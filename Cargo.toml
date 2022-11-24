@@ -1,0 +1,6 @@
+[workspace]
+members = [
+    "placement-manager",
+    "data-node",
+    "front-end-sdk"
+]
