@@ -1,3 +1,7 @@
+use clap::Parser;
+use data_node::cfg::ServerConfig;
+
 fn main() {
-    println!("Hello, world!");
+    let server_config = ServerConfig::parse();
+    println!("{:?}", server_config);
 }

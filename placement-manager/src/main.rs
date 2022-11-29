@@ -25,4 +25,15 @@ mod tests {
         writer.write_u16::<LittleEndian>(768).unwrap();
         assert_eq!(writer, vec![5, 2, 0, 3]);
     }
+
+    use slog::{info, o, Drain};
+    #[test]
+    fn test_log() {
+        let decorator = slog_term::TermDecorator::new().build();
+        let drain = slog_term::CompactFormat::new(decorator).build().fuse();
+        let drain = slog_async::Async::new(drain).build().fuse();
+        let log = slog::Logger::root(drain, o!());
+
+        info!(log, "Logging works");
+    }
 }

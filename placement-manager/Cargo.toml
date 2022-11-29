@@ -6,6 +6,30 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-raft = "0.6"
-num_cpus = "1"
 byteorder = "1"
+bytes = "1"
+
+# Command Line Argumeng Parser
+clap = "4.0"
+
+flatbuffers = "22.10"
+
+num_cpus = "1"
+
+# Raft
+raft = "0.6"
+
+# RocksDB
+rocksdb = { version = "0.19", default-features = false, features = ["lz4"] }
+
+# Logging
+slog = "2.7"
+slog-async = "2.7"
+slog-term = "2.9"
+
+thiserror = "1.0"
+
+# Tokio ecosystem
+tokio = { version = "1", features = ["full"] }
+tracing = "0.1"
+tracing-subscriber = "0.3"
