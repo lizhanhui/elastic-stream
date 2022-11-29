@@ -11,10 +11,27 @@ pub fn launch(cfg: &ServerConfig) {
 
     let cores = cfg.actor_count();
     let mut thread_handles = vec![];
-    for _ in 1..=cores {
+    for index in 1..=cores {
         let server_config = cfg.clone();
         let logger = log.new(o!());
         let handle = std::thread::spawn(move || {
+            let uring_available = monoio::utils::detect_uring();
+            info!(logger, "Detect uring availablility: {}", uring_available);
+
+            let target_core = num_cpus::get() - index as usize;
+
+            match monoio::utils::bind_to_cpu_set([target_core]) {
+                Ok(_) => {
+                    info!(logger, "Bind thread to processor: {}", target_core);
+                }
+                Err(e) => {
+                    warn!(
+                        logger,
+                        "Failed to bind thread to core: {}, errno: {}", target_core, e
+                    );
+                }
+            };
+
             let mut driver = match monoio::RuntimeBuilder::<monoio::FusionDriver>::new()
                 .enable_timer()
                 .with_entries(server_config.queue_depth)
