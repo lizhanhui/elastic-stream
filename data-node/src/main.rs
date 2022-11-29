@@ -3,5 +3,5 @@ use data_node::cfg::ServerConfig;
 
 fn main() {
     let server_config = ServerConfig::parse();
-    println!("{:?}", server_config);
+    data_node::server::launch(&server_config);
 }

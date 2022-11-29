@@ -242,6 +242,9 @@ dependencies = [
  "crossbeam",
  "monoio",
  "num_cpus",
+ "slog",
+ "slog-async",
+ "slog-term",
  "thiserror",
 ]
 
