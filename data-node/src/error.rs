@@ -1,0 +1,33 @@
+use thiserror::Error;
+
+
+#[derive(Debug, Error)]
+pub enum FrameError {
+    /// Not enough data is available to parse a message
+    #[error("Not enough data for a frame")]
+    Incomplete,
+
+    #[error("Invalid frame length(max: {max:?}, found: {found:?})")]
+    TooLongFrame {
+        found: u32,
+        max: u32,
+    },
+
+    #[error("Invalid frame header length(max: {max:?}, found: {found:?})")]
+    TooLongFrameHeader {
+        found: u32,
+        max: u32,
+    },
+
+    #[error("Unknown operation code `{0}`")]
+    OpCodeUnknown(u16),
+
+    #[error("Payload checksum mismatch detected(expect: {expected:?}, actual: {actual:?})")]
+    PayloadChecksumMismatch {
+        expected: u32,
+        actual: u32
+    },
+
+    #[error("Underlying connection reset by peer")]
+    ConnectionReset,
+}
