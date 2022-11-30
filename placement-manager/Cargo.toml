@@ -20,7 +20,7 @@ num_cpus = "1"
 raft = "0.6"
 
 # RocksDB
-rocksdb = { version = "0.19", default-features = false, features = ["lz4"] }
+# rocksdb = { version = "0.19", default-features = false, features = ["lz4"] }
 
 # Logging
 slog = "2.7"
