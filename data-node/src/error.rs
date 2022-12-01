@@ -18,9 +18,6 @@ pub enum FrameError {
     #[error("Invalid frame header length(max: {max:?}, found: {found:?})")]
     TooLongFrameHeader { found: u32, max: u32 },
 
-    #[error("Unknown operation code `{0}`")]
-    OpCodeUnknown(u16),
-
     #[error("Payload checksum mismatch detected(expect: {expected:?}, actual: {actual:?})")]
     PayloadChecksumMismatch { expected: u32, actual: u32 },
 
