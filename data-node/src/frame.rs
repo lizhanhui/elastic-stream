@@ -1,7 +1,7 @@
 use std::io::Cursor;
 
 use byteorder::ReadBytesExt;
-use bytes::{Buf, Bytes, BytesMut};
+use bytes::{Buf, BufMut, Bytes, BytesMut};
 use crc::Crc;
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 
@@ -17,12 +17,12 @@ pub(crate) const MAX_FRAME_LENGTH: u32 = 16 * 1024 * 1024;
 const CRC32: Crc<u32> = Crc::<u32>::new(&crc::CRC_32_ISO_HDLC);
 
 pub struct Frame {
-    operation_code: OperationCode,
-    flag: u8,
-    stream_id: u32,
-    header_format: HeaderFormat,
-    header: Option<Bytes>,
-    payload: Option<Bytes>,
+    pub(crate) operation_code: OperationCode,
+    pub(crate) flag: u8,
+    pub(crate) stream_id: u32,
+    pub(crate) header_format: HeaderFormat,
+    pub(crate) header: Option<Bytes>,
+    pub(crate) payload: Option<Bytes>,
 }
 
 impl Frame {
@@ -162,20 +162,69 @@ impl Frame {
 
         Ok(frame)
     }
+
+    pub(crate) fn encode(&self, buffer: &mut BytesMut) -> Result<(), FrameError> {
+        let mut frame_length = 16;
+        if let Some(header) = &self.header {
+            frame_length += header.len();
+        }
+
+        if let Some(body) = &self.payload {
+            frame_length += body.len();
+        }
+
+        if frame_length > crate::frame::MAX_FRAME_LENGTH as usize {
+            return Err(FrameError::TooLongFrame {
+                found: frame_length as u32,
+                max: MAX_FRAME_LENGTH,
+            });
+        }
+
+        // Check to reserve additional memory
+        if buffer.capacity() < 4 + frame_length {
+            let additional = 4 + frame_length - buffer.capacity();
+            buffer.reserve(additional);
+        }
+
+        buffer.put_u32(frame_length as u32);
+        buffer.put_u8(crate::frame::MAGIC_CODE);
+        buffer.put_u16(self.operation_code.into());
+        buffer.put_u8(self.flag);
+        buffer.put_u32(self.stream_id);
+        buffer.put_u8(self.header_format.into());
+
+        if let Some(header) = &self.header {
+            let bytes = header.len().to_be_bytes();
+            buffer.put_slice(&bytes[1..]);
+            buffer.copy_from_slice(&header[..]);
+        } else {
+            buffer.put_u8(0);
+            buffer.put_u16(0);
+        }
+
+        if let Some(body) = &self.payload {
+            buffer.copy_from_slice(&body[..]);
+        } else {
+            // Dummy checksum
+            buffer.put_u32(0);
+        }
+
+        Ok(())
+    }
 }
 
-#[derive(Debug, Eq, PartialEq, TryFromPrimitive, IntoPrimitive)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, TryFromPrimitive, IntoPrimitive)]
 #[repr(u8)]
-enum HeaderFormat {
+pub(crate) enum HeaderFormat {
     Unknown = 0,
     FlatBuffer = 1,
     ProtoBuffer = 2,
     JSON = 3,
 }
 
-#[derive(Debug, Eq, PartialEq, TryFromPrimitive, IntoPrimitive)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, TryFromPrimitive, IntoPrimitive)]
 #[repr(u16)]
-enum OperationCode {
+pub(crate) enum OperationCode {
     Unknown = 0,
     Ping = 1,
     GoAway = 2,

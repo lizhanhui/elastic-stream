@@ -1,8 +1,8 @@
 use std::io::Cursor;
 
-use bytes::{Buf, BytesMut};
+use bytes::{Buf, BufMut, BytesMut};
 use monoio::{
-    io::{AsyncReadRent, BufWriter},
+    io::{AsyncReadRent, AsyncWriteRent, AsyncWriteRentExt, BufWriter},
     net::TcpStream,
 };
 
@@ -26,6 +26,7 @@ pub struct Connection {
 
     // The buffer for reading frames.
     buffer: BytesMut,
+    write_buffer: Option<BytesMut>,
 }
 
 impl Connection {
@@ -35,6 +36,7 @@ impl Connection {
         Connection {
             stream: BufWriter::new(stream),
             buffer: BytesMut::with_capacity(4 * 1024),
+            write_buffer: Some(BytesMut::with_capacity(4 * 1024)),
         }
     }
 
@@ -150,5 +152,21 @@ impl Connection {
             // in the connection being closed.
             Err(e) => Err(e.into()),
         }
+    }
+
+    pub async fn write_frame(&mut self, frame: &Frame) -> Result<(), std::io::Error> {
+
+        let mut buffer = self.write_buffer.take().unwrap();
+
+        if let Err(e) = frame.encode(&mut buffer) {
+            // TODO: error handling
+            dbg!(e);
+        }
+
+        let (res, mut buf) = self.stream.write_all(buffer).await;
+        buf.clear();
+        self.write_buffer = Some(buf);
+        res?;
+        self.stream.flush().await
     }
 }
