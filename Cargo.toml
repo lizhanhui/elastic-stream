@@ -5,6 +5,7 @@
 resolver = "2"
 members = [
     "components/codec",
+    "components/transport",
     "placement-manager",
     "data-node",
     "front-end-sdk"

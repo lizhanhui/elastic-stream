@@ -218,6 +218,7 @@ dependencies = [
  "slog-async",
  "slog-term",
  "thiserror",
+ "transport",
 ]
 
 [[package]]
@@ -244,6 +245,16 @@ dependencies = [
 [[package]]
 name = "front-end-sdk"
 version = "0.1.0"
+dependencies = [
+ "bytes",
+ "clap",
+ "codec",
+ "monoio",
+ "slog",
+ "slog-async",
+ "slog-term",
+ "transport",
+]
 
 [[package]]
 name = "fxhash"
@@ -517,6 +528,7 @@ dependencies = [
  "slog-term",
  "thiserror",
  "tokio",
+ "transport",
 ]
 
 [[package]]
@@ -817,6 +829,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8d82e1a7758622a465f8cee077614c73484dac5b836c02ff6a40d5d1010324d7"
 dependencies = [
  "serde",
+]
+
+[[package]]
+name = "transport"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+ "codec",
+ "monoio",
 ]
 
 [[package]]

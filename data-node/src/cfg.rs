@@ -1,17 +1,23 @@
 use clap::Parser;
 
+pub const DEFAULT_PORT: u16 = 10911;
+
+pub const DEFAULT_QUEUE_DEPTH: u32 = 1024;
+
+pub const DEFAULT_CONCURRENCY: usize = 1;
+
 #[derive(Debug, Parser, Clone)]
 #[command(author, version, about, long_about = None)]
 pub struct ServerConfig {
     /// Number of thread-per-core workers
-    #[arg(short, long, default_value_t = 1, value_parser = parse_concurrency)]
+    #[arg(short, long, default_value_t = DEFAULT_CONCURRENCY, value_parser = parse_concurrency)]
     pub concurrency: usize,
 
     /// Listening port
-    #[arg(short, long, default_value_t = 10911)]
+    #[arg(short, long, default_value_t = DEFAULT_PORT)]
     pub port: u16,
 
-    #[arg(short, long, default_value_t = 1024)]
+    #[arg(short, long, default_value_t = DEFAULT_QUEUE_DEPTH)]
     pub queue_depth: u32,
 }
 

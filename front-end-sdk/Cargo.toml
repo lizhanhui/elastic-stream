@@ -3,6 +3,16 @@ name = "front-end-sdk"
 version = "0.1.0"
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
+codec = { path = "../components/codec" }
+transport = { path = "../components/transport" }
+monoio =  { workspace = true }
+clap = { workspace = true }
+slog =  { workspace = true }
+slog-async =  { workspace = true }
+slog-term =  { workspace = true }
+bytes = { workspace = true }
+
+[[bin]]
+name = "ping_pong"
+path = "src/bin/ping_pong.rs"

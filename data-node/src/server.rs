@@ -1,11 +1,8 @@
-use crate::connection::Connection;
-use crate::{
-    cfg::ServerConfig,
-    
-};
+use crate::cfg::ServerConfig;
 use codec::frame::{Frame, OperationCode};
 use monoio::net::{TcpListener, TcpStream};
 use slog::{debug, error, info, o, warn, Drain, Logger};
+use transport::connection::Connection;
 
 pub fn launch(cfg: &ServerConfig) {
     let decorator = slog_term::TermDecorator::new().build();
@@ -35,12 +32,12 @@ pub fn launch(cfg: &ServerConfig) {
                     if !core_affinity::set_for_current(core_id) {
                         error!(
                             logger,
-                            "Failed to bind worker thread to processor: {:?}", core_id
+                            "Failed to bind the worker thread to processor: {:?}", core_id
                         );
                         return;
                     }
 
-                    info!(logger, "Bind worker thread to processor: {:?}", core_id);
+                    info!(logger, "Bind the worker thread to processor: {:?}", core_id);
 
                     let mut driver = match monoio::RuntimeBuilder::<monoio::FusionDriver>::new()
                         .enable_timer()
@@ -86,8 +83,19 @@ async fn run(listener: TcpListener, logger: Logger) -> Result<(), Box<dyn std::e
     loop {
         let incoming = listener.accept().await;
         let logger = logger.new(o!());
-        let (stream, socket_address) = match incoming {
-            Ok((stream, socket_addr)) => (stream, socket_addr),
+        let (stream, _socket_address) = match incoming {
+            Ok((stream, socket_addr)) => {
+                debug!(logger, "Accepted a new connection from {socket_addr:?}");
+                stream.set_nodelay(true).unwrap_or_else(|e| {
+                    warn!(logger, "Failed to disable Nagle's algorithm. Cause: {e:?}, PeerAddress: {socket_addr:?}");
+                });
+                debug!(
+                    logger,
+                    "Turned Nagle's algorithm off by TcpStream#set_nodelay"
+                );
+
+                (stream, socket_addr)
+            }
             Err(e) => {
                 error!(
                     logger,
@@ -97,8 +105,6 @@ async fn run(listener: TcpListener, logger: Logger) -> Result<(), Box<dyn std::e
                 break;
             }
         };
-
-        debug!(logger, "Accept a new connection from {:?}", socket_address);
 
         monoio::spawn(async move {
             process(stream, logger).await;

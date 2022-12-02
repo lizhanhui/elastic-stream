@@ -9,6 +9,7 @@ edition = "2021"
 # Command Line Argumeng Parser
 clap =  { workspace = true }
 codec = { path = "../components/codec" }
+transport = { path = "../components/transport" }
 
 # Logging
 slog =  { workspace = true }

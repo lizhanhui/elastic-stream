@@ -1,5 +1,4 @@
 pub mod cfg;
-pub mod connection;
 pub mod server;
 
 #[cfg(test)]
