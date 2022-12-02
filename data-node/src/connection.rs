@@ -6,8 +6,8 @@ use monoio::{
     net::TcpStream,
 };
 
-use crate::error::FrameError;
-use crate::frame::Frame;
+use codec::error::FrameError;
+use codec::frame::Frame;
 
 /// Send and receive `Frame` values from a remote peer.
 ///

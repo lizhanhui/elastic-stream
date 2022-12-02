@@ -1,7 +1,5 @@
 pub mod cfg;
 pub mod connection;
-pub mod error;
-pub mod frame;
 pub mod server;
 
 #[cfg(test)]

@@ -17,16 +17,16 @@ pub(crate) const MAX_FRAME_LENGTH: u32 = 16 * 1024 * 1024;
 const CRC32: Crc<u32> = Crc::<u32>::new(&crc::CRC_32_ISO_HDLC);
 
 pub struct Frame {
-    pub(crate) operation_code: OperationCode,
-    pub(crate) flag: u8,
-    pub(crate) stream_id: u32,
-    pub(crate) header_format: HeaderFormat,
-    pub(crate) header: Option<Bytes>,
-    pub(crate) payload: Option<Bytes>,
+    pub operation_code: OperationCode,
+    pub flag: u8,
+    pub stream_id: u32,
+    pub header_format: HeaderFormat,
+    pub header: Option<Bytes>,
+    pub payload: Option<Bytes>,
 }
 
 impl Frame {
-    pub(crate) fn check(src: &mut Cursor<&[u8]>) -> Result<(), FrameError> {
+    pub fn check(src: &mut Cursor<&[u8]>) -> Result<(), FrameError> {
         let frame_length = match src.read_u32::<byteorder::NetworkEndian>() {
             Ok(n) => n,
             Err(_) => {
@@ -106,7 +106,7 @@ impl Frame {
         Ok(())
     }
 
-    pub(crate) fn parse(src: &mut Cursor<&[u8]>) -> Result<Frame, FrameError> {
+    pub fn parse(src: &mut Cursor<&[u8]>) -> Result<Frame, FrameError> {
         // Safety: previous `check` method ensures we are having a complete frame to parse
         let frame_length = src.get_u32();
         let mut remaining = frame_length;
@@ -163,7 +163,7 @@ impl Frame {
         Ok(frame)
     }
 
-    pub(crate) fn encode(&self, buffer: &mut BytesMut) -> Result<(), FrameError> {
+    pub fn encode(&self, buffer: &mut BytesMut) -> Result<(), FrameError> {
         let mut frame_length = 16;
         if let Some(header) = &self.header {
             frame_length += header.len();
@@ -215,7 +215,7 @@ impl Frame {
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, TryFromPrimitive, IntoPrimitive)]
 #[repr(u8)]
-pub(crate) enum HeaderFormat {
+pub enum HeaderFormat {
     Unknown = 0,
     FlatBuffer = 1,
     ProtoBuffer = 2,
@@ -224,7 +224,7 @@ pub(crate) enum HeaderFormat {
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, TryFromPrimitive, IntoPrimitive)]
 #[repr(u16)]
-pub(crate) enum OperationCode {
+pub enum OperationCode {
     Unknown = 0,
     Ping = 1,
     GoAway = 2,

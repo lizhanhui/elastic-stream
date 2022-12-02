@@ -1,8 +1,9 @@
 use crate::connection::Connection;
 use crate::{
     cfg::ServerConfig,
-    frame::{Frame, OperationCode},
+    
 };
+use codec::frame::{Frame, OperationCode};
 use monoio::net::{TcpListener, TcpStream};
 use slog::{debug, error, info, o, warn, Drain, Logger};
 
@@ -145,7 +146,7 @@ async fn handle_request(request: &Frame, channel: &mut Connection) {
                 operation_code: OperationCode::Ping,
                 flag: 1u8,
                 stream_id: request.stream_id,
-                header_format: crate::frame::HeaderFormat::FlatBuffer,
+                header_format: codec::frame::HeaderFormat::FlatBuffer,
                 header: None,
                 payload: None,
             };
