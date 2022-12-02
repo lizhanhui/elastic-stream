@@ -17,3 +17,6 @@ slog-term =  { workspace = true }
 
 thiserror =  { workspace = true }
 tokio = { workspace = true }
+
+num_cpus = { workspace = true }
+byteorder = { workspace = true }
