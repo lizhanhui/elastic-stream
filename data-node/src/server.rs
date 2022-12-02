@@ -9,6 +9,14 @@ pub fn launch(cfg: &ServerConfig) {
     let drain = slog_term::CompactFormat::new(decorator).build().fuse();
     let drain = slog_async::Async::new(drain).build().fuse();
     let log = slog::Logger::root(drain, o!());
+
+    let (profiler_tx, profiler_rx) = crossbeam::channel::bounded(1);
+
+    let profiler_logger = log.new(o!());
+    let profiler_handle = std::thread::Builder::new()
+        .name("Profiler".to_owned())
+        .spawn(move || profile(profiler_rx, profiler_logger));
+
     let core_ids = match core_affinity::get_core_ids() {
         Some(ids) => ids,
         None => {
@@ -24,6 +32,7 @@ pub fn launch(cfg: &ServerConfig) {
         .map(|core_id| {
             let server_config = cfg.clone();
             let logger = log.new(o!());
+            let profiler_sender = profiler_tx.clone();
             std::thread::Builder::new()
                 .name("Worker".to_owned())
                 .spawn(move || {
@@ -63,6 +72,22 @@ pub fn launch(cfg: &ServerConfig) {
                                 return;
                             }
                         };
+
+                        // Generate a flamegraph every minute.
+                        let profiler_logger = logger.new(o!("module" => "profiler"));
+                        monoio::spawn(async move {
+                            let mut i = 0;
+                            loop {
+                                i += 1;
+                                monoio::time::sleep(std::time::Duration::from_secs(60)).await;
+                                if let Ok(_) =
+                                    profiler_sender.try_send(format!("{}-{}", core_id.id, i))
+                                {
+                                    info!(profiler_logger, "Notify pprof to create a flamegraph");
+                                }
+                            }
+                        });
+
                         match run(listener, logger.new(o!())).await {
                             Ok(_) => {}
                             Err(e) => {
@@ -76,6 +101,38 @@ pub fn launch(cfg: &ServerConfig) {
 
     for handle in handles.into_iter() {
         let _result = handle.unwrap().join();
+    }
+
+    let _result = profiler_handle.unwrap().join();
+}
+
+fn profile(rx: crossbeam::channel::Receiver<String>, logger: Logger) {
+    let profile_guard = pprof::ProfilerGuardBuilder::default()
+        .frequency(1000)
+        .blocklist(&["libc", "libgcc", "pthread", "vdso"])
+        .build()
+        .unwrap();
+    loop {
+        match rx.recv() {
+            Ok(mut file_name) => {
+                if let Ok(report) = profile_guard.report().build() {
+                    file_name.push_str(".svg");
+                    let file = std::fs::File::create(&file_name).unwrap();
+                    match report.flamegraph(file) {
+                        Ok(_) => {
+                            info!(logger, "Create flamegraph {}", file_name);
+                        }
+                        Err(e) => {
+                            error!(logger, "Failed to report flamegraph. Cause: {:?}", e);
+                        }
+                    };
+                };
+            }
+            Err(e) => {
+                error!(logger, "Profiler receiver#recv got an error: {:?}", e);
+                break;
+            }
+        }
     }
 }
 
