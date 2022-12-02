@@ -1,9 +1,10 @@
 use clap::Parser;
 use codec::frame::{Frame, HeaderFormat, OperationCode};
 use monoio::net::TcpStream;
-use slog::{error, info, o, Drain, Logger};
+use slog::{debug, error, info, o, warn, Drain, Logger};
+use transport::connection::Connection;
 
-#[monoio::main]
+#[monoio::main(timer_enabled = true)]
 async fn main() {
     let args = Args::parse();
 
@@ -18,7 +19,7 @@ async fn main() {
 pub const DEFAULT_DATA_NODE_PORT: u16 = 10911;
 
 #[derive(Debug, Parser)]
-#[clap(name = "ping_pong", author, version, about, long_about = None)]
+#[clap(name = "ping-pong", author, version, about, long_about = None)]
 struct Args {
     #[clap(name = "hostname", short = 'H', long, default_value = "127.0.0.1")]
     host: String,
@@ -56,5 +57,34 @@ async fn launch(args: &Args, logger: Logger) {
         error!(logger, "Failed to encode frame. Cause: {e:#?}");
     });
 
-    // let mut connection =
+    let mut connection = Connection::new(stream);
+    connection.write_frame(&frame).await.unwrap();
+    let mut cnt = 0;
+    debug!(logger, "{cnt} Ping");
+    loop {
+        match connection.read_frame().await {
+            Ok(Some(frame)) => {
+                if cnt % 1000 == 0 {
+                    debug!(logger, "{cnt} Pong...");
+                }
+                cnt += 1;
+                if let Ok(_) = connection.write_frame(&frame).await {
+                    if cnt % 1000 == 0 {
+                        debug!(logger, "{cnt} Ping");
+                    }
+                } else {
+                    warn!(logger, "Failed to ping...");
+                    return;
+                }
+            }
+            Ok(None) => {
+                info!(logger, "Connection closed");
+                return;
+            }
+            Err(e) => {
+                error!(logger, "Connection reset by peer. {e:?}");
+                return;
+            }
+        }
+    }
 }

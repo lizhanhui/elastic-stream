@@ -14,5 +14,5 @@ slog-term =  { workspace = true }
 bytes = { workspace = true }
 
 [[bin]]
-name = "ping_pong"
+name = "ping-pong"
 path = "src/bin/ping_pong.rs"

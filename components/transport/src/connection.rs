@@ -9,6 +9,8 @@ use monoio::{
 use codec::error::FrameError;
 use codec::frame::Frame;
 
+const BUFFER_SIZE: usize = 4 * 1024;
+
 /// Send and receive `Frame` values from a remote peer.
 ///
 /// When implementing networking protocols, a message on that protocol is
@@ -44,10 +46,10 @@ impl Connection {
             stream: BufWriter::new(stream),
 
             /// Read buffer
-            buffer: BytesMut::with_capacity(4 * 1024),
+            buffer: BytesMut::with_capacity(BUFFER_SIZE),
 
             /// Write buffer
-            write_buffer: Some(BytesMut::with_capacity(4 * 1024)),
+            write_buffer: Some(BytesMut::with_capacity(BUFFER_SIZE)),
         }
     }
 
@@ -72,6 +74,11 @@ impl Connection {
             // has been buffered, the frame is returned.
             if let Some(frame) = self.parse_frame()? {
                 return Ok(Some(frame));
+            }
+
+            // Try to allocate more memory from allocator
+            if self.buffer.spare_capacity_mut().len() < BUFFER_SIZE {
+                self.buffer.reserve(BUFFER_SIZE);
             }
 
             // There is not enough buffered data to read a frame. Attempt to
@@ -183,5 +190,45 @@ impl Connection {
         self.write_buffer = Some(buf);
         debug_assert!(bytes_to_write == res?);
         self.stream.flush().await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use bytes::{Buf, BufMut, BytesMut};
+
+    #[test]
+    fn test_bytes_concept() {
+        let mut buf = BytesMut::with_capacity(128);
+        buf.put_i32(1);
+        assert_eq!(128, buf.capacity());
+        assert_eq!(4, buf.len());
+        assert_eq!(4, buf.remaining());
+        assert_eq!(124, buf.spare_capacity_mut().len());
+
+        buf.get_u16();
+
+        assert_eq!(126, buf.capacity());
+        assert_eq!(2, buf.len());
+        assert_eq!(2, buf.remaining());
+        assert_eq!(124, buf.spare_capacity_mut().len());
+
+        buf.put_u8(4u8);
+        assert_eq!(126, buf.capacity());
+        assert_eq!(3, buf.len());
+        assert_eq!(3, buf.remaining());
+        assert_eq!(123, buf.spare_capacity_mut().len());
+
+        buf.put_u8(2u8);
+        assert_eq!(126, buf.capacity());
+        assert_eq!(4, buf.len());
+        assert_eq!(4, buf.remaining());
+        assert_eq!(122, buf.spare_capacity_mut().len());
+
+        buf.get_u32();
+        assert_eq!(122, buf.capacity());
+        assert_eq!(0, buf.len());
+        assert_eq!(0, buf.remaining());
+        assert_eq!(122, buf.spare_capacity_mut().len());
     }
 }

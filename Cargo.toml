@@ -16,7 +16,7 @@ byteorder = "1"
 bytes = "1"
 core_affinity = "0.7"
 crc = "3.0"
-monoio = "0.0"
+monoio = { version = "0.0", features = ["splice"] }
 num_cpus = "1"
 thiserror = "1.0"
 crossbeam = "0.8"
