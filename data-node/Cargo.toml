@@ -16,6 +16,8 @@ thiserror = "1.0"
 crossbeam = "0.8"
 clap = { version = "4.0", features = ["derive"] }
 num_enum = "0.5"
+dashmap = "5.4"
+seahash = "4.1"
 
 # Logging
 slog = { version = "2.7", features = ["max_level_trace", "release_max_level_warn"] }

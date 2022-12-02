@@ -1,6 +1,6 @@
 use std::io::Cursor;
 
-use bytes::{Buf, BufMut, BytesMut};
+use bytes::{Buf, BytesMut};
 use monoio::{
     io::{AsyncReadRent, AsyncWriteRent, AsyncWriteRentExt, BufWriter},
     net::TcpStream,
@@ -27,6 +27,8 @@ pub struct Connection {
     // The buffer for reading frames.
     buffer: BytesMut,
     write_buffer: Option<BytesMut>,
+
+    peer_address: String,
 }
 
 impl Connection {
@@ -34,10 +36,23 @@ impl Connection {
     /// are initialized.
     pub fn new(stream: TcpStream) -> Self {
         Connection {
+            peer_address: match stream.peer_addr() {
+                Ok(addr) => addr.to_string(),
+                Err(_) => "Unknown".to_string(),
+            },
+
             stream: BufWriter::new(stream),
+
+            /// Read buffer
             buffer: BytesMut::with_capacity(4 * 1024),
+
+            /// Write buffer
             write_buffer: Some(BytesMut::with_capacity(4 * 1024)),
         }
+    }
+
+    pub fn peer_address(&self) -> &str {
+        &self.peer_address
     }
 
     /// Read a single `Frame` value from the underlying stream.
@@ -155,18 +170,18 @@ impl Connection {
     }
 
     pub async fn write_frame(&mut self, frame: &Frame) -> Result<(), std::io::Error> {
-
         let mut buffer = self.write_buffer.take().unwrap();
 
         if let Err(e) = frame.encode(&mut buffer) {
             // TODO: error handling
             dbg!(e);
         }
+        let bytes_to_write = buffer.len();
 
         let (res, mut buf) = self.stream.write_all(buffer).await;
         buf.clear();
         self.write_buffer = Some(buf);
-        res?;
+        debug_assert!(bytes_to_write == res?);
         self.stream.flush().await
     }
 }

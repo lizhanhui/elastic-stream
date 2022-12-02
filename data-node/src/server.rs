@@ -1,5 +1,8 @@
-use crate::cfg::ServerConfig;
-use monoio::io::{AsyncReadRent, AsyncWriteRentExt};
+use crate::connection::Connection;
+use crate::{
+    cfg::ServerConfig,
+    frame::{Frame, OperationCode},
+};
 use monoio::net::{TcpListener, TcpStream};
 use slog::{debug, error, info, o, warn, Drain, Logger};
 
@@ -81,6 +84,7 @@ pub fn launch(cfg: &ServerConfig) {
 async fn run(listener: TcpListener, logger: Logger) -> Result<(), Box<dyn std::error::Error>> {
     loop {
         let incoming = listener.accept().await;
+        let logger = logger.new(o!());
         let (stream, socket_address) = match incoming {
             Ok((stream, socket_addr)) => (stream, socket_addr),
             Err(e) => {
@@ -96,28 +100,61 @@ async fn run(listener: TcpListener, logger: Logger) -> Result<(), Box<dyn std::e
         debug!(logger, "Accept a new connection from {:?}", socket_address);
 
         monoio::spawn(async move {
-            let _ = process(stream).await;
+            process(stream, logger).await;
         });
     }
 
     Ok(())
 }
 
-async fn process(mut stream: TcpStream) -> std::io::Result<()> {
-    let mut buf = Vec::with_capacity(8 * 1024);
+async fn process(stream: TcpStream, logger: Logger) {
+    let mut connection = Connection::new(stream);
+    // let mut tasks = DashMap::new();
+    // TODO: Make task processing concurrent using MPSC
+
     loop {
-        let (res, _buf) = stream.read(buf).await;
-        buf = _buf;
-        let res: usize = res?;
-        if 0 == res {
-            return Ok(());
+        match connection.read_frame().await {
+            Ok(Some(frame)) => {
+                handle_request(&frame, &mut connection).await;
+            }
+            Ok(None) => {
+                info!(
+                    logger,
+                    "Connection to {} is closed",
+                    connection.peer_address()
+                );
+                break;
+            }
+            Err(e) => {
+                warn!(
+                    logger,
+                    "Connection reset. Peer address: {}. Cause: {e:?}",
+                    connection.peer_address()
+                );
+                break;
+            }
+        };
+    }
+}
+
+async fn handle_request(request: &Frame, channel: &mut Connection) {
+    match request.operation_code {
+        OperationCode::Unknown => {}
+        OperationCode::Ping => {
+            let response = Frame {
+                operation_code: OperationCode::Ping,
+                flag: 1u8,
+                stream_id: request.stream_id,
+                header_format: crate::frame::HeaderFormat::FlatBuffer,
+                header: None,
+                payload: None,
+            };
+            match channel.write_frame(&response).await {
+                Ok(_) => {}
+                Err(_) => {}
+            };
         }
-
-        let (res, _buf) = stream.write_all(buf).await;
-        buf = _buf;
-        res?;
-
-        buf.clear();
+        OperationCode::GoAway => {}
     }
 }
 
