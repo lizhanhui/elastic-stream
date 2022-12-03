@@ -111,7 +111,7 @@ impl Frame {
 
         // header length
         let header_length: u32 = src.get_u8() as u32;
-        let header_length = header_length << 16 + src.get_u16();
+        let header_length = src.get_u16() as u32 + (header_length << 16);
         src.advance(header_length as usize);
 
         let payload_length = frame_length - header_length - 16;
@@ -470,7 +470,7 @@ mod tests {
     }
 
     #[test]
-    fn test_decode() {
+    fn test_check_and_parse() {
         let mut header = BytesMut::new();
         header.put(&b"header"[..]);
 
@@ -491,6 +491,16 @@ mod tests {
         assert_eq!(29, buf.remaining());
 
         let mut cursor = Cursor::new(&buf[..]);
+
+        let mut logger = get_logger();
+
+        // Frame::check should pass
+        assert_eq!(Ok(()), Frame::check(&mut cursor, &mut logger));
+
+        // Reset cursor
+        cursor.set_position(0);
+
+        // Validate parse
         let decoded = Frame::parse(&mut cursor).unwrap();
         assert_eq!(OperationCode::Ping, decoded.operation_code);
         assert_eq!(1, decoded.flag);
