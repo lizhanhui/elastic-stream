@@ -6,7 +6,7 @@ use monoio::{
     net::TcpStream,
 };
 
-use slog::{debug, error, info, trace, warn, Logger};
+use slog::{error, info, trace, warn, Logger};
 
 use codec::error::FrameError;
 use codec::frame::Frame;
