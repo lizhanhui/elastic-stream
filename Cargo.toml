@@ -12,6 +12,7 @@ members = [
 ]
 
 [workspace.dependencies]
+async-channel = { version = "1.8" }
 byteorder = "1"
 bytes = "1"
 core_affinity = "0.7"

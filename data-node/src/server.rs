@@ -173,35 +173,63 @@ async fn run(listener: TcpListener, logger: Logger) -> Result<(), Box<dyn std::e
 
 async fn process(stream: TcpStream, logger: Logger) {
     let mut connection = Connection::new(stream);
-    // let mut tasks = DashMap::new();
-    // TODO: Make task processing concurrent using MPSC
-
+    let (tx, rx) = async_channel::unbounded();
     loop {
-        match connection.read_frame().await {
-            Ok(Some(frame)) => {
-                handle_request(&frame, &mut connection).await;
+        let sender = tx.clone();
+        let log = logger.new(o!());
+        monoio::select! {
+            request = connection.read_frame() => {
+                match request {
+                    Ok(Some(frame)) => {
+                        monoio::spawn(async move {
+                            handle_request(frame, sender, log).await;
+                        });
+                    }
+                    Ok(None) => {
+                        info!(
+                            logger,
+                            "Connection to {} is closed",
+                            connection.peer_address()
+                        );
+                        break;
+                    }
+                    Err(e) => {
+                        warn!(
+                            logger,
+                            "Connection reset. Peer address: {}. Cause: {e:?}",
+                            connection.peer_address()
+                        );
+                        break;
+                    }
+                }
             }
-            Ok(None) => {
-                info!(
-                    logger,
-                    "Connection to {} is closed",
-                    connection.peer_address()
-                );
-                break;
+            response = rx.recv() => {
+                match response {
+                    Ok(frame) => {
+                        match connection.write_frame(&frame).await {
+                            Ok(_) => {
+                                debug!(logger, "Response[stream-id={:?}] written to network", frame.stream_id);
+                            },
+                            Err(e) => {
+                                warn!(
+                                    logger,
+                                    "Failed to write response[stream-id={:?}] to network. Cause: {:?}",
+                                    frame.stream_id,
+                                    e
+                                );
+                            }
+                        }
+                    },
+                    Err(e) => {
+                        warn!(logger, "Failed to receive response frame from MSPC channel. Cause: {:?}", e);
+                    }
+                };
             }
-            Err(e) => {
-                warn!(
-                    logger,
-                    "Connection reset. Peer address: {}. Cause: {e:?}",
-                    connection.peer_address()
-                );
-                break;
-            }
-        };
+        }
     }
 }
 
-async fn handle_request(request: &Frame, channel: &mut Connection) {
+async fn handle_request(request: Frame, sender: async_channel::Sender<Frame>, logger: Logger) {
     match request.operation_code {
         OperationCode::Unknown => {}
         OperationCode::Ping => {
@@ -213,9 +241,21 @@ async fn handle_request(request: &Frame, channel: &mut Connection) {
                 header: None,
                 payload: None,
             };
-            match channel.write_frame(&response).await {
-                Ok(_) => {}
-                Err(_) => {}
+            match sender.send(response).await {
+                Ok(_) => {
+                    debug!(
+                        logger,
+                        "Response[stream-id={}] transferred to channel", request.stream_id
+                    );
+                }
+                Err(e) => {
+                    warn!(
+                        logger,
+                        "Failed to send response[stream-id={}] to channel. Cause: {:?}",
+                        request.stream_id,
+                        e
+                    );
+                }
             };
         }
         OperationCode::GoAway => {}
