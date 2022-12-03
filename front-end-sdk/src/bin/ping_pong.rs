@@ -1,3 +1,4 @@
+use bytes::{Buf, BufMut, BytesMut};
 use clap::Parser;
 use codec::frame::{Frame, HeaderFormat, OperationCode};
 use monoio::net::TcpStream;
@@ -55,7 +56,7 @@ async fn launch(args: &Args, logger: Logger) {
         }
     };
 
-    let frame = Frame {
+    let mut frame = Frame {
         operation_code: OperationCode::Ping,
         flag: 0u8,
         stream_id: 0,
@@ -63,6 +64,8 @@ async fn launch(args: &Args, logger: Logger) {
         header: None,
         payload: None,
     };
+
+    fill_header(&mut frame);
 
     let mut buffer = bytes::BytesMut::with_capacity(4 * 1024);
     frame.encode(&mut buffer).unwrap_or_else(|e| {
@@ -79,6 +82,10 @@ async fn launch(args: &Args, logger: Logger) {
                 debug!(logger, "{cnt} Pong received");
                 cnt += 1;
                 frame.stream_id = cnt;
+                fill_header(&mut frame);
+
+                monoio::time::sleep(std::time::Duration::from_secs(1)).await;
+
                 if let Ok(_) = connection.write_frame(&frame).await {
                     debug!(logger, "{cnt} Ping sent");
                 } else {
@@ -95,5 +102,28 @@ async fn launch(args: &Args, logger: Logger) {
                 return;
             }
         }
+    }
+}
+
+fn fill_header(frame: &mut Frame) {
+    let mut header = BytesMut::new();
+    let text = format!("stream-id={}", frame.stream_id);
+    header.put(text.as_bytes());
+    let header = header.freeze();
+    frame.header = Some(header);
+}
+
+#[cfg(test)]
+mod tests {
+    use bytes::{Buf, BufMut, BytesMut};
+
+    #[test]
+    fn test_bytes() {
+        let mut buf = BytesMut::new();
+        let text = format!("k={}", 1);
+        buf.put(text.as_bytes());
+        let buf = buf.freeze();
+        assert_eq!(3, buf.len());
+        assert_eq!(3, buf.remaining());
     }
 }

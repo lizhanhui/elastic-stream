@@ -1,10 +1,9 @@
-use std::io::Cursor;
-
 use byteorder::ReadBytesExt;
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use crc::Crc;
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 use slog::{trace, warn, Logger};
+use std::io::Cursor;
 
 use crate::error::FrameError;
 
@@ -27,6 +26,13 @@ pub struct Frame {
 }
 
 impl Frame {
+
+    fn crc32(payload: &[u8]) -> u32 {
+        let mut digest = CRC32.digest();
+        digest.update(payload);
+        digest.finalize()
+    }
+
     pub fn check(src: &mut Cursor<&[u8]>, logger: &mut Logger) -> Result<(), FrameError> {
         let frame_length = match src.read_u32::<byteorder::NetworkEndian>() {
             Ok(n) => {
@@ -36,7 +42,7 @@ impl Frame {
             Err(_) => {
                 trace!(
                     logger,
-                    "Only {} bytes in buffer. Read more data to proceed.",
+                    "Only {} bytes in buffer. Read more data to proceed",
                     src.remaining()
                 );
                 return Err(FrameError::Incomplete);
@@ -118,9 +124,7 @@ impl Frame {
 
         if let Some(body) = payload {
             let checksum = src.get_u32();
-            let mut digest = CRC32.digest();
-            digest.update(&body[..]);
-            let ckm = digest.finalize();
+            let ckm = Frame::crc32(body.as_ref());
             if checksum != ckm {
                 warn!(
                     logger,
@@ -227,16 +231,18 @@ impl Frame {
         buffer.put_u8(self.header_format.into());
 
         if let Some(header) = &self.header {
-            let bytes = header.len().to_be_bytes();
-            buffer.put_slice(&bytes[1..]);
-            buffer.copy_from_slice(&header[..]);
+            let bytes = (header.len() as u32).to_be_bytes();
+            debug_assert!(4 == bytes.len());
+            buffer.extend_from_slice(&bytes[1..]);
+            buffer.extend_from_slice(header.as_ref());
         } else {
             buffer.put_u8(0);
             buffer.put_u16(0);
         }
 
         if let Some(body) = &self.payload {
-            buffer.copy_from_slice(&body[..]);
+            buffer.extend_from_slice(body.as_ref());
+            buffer.put_u32(Frame::crc32(body.as_ref()));
         } else {
             // Dummy checksum
             buffer.put_u32(0);
@@ -390,4 +396,86 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn test_encode_header() {
+        let mut header = BytesMut::with_capacity(16);
+        header.put(&b"abc"[..]);
+
+        let frame = Frame {
+            operation_code: OperationCode::Ping,
+            flag: 1,
+            stream_id: 2,
+            header_format: HeaderFormat::FlatBuffer,
+            header: Some(header.freeze()),
+            payload: None,
+        };
+
+        let mut buf = BytesMut::new();
+
+        assert_eq!(Ok(()), frame.encode(&mut buf));
+
+        let frame_length = buf.get_u32();
+        assert_eq!(19, frame_length);
+        assert_eq!(MAGIC_CODE, buf.get_u8());
+        assert_eq!(1, buf.get_u16());
+        assert_eq!(1, buf.get_u8());
+        assert_eq!(2, buf.get_u32());
+        assert_eq!(1, buf.get_u8());
+        // header length
+        assert_eq!(0, buf.get_u8());
+        assert_eq!(3, buf.get_u16());
+
+        let header = buf.copy_to_bytes(3);
+        assert_eq!(b"abc", header.as_ref());
+
+        assert_eq!(0, buf.get_u32());
+
+        assert_eq!(0, buf.remaining());
+    }
+
+
+    #[test]
+    fn test_encode_body() {
+        let mut body = BytesMut::with_capacity(16);
+        body.put(&b"abc"[..]);
+
+        let frame = Frame {
+            operation_code: OperationCode::Ping,
+            flag: 1,
+            stream_id: 2,
+            header_format: HeaderFormat::FlatBuffer,
+            header: None,
+            payload: Some(body.freeze()),
+        };
+
+        let mut buf = BytesMut::new();
+        assert_eq!(Ok(()), frame.encode(&mut buf));
+
+        assert_eq!(19, buf.get_u32());
+
+        assert_eq!(MAGIC_CODE, buf.get_u8());
+        assert_eq!(1, buf.get_u16());
+        assert_eq!(1, buf.get_u8());
+        assert_eq!(2, buf.get_u32());
+        assert_eq!(1, buf.get_u8());
+        // header length
+        assert_eq!(0, buf.get_u8());
+        assert_eq!(0, buf.get_u16());
+
+        let body = buf.copy_to_bytes(3);
+        assert_eq!(b"abc", body.as_ref());
+        // checksum
+        assert_eq!(Frame::crc32(b"abc"), buf.get_u32());
+        assert_eq!(0, buf.remaining());
+        assert_eq!(0, buf.len());
+    }
+
+
+    #[test]
+    fn test_decode() {
+        
+    }
+
+
 }
