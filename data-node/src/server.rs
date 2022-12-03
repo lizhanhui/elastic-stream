@@ -73,13 +73,13 @@ pub fn launch(cfg: &ServerConfig) {
                             }
                         };
 
-                        // Generate a flamegraph every minute.
+                        // Generate a flamegraph every 5 minutes.
                         let profiler_logger = logger.new(o!("module" => "profiler"));
                         monoio::spawn(async move {
                             let mut i = 0;
                             loop {
                                 i += 1;
-                                monoio::time::sleep(std::time::Duration::from_secs(60)).await;
+                                monoio::time::sleep(std::time::Duration::from_secs(30000)).await;
                                 if let Ok(_) =
                                     profiler_sender.try_send(format!("{}-{}", core_id.id, i))
                                 {
@@ -146,10 +146,7 @@ async fn run(listener: TcpListener, logger: Logger) -> Result<(), Box<dyn std::e
                 stream.set_nodelay(true).unwrap_or_else(|e| {
                     warn!(logger, "Failed to disable Nagle's algorithm. Cause: {e:?}, PeerAddress: {socket_addr:?}");
                 });
-                debug!(
-                    logger,
-                    "Turned Nagle's algorithm off by TcpStream#set_nodelay"
-                );
+                debug!(logger, "Nagle's algorithm turned off");
 
                 (stream, socket_addr)
             }
@@ -172,7 +169,8 @@ async fn run(listener: TcpListener, logger: Logger) -> Result<(), Box<dyn std::e
 }
 
 async fn process(stream: TcpStream, logger: Logger) {
-    let mut connection = Connection::new(stream);
+    let log = logger.new(o!());
+    let mut connection = Connection::new(stream, log);
     let (tx, rx) = async_channel::unbounded();
     loop {
         let sender = tx.clone();
@@ -209,6 +207,7 @@ async fn process(stream: TcpStream, logger: Logger) {
                         match connection.write_frame(&frame).await {
                             Ok(_) => {
                                 debug!(logger, "Response[stream-id={:?}] written to network", frame.stream_id);
+
                             },
                             Err(e) => {
                                 warn!(
@@ -233,6 +232,7 @@ async fn handle_request(request: Frame, sender: async_channel::Sender<Frame>, lo
     match request.operation_code {
         OperationCode::Unknown => {}
         OperationCode::Ping => {
+            debug!(logger, "Request[stream-id={}] received", request.stream_id);
             let response = Frame {
                 operation_code: OperationCode::Ping,
                 flag: 1u8,

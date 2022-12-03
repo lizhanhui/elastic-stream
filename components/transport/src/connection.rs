@@ -6,6 +6,8 @@ use monoio::{
     net::TcpStream,
 };
 
+use slog::{debug, error, info, trace, warn, Logger};
+
 use codec::error::FrameError;
 use codec::frame::Frame;
 
@@ -31,12 +33,14 @@ pub struct Connection {
     write_buffer: Option<BytesMut>,
 
     peer_address: String,
+
+    logger: Logger,
 }
 
 impl Connection {
     /// Create a new `Connection`, backed by socket `stream`. Read and write buffers
     /// are initialized.
-    pub fn new(stream: TcpStream) -> Self {
+    pub fn new(stream: TcpStream, logger: Logger) -> Self {
         Connection {
             peer_address: match stream.peer_addr() {
                 Ok(addr) => addr.to_string(),
@@ -50,6 +54,7 @@ impl Connection {
 
             /// Write buffer
             write_buffer: Some(BytesMut::with_capacity(BUFFER_SIZE)),
+            logger,
         }
     }
 
@@ -91,8 +96,17 @@ impl Connection {
             self.buffer.unsplit(buf);
 
             let read = match res {
-                Ok(n) => n,
-                Err(_e) => 0,
+                Ok(n) => {
+                    debug!(self.logger, "Read {} bytes from {}", n, self.peer_address);
+                    n
+                }
+                Err(_e) => {
+                    info!(
+                        self.logger,
+                        "Failed to read data from {}", self.peer_address
+                    );
+                    0
+                }
             };
 
             if 0 == read {
@@ -103,6 +117,7 @@ impl Connection {
                 if self.buffer.is_empty() {
                     return Ok(None);
                 } else {
+                    warn!(self.logger, "Discarded {} bytes", self.buffer.len());
                     return Err(FrameError::ConnectionReset);
                 }
             }
@@ -180,16 +195,32 @@ impl Connection {
         let mut buffer = self.write_buffer.take().unwrap();
 
         if let Err(e) = frame.encode(&mut buffer) {
-            // TODO: error handling
-            dbg!(e);
+            error!(self.logger, "Failed to encode frame. Cause: {:?}", e);
         }
         let bytes_to_write = buffer.len();
+        trace!(
+            self.logger,
+            "{} bytes to write to: {}",
+            bytes_to_write,
+            self.peer_address
+        );
 
         let (res, mut buf) = self.stream.write_all(buffer).await;
+        debug_assert!(bytes_to_write == res?);
         buf.clear();
         self.write_buffer = Some(buf);
-        debug_assert!(bytes_to_write == res?);
-        self.stream.flush().await
+        match self.stream.flush().await {
+            Ok(_) => {
+                trace!(
+                    self.logger,
+                    "Wrote and flushed {} bytes to {}",
+                    bytes_to_write,
+                    self.peer_address
+                );
+                Ok(())
+            }
+            Err(e) => Err(e),
+        }
     }
 }
 

@@ -9,3 +9,4 @@ edition = "2021"
 codec = { path = "../codec" }
 bytes = { workspace = true }
 monoio = { workspace = true }
+slog = { workspace = true }

@@ -35,6 +35,18 @@ async fn launch(args: &Args, logger: Logger) {
     let stream = match TcpStream::connect(&connect).await {
         Ok(stream) => {
             info!(logger, "Connected to {connect:?}");
+            match stream.set_nodelay(true) {
+                Ok(_) => {
+                    debug!(logger, "Nagle's algorithm turned off");
+                }
+                Err(e) => {
+                    error!(
+                        logger,
+                        "Failed to turn Nagle's algorithm off. Cause: {:?}", e
+                    );
+                }
+            }
+
             stream
         }
         Err(e) => {
@@ -46,7 +58,7 @@ async fn launch(args: &Args, logger: Logger) {
     let frame = Frame {
         operation_code: OperationCode::Ping,
         flag: 0u8,
-        stream_id: 1,
+        stream_id: 0,
         header_format: HeaderFormat::FlatBuffer,
         header: None,
         payload: None,
@@ -57,21 +69,18 @@ async fn launch(args: &Args, logger: Logger) {
         error!(logger, "Failed to encode frame. Cause: {e:#?}");
     });
 
-    let mut connection = Connection::new(stream);
+    let mut connection = Connection::new(stream, logger.new(o!()));
     connection.write_frame(&frame).await.unwrap();
     let mut cnt = 0;
     debug!(logger, "{cnt} Ping");
     loop {
         match connection.read_frame().await {
-            Ok(Some(frame)) => {
-                if cnt % 1000 == 0 {
-                    debug!(logger, "{cnt} Pong...");
-                }
+            Ok(Some(mut frame)) => {
+                debug!(logger, "{cnt} Pong...");
                 cnt += 1;
+                frame.stream_id = cnt;
                 if let Ok(_) = connection.write_frame(&frame).await {
-                    if cnt % 1000 == 0 {
-                        debug!(logger, "{cnt} Ping");
-                    }
+                    debug!(logger, "{cnt} Ping");
                 } else {
                     warn!(logger, "Failed to ping...");
                     return;
