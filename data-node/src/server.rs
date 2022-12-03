@@ -1,4 +1,5 @@
 use crate::cfg::ServerConfig;
+use bytes::{BytesMut, BufMut};
 use codec::frame::{Frame, OperationCode};
 use monoio::net::{TcpListener, TcpStream};
 use slog::{debug, error, info, o, warn, Drain, Logger};
@@ -232,12 +233,15 @@ async fn handle_request(request: Frame, sender: async_channel::Sender<Frame>, lo
         OperationCode::Unknown => {}
         OperationCode::Ping => {
             debug!(logger, "Request[stream-id={}] received", request.stream_id);
+            let mut header = BytesMut::new();
+            let text = format!("stream-id={}, response=true", request.stream_id);
+            header.put(text.as_bytes());
             let response = Frame {
                 operation_code: OperationCode::Ping,
                 flag: 1u8,
                 stream_id: request.stream_id,
                 header_format: codec::frame::HeaderFormat::FlatBuffer,
-                header: None,
+                header: Some(header.freeze()),
                 payload: None,
             };
             match sender.send(response).await {
