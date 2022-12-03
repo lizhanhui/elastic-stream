@@ -26,7 +26,6 @@ pub struct Frame {
 }
 
 impl Frame {
-
     fn crc32(payload: &[u8]) -> u32 {
         let mut digest = CRC32.digest();
         digest.update(payload);
@@ -176,7 +175,7 @@ impl Frame {
         };
 
         let header_length: u32 = src.get_u8() as u32;
-        let header_length = header_length << 16 + src.get_u16();
+        let header_length = src.get_u16() as u32 + (header_length << 16);
         remaining -= 3;
 
         if header_length > 0 {
@@ -434,7 +433,6 @@ mod tests {
         assert_eq!(0, buf.remaining());
     }
 
-
     #[test]
     fn test_encode_body() {
         let mut body = BytesMut::with_capacity(16);
@@ -471,11 +469,34 @@ mod tests {
         assert_eq!(0, buf.len());
     }
 
-
     #[test]
     fn test_decode() {
-        
+        let mut header = BytesMut::new();
+        header.put(&b"header"[..]);
+
+        let mut body = BytesMut::with_capacity(16);
+        body.put(&b"abc"[..]);
+
+        let frame = Frame {
+            operation_code: OperationCode::Ping,
+            flag: 1,
+            stream_id: 2,
+            header_format: HeaderFormat::FlatBuffer,
+            header: Some(header.freeze()),
+            payload: Some(body.freeze()),
+        };
+
+        let mut buf = BytesMut::new();
+        assert_eq!(Ok(()), frame.encode(&mut buf));
+        assert_eq!(29, buf.remaining());
+
+        let mut cursor = Cursor::new(&buf[..]);
+        let decoded = Frame::parse(&mut cursor).unwrap();
+        assert_eq!(OperationCode::Ping, decoded.operation_code);
+        assert_eq!(1, decoded.flag);
+        assert_eq!(2, decoded.stream_id);
+        assert_eq!(HeaderFormat::FlatBuffer, decoded.header_format);
+        assert_eq!(Some(Bytes::from("header")), decoded.header);
+        assert_eq!(Some(Bytes::from("abc")), decoded.payload);
     }
-
-
 }
