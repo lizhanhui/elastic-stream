@@ -11,3 +11,6 @@ bytes =  { workspace = true }
 crc =  { workspace = true }
 num_enum =  { workspace = true }
 thiserror =  { workspace = true }
+slog = { workspace = true }
+slog-async =  { workspace = true }
+slog-term =  { workspace = true }

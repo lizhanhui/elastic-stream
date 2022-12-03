@@ -4,6 +4,7 @@ use byteorder::ReadBytesExt;
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use crc::Crc;
 use num_enum::{IntoPrimitive, TryFromPrimitive};
+use slog::{trace, warn, Logger};
 
 use crate::error::FrameError;
 
@@ -26,15 +27,27 @@ pub struct Frame {
 }
 
 impl Frame {
-    pub fn check(src: &mut Cursor<&[u8]>) -> Result<(), FrameError> {
+    pub fn check(src: &mut Cursor<&[u8]>, logger: &mut Logger) -> Result<(), FrameError> {
         let frame_length = match src.read_u32::<byteorder::NetworkEndian>() {
-            Ok(n) => n,
+            Ok(n) => {
+                trace!(logger, "Incoming frame length is: {}", n);
+                n
+            }
             Err(_) => {
+                trace!(
+                    logger,
+                    "Only {} bytes in buffer. Read more data to proceed.",
+                    src.remaining()
+                );
                 return Err(FrameError::Incomplete);
             }
         };
 
         if frame_length < MIN_FRAME_LENGTH {
+            warn!(
+                logger,
+                "Illegal frame length: {}, fewer than minimum: {}", frame_length, MIN_FRAME_LENGTH
+            );
             return Err(FrameError::BadFrame(format!(
                 "Length of the incoming frame is: {}, less than the minimum possible: {}",
                 frame_length, MIN_FRAME_LENGTH
@@ -43,6 +56,12 @@ impl Frame {
 
         // Check if the frame length is legal or not.
         if frame_length > MAX_FRAME_LENGTH {
+            warn!(
+                logger,
+                "Illegal frame length: {}, greater than maximum allowed: {}",
+                frame_length,
+                MAX_FRAME_LENGTH
+            );
             return Err(FrameError::TooLongFrame {
                 found: frame_length,
                 max: MAX_FRAME_LENGTH,
@@ -51,12 +70,22 @@ impl Frame {
 
         // Check if the frame is complete
         if src.remaining() < frame_length as usize {
+            trace!(
+                logger,
+                "Incoming frame length: {}, remaining bytes: {}",
+                frame_length,
+                src.remaining()
+            );
             return Err(FrameError::Incomplete);
         }
 
         // Verify magic code
         let magic_code = src.get_u8();
         if MAGIC_CODE != magic_code {
+            warn!(
+                logger,
+                "Illegal magic code, expecting: {}, actual: {}", MAGIC_CODE, magic_code
+            );
             return Err(FrameError::MagicCodeMismatch {
                 found: magic_code,
                 expect: MAGIC_CODE,
@@ -93,6 +122,10 @@ impl Frame {
             digest.update(&body[..]);
             let ckm = digest.finalize();
             if checksum != ckm {
+                warn!(
+                    logger,
+                    "Payload checksum mismatch. Expecting: {}, Actual: {}", checksum, ckm
+                );
                 return Err(FrameError::PayloadChecksumMismatch {
                     expected: checksum,
                     actual: ckm,
@@ -237,6 +270,15 @@ mod tests {
     use bytes::{BufMut, BytesMut};
 
     use super::*;
+    use slog::{o, Drain, Logger};
+
+    fn get_logger() -> Logger {
+        let decorator = slog_term::TermDecorator::new().build();
+        let drain = slog_term::CompactFormat::new(decorator).build().fuse();
+        let drain = slog_async::Async::new(drain).build().fuse();
+        let log = slog::Logger::root(drain, o!());
+        log
+    }
 
     #[test]
     fn test_num_enum() {
@@ -256,7 +298,8 @@ mod tests {
     fn test_check() {
         let raw = [1u8];
         let mut rdr = Cursor::new(&raw[..]);
-        let res = Frame::check(&mut rdr);
+        let mut logger = get_logger();
+        let res = Frame::check(&mut rdr, &mut logger);
         assert_eq!(Err(FrameError::Incomplete), res);
 
         // On read failure, the cursor should be intact.
@@ -265,11 +308,13 @@ mod tests {
 
     #[test]
     fn test_check_min_frame_length() {
+        let mut logger = get_logger();
+
         let mut buffer = BytesMut::new();
         buffer.put_u32(10);
 
         let mut cursor = Cursor::new(&buffer[..]);
-        match Frame::check(&mut cursor) {
+        match Frame::check(&mut cursor, &mut logger) {
             Ok(_) => {
                 panic!("Should have detected the frame length issue");
             }
@@ -289,9 +334,10 @@ mod tests {
     fn test_check_max_frame_length() {
         let mut buffer = BytesMut::new();
         buffer.put_u32(MAX_FRAME_LENGTH + 1);
+        let mut logger = get_logger();
 
         let mut cursor = Cursor::new(&buffer[..]);
-        match Frame::check(&mut cursor) {
+        match Frame::check(&mut cursor, &mut logger) {
             Ok(_) => {
                 panic!("Should have detected the frame length issue");
             }
@@ -327,7 +373,9 @@ mod tests {
         buffer.put_u32(0);
 
         let mut cursor = Cursor::new(&buffer[..]);
-        match Frame::check(&mut cursor) {
+
+        let mut logger = get_logger();
+        match Frame::check(&mut cursor, &mut logger) {
             Ok(_) => {
                 panic!("Should have detected the frame magic code mismatch issue");
             }

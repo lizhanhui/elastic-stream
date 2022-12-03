@@ -158,6 +158,9 @@ dependencies = [
  "bytes",
  "crc",
  "num_enum",
+ "slog",
+ "slog-async",
+ "slog-term",
  "thiserror",
 ]
 

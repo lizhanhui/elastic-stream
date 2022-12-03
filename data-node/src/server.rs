@@ -207,7 +207,6 @@ async fn process(stream: TcpStream, logger: Logger) {
                         match connection.write_frame(&frame).await {
                             Ok(_) => {
                                 debug!(logger, "Response[stream-id={:?}] written to network", frame.stream_id);
-
                             },
                             Err(e) => {
                                 warn!(

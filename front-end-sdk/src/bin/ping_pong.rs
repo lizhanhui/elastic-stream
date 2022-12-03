@@ -76,11 +76,11 @@ async fn launch(args: &Args, logger: Logger) {
     loop {
         match connection.read_frame().await {
             Ok(Some(mut frame)) => {
-                debug!(logger, "{cnt} Pong...");
+                debug!(logger, "{cnt} Pong received");
                 cnt += 1;
                 frame.stream_id = cnt;
                 if let Ok(_) = connection.write_frame(&frame).await {
-                    debug!(logger, "{cnt} Ping");
+                    debug!(logger, "{cnt} Ping sent");
                 } else {
                     warn!(logger, "Failed to ping...");
                     return;

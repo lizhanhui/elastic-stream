@@ -97,7 +97,7 @@ impl Connection {
 
             let read = match res {
                 Ok(n) => {
-                    debug!(self.logger, "Read {} bytes from {}", n, self.peer_address);
+                    trace!(self.logger, "Read {} bytes from {}", n, self.peer_address);
                     n
                 }
                 Err(_e) => {
@@ -142,7 +142,7 @@ impl Connection {
         // parse of the frame, and allows us to skip allocating data structures
         // to hold the frame data unless we know the full frame has been
         // received.
-        match Frame::check(&mut buf) {
+        match Frame::check(&mut buf, &mut self.logger) {
             Ok(_) => {
                 // The `check` function will have advanced the cursor until the
                 // end of the frame. Since the cursor had position set to zero
