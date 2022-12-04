@@ -5,7 +5,7 @@ use monoio::net::TcpStream;
 use slog::{debug, error, info, o, warn, Drain, Logger};
 use transport::connection::Connection;
 
-#[monoio::main(timer_enabled = true)]
+#[monoio::main(timer_enabled = true, driver = "fusion")]
 async fn main() {
     let args = Args::parse();
 
@@ -83,8 +83,6 @@ async fn launch(args: &Args, logger: Logger) {
                 cnt += 1;
                 frame.stream_id = cnt;
                 fill_header(&mut frame);
-
-                monoio::time::sleep(std::time::Duration::from_secs(1)).await;
 
                 if let Ok(_) = connection.write_frame(&frame).await {
                     debug!(logger, "{cnt} Ping sent");

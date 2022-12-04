@@ -1,5 +1,5 @@
 use crate::cfg::ServerConfig;
-use bytes::{BytesMut, BufMut};
+use bytes::{BufMut, BytesMut};
 use codec::frame::{Frame, OperationCode};
 use monoio::net::{TcpListener, TcpStream};
 use slog::{debug, error, info, o, warn, Drain, Logger};

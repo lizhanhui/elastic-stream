@@ -2,7 +2,7 @@ use clap::Parser;
 
 pub const DEFAULT_PORT: u16 = 10911;
 
-pub const DEFAULT_QUEUE_DEPTH: u32 = 1024;
+pub const DEFAULT_QUEUE_DEPTH: u32 = 32768;
 
 pub const DEFAULT_CONCURRENCY: usize = 1;
 
