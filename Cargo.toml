@@ -41,6 +41,8 @@ tokio = { version = "1", features = ["full"] }
 tracing = "0.1"
 tracing-subscriber = "0.3"
 
+tower = { version = "0.4", features = ["full"] }
+
 # RocksDB
 # rocksdb = { version = "0.19", default-features = false, features = ["lz4"] }
 
