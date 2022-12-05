@@ -622,6 +622,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "model"
+version = "0.1.0"
+dependencies = [
+ "thiserror",
+]
+
+[[package]]
 name = "monoio"
 version = "0.0.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
