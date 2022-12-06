@@ -1,46 +1,40 @@
 pub mod error;
 
-use std::time::Duration;
-
 use error::{RangeError, StreamError};
 
 pub trait Record<'a> {
-    fn partition() -> Option<u32>;
+    fn partition(&self) -> Option<u32>;
 
-    fn offset() -> Option<u64>;
+    fn offset(&self) -> Option<u64>;
 
-    fn data() -> &'a [u8];
+    fn data(&self) -> &'a [u8];
 }
 
 pub trait Range {
-    fn sealed() -> bool;
+    fn sealed(&self) -> bool;
 
-    fn seal() -> Result<(), RangeError>;
+    fn seal(&mut self) -> Result<(), RangeError>;
 }
 
-pub trait Stream {
+pub trait Stream<T> {
     /// Associate type: Range.
     type R: Range;
 
-    fn open() -> Result<Vec<Self::R>, StreamError>;
+    fn open(&mut self) -> Result<Vec<Self::R>, StreamError>;
 
-    fn close();
+    fn close(&mut self);
 
-    fn delete() -> Result<(), StreamError>;
-}
+    fn delete(&mut self) -> Result<(), StreamError>;
 
-pub trait Reader {
-    /// Associate type: Record
-    type R;
+    fn get<'a>(&self, offset: u64) -> Result<Option<T>, StreamError>
+    where
+        T: Record<'a>;
 
-    fn pread(offset: u64, len: usize, timeout: Duration) -> Result<Vec<Self::R>, StreamError>;
-}
+    fn multi_get<'a>(&self, offset: u64, len: usize) -> Result<Option<Vec<T>>, StreamError>
+    where
+        T: Record<'a>;
 
-pub trait Writer {
-    /// Associate type: Record
-    type R;
-
-    fn append(record: Self::R, timeout: Duration) -> Result<u64, StreamError>;
-
-    fn append_batch(records: &[Self::R], timeout: Duration) -> Result<Vec<u64>, StreamError>;
+    fn append<'a>(&mut self, record: &[T]) -> Result<(), StreamError>
+    where
+        T: Record<'a>;
 }
