@@ -84,6 +84,8 @@ async fn launch(args: &Args, logger: Logger) {
                 frame.stream_id = cnt;
                 fill_header(&mut frame);
 
+                monoio::time::sleep(std::time::Duration::from_millis(100)).await;
+
                 if let Ok(_) = connection.write_frame(&frame).await {
                     debug!(logger, "{cnt} Ping sent");
                 } else {
