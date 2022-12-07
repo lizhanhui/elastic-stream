@@ -30,7 +30,7 @@ pub trait Stream<T> {
     where
         T: Record<'a>;
 
-    fn multi_get<'a>(&self, offset: u64, len: usize) -> Result<Option<Vec<T>>, StreamError>
+    fn scan<'a>(&self, offset: u64, len: usize) -> Result<Option<Vec<T>>, StreamError>
     where
         T: Record<'a>;
 
