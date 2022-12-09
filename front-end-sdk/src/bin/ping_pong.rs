@@ -48,19 +48,6 @@ async fn launch(args: &Args, logger: Logger) {
                 }
             }
 
-            let never = std::time::Duration::from_secs(u64::MAX);
-            match stream.set_tcp_keepalive(Some(never), Some(never), Some(1)) {
-                Ok(_) => {
-                    debug!(logger, "TCP_KEEP_ALIVE disabled");
-                },
-                Err(e) => {
-                    error!(
-                        logger,
-                        "Failed to disable TCP_KEEP_ALIVE off. Cause: {:?}", e
-                    );
-                }
-            }
-
             stream
         }
         Err(e) => {

@@ -5,6 +5,23 @@ use monoio::net::{TcpListener, TcpStream};
 use slog::{debug, error, info, o, warn, Drain, Logger};
 use transport::connection::Connection;
 
+#[cfg(target_os = "linux")]
+fn bind_processor(core_id: CoreId, logger: &mut Logger) {
+    if !core_affinity::set_for_current(core_id) {
+        error!(
+            logger,
+            "Failed to bind the worker thread to processor: {:?}", core_id
+        );
+        return;
+    }
+    info!(logger, "Worker thread bound to processor: {:?}", core_id);
+}
+
+#[cfg(not(target_os = "linux"))]
+fn bind_processor(_core_id: core_affinity::CoreId, logger: &mut Logger) {
+    info!(logger, "Skip binding worker thread to processor");
+}
+
 pub fn launch(cfg: &ServerConfig) {
     let decorator = slog_term::TermDecorator::new().build();
     let drain = slog_term::CompactFormat::new(decorator).build().fuse();
@@ -32,22 +49,14 @@ pub fn launch(cfg: &ServerConfig) {
         .skip(available_core_len - cfg.concurrency)
         .map(|core_id| {
             let server_config = cfg.clone();
-            let logger = log.new(o!());
+            let mut logger = log.new(o!());
             let profiler_sender = profiler_tx.clone();
             std::thread::Builder::new()
                 .name("Worker".to_owned())
                 .spawn(move || {
                     let uring_available = monoio::utils::detect_uring();
                     info!(logger, "Detect uring availablility: {}", uring_available);
-
-                    // if !core_affinity::set_for_current(core_id) {
-                    //     error!(
-                    //         logger,
-                    //         "Failed to bind the worker thread to processor: {:?}", core_id
-                    //     );
-                    //     return;
-                    // }
-                    // info!(logger, "Bind the worker thread to processor: {:?}", core_id);
+                    bind_processor(core_id, &mut logger);
 
                     let mut driver = match monoio::RuntimeBuilder::<monoio::FusionDriver>::new()
                         .enable_timer()
