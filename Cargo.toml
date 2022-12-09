@@ -7,6 +7,7 @@ members = [
     "components/codec",
     "components/model",
     "components/transport",
+    "components/service",
     "placement-manager",
     "data-node",
     "front-end-sdk"
@@ -18,7 +19,9 @@ byteorder = "1"
 bytes = "1"
 core_affinity = "0.7"
 crc = "3.0"
+futures = { version = "0.3" }
 monoio = { version = "0.0", features = ["splice"] }
+monoio-macros = "0.0"
 num_cpus = "1"
 thiserror = "1.0"
 crossbeam = "0.8"
@@ -36,13 +39,6 @@ raft = "0.6"
 slog = { version = "2.7", features = ["max_level_trace", "release_max_level_warn"] }
 slog-async = "2.7"
 slog-term = "2.9"
-
-# Tokio ecosystem
-tokio = { version = "1", features = ["full"] }
-tracing = "0.1"
-tracing-subscriber = "0.3"
-
-tower = { version = "0.4", features = ["full"] }
 
 # RocksDB
 # rocksdb = { version = "0.19", default-features = false, features = ["lz4"] }

@@ -25,5 +25,4 @@ slog-async =  { workspace = true }
 slog-term =  { workspace = true }
 codec = { path = "../components/codec" }
 transport = { path = "../components/transport" }
-
-tower = { workspace = true }
+service = { path = "../components/service" }
