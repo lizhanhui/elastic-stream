@@ -39,15 +39,15 @@ pub fn launch(cfg: &ServerConfig) {
                 .spawn(move || {
                     let uring_available = monoio::utils::detect_uring();
                     info!(logger, "Detect uring availablility: {}", uring_available);
-                    if !core_affinity::set_for_current(core_id) {
-                        error!(
-                            logger,
-                            "Failed to bind the worker thread to processor: {:?}", core_id
-                        );
-                        return;
-                    }
 
-                    info!(logger, "Bind the worker thread to processor: {:?}", core_id);
+                    // if !core_affinity::set_for_current(core_id) {
+                    //     error!(
+                    //         logger,
+                    //         "Failed to bind the worker thread to processor: {:?}", core_id
+                    //     );
+                    //     return;
+                    // }
+                    // info!(logger, "Bind the worker thread to processor: {:?}", core_id);
 
                     let mut driver = match monoio::RuntimeBuilder::<monoio::FusionDriver>::new()
                         .enable_timer()
