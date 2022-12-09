@@ -6,7 +6,7 @@ use slog::{debug, error, info, o, warn, Drain, Logger};
 use transport::connection::Connection;
 
 #[cfg(target_os = "linux")]
-fn bind_processor(core_id: CoreId, logger: &mut Logger) {
+fn bind_processor(core_id: core_affinity::CoreId, logger: &mut Logger) {
     if !core_affinity::set_for_current(core_id) {
         error!(
             logger,
