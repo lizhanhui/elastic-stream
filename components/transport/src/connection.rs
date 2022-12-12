@@ -1,10 +1,8 @@
 use std::io::Cursor;
 
 use bytes::{Buf, BytesMut};
-use monoio::{
-    io::{AsyncReadRent, AsyncWriteRent, AsyncWriteRentExt, BufWriter},
-    net::TcpStream,
-};
+use monoio::net::TcpStream;
+use monoio_compat::{AsyncReadExt, AsyncWriteExt, TcpStreamCompat};
 
 use slog::{error, info, trace, warn, Logger};
 
@@ -26,11 +24,11 @@ const BUFFER_SIZE: usize = 4 * 1024;
 /// When sending frames, the frame is first encoded into the write buffer.
 /// The contents of the write buffer are then written to the socket.
 pub struct Connection {
-    stream: BufWriter<TcpStream>,
+    stream: TcpStreamCompat,
 
     // The buffer for reading frames.
     buffer: BytesMut,
-    write_buffer: Option<BytesMut>,
+    write_buffer: BytesMut,
 
     peer_address: String,
 
@@ -47,13 +45,13 @@ impl Connection {
                 Err(_) => "Unknown".to_string(),
             },
 
-            stream: BufWriter::new(stream),
+            stream: TcpStreamCompat::new(stream),
 
-            /// Read buffer
+            // Read buffer
             buffer: BytesMut::with_capacity(BUFFER_SIZE),
 
             /// Write buffer
-            write_buffer: Some(BytesMut::with_capacity(BUFFER_SIZE)),
+            write_buffer: BytesMut::with_capacity(BUFFER_SIZE),
             logger,
         }
     }
@@ -91,9 +89,7 @@ impl Connection {
             //
             // On success, the number of bytes is returned. `0` indicates "end
             // of stream".
-            let buf = self.buffer.split_off(self.buffer.len());
-            let (res, buf) = self.stream.read(buf).await;
-            self.buffer.unsplit(buf);
+            let res = self.stream.read_buf(&mut self.buffer).await;
 
             let read = match res {
                 Ok(n) => {
@@ -192,12 +188,10 @@ impl Connection {
     }
 
     pub async fn write_frame(&mut self, frame: &Frame) -> Result<(), std::io::Error> {
-        let mut buffer = self.write_buffer.take().unwrap();
-
-        if let Err(e) = frame.encode(&mut buffer) {
+        if let Err(e) = frame.encode(&mut self.write_buffer) {
             error!(self.logger, "Failed to encode frame. Cause: {:?}", e);
         }
-        let bytes_to_write = buffer.len();
+        let bytes_to_write = self.write_buffer.len();
         trace!(
             self.logger,
             "{} bytes to write to: {}",
@@ -205,10 +199,7 @@ impl Connection {
             self.peer_address
         );
 
-        let (res, mut buf) = self.stream.write_all(buffer).await;
-        debug_assert!(bytes_to_write == res?);
-        buf.clear();
-        self.write_buffer = Some(buf);
+        self.stream.write_all(&self.write_buffer).await?;
         match self.stream.flush().await {
             Ok(_) => {
                 trace!(
@@ -217,10 +208,11 @@ impl Connection {
                     bytes_to_write,
                     self.peer_address
                 );
-                Ok(())
             }
-            Err(e) => Err(e),
-        }
+            Err(e) => return Err(e),
+        };
+        self.write_buffer.clear();
+        Ok(())
     }
 }
 

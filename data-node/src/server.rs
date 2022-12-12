@@ -189,35 +189,6 @@ async fn process(stream: TcpStream, logger: Logger) {
             request = connection.read_frame() => {
                 match request {
                     Ok(Some(frame)) => {
-                        // No network multiplexing
-                        {
-                            // debug!(log, "Request[stream-id={}] received", frame.stream_id);
-                            // let mut header = BytesMut::new();
-                            // let text = format!("stream-id={}, response=true", frame.stream_id);
-                            // header.put(text.as_bytes());
-                            // let response = Frame {
-                            //     operation_code: OperationCode::Ping,
-                            //     flag: 1u8,
-                            //     stream_id: frame.stream_id,
-                            //     header_format: codec::frame::HeaderFormat::FlatBuffer,
-                            //     header: Some(header.freeze()),
-                            //     payload: None,
-                            // };
-                            // match connection.write_frame(&response).await {
-                            //     Ok(_) => {
-                            //         debug!(log, "Response[stream-id={:?}] written to network", response.stream_id);
-                            //     },
-                            //     Err(e) => {
-                            //         warn!(
-                            //             log,
-                            //             "Failed to write response[stream-id={:?}] to network. Cause: {:?}",
-                            //             response.stream_id,
-                            //             e
-                            //         );
-                            //     }
-                            // };
-                        }
-
                         // Try TCP connection multiplexing
                         monoio::spawn(async move {
                             handle_request(frame, sender, log).await;

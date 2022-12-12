@@ -8,7 +8,6 @@ members = [
     "components/model",
     "components/transport",
     "components/service",
-    "placement-manager",
     "data-node",
     "front-end-sdk"
 ]
@@ -22,6 +21,7 @@ crc = "3.0"
 futures = { version = "0.3" }
 monoio = { version = "0.0", features = ["splice"] }
 monoio-macros = "0.0"
+monoio-compat = "0.0"
 num_cpus = "1"
 thiserror = "1.0"
 crossbeam = "0.8"
