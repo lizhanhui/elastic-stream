@@ -1,4 +1,4 @@
-module github.com/thockin/go-build-template/tools
+module github.com/AutoMQ/placement-manager/tools
 
 go 1.19
 

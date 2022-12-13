@@ -22,7 +22,7 @@ else
 endif
 
 # The binaries to build (just the basenames)
-BINS ?= myapp-1 myapp-2
+BINS ?= server
 
 # The platforms we support.  In theory this can be used for Windows platforms,
 # too, but they require specific base images, which we do not have.
@@ -33,7 +33,7 @@ ALL_PLATFORMS ?= linux/amd64 linux/arm linux/arm64 linux/ppc64le linux/s390x
 BASE_IMAGE ?= gcr.io/distroless/static
 
 # Where to push the docker images.
-REGISTRY ?= example.com
+REGISTRY ?= 716469478206.dkr.ecr.ap-northeast-1.amazonaws.com
 
 # This version-strategy uses git tags to set the version string
 VERSION ?= $(shell git describe --tags --always --dirty)
@@ -384,4 +384,3 @@ help:
 	docker buildx create --name "$(BUILDX_NAME)" --node "$(BUILDX_NAME)-0" >/dev/null
 	docker run --rm --privileged multiarch/qemu-user-static --reset -p yes >/dev/null
 	date > $@
-

@@ -14,13 +14,13 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package main is the entrypoint for myapp-2.
+// Package main is the entrypoint for server.
 package main
 
 import (
 	"log"
 
-	"github.com/thockin/go-build-template/pkg/version"
+	"github.com/AutoMQ/placement-manager/pkg/version"
 )
 
 func main() {

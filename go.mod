@@ -1,3 +1,3 @@
-module github.com/thockin/go-build-template
+module github.com/AutoMQ/placement-manager
 
-go 1.17
+go 1.19
