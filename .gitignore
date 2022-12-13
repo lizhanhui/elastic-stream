@@ -13,3 +13,12 @@
 
 # Dependency directories (remove the comment below to include it)
 # vendor/
+
+# Makefile output
+/bin
+/.go
+/.push-*
+/.container-*
+/.dockerfile-*
+/.licenses
+/.buildx-initialized
