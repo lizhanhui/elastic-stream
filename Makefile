@@ -382,5 +382,7 @@ help:
 # for great context.
 .buildx-initialized:
 	docker buildx create --name "$(BUILDX_NAME)" --node "$(BUILDX_NAME)-0" >/dev/null
-	docker run --rm --privileged multiarch/qemu-user-static --reset -p yes >/dev/null
+	if ! docker version | grep -iq "Docker Desktop"; then                                 \
+	  docker run --rm --privileged multiarch/qemu-user-static --reset -p yes >/dev/null;  \
+	fi
 	date > $@
