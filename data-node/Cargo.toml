@@ -26,3 +26,4 @@ slog-term =  { workspace = true }
 codec = { path = "../components/codec" }
 transport = { path = "../components/transport" }
 service = { path = "../components/service" }
+store = { path = "../components/store" }
