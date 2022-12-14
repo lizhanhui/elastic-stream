@@ -15,8 +15,8 @@ pub trait AsyncStore {
 pub trait Segment {}
 
 pub struct WriteCursor {
-    write: u64,
-    commit: u64,
+    pub(crate) write: u64,
+    pub(crate) commit: u64,
 }
 
 impl WriteCursor {

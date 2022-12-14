@@ -1,7 +1,7 @@
 use std::{cell::RefCell, fs, path::Path, rc::Rc};
 
 use futures::Future;
-use monoio::fs::{File, OpenOptions};
+use monoio::fs::OpenOptions;
 use slog::{debug, error, info, warn, Logger};
 
 use crate::{
@@ -9,12 +9,12 @@ use crate::{
     error::StoreError,
 };
 
-use super::option::StoreOptions;
+use super::{option::StoreOptions, segment::JournalSegment};
 
 pub struct ElasticStore {
     options: StoreOptions,
     logger: Logger,
-    segments: Vec<Rc<RefCell<File>>>,
+    segments: Vec<Rc<RefCell<JournalSegment>>>,
     cursor: WriteCursor,
 }
 
@@ -39,9 +39,9 @@ impl ElasticStore {
     }
 
     pub async fn open(&mut self) -> Result<(), StoreError> {
-        let path = format!("{}/1", self.options.store_path.path);
+        let file_name = format!("{}/1", self.options.store_path.path);
 
-        let path = Path::new(&path);
+        let path = Path::new(&file_name);
         {
             let dir = match path.parent() {
                 Some(p) => p,
@@ -64,22 +64,32 @@ impl ElasticStore {
             .create(true)
             .open(&path)
             .await?;
-        self.segments.push(Rc::new(RefCell::new(f)));
+        let segment = JournalSegment { file: f, file_name };
+        self.segments.push(Rc::new(RefCell::new(segment)));
         Ok(())
     }
 
     /// Return the last segment of the store journal.
-    fn last_segment(&self) -> Option<Rc<RefCell<File>>> {
+    fn last_segment(&self) -> Option<Rc<RefCell<JournalSegment>>> {
         match self.segments.last() {
             Some(f) => Some(Rc::clone(f)),
             None => None,
         }
     }
 
+    /// Delete all journal segment files.
     pub fn destroy(&mut self) -> Result<(), StoreError> {
         self.segments.iter().for_each(|s| {
-            debug!(self.logger, "Delete file[`{}`]", "a");
+            let file_name = &s.borrow().file_name;
+            debug!(self.logger, "Delete file[`{}`]", file_name);
+            fs::remove_file(Path::new(file_name)).unwrap_or_else(|e| {
+                warn!(
+                    self.logger,
+                    "Failed to delete file[`{}`]. Cause: {:?}", file_name, e
+                );
+            });
         });
+
         Ok(())
     }
 }
@@ -90,7 +100,25 @@ impl AsyncStore for ElasticStore {
     Self: 'a;
 
     fn put(&mut self, buf: &[u8]) -> Self::PutFuture<'_> {
-        async move { Ok(PutResult {}) }
+        let segment = self.last_segment();
+
+        let data: Vec<u8> = buf.to_vec();
+
+        async move {
+            let segment = match segment {
+                Some(ref segment) => Rc::clone(segment),
+                None => {
+                    return Err(StoreError::DiskFull("Journal is not writable".to_owned()));
+                }
+            };
+
+            let file = &mut segment.borrow_mut().file;
+
+            // Figure out lifetime issue
+            // let (res, _buf) = file.write_all_at(data, self.cursor.write).await;
+
+            Ok(PutResult {})
+        }
     }
 }
 
