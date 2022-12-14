@@ -290,15 +290,15 @@ manifest-list: all-push
 	  export GOBIN=$$(pwd)/../bin/tools;                                \
 	  go install github.com/estesp/manifest-tool/v2/cmd/manifest-tool;  \
 	  popd >/dev/null
-	for bin in $(BINS); do                                    \
-	    platforms=$$(echo $(ALL_PLATFORMS) | sed 's/ /,/g');  \
-	    bin/tools/manifest-tool                               \
-	        --username=oauth2accesstoken                      \
-	        --password=$$(gcloud auth print-access-token)     \
-	        push from-args                                    \
-	        --platforms "$$platforms"                         \
-	        --template $(REGISTRY)/$$bin:$(VERSION)__OS_ARCH  \
-	        --target $(REGISTRY)/$$bin:$(VERSION);            \
+	for bin in $(BINS); do                                                     \
+	    platforms=$$(echo $(ALL_PLATFORMS) | sed 's/ /,/g');                   \
+	    bin/tools/manifest-tool                                                \
+	        --username=AWS                                                     \
+	        --password=$$(aws ecr get-login-password --region ap-northeast-1)  \
+	        push from-args                                                     \
+	        --platforms "$$platforms"                                          \
+	        --template $(REGISTRY)/$$bin:$(VERSION)__OS_ARCH                   \
+	        --target $(REGISTRY)/$$bin:$(VERSION);                             \
 	done
 
 version: # @HELP outputs the version string
