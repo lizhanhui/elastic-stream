@@ -12,3 +12,8 @@ futures = { workspace = true }
 thiserror = { workspace = true }
 rand = { workspace = true }
 uuid = { workspace = true }
+slog =  { workspace = true }
+
+[dev-dependencies]
+slog-async =  { workspace = true }
+slog-term =  { workspace = true }

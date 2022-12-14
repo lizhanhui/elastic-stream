@@ -1191,6 +1191,9 @@ dependencies = [
  "monoio",
  "monoio-macros",
  "rand",
+ "slog",
+ "slog-async",
+ "slog-term",
  "thiserror",
  "uuid",
 ]
