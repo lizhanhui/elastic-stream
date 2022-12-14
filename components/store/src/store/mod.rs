@@ -2,7 +2,7 @@ use std::{fs, path::Path};
 
 use futures::Future;
 use monoio::fs::{File, OpenOptions};
-use slog::{info, Logger};
+use slog::{error, info, warn, Logger};
 
 use crate::{
     api::{AsyncStore, PutResult},
@@ -21,7 +21,7 @@ pub struct StorePath {
 pub struct StoreOptions {
     create_if_missing: bool,
     store_path: StorePath,
-    destroy: bool,
+    destroy_on_exit: bool,
 }
 
 impl StoreOptions {
@@ -29,7 +29,7 @@ impl StoreOptions {
         Self {
             create_if_missing: true,
             store_path: store_path.clone(),
-            destroy: false,
+            destroy_on_exit: false,
         }
     }
 }
@@ -58,6 +58,10 @@ pub struct ElasticStore {
 impl ElasticStore {
     pub fn new(options: &StoreOptions, logger: &Logger) -> Result<Self, StoreError> {
         if !options.create_if_missing && !Path::new(&options.store_path.path).exists() {
+            error!(
+                logger,
+                "Specified store path[`{}`] does not exist.", options.store_path.path
+            );
             return Err(StoreError::NotFound(
                 "Specified store path does not exist".to_owned(),
             ));
@@ -74,17 +78,16 @@ impl ElasticStore {
     pub async fn open(&mut self) -> Result<(), StoreError> {
         debug_assert!(self.current.is_none());
 
-        let path = format!("{}/store/1", self.options.store_path.path);
+        let path = format!("{}/1", self.options.store_path.path);
 
         let path = Path::new(&path);
         {
             let dir = match path.parent() {
                 Some(p) => p,
                 None => {
-                    return Err(StoreError::InvalidPath(format!(
-                        "{}/store",
-                        self.options.store_path.path
-                    )))
+                    return Err(StoreError::InvalidPath(
+                        self.options.store_path.path.clone(),
+                    ))
                 }
             };
 
@@ -117,7 +120,12 @@ impl AsyncStore for ElasticStore {
 
 impl Drop for ElasticStore {
     fn drop(&mut self) {
-        
+        if self.options.destroy_on_exit {
+            warn!(
+                self.logger,
+                "Start to destroy ElasticStore[`{}`]", self.options.store_path.path
+            );
+        }
     }
 }
 
@@ -141,7 +149,7 @@ mod tests {
     #[monoio::test]
     async fn test_store_options_new() {
         let store_path = StorePath {
-            path: "/data".to_owned(),
+            path: "/data/store".to_owned(),
             target_size: 1024 * 1024,
         };
 
@@ -170,11 +178,12 @@ mod tests {
     #[monoio::test]
     async fn test_elastic_store_open() -> Result<(), StoreError> {
         let store_path = StorePath {
-            path: "/data".to_owned(),
+            path: "/data/store".to_owned(),
             target_size: 1024 * 1024,
         };
 
-        let options = StoreOptions::new(&store_path);
+        let mut options = StoreOptions::new(&store_path);
+        options.destroy_on_exit = true;
         let logger = get_logger();
 
         let mut store = ElasticStore::new(&options, &logger)?;
