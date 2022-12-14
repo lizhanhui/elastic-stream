@@ -11,3 +11,19 @@ pub trait AsyncStore {
 
     fn put(&mut self, buf: &[u8]) -> Self::PutFuture<'_>;
 }
+
+pub trait Segment {}
+
+pub struct WriteCursor {
+    write: u64,
+    commit: u64,
+}
+
+impl WriteCursor {
+    pub fn new() -> Self {
+        Self {
+            write: 0,
+            commit: 0,
+        }
+    }
+}
