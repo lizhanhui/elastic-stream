@@ -250,23 +250,28 @@ $(CONTAINER_DOTFILES): .buildx-initialized
 	    -e 's|{ARG_OS}|$(OS)|g'                    \
 	    -e 's|{ARG_FROM}|$(BASE_IMAGE)|g'          \
 	    Dockerfile.in > .dockerfile-$(BIN)-$(OS)_$(ARCH)
-	HASH_LICENSES=$$(find $(LICENSES) -type f                       \
-		    | xargs md5sum | md5sum | cut -f1 -d' ');           \
-	HASH_BINARY=$$(md5sum bin/$(OS)_$(ARCH)/$(BIN)$(BIN_EXTENSION)  \
-		    | cut -f1 -d' ');                                   \
-	FORCE=0;                                                        \
-	docker buildx build                                             \
-	    --builder "$(BUILDX_NAME)"                                  \
-	    --build-arg FORCE_REBUILD="$$FORCE"                         \
-	    --build-arg HASH_LICENSES="$$HASH_LICENSES"                 \
-	    --build-arg HASH_BINARY="$$HASH_BINARY"                     \
-	    --progress=plain                                            \
-	    --load                                                      \
-	    --platform "$(OS)/$(ARCH)"                                  \
-	    --build-arg HTTP_PROXY="$(HTTP_PROXY)"                      \
-	    --build-arg HTTPS_PROXY="$(HTTPS_PROXY)"                    \
-	    -t $(REGISTRY)/$(BIN):$(TAG)                                \
-	    -f .dockerfile-$(BIN)-$(OS)_$(ARCH)                         \
+	if builtin command -v md5 > /dev/null; then                           \
+	    HASH_LICENSES=$$(find $(LICENSES) -type f | xargs md5 | md5);     \
+	    HASH_BINARY=$$(md5 -q bin/$(OS)_$(ARCH)/$(BIN)$(BIN_EXTENSION));  \
+	else                                                                  \
+	    HASH_LICENSES=$$(find $(LICENSES) -type f                         \
+	        | xargs md5sum | md5sum | cut -f1 -d' ');                     \
+	    HASH_BINARY=$$(md5sum bin/$(OS)_$(ARCH)/$(BIN)$(BIN_EXTENSION)    \
+	        | cut -f1 -d' ');                                             \
+	fi;                                                                   \
+	FORCE=0;                                                              \
+	docker buildx build                                                   \
+	    --builder "$(BUILDX_NAME)"                                        \
+	    --build-arg FORCE_REBUILD="$$FORCE"                               \
+	    --build-arg HASH_LICENSES="$$HASH_LICENSES"                       \
+	    --build-arg HASH_BINARY="$$HASH_BINARY"                           \
+	    --progress=plain                                                  \
+	    --load                                                            \
+	    --platform "$(OS)/$(ARCH)"                                        \
+	    --build-arg HTTP_PROXY="$(HTTP_PROXY)"                            \
+	    --build-arg HTTPS_PROXY="$(HTTPS_PROXY)"                          \
+	    -t $(REGISTRY)/$(BIN):$(TAG)                                      \
+	    -f .dockerfile-$(BIN)-$(OS)_$(ARCH)                               \
 	    .
 	docker images -q $(REGISTRY)/$(BIN):$(TAG) > $@
 	echo
