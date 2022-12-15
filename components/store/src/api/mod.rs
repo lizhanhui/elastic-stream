@@ -1,15 +1,15 @@
-use std::future::Future;
+use async_trait::async_trait;
+use monoio::buf::IoBuf;
 
 use crate::error::StoreError;
 
 pub struct PutResult {}
 
+#[async_trait(?Send)]
 pub trait AsyncStore {
-    type PutFuture<'a>: Future<Output = Result<PutResult, StoreError>>
+    async fn put<T>(&mut self, buf: T) -> Result<PutResult, StoreError>
     where
-        Self: 'a;
-
-    fn put(&mut self, buf: &[u8]) -> Self::PutFuture<'_>;
+        T: IoBuf;
 }
 
 pub trait Segment {}

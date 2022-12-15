@@ -14,12 +14,9 @@ crc =  { workspace = true }
 monoio =  { workspace = true }
 num_cpus =  { workspace = true }
 thiserror =  { workspace = true }
-crossbeam =  { workspace = true }
 clap = { workspace = true }
 num_enum =  { workspace = true }
-dashmap =  { workspace = true }
 pprof = { workspace = true }
-seahash =  { workspace = true }
 slog =  { workspace = true }
 slog-async =  { workspace = true }
 slog-term =  { workspace = true }

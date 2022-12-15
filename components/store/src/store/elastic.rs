@@ -1,7 +1,7 @@
 use std::{cell::RefCell, fs, path::Path, rc::Rc};
 
-use futures::Future;
-use monoio::fs::OpenOptions;
+use async_trait::async_trait;
+use monoio::{buf::IoBuf, fs::OpenOptions};
 use slog::{debug, error, info, warn, Logger};
 
 use crate::{
@@ -94,29 +94,28 @@ impl ElasticStore {
     }
 }
 
+#[async_trait(?Send)]
 impl AsyncStore for ElasticStore {
-    type PutFuture<'a> = impl Future<Output = Result<PutResult, StoreError>>
+    async fn put<T>(&mut self, buf: T) -> Result<PutResult, StoreError>
     where
-    Self: 'a;
-
-    fn put(&mut self, buf: &[u8]) -> Self::PutFuture<'_> {
+        T: IoBuf,
+    {
         let segment = self.last_segment();
 
-        async move {
-            let segment = match segment {
-                Some(ref segment) => Rc::clone(segment),
-                None => {
-                    return Err(StoreError::DiskFull("Journal is not writable".to_owned()));
-                }
-            };
+        let segment = match segment {
+            Some(ref segment) => segment,
+            None => {
+                // A ready failure future
+                return Err(StoreError::DiskFull(
+                    "No writeable segment is available".to_owned(),
+                ));
+            }
+        };
+        let file = &segment.borrow().file;
 
-            let file = &mut segment.borrow_mut().file;
+        let res = file.write_all_at(buf, self.cursor.write).await;
 
-            // Figure out lifetime issue
-            // let (res, _buf) = file.write_all_at(data, self.cursor.write).await;
-
-            Ok(PutResult {})
-        }
+        Ok(PutResult {})
     }
 }
 
