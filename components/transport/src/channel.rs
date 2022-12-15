@@ -1,63 +1,33 @@
 use std::io::Cursor;
 
 use bytes::{Buf, BytesMut};
-use monoio::net::TcpStream;
-use monoio_compat::{AsyncReadExt, AsyncWriteExt, TcpStreamCompat};
+use monoio::io::{AsyncReadRent, AsyncWriteRent, AsyncWriteRentExt};
 
-use slog::{error, info, trace, warn, Logger};
+use slog::{debug, error, info, trace, warn, Logger};
 
 use codec::error::FrameError;
 use codec::frame::Frame;
 
 const BUFFER_SIZE: usize = 4 * 1024;
 
-/// Send and receive `Frame` values from a remote peer.
-///
-/// When implementing networking protocols, a message on that protocol is
-/// often composed of several smaller messages known as frames. The purpose of
-/// `Connection` is to read and write frames on the underlying `TcpStream`.
-///
-/// To read frames, the `Connection` uses an internal buffer, which is filled
-/// up until there are enough bytes to create a full frame. Once this happens,
-/// the `Connection` creates the frame and returns it to the caller.
-///
-/// When sending frames, the frame is first encoded into the write buffer.
-/// The contents of the write buffer are then written to the socket.
-pub struct Connection {
-    stream: TcpStreamCompat,
-
-    // The buffer for reading frames.
+pub struct ChannelReader<T> {
+    stream: T,
     buffer: BytesMut,
-    write_buffer: BytesMut,
-
     peer_address: String,
-
     logger: Logger,
 }
 
-impl Connection {
-    /// Create a new `Connection`, backed by socket `stream`. Read and write buffers
-    /// are initialized.
-    pub fn new(stream: TcpStream, logger: Logger) -> Self {
-        Connection {
-            peer_address: match stream.peer_addr() {
-                Ok(addr) => addr.to_string(),
-                Err(_) => "Unknown".to_string(),
-            },
-
-            stream: TcpStreamCompat::new(stream),
-
-            // Read buffer
+impl<T> ChannelReader<T>
+where
+    T: AsyncReadRent,
+{
+    pub fn new(stream: T, peer_address: &str, logger: Logger) -> Self {
+        Self {
+            stream,
             buffer: BytesMut::with_capacity(BUFFER_SIZE),
-
-            /// Write buffer
-            write_buffer: BytesMut::with_capacity(BUFFER_SIZE),
+            peer_address: peer_address.to_owned(),
             logger,
         }
-    }
-
-    pub fn peer_address(&self) -> &str {
-        &self.peer_address
     }
 
     /// Read a single `Frame` value from the underlying stream.
@@ -89,7 +59,9 @@ impl Connection {
             //
             // On success, the number of bytes is returned. `0` indicates "end
             // of stream".
-            let res = self.stream.read_buf(&mut self.buffer).await;
+            let buf = self.buffer.split_off(self.buffer.len());
+            let (res, buf) = self.stream.read(buf).await;
+            self.buffer.unsplit(buf);
 
             let read = match res {
                 Ok(n) => {
@@ -186,12 +158,33 @@ impl Connection {
             Err(e) => Err(e.into()),
         }
     }
+}
+
+pub struct ChannelWriter<T> {
+    stream: T,
+    peer_address: String,
+    logger: Logger,
+}
+
+impl<T> ChannelWriter<T>
+where
+    T: AsyncWriteRent,
+{
+    pub fn new(stream: T, peer_address: &str, logger: Logger) -> Self {
+        Self {
+            stream,
+            peer_address: peer_address.to_owned(),
+            logger,
+        }
+    }
 
     pub async fn write_frame(&mut self, frame: &Frame) -> Result<(), std::io::Error> {
-        if let Err(e) = frame.encode(&mut self.write_buffer) {
+        let mut buffer = BytesMut::new();
+
+        if let Err(e) = frame.encode(&mut buffer) {
             error!(self.logger, "Failed to encode frame. Cause: {:?}", e);
         }
-        let bytes_to_write = self.write_buffer.len();
+        let bytes_to_write = buffer.len();
         trace!(
             self.logger,
             "{} bytes to write to: {}",
@@ -199,20 +192,40 @@ impl Connection {
             self.peer_address
         );
 
-        self.stream.write_all(&self.write_buffer).await?;
+        let (res, _buf) = self.stream.write_all(buffer).await;
+        match res {
+            Ok(n) => {
+                trace!(self.logger, "Wrote {} bytes to {}", n, self.peer_address);
+                debug_assert!(n == bytes_to_write);
+            }
+            Err(e) => {
+                error!(
+                    self.logger,
+                    "Failed to write Frame[stream-id={}]", frame.stream_id
+                );
+                return Err(e);
+            }
+        };
+
+        // Keep the following code even if TcpStream#flush is noop for now.
         match self.stream.flush().await {
             Ok(_) => {
                 trace!(
                     self.logger,
-                    "Wrote and flushed {} bytes to {}",
+                    "Flushed {} bytes to {}",
                     bytes_to_write,
                     self.peer_address
                 );
+
+                debug!(
+                    self.logger,
+                    "Frame[stream-id={}] is written", frame.stream_id
+                );
+
+                Ok(())
             }
-            Err(e) => return Err(e),
-        };
-        self.write_buffer.clear();
-        Ok(())
+            Err(e) => Err(e),
+        }
     }
 }
 

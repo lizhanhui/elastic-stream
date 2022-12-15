@@ -1,9 +1,9 @@
 use bytes::{BufMut, BytesMut};
 use clap::Parser;
 use codec::frame::{Frame, HeaderFormat, OperationCode};
-use monoio::net::TcpStream;
+use monoio::{io::Splitable, net::TcpStream};
 use slog::{debug, error, info, o, warn, Drain, Logger};
-use transport::connection::Connection;
+use transport::channel::{ChannelReader, ChannelWriter};
 
 #[monoio::main(timer_enabled = true, driver = "fusion")]
 async fn main() {
@@ -33,7 +33,7 @@ async fn launch(args: &Args, logger: Logger) {
     let connect = format!("{}:{}", args.host, args.port);
     info!(logger, "Start to connect to {connect}");
 
-    let stream = match TcpStream::connect(&connect).await {
+    let mut stream = match TcpStream::connect(&connect).await {
         Ok(stream) => {
             info!(logger, "Connected to {connect:?}");
             match stream.set_nodelay(true) {
@@ -72,12 +72,14 @@ async fn launch(args: &Args, logger: Logger) {
         error!(logger, "Failed to encode frame. Cause: {e:#?}");
     });
 
-    let mut connection = Connection::new(stream, logger.new(o!()));
-    connection.write_frame(&frame).await.unwrap();
+    let (read_half, write_half) = stream.split();
+    let mut read_channel = ChannelReader::new(read_half, &connect, logger.new(o!()));
+    let mut write_channel = ChannelWriter::new(write_half, &connect, logger.new(o!()));
+    write_channel.write_frame(&frame).await.unwrap();
     let mut cnt = 0;
     debug!(logger, "{cnt} Ping");
     loop {
-        match connection.read_frame().await {
+        match read_channel.read_frame().await {
             Ok(Some(mut frame)) => {
                 debug!(logger, "{cnt} Pong received");
                 cnt += 1;
@@ -86,7 +88,7 @@ async fn launch(args: &Args, logger: Logger) {
 
                 monoio::time::sleep(std::time::Duration::from_millis(100)).await;
 
-                if let Ok(_) = connection.write_frame(&frame).await {
+                if let Ok(_) = write_channel.write_frame(&frame).await {
                     debug!(logger, "{cnt} Ping sent");
                 } else {
                     warn!(logger, "Failed to ping...");

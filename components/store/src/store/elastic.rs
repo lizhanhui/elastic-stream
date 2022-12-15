@@ -102,8 +102,6 @@ impl AsyncStore for ElasticStore {
     fn put(&mut self, buf: &[u8]) -> Self::PutFuture<'_> {
         let segment = self.last_segment();
 
-        let data: Vec<u8> = buf.to_vec();
-
         async move {
             let segment = match segment {
                 Some(ref segment) => Rc::clone(segment),
@@ -163,7 +161,11 @@ mod tests {
         let uuid = Uuid::new_v4();
         dbg!(uuid);
         let store_path = StorePath {
-            path: format!("/data/{}", uuid.hyphenated().to_string()),
+            path: format!(
+                "{}/{}",
+                std::env::temp_dir().as_path().display(),
+                uuid.hyphenated().to_string()
+            ),
             target_size: 1024 * 1024,
         };
 
@@ -178,7 +180,7 @@ mod tests {
     #[monoio::test]
     async fn test_elastic_store_open() -> Result<(), StoreError> {
         let store_path = StorePath {
-            path: "/data/store".to_owned(),
+            path: format!("{}/store", std::env::temp_dir().as_path().display()),
             target_size: 1024 * 1024,
         };
 
@@ -196,7 +198,7 @@ mod tests {
     #[monoio::test]
     async fn test_elastic_store_last_segment() -> Result<(), StoreError> {
         let store_path = StorePath {
-            path: "/data/store".to_owned(),
+            path: format!("{}/store", std::env::temp_dir().as_path().display()),
             target_size: 1024 * 1024,
         };
 
