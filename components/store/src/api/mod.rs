@@ -8,7 +8,7 @@ use crate::error::StoreError;
 #[derive(Debug)]
 pub struct AppendResult {}
 
-pub trait AsyncStore {
+pub trait Store {
     fn submission_queue(&self) -> Rc<Tx<Command>>;
 }
 

@@ -11,9 +11,12 @@ use monoio::{
 use slog::{debug, error, info, o, warn, Drain, Logger};
 use slog_async::Async;
 use slog_term::{CompactFormat, TermDecorator};
-use store::store::{
-    elastic::ElasticStore,
-    option::{StoreOptions, StorePath},
+use store::{
+    api::Store,
+    store::{
+        elastic::ElasticStore,
+        option::{StoreOptions, StorePath},
+    },
 };
 use transport::channel::{ChannelReader, ChannelWriter};
 
@@ -24,15 +27,15 @@ struct NodeConfig {
 
 struct Node {
     config: NodeConfig,
-    store: Rc<ElasticStore>,
+    store: Rc<dyn Store>,
     logger: Logger,
 }
 
 impl Node {
-    pub fn new(config: NodeConfig, store: &Rc<ElasticStore>, logger: &Logger) -> Self {
+    pub fn new(config: NodeConfig, store: Rc<dyn Store>, logger: &Logger) -> Self {
         Self {
             config,
-            store: Rc::clone(store),
+            store,
             logger: logger.clone(),
         }
     }
@@ -110,7 +113,7 @@ impl Node {
         Ok(())
     }
 
-    async fn process(store: Rc<ElasticStore>, stream: TcpStream, logger: Logger) {
+    async fn process(store: Rc<dyn Store>, stream: TcpStream, logger: Logger) {
         let peer_address = match stream.peer_addr() {
             Ok(addr) => addr.to_string(),
             Err(_e) => "Unknown".to_owned(),
@@ -226,7 +229,7 @@ pub fn launch(cfg: &ServerConfig) {
                             panic!("Failed to create ElasticStore");
                         }
                     };
-                    let node = Node::new(node_config, &store, &logger);
+                    let node = Node::new(node_config, store, &logger);
                     node.serve()
                 })
         })

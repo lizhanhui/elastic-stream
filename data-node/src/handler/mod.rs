@@ -4,13 +4,13 @@ use async_channel::Sender;
 use bytes::{BufMut, BytesMut};
 use codec::frame::{Frame, OperationCode};
 use slog::{debug, warn, Logger};
-use store::store::elastic::ElasticStore;
+use store::api::Store;
 
 pub struct ServerCall {
     pub(crate) request: Frame,
     pub(crate) sender: Sender<Frame>,
     pub(crate) logger: Logger,
-    pub(crate) store: Rc<ElasticStore>,
+    pub(crate) store: Rc<dyn Store>,
 }
 
 impl ServerCall {

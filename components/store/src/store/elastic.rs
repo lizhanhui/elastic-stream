@@ -5,7 +5,7 @@ use monoio::fs::OpenOptions;
 use slog::{debug, error, info, trace, warn, Logger};
 
 use crate::{
-    api::{AppendResult, AsyncStore, Command, Cursor},
+    api::{AppendResult, Command, Cursor, Store},
     error::StoreError,
 };
 
@@ -179,7 +179,7 @@ impl ElasticStore {
     }
 }
 
-impl AsyncStore for ElasticStore {
+impl Store for ElasticStore {
     fn submission_queue(&self) -> Rc<Tx<Command>> {
         Rc::clone(&self.tx)
     }
