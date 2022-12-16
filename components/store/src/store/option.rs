@@ -11,6 +11,7 @@ pub struct StoreOptions {
     pub(crate) create_if_missing: bool,
     pub(crate) store_path: StorePath,
     pub(crate) destroy_on_exit: bool,
+    pub(crate) command_queue_depth: usize,
 }
 
 impl StoreOptions {
@@ -19,6 +20,7 @@ impl StoreOptions {
             create_if_missing: true,
             store_path: store_path.clone(),
             destroy_on_exit: false,
+            command_queue_depth: 1024,
         }
     }
 }

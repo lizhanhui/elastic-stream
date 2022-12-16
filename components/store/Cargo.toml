@@ -13,8 +13,7 @@ thiserror = { workspace = true }
 rand = { workspace = true }
 uuid = { workspace = true }
 slog =  { workspace = true }
-pin-project = { workspace = true }
-async-trait = { workspace = true }
+local-sync = { workspace = true }
 
 [dev-dependencies]
 slog-async =  { workspace = true }

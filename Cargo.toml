@@ -14,7 +14,13 @@ members = [
 ]
 
 [workspace.dependencies]
+
+# Communicate among tasks of the same thread
+local-sync = { version = "0.0" }
+
+# Communicate among multiple threads
 async-channel = { version = "1.8" }
+
 byteorder = "1"
 bytes = "1"
 core_affinity = "0.7"

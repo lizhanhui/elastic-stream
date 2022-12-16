@@ -1,11 +1,11 @@
-use std::{cell::RefCell, fs, path::Path, rc::Rc};
+use std::{cell::UnsafeCell, fs, path::Path, rc::Rc};
 
-use async_trait::async_trait;
-use monoio::{buf::IoBuf, fs::OpenOptions};
+use local_sync::mpsc::bounded::{self, Rx, Tx};
+use monoio::fs::OpenOptions;
 use slog::{debug, error, info, warn, Logger};
 
 use crate::{
-    api::{AsyncStore, PutResult, WriteCursor},
+    api::{AppendResult, AsyncStore, Command, Cursor},
     error::StoreError,
 };
 
@@ -14,12 +14,13 @@ use super::{option::StoreOptions, segment::JournalSegment};
 pub struct ElasticStore {
     options: StoreOptions,
     logger: Logger,
-    segments: Vec<Rc<RefCell<JournalSegment>>>,
-    cursor: WriteCursor,
+    segments: UnsafeCell<Vec<Rc<JournalSegment>>>,
+    cursor: UnsafeCell<Cursor>,
+    tx: Rc<Tx<Command>>,
 }
 
 impl ElasticStore {
-    pub fn new(options: &StoreOptions, logger: &Logger) -> Result<Self, StoreError> {
+    pub fn new(options: &StoreOptions, logger: &Logger) -> Result<Rc<Self>, StoreError> {
         if !options.create_if_missing && !Path::new(&options.store_path.path).exists() {
             error!(
                 logger,
@@ -30,15 +31,35 @@ impl ElasticStore {
             ));
         }
 
-        Ok(Self {
+        let (tx, mut rx) = bounded::channel(options.command_queue_depth);
+        let store = Rc::new(Self {
             options: options.clone(),
             logger: logger.clone(),
-            segments: vec![],
-            cursor: WriteCursor::new(),
-        })
+            segments: UnsafeCell::new(vec![]),
+            cursor: UnsafeCell::new(Cursor::new()),
+            tx: Rc::new(tx),
+        });
+
+        let cloned = Rc::clone(&store);
+        monoio::spawn(async move {
+            let store = cloned;
+            loop {
+                match rx.recv().await {
+                    Some(command) => {
+                        let _store = Rc::clone(&store);
+                        monoio::spawn(async move { _store.process(command).await });
+                    }
+                    None => {
+                        break;
+                    }
+                }
+            }
+        });
+
+        Ok(store)
     }
 
-    pub async fn open(&mut self) -> Result<(), StoreError> {
+    pub async fn open(&self) -> Result<(), StoreError> {
         let file_name = format!("{}/1", self.options.store_path.path);
 
         let path = Path::new(&file_name);
@@ -65,22 +86,55 @@ impl ElasticStore {
             .open(&path)
             .await?;
         let segment = JournalSegment { file: f, file_name };
-        self.segments.push(Rc::new(RefCell::new(segment)));
+        let segments = unsafe { &mut *self.segments.get() };
+        segments.push(Rc::new(segment));
         Ok(())
     }
 
     /// Return the last segment of the store journal.
-    fn last_segment(&self) -> Option<Rc<RefCell<JournalSegment>>> {
-        match self.segments.last() {
+    fn last_segment(&self) -> Option<Rc<JournalSegment>> {
+        let segments = unsafe { &mut *self.segments.get() };
+        match segments.last() {
             Some(f) => Some(Rc::clone(f)),
             None => None,
         }
     }
 
+    async fn process(&self, command: Command) {
+        match command {
+            Command::Append(req) => match req.sender.send(AppendResult {}) {
+                Ok(_) => {
+                    // Allocate buffer to append data
+                    let len = 1;
+                    let pos = self.cursor_alloc(len);
+
+                    // file.write.await
+
+                    // Assume we have written `len` bytes.
+                    if !self.cursor_commit(pos, len) {
+                        // TODO put [pos, pos + len] to the binary search tree
+                    }
+                }
+                Err(_e) => {}
+            },
+        }
+    }
+
+    fn cursor_alloc(&self, len: u64) -> u64 {
+        let cursor = unsafe { &mut *self.cursor.get() };
+        cursor.alloc(len)
+    }
+
+    fn cursor_commit(&self, pos: u64, len: u64) -> bool {
+        let cursor = unsafe { &mut *self.cursor.get() };
+        cursor.commit(pos, len)
+    }
+
     /// Delete all journal segment files.
-    pub fn destroy(&mut self) -> Result<(), StoreError> {
-        self.segments.iter().for_each(|s| {
-            let file_name = &s.borrow().file_name;
+    pub fn destroy(&self) -> Result<(), StoreError> {
+        let segments = unsafe { &*self.segments.get() };
+        segments.iter().for_each(|s| {
+            let file_name = &s.file_name;
             debug!(self.logger, "Delete file[`{}`]", file_name);
             fs::remove_file(Path::new(file_name)).unwrap_or_else(|e| {
                 warn!(
@@ -94,37 +148,9 @@ impl ElasticStore {
     }
 }
 
-#[async_trait(?Send)]
 impl AsyncStore for ElasticStore {
-    async fn put<T>(&mut self, buf: T) -> Result<PutResult, StoreError>
-    where
-        T: IoBuf,
-    {
-        let segment = self.last_segment();
-
-        let segment = match segment {
-            Some(ref segment) => segment,
-            None => {
-                error!(self.logger, "No writable journal segment is available");
-                // A ready failure future
-                return Err(StoreError::DiskFull(
-                    "No writeable segment is available".to_owned(),
-                ));
-            }
-        };
-        let file = &segment.borrow().file;
-
-        let (res, _buf) = file.write_all_at(buf, self.cursor.write).await;
-        match res {
-            Ok(_) => Ok(PutResult {}),
-            Err(e) => {
-                error!(
-                    self.logger,
-                    "Failed to append data to journal segment. {:?}", e
-                );
-                Err(StoreError::IO(e))
-            }
-        }
+    fn submission_queue(&self) -> Rc<Tx<Command>> {
+        Rc::clone(&self.tx)
     }
 }
 
@@ -185,7 +211,7 @@ mod tests {
         assert_eq!(true, store.is_err());
     }
 
-    async fn new_elastic_store() -> Result<ElasticStore, StoreError> {
+    async fn new_elastic_store() -> Result<Rc<ElasticStore>, StoreError> {
         let store_path = StorePath {
             path: format!("{}/store", std::env::temp_dir().as_path().display()),
             target_size: 1024 * 1024,
@@ -200,25 +226,18 @@ mod tests {
 
     #[monoio::test]
     async fn test_elastic_store_open() -> Result<(), StoreError> {
-        let mut store = new_elastic_store().await.unwrap();
+        let store = new_elastic_store().await.unwrap();
         store.open().await?;
-        assert_eq!(false, store.segments.is_empty());
+        let segments = unsafe { &*store.segments.get() };
+        assert_eq!(false, segments.is_empty());
         Ok(())
     }
 
     #[monoio::test]
     async fn test_elastic_store_last_segment() -> Result<(), StoreError> {
-        let mut store = new_elastic_store().await.unwrap();
+        let store = new_elastic_store().await.unwrap();
         store.open().await?;
         assert_eq!(true, store.last_segment().is_some());
-        Ok(())
-    }
-
-    #[monoio::test]
-    async fn test_elastic_store_put() -> Result<(), StoreError> {
-        let mut store = new_elastic_store().await.unwrap();
-        store.open().await?;
-        let _res = store.put("Test").await.unwrap();
         Ok(())
     }
 }
