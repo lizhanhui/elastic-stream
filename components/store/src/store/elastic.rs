@@ -54,7 +54,7 @@ impl ElasticStore {
 
             if !dir.exists() {
                 info!(self.logger, "Create directory: {}", dir.display());
-                fs::create_dir_all(dir).map_err(|e| StoreError::Other(e))?
+                fs::create_dir_all(dir).map_err(|e| StoreError::IO(e))?
             }
         }
 
@@ -105,6 +105,7 @@ impl AsyncStore for ElasticStore {
         let segment = match segment {
             Some(ref segment) => segment,
             None => {
+                error!(self.logger, "No writable journal segment is available");
                 // A ready failure future
                 return Err(StoreError::DiskFull(
                     "No writeable segment is available".to_owned(),
@@ -113,9 +114,17 @@ impl AsyncStore for ElasticStore {
         };
         let file = &segment.borrow().file;
 
-        let res = file.write_all_at(buf, self.cursor.write).await;
-
-        Ok(PutResult {})
+        let (res, _buf) = file.write_all_at(buf, self.cursor.write).await;
+        match res {
+            Ok(_) => Ok(PutResult {}),
+            Err(e) => {
+                error!(
+                    self.logger,
+                    "Failed to append data to journal segment. {:?}", e
+                );
+                Err(StoreError::IO(e))
+            }
+        }
     }
 }
 
@@ -176,8 +185,7 @@ mod tests {
         assert_eq!(true, store.is_err());
     }
 
-    #[monoio::test]
-    async fn test_elastic_store_open() -> Result<(), StoreError> {
+    async fn new_elastic_store() -> Result<ElasticStore, StoreError> {
         let store_path = StorePath {
             path: format!("{}/store", std::env::temp_dir().as_path().display()),
             target_size: 1024 * 1024,
@@ -187,8 +195,12 @@ mod tests {
         options.destroy_on_exit = true;
         let logger = get_logger();
 
-        let mut store = ElasticStore::new(&options, &logger)?;
+        Ok(ElasticStore::new(&options, &logger)?)
+    }
 
+    #[monoio::test]
+    async fn test_elastic_store_open() -> Result<(), StoreError> {
+        let mut store = new_elastic_store().await.unwrap();
         store.open().await?;
         assert_eq!(false, store.segments.is_empty());
         Ok(())
@@ -196,19 +208,17 @@ mod tests {
 
     #[monoio::test]
     async fn test_elastic_store_last_segment() -> Result<(), StoreError> {
-        let store_path = StorePath {
-            path: format!("{}/store", std::env::temp_dir().as_path().display()),
-            target_size: 1024 * 1024,
-        };
-
-        let mut options = StoreOptions::new(&store_path);
-        options.destroy_on_exit = true;
-        let logger = get_logger();
-
-        let mut store = ElasticStore::new(&options, &logger)?;
-
+        let mut store = new_elastic_store().await.unwrap();
         store.open().await?;
         assert_eq!(true, store.last_segment().is_some());
+        Ok(())
+    }
+
+    #[monoio::test]
+    async fn test_elastic_store_put() -> Result<(), StoreError> {
+        let mut store = new_elastic_store().await.unwrap();
+        store.open().await?;
+        let _res = store.put("Test").await.unwrap();
         Ok(())
     }
 }

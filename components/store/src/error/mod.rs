@@ -12,5 +12,5 @@ pub enum StoreError {
     NotFound(String),
 
     #[error("Internal IO error")]
-    Other(#[from] std::io::Error),
+    IO(#[from] std::io::Error),
 }
