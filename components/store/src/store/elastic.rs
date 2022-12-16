@@ -1,8 +1,8 @@
 use std::{cell::UnsafeCell, fs, path::Path, rc::Rc};
 
-use local_sync::mpsc::bounded::{self, Rx, Tx};
+use local_sync::mpsc::bounded::{self, Tx};
 use monoio::fs::OpenOptions;
-use slog::{debug, error, info, warn, Logger};
+use slog::{debug, error, info, trace, warn, Logger};
 
 use crate::{
     api::{AppendResult, AsyncStore, Command, Cursor},
@@ -102,21 +102,52 @@ impl ElasticStore {
 
     async fn process(&self, command: Command) {
         match command {
-            Command::Append(req) => match req.sender.send(AppendResult {}) {
-                Ok(_) => {
-                    // Allocate buffer to append data
-                    let len = 1;
-                    let pos = self.cursor_alloc(len);
+            Command::Append(req) => {
+                match self.last_segment() {
+                    Some(segment) => {
+                        let buf = req.buf;
+                        // Allocate buffer to append data
+                        let len = buf.len() as u64;
+                        let pos = self.cursor_alloc(len);
 
-                    // file.write.await
+                        // file.write.await
+                        let (res, _buf) = segment.file.write_all_at(buf, pos).await;
 
-                    // Assume we have written `len` bytes.
-                    if !self.cursor_commit(pos, len) {
-                        // TODO put [pos, pos + len] to the binary search tree
+                        let result = match res {
+                            Ok(_) => {
+                                trace!(
+                                    self.logger,
+                                    "Appended {} bytes to {}",
+                                    len,
+                                    segment.file_name
+                                );
+                                // Assume we have written `len` bytes.
+                                if !self.cursor_commit(pos, len) {
+                                    // TODO put [pos, pos + len] to the binary search tree
+                                }
+                                Ok(AppendResult {})
+                            }
+                            Err(e) => Err(StoreError::IO(e)),
+                        };
+
+                        match req.sender.send(result) {
+                            Ok(_) => {}
+                            Err(_e) => {}
+                        };
+                    }
+                    None => {
+                        let err = Err(StoreError::DiskFull(
+                            "No writable segment available".to_owned(),
+                        ));
+                        match req.sender.send(err) {
+                            Ok(_) => {}
+                            Err(e) => {
+                                error!(self.logger, "Failed to send result. Cause: {:?}", e);
+                            }
+                        }
                     }
                 }
-                Err(_e) => {}
-            },
+            }
         }
     }
 
@@ -177,10 +208,12 @@ impl Drop for ElasticStore {
 mod tests {
     use super::*;
 
+    use bytes::Bytes;
+    use local_sync::oneshot;
     use slog::{o, Drain, Logger};
     use uuid::Uuid;
 
-    use crate::store::option::StorePath;
+    use crate::{api::AppendRecordRequest, store::option::StorePath};
 
     fn get_logger() -> Logger {
         let decorator = slog_term::TermDecorator::new().build();
@@ -238,6 +271,26 @@ mod tests {
         let store = new_elastic_store().await.unwrap();
         store.open().await?;
         assert_eq!(true, store.last_segment().is_some());
+        Ok(())
+    }
+
+    #[monoio::test]
+    async fn test_elastic_store_append() -> Result<(), StoreError> {
+        let store = new_elastic_store().await.unwrap();
+        store.open().await?;
+
+        let tx = store.submission_queue();
+
+        let (cb_tx, cb_rx) = oneshot::channel();
+        let append_request = AppendRecordRequest {
+            buf: Bytes::from("abcd"),
+            sender: cb_tx,
+        };
+
+        tx.send(Command::Append(append_request)).await.unwrap();
+
+        let res = cb_rx.await;
+        assert_eq!(true, res.is_ok());
         Ok(())
     }
 }

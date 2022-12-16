@@ -1,7 +1,11 @@
 use std::rc::Rc;
 
+use bytes::Bytes;
 use local_sync::{mpsc::bounded::Tx, oneshot::Sender};
 
+use crate::error::StoreError;
+
+#[derive(Debug)]
 pub struct AppendResult {}
 
 pub trait AsyncStore {
@@ -9,7 +13,8 @@ pub trait AsyncStore {
 }
 
 pub struct AppendRecordRequest {
-    pub sender: Sender<AppendResult>,
+    pub buf: Bytes,
+    pub sender: Sender<Result<AppendResult, StoreError>>,
 }
 
 pub enum Command {
