@@ -6,6 +6,15 @@ pub struct StorePath {
     pub(crate) target_size: u64,
 }
 
+impl StorePath {
+    pub fn new(path: &str, target_size: u64) -> Self {
+        Self {
+            path: path.to_owned(),
+            target_size,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct StoreOptions {
     pub(crate) create_if_missing: bool,
