@@ -1,7 +1,8 @@
-use std::{cell::UnsafeCell, fs, path::Path, rc::Rc};
+use std::{cell::UnsafeCell, fs, os::fd::AsRawFd, path::Path, rc::Rc};
 
 use local_sync::mpsc::bounded::{self, Tx};
 use monoio::fs::OpenOptions;
+use nix::unistd::Whence;
 use slog::{debug, error, info, trace, warn, Logger};
 
 use crate::{
@@ -85,6 +86,20 @@ impl ElasticStore {
             .create(true)
             .open(&path)
             .await?;
+
+        let fd = f.as_raw_fd();
+        match nix::unistd::lseek(fd, 0, Whence::SeekEnd) {
+            Ok(offset) => {
+                debug!(self.logger, "Previously appended file:`{}` to {}", file_name, offset);
+                self.cursor_alloc(offset as u64);
+                self.cursor_commit(0, offset as u64);
+            }
+
+            Err(errno) => {
+                error!(self.logger, "Failed to seek to file end. errno: {}", errno);
+            }
+        };
+
         let segment = JournalSegment { file: f, file_name };
         let segments = unsafe { &mut *self.segments.get() };
         segments.push(Rc::new(segment));
@@ -110,16 +125,17 @@ impl ElasticStore {
                         let len = buf.len() as u64;
                         let pos = self.cursor_alloc(len);
 
-                        // file.write.await
                         let (res, _buf) = segment.file.write_all_at(buf, pos).await;
 
                         let result = match res {
                             Ok(_) => {
                                 trace!(
                                     self.logger,
-                                    "Appended {} bytes to {}",
+                                    "Appended {} bytes to {}[{}, {}]",
                                     len,
-                                    segment.file_name
+                                    segment.file_name,
+                                    pos,
+                                    pos + len
                                 );
                                 // Assume we have written `len` bytes.
                                 if !self.cursor_commit(pos, len) {

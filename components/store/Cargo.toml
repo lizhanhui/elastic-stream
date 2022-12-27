@@ -15,6 +15,7 @@ rand = { workspace = true }
 uuid = { workspace = true }
 slog =  { workspace = true }
 local-sync = { workspace = true }
+nix = { workspace = true }
 
 [dev-dependencies]
 slog-async =  { workspace = true }

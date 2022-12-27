@@ -56,13 +56,14 @@ async fn launch(args: &Args, logger: Logger) {
         }
     };
 
+    let payload = BytesMut::zeroed(1024).freeze();
     let mut frame = Frame {
         operation_code: OperationCode::Publish,
         flag: 0u8,
         stream_id: 0,
         header_format: HeaderFormat::FlatBuffer,
         header: None,
-        payload: None,
+        payload: Some(payload.clone()),
     };
 
     fill_header(&mut frame);
@@ -77,21 +78,22 @@ async fn launch(args: &Args, logger: Logger) {
     let mut write_channel = ChannelWriter::new(write_half, &connect, logger.new(o!()));
     write_channel.write_frame(&frame).await.unwrap();
     let mut cnt = 0;
-    debug!(logger, "{cnt} Ping");
+    debug!(logger, "{cnt} Publish");
     loop {
         match read_channel.read_frame().await {
             Ok(Some(mut frame)) => {
-                debug!(logger, "{cnt} Pong received");
+                debug!(logger, "{cnt} Publish response received");
                 cnt += 1;
                 frame.stream_id = cnt;
                 fill_header(&mut frame);
+                frame.payload = Some(payload.clone());
 
-                monoio::time::sleep(std::time::Duration::from_millis(100)).await;
+                monoio::time::sleep(std::time::Duration::from_millis(1000)).await;
 
                 if let Ok(_) = write_channel.write_frame(&frame).await {
-                    debug!(logger, "{cnt} Ping sent");
+                    debug!(logger, "{cnt} Publish request sent");
                 } else {
-                    warn!(logger, "Failed to ping...");
+                    warn!(logger, "Failed to publish...");
                     return;
                 }
             }
