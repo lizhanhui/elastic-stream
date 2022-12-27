@@ -250,6 +250,7 @@ dependencies = [
  "codec",
  "core_affinity",
  "crc",
+ "local-sync",
  "monoio",
  "num_cpus",
  "num_enum",

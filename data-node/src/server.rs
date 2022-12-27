@@ -124,9 +124,9 @@ impl Node {
         let mut channel_writer = ChannelWriter::new(write_half, &peer_address, logger.new(o!()));
         let (tx, rx) = async_channel::unbounded();
 
-        let receive_request_logger = logger.clone();
+        let request_logger = logger.clone();
         monoio::spawn(async move {
-            let logger = receive_request_logger;
+            let logger = request_logger;
             loop {
                 match channel_reader.read_frame().await {
                     Ok(Some(frame)) => {

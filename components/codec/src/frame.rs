@@ -266,6 +266,7 @@ pub enum OperationCode {
     Unknown = 0,
     Ping = 1,
     GoAway = 2,
+    Publish = 3,
 }
 
 #[cfg(test)]

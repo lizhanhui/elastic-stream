@@ -3,8 +3,9 @@ use std::rc::Rc;
 use async_channel::Sender;
 use bytes::{BufMut, BytesMut};
 use codec::frame::{Frame, OperationCode};
-use slog::{debug, warn, Logger};
-use store::api::Store;
+use local_sync::oneshot;
+use slog::{debug, error, warn, Logger};
+use store::api::{AppendRecordRequest, Command, Store};
 
 pub struct ServerCall {
     pub(crate) request: Frame,
@@ -20,7 +21,7 @@ impl ServerCall {
             OperationCode::Ping => {
                 debug!(
                     self.logger,
-                    "Request[stream-id={}] received", self.request.stream_id
+                    "PingRequest[stream-id={}] received", self.request.stream_id
                 );
                 let mut header = BytesMut::new();
                 let text = format!("stream-id={}, response=true", self.request.stream_id);
@@ -37,13 +38,14 @@ impl ServerCall {
                     Ok(_) => {
                         debug!(
                             self.logger,
-                            "Response[stream-id={}] transferred to channel", self.request.stream_id
+                            "PingResponse[stream-id={}] transferred to channel",
+                            self.request.stream_id
                         );
                     }
                     Err(e) => {
                         warn!(
                             self.logger,
-                            "Failed to send response[stream-id={}] to channel. Cause: {:?}",
+                            "Failed to send ping-response[stream-id={}] to channel. Cause: {:?}",
                             self.request.stream_id,
                             e
                         );
@@ -51,6 +53,52 @@ impl ServerCall {
                 };
             }
             OperationCode::GoAway => {}
+            OperationCode::Publish => {
+                let sq = self.store.submission_queue();
+
+                let (tx, rx) = oneshot::channel();
+
+                let mut buf = BytesMut::new();
+                match self.request.encode(&mut buf) {
+                    Ok(_) => {}
+                    Err(e) => {
+                        error!(self.logger, "Failed to encode {:?}", e);
+                    }
+                };
+
+                let append_request = AppendRecordRequest {
+                    sender: tx,
+                    buf: buf.freeze(),
+                };
+
+                let command = Command::Append(append_request);
+
+                match sq.send(command).await {
+                    Ok(_) => {}
+                    Err(e) => {
+                        error!(
+                            self.logger,
+                            "Failed to pass AppendCommand to store layer {:?}", e
+                        );
+                    }
+                };
+
+                match rx.await {
+                    Ok(result) => match result {
+                        Ok(_append) => {
+                            debug!(self.logger, "Append OK");
+                        }
+                        Err(e) => {
+                            error!(self.logger, "Failed to append {:?}", e);
+                        }
+                    },
+                    Err(e) => {
+                        error!(self.logger, "Failed to receive for StoreCommand {:?}", e);
+                    }
+                }
+
+                todo!()
+            }
         }
     }
 }

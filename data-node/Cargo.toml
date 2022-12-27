@@ -24,3 +24,4 @@ codec = { path = "../components/codec" }
 transport = { path = "../components/transport" }
 service = { path = "../components/service" }
 store = { path = "../components/store" }
+local-sync = { workspace = true }
