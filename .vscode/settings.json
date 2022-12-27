@@ -2,5 +2,10 @@
     "cSpell.words": [
         "byteorder",
         "monoio"
-    ]
+    ],
+    "rust-analyzer.updates.askBeforeDownload": false,
+    "[rust]": {
+        "editor.defaultFormatter": "rust-lang.rust-analyzer",
+        "editor.formatOnSave": true,
+    },
 }

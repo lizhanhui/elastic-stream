@@ -27,20 +27,20 @@ struct NodeConfig {
 
 struct Node {
     config: NodeConfig,
-    store: Rc<dyn Store>,
+    store: Option<Rc<dyn Store>>,
     logger: Logger,
 }
 
 impl Node {
-    pub fn new(config: NodeConfig, store: Rc<dyn Store>, logger: &Logger) -> Self {
+    pub fn new(config: NodeConfig, logger: &Logger) -> Self {
         Self {
             config,
-            store,
+            store: None,
             logger: logger.clone(),
         }
     }
 
-    pub fn serve(&self) {
+    pub fn serve(&mut self) {
         monoio::utils::bind_to_cpu_set([self.config.core_id.id]).unwrap();
         let mut driver = match RuntimeBuilder::<FusionDriver>::new()
             .enable_timer()
@@ -59,6 +59,25 @@ impl Node {
         };
 
         driver.block_on(async {
+            let store_path = StorePath::new("/tmp", 0);
+            let store_options = StoreOptions::new(&store_path);
+            let store = match ElasticStore::new(&store_options, &self.logger) {
+                Ok(store) => store,
+                Err(e) => {
+                    error!(self.logger, "Failed to create ElasticStore. Cause: {:?}", e);
+                    panic!("Failed to create ElasticStore");
+                }
+            };
+
+            match store.open().await {
+                Ok(_) => {}
+                Err(e) => {
+                    error!(self.logger, "Failed to initiaize store. Cause: {:?}", e);
+                }
+            };
+
+            self.store = Some(store);
+
             let bind_address = format!("0.0.0.0:{}", self.config.server_config.port);
             let listener = match TcpListener::bind(&bind_address) {
                 Ok(listener) => {
@@ -104,10 +123,15 @@ impl Node {
                 }
             };
 
-            let store = Rc::clone(&self.store);
-            monoio::spawn(async move {
-                Node::process(store, stream, logger).await;
-            });
+            if let Some(ref store) = self.store {
+                let store = Rc::clone(store);
+                monoio::spawn(async move {
+                    Node::process(store, stream, logger).await;
+                });
+            } else {
+                error!(self.logger, "Store is not properly initilialized");
+                break;
+            }
         }
 
         Ok(())
@@ -220,16 +244,7 @@ pub fn launch(cfg: &ServerConfig) {
                         core_id: core_id.clone(),
                         server_config: server_config.clone(),
                     };
-                    let store_path = StorePath::new("/tmp", 0);
-                    let store_options = StoreOptions::new(&store_path);
-                    let store = match ElasticStore::new(&store_options, &logger) {
-                        Ok(store) => store,
-                        Err(e) => {
-                            error!(logger, "Failed to create ElasticStore. Cause: {:?}", e);
-                            panic!("Failed to create ElasticStore");
-                        }
-                    };
-                    let node = Node::new(node_config, store, &logger);
+                    let mut node = Node::new(node_config, &logger);
                     node.serve()
                 })
         })
