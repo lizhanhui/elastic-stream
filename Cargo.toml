@@ -37,6 +37,7 @@ num_enum = "0.5"
 flatbuffers = "22.10"
 
 nix = "0.26"
+prometheus = "0.13"
 
 # Logging
 slog = { version = "2.7", features = ["max_level_trace", "release_max_level_warn"] }

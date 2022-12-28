@@ -1,7 +1,7 @@
-use std::{cell::UnsafeCell, fs, os::fd::AsRawFd, path::Path, rc::Rc};
+use std::{cell::UnsafeCell, fs, os::fd::AsRawFd, path::Path, rc::Rc, time::Duration};
 
 use local_sync::mpsc::bounded::{self, Tx};
-use monoio::fs::OpenOptions;
+use monoio::{fs::OpenOptions, time::sleep};
 use nix::unistd::Whence;
 use slog::{debug, error, info, trace, warn, Logger};
 
@@ -11,6 +11,8 @@ use crate::{
 };
 
 use super::{option::StoreOptions, segment::JournalSegment};
+
+const STATS_INTERVAL: u64 = 10;
 
 pub struct ElasticStore {
     options: StoreOptions,
@@ -57,6 +59,21 @@ impl ElasticStore {
             }
         });
 
+        let stats_store = Rc::clone(&store);
+        monoio::spawn(async move {
+            let store = stats_store;
+            loop {
+                let prev = store.cursor_committed();
+                sleep(Duration::from_secs(STATS_INTERVAL)).await;
+                let delta = store.cursor_committed() - prev;
+                info!(
+                    store.logger,
+                    "On average, {} bytes are appended to store",
+                    delta / STATS_INTERVAL
+                );
+            }
+        });
+
         Ok(store)
     }
 
@@ -90,7 +107,10 @@ impl ElasticStore {
         let fd = f.as_raw_fd();
         match nix::unistd::lseek(fd, 0, Whence::SeekEnd) {
             Ok(offset) => {
-                debug!(self.logger, "Previously appended file:`{}` to {}", file_name, offset);
+                debug!(
+                    self.logger,
+                    "Previously appended file:`{}` to {}", file_name, offset
+                );
                 self.cursor_alloc(offset as u64);
                 self.cursor_commit(0, offset as u64);
             }
@@ -165,6 +185,11 @@ impl ElasticStore {
                 }
             }
         }
+    }
+
+    fn cursor_committed(&self) -> u64 {
+        let cursor = unsafe { &mut *self.cursor.get() };
+        cursor.committed()
     }
 
     fn cursor_alloc(&self, len: u64) -> u64 {
@@ -273,7 +298,7 @@ mod tests {
         Ok(ElasticStore::new(&options, &logger)?)
     }
 
-    #[monoio::test]
+    #[monoio::test(enable_timer = true)]
     async fn test_elastic_store_open() -> Result<(), StoreError> {
         let store = new_elastic_store().await.unwrap();
         store.open().await?;
@@ -282,7 +307,7 @@ mod tests {
         Ok(())
     }
 
-    #[monoio::test]
+    #[monoio::test(enable_timer = true)]
     async fn test_elastic_store_last_segment() -> Result<(), StoreError> {
         let store = new_elastic_store().await.unwrap();
         store.open().await?;
@@ -290,7 +315,7 @@ mod tests {
         Ok(())
     }
 
-    #[monoio::test]
+    #[monoio::test(enable_timer = true)]
     async fn test_elastic_store_append() -> Result<(), StoreError> {
         let store = new_elastic_store().await.unwrap();
         store.open().await?;
