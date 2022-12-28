@@ -26,7 +26,7 @@ go install github.com/golangci/golangci-lint/cmd/golangci-lint
 cd - >/dev/null
 
 echo -n "Running golangci-lint: "
-ERRS=$(golangci-lint run --disable structcheck "$@" 2>&1 || true)
+ERRS=$(golangci-lint run "$@" 2>&1 || true)
 if [ -n "${ERRS}" ]; then
     echo "FAIL"
     echo "${ERRS}"
