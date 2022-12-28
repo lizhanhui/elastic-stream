@@ -351,6 +351,29 @@ lint: | $(BUILD_DIRS)
 	    $(BUILD_IMAGE)                                          \
 	    ./build/lint.sh ./...
 
+fmt: # @HELP runs gofmt with -w flag
+fmt: | $(BUILD_DIRS)
+	docker run                                                  \
+	    -i                                                      \
+	    --rm                                                    \
+	    -u $$(id -u):$$(id -g)                                  \
+	    -v $$(pwd):/src                                         \
+	    -w /src                                                 \
+	    -v $$(pwd)/.go/bin/$(OS)_$(ARCH):/go/bin                \
+	    -v $$(pwd)/.go/bin/$(OS)_$(ARCH):/go/bin/$(OS)_$(ARCH)  \
+	    -v $$(pwd)/.go/cache:/.cache                            \
+	    --env GOCACHE="/.cache/gocache"                         \
+	    --env GOMODCACHE="/.cache/gomodcache"                   \
+	    --env ARCH="$(ARCH)"                                    \
+	    --env OS="$(OS)"                                        \
+	    --env VERSION="$(VERSION)"                              \
+	    --env DEBUG="$(DBG)"                                    \
+	    --env GOFLAGS="$(GOFLAGS)"                              \
+	    --env HTTP_PROXY="$(HTTP_PROXY)"                        \
+	    --env HTTPS_PROXY="$(HTTPS_PROXY)"                      \
+	    $(BUILD_IMAGE)                                          \
+	    ./build/fmt.sh
+
 $(BUILD_DIRS):
 	mkdir -p $@
 
