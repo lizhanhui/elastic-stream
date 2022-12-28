@@ -1,7 +1,5 @@
 pub mod error;
 
-use error::{RangeError, StreamError};
-
 pub trait Record<'a> {
     fn partition(&self) -> Option<u32>;
 
@@ -12,25 +10,4 @@ pub trait Record<'a> {
 
 pub mod range;
 
-// pub trait Stream<T> {
-//     /// Associate type: Range.
-//     type R: Range;
-
-//     fn open(&mut self) -> Result<Vec<Self::R>, StreamError>;
-
-//     fn close(&mut self);
-
-//     fn delete(&mut self) -> Result<(), StreamError>;
-
-//     fn get<'a>(&self, offset: u64) -> Result<Option<T>, StreamError>
-//     where
-//         T: Record<'a>;
-
-//     fn scan<'a>(&self, offset: u64, len: usize) -> Result<Option<Vec<T>>, StreamError>
-//     where
-//         T: Record<'a>;
-
-//     fn append<'a>(&mut self, record: &[T]) -> Result<(), StreamError>
-//     where
-//         T: Record<'a>;
-// }
+pub mod partition;

@@ -1,0 +1,19 @@
+[package]
+name = "placement-client"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+codec = { path = "../codec" }
+transport = { path = "../transport" }
+bytes = { workspace = true }
+monoio = { workspace = true }
+slog = { workspace = true }
+local-sync = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+slog-async =  { workspace = true }
+slog-term =  { workspace = true }

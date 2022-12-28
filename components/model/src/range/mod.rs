@@ -27,17 +27,20 @@ impl PartitionRange {
         Self { start, next, end }
     }
 
+    /// Expand the range by one.
     pub fn take_slot(&mut self) -> Result<u64, RangeError> {
         match self.end {
             None => {
-                let cur = self.next;
+                let index = self.next;
                 self.next += 1;
-                Ok(cur)
+                Ok(index)
             }
             Some(offset) => Err(RangeError::AlreadySealed(offset)),
         }
     }
 
+    /// Length of the range.
+    /// That is, number of records in the partition range.
     pub fn len(&self) -> u64 {
         self.next - self.start
     }

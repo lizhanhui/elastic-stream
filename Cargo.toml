@@ -6,6 +6,7 @@ resolver = "2"
 members = [
     "components/codec",
     "components/model",
+    "components/placement-client",
     "components/transport",
     "components/service",
     "components/store",
