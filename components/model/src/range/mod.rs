@@ -11,6 +11,7 @@ pub trait Range {
 ///
 /// At the beginning, `end` will be `None` and it would grow as more slots are taken from the range.
 /// Once the range is sealed, it becomes immutable and its right boundary becomes fixed.
+#[derive(Debug, PartialEq)]
 pub struct PartitionRange {
     /// The start slot index, inclusive.
     start: u64,

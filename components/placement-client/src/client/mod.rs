@@ -1,25 +1,34 @@
-use crate::error::CommandError;
-use std::{cell::UnsafeCell, collections::HashMap, rc::Rc};
+mod config;
+mod naming;
 
+use crate::error::{ClientError, CommandError};
+use std::{cell::UnsafeCell, net::SocketAddr, rc::Rc, str::FromStr};
+
+use config::ClientConfig;
 use local_sync::{
     mpsc::unbounded::{channel, Rx, Tx},
     oneshot::Sender,
 };
+use model::range::PartitionRange;
 use monoio::{
-    io::{ReadHalf, WriteHalf},
+    io::{OwnedReadHalf, OwnedWriteHalf},
     net::TcpStream,
 };
 use slog::{debug, error, warn, Logger};
 use transport::channel::{ChannelReader, ChannelWriter};
 
+use self::naming::Endpoints;
+
 #[derive(Debug, Clone)]
 pub enum Command {
     UnitTest,
+    ListRange { partition_id: u64 },
 }
 
 #[derive(Debug, PartialEq)]
 pub enum Reply {
     UnitTest,
+    PartitionRanges { items: Vec<PartitionRange> },
 }
 
 #[derive(Debug)]
@@ -29,35 +38,91 @@ struct Request {
     sender: Sender<Result<Reply, CommandError>>,
 }
 
-struct Session<'a> {
-    reader: ChannelReader<ReadHalf<'a, TcpStream>>,
-    writer: ChannelWriter<WriteHalf<'a, TcpStream>>,
+#[derive(Debug)]
+enum ChannelState {
+    /// Channel is establishing a TCP connection, potentially handshaking with its peer.
+    Connecting,
+
+    /// Connection has already been established and ready to send/recieve data to its peer.
+    Active,
+
+    /// The underlying connection is being shut down.
+    Closing,
+
+    /// The associated connection is already closed.
+    Closed,
+}
+
+struct SubChannel {
+    addr: SocketAddr,
+    state: ChannelState,
+    reader: Option<ChannelReader<OwnedReadHalf<TcpStream>>>,
+    writer: Option<ChannelWriter<OwnedWriteHalf<TcpStream>>>,
+}
+
+enum LBPolicy {
+    PickFirst { current_index: usize },
+    RoundRobin,
+}
+
+struct ManagedChannel {
+    /// Naming of the target endpoints.
+    /// Typically, it could be of `host-name:port`
+    endpoints: Endpoints,
+    channels: Vec<SubChannel>,
+    lb_policy: LBPolicy,
 }
 
 struct Client {
-    sessions: UnsafeCell<HashMap<String, Session<'static>>>,
+    config: ClientConfig,
+    managed_channel: UnsafeCell<ManagedChannel>,
+    log: Logger,
     tx: Tx<Request>,
     rx: UnsafeCell<Rx<Request>>,
-    log: Logger,
 }
 
 impl Client {
-    pub fn new(log: Logger) -> Rc<Client> {
-        let (tx, rx) = channel();
+    /// Build a new `Client`
+    ///
+    /// - `config` Configure various aspects of `Client`, including network connect timeout, retry policy etc.
+    /// - `address` Preferred way to configure address of placement managers is `dns:domain-name:port`
+    pub fn new(config: ClientConfig, address: &str, log: Logger) -> Result<Rc<Self>, ClientError> {
+        let endpoints = Endpoints::from_str(address)?;
 
-        Rc::new(Client {
+        let channels: Vec<_> = endpoints
+            .addrs
+            .iter()
+            .map(|addr| SubChannel {
+                addr: addr.clone(),
+                state: ChannelState::Connecting,
+                reader: None,
+                writer: None,
+            })
+            .collect();
+
+        let managed_channel = ManagedChannel {
+            endpoints,
+            channels,
+            lb_policy: LBPolicy::PickFirst { current_index: 0 },
+        };
+
+        let (tx, rx) = channel();
+        Ok(Rc::new(Self {
+            config,
+            managed_channel: UnsafeCell::new(managed_channel),
             log,
-            sessions: UnsafeCell::new(HashMap::new()),
             tx,
             rx: UnsafeCell::new(rx),
-        })
+        }))
     }
 
-    pub fn start(client: &Rc<Client>) {
+    pub async fn start(client: &Rc<Client>) -> Result<(), ClientError> {
         let this = Rc::clone(&client);
         monoio::spawn(async move {
             this.do_loop().await;
         });
+
+        Ok(())
     }
 
     pub fn post(&self, request: Request) {
@@ -72,7 +137,9 @@ impl Client {
         loop {
             match rx.recv().await {
                 Some(request) => {
-                    self.process(request).await;
+                    self.process(request).await.unwrap_or_else(|e| {
+                        warn!(self.log, "Failed to process request. Cause: {:?}", e);
+                    });
                 }
                 None => {
                     warn!(
@@ -85,15 +152,25 @@ impl Client {
         }
     }
 
-    async fn process(&self, request: Request) {
+    async fn process(&self, request: Request) -> Result<(), CommandError> {
         match request.command {
-            Command::UnitTest => {
-                request
-                    .sender
-                    .send(Ok(Reply::UnitTest))
-                    .unwrap_or_else(|e| error!(self.log, "Failed to write reply. Cause: {:?}", e));
+            Command::UnitTest => request
+                .sender
+                .send(Ok(Reply::UnitTest))
+                .map_err(|e| e.err().unwrap()),
+            Command::ListRange { partition_id } => {
+                let result = self.list_range(partition_id).await;
+                request.sender.send(result).unwrap_or_else(|e| {
+                    warn!(self.log, "Failed to forward reply {:?}", e);
+                });
+                Ok(())
             }
         }
+    }
+
+    async fn list_range(&self, partition_id: u64) -> Result<Reply, CommandError> {
+        let reply = Reply::PartitionRanges { items: vec![] };
+        Ok(reply)
     }
 }
 
@@ -112,13 +189,17 @@ mod tests {
     }
 
     #[test]
-    fn test_new() {
+    fn test_new() -> Result<(), ClientError> {
         let log = get_logger();
-        let client = Client::new(log);
-        let sessions = unsafe { &mut *client.sessions.get() };
-        assert_eq!(true, sessions.is_empty());
+        let config = ClientConfig::default();
+        let address = "dns:localhost:9876";
+        let client = Client::new(config, address, log)?;
+        let managed_channel = unsafe { &mut *client.managed_channel.get() };
+        assert_eq!(1, managed_channel.channels.len());
+        Ok(())
     }
 
+    /*
     #[monoio::test(enable_timer = true)]
     async fn test_start() {
         let log = get_logger();
@@ -143,4 +224,5 @@ mod tests {
             }
         };
     }
+     */
 }
