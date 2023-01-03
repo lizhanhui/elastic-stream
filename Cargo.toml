@@ -27,7 +27,7 @@ bytes = "1"
 core_affinity = "0.7"
 crc = "3.0"
 futures = { version = "0.3" }
-pin-project = { version = "1.0" }
+pin-project = { version = "1" }
 monoio = { version = "0.0", features = ["splice"] }
 monoio-macros = "0.0"
 num_cpus = "1"

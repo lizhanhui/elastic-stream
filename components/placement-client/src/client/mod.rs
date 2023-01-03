@@ -1,7 +1,8 @@
+use futures::Future;
 use local_sync::{mpsc::unbounded, oneshot};
-use slog::{o, Discard, Logger};
+use pin_project::pin_project;
+use slog::{o, trace, warn, Discard, Logger};
 use std::{
-    future::Future,
     pin::Pin,
     str::FromStr,
     task::{Context, Poll},
@@ -19,15 +20,42 @@ pub(crate) struct ClientBuilder {
     log: Logger,
 }
 
+#[pin_project]
 struct SessionManager {
+    #[pin]
     rx: unbounded::Rx<(request::Request, oneshot::Sender<response::Response>)>,
+
+    log: Logger,
 }
 
 impl Future for SessionManager {
     type Output = ();
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        Poll::Ready(())
+        trace!(self.log, "poll");
+        let mut this = self.project();
+        let log = this.log;
+        loop {
+            match this.rx.poll_recv(cx) {
+                Poll::Ready(Some((req, tx))) => {
+                    trace!(log, "Received a request {:?}", req);
+                    // Generate mock response
+                    let response = response::Response::ListRange;
+                    match tx.send(response) {
+                        Ok(_) => {}
+                        Err(_r) => {
+                            warn!(log, "Failed to send response to one-shot channel");
+                        }
+                    }
+                }
+                Poll::Ready(None) => {
+                    return Poll::Ready(());
+                }
+                Poll::Pending => {
+                    return Poll::Pending;
+                }
+            };
+        }
     }
 }
 
@@ -54,7 +82,10 @@ impl ClientBuilder {
     pub(crate) fn connect(self, addr: &str) -> Result<Client, ClientError> {
         let endpoints = naming::Endpoints::from_str(addr)?;
         let (tx, rx) = unbounded::channel();
-        monoio::spawn(SessionManager { rx });
+        monoio::spawn(SessionManager {
+            rx,
+            log: self.log.clone(),
+        });
         Ok(Client { tx })
     }
 }
@@ -106,6 +137,26 @@ mod tests {
             .set_log(log)
             .set_config(config)
             .connect(addr)?;
+        Ok(())
+    }
+
+    #[monoio::test]
+    async fn test_list_range() -> Result<(), ListRangeError> {
+        let decorator = slog_term::TermDecorator::new().build();
+        let drain = slog_term::FullFormat::new(decorator).build().fuse();
+        let drain = slog_async::Async::new(drain).build().fuse();
+        let log = slog::Logger::root(drain, o!());
+
+        let addr = "dns:localhost:1234";
+        let client = ClientBuilder::new()
+            .set_log(log)
+            .connect(addr)
+            .map_err(|_e| ListRangeError::Internal)?;
+
+        for i in 0..3 {
+            client.list_range(i as i64).await?;
+        }
+
         Ok(())
     }
 }
