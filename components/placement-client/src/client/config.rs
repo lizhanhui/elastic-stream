@@ -7,7 +7,7 @@ const CONNECT_TIMEOUT_IN_SECS: u64 = 3;
 #[derive(Debug)]
 pub(crate) struct ClientConfig {
     /// Maximum amount of time to wait when creating connections to placement manager servers.
-    connect_timeout: Duration,
+    pub(crate) connect_timeout: Duration,
 }
 
 impl Default for ClientConfig {

@@ -14,3 +14,9 @@ pub enum ClientError {
     #[error("Failed to establish TCP connection. Cause: `{0}`")]
     ConnectFailure(String),
 }
+
+#[derive(Debug, Error)]
+pub enum ListRangeError {
+    #[error("Internal client error")]
+    Internal,
+}
