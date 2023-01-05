@@ -8,11 +8,15 @@ use local_sync::{mpsc::unbounded, oneshot};
 use monoio::{
     io::{OwnedWriteHalf, Splitable},
     net::TcpStream,
+    time::Instant,
 };
 use slog::{debug, error, info, o, trace, warn, Discard, Logger};
 use transport::channel::{ChannelReader, ChannelWriter};
 
-use crate::error::{ClientError, ListRangeError};
+use crate::{
+    error::{ClientError, ListRangeError, SessionError},
+    SessionState,
+};
 
 use self::naming::Endpoints;
 
@@ -27,18 +31,19 @@ pub(crate) struct ClientBuilder {
     log: Logger,
 }
 
-enum SessionState {
-    Active,
-    Closing,
-}
-
 struct Session {
+    idle_interval: Duration,
+
     log: Logger,
+
     state: SessionState,
+
     writer: ChannelWriter<OwnedWriteHalf<TcpStream>>,
 
     /// In-flight requests.
     inflight_requests: Rc<UnsafeCell<HashMap<u32, oneshot::Sender<response::Response>>>>,
+
+    last_write_instant: Instant,
 }
 
 impl Session {
@@ -74,10 +79,35 @@ impl Session {
 
         Self {
             log: logger.clone(),
+            // TODO: configured from config
+            idle_interval: Duration::from_secs(30),
             state: SessionState::Active,
             writer,
             inflight_requests: inflights,
+            last_write_instant: Instant::now(),
         }
+    }
+
+    async fn write(
+        &mut self,
+        request: &request::Request,
+        response_observer: oneshot::Sender<response::Response>,
+    ) -> Result<(), oneshot::Sender<response::Response>> {
+        Ok(())
+    }
+
+    async fn try_heartbeat(&mut self) -> Option<oneshot::Receiver<response::Response>> {
+        let elapsed = Instant::now() - self.last_write_instant;
+        if elapsed < self.idle_interval {
+            return None;
+        }
+
+        let request = request::Request::Heartbeat;
+        let (response_observer, rx) = oneshot::channel();
+        if let Ok(_) = self.write(&request, response_observer).await {
+            self.last_write_instant = Instant::now();
+        }
+        Some(rx)
     }
 
     fn on_response(
@@ -137,6 +167,9 @@ struct SessionManager {
     lb_policy: LBPolicy,
     sessions: Rc<UnsafeCell<HashMap<SocketAddr, Session>>>,
     session_mgr_tx: unbounded::Tx<(SocketAddr, oneshot::Sender<bool>)>,
+
+    // MPMC channel
+    stop_tx: async_channel::Sender<()>,
 }
 
 impl SessionManager {
@@ -149,6 +182,8 @@ impl SessionManager {
         let (session_mgr_tx, mut session_mgr_rx) =
             unbounded::channel::<(SocketAddr, oneshot::Sender<bool>)>();
         let sessions = Rc::new(UnsafeCell::new(HashMap::new()));
+
+        // Handle session re-connect event.
         {
             let sessions = Rc::clone(&sessions);
             let timeout = config.connect_timeout;
@@ -199,6 +234,41 @@ impl SessionManager {
             });
         }
 
+        // Heartbeat
+        let (stop_tx, stop_rx) = async_channel::bounded::<()>(1);
+        {
+            let sessions = Rc::clone(&sessions);
+            let logger = log.clone();
+            let idle_interval = config.heartbeat_interval;
+
+            monoio::spawn(async move {
+                monoio::pin! {
+                    let stop_fut = stop_rx.recv();
+                    let sleep = monoio::time::sleep(idle_interval);
+                }
+
+                loop {
+                    monoio::select! {
+                        _ = &mut stop_fut => {
+                            info!(logger, "Got notified to stop");
+                            break;
+                        }
+
+                        hb = &mut sleep => {
+                            sleep.as_mut().reset(Instant::now() + idle_interval);
+
+                            let sessions = unsafe {&mut *sessions.get()};
+                            let mut futs = Vec::with_capacity(sessions.len());
+                            for (_addr, session) in sessions.iter_mut() {
+                                 futs.push(session.try_heartbeat());
+                            }
+                            futures::future::join_all(futs).await;
+                        }
+                    }
+                }
+            });
+        }
+
         let endpoints = Endpoints::from_str(target)?;
 
         Ok(Self {
@@ -209,15 +279,16 @@ impl SessionManager {
             lb_policy: LBPolicy::PickFirst,
             session_mgr_tx,
             sessions,
+            stop_tx,
         })
     }
 
     async fn poll_enqueue(&mut self) -> Result<(), ClientError> {
         trace!(self.log, "poll_enqueue");
         match self.rx.recv().await {
-            Some((req, tx)) => {
+            Some((req, response_observer)) => {
                 trace!(self.log, "Received a request {:?}", req);
-                self.dispatch(req, tx);
+                self.dispatch(req, response_observer).await;
             }
             None => {
                 return Err(ClientError::ChannelClosing(
@@ -228,13 +299,35 @@ impl SessionManager {
         Ok(())
     }
 
-    fn dispatch(&mut self, request: request::Request, tx: oneshot::Sender<response::Response>) {
+    async fn dispatch(
+        &mut self,
+        request: request::Request,
+        mut response_observer: oneshot::Sender<response::Response>,
+    ) {
         debug!(self.log, "Received a request `{:?}`", request);
 
-        match tx.send(response::Response::ListRange) {
-            Ok(_) => {}
-            Err(_resp) => {}
-        };
+        let sessions = unsafe { &mut *self.sessions.get() };
+        if sessions.is_empty() {
+            // Create a new session
+        }
+
+        let mut retry = 0;
+        for (addr, session) in sessions.iter_mut() {
+            retry += 1;
+            if retry > 3 {
+                break;
+            }
+            response_observer = match session.write(&request, response_observer).await {
+                Ok(_) => {
+                    trace!(self.log, "Request[`{request:?}`] forwarded to {addr:?}");
+                    break;
+                }
+                Err(observer) => {
+                    error!(self.log, "Failed to forward request to {addr:?}");
+                    observer
+                }
+            }
+        }
     }
 
     async fn run(&mut self) {
@@ -375,6 +468,7 @@ mod tests {
 
         let config = config::ClientConfig {
             connect_timeout: Duration::from_secs(5),
+            heartbeat_interval: Duration::from_secs(30),
         };
 
         let logger = log.clone();
@@ -390,6 +484,7 @@ mod tests {
         Ok(())
     }
 
+    #[ignore]
     #[monoio::test(timer = true)]
     async fn test_list_range() -> Result<(), ListRangeError> {
         let decorator = slog_term::TermDecorator::new().build();

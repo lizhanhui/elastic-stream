@@ -1,5 +1,7 @@
 use thiserror::Error;
 
+use crate::SessionState;
+
 #[derive(Debug, Error, PartialEq)]
 pub enum CommandError {}
 
@@ -22,6 +24,16 @@ pub enum ClientError {
 
     #[error("Channel `{0}` is half closed")]
     ChannelClosing(String),
+}
+
+#[derive(Debug, Error)]
+pub enum SessionError {
+    
+    #[error("Session state is `{actual:?}`, expecting `{expected:?}`")]
+    IllegalState {
+        actual: SessionState,
+        expected: SessionState,
+    },
 }
 
 #[derive(Debug, Error)]

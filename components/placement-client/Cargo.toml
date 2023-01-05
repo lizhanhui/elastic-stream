@@ -16,6 +16,7 @@ local-sync = { workspace = true }
 thiserror = { workspace = true }
 pin-project = { workspace = true }
 futures = { workspace = true }
+async-channel = { workspace = true }
 
 
 [dev-dependencies]
