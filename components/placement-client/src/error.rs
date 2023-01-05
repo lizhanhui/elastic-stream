@@ -19,6 +19,9 @@ pub enum ClientError {
 
     #[error("Failed to disable Nagle's algorithm")]
     DisableNagleAlgorithm,
+
+    #[error("Channel `{0}` is half closed")]
+    ChannelClosing(String),
 }
 
 #[derive(Debug, Error)]

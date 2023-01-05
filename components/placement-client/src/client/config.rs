@@ -4,7 +4,7 @@ use std::time::Duration;
 const CONNECT_TIMEOUT_IN_SECS: u64 = 3;
 
 /// Placement client configuration
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct ClientConfig {
     /// Maximum amount of time to wait when creating connections to placement manager servers.
     pub(crate) connect_timeout: Duration,

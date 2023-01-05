@@ -1,4 +1,7 @@
-use std::{cell::UnsafeCell, collections::HashMap, io::ErrorKind, rc::Rc, str::FromStr};
+use std::{
+    cell::UnsafeCell, collections::HashMap, io::ErrorKind, net::SocketAddr, rc::Rc, str::FromStr,
+    time::Duration,
+};
 
 use codec::frame::Frame;
 use local_sync::{mpsc::unbounded, oneshot};
@@ -6,10 +9,12 @@ use monoio::{
     io::{OwnedWriteHalf, Splitable},
     net::TcpStream,
 };
-use slog::{debug, error, o, trace, warn, Discard, Logger};
+use slog::{debug, error, info, o, trace, warn, Discard, Logger};
 use transport::channel::{ChannelReader, ChannelWriter};
 
 use crate::error::{ClientError, ListRangeError};
+
+use self::naming::Endpoints;
 
 mod config;
 mod naming;
@@ -17,12 +22,19 @@ mod request;
 mod response;
 
 pub(crate) struct ClientBuilder {
+    target: String,
     config: config::ClientConfig,
     log: Logger,
 }
 
+enum SessionState {
+    Active,
+    Closing,
+}
+
 struct Session {
     log: Logger,
+    state: SessionState,
     writer: ChannelWriter<OwnedWriteHalf<TcpStream>>,
 
     /// In-flight requests.
@@ -62,6 +74,7 @@ impl Session {
 
         Self {
             log: logger.clone(),
+            state: SessionState::Active,
             writer,
             inflight_requests: inflights,
         }
@@ -102,55 +115,187 @@ impl Drop for Session {
     }
 }
 
-enum SessionState {
-    Connected(Session),
-    Reconnecting,
+enum LBPolicy {
+    PickFirst,
 }
 
 struct SessionManager {
+    /// Configuration for the transport layer.
     config: config::ClientConfig,
+
+    /// Receiver of SubmitRequestChannel.
+    /// It is used by `Client` to submit requst to `SessionManager`. Requests are expected to be converted into `Command`s and then
+    /// forwarded to transport layer.
     rx: unbounded::Rx<(request::Request, oneshot::Sender<response::Response>)>,
+
     log: Logger,
+
+    /// Parsed endpoints from target url.
     endpoints: naming::Endpoints,
-    state: SessionState,
+
+    // Session management
+    lb_policy: LBPolicy,
+    sessions: Rc<UnsafeCell<HashMap<SocketAddr, Session>>>,
+    session_mgr_tx: unbounded::Tx<(SocketAddr, oneshot::Sender<bool>)>,
 }
 
 impl SessionManager {
-    async fn poll_enqueue(&mut self) {
+    fn new(
+        target: &str,
+        config: &config::ClientConfig,
+        rx: unbounded::Rx<(request::Request, oneshot::Sender<response::Response>)>,
+        log: &Logger,
+    ) -> Result<Self, ClientError> {
+        let (session_mgr_tx, mut session_mgr_rx) =
+            unbounded::channel::<(SocketAddr, oneshot::Sender<bool>)>();
+        let sessions = Rc::new(UnsafeCell::new(HashMap::new()));
+        {
+            let sessions = Rc::clone(&sessions);
+            let timeout = config.connect_timeout;
+            let logger = log.clone();
+
+            monoio::spawn(async move {
+                loop {
+                    match session_mgr_rx.recv().await {
+                        Some((addr, tx)) => {
+                            let sessions = unsafe { &mut *sessions.get() };
+                            match SessionManager::connect(&addr, timeout, &logger).await {
+                                Ok(session) => {
+                                    sessions.insert(addr.clone(), session);
+                                    match tx.send(true) {
+                                        Ok(_) => {}
+                                        Err(res) => {
+                                            debug!(
+                                                logger,
+                                                "Failed to notify session creation result: `{}`",
+                                                res
+                                            );
+                                        }
+                                    }
+                                }
+                                Err(e) => {
+                                    error!(
+                                        logger,
+                                        "Failed to connect to `{:?}`. Cause: `{:?}`", addr, e
+                                    );
+                                    match tx.send(false) {
+                                        Ok(_) => {}
+                                        Err(res) => {
+                                            debug!(
+                                                logger,
+                                                "Failed to notify session creation result: `{}`",
+                                                res
+                                            );
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        None => {
+                            break;
+                        }
+                    }
+                }
+            });
+        }
+
+        let endpoints = Endpoints::from_str(target)?;
+
+        Ok(Self {
+            config: config.clone(),
+            rx,
+            log: log.clone(),
+            endpoints,
+            lb_policy: LBPolicy::PickFirst,
+            session_mgr_tx,
+            sessions,
+        })
+    }
+
+    async fn poll_enqueue(&mut self) -> Result<(), ClientError> {
         trace!(self.log, "poll_enqueue");
         match self.rx.recv().await {
             Some((req, tx)) => {
                 trace!(self.log, "Received a request {:?}", req);
-                // Generate mock response
-                let response = response::Response::ListRange;
-                match tx.send(response) {
-                    Ok(_) => {}
-                    Err(_r) => {
-                        warn!(self.log, "Failed to send response to one-shot channel");
-                    }
-                }
+                self.dispatch(req, tx);
             }
-            None => {}
+            None => {
+                return Err(ClientError::ChannelClosing(
+                    "SubmitRequestChannel".to_owned(),
+                ));
+            }
         };
+        Ok(())
     }
 
-    async fn poll_read(&mut self) {}
+    fn dispatch(&mut self, request: request::Request, tx: oneshot::Sender<response::Response>) {
+        debug!(self.log, "Received a request `{:?}`", request);
 
-    async fn poll_write(&mut self) {}
+        match tx.send(response::Response::ListRange) {
+            Ok(_) => {}
+            Err(_resp) => {}
+        };
+    }
 
     async fn run(&mut self) {
         trace!(self.log, "run");
         loop {
-            self.poll_enqueue().await;
+            if let Err(ClientError::ChannelClosing(_)) = self.poll_enqueue().await {
+                info!(self.log, "SubmitRequsetChannel is half closed");
+                break;
+            }
         }
+    }
+
+    async fn connect(
+        addr: &SocketAddr,
+        timeout: Duration,
+        log: &Logger,
+    ) -> Result<Session, ClientError> {
+        let endpoint = addr.to_string();
+        let stream = monoio::net::TcpStream::connect_addr(addr.clone());
+        let timeout = monoio::time::sleep(timeout);
+        monoio::pin!(stream, timeout);
+        let stream = monoio::select! {
+            _ = timeout => {
+                error!(log, "Timeout when connecting {}", endpoint);
+                return Err(ClientError::ConnectTimeout(format!("Timeout when connecting {:?}", endpoint)));
+            }
+            conn = stream => {
+                match conn {
+                    Ok( connection) => {
+                        connection.set_nodelay(true).map_err(|e| {
+                            error!(log, "Failed to disable Nagle's algorithm. Cause: {:?}", e);
+                            ClientError::DisableNagleAlgorithm
+                        })?;
+                        connection
+                    },
+                    Err(e) => {
+                        match e.kind() {
+                            ErrorKind::ConnectionRefused => {
+                                error!(log, "Connection to {} is refused", endpoint);
+                                return Err(ClientError::ConnectionRefused(format!("{:?}", endpoint)));
+                            }
+                            _ => {
+                                return Err(ClientError::ConnectFailure(format!("{:?}", e)));
+                            }
+                        }
+
+                    }
+                }
+            }
+        };
+
+        Ok(Session::new(stream, &endpoint, log))
     }
 }
 
 impl ClientBuilder {
-    pub(crate) fn new() -> Self {
+    pub(crate) fn new(target: &str) -> Self {
         let drain = Discard;
         let root = Logger::root(drain, o!());
         Self {
+            target: target.to_owned(),
             config: config::ClientConfig::default(),
             log: root,
         }
@@ -166,55 +311,10 @@ impl ClientBuilder {
         self
     }
 
-    pub(crate) async fn connect(self, addr: &str) -> Result<Client, ClientError> {
+    pub(crate) async fn build(self) -> Result<Client, ClientError> {
         let (tx, rx) = unbounded::channel();
-        let mut endpoints = naming::Endpoints::from_str(addr)?;
-        let stream = endpoints
-            .get()
-            .ok_or(ClientError::BadAddress)
-            .map(|&socket_addr| monoio::net::TcpStream::connect_addr(socket_addr))?;
 
-        let timeout = monoio::time::sleep(self.config.connect_timeout);
-        monoio::pin!(stream, timeout);
-
-        let endpoint = endpoints.current().unwrap().to_string();
-        let stream = monoio::select! {
-            _ = timeout => {
-                error!(self.log, "Timeout when connecting {}", endpoint);
-                return Err(ClientError::ConnectTimeout(format!("Timeout when connecting {:?}", endpoint)));
-            }
-            conn = stream => {
-                match conn {
-                    Ok( connection) => {
-                        connection.set_nodelay(true).map_err(|e| {
-                            error!(self.log, "Failed to disable Nagle's algorithm. Cause: {:?}", e);
-                            ClientError::DisableNagleAlgorithm
-                        })?;
-                        connection
-                    },
-                    Err(e) => {
-                        match e.kind() {
-                            ErrorKind::ConnectionRefused => {
-                                error!(self.log, "Connection to {} is refused", endpoint);
-                                return Err(ClientError::ConnectionRefused(format!("{:?}", endpoint)));
-                            }
-                            _ => {
-                                return Err(ClientError::ConnectFailure(format!("{:?}", e)));
-                            }
-                        }
-
-                    }
-                }
-            }
-        };
-
-        let mut session_manager = SessionManager {
-            config: self.config,
-            rx,
-            log: self.log.clone(),
-            endpoints,
-            state: SessionState::Connected(Session::new(stream, &endpoint, &self.log)),
-        };
+        let mut session_manager = SessionManager::new(&self.target, &self.config, rx, &self.log)?;
         monoio::spawn(async move {
             session_manager.run().await;
         });
@@ -282,10 +382,10 @@ mod tests {
         let addr = format!("dns:localhost:{}", port);
         trace!(log, "Target endpoint: `{}`", addr);
 
-        ClientBuilder::new()
+        ClientBuilder::new(&addr)
             .set_log(log)
             .set_config(config)
-            .connect(&addr)
+            .build()
             .await?;
         Ok(())
     }
@@ -299,9 +399,9 @@ mod tests {
 
         let port = run_listener(log.clone()).await;
         let addr = format!("dns:localhost:{}", port);
-        let client = ClientBuilder::new()
+        let client = ClientBuilder::new(&addr)
             .set_log(log)
-            .connect(&addr)
+            .build()
             .await
             .map_err(|_e| ListRangeError::Internal)?;
 
