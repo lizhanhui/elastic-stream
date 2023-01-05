@@ -19,6 +19,10 @@ impl Endpoints {
         }
     }
 
+    pub(crate) fn current(&self) -> Option<&SocketAddr> {
+        self.addrs.get(self.index)
+    }
+
     pub(crate) fn get(&mut self) -> Option<&SocketAddr> {
         if self.addrs.is_empty() {
             return None;
