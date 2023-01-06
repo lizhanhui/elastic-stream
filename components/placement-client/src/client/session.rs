@@ -7,7 +7,7 @@ use monoio::{
     net::TcpStream,
     time::Instant,
 };
-use slog::{warn, Logger};
+use slog::{trace, warn, Logger};
 use transport::channel::{ChannelReader, ChannelWriter};
 
 use crate::SessionState;
@@ -26,7 +26,7 @@ pub(crate) struct Session {
     /// In-flight requests.
     inflight_requests: Rc<UnsafeCell<HashMap<u32, oneshot::Sender<response::Response>>>>,
 
-    last_write_instant: Instant,
+    last_rw_instant: Instant,
 }
 
 impl Session {
@@ -67,7 +67,7 @@ impl Session {
             state: SessionState::Active,
             writer,
             inflight_requests: inflights,
-            last_write_instant: Instant::now(),
+            last_rw_instant: Instant::now(),
         }
     }
 
@@ -76,11 +76,25 @@ impl Session {
         request: &request::Request,
         response_observer: oneshot::Sender<response::Response>,
     ) -> Result<(), oneshot::Sender<response::Response>> {
+        trace!(self.log, "Sending request {:?}", request);
+
+        // Update last read/write instant.
+        self.last_rw_instant = Instant::now();
+
+        response_observer
+            .send(response::Response::ListRange)
+            .unwrap_or_else(|res| {
+                warn!(
+                    self.log,
+                    "Failed to pipe response to `Client`. Dropped {:?}", res
+                );
+            });
+        trace!(self.log, "Piped response to `Client`");
         Ok(())
     }
 
     pub(crate) async fn try_heartbeat(&mut self) -> Option<oneshot::Receiver<response::Response>> {
-        let elapsed = Instant::now() - self.last_write_instant;
+        let elapsed = Instant::now() - self.last_rw_instant;
         if elapsed < self.idle_interval {
             return None;
         }
@@ -88,7 +102,7 @@ impl Session {
         let request = request::Request::Heartbeat;
         let (response_observer, rx) = oneshot::channel();
         if let Ok(_) = self.write(&request, response_observer).await {
-            self.last_write_instant = Instant::now();
+            self.last_rw_instant = Instant::now();
         }
         Some(rx)
     }

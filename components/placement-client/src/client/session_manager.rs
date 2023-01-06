@@ -1,8 +1,11 @@
-use std::{cell::UnsafeCell, collections::HashMap, net::SocketAddr, rc::Rc, str::FromStr, time::Duration, io::ErrorKind};
+use std::{
+    cell::UnsafeCell, collections::HashMap, io::ErrorKind, net::SocketAddr, rc::Rc, str::FromStr,
+    time::Duration,
+};
 
 use local_sync::{mpsc::unbounded, oneshot};
 use monoio::time::Instant;
-use slog::{debug, error, info, trace, Logger};
+use slog::{debug, error, info, trace, warn, Logger};
 
 use crate::error::ClientError;
 
@@ -63,7 +66,9 @@ impl SessionManager {
                                 Ok(session) => {
                                     sessions.insert(addr.clone(), session);
                                     match tx.send(true) {
-                                        Ok(_) => {}
+                                        Ok(_) => {
+                                            trace!(logger, "Session creation is notified");
+                                        }
                                         Err(res) => {
                                             debug!(
                                                 logger,
@@ -149,10 +154,10 @@ impl SessionManager {
     }
 
     async fn poll_enqueue(&mut self) -> Result<(), ClientError> {
-        trace!(self.log, "poll_enqueue");
+        trace!(self.log, "poll_enqueue"; "struct" => "SessionManager");
         match self.rx.recv().await {
             Some((req, response_observer)) => {
-                trace!(self.log, "Received a request {:?}", req);
+                trace!(self.log, "Received a request `{:?}`", req; "method" => "poll_enqueue");
                 self.dispatch(req, response_observer).await;
             }
             None => {
@@ -169,11 +174,51 @@ impl SessionManager {
         request: request::Request,
         mut response_observer: oneshot::Sender<response::Response>,
     ) {
-        debug!(self.log, "Received a request `{:?}`", request);
+        trace!(self.log, "Received a request `{:?}`", request; "method" => "dispatch");
 
         let sessions = unsafe { &mut *self.sessions.get() };
         if sessions.is_empty() {
             // Create a new session
+            match self.lb_policy {
+                LBPolicy::PickFirst => {
+                    if let Some(&socket_addr) = self.endpoints.get() {
+                        let (tx, rx) = oneshot::channel();
+                        self.session_mgr_tx
+                            .send((socket_addr.clone(), tx))
+                            .unwrap_or_else(|e| {
+                                error!(self.log, "Failed to create a new session. Cause: {:?}", e);
+                            });
+                        match rx.await {
+                            Ok(result) => {
+                                if result {
+                                    trace!(self.log, "Session to {:?} was created", socket_addr);
+                                } else {
+                                    warn!(
+                                        self.log,
+                                        "Failed to create session to {:?}", socket_addr
+                                    );
+                                }
+                            }
+                            Err(e) => {
+                                warn!(
+                                    self.log,
+                                    "Got an error while creating session to {:?}. Error: {:?}",
+                                    socket_addr,
+                                    e
+                                );
+                            }
+                        }
+                    } else {
+                        error!(self.log, "No endpoints available to connect.");
+                        response_observer
+                            .send(response::Response::ListRange)
+                            .unwrap_or_else(|_response| {
+                                warn!(self.log, "Failed to write response to `Client`");
+                            });
+                        return;
+                    }
+                }
+            }
         }
 
         let mut retry = 0;
@@ -196,7 +241,7 @@ impl SessionManager {
     }
 
     pub(super) async fn run(&mut self) {
-        trace!(self.log, "run");
+        trace!(self.log, "run"; "struct" => "SessionManager");
         loop {
             if let Err(ClientError::ChannelClosing(_)) = self.poll_enqueue().await {
                 info!(self.log, "SubmitRequsetChannel is half closed");
@@ -210,6 +255,7 @@ impl SessionManager {
         timeout: Duration,
         log: &Logger,
     ) -> Result<Session, ClientError> {
+        trace!(log, "Establishing connection to {:?}", addr);
         let endpoint = addr.to_string();
         let stream = monoio::net::TcpStream::connect_addr(addr.clone());
         let timeout = monoio::time::sleep(timeout);
@@ -222,6 +268,7 @@ impl SessionManager {
             conn = stream => {
                 match conn {
                     Ok( connection) => {
+                        trace!(log, "Connection to {:?} established", addr);
                         connection.set_nodelay(true).map_err(|e| {
                             error!(log, "Failed to disable Nagle's algorithm. Cause: {:?}", e);
                             ClientError::DisableNagleAlgorithm

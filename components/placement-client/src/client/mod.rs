@@ -80,6 +80,7 @@ mod tests {
 
     use monoio::net::TcpListener;
     use slog::{trace, Drain};
+    use slog_async::OverflowStrategy;
 
     use super::*;
 
@@ -122,12 +123,15 @@ mod tests {
         Ok(())
     }
 
-    #[ignore]
     #[monoio::test(timer = true)]
     async fn test_list_range() -> Result<(), ListRangeError> {
         let decorator = slog_term::TermDecorator::new().build();
         let drain = slog_term::FullFormat::new(decorator).build().fuse();
-        let drain = slog_async::Async::new(drain).build().fuse();
+        let drain = slog_async::Async::new(drain)
+            .overflow_strategy(OverflowStrategy::Block)
+            .chan_size(1)
+            .build()
+            .fuse();
         let log = slog::Logger::root(drain, o!());
 
         let port = run_listener(log.clone()).await;
