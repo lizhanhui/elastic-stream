@@ -132,7 +132,9 @@ impl SessionManager {
                             let sessions = unsafe {&mut *sessions.get()};
                             let mut futs = Vec::with_capacity(sessions.len());
                             for (_addr, session) in sessions.iter_mut() {
-                                 futs.push(session.try_heartbeat());
+                                if session.need_heartbeat(&idle_interval) {
+                                    futs.push(session.heartbeat());
+                                }
                             }
                             futures::future::join_all(futs).await;
                         }

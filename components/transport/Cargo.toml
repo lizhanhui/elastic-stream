@@ -10,3 +10,6 @@ codec = { path = "../codec" }
 bytes = { workspace = true }
 monoio = { workspace = true }
 slog = { workspace = true }
+
+[dev-dependencies]
+cargo-llvm-cov = { workspace = true }

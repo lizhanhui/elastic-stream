@@ -21,3 +21,4 @@ prometheus = { workspace = true }
 [dev-dependencies]
 slog-async =  { workspace = true }
 slog-term =  { workspace = true }
+cargo-llvm-cov = { workspace = true }

@@ -24,3 +24,4 @@ slog-async =  { workspace = true }
 slog-term =  { workspace = true }
 mockall = { workspace = true }
 util = { path = "../util" }
+cargo-llvm-cov = { workspace = true }

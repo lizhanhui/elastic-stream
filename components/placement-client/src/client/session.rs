@@ -15,8 +15,6 @@ use crate::SessionState;
 use super::{request, response};
 
 pub(crate) struct Session {
-    idle_interval: Duration,
-
     log: Logger,
 
     state: SessionState,
@@ -62,8 +60,6 @@ impl Session {
 
         Self {
             log: logger.clone(),
-            // TODO: configured from config
-            idle_interval: Duration::from_secs(30),
             state: SessionState::Active,
             writer,
             inflight_requests: inflights,
@@ -93,9 +89,21 @@ impl Session {
         Ok(())
     }
 
-    pub(crate) async fn try_heartbeat(&mut self) -> Option<oneshot::Receiver<response::Response>> {
-        let elapsed = Instant::now() - self.last_rw_instant;
-        if elapsed < self.idle_interval {
+    pub(crate) fn state(&self) -> SessionState {
+        self.state
+    }
+
+    fn active(&self) -> bool {
+        SessionState::Active == self.state
+    }
+
+    pub(crate) fn need_heartbeat(&self, duration: &Duration) -> bool {
+        self.active() && (Instant::now() - self.last_rw_instant >= *duration)
+    }
+
+    pub(crate) async fn heartbeat(&mut self) -> Option<oneshot::Receiver<response::Response>> {
+        // If the current session is being closed, heartbeat will be no-op.
+        if self.state == SessionState::Closing {
             return None;
         }
 
@@ -147,7 +155,6 @@ mod tests {
 
     use std::error::Error;
 
-    use monoio::time::sleep;
     use util::test::{run_listener, terminal_logger};
 
     use super::*;
@@ -159,24 +166,26 @@ mod tests {
         let port = run_listener(logger.clone()).await;
         let target = format!("127.0.0.1:{}", port);
         let stream = TcpStream::connect(&target).await?;
-        let _session = Session::new(stream, &target, &logger);
+        let session = Session::new(stream, &target, &logger);
+
+        assert_eq!(SessionState::Active, session.state());
+
+        assert_eq!(false, session.need_heartbeat(&Duration::from_secs(1)));
+
         Ok(())
     }
 
+    #[monoio::test]
     async fn test_heartbeat() -> Result<(), Box<dyn Error>> {
         let logger = terminal_logger();
         let port = run_listener(logger.clone()).await;
         let target = format!("127.0.0.1:{}", port);
         let stream = TcpStream::connect(&target).await?;
         let mut session = Session::new(stream, &target, &logger);
-        let result = session.try_heartbeat().await;
-        assert_eq!(true, result.is_none());
 
-        session.last_rw_instant = Instant::now() - session.idle_interval;
-        sleep(Duration::from_millis(10)).await;
-
-        let result = session.try_heartbeat().await;
+        let result = session.heartbeat().await;
         let response = result.unwrap().await;
+        assert_eq!(true, response.is_ok());
 
         Ok(())
     }
