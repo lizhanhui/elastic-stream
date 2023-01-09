@@ -178,6 +178,10 @@ where
         }
     }
 
+    pub fn peer_address(&self) -> &str {
+        &self.peer_address
+    }
+
     pub async fn write_frame(&mut self, frame: &Frame) -> Result<(), std::io::Error> {
         let mut buffer = BytesMut::new();
 

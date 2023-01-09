@@ -1,6 +1,6 @@
 use crate::error::{ClientError, ListRangeError};
 use local_sync::{mpsc::unbounded, oneshot};
-use slog::{o, Discard, Logger};
+use slog::{error, o, trace, Discard, Logger};
 
 mod config;
 mod naming;
@@ -49,12 +49,13 @@ impl ClientBuilder {
         monoio::spawn(async move {
             session_manager.run().await;
         });
-        Ok(Client { tx })
+        Ok(Client { tx, log: self.log })
     }
 }
 
 pub(crate) struct Client {
     tx: unbounded::Tx<(request::Request, oneshot::Sender<response::Response>)>,
+    log: Logger,
 }
 
 impl Client {
@@ -62,14 +63,24 @@ impl Client {
         &self,
         partition_id: i64,
     ) -> Result<response::Response, ListRangeError> {
+        trace!(self.log, "list_range"; "partition-id" => partition_id);
         let (tx, rx) = oneshot::channel();
         let request = request::Request::ListRange {
             partition_id: partition_id,
         };
-        self.tx
-            .send((request, tx))
-            .map_err(|e| ListRangeError::Internal)?;
-        let result = rx.await.map_err(|e| ListRangeError::Internal)?;
+        self.tx.send((request, tx)).map_err(|e| {
+            error!(self.log, "Failed to forward request. Cause: {:?}", e; "struct" => "Client");
+            ListRangeError::Internal
+        })?;
+        trace!(self.log, "Request forwarded"; "struct" => "Client");
+        let result = rx.await.map_err(|e| {
+            error!(
+                self.log,
+                "Failed to receive response from broken channel. Cause: {:?}", e; "struct" => "Client"
+            );
+            ListRangeError::Internal
+        })?;
+        trace!(self.log, "Response received from channel"; "struct" => "Client");
         Ok(result)
     }
 }

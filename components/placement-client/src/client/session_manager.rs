@@ -114,6 +114,8 @@ impl SessionManager {
             monoio::spawn(async move {
                 monoio::pin! {
                     let stop_fut = stop_rx.recv();
+
+                    // Interval to check if a session needs to send a heartbeat request.
                     let sleep = monoio::time::sleep(idle_interval);
                 }
 

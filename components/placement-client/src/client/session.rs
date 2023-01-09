@@ -86,10 +86,10 @@ impl Session {
             .unwrap_or_else(|res| {
                 warn!(
                     self.log,
-                    "Failed to pipe response to `Client`. Dropped {:?}", res
+                    "Failed to send response to `Client`. Dropped {:?}", res
                 );
             });
-        trace!(self.log, "Piped response to `Client`");
+        trace!(self.log, "Response sent to `Client`");
         Ok(())
     }
 
@@ -102,7 +102,11 @@ impl Session {
         let request = request::Request::Heartbeat;
         let (response_observer, rx) = oneshot::channel();
         if let Ok(_) = self.write(&request, response_observer).await {
-            self.last_rw_instant = Instant::now();
+            trace!(
+                self.log,
+                "Heartbeat sent to {}",
+                self.writer.peer_address()
+            );
         }
         Some(rx)
     }

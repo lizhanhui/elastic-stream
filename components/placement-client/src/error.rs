@@ -28,7 +28,6 @@ pub enum ClientError {
 
 #[derive(Debug, Error)]
 pub enum SessionError {
-    
     #[error("Session state is `{actual:?}`, expecting `{expected:?}`")]
     IllegalState {
         actual: SessionState,
