@@ -157,7 +157,7 @@ mod tests {
     async fn test_new() -> Result<(), Box<dyn Error>> {
         let logger = terminal_logger();
         let port = run_listener(logger.clone()).await;
-        let target = format!("localhost:{}", port);
+        let target = format!("127.0.0.1:{}", port);
         let stream = TcpStream::connect(&target).await?;
         let _session = Session::new(stream, &target, &logger);
         Ok(())
@@ -166,7 +166,7 @@ mod tests {
     async fn test_heartbeat() -> Result<(), Box<dyn Error>> {
         let logger = terminal_logger();
         let port = run_listener(logger.clone()).await;
-        let target = format!("localhost:{}", port);
+        let target = format!("127.0.0.1:{}", port);
         let stream = TcpStream::connect(&target).await?;
         let mut session = Session::new(stream, &target, &logger);
         let result = session.try_heartbeat().await;

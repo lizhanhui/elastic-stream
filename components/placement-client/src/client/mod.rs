@@ -121,7 +121,7 @@ mod tests {
         let log = terminal_logger();
 
         let port = run_listener(log.clone()).await;
-        let addr = format!("dns:localhost:{}", port);
+        let addr = format!("ipv4:127.0.0.1:{}", port);
         let client = ClientBuilder::new(&addr)
             .set_log(log)
             .build()
