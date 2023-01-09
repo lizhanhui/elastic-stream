@@ -102,11 +102,7 @@ impl Session {
         let request = request::Request::Heartbeat;
         let (response_observer, rx) = oneshot::channel();
         if let Ok(_) = self.write(&request, response_observer).await {
-            trace!(
-                self.log,
-                "Heartbeat sent to {}",
-                self.writer.peer_address()
-            );
+            trace!(self.log, "Heartbeat sent to {}", self.writer.peer_address());
         }
         Some(rx)
     }
@@ -143,5 +139,45 @@ impl Drop for Session {
                     warn!(self.log, "Failed to notify connection reset");
                 });
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+
+    use std::error::Error;
+
+    use monoio::time::sleep;
+    use util::test::{run_listener, terminal_logger};
+
+    use super::*;
+
+    /// Verify it's OK to create a new session.
+    #[monoio::test]
+    async fn test_new() -> Result<(), Box<dyn Error>> {
+        let logger = terminal_logger();
+        let port = run_listener(logger.clone()).await;
+        let target = format!("localhost:{}", port);
+        let stream = TcpStream::connect(&target).await?;
+        let _session = Session::new(stream, &target, &logger);
+        Ok(())
+    }
+
+    async fn test_heartbeat() -> Result<(), Box<dyn Error>> {
+        let logger = terminal_logger();
+        let port = run_listener(logger.clone()).await;
+        let target = format!("localhost:{}", port);
+        let stream = TcpStream::connect(&target).await?;
+        let mut session = Session::new(stream, &target, &logger);
+        let result = session.try_heartbeat().await;
+        assert_eq!(true, result.is_none());
+
+        session.last_rw_instant = Instant::now() - session.idle_interval;
+        sleep(Duration::from_millis(10)).await;
+
+        let result = session.try_heartbeat().await;
+        let response = result.unwrap().await;
+
+        Ok(())
     }
 }
