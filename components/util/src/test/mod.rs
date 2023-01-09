@@ -11,9 +11,11 @@ use slog_async::OverflowStrategy;
 pub async fn run_listener(logger: Logger) -> u16 {
     let (tx, rx) = oneshot::channel();
     monoio::spawn(async move {
-        let listener = TcpListener::bind("0.0.0.0:0").unwrap();
+        // We are using dual-stack mode.
+        // Binding to "[::]:0", the any address for IPv6, will also listen for IPv4.
+        let listener = TcpListener::bind("[::]:0").unwrap();
         let port = listener.local_addr().unwrap().port();
-        debug!(logger, "Listening 0.0.0.0:{}", port);
+        debug!(logger, "Listening {}", port);
         tx.send(port).unwrap();
         loop {
             if let Ok((_conn, sock_addr)) = listener.accept().await {
