@@ -1,16 +1,22 @@
 use std::{cell::UnsafeCell, collections::HashMap, rc::Rc, time::Duration};
 
-use codec::frame::Frame;
+use bytes::BytesMut;
+use codec::frame::{Frame, HeaderFormat, OperationCode};
 use local_sync::oneshot;
 use monoio::{
     io::{OwnedWriteHalf, Splitable},
     net::TcpStream,
     time::Instant,
 };
-use slog::{trace, warn, Logger};
+use slog::{error, trace, warn, Logger};
 use transport::channel::{ChannelReader, ChannelWriter};
 
-use crate::SessionState;
+use crate::{
+    client::response::Status,
+    error::ClientError,
+    generated::rpc_generated::elastic::store::{ListRange, ListRangeArgs},
+    SessionState,
+};
 
 use super::{request, response};
 
@@ -71,21 +77,80 @@ impl Session {
         &mut self,
         request: &request::Request,
         response_observer: oneshot::Sender<response::Response>,
-    ) -> Result<(), oneshot::Sender<response::Response>> {
+    ) -> Result<(), ClientError> {
         trace!(self.log, "Sending request {:?}", request);
 
         // Update last read/write instant.
         self.last_rw_instant = Instant::now();
 
-        response_observer
-            .send(response::Response::ListRange)
-            .unwrap_or_else(|res| {
-                warn!(
-                    self.log,
-                    "Failed to send response to `Client`. Dropped {:?}", res
-                );
-            });
-        trace!(self.log, "Response sent to `Client`");
+        match request {
+            request::Request::Heartbeat => {
+                let heartbeat_frame = Frame::new(OperationCode::Heartbeat);
+                match self.writer.write_frame(&heartbeat_frame).await {
+                    Ok(_) => {}
+                    Err(e) => {
+                        error!(
+                            self.log,
+                            "Failed to write request to network. Cause: {:?}", e
+                        );
+                        let response = response::Response::ListRange {
+                            status: Status::Internal,
+                        };
+                        response_observer.send(response).unwrap_or_else(|res| {
+                            warn!(
+                                self.log,
+                                "Failed to send response to `Client`. Dropped {:?}", res
+                            );
+                        });
+                        trace!(self.log, "Response sent to `Client`");
+
+                        return Err(ClientError::ClientInternal);
+                    }
+                }
+            }
+
+            request::Request::ListRange { partition_id } => {
+                let mut list_range_frame = Frame::new(OperationCode::ListRange);
+
+                // Fill frame header
+                {
+                    let mut builder = flatbuffers::FlatBufferBuilder::new();
+                    let list_range = ListRange::create(
+                        &mut builder,
+                        &ListRangeArgs {
+                            partition_id: *partition_id,
+                        },
+                    );
+                    builder.finish(list_range, None);
+                    let buf = builder.finished_data();
+                    let mut buffer = BytesMut::with_capacity(buf.len());
+                    buffer.extend_from_slice(buf);
+                    list_range_frame.header = Some(buffer.freeze());
+                }
+
+                match self.writer.write_frame(&list_range_frame).await {
+                    Ok(_) => {
+                        let inflight_requests = unsafe { &mut *self.inflight_requests.get() };
+                        inflight_requests.insert(list_range_frame.stream_id, response_observer);
+                        trace!(
+                            self.log,
+                            "Write `ListRange` request to {}",
+                            self.writer.peer_address()
+                        );
+                    }
+                    Err(e) => {
+                        warn!(
+                            self.log,
+                            "Failed to write `ListRange` request to {}. Cause: {:?}",
+                            self.writer.peer_address(),
+                            e
+                        );
+                        return Err(ClientError::ClientInternal);
+                    }
+                }
+            }
+        };
+
         Ok(())
     }
 
@@ -122,7 +187,9 @@ impl Session {
     ) {
         match inflights.remove(&response.stream_id) {
             Some(sender) => {
-                let res = response::Response::ListRange;
+                let res = response::Response::ListRange {
+                    status: Status::Internal,
+                };
                 sender.send(res).unwrap_or_else(|_resp| {
                     warn!(log, "Failed to forward response to Client");
                 });
@@ -140,12 +207,13 @@ impl Session {
 impl Drop for Session {
     fn drop(&mut self) {
         let requests = unsafe { &mut *self.inflight_requests.get() };
+        let aborted_response = response::Response::ListRange {
+            status: Status::Aborted,
+        };
         requests.drain().for_each(|(_stream_id, sender)| {
-            sender
-                .send(response::Response::ListRange)
-                .unwrap_or_else(|_response| {
-                    warn!(self.log, "Failed to notify connection reset");
-                });
+            sender.send(aborted_response).unwrap_or_else(|_response| {
+                warn!(self.log, "Failed to notify connection reset");
+            });
         });
     }
 }

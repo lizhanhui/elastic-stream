@@ -3,6 +3,7 @@ use bytes::{Buf, BufMut, Bytes, BytesMut};
 use crc::Crc;
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 use slog::{trace, warn, Logger};
+use std::cell::RefCell;
 use std::io::Cursor;
 
 use crate::error::FrameError;
@@ -16,16 +17,45 @@ pub(crate) const MAX_FRAME_LENGTH: u32 = 16 * 1024 * 1024;
 
 const CRC32: Crc<u32> = Crc::<u32>::new(&crc::CRC_32_ISO_HDLC);
 
+thread_local! {
+    static STREAM_ID: RefCell<u32> = RefCell::new(1);
+}
+
 pub struct Frame {
     pub operation_code: OperationCode,
+
     pub flag: u8,
+
+    // Stream-ID, starting from 1.
+    // stream-id `0` is used as placeholder only.
     pub stream_id: u32,
+
     pub header_format: HeaderFormat,
+
     pub header: Option<Bytes>,
+
     pub payload: Option<Bytes>,
 }
 
 impl Frame {
+    pub fn new(op: OperationCode) -> Self {
+        let stream_id = STREAM_ID.with(|f| {
+            let mut value = f.borrow_mut();
+            let current = *value;
+            *value += 1;
+            current
+        });
+
+        Self {
+            operation_code: op,
+            flag: 0,
+            stream_id,
+            header_format: HeaderFormat::FlatBuffer,
+            header: None,
+            payload: None,
+        }
+    }
+
     fn crc32(payload: &[u8]) -> u32 {
         let mut digest = CRC32.digest();
         digest.update(payload);
@@ -267,6 +297,8 @@ pub enum OperationCode {
     Ping = 1,
     GoAway = 2,
     Publish = 3,
+    Heartbeat = 4,
+    ListRange = 5,
 }
 
 #[cfg(test)]

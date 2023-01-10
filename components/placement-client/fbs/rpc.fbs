@@ -1,0 +1,7 @@
+namespace Elastic.Store;
+
+table ListRange {
+    partition_id: int64;
+}
+
+root_type ListRange;

@@ -36,7 +36,7 @@ thiserror = "1.0"
 clap = { version = "4.0", features = ["derive"] }
 num_enum = "0.5"
 
-flatbuffers = "22.10"
+flatbuffers = { version = "22" }
 
 nix = "0.26"
 prometheus = "0.13"
@@ -60,3 +60,5 @@ uuid = { version = "1.2", features = [
 ] }
 mockall = "0.11"
 cargo-llvm-cov = "0.5"
+
+flatc-rust = { version = "0.2" }

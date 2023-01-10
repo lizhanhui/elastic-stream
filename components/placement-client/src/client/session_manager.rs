@@ -7,7 +7,7 @@ use local_sync::{mpsc::unbounded, oneshot};
 use monoio::time::Instant;
 use slog::{debug, error, info, trace, warn, Logger};
 
-use crate::error::ClientError;
+use crate::{client::response::Status, error::ClientError};
 
 use super::{
     config,
@@ -214,8 +214,11 @@ impl SessionManager {
                         }
                     } else {
                         error!(self.log, "No endpoints available to connect.");
+                        let response = response::Response::ListRange {
+                            status: Status::Unavailable,
+                        };
                         response_observer
-                            .send(response::Response::ListRange)
+                            .send(response)
                             .unwrap_or_else(|_response| {
                                 warn!(self.log, "Failed to write response to `Client`");
                             });

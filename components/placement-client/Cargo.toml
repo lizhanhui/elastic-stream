@@ -17,7 +17,7 @@ thiserror = { workspace = true }
 pin-project = { workspace = true }
 futures = { workspace = true }
 async-channel = { workspace = true }
-
+flatbuffers = { workspace = true }
 
 [dev-dependencies]
 slog-async =  { workspace = true }
@@ -25,3 +25,6 @@ slog-term =  { workspace = true }
 mockall = { workspace = true }
 util = { path = "../util" }
 cargo-llvm-cov = { workspace = true }
+
+[build-dependencies]
+flatc-rust = { workspace = true }

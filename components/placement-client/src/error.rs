@@ -24,6 +24,12 @@ pub enum ClientError {
 
     #[error("Channel `{0}` is half closed")]
     ChannelClosing(String),
+
+    #[error("Server internal error")]
+    ServerInternal,
+
+    #[error("Client internal error")]
+    ClientInternal,
 }
 
 #[derive(Debug, Error)]

@@ -25,6 +25,8 @@ impl ServerCall {
             OperationCode::Publish => {
                 self.do_publish().await;
             }
+            OperationCode::Heartbeat => {}
+            OperationCode::ListRange => {}
         }
     }
 
