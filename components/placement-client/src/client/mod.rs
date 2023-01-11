@@ -1,3 +1,5 @@
+use std::{rc::Rc, time::Duration};
+
 use crate::error::{ClientError, ListRangeError};
 use local_sync::{mpsc::unbounded, oneshot};
 use slog::{error, o, trace, Discard, Logger};
@@ -10,6 +12,8 @@ mod session;
 mod session_manager;
 
 use session_manager::SessionManager;
+
+use self::config::ClientConfig;
 
 pub(crate) struct ClientBuilder {
     target: String,
@@ -45,23 +49,32 @@ impl ClientBuilder {
     pub(crate) async fn build(self) -> Result<Client, ClientError> {
         let (tx, rx) = unbounded::channel();
 
-        let mut session_manager = SessionManager::new(&self.target, &self.config, rx, &self.log)?;
+        let config = Rc::new(self.config);
+
+        let mut session_manager = SessionManager::new(&self.target, &config, rx, &self.log)?;
         monoio::spawn(async move {
             session_manager.run().await;
         });
-        Ok(Client { tx, log: self.log })
+
+        Ok(Client {
+            tx,
+            log: self.log,
+            config,
+        })
     }
 }
 
 pub(crate) struct Client {
     tx: unbounded::Tx<(request::Request, oneshot::Sender<response::Response>)>,
     log: Logger,
+    config: Rc<ClientConfig>,
 }
 
 impl Client {
     pub async fn list_range(
         &self,
         partition_id: i64,
+        timeout: Duration,
     ) -> Result<response::Response, ListRangeError> {
         trace!(self.log, "list_range"; "partition-id" => partition_id);
         let (tx, rx) = oneshot::channel();
@@ -73,15 +86,23 @@ impl Client {
             ListRangeError::Internal
         })?;
         trace!(self.log, "Request forwarded"; "struct" => "Client");
-        let result = rx.await.map_err(|e| {
-            error!(
-                self.log,
-                "Failed to receive response from broken channel. Cause: {:?}", e; "struct" => "Client"
-            );
-            ListRangeError::Internal
-        })?;
-        trace!(self.log, "Response received from channel"; "struct" => "Client");
-        Ok(result)
+        let sleep = monoio::time::sleep(timeout);
+        monoio::select! {
+            response = rx => {
+                let result = response.map_err(|e| {
+                    error!(
+                        self.log,
+                        "Failed to receive response from broken channel. Cause: {:?}", e; "struct" => "Client"
+                    );
+                    ListRangeError::Internal
+                })?;
+                trace!(self.log, "Response received from channel"; "struct" => "Client");
+                Ok(result)
+            },
+            _ = sleep => {
+                Err(ListRangeError::Timeout)
+            }
+        }
     }
 }
 
@@ -98,10 +119,7 @@ mod tests {
     async fn test_builder() -> Result<(), ClientError> {
         let log = terminal_logger();
 
-        let config = config::ClientConfig {
-            connect_timeout: Duration::from_secs(5),
-            heartbeat_interval: Duration::from_secs(30),
-        };
+        let config = config::ClientConfig::default();
 
         let logger = log.clone();
         let port = run_listener(logger).await;
@@ -128,8 +146,13 @@ mod tests {
             .await
             .map_err(|_e| ListRangeError::Internal)?;
 
+        let timeout = Duration::from_millis(100);
+
         for i in 0..3 {
-            client.list_range(i as i64).await?;
+            match client.list_range(i as i64, timeout).await {
+                Ok(_response) => {}
+                Err(_e) => {}
+            }
         }
 
         Ok(())

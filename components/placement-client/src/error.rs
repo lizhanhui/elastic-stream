@@ -45,4 +45,7 @@ pub enum SessionError {
 pub enum ListRangeError {
     #[error("Internal client error")]
     Internal,
+
+    #[error("Request Timeout")]
+    Timeout,
 }

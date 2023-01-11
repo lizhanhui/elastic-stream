@@ -18,6 +18,7 @@ pin-project = { workspace = true }
 futures = { workspace = true }
 async-channel = { workspace = true }
 flatbuffers = { workspace = true }
+gethostname = { workspace = true }
 
 [dev-dependencies]
 slog-async =  { workspace = true }

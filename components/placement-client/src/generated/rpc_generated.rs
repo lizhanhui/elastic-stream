@@ -26,6 +26,103 @@ pub mod store {
   extern crate flatbuffers;
   use self::flatbuffers::{EndianScalar, Follow};
 
+pub enum HeartbeatOffset {}
+#[derive(Copy, Clone, PartialEq)]
+
+pub struct Heartbeat<'a> {
+  pub _tab: flatbuffers::Table<'a>,
+}
+
+impl<'a> flatbuffers::Follow<'a> for Heartbeat<'a> {
+  type Inner = Heartbeat<'a>;
+  #[inline]
+  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+    Self { _tab: flatbuffers::Table::new(buf, loc) }
+  }
+}
+
+impl<'a> Heartbeat<'a> {
+  pub const VT_CLIENT_ID: flatbuffers::VOffsetT = 4;
+
+  #[inline]
+  pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
+    Heartbeat { _tab: table }
+  }
+  #[allow(unused_mut)]
+  pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr>(
+    _fbb: &'mut_bldr mut flatbuffers::FlatBufferBuilder<'bldr>,
+    args: &'args HeartbeatArgs<'args>
+  ) -> flatbuffers::WIPOffset<Heartbeat<'bldr>> {
+    let mut builder = HeartbeatBuilder::new(_fbb);
+    if let Some(x) = args.client_id { builder.add_client_id(x); }
+    builder.finish()
+  }
+
+
+  #[inline]
+  pub fn client_id(&self) -> Option<&'a str> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(Heartbeat::VT_CLIENT_ID, None)}
+  }
+}
+
+impl flatbuffers::Verifiable for Heartbeat<'_> {
+  #[inline]
+  fn run_verifier(
+    v: &mut flatbuffers::Verifier, pos: usize
+  ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
+    use self::flatbuffers::Verifiable;
+    v.visit_table(pos)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("client_id", Self::VT_CLIENT_ID, false)?
+     .finish();
+    Ok(())
+  }
+}
+pub struct HeartbeatArgs<'a> {
+    pub client_id: Option<flatbuffers::WIPOffset<&'a str>>,
+}
+impl<'a> Default for HeartbeatArgs<'a> {
+  #[inline]
+  fn default() -> Self {
+    HeartbeatArgs {
+      client_id: None,
+    }
+  }
+}
+
+pub struct HeartbeatBuilder<'a: 'b, 'b> {
+  fbb_: &'b mut flatbuffers::FlatBufferBuilder<'a>,
+  start_: flatbuffers::WIPOffset<flatbuffers::TableUnfinishedWIPOffset>,
+}
+impl<'a: 'b, 'b> HeartbeatBuilder<'a, 'b> {
+  #[inline]
+  pub fn add_client_id(&mut self, client_id: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Heartbeat::VT_CLIENT_ID, client_id);
+  }
+  #[inline]
+  pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a>) -> HeartbeatBuilder<'a, 'b> {
+    let start = _fbb.start_table();
+    HeartbeatBuilder {
+      fbb_: _fbb,
+      start_: start,
+    }
+  }
+  #[inline]
+  pub fn finish(self) -> flatbuffers::WIPOffset<Heartbeat<'a>> {
+    let o = self.fbb_.end_table(self.start_);
+    flatbuffers::WIPOffset::new(o.value())
+  }
+}
+
+impl core::fmt::Debug for Heartbeat<'_> {
+  fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+    let mut ds = f.debug_struct("Heartbeat");
+      ds.field("client_id", &self.client_id());
+      ds.finish()
+  }
+}
 pub enum ListRangeOffset {}
 #[derive(Copy, Clone, PartialEq)]
 

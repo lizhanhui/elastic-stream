@@ -460,9 +460,8 @@ dependencies = [
 
 [[package]]
 name = "flatbuffers"
-version = "22.10.26"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d2ba319fc85cd1d8994d42c95b13cdf051786b35f9e401b1c03bff1c67efd899"
+version = "23.1.4"
+source = "git+https://github.com/google/flatbuffers.git?tag=v23.1.4#af9ceabeef1a10c1004e2741f8c0c090ca59e5af"
 dependencies = [
  "bitflags",
  "rustc_version",
@@ -614,6 +613,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c31b6d751ae2c7f11320402d34e41349dd1016f8d5d45e48c4312bc8625af50c"
 dependencies = [
  "byteorder",
+]
+
+[[package]]
+name = "gethostname"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8a329e22866dd78b35d2c639a4a23d7b950aeae300dfd79f4fb19f74055c2404"
+dependencies = [
+ "libc",
+ "windows 0.43.0",
 ]
 
 [[package]]
@@ -947,7 +956,7 @@ dependencies = [
  "pin-project-lite",
  "scoped-tls",
  "socket2",
- "windows",
+ "windows 0.42.0",
 ]
 
 [[package]]
@@ -1172,6 +1181,7 @@ dependencies = [
  "flatbuffers",
  "flatc-rust",
  "futures",
+ "gethostname",
  "local-sync",
  "mockall",
  "model",
@@ -1829,6 +1839,7 @@ checksum = "84a22b9f218b40614adcb3f4ff08b703773ad44fa9423e4e0d346d5db86e4ebc"
 name = "util"
 version = "0.1.0"
 dependencies = [
+ "bytes",
  "local-sync",
  "monoio",
  "slog",
@@ -1917,6 +1928,21 @@ name = "windows"
 version = "0.42.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0286ba339aa753e70765d521bb0242cc48e1194562bfa2a2ad7ac8a6de28f5d5"
+dependencies = [
+ "windows_aarch64_gnullvm",
+ "windows_aarch64_msvc",
+ "windows_i686_gnu",
+ "windows_i686_msvc",
+ "windows_x86_64_gnu",
+ "windows_x86_64_gnullvm",
+ "windows_x86_64_msvc",
+]
+
+[[package]]
+name = "windows"
+version = "0.43.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "04662ed0e3e5630dfa9b26e4cb823b817f1a9addda855d973a9458c236556244"
 dependencies = [
  "windows_aarch64_gnullvm",
  "windows_aarch64_msvc",

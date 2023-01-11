@@ -19,7 +19,7 @@ use super::{
 
 pub struct SessionManager {
     /// Configuration for the transport layer.
-    config: config::ClientConfig,
+    config: Rc<config::ClientConfig>,
 
     /// Receiver of SubmitRequestChannel.
     /// It is used by `Client` to submit requst to `SessionManager`. Requests are expected to be converted into `Command`s and then
@@ -43,7 +43,7 @@ pub struct SessionManager {
 impl SessionManager {
     pub(crate) fn new(
         target: &str,
-        config: &config::ClientConfig,
+        config: &Rc<config::ClientConfig>,
         rx: unbounded::Rx<(request::Request, oneshot::Sender<response::Response>)>,
         log: &Logger,
     ) -> Result<Self, ClientError> {
@@ -56,13 +56,14 @@ impl SessionManager {
             let sessions = Rc::clone(&sessions);
             let timeout = config.connect_timeout;
             let logger = log.clone();
-
+            let _config = Rc::clone(config);
             monoio::spawn(async move {
+                let config = _config;
                 loop {
                     match session_mgr_rx.recv().await {
                         Some((addr, tx)) => {
                             let sessions = unsafe { &mut *sessions.get() };
-                            match SessionManager::connect(&addr, timeout, &logger).await {
+                            match SessionManager::connect(&addr, timeout, &config, &logger).await {
                                 Ok(session) => {
                                     sessions.insert(addr.clone(), session);
                                     match tx.send(true) {
@@ -146,7 +147,7 @@ impl SessionManager {
         let endpoints = Endpoints::from_str(target)?;
 
         Ok(Self {
-            config: config.clone(),
+            config: Rc::clone(config),
             rx,
             log: log.clone(),
             endpoints,
@@ -228,12 +229,35 @@ impl SessionManager {
             }
         }
 
-        let mut retry = 0;
+        let mut attempt = 0;
         for (addr, session) in sessions.iter_mut() {
-            retry += 1;
-            if retry > 3 {
+            attempt += 1;
+            if attempt > self.config.max_attempt {
+                match request {
+                    request::Request::Heartbeat { .. } => {}
+                    request::Request::ListRange { .. } => {
+                        let response = response::Response::ListRange {
+                            status: Status::Unavailable,
+                        };
+                        match response_observer.send(response) {
+                            Ok(_) => {}
+                            Err(e) => {
+                                warn!(
+                                    self.log,
+                                    "Failed to propogate error response. Cause: {:?}", e
+                                );
+                            }
+                        }
+                    }
+                }
                 break;
             }
+            trace!(
+                self.log,
+                "Attempt to write {} request for the {} time",
+                request,
+                attempt
+            );
             response_observer = match session.write(&request, response_observer).await {
                 Ok(_) => {
                     trace!(self.log, "Request[`{request:?}`] forwarded to {addr:?}");
@@ -260,6 +284,7 @@ impl SessionManager {
     async fn connect(
         addr: &SocketAddr,
         timeout: Duration,
+        config: &Rc<config::ClientConfig>,
         log: &Logger,
     ) -> Result<Session, ClientError> {
         trace!(log, "Establishing connection to {:?}", addr);
@@ -298,6 +323,6 @@ impl SessionManager {
             }
         };
 
-        Ok(Session::new(stream, &endpoint, log))
+        Ok(Session::new(stream, &endpoint, config, log))
     }
 }

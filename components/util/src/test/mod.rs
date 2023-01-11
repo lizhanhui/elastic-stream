@@ -1,8 +1,12 @@
 //! Util functions for tests.
 //!
 
+use bytes::BytesMut;
 use local_sync::oneshot;
-use monoio::net::TcpListener;
+use monoio::{
+    io::{AsyncReadRent, AsyncWriteRent},
+    net::{TcpListener, TcpStream},
+};
 use slog::{debug, info, o, Drain, Logger};
 use slog_async::OverflowStrategy;
 
@@ -18,8 +22,20 @@ pub async fn run_listener(logger: Logger) -> u16 {
         debug!(logger, "Listening {}", port);
         tx.send(port).unwrap();
         loop {
-            if let Ok((_conn, sock_addr)) = listener.accept().await {
+            if let Ok((mut conn, sock_addr)) = listener.accept().await {
                 debug!(logger, "Accepted a connection from {:?}", sock_addr);
+                monoio::spawn(async move {
+                    let mut buf = Some(BytesMut::new());
+                    loop {
+                        let (res, buf_r) = conn.read(buf.take().unwrap()).await;
+                        if let Ok(len) = res {
+                            let (res, buf_w) = conn.write(buf_r).await;
+                            buf.replace(buf_w);
+                        } else {
+                            break;
+                        }
+                    }
+                });
             } else {
                 break;
             }
