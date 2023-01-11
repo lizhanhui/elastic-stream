@@ -24,11 +24,14 @@ pub async fn run_listener(logger: Logger) -> u16 {
         loop {
             if let Ok((mut conn, sock_addr)) = listener.accept().await {
                 debug!(logger, "Accepted a connection from {:?}", sock_addr);
+                let log = logger.clone();
                 monoio::spawn(async move {
-                    let mut buf = Some(BytesMut::new());
+                    let mut buf = Some(BytesMut::with_capacity(128));
+                    let logger = log.clone();
                     loop {
                         let (res, buf_r) = conn.read(buf.take().unwrap()).await;
                         if let Ok(len) = res {
+                            info!(logger, "Read {} bytes", len);
                             let (res, buf_w) = conn.write(buf_r).await;
                             buf.replace(buf_w);
                         } else {

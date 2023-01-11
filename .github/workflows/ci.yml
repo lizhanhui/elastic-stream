@@ -17,6 +17,14 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
     - uses: actions/checkout@v3
+    - name: Install Flatbuffers
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y unzip
+        wget -O flatc.zip https://github.com/google/flatbuffers/releases/download/v23.1.4/Linux.flatc.binary.g++-10.zip
+        unzip flatc.zip
+        sudo mv flatc /usr/bin/
+        rm flatc.zip
     - name: Build
       run: cargo build --verbose
     - name: Run tests
