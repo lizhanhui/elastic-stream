@@ -27,7 +27,7 @@ jobs:
           wget -O flatc.zip https://github.com/google/flatbuffers/releases/download/v23.1.4/MacIntel.flatc.binary.zip
         fi
         unzip flatc.zip
-        sudo mv flatc /usr/bin/
+        sudo mv flatc /usr/local/bin/
         rm flatc.zip
     - name: Build
       run: cargo build --verbose
