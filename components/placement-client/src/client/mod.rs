@@ -149,10 +149,7 @@ mod tests {
         let timeout = Duration::from_millis(100);
 
         for i in 0..3 {
-            match client.list_range(i as i64, timeout).await {
-                Ok(_response) => {}
-                Err(_e) => {}
-            }
+            client.list_range(i as i64, timeout).await.unwrap();
         }
 
         Ok(())

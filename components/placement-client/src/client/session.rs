@@ -106,7 +106,7 @@ impl Session {
                         inflight_requests.insert(frame.stream_id, response_observer);
                         trace!(
                             self.log,
-                            "Write `ListRange` request to {}",
+                            "Write `Heartbeat` request to {}",
                             self.writer.peer_address()
                         );
                     }
@@ -213,11 +213,34 @@ impl Session {
         response: Frame,
         log: &Logger,
     ) {
-        match inflights.remove(&response.stream_id) {
+        let stream_id = response.stream_id;
+        trace!(
+            log,
+            "Received {} response for stream-id={}",
+            response.operation_code,
+            stream_id
+        );
+
+        match inflights.remove(&stream_id) {
             Some(sender) => {
-                let res = response::Response::ListRange {
-                    status: Status::Internal,
+                let res = match response.operation_code {
+                    OperationCode::Heartbeat => {
+                        trace!(log, "Mock parsing {} response", response.operation_code);
+                        response::Response::Heartbeat { status: Status::OK }
+                    }
+                    OperationCode::ListRange => {
+                        trace!(log, "Mock parsing {} response", response.operation_code);
+                        response::Response::ListRange {
+                            status: Status::OK,
+                            ranges: None,
+                        }
+                    }
+                    _ => {
+                        warn!(log, "Unsupported operation {}", response.operation_code);
+                        return;
+                    }
                 };
+
                 sender.send(res).unwrap_or_else(|_resp| {
                     warn!(log, "Failed to forward response to Client");
                 });
@@ -235,10 +258,11 @@ impl Session {
 impl Drop for Session {
     fn drop(&mut self) {
         let requests = unsafe { &mut *self.inflight_requests.get() };
-        let aborted_response = response::Response::ListRange {
-            status: Status::Aborted,
-        };
         requests.drain().for_each(|(_stream_id, sender)| {
+            let aborted_response = response::Response::ListRange {
+                status: Status::Aborted,
+                ranges: None,
+            };
             sender.send(aborted_response).unwrap_or_else(|_response| {
                 warn!(self.log, "Failed to notify connection reset");
             });
@@ -282,9 +306,8 @@ mod tests {
         let mut session = Session::new(stream, &target, &config, &logger);
 
         let result = session.heartbeat().await;
-        // let response = result.unwrap().await;
-        // assert_eq!(true, response.is_ok());
-
+        let response = result.unwrap().await;
+        assert_eq!(true, response.is_ok());
         Ok(())
     }
 }

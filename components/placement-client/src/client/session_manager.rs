@@ -217,6 +217,7 @@ impl SessionManager {
                         error!(self.log, "No endpoints available to connect.");
                         let response = response::Response::ListRange {
                             status: Status::Unavailable,
+                            ranges: None,
                         };
                         response_observer
                             .send(response)
@@ -238,6 +239,7 @@ impl SessionManager {
                     request::Request::ListRange { .. } => {
                         let response = response::Response::ListRange {
                             status: Status::Unavailable,
+                            ranges: None,
                         };
                         match response_observer.send(response) {
                             Ok(_) => {}

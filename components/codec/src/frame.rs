@@ -4,6 +4,7 @@ use crc::Crc;
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 use slog::{trace, warn, Logger};
 use std::cell::RefCell;
+use std::fmt::{self, Display, Formatter};
 use std::io::Cursor;
 
 use crate::error::FrameError;
@@ -299,6 +300,31 @@ pub enum OperationCode {
     Publish = 3,
     Heartbeat = 4,
     ListRange = 5,
+}
+
+impl Display for OperationCode {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match *self {
+            OperationCode::Unknown => {
+                write!(f, "Unknown")
+            }
+            OperationCode::Ping => {
+                write!(f, "Ping")
+            }
+            OperationCode::GoAway => {
+                write!(f, "GoAway")
+            }
+            OperationCode::Publish => {
+                write!(f, "Publish")
+            }
+            OperationCode::Heartbeat => {
+                write!(f, "Heartbeat")
+            }
+            OperationCode::ListRange => {
+                write!(f, "ListRange")
+            }
+        }
+    }
 }
 
 #[cfg(test)]

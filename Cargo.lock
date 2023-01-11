@@ -1840,11 +1840,14 @@ name = "util"
 version = "0.1.0"
 dependencies = [
  "bytes",
+ "codec",
  "local-sync",
+ "model",
  "monoio",
  "slog",
  "slog-async",
  "slog-term",
+ "transport",
 ]
 
 [[package]]

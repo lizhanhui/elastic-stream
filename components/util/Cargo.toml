@@ -12,3 +12,6 @@ slog = { workspace = true }
 slog-async =  { workspace = true }
 slog-term =  { workspace = true }
 bytes = { workspace = true }
+transport = { path = "../transport" }
+codec = { path = "../codec" }
+model = { path = "../model" }

@@ -1,3 +1,5 @@
+use model::range::PartitionRange;
+
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum Status {
     OK,
@@ -18,7 +20,13 @@ pub(crate) enum Status {
     Unauthenticated,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub(crate) enum Response {
-    ListRange { status: Status },
+    Heartbeat {
+        status: Status,
+    },
+    ListRange {
+        status: Status,
+        ranges: Option<Vec<PartitionRange>>,
+    },
 }
