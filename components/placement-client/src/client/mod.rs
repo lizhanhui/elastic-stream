@@ -2,7 +2,8 @@ use std::{rc::Rc, time::Duration};
 
 use crate::error::{ClientError, ListRangeError};
 use local_sync::{mpsc::unbounded, oneshot};
-use slog::{error, o, trace, Discard, Logger};
+use monoio::time::{self, error::Elapsed};
+use slog::{error, o, trace, warn, Discard, Logger};
 
 mod config;
 mod naming;
@@ -86,23 +87,17 @@ impl Client {
             ListRangeError::Internal
         })?;
         trace!(self.log, "Request forwarded"; "struct" => "Client");
-        let sleep = monoio::time::sleep(timeout);
-        monoio::select! {
-            response = rx => {
-                let result = response.map_err(|e| {
-                    error!(
-                        self.log,
-                        "Failed to receive response from broken channel. Cause: {:?}", e; "struct" => "Client"
-                    );
-                    ListRangeError::Internal
-                })?;
-                trace!(self.log, "Response received from channel"; "struct" => "Client");
-                Ok(result)
-            },
-            _ = sleep => {
-                Err(ListRangeError::Timeout)
-            }
-        }
+
+        time::timeout(timeout, rx).await.map_err(|elapsed| {
+            warn!(self.log, "Timeout when list range. {}", elapsed);
+            ListRangeError::Timeout
+        })?.map_err(|e| {
+            error!(
+                self.log,
+                "Failed to receive response from broken channel. Cause: {:?}", e; "struct" => "Client"
+            );
+            ListRangeError::Internal
+        })
     }
 }
 

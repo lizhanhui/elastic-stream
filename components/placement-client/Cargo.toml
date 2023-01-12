@@ -19,6 +19,7 @@ futures = { workspace = true }
 async-channel = { workspace = true }
 flatbuffers = { workspace = true }
 gethostname = { workspace = true }
+ordinal = { workspace = true }
 
 [dev-dependencies]
 slog-async =  { workspace = true }

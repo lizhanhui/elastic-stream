@@ -64,3 +64,5 @@ cargo-llvm-cov = "0.5"
 flatc-rust = { version = "0.2" }
 
 gethostname = "0.4"
+
+ordinal = "0.3"

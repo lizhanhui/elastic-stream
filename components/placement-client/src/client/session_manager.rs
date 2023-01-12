@@ -258,7 +258,7 @@ impl SessionManager {
                 self.log,
                 "Attempt to write {} request for the {} time",
                 request,
-                attempt
+                ordinal::Ordinal(attempt)
             );
             response_observer = match session.write(&request, response_observer).await {
                 Ok(_) => {

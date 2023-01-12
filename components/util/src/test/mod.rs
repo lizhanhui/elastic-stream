@@ -4,7 +4,7 @@
 use codec::frame::OperationCode;
 use local_sync::oneshot;
 use monoio::{io::Splitable, net::TcpListener};
-use slog::{debug, error, info, o, Drain, Logger};
+use slog::{debug, error, info, o, warn, Drain, Logger};
 use slog_async::OverflowStrategy;
 use transport::channel::{ChannelReader, ChannelWriter};
 
@@ -17,11 +17,14 @@ pub async fn run_listener(logger: Logger) -> u16 {
         // Binding to "[::]:0", the any address for IPv6, will also listen for IPv4.
         let listener = TcpListener::bind("[::]:0").unwrap();
         let port = listener.local_addr().unwrap().port();
-        debug!(logger, "Listening {}", port);
+        debug!(logger, "TestServer is up, listening {}", port);
         tx.send(port).unwrap();
         loop {
             if let Ok((conn, sock_addr)) = listener.accept().await {
-                debug!(logger, "Accepted a connection from {:?}", sock_addr);
+                debug!(
+                    logger,
+                    "TestServer accepted a connection from {:?}", sock_addr
+                );
                 let log = logger.clone();
 
                 monoio::spawn(async move {
@@ -34,21 +37,24 @@ pub async fn run_listener(logger: Logger) -> u16 {
                     loop {
                         if let Ok(frame) = reader.read_frame().await {
                             if let Some(frame) = frame {
-                                info!(logger, "Process `{}` request", frame.operation_code);
+                                info!(
+                                    logger,
+                                    "TestServer is processing a `{}` request", frame.operation_code
+                                );
                                 match frame.operation_code {
                                     OperationCode::Heartbeat => {
                                         match writer.write_frame(&frame).await {
                                             Ok(_) => {
                                                 info!(
                                                     logger,
-                                                    "Write `{}` request back directly",
+                                                    "TestServer writes the `{}` request back directly",
                                                     frame.operation_code
                                                 );
                                             }
                                             Err(e) => {
                                                 error!(
                                                     logger,
-                                                    "Failed to process `{}`. Cause: {:?}",
+                                                    "TestServer failed to process `{}`. Cause: {:?}",
                                                     frame.operation_code,
                                                     e
                                                 );
@@ -60,14 +66,14 @@ pub async fn run_listener(logger: Logger) -> u16 {
                                             Ok(_) => {
                                                 info!(
                                                     logger,
-                                                    "Write `{}` request back directly",
+                                                    "TestServer writes the `{}` request back directly",
                                                     frame.operation_code
                                                 );
                                             }
                                             Err(e) => {
                                                 error!(
                                                     logger,
-                                                    "Failed to process `{}`. Cause: {:?}",
+                                                    "TestServer failed to process `{}`. Cause: {:?}",
                                                     frame.operation_code,
                                                     e
                                                 );
@@ -77,11 +83,14 @@ pub async fn run_listener(logger: Logger) -> u16 {
                                     _ => {}
                                 }
                             } else {
-                                // Clean connection reset.
+                                debug!(logger, "Connection from {} is closed", addr);
                                 break;
                             }
                         } else {
-                            // Connection sees dirty reset.
+                            warn!(
+                                logger,
+                                "Connection from {} is reset, dropping some buffered data", addr
+                            );
                             break;
                         }
                     }
@@ -90,7 +99,7 @@ pub async fn run_listener(logger: Logger) -> u16 {
                 break;
             }
         }
-        info!(logger, "Listener quit");
+        info!(logger, "TestServer shut down OK");
     });
     rx.await.unwrap()
 }
