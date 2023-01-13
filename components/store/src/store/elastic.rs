@@ -229,7 +229,7 @@ impl ElasticStore {
 }
 
 impl Store for ElasticStore {
-    fn put(&self, _options: api::WriteOptions, _record: api::Record) -> api::PutFuture {
+    fn put(&self, _options: api::WriteOptions, _record: api::Record) -> api::Put {
         // api::PutFuture {}
 
         let sq = self.submission_queue();
@@ -256,7 +256,7 @@ impl Store for ElasticStore {
                 .map_err(|e| PutError::Internal)
         };
 
-        api::PutFuture {}
+        api::Put {}
 
         /*
         match rx.await {
@@ -303,16 +303,11 @@ impl Store for ElasticStore {
         */
     }
 
-    fn get(&self, _options: api::ReadOptions, _paritition_id: u64, _offset: u64) -> api::GetFuture {
+    fn get(&self, _options: api::ReadOptions, _paritition_id: u64, _offset: u64) -> api::Get {
         todo!()
     }
 
-    fn tail(
-        &self,
-        _options: api::ReadOptions,
-        _paritition_id: u64,
-        _start: u64,
-    ) -> api::TailingStream {
+    fn tail(&self, _options: api::ReadOptions, _paritition_id: u64, _start: u64) -> api::Tail {
         todo!()
     }
 }

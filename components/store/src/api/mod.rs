@@ -39,9 +39,9 @@ pub struct Record {
     pub buffer: bytes::Bytes,
 }
 
-pub struct PutFuture {}
+pub struct Put {}
 
-impl Future for PutFuture {
+impl Future for Put {
     type Output = Result<PutResult, PutError>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
@@ -49,9 +49,9 @@ impl Future for PutFuture {
     }
 }
 
-pub struct GetFuture {}
+pub struct Get {}
 
-impl Future for GetFuture {
+impl Future for Get {
     type Output = Result<Record, ReadError>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
@@ -59,9 +59,9 @@ impl Future for GetFuture {
     }
 }
 
-pub struct TailingStream {}
+pub struct Tail {}
 
-impl Stream for TailingStream {
+impl Stream for Tail {
     type Item = Record;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
@@ -70,11 +70,11 @@ impl Stream for TailingStream {
 }
 
 pub trait Store {
-    fn put(&self, options: WriteOptions, record: Record) -> PutFuture;
+    fn put(&self, options: WriteOptions, record: Record) -> Put;
 
-    fn get(&self, options: ReadOptions, paritition_id: u64, offset: u64) -> GetFuture;
+    fn get(&self, options: ReadOptions, paritition_id: u64, offset: u64) -> Get;
 
-    fn tail(&self, options: ReadOptions, paritition_id: u64, start: u64) -> TailingStream;
+    fn tail(&self, options: ReadOptions, paritition_id: u64, start: u64) -> Tail;
 }
 
 pub struct AppendRecordRequest {
