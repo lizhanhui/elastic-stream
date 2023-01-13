@@ -12,7 +12,7 @@ use thiserror::Error;
 use crate::error::StoreError;
 
 #[derive(Debug)]
-pub struct AppendResult {}
+pub struct PutResult {}
 
 #[derive(Debug, Default)]
 pub struct WriteOptions {}
@@ -21,20 +21,31 @@ pub struct WriteOptions {}
 pub struct ReadOptions {}
 
 #[derive(Debug, Error)]
-pub enum AppendError {}
+pub enum PutError {
+    #[error("Failed to send PutRequest")]
+    SubmissionQueue,
+
+    #[error("Recv from oneshot channel failed")]
+    ChannelRecv,
+
+    #[error("Internal error")]
+    Internal,
+}
 
 #[derive(Debug, Error)]
 pub enum ReadError {}
 
-pub struct Record {}
+pub struct Record {
+    pub buffer: bytes::Bytes,
+}
 
 pub struct PutFuture {}
 
 impl Future for PutFuture {
-    type Output = Result<AppendResult, AppendError>;
+    type Output = Result<PutResult, PutError>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        Poll::Ready(Ok(AppendResult {}))
+        Poll::Ready(Ok(PutResult {}))
     }
 }
 
@@ -68,7 +79,7 @@ pub trait Store {
 
 pub struct AppendRecordRequest {
     pub buf: Bytes,
-    pub sender: Sender<Result<AppendResult, StoreError>>,
+    pub sender: Sender<Result<PutResult, StoreError>>,
 }
 
 pub enum Command {

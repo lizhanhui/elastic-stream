@@ -66,7 +66,9 @@ impl ServerCall {
 
     async fn do_publish(&self) -> Frame {
         // TODO: convert self.request to Record.
-        let record = Record {};
+        let record = Record {
+            buffer: bytes::Bytes::new(),
+        };
 
         let options = WriteOptions::default();
 

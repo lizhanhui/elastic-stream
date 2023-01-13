@@ -1,12 +1,16 @@
 use std::{cell::UnsafeCell, fs, os::fd::AsRawFd, path::Path, rc::Rc, time::Duration};
 
-use local_sync::mpsc::bounded::{self, Tx};
+use bytes::BytesMut;
+use local_sync::{
+    mpsc::bounded::{self, Tx},
+    oneshot,
+};
 use monoio::{fs::OpenOptions, time::sleep};
 use nix::unistd::Whence;
 use slog::{debug, error, info, trace, warn, Logger};
 
 use crate::{
-    api::{self, AppendResult, Command, Cursor, Store},
+    api::{self, AppendRecordRequest, Command, Cursor, PutError, PutResult, Store},
     error::StoreError,
 };
 
@@ -161,7 +165,7 @@ impl ElasticStore {
                                 if !self.cursor_commit(pos, len) {
                                     // TODO put [pos, pos + len] to the binary search tree
                                 }
-                                Ok(AppendResult {})
+                                Ok(PutResult {})
                             }
                             Err(e) => Err(StoreError::IO(e)),
                         };
@@ -226,80 +230,76 @@ impl ElasticStore {
 
 impl Store for ElasticStore {
     fn put(&self, _options: api::WriteOptions, _record: api::Record) -> api::PutFuture {
-        api::PutFuture {}
+        // api::PutFuture {}
 
-        /*
-        let sq = self.store.submission_queue();
+        let sq = self.submission_queue();
 
         let (tx, rx) = oneshot::channel();
 
-        let mut buf = BytesMut::new();
-        match self.request.encode(&mut buf) {
-            Ok(_) => {
-                debug!(self.logger, "Incoming request is {}bytes", buf.len());
-            }
-            Err(e) => {
-                error!(self.logger, "Failed to encode {:?}", e);
-            }
-        };
-
         let append_request = AppendRecordRequest {
             sender: tx,
-            buf: buf.freeze(),
+            buf: _record.buffer,
         };
 
         let command = Command::Append(append_request);
 
-        match sq.send(command).await {
-            Ok(_) => {}
-            Err(e) => {
+        let fut = async move {
+            sq.send(command).await.map_err(|e| {
                 error!(
                     self.logger,
                     "Failed to pass AppendCommand to store layer {:?}", e
                 );
-            }
+                PutError::SubmissionQueue
+            })?;
+            rx.await
+                .map_err(|e| PutError::ChannelRecv)?
+                .map_err(|e| PutError::Internal)
         };
 
-        match rx.await {
-            Ok(result) => match result {
-                Ok(_append) => {
-                    debug!(self.logger, "Append OK");
-                    let mut header = BytesMut::new();
-                    let text = format!("stream-id={}, response=true", self.request.stream_id);
-                    header.put(text.as_bytes());
-                    let response = Frame {
-                        operation_code: OperationCode::Publish,
-                        flag: 1u8,
-                        stream_id: self.request.stream_id,
-                        header_format: codec::frame::HeaderFormat::FlatBuffer,
-                        header: Some(header.freeze()),
-                        payload: None,
-                    };
+        api::PutFuture {}
 
-                    match self.sender.send(response).await {
-                        Ok(_) => {
-                            debug!(
-                                self.logger,
-                                "PublishResponse[stream-id={}] transferred to channel",
-                                self.request.stream_id
-                            );
-                        }
-                        Err(e) => {
-                            error!(
-                                self.logger,
-                                "Failed to transfer publish-response to channel. Cause: {:?}", e
-                            );
+        /*
+        match rx.await {
+                Ok(result) => match result {
+                    Ok(_append) => {
+                        debug!(self.logger, "Append OK");
+                        let mut header = BytesMut::new();
+                        let text = format!("stream-id={}, response=true", self.request.stream_id);
+                        header.put(text.as_bytes());
+                        let response = Frame {
+                            operation_code: OperationCode::Publish,
+                            flag: 1u8,
+                            stream_id: self.request.stream_id,
+                            header_format: codec::frame::HeaderFormat::FlatBuffer,
+                            header: Some(header.freeze()),
+                            payload: None,
+                        };
+
+                        match self.sender.send(response).await {
+                            Ok(_) => {
+                                debug!(
+                                    self.logger,
+                                    "PublishResponse[stream-id={}] transferred to channel",
+                                    self.request.stream_id
+                                );
+                            }
+                            Err(e) => {
+                                error!(
+                                    self.logger,
+                                    "Failed to transfer publish-response to channel. Cause: {:?}",
+                                    e
+                                );
+                            }
                         }
                     }
-                }
+                    Err(e) => {
+                        error!(self.logger, "Failed to append {:?}", e);
+                    }
+                },
                 Err(e) => {
-                    error!(self.logger, "Failed to append {:?}", e);
+                    error!(self.logger, "Failed to receive for StoreCommand {:?}", e);
                 }
-            },
-            Err(e) => {
-                error!(self.logger, "Failed to receive for StoreCommand {:?}", e);
             }
-        }
         */
     }
 
