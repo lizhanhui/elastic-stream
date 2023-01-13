@@ -16,7 +16,7 @@ use session_manager::SessionManager;
 
 use self::config::ClientConfig;
 
-pub(crate) struct ClientBuilder {
+pub(crate) struct PlacementClientBuilder {
     target: String,
     config: config::ClientConfig,
     log: Logger,
@@ -26,7 +26,7 @@ enum LBPolicy {
     PickFirst,
 }
 
-impl ClientBuilder {
+impl PlacementClientBuilder {
     pub(crate) fn new(target: &str) -> Self {
         let drain = Discard;
         let root = Logger::root(drain, o!());
@@ -121,7 +121,7 @@ mod tests {
         let addr = format!("dns:localhost:{}", port);
         trace!(log, "Target endpoint: `{}`", addr);
 
-        ClientBuilder::new(&addr)
+        PlacementClientBuilder::new(&addr)
             .set_log(log)
             .set_config(config)
             .build()
@@ -135,7 +135,7 @@ mod tests {
 
         let port = run_listener(log.clone()).await;
         let addr = format!("dns:localhost:{}", port);
-        let client = ClientBuilder::new(&addr)
+        let client = PlacementClientBuilder::new(&addr)
             .set_log(log)
             .build()
             .await

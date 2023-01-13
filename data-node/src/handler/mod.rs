@@ -5,7 +5,7 @@ use bytes::{BufMut, BytesMut};
 use codec::frame::{Frame, OperationCode};
 use local_sync::oneshot;
 use slog::{debug, error, warn, Logger};
-use store::api::{AppendRecordRequest, Command, Store};
+use store::api::{AppendRecordRequest, Command, Record, Store, WriteOptions};
 
 pub struct ServerCall {
     pub(crate) request: Frame,
@@ -64,77 +64,17 @@ impl ServerCall {
         };
     }
 
-    async fn do_publish(&self) {
-        let sq = self.store.submission_queue();
+    async fn do_publish(&self) -> Frame {
+        // TODO: convert self.request to Record.
+        let record = Record {};
 
-        let (tx, rx) = oneshot::channel();
+        let options = WriteOptions::default();
 
-        let mut buf = BytesMut::new();
-        match self.request.encode(&mut buf) {
-            Ok(_) => {
-                debug!(self.logger, "Incoming request is {}bytes", buf.len());
-            }
-            Err(e) => {
-                error!(self.logger, "Failed to encode {:?}", e);
-            }
-        };
-
-        let append_request = AppendRecordRequest {
-            sender: tx,
-            buf: buf.freeze(),
-        };
-
-        let command = Command::Append(append_request);
-
-        match sq.send(command).await {
-            Ok(_) => {}
-            Err(e) => {
-                error!(
-                    self.logger,
-                    "Failed to pass AppendCommand to store layer {:?}", e
-                );
-            }
-        };
-
-        match rx.await {
-            Ok(result) => match result {
-                Ok(_append) => {
-                    debug!(self.logger, "Append OK");
-                    let mut header = BytesMut::new();
-                    let text = format!("stream-id={}, response=true", self.request.stream_id);
-                    header.put(text.as_bytes());
-                    let response = Frame {
-                        operation_code: OperationCode::Publish,
-                        flag: 1u8,
-                        stream_id: self.request.stream_id,
-                        header_format: codec::frame::HeaderFormat::FlatBuffer,
-                        header: Some(header.freeze()),
-                        payload: None,
-                    };
-
-                    match self.sender.send(response).await {
-                        Ok(_) => {
-                            debug!(
-                                self.logger,
-                                "PublishResponse[stream-id={}] transferred to channel",
-                                self.request.stream_id
-                            );
-                        }
-                        Err(e) => {
-                            error!(
-                                self.logger,
-                                "Failed to transfer publish-response to channel. Cause: {:?}", e
-                            );
-                        }
-                    }
-                }
-                Err(e) => {
-                    error!(self.logger, "Failed to append {:?}", e);
-                }
-            },
-            Err(e) => {
-                error!(self.logger, "Failed to receive for StoreCommand {:?}", e);
-            }
+        match self.store.put(options, record).await {
+            Ok(append_result) => {}
+            Err(e) => {}
         }
+
+        Frame::new(OperationCode::Publish)
     }
 }
