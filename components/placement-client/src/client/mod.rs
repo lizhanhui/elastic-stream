@@ -47,7 +47,7 @@ impl ClientBuilder {
         self
     }
 
-    pub(crate) async fn build(self) -> Result<Client, ClientError> {
+    pub(crate) async fn build(self) -> Result<PlacementClient, ClientError> {
         let (tx, rx) = unbounded::channel();
 
         let config = Rc::new(self.config);
@@ -57,7 +57,7 @@ impl ClientBuilder {
             session_manager.run().await;
         });
 
-        Ok(Client {
+        Ok(PlacementClient {
             tx,
             log: self.log,
             config,
@@ -65,13 +65,13 @@ impl ClientBuilder {
     }
 }
 
-pub(crate) struct Client {
+pub(crate) struct PlacementClient {
     tx: unbounded::Tx<(request::Request, oneshot::Sender<response::Response>)>,
     log: Logger,
     config: Rc<ClientConfig>,
 }
 
-impl Client {
+impl PlacementClient {
     pub async fn list_range(
         &self,
         partition_id: i64,

@@ -340,6 +340,7 @@ dependencies = [
  "monoio",
  "num_cpus",
  "num_enum",
+ "placement-client",
  "pprof",
  "service",
  "slog",
