@@ -12,11 +12,8 @@ use slog::{debug, error, info, o, warn, Drain, Logger};
 use slog_async::Async;
 use slog_term::{CompactFormat, TermDecorator};
 use store::{
-    api::Store,
-    store::{
-        elastic::ElasticStore,
-        option::{StoreOptions, StorePath},
-    },
+    elastic::ElasticStore,
+    option::{StoreOptions, StorePath},
 };
 use transport::channel::{ChannelReader, ChannelWriter};
 
@@ -27,7 +24,7 @@ struct NodeConfig {
 
 struct Node {
     config: NodeConfig,
-    store: Option<Rc<dyn Store>>,
+    store: Option<Rc<ElasticStore>>,
     logger: Logger,
 }
 
@@ -137,7 +134,7 @@ impl Node {
         Ok(())
     }
 
-    async fn process(store: Rc<dyn Store>, stream: TcpStream, logger: Logger) {
+    async fn process(store: Rc<ElasticStore>, stream: TcpStream, logger: Logger) {
         let peer_address = match stream.peer_addr() {
             Ok(addr) => addr.to_string(),
             Err(_e) => "Unknown".to_owned(),

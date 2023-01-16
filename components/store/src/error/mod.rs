@@ -14,3 +14,18 @@ pub enum StoreError {
     #[error("Internal IO error")]
     IO(#[from] std::io::Error),
 }
+
+#[derive(Debug, Error)]
+pub enum ReadError {}
+
+#[derive(Debug, Error)]
+pub enum PutError {
+    #[error("Failed to send PutRequest")]
+    SubmissionQueue,
+
+    #[error("Recv from oneshot channel failed")]
+    ChannelRecv,
+
+    #[error("Internal error")]
+    Internal,
+}

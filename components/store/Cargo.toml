@@ -17,6 +17,7 @@ slog =  { workspace = true }
 local-sync = { workspace = true }
 nix = { workspace = true }
 prometheus = { workspace = true }
+pin-project = { workspace = true }
 
 [dev-dependencies]
 slog-async =  { workspace = true }

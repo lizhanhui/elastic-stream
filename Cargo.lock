@@ -1654,6 +1654,7 @@ dependencies = [
  "monoio",
  "monoio-macros",
  "nix 0.26.1",
+ "pin-project",
  "prometheus",
  "rand",
  "slog",

@@ -1,6 +1,6 @@
 use std::{cell::UnsafeCell, fs, os::fd::AsRawFd, path::Path, rc::Rc, time::Duration};
 
-use bytes::BytesMut;
+use futures::Future;
 use local_sync::{
     mpsc::bounded::{self, Tx},
     oneshot,
@@ -10,11 +10,18 @@ use nix::unistd::Whence;
 use slog::{debug, error, info, trace, warn, Logger};
 
 use crate::{
-    api::{self, AppendRecordRequest, Command, Cursor, PutError, PutResult, Store},
-    error::StoreError,
+    error::PutError,
+    ops::{put::PutResult, AppendRecordRequest},
 };
+use crate::{error::StoreError, ops::Command};
 
-use super::{option::StoreOptions, segment::JournalSegment};
+use super::{
+    cursor::Cursor,
+    ops::{Get, Put, Scan},
+    option::StoreOptions,
+    segment::JournalSegment,
+    ReadOptions, Record, Store, WriteOptions,
+};
 
 const STATS_INTERVAL: u64 = 10;
 
@@ -229,7 +236,9 @@ impl ElasticStore {
 }
 
 impl Store for ElasticStore {
-    fn put(&self, _options: api::WriteOptions, _record: api::Record) -> api::Put {
+    type PutOp = impl Future<Output = Result<PutResult, PutError>>;
+
+    fn put(&self, _options: WriteOptions, _record: Record) -> Put<Self::PutOp> {
         // api::PutFuture {}
 
         let sq = self.submission_queue();
@@ -243,12 +252,10 @@ impl Store for ElasticStore {
 
         let command = Command::Append(append_request);
 
+        let log = self.logger.clone();
         let fut = async move {
             sq.send(command).await.map_err(|e| {
-                error!(
-                    self.logger,
-                    "Failed to pass AppendCommand to store layer {:?}", e
-                );
+                error!(log, "Failed to pass AppendCommand to store layer {:?}", e);
                 PutError::SubmissionQueue
             })?;
             rx.await
@@ -256,7 +263,7 @@ impl Store for ElasticStore {
                 .map_err(|e| PutError::Internal)
         };
 
-        api::Put {}
+        Put { inner: fut }
 
         /*
         match rx.await {
@@ -303,11 +310,11 @@ impl Store for ElasticStore {
         */
     }
 
-    fn get(&self, _options: api::ReadOptions, _paritition_id: u64, _offset: u64) -> api::Get {
+    fn get(&self, _options: ReadOptions) -> Get {
         todo!()
     }
 
-    fn tail(&self, _options: api::ReadOptions, _paritition_id: u64, _start: u64) -> api::Tail {
+    fn scan(&self, _options: ReadOptions) -> Scan {
         todo!()
     }
 }
@@ -340,7 +347,7 @@ mod tests {
     use slog::{o, Drain, Logger};
     use uuid::Uuid;
 
-    use crate::{api::AppendRecordRequest, store::option::StorePath};
+    use crate::option::StorePath;
 
     fn get_logger() -> Logger {
         let decorator = slog_term::TermDecorator::new().build();

@@ -1,6 +1,6 @@
 use monoio::fs::File;
 
-use crate::api::Segment;
+pub trait Segment {}
 
 pub struct JournalSegment {
     pub(crate) file: File,

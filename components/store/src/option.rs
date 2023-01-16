@@ -34,6 +34,21 @@ impl StoreOptions {
     }
 }
 
+#[derive(Debug, Default)]
+pub struct WriteOptions {}
+
+#[derive(Debug, Default)]
+pub struct ReadOptions {
+    /// Target partition
+    pub(crate) partition_id: i64,
+
+    /// Logical offset, from which to read records
+    pub(crate) offset: i64,
+
+    /// Maximum number of records to read.
+    pub(crate) limit: Option<usize>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

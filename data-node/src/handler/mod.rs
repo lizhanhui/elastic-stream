@@ -1,17 +1,15 @@
-use std::rc::Rc;
-
 use async_channel::Sender;
 use bytes::{BufMut, BytesMut};
 use codec::frame::{Frame, OperationCode};
-use local_sync::oneshot;
-use slog::{debug, error, warn, Logger};
-use store::api::{AppendRecordRequest, Command, Record, Store, WriteOptions};
+use slog::{debug, warn, Logger};
+use std::rc::Rc;
+use store::{elastic::ElasticStore, option::WriteOptions, Record, Store};
 
 pub struct ServerCall {
     pub(crate) request: Frame,
     pub(crate) sender: Sender<Frame>,
     pub(crate) logger: Logger,
-    pub(crate) store: Rc<dyn Store>,
+    pub(crate) store: Rc<ElasticStore>,
 }
 
 impl ServerCall {
@@ -73,8 +71,8 @@ impl ServerCall {
         let options = WriteOptions::default();
 
         match self.store.put(options, record).await {
-            Ok(append_result) => {}
-            Err(e) => {}
+            Ok(_append_result) => {}
+            Err(_e) => {}
         }
 
         Frame::new(OperationCode::Publish)
