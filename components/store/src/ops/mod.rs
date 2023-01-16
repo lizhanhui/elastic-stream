@@ -1,3 +1,6 @@
+//! Implement operations offered by `Store` trait.
+//!
+//!
 use bytes::Bytes;
 use local_sync::oneshot::Sender;
 use pin_project::pin_project;

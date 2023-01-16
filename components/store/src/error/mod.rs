@@ -1,3 +1,10 @@
+//! Define various error types for this crate.
+//!
+//! Though some developers prefer to have their errors in each module, this crate takes the strategy of
+//! defining errors centrally. Namely, all errors live in this module with the hope of having a consistent
+//! and coherent heirarchy of errors.
+//!
+
 use thiserror::Error;
 
 #[derive(Debug, Error)]

@@ -1,3 +1,6 @@
+//! Options of various kinds to modify their action behaviors
+//!
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct StorePath {
     pub(crate) path: String,

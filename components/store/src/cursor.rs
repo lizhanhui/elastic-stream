@@ -1,3 +1,6 @@
+//! Manage write and `sync` progress of each `FileSegment`.
+//!
+//!
 pub struct Cursor {
     written: u64,
     committed: u64,

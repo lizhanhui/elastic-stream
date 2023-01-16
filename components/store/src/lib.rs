@@ -1,3 +1,22 @@
+//! # Design Overview and Theory
+//!
+//! `store` crate follows "thread-per-core" paradigm to achieve the goal of scaling linearly with the addition and evolution of hardware.
+//!  This design pattern makes execution of threads independent from one another as much as possible, which means avoiding software locks
+//!  and even atomic instructions. Read [SPDK](https://spdk.io/doc/concurrency.html) for a detailed explanation and analysis.
+//!
+//! There are other libraries and products adopting this design:
+//! - [Datadog Glommio](https://www.datadoghq.com/blog/engineering/introducing-glommio/)
+//! - [ScyllaDB](https://www.scylladb.com/) and [Seastar](https://seastar.io/)
+//! - [Redpanda](https://redpanda.com/blog/tpc-buffers)
+//! - [SPDK](https://spdk.io/doc/concurrency.html)
+//!
+//! # Implementation
+//! In production, this crate is supposed to run on Linux with modern kernel, offering full-fledged io-uring feature. It also works for macOS
+//!  and legacy Linux where io-uring is not available through falling back to kqueue and epoll respectively.
+//!
+//! # Rust Note
+//! `TAIT` feature is employed to wrap async methods into Future, which would then be wrapped into `tower`-like service and layers. As a result,
+//! nightly rust-toolchain is required for the moment.
 #![feature(type_alias_impl_trait)]
 
 pub mod error;
@@ -19,6 +38,9 @@ pub struct Record {
     pub buffer: bytes::Bytes,
 }
 
+/// Definition of core storage trait.
+///
+///
 pub trait Store {
     /// Inner operation that actually puts record into store.
     type PutOp;

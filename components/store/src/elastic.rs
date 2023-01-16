@@ -1,3 +1,5 @@
+//! An io-uring based implemention of the `Store` trait.
+
 use std::{cell::UnsafeCell, fs, os::fd::AsRawFd, path::Path, rc::Rc, time::Duration};
 
 use futures::Future;
@@ -25,6 +27,9 @@ use super::{
 
 const STATS_INTERVAL: u64 = 10;
 
+/// io-uring based implementation of `Store` trait.
+///
+/// `ElasticStore` is designed to be `!Send` as it follows `thread-per-core` paradigm.
 pub struct ElasticStore {
     options: StoreOptions,
     logger: Logger,
