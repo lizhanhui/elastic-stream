@@ -1,0 +1,19 @@
+run:
+  timeout: 30m
+
+linters:
+  disable-all: true
+  enable: # please keep this alphabetized
+    - errcheck
+    - gocritic
+    - goimports
+    - gosec
+    - gosimple
+    - govet
+    - ineffassign
+    - makezero
+    - staticcheck
+    - stylecheck
+    - typecheck
+    - unconvert
+    - unused

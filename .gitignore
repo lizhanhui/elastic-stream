@@ -13,3 +13,16 @@
 
 # Dependency directories (remove the comment below to include it)
 # vendor/
+
+# Intellij
+.idea/
+
+# Makefile output
+/bin
+/.go
+/.push-*
+/.container-*
+/.dockerfile-*
+/.licenses
+/.buildx-initialized
+/covprofile
