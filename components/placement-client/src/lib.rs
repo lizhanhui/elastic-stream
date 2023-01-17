@@ -2,7 +2,6 @@ use std::fmt::{Display, Formatter, Result};
 
 pub mod client;
 pub mod error;
-pub mod generated;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum SessionState {

@@ -8,6 +8,7 @@ edition = "2021"
 [dependencies]
 codec = { path = "../codec" }
 model = { path = "../model" }
+protocol = { path = "../protocol" }
 transport = { path = "../transport" }
 bytes = { workspace = true }
 monoio = { workspace = true }
@@ -27,6 +28,3 @@ slog-term =  { workspace = true }
 mockall = { workspace = true }
 util = { path = "../util" }
 cargo-llvm-cov = { workspace = true }
-
-[build-dependencies]
-flatc-rust = { workspace = true }

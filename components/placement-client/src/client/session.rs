@@ -1,23 +1,18 @@
 use std::{cell::UnsafeCell, collections::HashMap, rc::Rc, time::Duration};
 
 use bytes::BytesMut;
-use codec::frame::{Frame, HeaderFormat, OperationCode};
+use codec::frame::{Frame, OperationCode};
 use local_sync::oneshot;
 use monoio::{
     io::{OwnedWriteHalf, Splitable},
     net::TcpStream,
     time::Instant,
 };
+use protocol::rpc::header::{Heartbeat, HeartbeatArgs, ListRange, ListRangeArgs};
 use slog::{error, trace, warn, Logger};
 use transport::channel::{ChannelReader, ChannelWriter};
 
-use crate::{
-    client::response::Status,
-    generated::rpc_generated::elastic::store::{
-        Heartbeat, HeartbeatArgs, ListRange, ListRangeArgs,
-    },
-    SessionState,
-};
+use crate::{client::response::Status, SessionState};
 
 use super::{
     config,

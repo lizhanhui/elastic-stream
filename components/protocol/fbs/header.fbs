@@ -1,4 +1,4 @@
-namespace DataNode;
+namespace Header;
 
 /// The metadata for a record that has been acknowledged by the server
 table RecordMetadata {
@@ -56,4 +56,12 @@ table Status {
 table PublishRecordResponseHeader {
     status: Status;
     metadata: RecordMetadata;
+}
+
+table Heartbeat {
+    client_id: string;
+}
+
+table ListRange {
+    partition_id: int64;
 }
