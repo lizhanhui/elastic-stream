@@ -336,6 +336,8 @@ dependencies = [
  "codec",
  "core_affinity",
  "crc",
+ "flatbuffers",
+ "flatc-rust",
  "local-sync",
  "monoio",
  "num_cpus",

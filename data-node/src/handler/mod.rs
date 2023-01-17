@@ -5,7 +5,7 @@
 use async_channel::Sender;
 use bytes::{BufMut, BytesMut};
 use codec::frame::{Frame, OperationCode};
-use slog::{debug, warn, Logger};
+use slog::{debug, trace, warn, Logger};
 use std::rc::Rc;
 use store::{elastic::ElasticStore, option::WriteOptions, Record, Store};
 
@@ -106,16 +106,34 @@ impl ServerCall {
     /// Once the underlying operations are completed, the `Store#put` API shall asynchronously return
     /// `Result<PutResult, PutError>`. The result will be rendered into the `response`.
     async fn on_publish(&self, response: &mut Frame) {
-        // TODO: convert self.request to Record.
-        let record = Record {
-            buffer: bytes::Bytes::new(),
-        };
-
         let options = WriteOptions::default();
-
+        let record = self.build_proof_of_concept_record();
         match self.store.put(options, record).await {
             Ok(_append_result) => {}
             Err(_e) => {}
         };
+    }
+
+    /// Build proof of concept record.
+    /// 
+    /// TODO:
+    /// 1. Check metadata cache to see if there is a writable range for the targeting partition;
+    /// 2. If step-1 returns None, query placement manager;
+    /// 3. Ensure current data-node is the leader of the writable range;
+    /// 4. If 
+    fn build_proof_of_concept_record(&self) -> Record {
+        let mut buffer = bytes::BytesMut::new();
+
+        if let Ok(_) = self.request.encode(&mut buffer) {
+            trace!(self.logger, "PoC: header section");
+        }
+
+        if let Some(body) = &self.request.payload {
+            buffer.extend_from_slice(body);
+        }
+
+        Record {
+            buffer: buffer.freeze(),
+        }
     }
 }

@@ -37,8 +37,25 @@ impl StoreOptions {
     }
 }
 
-#[derive(Debug, Default)]
-pub struct WriteOptions {}
+/// Options that control write operations
+#[derive(Debug)]
+pub struct WriteOptions {
+    /// If true, the write will be flushed from operating system buffer cache(through fsync or fdatasync)
+    /// and replicated to replica-group peers before the write is considered complete.
+    ///
+    /// If this flag is true, writes will require relatively more amount of time.
+    ///
+    /// If this flag is false, some recent writes may be lost on machine/process crashes, or failing-over.
+    ///
+    /// Default: true
+    pub sync: bool,
+}
+
+impl Default for WriteOptions {
+    fn default() -> Self {
+        Self { sync: true }
+    }
+}
 
 #[derive(Debug, Default)]
 pub struct ReadOptions {

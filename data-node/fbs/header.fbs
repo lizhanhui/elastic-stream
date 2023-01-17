@@ -1,0 +1,59 @@
+namespace DataNode;
+
+/// The metadata for a record that has been acknowledged by the server
+table RecordMetadata {
+    
+    /// Logical offset of the record in the topic/partition.
+    offset: int64;
+
+    /// The partition the record was sent to
+    partition: int32;
+
+    /// The size of the serialized, uncompressed key in bytes.
+    serialized_key_size: int32;
+
+    /// The size of the serialized, uncompressed value in bytes.
+    serialized_value_size: int32;
+
+    /// The timestamp of the record in the topic/partition.
+    timestamp: int64;
+
+    /// The topic the record was appended to
+    topic: string;
+}
+
+/// Status of the response
+enum Code : int16 {
+    /// Requests are properly served
+    OK = 0,
+
+    /// One of the replica-group member failed due to insufficient storage.
+    InsufficientStorage = 1,
+    
+    /// Publishing requests are routed to data nodes that is not the leader of the 
+    /// writable range. Clients should renew their metadata cache on receiving response 
+    /// with this status. 
+    NotLeader = 2
+}
+
+/// Address of a data node
+table Node {
+    host: string;
+    port: uint16;
+}
+
+table Status {
+    /// Status code
+    code: Code;
+
+    /// Human readable text for the code.
+    message: string;
+
+    /// If status were errors, `nodes` are the list of nodes that reports such errors.
+    nodes: [Node];
+}
+
+table PublishRecordResponseHeader {
+    status: Status;
+    metadata: RecordMetadata;
+}

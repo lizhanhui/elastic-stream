@@ -15,6 +15,7 @@ monoio =  { workspace = true }
 num_cpus =  { workspace = true }
 thiserror =  { workspace = true }
 clap = { workspace = true }
+flatbuffers = { workspace = true }
 num_enum =  { workspace = true }
 pprof = { workspace = true }
 slog =  { workspace = true }
@@ -26,3 +27,6 @@ service = { path = "../components/service" }
 store = { path = "../components/store" }
 local-sync = { workspace = true }
 placement-client = { path = "../components/placement-client" }
+
+[build-dependencies]
+flatc-rust = { workspace = true }

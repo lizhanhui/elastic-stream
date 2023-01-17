@@ -1,5 +1,7 @@
 pub mod cfg;
 pub mod handler;
+#[path = "generated/header_generated.rs"]
+pub mod header;
 pub mod server;
 
 #[cfg(test)]

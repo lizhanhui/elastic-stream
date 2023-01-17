@@ -39,8 +39,7 @@ pub struct ElasticStore {
 }
 
 impl ElasticStore {
-
-    /// Create a new `ElasticStore` 
+    /// Create a new `ElasticStore`
     pub fn new(options: &StoreOptions, logger: &Logger) -> Result<Rc<Self>, StoreError> {
         if !options.create_if_missing && !Path::new(&options.store_path.path).exists() {
             error!(
@@ -245,16 +244,14 @@ impl ElasticStore {
 impl Store for ElasticStore {
     type PutOp = impl Future<Output = Result<PutResult, PutError>>;
 
-    fn put(&self, _options: WriteOptions, _record: Record) -> Put<Self::PutOp> {
-        // api::PutFuture {}
-
+    fn put(&self, _options: WriteOptions, record: Record) -> Put<Self::PutOp> {
         let sq = self.submission_queue();
 
         let (tx, rx) = oneshot::channel();
 
         let append_request = AppendRecordRequest {
             sender: tx,
-            buf: _record.buffer,
+            buf: record.buffer,
         };
 
         let command = Command::Append(append_request);
