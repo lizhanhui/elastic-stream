@@ -57,6 +57,10 @@ impl Frame {
         }
     }
 
+    pub fn flag_response(&mut self) {
+        self.flag |= 1u8;
+    }
+
     fn crc32(payload: &[u8]) -> u32 {
         let mut digest = CRC32.digest();
         digest.update(payload);

@@ -151,7 +151,7 @@ impl Node {
             loop {
                 match channel_reader.read_frame().await {
                     Ok(Some(frame)) => {
-                        let log = logger.new(o!());
+                        let log = logger.clone();
                         let sender = tx.clone();
                         let store = Rc::clone(&store);
                         let mut server_call = ServerCall {

@@ -39,6 +39,8 @@ pub struct ElasticStore {
 }
 
 impl ElasticStore {
+
+    /// Create a new `ElasticStore` 
     pub fn new(options: &StoreOptions, logger: &Logger) -> Result<Rc<Self>, StoreError> {
         if !options.create_if_missing && !Path::new(&options.store_path.path).exists() {
             error!(

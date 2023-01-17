@@ -26,7 +26,9 @@ use self::{
     ops::{Get, Put, Scan},
     option::{ReadOptions, WriteOptions},
 };
+use error::PutError;
 use futures::Future;
+use ops::put::PutResult;
 
 pub mod cursor;
 pub mod elastic;
@@ -51,7 +53,7 @@ pub trait Store {
     /// * `record` - Data record to append.
     fn put(&self, options: WriteOptions, record: Record) -> Put<Self::PutOp>
     where
-        <Self as Store>::PutOp: Future;
+        <Self as Store>::PutOp: Future<Output = Result<PutResult, PutError>>;
 
     /// Retrieve a single existing record at the given partition and offset.
     /// * `options` - Read options, specifying target partition and offset.
