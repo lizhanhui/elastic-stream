@@ -6,6 +6,7 @@ linters:
   enable: # please keep this alphabetized
     - errcheck
     - gocritic
+    - gocyclo
     - goimports
     - gosec
     - gosimple
