@@ -25,3 +25,4 @@
 /.dockerfile-*
 /.licenses
 /.buildx-initialized
+/covprofile
