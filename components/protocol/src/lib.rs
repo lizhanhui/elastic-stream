@@ -1,2 +1,2 @@
-#[path = "generated/header_generated.rs"]
+#[path = "generated/rpc_generated.rs"]
 pub mod rpc;
