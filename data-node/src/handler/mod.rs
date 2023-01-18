@@ -3,11 +3,16 @@
 //! See details docs for each operation code
 
 use async_channel::Sender;
-use bytes::{BufMut, BytesMut};
+use bytes::{BufMut, Bytes, BytesMut};
 use codec::frame::{Frame, OperationCode};
+use flatbuffers::FlatBufferBuilder;
+use protocol::rpc::header::{
+    Code, PublishRecordResponseHeader, PublishRecordResponseHeaderArgs, RecordMetadata,
+    RecordMetadataArgs, Status, StatusArgs,
+};
 use slog::{debug, trace, warn, Logger};
 use std::rc::Rc;
-use store::{elastic::ElasticStore, option::WriteOptions, Record, Store};
+use store::{elastic::ElasticStore, ops::put::PutResult, option::WriteOptions, Record, Store};
 
 /// Representation of the incoming request.
 ///
@@ -105,22 +110,70 @@ impl ServerCall {
     ///
     /// Once the underlying operations are completed, the `Store#put` API shall asynchronously return
     /// `Result<PutResult, PutError>`. The result will be rendered into the `response`.
+    ///
+    /// `response` - Mutable response frame reference, into which required business data are filled.
+    ///
     async fn on_publish(&self, response: &mut Frame) {
         let options = WriteOptions::default();
         let record = self.build_proof_of_concept_record();
         match self.store.put(options, record).await {
-            Ok(_append_result) => {}
+            Ok(result) => {
+                response.header = self.build_publish_response_header(&result);
+            }
             Err(_e) => {}
         };
     }
 
+    /// Build frame header according to `PutResult` with FlatBuffers encoding.
+    ///
+    /// `_result` - PutResult from underlying `Store`
+    fn build_publish_response_header(&self, _result: &PutResult) -> Option<Bytes> {
+        let mut builder = FlatBufferBuilder::with_capacity(256);
+        let status = Status::create(
+            &mut builder,
+            &StatusArgs {
+                code: Code::OK,
+                message: None,
+                nodes: None,
+            },
+        );
+
+        let topic = builder.create_string("topic");
+        let metadata = RecordMetadata::create(
+            &mut builder,
+            &RecordMetadataArgs {
+                offset: 0,
+                partition: 0,
+                serialized_key_size: 0,
+                serialized_value_size: 0,
+                timestamp: 0,
+                topic: Some(topic),
+            },
+        );
+
+        let response_header = PublishRecordResponseHeader::create(
+            &mut builder,
+            &PublishRecordResponseHeaderArgs {
+                status: Some(status),
+                metadata: Some(metadata),
+            },
+        );
+
+        builder.finish(response_header, None);
+        let header_data = builder.finished_data();
+        let mut header = BytesMut::with_capacity(header_data.len());
+        // TODO: dig if memory copy here can be avoided...say moving finished data from flatbuffer builder to bytes::Bytes
+        header.extend_from_slice(header_data);
+        Some(header.into())
+    }
+
     /// Build proof of concept record.
-    /// 
+    ///
     /// TODO:
     /// 1. Check metadata cache to see if there is a writable range for the targeting partition;
     /// 2. If step-1 returns None, query placement manager;
     /// 3. Ensure current data-node is the leader of the writable range;
-    /// 4. If 
+    /// 4. If
     fn build_proof_of_concept_record(&self) -> Record {
         let mut buffer = bytes::BytesMut::new();
 
