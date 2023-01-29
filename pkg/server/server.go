@@ -17,6 +17,7 @@ package server
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"go.etcd.io/etcd/client/v3"
@@ -30,7 +31,7 @@ const (
 
 // Server ensures redundancy by using the Raft consensus algorithm provided by etcd
 type Server struct {
-	closed int64 // 0 for closed, 1 for started
+	started int64 // 0 for closed, 1 for started
 
 	cfg     *Config       // Server configuration
 	etcdCfg *embed.Config // etcd configuration
@@ -46,21 +47,61 @@ type Server struct {
 	rootPath string           // root path in etcd
 }
 
+// CreateServer creates the UNINITIALIZED pd server with given configuration.
 func CreateServer(ctx context.Context, cfg *Config) (*Server, error) {
-	// TODO
-	return nil, nil
+	s := &Server{
+		cfg:    cfg,
+		ctx:    ctx,
+		member: &Member{},
+	}
+
+	// etcd Config
+	etcdCfg, err := s.cfg.GenEmbedEtcdConfig()
+	if err != nil {
+		return nil, err
+	}
+	s.etcdCfg = etcdCfg
+
+	return s, nil
 }
 
+// Start starts the server
 func (s *Server) Start() error {
+	if err := s.startEtcd(s.ctx); err != nil {
+		return err
+	}
+	if err := s.startServer(s.ctx); err != nil {
+		return err
+	}
+	s.startLoop(s.ctx)
+
+	return nil
+}
+
+func (s *Server) startEtcd(ctx context.Context) error {
 	// TODO
 	return nil
 }
 
-func (s *Server) Close() {
+func (s *Server) startServer(ctx context.Context) error {
+	// TODO
+	return nil
+}
+
+func (s *Server) startLoop(ctx context.Context) {
 	// TODO
 }
 
+// Close closes the server.
+func (s *Server) Close() {
+	if !atomic.CompareAndSwapInt64(&s.started, 1, 0) {
+		// server is already closed
+		return
+	}
+	// TODO stop loop, close etcd, etc.
+}
+
+// IsClosed checks whether server is closed or not.
 func (s *Server) IsClosed() bool {
-	// TODO
-	return false
+	return atomic.LoadInt64(&s.started) == 0
 }

@@ -14,7 +14,15 @@
 
 package server
 
+import "go.etcd.io/etcd/server/v3/embed"
+
 // Config is the configuration for [Server]
 type Config struct {
 	// TODO
+}
+
+// GenEmbedEtcdConfig generates a configuration for embedded etcd.
+func (c *Config) GenEmbedEtcdConfig() (*embed.Config, error) {
+	// TODO
+	return nil, nil
 }
