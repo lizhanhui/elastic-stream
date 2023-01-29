@@ -14,7 +14,23 @@
 
 package server
 
+import (
+	clientv3 "go.etcd.io/etcd/client/v3"
+	"go.etcd.io/etcd/server/v3/embed"
+)
+
 // Member is used for the election related logic.
 type Member struct {
+	// TODO
+}
+
+// NewMember create a new Member.
+func NewMember(etcd *embed.Etcd, client *clientv3.Client, id uint64) *Member {
+	// TODO
+	return &Member{}
+}
+
+// Init initializes the member info.
+func (m *Member) Init(cfg *Config, name string, rootPath string) {
 	// TODO
 }

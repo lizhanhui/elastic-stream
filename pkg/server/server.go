@@ -16,6 +16,10 @@ package server
 
 import (
 	"context"
+	"github.com/pkg/errors"
+	"go.uber.org/zap"
+	"path"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -25,13 +29,19 @@ import (
 )
 
 const (
-	etcdTimeout    = time.Second * 3      // etcd DialTimeout
-	rootPathPrefix = "/placement-manager" // prefix of Server.rootPath
+	serverStatusClosed  = iota
+	serverStatusStarted = iota
+)
+
+const (
+	etcdTimeout      = time.Second * 3      // etcd DialTimeout
+	etcdStartTimeout = time.Minute * 5      // timeout when start etcd
+	rootPathPrefix   = "/placement-manager" // prefix of Server.rootPath
 )
 
 // Server ensures redundancy by using the Raft consensus algorithm provided by etcd
 type Server struct {
-	started int64 // 0 for closed, 1 for started
+	status int64 // serverStatusClosed or serverStatusStarted
 
 	cfg     *Config       // Server configuration
 	etcdCfg *embed.Config // etcd configuration
@@ -45,11 +55,14 @@ type Server struct {
 	client   *clientv3.Client // etcd client
 	id       uint64           // server id
 	rootPath string           // root path in etcd
+
+	lg *zap.Logger // logger
 }
 
 // CreateServer creates the UNINITIALIZED pd server with given configuration.
 func CreateServer(ctx context.Context, cfg *Config) (*Server, error) {
 	s := &Server{
+		status: serverStatusClosed,
 		cfg:    cfg,
 		ctx:    ctx,
 		member: &Member{},
@@ -79,12 +92,57 @@ func (s *Server) Start() error {
 }
 
 func (s *Server) startEtcd(ctx context.Context) error {
-	// TODO
+	startTimeoutCtx, cancel := context.WithTimeout(ctx, etcdStartTimeout)
+	defer cancel()
+
+	etcd, err := embed.StartEtcd(s.etcdCfg)
+	if err != nil {
+		return errors.Wrap(err, "failed to start etcd.")
+	}
+
+	// wait until etcd is ready or timeout
+	select {
+	case <-etcd.Server.ReadyNotify():
+	case <-startTimeoutCtx.Done():
+		return errors.New("failed to start etcd: timeout.")
+	}
+
+	// init client
+	// TODO whether to use ACUrls or ACUrls[0] ?
+	endpoints := []string{s.etcdCfg.ACUrls[0].String()}
+	client, err := clientv3.New(clientv3.Config{
+		Endpoints:   endpoints,
+		DialTimeout: etcdTimeout,
+		Logger:      s.lg,
+	})
+	if err != nil {
+		return errors.Wrap(err, "failed to start etcd client.")
+	}
+	s.client = client
+
+	// init member
+	s.member = NewMember(etcd, client, uint64(etcd.Server.ID()))
+
 	return nil
 }
 
 func (s *Server) startServer(ctx context.Context) error {
+	// init server id
+	if err := s.initID(); err != nil {
+		return err
+	}
+
+	s.rootPath = path.Join(rootPathPrefix, strconv.FormatUint(s.id, 10))
+	s.member.Init(s.cfg, s.Name(), s.rootPath)
+	// TODO set member prop
+
+	atomic.StoreInt64(&s.status, serverStatusStarted)
+	return nil
+}
+
+func (s *Server) initID() error {
 	// TODO
+	s.id = 0
 	return nil
 }
 
@@ -94,7 +152,7 @@ func (s *Server) startLoop(ctx context.Context) {
 
 // Close closes the server.
 func (s *Server) Close() {
-	if !atomic.CompareAndSwapInt64(&s.started, 1, 0) {
+	if !atomic.CompareAndSwapInt64(&s.status, serverStatusStarted, serverStatusClosed) {
 		// server is already closed
 		return
 	}
@@ -103,5 +161,10 @@ func (s *Server) Close() {
 
 // IsClosed checks whether server is closed or not.
 func (s *Server) IsClosed() bool {
-	return atomic.LoadInt64(&s.started) == 0
+	return atomic.LoadInt64(&s.status) == serverStatusClosed
+}
+
+func (s *Server) Name() string {
+	// TODO
+	return ""
 }
