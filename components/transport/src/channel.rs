@@ -221,9 +221,10 @@ where
                     self.peer_address
                 );
 
-                debug!(
+                trace!(
                     self.logger,
-                    "Frame[stream-id={}] is written", frame.stream_id
+                    "Frame[stream-id={}] is written",
+                    frame.stream_id
                 );
 
                 Ok(())

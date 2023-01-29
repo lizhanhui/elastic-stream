@@ -8,7 +8,7 @@ use monoio::{
     net::{TcpListener, TcpStream},
     FusionDriver, RuntimeBuilder,
 };
-use slog::{debug, error, info, o, warn, Drain, Logger};
+use slog::{debug, error, info, o, trace, warn, Drain, Logger};
 use slog_async::Async;
 use slog_term::{CompactFormat, TermDecorator};
 use store::{
@@ -180,30 +180,44 @@ impl Node {
         });
 
         monoio::spawn(async move {
+            let peer_address = channel_writer.peer_address().to_owned();
             loop {
                 match rx.recv().await {
                     Ok(frame) => match channel_writer.write_frame(&frame).await {
                         Ok(_) => {
-                            debug!(
+                            trace!(
                                 logger,
-                                "Response[stream-id={:?}] written to network", frame.stream_id
+                                "Response[stream-id={:?}] written to {}",
+                                frame.stream_id,
+                                peer_address
                             );
                         }
                         Err(e) => {
                             warn!(
                                 logger,
-                                "Failed to write response[stream-id={:?}] to network. Cause: {:?}",
+                                "Failed to write response[stream-id={:?}] to {}. Cause: {}",
                                 frame.stream_id,
+                                peer_address,
                                 e
                             );
                             break;
                         }
                     },
                     Err(e) => {
-                        warn!(
+                        if rx.is_closed() {
+                            debug!(
+                                logger,
+                                "Multiplex channel is closed. Session to {} will be terminated",
+                                peer_address
+                            );
+                            break;
+                        }
+
+                        info!(
                             logger,
-                            "Failed to receive response frame from MSPC channel. Cause: {:?}", e
-                        );
+                            "Failed to receive response frame from channel. Session to {} will be terminated due to RecvError: `{}`",
+                            peer_address,
+                            e);
                         break;
                     }
                 }

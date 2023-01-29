@@ -72,9 +72,10 @@ impl ServerCall {
         // Once the response is received, it would immediately get written to network.
         match self.sender.send(response).await {
             Ok(_) => {
-                debug!(
+                trace!(
                     self.logger,
-                    "Response[stream-id={}] transferred to channel", self.request.stream_id
+                    "Response[stream-id={}] transferred to channel",
+                    self.request.stream_id
                 );
             }
             Err(e) => {
