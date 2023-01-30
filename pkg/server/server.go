@@ -33,11 +33,6 @@ import (
 )
 
 const (
-	serverStatusClosed  = iota
-	serverStatusStarted = iota
-)
-
-const (
 	etcdTimeout      = time.Second * 3 // etcd DialTimeout
 	etcdStartTimeout = time.Minute * 5 // timeout when start etcd
 
@@ -47,7 +42,7 @@ const (
 
 // Server ensures redundancy by using the Raft consensus algorithm provided by etcd
 type Server struct {
-	status int64 // serverStatusClosed or serverStatusStarted
+	started atomic.Bool // server status, true for started
 
 	cfg     *Config       // Server configuration
 	etcdCfg *embed.Config // etcd configuration
@@ -70,11 +65,11 @@ func CreateServer(ctx context.Context, cfg *Config) (*Server, error) {
 	rand.Seed(time.Now().UnixNano())
 
 	s := &Server{
-		status: serverStatusClosed,
 		cfg:    cfg,
 		ctx:    ctx,
 		member: &Member{},
 	}
+	s.started.Store(false)
 
 	// etcd Config
 	etcdCfg, err := s.cfg.GenEmbedEtcdConfig()
@@ -144,7 +139,9 @@ func (s *Server) startServer(ctx context.Context) error {
 	s.member.Init(s.cfg, s.Name(), s.rootPath)
 	// TODO set member prop
 
-	atomic.StoreInt64(&s.status, serverStatusStarted)
+	if s.started.Swap(true) {
+		s.lg.Warn("server already started.")
+	}
 	return nil
 }
 
@@ -172,7 +169,7 @@ func (s *Server) startLoop(ctx context.Context) {
 
 // Close closes the server.
 func (s *Server) Close() {
-	if !atomic.CompareAndSwapInt64(&s.status, serverStatusStarted, serverStatusClosed) {
+	if !s.started.Swap(false) {
 		// server is already closed
 		return
 	}
@@ -181,7 +178,7 @@ func (s *Server) Close() {
 
 // IsClosed checks whether server is closed or not.
 func (s *Server) IsClosed() bool {
-	return atomic.LoadInt64(&s.status) == serverStatusClosed
+	return !s.started.Load()
 }
 
 func (s *Server) Name() string {
