@@ -16,12 +16,14 @@ package server
 
 import (
 	"context"
-	"github.com/AutoMQ/placement-manager/pkg/util/etcdutil"
-	"github.com/AutoMQ/placement-manager/pkg/util/typeutil"
-	"github.com/pkg/errors"
-	"go.etcd.io/etcd/client/v3"
 	"math/rand"
 	"time"
+
+	"github.com/pkg/errors"
+	clientv3 "go.etcd.io/etcd/client/v3"
+
+	"github.com/AutoMQ/placement-manager/pkg/util/etcdutil"
+	"github.com/AutoMQ/placement-manager/pkg/util/typeutil"
 )
 
 // InitOrGetServerID tries to save a new ID to etcd. If failed (due to another PM

@@ -16,9 +16,10 @@ package etcdutil
 
 import (
 	"context"
+	"time"
+
 	"go.etcd.io/etcd/client/v3"
 	"go.uber.org/zap"
-	"time"
 )
 
 const (

@@ -16,6 +16,7 @@ package typeutil
 
 import (
 	"encoding/binary"
+
 	"github.com/pkg/errors"
 )
 

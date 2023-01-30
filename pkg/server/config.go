@@ -14,7 +14,9 @@
 
 package server
 
-import "go.etcd.io/etcd/server/v3/embed"
+import (
+	"go.etcd.io/etcd/server/v3/embed"
+)
 
 // Config is the configuration for [Server]
 type Config struct {
