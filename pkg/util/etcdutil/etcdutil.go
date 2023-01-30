@@ -18,6 +18,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/pkg/errors"
 	"go.etcd.io/etcd/client/v3"
 	"go.uber.org/zap"
 )
@@ -50,7 +51,7 @@ func GetValue(c *clientv3.Client, key string, opts ...clientv3.OpOption) (*clien
 
 	if err != nil {
 		logger.Error("failed to get value.", zap.String("key", key), zap.Error(err))
-		return resp, err
+		return resp, errors.Wrapf(err, "get value by key %s", key)
 	}
 
 	return resp, nil

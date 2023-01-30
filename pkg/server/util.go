@@ -46,7 +46,7 @@ func InitOrGetServerID(c *clientv3.Client, key string) (uint64, error) {
 		Else(clientv3.OpGet(key)).
 		Commit()
 	if err != nil {
-		return 0, err
+		return 0, errors.Wrap(err, "init server ID by etcd transaction")
 	}
 
 	// Txn commits ok, return the generated server ID.

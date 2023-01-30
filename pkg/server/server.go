@@ -79,7 +79,7 @@ func CreateServer(ctx context.Context, cfg *Config) (*Server, error) {
 	// etcd Config
 	etcdCfg, err := s.cfg.GenEmbedEtcdConfig()
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(err, "generate etcd config")
 	}
 	s.etcdCfg = etcdCfg
 
@@ -89,10 +89,10 @@ func CreateServer(ctx context.Context, cfg *Config) (*Server, error) {
 // Start starts the server
 func (s *Server) Start() error {
 	if err := s.startEtcd(s.ctx); err != nil {
-		return err
+		return errors.Wrap(err, "start etcd")
 	}
 	if err := s.startServer(s.ctx); err != nil {
-		return err
+		return errors.Wrap(err, "start server")
 	}
 	s.startLoop(s.ctx)
 
@@ -105,14 +105,14 @@ func (s *Server) startEtcd(ctx context.Context) error {
 
 	etcd, err := embed.StartEtcd(s.etcdCfg)
 	if err != nil {
-		return err
+		return errors.Wrap(err, "start etcd by config")
 	}
 
 	// wait until etcd is ready or timeout
 	select {
 	case <-etcd.Server.ReadyNotify():
 	case <-startTimeoutCtx.Done():
-		return errors.New("failed to start etcd: timeout.")
+		return errors.New("failed to start etcd: timeout")
 	}
 
 	// init client
@@ -124,7 +124,7 @@ func (s *Server) startEtcd(ctx context.Context) error {
 		Logger:      s.lg,
 	})
 	if err != nil {
-		return err
+		return errors.Wrap(err, "new client")
 	}
 	s.client = client
 
@@ -137,7 +137,7 @@ func (s *Server) startEtcd(ctx context.Context) error {
 func (s *Server) startServer(ctx context.Context) error {
 	// init server id
 	if err := s.initID(); err != nil {
-		return err
+		return errors.Wrap(err, "init server ID")
 	}
 
 	s.rootPath = path.Join(rootPathPrefix, strconv.FormatUint(s.id, 10))
@@ -152,18 +152,18 @@ func (s *Server) initID() error {
 	// query any existing ID in etcd
 	resp, err := etcdutil.GetValue(s.client, serverIDPath)
 	if err != nil {
-		return err
+		return errors.Wrap(err, "get value from etcd")
 	}
 
 	// use an existed ID
 	if len(resp.Kvs) != 0 {
 		s.id, err = typeutil.BytesToUint64(resp.Kvs[0].Value)
-		return err
+		return errors.Wrap(err, "convert bytes to uint64")
 	}
 
 	// new an ID
 	s.id, err = InitOrGetServerID(s.client, serverIDPath)
-	return err
+	return errors.Wrap(err, "new an ID")
 }
 
 func (s *Server) startLoop(ctx context.Context) {
