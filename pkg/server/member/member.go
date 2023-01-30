@@ -12,11 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package server
+package member
 
 import (
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"go.etcd.io/etcd/server/v3/embed"
+
+	"github.com/AutoMQ/placement-manager/pkg/server/config"
 )
 
 // Member is used for the election related logic.
@@ -31,6 +33,6 @@ func NewMember(etcd *embed.Etcd, client *clientv3.Client, id uint64) *Member {
 }
 
 // Init initializes the member info.
-func (m *Member) Init(cfg *Config, name string, rootPath string) {
+func (m *Member) Init(cfg *config.Config, name string, rootPath string) {
 	// TODO
 }

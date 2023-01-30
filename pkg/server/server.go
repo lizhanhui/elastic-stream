@@ -28,6 +28,8 @@ import (
 	"go.etcd.io/etcd/server/v3/embed"
 	"go.uber.org/zap"
 
+	"github.com/AutoMQ/placement-manager/pkg/server/config"
+	"github.com/AutoMQ/placement-manager/pkg/server/member"
 	"github.com/AutoMQ/placement-manager/pkg/util/etcdutil"
 	"github.com/AutoMQ/placement-manager/pkg/util/typeutil"
 )
@@ -44,15 +46,15 @@ const (
 type Server struct {
 	started atomic.Bool // server status, true for started
 
-	cfg     *Config       // Server configuration
-	etcdCfg *embed.Config // etcd configuration
+	cfg     *config.Config // Server configuration
+	etcdCfg *embed.Config  // etcd configuration
 
 	ctx        context.Context // main context
 	loopCtx    context.Context // loop context
 	loopCancel func()          // loop cancel
 	loopWg     sync.WaitGroup  // loop wait group
 
-	member   *Member          // for leader election
+	member   *member.Member   // for leader election
 	client   *clientv3.Client // etcd client
 	id       uint64           // server id
 	rootPath string           // root path in etcd
@@ -61,13 +63,13 @@ type Server struct {
 }
 
 // CreateServer creates the UNINITIALIZED pd server with given configuration.
-func CreateServer(ctx context.Context, cfg *Config) (*Server, error) {
+func CreateServer(ctx context.Context, cfg *config.Config) (*Server, error) {
 	rand.Seed(time.Now().UnixNano())
 
 	s := &Server{
 		cfg:    cfg,
 		ctx:    ctx,
-		member: &Member{},
+		member: &member.Member{},
 	}
 	s.started.Store(false)
 
@@ -126,7 +128,7 @@ func (s *Server) startEtcd(ctx context.Context) error {
 	s.client = client
 
 	// init member
-	s.member = NewMember(etcd, client, uint64(etcd.Server.ID()))
+	s.member = member.NewMember(etcd, client, uint64(etcd.Server.ID()))
 
 	return nil
 }
@@ -161,10 +163,9 @@ func (s *Server) initID() error {
 	}
 
 	// new an ID
-	s.id, err = InitOrGetServerID(s.client, serverIDPath)
+	s.id, err = initOrGetServerID(s.client, serverIDPath)
 	return errors.Wrap(err, "new an ID")
 }
-
 func (s *Server) startLoop(ctx context.Context) {
 	// TODO
 }
@@ -186,4 +187,41 @@ func (s *Server) IsClosed() bool {
 func (s *Server) Name() string {
 	// TODO
 	return ""
+}
+
+func initOrGetServerID(c *clientv3.Client, key string) (uint64, error) {
+	ctx, cancel := context.WithTimeout(c.Ctx(), etcdutil.DefaultRequestTimeout)
+	defer cancel()
+
+	// Generate a random server ID.
+	ts := uint64(time.Now().Unix())
+	ID := (ts << 32) + uint64(rand.Uint32())
+	value := typeutil.Uint64ToBytes(ID)
+
+	// Multiple PDs may try to init the server ID at the same time.
+	// Only one PD can commit this transaction, then other PDs can get
+	// the committed server ID.
+	resp, err := c.Txn(ctx).
+		If(clientv3.Compare(clientv3.CreateRevision(key), "=", 0)).
+		Then(clientv3.OpPut(key, string(value))).
+		Else(clientv3.OpGet(key)).
+		Commit()
+	if err != nil {
+		return 0, errors.Wrap(err, "init server ID by etcd transaction")
+	}
+
+	// Txn commits ok, return the generated server ID.
+	if resp.Succeeded {
+		return ID, nil
+	}
+
+	// Otherwise, parse the committed server ID.
+	if len(resp.Responses) == 0 {
+		return 0, errors.New("etcd transaction failed, conflicted and rolled back")
+	}
+	response := resp.Responses[0].GetResponseRange()
+	if response == nil || len(response.Kvs) != 1 {
+		return 0, errors.New("etcd transaction failed, conflicted and rolled back")
+	}
+	return typeutil.BytesToUint64(response.Kvs[0].Value)
 }

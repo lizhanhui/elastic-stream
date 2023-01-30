@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package server
+package config
 
 import (
 	"go.etcd.io/etcd/server/v3/embed"
