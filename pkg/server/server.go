@@ -111,8 +111,10 @@ func (s *Server) startEtcd(ctx context.Context) error {
 	}
 
 	// init client
-	// TODO whether to use ACUrls or ACUrls[0] ?
-	endpoints := []string{s.etcdCfg.ACUrls[0].String()}
+	endpoints := make([]string, 0, len(s.etcdCfg.ACUrls))
+	for _, url := range s.etcdCfg.ACUrls {
+		endpoints = append(endpoints, url.String())
+	}
 	client, err := clientv3.New(clientv3.Config{
 		Endpoints:   endpoints,
 		DialTimeout: etcdTimeout,
