@@ -16,8 +16,11 @@ package server
 
 import (
 	"context"
+	"github.com/AutoMQ/placement-manager/pkg/util/etcdutil"
+	"github.com/AutoMQ/placement-manager/pkg/util/typeutil"
 	"github.com/pkg/errors"
 	"go.uber.org/zap"
+	"math/rand"
 	"path"
 	"strconv"
 	"sync"
@@ -34,9 +37,11 @@ const (
 )
 
 const (
-	etcdTimeout      = time.Second * 3      // etcd DialTimeout
-	etcdStartTimeout = time.Minute * 5      // timeout when start etcd
-	rootPathPrefix   = "/placement-manager" // prefix of Server.rootPath
+	etcdTimeout      = time.Second * 3 // etcd DialTimeout
+	etcdStartTimeout = time.Minute * 5 // timeout when start etcd
+
+	rootPathPrefix = "/placement-manager"           // prefix of Server.rootPath
+	serverIDPath   = "/placement-manager/server_id" // path of Server.id
 )
 
 // Server ensures redundancy by using the Raft consensus algorithm provided by etcd
@@ -61,6 +66,8 @@ type Server struct {
 
 // CreateServer creates the UNINITIALIZED pd server with given configuration.
 func CreateServer(ctx context.Context, cfg *Config) (*Server, error) {
+	rand.Seed(time.Now().UnixNano())
+
 	s := &Server{
 		status: serverStatusClosed,
 		cfg:    cfg,
@@ -97,7 +104,7 @@ func (s *Server) startEtcd(ctx context.Context) error {
 
 	etcd, err := embed.StartEtcd(s.etcdCfg)
 	if err != nil {
-		return errors.Wrap(err, "failed to start etcd.")
+		return err
 	}
 
 	// wait until etcd is ready or timeout
@@ -116,7 +123,7 @@ func (s *Server) startEtcd(ctx context.Context) error {
 		Logger:      s.lg,
 	})
 	if err != nil {
-		return errors.Wrap(err, "failed to start etcd client.")
+		return err
 	}
 	s.client = client
 
@@ -141,9 +148,21 @@ func (s *Server) startServer(ctx context.Context) error {
 }
 
 func (s *Server) initID() error {
-	// TODO
-	s.id = 0
-	return nil
+	// query any existing ID in etcd
+	resp, err := etcdutil.GetValue(s.client, serverIDPath)
+	if err != nil {
+		return err
+	}
+
+	// use an existed ID
+	if len(resp.Kvs) != 0 {
+		s.id, err = typeutil.BytesToUint64(resp.Kvs[0].Value)
+		return err
+	}
+
+	// new an ID
+	s.id, err = InitOrGetServerID(s.client, serverIDPath)
+	return err
 }
 
 func (s *Server) startLoop(ctx context.Context) {
