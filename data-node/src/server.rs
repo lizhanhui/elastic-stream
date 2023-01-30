@@ -56,7 +56,7 @@ impl Node {
         };
 
         driver.block_on(async {
-            let store_path = StorePath::new("/tmp", 0);
+            let store_path = StorePath::new("/data", 0);
             let store_options = StoreOptions::new(&store_path);
             let store = match ElasticStore::new(&store_options, &self.logger) {
                 Ok(store) => store,

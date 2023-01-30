@@ -183,6 +183,8 @@ impl ElasticStore {
                             Err(e) => Err(StoreError::IO(e)),
                         };
 
+                        segment.file.sync_data().await.unwrap();
+
                         match req.sender.send(result) {
                             Ok(_) => {}
                             Err(_e) => {}

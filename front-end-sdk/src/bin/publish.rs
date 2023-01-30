@@ -2,7 +2,7 @@ use bytes::{BufMut, BytesMut};
 use clap::Parser;
 use codec::frame::{Frame, HeaderFormat, OperationCode};
 use monoio::{io::Splitable, net::TcpStream};
-use slog::{debug, error, info, o, warn, Drain, Logger};
+use slog::{debug, error, info, o, trace, warn, Drain, Logger};
 use transport::channel::{ChannelReader, ChannelWriter};
 
 #[monoio::main(timer_enabled = true, driver = "fusion")]
@@ -14,12 +14,23 @@ async fn main() {
     let drain = slog_async::Async::new(drain).build().fuse();
     let log = slog::Logger::root(drain, o!());
 
-    launch(&args, log).await
+    let handles: Vec<_> = (0..1024)
+        .into_iter()
+        .map(|_| {
+            let log = log.clone();
+            let args = args.clone();
+            monoio::spawn(async move { launch(&args, log).await })
+        })
+        .collect();
+
+    for handle in handles.into_iter() {
+        handle.await;
+    }
 }
 
 pub const DEFAULT_DATA_NODE_PORT: u16 = 10911;
 
-#[derive(Debug, Parser)]
+#[derive(Debug, Parser, Clone)]
 #[clap(name = "ping-pong", author, version, about, long_about = None)]
 struct Args {
     #[clap(name = "hostname", short = 'H', long, default_value = "127.0.0.1")]
@@ -78,20 +89,20 @@ async fn launch(args: &Args, logger: Logger) {
     let mut write_channel = ChannelWriter::new(write_half, &connect, logger.new(o!()));
     write_channel.write_frame(&frame).await.unwrap();
     let mut cnt = 0;
-    debug!(logger, "{cnt} Publish");
+    trace!(logger, "{cnt} Publish");
     loop {
         match read_channel.read_frame().await {
             Ok(Some(mut frame)) => {
-                debug!(logger, "{cnt} Publish response received");
+                trace!(logger, "{cnt} Publish response received");
                 cnt += 1;
                 frame.stream_id = cnt;
                 fill_header(&mut frame);
                 frame.payload = Some(payload.clone());
 
-                monoio::time::sleep(std::time::Duration::from_millis(1000)).await;
+                // monoio::time::sleep(std::time::Duration::from_millis(1000)).await;
 
                 if let Ok(_) = write_channel.write_frame(&frame).await {
-                    debug!(logger, "{cnt} Publish request sent");
+                    trace!(logger, "{cnt} Publish request sent");
                 } else {
                     warn!(logger, "Failed to publish...");
                     return;
