@@ -35,11 +35,11 @@ import (
 )
 
 const (
-	etcdTimeout      = time.Second * 3 // etcd DialTimeout
-	etcdStartTimeout = time.Minute * 5 // timeout when start etcd
+	_etcdTimeout      = time.Second * 3 // etcd DialTimeout
+	_etcdStartTimeout = time.Minute * 5 // timeout when start etcd
 
-	rootPathPrefix = "/placement-manager"           // prefix of Server.rootPath
-	serverIDPath   = "/placement-manager/server_id" // path of Server.id
+	_rootPathPrefix = "/placement-manager"           // prefix of Server.rootPath
+	_serverIDPath   = "/placement-manager/server_id" // path of Server.id
 )
 
 // Server ensures redundancy by using the Raft consensus algorithm provided by etcd
@@ -62,8 +62,8 @@ type Server struct {
 	lg *zap.Logger // logger
 }
 
-// CreateServer creates the UNINITIALIZED pd server with given configuration.
-func CreateServer(ctx context.Context, cfg *config.Config) (*Server, error) {
+// NewServer creates the UNINITIALIZED pd server with given configuration.
+func NewServer(ctx context.Context, cfg *config.Config) (*Server, error) {
 	rand.Seed(time.Now().UnixNano())
 
 	s := &Server{
@@ -97,7 +97,7 @@ func (s *Server) Start() error {
 }
 
 func (s *Server) startEtcd(ctx context.Context) error {
-	startTimeoutCtx, cancel := context.WithTimeout(ctx, etcdStartTimeout)
+	startTimeoutCtx, cancel := context.WithTimeout(ctx, _etcdStartTimeout)
 	defer cancel()
 
 	etcd, err := embed.StartEtcd(s.etcdCfg)
@@ -119,7 +119,7 @@ func (s *Server) startEtcd(ctx context.Context) error {
 	}
 	client, err := clientv3.New(clientv3.Config{
 		Endpoints:   endpoints,
-		DialTimeout: etcdTimeout,
+		DialTimeout: _etcdTimeout,
 		Logger:      s.lg,
 	})
 	if err != nil {
@@ -139,7 +139,7 @@ func (s *Server) startServer(ctx context.Context) error {
 		return errors.Wrap(err, "init server ID")
 	}
 
-	s.rootPath = path.Join(rootPathPrefix, strconv.FormatUint(s.id, 10))
+	s.rootPath = path.Join(_rootPathPrefix, strconv.FormatUint(s.id, 10))
 	s.member.Init(s.cfg, s.Name(), s.rootPath)
 	// TODO set member prop
 
@@ -151,7 +151,7 @@ func (s *Server) startServer(ctx context.Context) error {
 
 func (s *Server) initID() error {
 	// query any existing ID in etcd
-	resp, err := etcdutil.GetValue(s.client, serverIDPath)
+	resp, err := etcdutil.GetValue(s.client, _serverIDPath)
 	if err != nil {
 		return errors.Wrap(err, "get value from etcd")
 	}
@@ -163,7 +163,7 @@ func (s *Server) initID() error {
 	}
 
 	// new an ID
-	s.id, err = initOrGetServerID(s.client, serverIDPath)
+	s.id, err = initOrGetServerID(s.client, _serverIDPath)
 	return errors.Wrap(err, "new an ID")
 }
 func (s *Server) startLoop(ctx context.Context) {
