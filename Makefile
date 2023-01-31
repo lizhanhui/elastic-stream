@@ -55,8 +55,7 @@ MAKEFLAGS += --warn-undefined-variables
 .SUFFIXES:
 
 # Used internally.  Users should pass GOOS and/or GOARCH.
-#OS := $(if $(GOOS),$(GOOS),$(shell go env GOOS))
-OS := $(if $(GOOS),$(GOOS),linux)
+OS := $(if $(GOOS),$(GOOS),$(shell go env GOOS))
 ARCH := $(if $(GOARCH),$(GOARCH),$(shell go env GOARCH))
 
 TAG := $(VERSION)__$(OS)_$(ARCH)
