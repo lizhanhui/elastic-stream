@@ -16,7 +16,6 @@ package server
 
 import (
 	"context"
-	"math/rand"
 	"path"
 	"strconv"
 	"sync"
@@ -31,6 +30,7 @@ import (
 	"github.com/AutoMQ/placement-manager/pkg/server/config"
 	"github.com/AutoMQ/placement-manager/pkg/server/member"
 	"github.com/AutoMQ/placement-manager/pkg/util/etcdutil"
+	"github.com/AutoMQ/placement-manager/pkg/util/randutil"
 	"github.com/AutoMQ/placement-manager/pkg/util/typeutil"
 )
 
@@ -64,8 +64,6 @@ type Server struct {
 
 // NewServer creates the UNINITIALIZED pd server with given configuration.
 func NewServer(ctx context.Context, cfg *config.Config) (*Server, error) {
-	rand.Seed(time.Now().UnixNano())
-
 	s := &Server{
 		cfg:    cfg,
 		ctx:    ctx,
@@ -195,7 +193,11 @@ func initOrGetServerID(c *clientv3.Client, key string) (uint64, error) {
 
 	// Generate a random server ID.
 	ts := uint64(time.Now().Unix())
-	ID := (ts << 32) + uint64(rand.Uint32())
+	rd, err := randutil.Uint64()
+	if err != nil {
+		return 0, errors.Wrap(err, "generate random int64")
+	}
+	ID := (ts << 32) + rd
 	value := typeutil.Uint64ToBytes(ID)
 
 	// Multiple PDs may try to init the server ID at the same time.
