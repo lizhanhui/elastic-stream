@@ -8,3 +8,11 @@ pub enum RangeError {
 
 #[derive(Debug, Error)]
 pub enum StreamError {}
+
+
+#[derive(Debug, Error)]
+pub enum RecordError {
+
+    #[error("Required record field is missing")]
+    RequiredFieldMissing,
+}
