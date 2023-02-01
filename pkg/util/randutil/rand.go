@@ -18,7 +18,7 @@ func Uint64() (uint64, error) {
 	}
 
 	result, err := typeutil.BytesToUint64(bytes)
-	if err == nil {
+	if err != nil {
 		return 0, errors.Wrap(err, "convert bytes to int64")
 	}
 
