@@ -8,9 +8,37 @@ use std::{
 use futures::Stream;
 use model::Record;
 
-pub struct Consumer {}
+/// Reader to access records stored in partitions.
+///
+///
+/// # Examples
+///
+/// ```
+/// use std::error::Error;
+/// use front_end_sdk::{Reader, Whence};
+/// use futures::StreamExt;
+/// 
+/// #[tokio::main]
+/// async fn main() -> Result<(), Box<dyn Error>>  {
+///    let access_point = "localhost:80";
+///    let partition = 1;
+///    let consumer = Reader::new(access_point);
+///   
+///    let mut cursor = consumer.open(partition).await?;
+///    cursor.seek(3, Whence::SeekSet);
+///    while let Some(record) = cursor.next().await {
+///        println!("Got a record {record:#?}");
+///    }
+///    Ok(())
+/// }
+/// ```
+pub struct Reader {}
 
-impl Consumer {
+impl Reader {
+    /// Returns a `Reader` connecting to the given address.
+    ///
+    /// * `addr` - Access point exposed to application developers
+    ///
     pub fn new<A>(_addr: A) -> Self
     where
         A: ToSocketAddrs,
@@ -18,6 +46,12 @@ impl Consumer {
         Self {}
     }
 
+    /// Opens a `Cursor` to the specified partition.
+    ///
+    /// Returns `Ok(Cursor)` on success, an error otherwise.
+    ///
+    /// * `_partition_id` - Partition identifier
+    ///
     pub async fn open(&self, _partition_id: i32) -> Result<Cursor, Box<dyn Error>> {
         Ok(Cursor::new())
     }
@@ -34,6 +68,11 @@ pub enum Whence {
     SeekEnd,
 }
 
+/// A cursor, similar to Linux file descriptor, represents an active and ongoing access to `Partition`.
+///
+/// `Cursor` provides `seek` method to re-position location to read.
+///
+/// On drop, the cursor, along with assocated resources, shall be properly closed or released.  
 pub struct Cursor {
     read: usize,
 }

@@ -84,7 +84,7 @@ impl RecordBuilder {
 }
 
 #[derive(Debug)]
-pub struct RecordReceipt {
+pub struct RecordMetadata {
     /// The partition the record was saved into
     pub partition: i32,
 
@@ -95,7 +95,7 @@ pub struct RecordReceipt {
     pub timestamp: Instant,
 }
 
-impl Default for RecordReceipt {
+impl Default for RecordMetadata {
     fn default() -> Self {
         Self {
             partition: -1,
@@ -105,7 +105,7 @@ impl Default for RecordReceipt {
     }
 }
 
-impl RecordReceipt {
+impl RecordMetadata {
     pub fn new(partition: i32, offset: i64) -> Self {
         Self {
             partition,

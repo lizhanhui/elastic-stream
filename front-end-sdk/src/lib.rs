@@ -1,6 +1,6 @@
-mod consumer;
-mod producer;
+mod reader;
+mod writer;
 
-pub use crate::consumer::Consumer;
-pub use crate::consumer::Whence;
-pub use crate::producer::Producer;
+pub use crate::reader::Reader;
+pub use crate::reader::Whence;
+pub use crate::writer::Writer;

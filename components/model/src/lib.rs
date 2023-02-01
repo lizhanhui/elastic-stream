@@ -5,4 +5,4 @@ pub mod range;
 mod record;
 
 pub use crate::record::Record;
-pub use crate::record::RecordReceipt;
+pub use crate::record::RecordMetadata;
