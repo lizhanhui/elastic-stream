@@ -2,6 +2,7 @@ use crate::{error::RecordError, header::Headers};
 use bytes::Bytes;
 use std::{collections::HashMap, error::Error, time::Instant};
 
+#[derive(Debug, Clone)]
 pub struct Record {
     headers: Headers,
     properties: HashMap<String, String>,

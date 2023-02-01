@@ -1,15 +1,24 @@
-use std::error::Error;
+use std::{
+    error::Error,
+    net::ToSocketAddrs,
+    pin::Pin,
+    task::{Context, Poll},
+};
 
-use model::{Record, RecordReceipt};
+use futures::Sink;
+use model::{error::ProducerError, Record, RecordReceipt};
+use tokio::sync::oneshot;
 
 pub struct Producer {}
 
 impl Producer {
-
     /// Create a new `Producer` instance to send records to `ElasticStore`.
-    /// 
-    /// 
-    pub fn new() -> Self {
+    ///
+    ///
+    pub fn new<A>(_addr: A) -> Self
+    where
+        A: ToSocketAddrs,
+    {
         Self {}
     }
 

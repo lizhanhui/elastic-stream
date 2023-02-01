@@ -507,13 +507,12 @@ dependencies = [
  "bytes",
  "clap",
  "codec",
+ "futures",
  "model",
- "monoio",
  "slog",
  "slog-async",
  "slog-term",
  "tokio",
- "transport",
 ]
 
 [[package]]

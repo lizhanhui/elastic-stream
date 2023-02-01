@@ -6,15 +6,10 @@ edition = "2021"
 [dependencies]
 codec = { path = "../components/codec" }
 model = { path = "../components/model" }
-transport = { path = "../components/transport" }
-monoio =  { workspace = true }
 clap = { workspace = true }
 slog =  { workspace = true }
 slog-async =  { workspace = true }
 slog-term =  { workspace = true }
 bytes = { workspace = true }
 tokio = { version = "1", features = ["full"] }
-
-[[bin]]
-name = "ping-pong"
-path = "src/bin/ping_pong.rs"
+futures = { workspace = true }

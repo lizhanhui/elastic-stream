@@ -9,10 +9,14 @@ pub enum RangeError {
 #[derive(Debug, Error)]
 pub enum StreamError {}
 
-
 #[derive(Debug, Error)]
 pub enum RecordError {
-
     #[error("Required record field is missing")]
     RequiredFieldMissing,
+}
+
+#[derive(Debug, Error)]
+pub enum ProducerError {
+    #[error("Network IO timeout when sending records")]
+    Timeout,
 }

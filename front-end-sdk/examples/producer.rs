@@ -6,7 +6,8 @@ use model::Record;
 
 #[tokio::main]
 pub async fn main() -> Result<(), Box<dyn Error>> {
-    let producer = Producer::new();
+    let access_point = "localhost:80";
+    let producer = Producer::new(access_point);
 
     let body = BytesMut::with_capacity(128).freeze();
     let record = Record::new_builder()

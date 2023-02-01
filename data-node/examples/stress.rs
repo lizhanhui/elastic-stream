@@ -9,8 +9,8 @@ const BLOCK_SIZE: u64 = 512;
 ///
 /// By default, `monoio::fs::File` wraps buffered IO in a fully async way.
 /// File#write_all_at returns once it writes buffer into system pagecache.
-/// Observe system metric to verify this statement. Generally, this is good as 
-/// OS will help conduct write-merge operation where possible 
+/// Observe system metric to verify this statement. Generally, this is good as
+/// OS will help conduct write-merge operation where possible
 ///
 #[monoio::main(entries = 1024)]
 async fn main() -> Result<(), Box<dyn Error>> {

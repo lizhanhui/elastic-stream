@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-#[derive(Debug, Eq, PartialEq, Hash)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub enum Common {
     Topic,
     Partition,
@@ -8,7 +8,7 @@ pub enum Common {
     Offset,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Headers {
     pub common: HashMap<Common, String>,
     pub ext: HashMap<String, String>,
