@@ -31,68 +31,116 @@ func TestMain(m *testing.M) {
 }
 
 func TestGetValue(t *testing.T) {
-	t.Parallel()
-	re := require.New(t)
-	etcd, client := prepare(re, t)
-
+	type args struct {
+		key  string
+		opts []clientv3.OpOption
+	}
 	tests := []struct {
-		inKeys        []string
-		inValues      []string
-		key           string
-		opts          []clientv3.OpOption
-		outKeys       []string
-		outValues     []string
-		expectedError bool
+		name    string
+		preset  map[string]string
+		args    args
+		want    map[string]string
+		wantErr bool
 	}{
 		{
-			inKeys:        []string{"key1"},
-			inValues:      []string{"val1"},
-			key:           "key1",
-			opts:          []clientv3.OpOption{},
-			outKeys:       []string{"key1"},
-			outValues:     []string{"val1"},
-			expectedError: false,
+			name:   "get by single key",
+			preset: map[string]string{"test/key1": "val1"},
+			args: args{
+				key:  "test/key1",
+				opts: []clientv3.OpOption{},
+			},
+			want:    map[string]string{"test/key1": "val1"},
+			wantErr: false,
+		},
+		{
+			name:   "range query",
+			preset: map[string]string{"test/key1": "val1", "test/key2": "val2", "test/key3": "val3", "test/key4": "val4"},
+			args: args{
+				key:  "test/key2",
+				opts: []clientv3.OpOption{clientv3.WithRange("test/key4")},
+			},
+			want:    map[string]string{"test/key2": "val2", "test/key3": "val3"},
+			wantErr: false,
+		},
+		{
+			name:   "range query with limit",
+			preset: map[string]string{"test/key1": "val1", "test/key2": "val2", "test/key3": "val3", "test/key4": "val4"},
+			args: args{
+				key:  "test/key2",
+				opts: []clientv3.OpOption{clientv3.WithRange("test/key4"), clientv3.WithLimit(1), clientv3.WithSort(clientv3.SortByKey, clientv3.SortDescend)},
+			},
+			want:    map[string]string{"test/key3": "val3"},
+			wantErr: false,
+		},
+		{
+			name:   "query by prefix",
+			preset: map[string]string{"test/key1": "val1", "test/key2": "val2", "test/key3": "val3", "another/key": "val"},
+			args: args{
+				key:  "test/",
+				opts: []clientv3.OpOption{clientv3.WithRange(clientv3.GetPrefixRangeEnd("test/"))},
+			},
+			want:    map[string]string{"test/key1": "val1", "test/key2": "val2", "test/key3": "val3"},
+			wantErr: false,
+		},
+		{
+			name:   "query by nonexistent key",
+			preset: map[string]string{"test/key1": "val1"},
+			args: args{
+				key:  "test/key0",
+				opts: []clientv3.OpOption{},
+			},
+			want:    map[string]string{},
+			wantErr: false,
+		},
+		{
+			name:   "query by empty key",
+			preset: map[string]string{"test/key1": "val1"},
+			args: args{
+				key:  "",
+				opts: []clientv3.OpOption{},
+			},
+			wantErr: true,
 		},
 	}
-	t.Log("start test")
 
-	for _, rt := range tests {
-		t.Run("name", func(t *testing.T) {
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			re := require.New(t)
+			_, client, closeFunc := startEtcd(re, t)
+			defer closeFunc()
+
 			// prepare
 			kv := clientv3.NewKV(client)
-			for i := range rt.inKeys {
-				t.Log(i)
-				_, err := kv.Put(context.TODO(), rt.inKeys[i], rt.inValues[i])
+			for k, v := range tt.preset {
+				_, err := kv.Put(context.Background(), k, v)
 				re.NoError(err)
 			}
 
 			// run
-			resp, err := GetValue(client, rt.key, rt.opts...)
+			resp, err := GetValue(client, tt.args.key, tt.args.opts...)
 
 			// check
-			if rt.expectedError {
+			if tt.wantErr {
 				re.Error(err)
 			} else {
 				re.NoError(err)
-				for i := range resp.Kvs {
-					re.Equal(rt.outKeys[i], string(resp.Kvs[i].Key))
-					re.Equal(rt.outValues[i], string(resp.Kvs[i].Value))
+				re.Len(resp.Kvs, len(tt.want))
+				for _, keyValue := range resp.Kvs {
+					v, ok := tt.want[string(keyValue.Key)]
+					re.True(ok)
+					re.Equal(v, string(keyValue.Value))
 				}
 			}
 		})
 	}
-
-	etcd.Close()
-
 }
 
-func prepare(re *require.Assertions, t *testing.T) (*embed.Etcd, *clientv3.Client) {
+func startEtcd(re *require.Assertions, t *testing.T) (*embed.Etcd, *clientv3.Client, func()) {
 	// start etcd
 	cfg := testutil.NewEtcdConfig(t)
 	etcd, err := embed.StartEtcd(cfg)
-	defer func() {
-		etcd.Close()
-	}()
 	re.NoError(err)
 
 	// new client
@@ -103,7 +151,6 @@ func prepare(re *require.Assertions, t *testing.T) (*embed.Etcd, *clientv3.Clien
 	re.NoError(err)
 
 	<-etcd.Server.ReadyNotify()
-	t.Log("ready")
 
-	return etcd, client
+	return etcd, client, func() { _ = client.Close(); etcd.Close() }
 }
