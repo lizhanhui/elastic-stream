@@ -30,6 +30,7 @@ import (
 	"github.com/AutoMQ/placement-manager/pkg/server/config"
 	"github.com/AutoMQ/placement-manager/pkg/server/member"
 	"github.com/AutoMQ/placement-manager/pkg/util/etcdutil"
+	"github.com/AutoMQ/placement-manager/pkg/util/logutil"
 	"github.com/AutoMQ/placement-manager/pkg/util/randutil"
 	"github.com/AutoMQ/placement-manager/pkg/util/typeutil"
 )
@@ -38,8 +39,8 @@ const (
 	_etcdTimeout      = time.Second * 3 // etcd DialTimeout
 	_etcdStartTimeout = time.Minute * 5 // timeout when start etcd
 
-	_rootPathPrefix = "/placement-manager"           // prefix of Server.rootPath
-	_serverIDPath   = "/placement-manager/server_id" // path of Server.id
+	_rootPathPrefix = "/placement-manager"            // prefix of Server.rootPath
+	_clusterIDPath  = "/placement-manager/cluster_id" // path of Server.clusterID
 )
 
 // Server ensures redundancy by using the Raft consensus algorithm provided by etcd
@@ -54,10 +55,10 @@ type Server struct {
 	loopCancel func()          // loop cancel
 	loopWg     sync.WaitGroup  // loop wait group
 
-	member   *member.Member   // for leader election
-	client   *clientv3.Client // etcd client
-	id       uint64           // server id
-	rootPath string           // root path in etcd
+	member    *member.Member   // for leader election
+	client    *clientv3.Client // etcd client
+	clusterID uint64           // pm cluster id
+	rootPath  string           // root path in etcd
 
 	lg *zap.Logger // logger
 }
@@ -109,6 +110,7 @@ func (s *Server) startEtcd(ctx context.Context) error {
 	case <-startTimeoutCtx.Done():
 		return errors.New("failed to start etcd: timeout")
 	}
+	s.lg.Info("etcd started.")
 
 	// init client
 	endpoints := make([]string, 0, len(s.etcdCfg.ACUrls))
@@ -123,6 +125,7 @@ func (s *Server) startEtcd(ctx context.Context) error {
 	if err != nil {
 		return errors.Wrap(err, "new client")
 	}
+	s.lg.Info("new etcd client.", zap.Strings("endpoints", endpoints))
 	s.client = client
 
 	// init member
@@ -132,12 +135,13 @@ func (s *Server) startEtcd(ctx context.Context) error {
 }
 
 func (s *Server) startServer(ctx context.Context) error {
-	// init server id
-	if err := s.initID(); err != nil {
-		return errors.Wrap(err, "init server ID")
+	// init cluster id
+	if err := s.initClusterID(); err != nil {
+		return errors.Wrap(err, "init cluster ID")
 	}
+	s.lg.Info("init cluster ID.", zap.Uint64("cluster-id", s.clusterID))
 
-	s.rootPath = path.Join(_rootPathPrefix, strconv.FormatUint(s.id, 10))
+	s.rootPath = path.Join(_rootPathPrefix, strconv.FormatUint(s.clusterID, 10))
 	s.member.Init(s.cfg, s.Name(), s.rootPath)
 	// TODO set member prop
 
@@ -147,25 +151,74 @@ func (s *Server) startServer(ctx context.Context) error {
 	return nil
 }
 
-func (s *Server) initID() error {
+func (s *Server) initClusterID() error {
 	// query any existing ID in etcd
-	resp, err := etcdutil.GetValue(s.client, _serverIDPath)
+	resp, err := etcdutil.GetValue(s.client, _clusterIDPath)
 	if err != nil {
 		return errors.Wrap(err, "get value from etcd")
 	}
 
 	// use an existed ID
 	if len(resp.Kvs) != 0 {
-		s.id, err = typeutil.BytesToUint64(resp.Kvs[0].Value)
+		s.clusterID, err = typeutil.BytesToUint64(resp.Kvs[0].Value)
 		return errors.Wrap(err, "convert bytes to uint64")
 	}
 
 	// new an ID
-	s.id, err = initOrGetServerID(s.client, _serverIDPath)
+	s.clusterID, err = initOrGetClusterID(s.client, _clusterIDPath)
 	return errors.Wrap(err, "new an ID")
 }
+
 func (s *Server) startLoop(ctx context.Context) {
+	s.loopCtx, s.loopCancel = context.WithCancel(ctx)
+	loops := []func(){s.leaderLoop, s.etcdLeaderLoop}
+
+	s.loopWg.Add(len(loops))
+	for _, loop := range loops {
+		go loop()
+	}
+}
+
+func (s *Server) leaderLoop() {
+	logger := s.lg
+	defer logutil.LogPanic(logger)
+	defer s.loopWg.Done()
+
+	for {
+		if s.IsClosed() {
+			logger.Info("server is closed. stop leader loop")
+			return
+		}
+
+		// TODO server leader loop
+	}
+}
+
+func (s *Server) etcdLeaderLoop() {
+	logger := s.lg
+	defer logutil.LogPanic(logger)
+	defer s.loopWg.Done()
+
+	ctx, cancel := context.WithCancel(s.loopCtx)
+	defer cancel()
+	for {
+		select {
+		// TODO check etcd leader
+		case <-ctx.Done():
+			logger.Info("server is closed, stop etcd leader loop.")
+			return
+		}
+	}
+}
+
+func (s *Server) Name() string {
 	// TODO
+	return ""
+}
+
+// IsClosed checks whether server is closed or not.
+func (s *Server) IsClosed() bool {
+	return !s.started.Load()
 }
 
 // Close closes the server.
@@ -174,24 +227,34 @@ func (s *Server) Close() {
 		// server is already closed
 		return
 	}
+
+	logger := s.lg
+	logger.Info("closing server.")
+
 	// TODO stop loop, close etcd, etc.
+
+	s.stopServerLoop()
+
+	if s.client != nil {
+		err := s.client.Close()
+		if err != nil {
+			logger.Error("failed to close etcd client.", zap.Error(err))
+		}
+	}
+
+	logger.Info("server closed.")
 }
 
-// IsClosed checks whether server is closed or not.
-func (s *Server) IsClosed() bool {
-	return !s.started.Load()
+func (s *Server) stopServerLoop() {
+	s.loopCancel()
+	s.loopWg.Wait()
 }
 
-func (s *Server) Name() string {
-	// TODO
-	return ""
-}
-
-func initOrGetServerID(c *clientv3.Client, key string) (uint64, error) {
+func initOrGetClusterID(c *clientv3.Client, key string) (uint64, error) {
 	ctx, cancel := context.WithTimeout(c.Ctx(), etcdutil.DefaultRequestTimeout)
 	defer cancel()
 
-	// Generate a random server ID.
+	// Generate a random cluster ID.
 	ts := uint64(time.Now().Unix())
 	rd, err := randutil.Uint64()
 	if err != nil {
@@ -200,24 +263,24 @@ func initOrGetServerID(c *clientv3.Client, key string) (uint64, error) {
 	ID := (ts << 32) + rd
 	value := typeutil.Uint64ToBytes(ID)
 
-	// Multiple PDs may try to init the server ID at the same time.
+	// Multiple PDs may try to init the cluster ID at the same time.
 	// Only one PD can commit this transaction, then other PDs can get
-	// the committed server ID.
+	// the committed cluster ID.
 	resp, err := c.Txn(ctx).
 		If(clientv3.Compare(clientv3.CreateRevision(key), "=", 0)).
 		Then(clientv3.OpPut(key, string(value))).
 		Else(clientv3.OpGet(key)).
 		Commit()
 	if err != nil {
-		return 0, errors.Wrap(err, "init server ID by etcd transaction")
+		return 0, errors.Wrap(err, "init cluster ID by etcd transaction")
 	}
 
-	// Txn commits ok, return the generated server ID.
+	// Txn commits ok, return the generated cluster ID.
 	if resp.Succeeded {
 		return ID, nil
 	}
 
-	// Otherwise, parse the committed server ID.
+	// Otherwise, parse the committed cluster ID.
 	if len(resp.Responses) == 0 {
 		return 0, errors.New("etcd transaction failed, conflicted and rolled back")
 	}
