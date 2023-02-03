@@ -63,7 +63,7 @@ type Server struct {
 	lg *zap.Logger // logger
 }
 
-// NewServer creates the UNINITIALIZED pd server with given configuration.
+// NewServer creates the UNINITIALIZED PM server with given configuration.
 func NewServer(ctx context.Context, cfg *config.Config) (*Server, error) {
 	s := &Server{
 		cfg:    cfg,
@@ -87,7 +87,7 @@ func (s *Server) Start() error {
 	if err := s.startEtcd(s.ctx); err != nil {
 		return errors.Wrap(err, "start etcd")
 	}
-	if err := s.startServer(s.ctx); err != nil {
+	if err := s.startServer(); err != nil {
 		return errors.Wrap(err, "start server")
 	}
 	s.startLoop(s.ctx)
@@ -134,7 +134,7 @@ func (s *Server) startEtcd(ctx context.Context) error {
 	return nil
 }
 
-func (s *Server) startServer(ctx context.Context) error {
+func (s *Server) startServer() error {
 	// init cluster id
 	if err := s.initClusterID(); err != nil {
 		return errors.Wrap(err, "init cluster ID")
@@ -143,7 +143,6 @@ func (s *Server) startServer(ctx context.Context) error {
 
 	s.rootPath = path.Join(_rootPathPrefix, strconv.FormatUint(s.clusterID, 10))
 	s.member.Init(s.cfg, s.Name(), s.rootPath)
-	// TODO set member prop
 
 	if s.started.Swap(true) {
 		s.lg.Warn("server already started.")
@@ -263,8 +262,8 @@ func initOrGetClusterID(c *clientv3.Client, key string) (uint64, error) {
 	ID := (ts << 32) + rd
 	value := typeutil.Uint64ToBytes(ID)
 
-	// Multiple PDs may try to init the cluster ID at the same time.
-	// Only one PD can commit this transaction, then other PDs can get
+	// Multiple PMs may try to init the cluster ID at the same time.
+	// Only one PM can commit this transaction, then other PMs can get
 	// the committed cluster ID.
 	resp, err := c.Txn(ctx).
 		If(clientv3.Compare(clientv3.CreateRevision(key), "=", 0)).
