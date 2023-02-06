@@ -16,6 +16,7 @@ package server
 
 import (
 	"context"
+	"net/http"
 	"path"
 	"strconv"
 	"sync"
@@ -23,8 +24,10 @@ import (
 	"time"
 
 	"github.com/pkg/errors"
+	"go.etcd.io/etcd/client/pkg/v3/types"
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"go.etcd.io/etcd/server/v3/embed"
+	"go.etcd.io/etcd/server/v3/etcdserver"
 	"go.uber.org/zap"
 
 	"github.com/AutoMQ/placement-manager/pkg/server/config"
@@ -102,6 +105,16 @@ func (s *Server) startEtcd(ctx context.Context) error {
 	etcd, err := embed.StartEtcd(s.etcdCfg)
 	if err != nil {
 		return errors.Wrap(err, "start etcd by config")
+	}
+
+	// Check cluster ID
+	urlMap, err := types.NewURLsMap(s.cfg.InitialCluster)
+	if err != nil {
+		return errors.Wrap(err, "parse urlMap from config")
+	}
+	err = checkClusterID(etcd.Server.Cluster().ID(), urlMap, s.lg)
+	if err != nil {
+		return errors.Wrap(err, "check cluster ID")
 	}
 
 	// wait until etcd is ready or timeout
@@ -247,6 +260,30 @@ func (s *Server) Close() {
 func (s *Server) stopServerLoop() {
 	s.loopCancel()
 	s.loopWg.Wait()
+}
+
+// checkClusterID checks etcd cluster ID, returns an error if mismatch.
+// This function will never block even quorum is not satisfied.
+func checkClusterID(localClusterID types.ID, um types.URLsMap, logger *zap.Logger) error {
+	if len(um) == 0 {
+		return nil
+	}
+
+	for _, u := range um.URLs() {
+		trp := &http.Transport{}
+		remoteCluster, err := etcdserver.GetClusterFromRemotePeers(nil, []string{u}, trp)
+		trp.CloseIdleConnections()
+		if err != nil {
+			// Do not return error, because other members may be not ready.
+			logger.Warn("failed to get cluster from remote", zap.Error(err))
+			continue
+		}
+
+		if remoteClusterID := remoteCluster.ID(); remoteClusterID != localClusterID {
+			return errors.Errorf("Etcd cluster ID mismatch, expect %d, got %d", localClusterID, remoteClusterID)
+		}
+	}
+	return nil
 }
 
 func initOrGetClusterID(c *clientv3.Client, key string) (uint64, error) {
