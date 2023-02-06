@@ -57,6 +57,7 @@ func TestBytesToUint64(t *testing.T) {
 			if tt.wantErr {
 				re.Error(err)
 			} else {
+				re.NoError(err)
 				re.Equal(tt.want, got)
 			}
 		})

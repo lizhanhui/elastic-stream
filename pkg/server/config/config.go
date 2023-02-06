@@ -20,6 +20,8 @@ import (
 
 	"github.com/pkg/errors"
 	"go.etcd.io/etcd/server/v3/embed"
+
+	"github.com/AutoMQ/placement-manager/pkg/util/typeutil"
 )
 
 const (
@@ -52,7 +54,10 @@ type Config struct {
 	// If enabled, Raft runs an additional election phase
 	// to check whether it would get enough votes to win
 	// an election, thus minimizing disruptions.
-	PreVote bool `toml:"enable-prevote"`
+	PreVote bool `toml:"enable-prevote" json:"enable-prevote"`
+
+	HeartbeatStreamBindInterval typeutil.Duration
+	LeaderPriorityCheckInterval typeutil.Duration
 }
 
 // NewConfig creates a new config.
