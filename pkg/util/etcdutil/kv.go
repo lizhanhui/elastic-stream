@@ -16,9 +16,11 @@ package etcdutil
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/pkg/errors"
+	"go.etcd.io/etcd/api/v3/mvccpb"
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"go.uber.org/zap"
 )
@@ -36,8 +38,26 @@ const (
 	DefaultSlowRequestTime = time.Second
 )
 
-// GetValue returns the etcd GetResponse by given key and options
-func GetValue(c *clientv3.Client, key string, opts ...clientv3.OpOption) (*clientv3.GetResponse, error) {
+// GetOne gets KeyValue with key from etcd.
+// GetOne will return nil if the specified key is not found
+// GetOne will return an error if etcd returns multiple KeyValue
+func GetOne(c *clientv3.Client, key string) (*mvccpb.KeyValue, error) {
+	resp, err := Get(c, key)
+	if err != nil {
+		return nil, errors.Wrap(err, "get value from etcd")
+	}
+
+	if n := len(resp.Kvs); n == 0 {
+		return nil, nil
+	} else if n > 1 {
+		return nil, errors.New(fmt.Sprintf("etcd get multiple values, expected only one. response %v", resp.Kvs))
+	}
+
+	return resp.Kvs[0], nil
+}
+
+// Get returns the etcd GetResponse by given key and options
+func Get(c *clientv3.Client, key string, opts ...clientv3.OpOption) (*clientv3.GetResponse, error) {
 	ctx, cancel := context.WithTimeout(c.Ctx(), DefaultRequestTimeout)
 	defer cancel()
 

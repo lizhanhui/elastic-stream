@@ -30,7 +30,7 @@ func TestMain(m *testing.M) {
 	goleak.VerifyTestMain(m)
 }
 
-func TestGetValue(t *testing.T) {
+func TestGet(t *testing.T) {
 	type args struct {
 		key  string
 		opts []clientv3.OpOption
@@ -119,7 +119,7 @@ func TestGetValue(t *testing.T) {
 			}
 
 			// run
-			resp, err := GetValue(client, tt.args.key, tt.args.opts...)
+			resp, err := Get(client, tt.args.key, tt.args.opts...)
 
 			// check
 			if tt.wantErr {

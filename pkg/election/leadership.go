@@ -21,6 +21,8 @@ import (
 	clientv3 "go.etcd.io/etcd/client/v3"
 )
 
+type Revision = int64
+
 // Leadership is used to manage the leadership campaigning.
 type Leadership struct {
 	purpose string                // purpose is used to show what this election for

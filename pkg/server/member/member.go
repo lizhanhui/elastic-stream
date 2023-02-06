@@ -123,15 +123,15 @@ func (m *Member) EtcdLeaderID() uint64 {
 // GetMemberPriority loads a member's priority to be elected as the etcd leader.
 func (m *Member) GetMemberPriority(id uint64) (int, error) {
 	key := m.getPriorityPath(id)
-	res, err := etcdutil.GetValue(m.client, key)
+	kv, err := etcdutil.GetOne(m.client, key)
 	if err != nil {
 		return 0, errors.Wrapf(err, "failed to get member's leader priority by key %s", key)
 	}
-	if len(res.Kvs) == 0 {
+	if kv == nil {
 		return 0, nil
 	}
 
-	priority, err := strconv.Atoi(string(res.Kvs[0].Value))
+	priority, err := strconv.Atoi(string(kv.Value))
 	if err != nil {
 		return 0, errors.Wrap(err, "parse priority")
 	}

@@ -165,14 +165,14 @@ func (s *Server) startServer() error {
 
 func (s *Server) initClusterID() error {
 	// query any existing ID in etcd
-	resp, err := etcdutil.GetValue(s.client, _clusterIDPath)
+	kv, err := etcdutil.GetOne(s.client, _clusterIDPath)
 	if err != nil {
 		return errors.Wrap(err, "get value from etcd")
 	}
 
 	// use an existed ID
-	if len(resp.Kvs) != 0 {
-		s.clusterID, err = typeutil.BytesToUint64(resp.Kvs[0].Value)
+	if kv != nil {
+		s.clusterID, err = typeutil.BytesToUint64(kv.Value)
 		return errors.Wrap(err, "convert bytes to uint64")
 	}
 
@@ -198,11 +198,10 @@ func (s *Server) leaderLoop() {
 
 	for {
 		if s.IsClosed() {
-			logger.Info("server is closed. stop leader loop")
+			logger.Info("server is closed. stop leader loop.")
 			return
 		}
 
-		// TODO server leader loop
 	}
 }
 
@@ -218,7 +217,7 @@ func (s *Server) etcdLeaderLoop() {
 		case <-time.After(s.cfg.LeaderPriorityCheckInterval.Duration):
 			err := s.member.CheckPriorityAndMoveLeader(ctx)
 			if err != nil {
-				logger.Error("failed to check and")
+				logger.Error("failed to check priority and move leader.", zap.Error(err))
 			}
 		case <-ctx.Done():
 			logger.Info("server is closed, stop etcd leader loop.")
