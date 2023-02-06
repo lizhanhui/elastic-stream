@@ -142,7 +142,7 @@ func (s *Server) startEtcd(ctx context.Context) error {
 	s.client = client
 
 	// init member
-	s.member = member.NewMember(etcd, client, uint64(etcd.Server.ID()))
+	s.member = member.NewMember(etcd, client, uint64(etcd.Server.ID()), s.lg)
 
 	return nil
 }
@@ -215,7 +215,11 @@ func (s *Server) etcdLeaderLoop() {
 	defer cancel()
 	for {
 		select {
-		// TODO check etcd leader
+		case <-time.After(s.cfg.LeaderPriorityCheckInterval.Duration):
+			err := s.member.CheckPriorityAndMoveLeader(ctx)
+			if err != nil {
+				logger.Error("failed to check and")
+			}
 		case <-ctx.Done():
 			logger.Info("server is closed, stop etcd leader loop.")
 			return
@@ -223,9 +227,9 @@ func (s *Server) etcdLeaderLoop() {
 	}
 }
 
+// Name returns the unique etcd Name for this server in etcd cluster.
 func (s *Server) Name() string {
-	// TODO
-	return ""
+	return s.cfg.Name
 }
 
 // IsClosed checks whether server is closed or not.

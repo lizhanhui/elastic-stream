@@ -36,7 +36,7 @@ const (
 	DefaultSlowRequestTime = time.Second
 )
 
-// GetValue returns the etcd GetResponse by given key
+// GetValue returns the etcd GetResponse by given key and options
 func GetValue(c *clientv3.Client, key string, opts ...clientv3.OpOption) (*clientv3.GetResponse, error) {
 	ctx, cancel := context.WithTimeout(c.Ctx(), DefaultRequestTimeout)
 	defer cancel()
