@@ -137,6 +137,78 @@ func TestGet(t *testing.T) {
 	}
 }
 
+func TestGetOne(t *testing.T) {
+	type args struct {
+		key string
+	}
+	tests := []struct {
+		name    string
+		preset  map[string]string
+		args    args
+		want    string
+		wantErr bool
+		wantNil bool
+	}{
+
+		{
+			name:   "get by single key",
+			preset: map[string]string{"test/key1": "val1"},
+			args: args{
+				key: "test/key1",
+			},
+			want: "val1",
+		},
+		{
+			name:   "query by nonexistent key",
+			preset: map[string]string{"test/key1": "val1"},
+			args: args{
+				key: "test/key0",
+			},
+			wantNil: true,
+		},
+		{
+			name:   "query by empty key",
+			preset: map[string]string{"test/key1": "val1"},
+			args: args{
+				key: "",
+			},
+			wantErr: true,
+		},
+	}
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			re := require.New(t)
+			_, client, closeFunc := startEtcd(re, t)
+			defer closeFunc()
+
+			// prepare
+			kv := clientv3.NewKV(client)
+			for k, v := range tt.preset {
+				_, err := kv.Put(context.Background(), k, v)
+				re.NoError(err)
+			}
+
+			// run
+			got, err := GetOne(client, tt.args.key)
+
+			// check
+			if tt.wantErr {
+				re.Error(err)
+				return
+			}
+			re.NoError(err)
+			if tt.wantNil {
+				re.Nil(got)
+				return
+			}
+			re.Equal(tt.args.key, string(got.Key))
+			re.Equal(tt.want, string(got.Value))
+		})
+	}
+}
+
 func startEtcd(re *require.Assertions, t *testing.T) (*embed.Etcd, *clientv3.Client, func()) {
 	// start etcd
 	cfg := testutil.NewEtcdConfig(t)
