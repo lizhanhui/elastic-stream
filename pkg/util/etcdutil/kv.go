@@ -25,18 +25,7 @@ import (
 	"go.uber.org/zap"
 )
 
-const (
-	// DefaultDialTimeout is the maximum amount of time a dial will wait for a
-	// connection to setup. 30s is long enough for most of the network conditions.
-	DefaultDialTimeout = 30 * time.Second
-
-	// DefaultRequestTimeout 10s is long enough for most of etcd clusters.
-	DefaultRequestTimeout = 10 * time.Second
-
-	// DefaultSlowRequestTime 1s for the threshold for normal request, for those
-	// longer then 1s, they are considered as slow requests.
-	DefaultSlowRequestTime = time.Second
-)
+type ModRevision = int64
 
 // GetOne gets KeyValue with key from etcd.
 // GetOne will return nil if the specified key is not found

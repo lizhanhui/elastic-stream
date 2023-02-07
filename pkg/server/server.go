@@ -202,6 +202,17 @@ func (s *Server) leaderLoop() {
 			return
 		}
 
+		leader, rev, checkAgain := s.member.CheckLeader()
+		if checkAgain {
+			continue
+		}
+
+		if leader != nil {
+			// TODO
+			print(rev)
+		}
+		// TODO
+
 	}
 }
 

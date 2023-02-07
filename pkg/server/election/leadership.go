@@ -18,10 +18,12 @@ import (
 	"context"
 	"sync/atomic"
 
+	"github.com/pkg/errors"
 	clientv3 "go.etcd.io/etcd/client/v3"
-)
+	"go.uber.org/zap"
 
-type Revision = int64
+	"github.com/AutoMQ/placement-manager/pkg/util/etcdutil"
+)
 
 // Leadership is used to manage the leadership campaigning.
 type Leadership struct {
@@ -35,21 +37,56 @@ type Leadership struct {
 
 	keepAliveCtx        context.Context
 	keepAliveCancelFunc context.CancelFunc
+
+	lg *zap.Logger
 }
 
 // NewLeadership creates a new Leadership.
-func NewLeadership(client *clientv3.Client, leaderKey, purpose string) *Leadership {
+func NewLeadership(client *clientv3.Client, leaderKey, purpose string, logger *zap.Logger) *Leadership {
 	leadership := &Leadership{
 		purpose:   purpose,
 		client:    client,
 		leaderKey: leaderKey,
+		lg:        logger,
 	}
 	return leadership
 }
 
+// DeleteLeaderKey deletes the corresponding leader from etcd by the leaderPath as the key.
+func (ls *Leadership) DeleteLeaderKey() error {
+	logger := ls.lg
+
+	resp, err := etcdutil.NewTxn(ls.client).Then(clientv3.OpDelete(ls.leaderKey)).Commit()
+	if err != nil {
+		return errors.Wrap(err, "delete etcd key")
+	}
+	if !resp.Succeeded {
+		return errors.New("failed to delete etcd key: transaction failed")
+	}
+
+	// Reset the lease as soon as possible.
+	ls.Reset()
+	logger.Info("delete the leader key ok", zap.String("leaderPath", ls.leaderKey), zap.String("purpose", ls.purpose))
+	return nil
+}
+
+// Reset does some defer jobs such as closing lease, resetting lease etc.
+func (ls *Leadership) Reset() {
+	if ls.getLease() == nil {
+		return
+	}
+	if ls.keepAliveCancelFunc != nil {
+		ls.keepAliveCancelFunc()
+	}
+	if l := ls.getLease(); l != nil {
+		l.Close()
+	}
+}
+
 // Check returns whether the leadership is still available.
 func (ls *Leadership) Check() bool {
-	return ls.getLease() != nil && !ls.getLease().IsExpired()
+	l := ls.getLease()
+	return l != nil && !l.IsExpired()
 }
 
 // getLease gets the lease of leadership, only if leadership is valid,

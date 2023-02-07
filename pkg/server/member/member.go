@@ -16,6 +16,7 @@ package member
 
 import (
 	"context"
+	"encoding/json"
 	"path"
 	"strconv"
 	"strings"
@@ -27,8 +28,8 @@ import (
 	"go.etcd.io/etcd/server/v3/embed"
 	"go.uber.org/zap"
 
-	"github.com/AutoMQ/placement-manager/pkg/election"
 	"github.com/AutoMQ/placement-manager/pkg/server/config"
+	"github.com/AutoMQ/placement-manager/pkg/server/election"
 	"github.com/AutoMQ/placement-manager/pkg/util/etcdutil"
 )
 
@@ -85,7 +86,63 @@ func (m *Member) Init(cfg *config.Config, name string, clusterRootPath string) {
 	m.info = info
 	m.clusterRootPath = clusterRootPath
 	m.rootPath = path.Join(clusterRootPath, _memberPathPrefix, strconv.FormatUint(m.id, 10))
-	m.leadership = election.NewLeadership(m.client, path.Join(m.clusterRootPath, _leaderPathPrefix), _leaderElectionPurpose)
+	m.leadership = election.NewLeadership(m.client, m.getLeaderPath(), _leaderElectionPurpose, m.lg)
+}
+
+// CheckLeader checks returns true if it is needed to check later.
+func (m *Member) CheckLeader() (*Info, etcdutil.ModRevision, bool) {
+	const (
+		checkAgainInterval = 200 * time.Millisecond
+	)
+	logger := m.lg
+
+	if m.EtcdLeaderID() == 0 {
+		logger.Info("no etcd leader, check PM leader later")
+		time.Sleep(checkAgainInterval)
+		return nil, 0, true
+	}
+
+	leader, rev, err := m.GetLeader()
+	if err != nil {
+		logger.Warn("failed to get PM leader", zap.Error(err))
+		time.Sleep(checkAgainInterval)
+		return nil, 0, true
+	}
+
+	if leader != nil && leader.MemberID == m.id {
+		// oh, we are already a PM leader, which indicates we may meet something wrong
+		// in previous CampaignLeader. We should delete the leadership and campaign again.
+		logger.Warn("PM leader has not changed, delete and campaign again", zap.Object("old-pm-leader", leader))
+		// Delete the leader itself and let others start a new election again.
+		if err = m.leadership.DeleteLeaderKey(); err != nil {
+			logger.Warn("deleting PM leader key meets error", zap.Error(err))
+			time.Sleep(200 * time.Millisecond)
+			return nil, 0, true
+		}
+		// Return nil and false to make sure the campaign will start immediately.
+		return nil, 0, false
+	}
+
+	return leader, rev, false
+}
+
+// GetLeader gets the corresponding leader from etcd by given leaderPath (as the key).
+func (m *Member) GetLeader() (*Info, etcdutil.ModRevision, error) {
+	kv, err := etcdutil.GetOne(m.client, m.getLeaderPath())
+	if err != nil {
+		return nil, 0, errors.Wrap(err, "get kv from etcd")
+	}
+	if kv == nil {
+		return nil, 0, nil
+	}
+
+	info := &Info{}
+	err = json.Unmarshal(kv.Value, info)
+	if err != nil {
+		return nil, 0, errors.Wrap(err, "unmarshal leader info")
+	}
+
+	return info, kv.ModRevision, nil
 }
 
 // CheckPriorityAndMoveLeader checks whether the etcd leader should be moved according to the priority, and moves if so
@@ -138,10 +195,6 @@ func (m *Member) GetMemberPriority(id uint64) (int, error) {
 	return priority, nil
 }
 
-func (m *Member) getPriorityPath(id uint64) string {
-	return path.Join(m.clusterRootPath, _memberPathPrefix, strconv.FormatUint(id, 10), _priorityPathPrefix)
-}
-
 // MoveEtcdLeader tries to transfer etcd leader.
 func (m *Member) MoveEtcdLeader(ctx context.Context, old, new uint64) error {
 	moveCtx, cancel := context.WithTimeout(ctx, _moveLeaderTimeout)
@@ -168,4 +221,12 @@ func (m *Member) Leader() *Info {
 		return nil
 	}
 	return leader
+}
+
+func (m *Member) getLeaderPath() string {
+	return path.Join(m.clusterRootPath, _leaderPathPrefix)
+}
+
+func (m *Member) getPriorityPath(id uint64) string {
+	return path.Join(m.clusterRootPath, _memberPathPrefix, strconv.FormatUint(id, 10), _priorityPathPrefix)
 }

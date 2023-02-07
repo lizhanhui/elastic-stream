@@ -15,10 +15,15 @@
 package election
 
 import (
+	"context"
 	"sync/atomic"
 	"time"
 
 	clientv3 "go.etcd.io/etcd/client/v3"
+)
+
+const (
+	_revokeLeaseTimeout = time.Second
 )
 
 // lease is used as the low-level mechanism for campaigning and renewing elected leadership.
@@ -34,6 +39,19 @@ type lease struct {
 	// leaseTimeout and expireTime are used to control the lease's lifetime
 	leaseTimeout time.Duration
 	expireTime   atomic.Pointer[time.Time]
+}
+
+// Close releases the lease.
+func (l *lease) Close() {
+	// Reset expire time.
+	l.expireTime.Store(&time.Time{})
+
+	// Try to revoke lease to make subsequent elections faster.
+	ctx, cancel := context.WithTimeout(l.client.Ctx(), _revokeLeaseTimeout)
+	defer cancel()
+	_, _ = l.lease.Revoke(ctx, l.ID)
+
+	_ = l.lease.Close()
 }
 
 // IsExpired checks if the lease is expired. If it returns true,
