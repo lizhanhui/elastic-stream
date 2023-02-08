@@ -16,7 +16,7 @@ pub enum RecordError {
 }
 
 #[derive(Debug, Error)]
-pub enum ProducerError {
+pub enum WriterError {
     #[error("Network IO timeout when sending records")]
     Timeout,
 }
