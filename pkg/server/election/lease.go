@@ -68,8 +68,32 @@ func (l *lease) Grant(leaseTimeout int64, logger *zap.Logger) error {
 }
 
 // KeepAlive auto-renews the lease and update expireTime.
-func (l *lease) KeepAlive(ctx context.Context) {
-	// TODO
+func (l *lease) KeepAlive(ctx context.Context, logger *zap.Logger) {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	timeCh := l.keepAliveWorker(ctx, l.leaseTimeout/3, logger)
+
+	var maxExpire time.Time
+	for {
+		select {
+		case t := <-timeCh:
+			if t.After(maxExpire) {
+				maxExpire = t
+				// Check again to make sure the `expireTime` still needs to be updated.
+				select {
+				case <-ctx.Done():
+					return
+				default:
+					l.expireTime.Store(&t)
+				}
+			}
+		case <-time.After(l.leaseTimeout):
+			logger.Info("lease timeout.", zap.Time("expire", *l.expireTime.Load()), zap.String("purpose", l.Purpose))
+			return
+		case <-ctx.Done():
+			return
+		}
+	}
 }
 
 // Close releases the lease.
@@ -92,4 +116,45 @@ func (l *lease) IsExpired() bool {
 		return true
 	}
 	return time.Now().After(*l.expireTime.Load())
+}
+
+// Periodically call `lease.KeepAliveOnce` and post back latest received expire time into the channel.
+func (l *lease) keepAliveWorker(ctx context.Context, interval time.Duration, logger *zap.Logger) <-chan time.Time {
+	ch := make(chan time.Time)
+
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+
+		logger.Info("start lease keep alive worker.", zap.Duration("interval", interval), zap.String("purpose", l.Purpose))
+		defer logger.Info("stop lease keep alive worker.", zap.String("purpose", l.Purpose))
+
+		for {
+			go func() {
+				start := time.Now()
+				ctx1, cancel := context.WithTimeout(ctx, l.leaseTimeout)
+				defer cancel()
+				res, err := l.lease.KeepAliveOnce(ctx1, l.ID)
+				if err != nil {
+					logger.Warn("lease keep alive failed.", zap.String("purpose", l.Purpose), zap.Error(err))
+					return
+				}
+				if res.TTL > 0 {
+					expire := start.Add(time.Duration(res.TTL) * time.Second)
+					select {
+					case ch <- expire:
+					case <-ctx1.Done():
+					}
+				}
+			}()
+
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+			}
+		}
+	}()
+
+	return ch
 }

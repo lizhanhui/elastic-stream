@@ -166,6 +166,11 @@ func (m *Member) KeepLeader(ctx context.Context) {
 	m.leadership.Keep(ctx)
 }
 
+// EnableLeader sets the member itself to a PM leader.
+func (m *Member) EnableLeader() {
+	m.setLeader(m.info)
+}
+
 // ResetLeader is used to reset the PM member's current leadership.
 // Basically it will reset the leader lease and unset leader info.
 func (m *Member) ResetLeader() {
@@ -249,6 +254,11 @@ func (m *Member) Leader() *Info {
 		return nil
 	}
 	return leader
+}
+
+// Etcd returns etcd related information.
+func (m *Member) Etcd() *embed.Etcd {
+	return m.etcd
 }
 
 // ID returns the unique etcd ID for this server in etcd cluster.

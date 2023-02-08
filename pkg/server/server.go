@@ -39,8 +39,9 @@ import (
 )
 
 const (
-	_etcdTimeout      = time.Second * 3 // etcd DialTimeout
-	_etcdStartTimeout = time.Minute * 5 // timeout when start etcd
+	_etcdTimeout        = time.Second * 3       // etcd DialTimeout
+	_etcdStartTimeout   = time.Minute * 5       // timeout when start etcd
+	_leaderTickInterval = 50 * time.Millisecond // check leader loop interval
 
 	_rootPathPrefix = "/placement-manager"            // prefix of Server.rootPath
 	_clusterIDPath  = "/placement-manager/cluster_id" // path of Server.clusterID
@@ -235,6 +236,7 @@ func (s *Server) campaignLeader() {
 	logger := s.lg
 	logger.Info("start to campaign PM leader.", zap.String("campaign-pm-leader-name", s.Name()))
 
+	// campaign leader
 	success, err := s.member.CampaignLeader(s.cfg.LeaderLease)
 	if err != nil {
 		logger.Error("an error when campaign leader.", zap.String("campaign-pm-leader-name", s.Name()), zap.Error(err))
@@ -248,15 +250,55 @@ func (s *Server) campaignLeader() {
 	// Start keepalive the leadership
 	ctx, cancel := context.WithCancel(s.loopCtx)
 	var resetLeaderOnce sync.Once
-	defer resetLeaderOnce.Do(func() {
+	resetLeaderFunc := func() {
 		cancel()
 		s.member.ResetLeader()
-	})
+	}
+	defer resetLeaderOnce.Do(resetLeaderFunc)
 	// maintain the PM leadership
 	s.member.KeepLeader(ctx)
 	logger.Info("success to campaign leader.", zap.String("campaign-pm-leader-name", s.Name()))
 
-	// TODO
+	// reload config
+	err = s.reloadConfigFromKV()
+	if err != nil {
+		logger.Error("failed to reload config.", zap.Error(err))
+	}
+
+	// TODO start raft cluster
+
+	// EnableLeader to accept the remaining service, such as GetPartition.
+	s.member.EnableLeader()
+	// as soon as cancel the leadership keepalive, then other member have chance to be new leader.
+	defer resetLeaderOnce.Do(resetLeaderFunc)
+	logger.Info("PM cluster leader is ready to serve.", zap.String("pm-leader-name", s.Name()))
+
+	s.checkLeaderLoop(ctx)
+}
+
+func (s *Server) checkLeaderLoop(ctx context.Context) {
+	logger := s.lg
+
+	leaderTicker := time.NewTicker(_leaderTickInterval)
+	defer leaderTicker.Stop()
+
+	for {
+		select {
+		case <-leaderTicker.C:
+			if !s.member.IsLeader() {
+				logger.Info("no longer a leader because lease has expired, pm leader will step down.")
+				return
+			}
+			if etcdLeader := s.member.EtcdLeaderID(); etcdLeader != s.member.ID() {
+				logger.Info("etcd leader changed, resigns pm leadership.", zap.String("old-pm-leader-name", s.Name()))
+				return
+			}
+		case <-ctx.Done():
+			// Server is closed and it should return nil.
+			logger.Info("server is closed.")
+			return
+		}
+	}
 }
 
 func (s *Server) reloadConfigFromKV() error {
@@ -305,15 +347,16 @@ func (s *Server) Close() {
 	logger := s.lg
 	logger.Info("closing server.")
 
-	// TODO stop loop, close etcd, etc.
-
 	s.stopServerLoop()
 
 	if s.client != nil {
-		err := s.client.Close()
-		if err != nil {
+		if err := s.client.Close(); err != nil {
 			logger.Error("failed to close etcd client.", zap.Error(err))
 		}
+	}
+
+	if s.member.Etcd() != nil {
+		s.member.Etcd().Close()
 	}
 
 	logger.Info("server closed.")

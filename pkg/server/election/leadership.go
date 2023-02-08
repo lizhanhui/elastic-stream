@@ -150,7 +150,11 @@ func (ls *Leadership) Keep(ctx context.Context) {
 		return
 	}
 	ls.keepAliveCtx, ls.keepAliveCancelFunc = context.WithCancel(ctx)
-	go ls.getLease().KeepAlive(ls.keepAliveCtx)
+
+	l := ls.getLease()
+	if l != nil {
+		go l.KeepAlive(ls.keepAliveCtx, ls.lg)
+	}
 }
 
 // DeleteLeaderKey deletes the corresponding leader from etcd by the leaderPath as the key.
@@ -173,15 +177,15 @@ func (ls *Leadership) DeleteLeaderKey() error {
 
 // Reset does some defer jobs such as closing lease, resetting lease etc.
 func (ls *Leadership) Reset() {
-	if ls.getLease() == nil {
+	l := ls.getLease()
+	if l == nil {
 		return
 	}
+
 	if ls.keepAliveCancelFunc != nil {
 		ls.keepAliveCancelFunc()
 	}
-	if l := ls.getLease(); l != nil {
-		l.Close()
-	}
+	l.Close()
 }
 
 // Check returns whether the leadership is still available.
@@ -192,6 +196,7 @@ func (ls *Leadership) Check() bool {
 
 // getLease gets the lease of leadership, only if leadership is valid,
 // i.e. the owner is a true leader, the lease is not nil.
+// ATTENTION: getLease may return nil
 func (ls *Leadership) getLease() *lease {
 	l := ls.lease.Load()
 	if l == nil {
