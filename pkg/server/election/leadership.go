@@ -19,6 +19,7 @@ import (
 	"sync/atomic"
 
 	"github.com/pkg/errors"
+	"go.etcd.io/etcd/api/v3/mvccpb"
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"go.uber.org/zap"
 
@@ -80,6 +81,61 @@ func (ls *Leadership) Reset() {
 	}
 	if l := ls.getLease(); l != nil {
 		l.Close()
+	}
+}
+
+// Watch is used to watch the changes of the leadership, usually is used to
+// detect the leadership stepping down and restart an election as soon as possible.
+func (ls *Leadership) Watch(serverCtx context.Context, revision etcdutil.ModRevision) {
+	logger := ls.lg
+
+	watcher := clientv3.NewWatcher(ls.client)
+	defer func(watcher clientv3.Watcher) {
+		err := watcher.Close()
+		if err != nil {
+			logger.Error("failed to close watcher", zap.Error(err))
+		}
+	}(watcher)
+
+	ctx, cancel := context.WithCancel(serverCtx)
+	defer cancel()
+
+	// The revision is the revision of last modification on this key.
+	// If the revision is compacted, will meet required revision has been compacted error.
+	// In this case, use the compact revision to re-watch the key.
+	for {
+		rch := watcher.Watch(ctx, ls.leaderKey, clientv3.WithRev(revision))
+		for watchResp := range rch {
+			// meet compacted error, use the compact revision.
+			if watchResp.CompactRevision != 0 {
+				logger.Warn("required revision has been compacted, use the compact revision.",
+					zap.Int64("required-revision", revision),
+					zap.Int64("compact-revision", watchResp.CompactRevision))
+				revision = watchResp.CompactRevision
+				break
+			}
+			if watchResp.Canceled {
+				logger.Error("leadership watcher is canceled with.", zap.Int64("revision", revision),
+					zap.String("leader-key", ls.leaderKey), zap.String("purpose", ls.purpose),
+					zap.Error(watchResp.Err()))
+				return
+			}
+
+			for _, ev := range watchResp.Events {
+				if ev.Type == mvccpb.DELETE {
+					logger.Info("current leadership is deleted.",
+						zap.String("leader-key", ls.leaderKey), zap.String("purpose", ls.purpose))
+					return
+				}
+			}
+		}
+
+		select {
+		case <-ctx.Done():
+			// server closed, return
+			return
+		default:
+		}
 	}
 }
 

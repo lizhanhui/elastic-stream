@@ -208,12 +208,39 @@ func (s *Server) leaderLoop() {
 		}
 
 		if leader != nil {
-			// TODO
-			print(rev)
-		}
-		// TODO
+			err := s.reloadConfigFromKV()
+			if err != nil {
+				logger.Error("failed to reload config.", zap.Error(err))
+				continue
+			}
 
+			logger.Info("start to watch PM leader.", zap.Object("pm-leader", leader))
+			// WatchLeader will keep looping and never return unless the PM leader has changed.
+			s.member.WatchLeader(s.loopCtx, leader, rev)
+			logger.Info("PM leader has changed, try to re-campaign a PM leader.")
+		}
+
+		// To make sure the etcd leader and PM leader are on the same server.
+		if leaderID := s.member.EtcdLeaderID(); leaderID != s.member.ID() {
+			logger.Info("etcd leader and PM leader are not on the same server, skip campaigning of PM leader"+
+				" and check later.", zap.String("server-name", s.Name()),
+				zap.Uint64("etcd-leader-id", leaderID), zap.Uint64("member-id", s.member.ID()))
+			time.Sleep(member.CheckAgainInterval)
+			continue
+		}
+		s.campaignLeader()
 	}
+}
+
+func (s *Server) campaignLeader() {
+	logger := s.lg
+	logger.Info("start to campaign PM leader.", zap.String("campaign-pm-leader-name", s.Name()))
+	// TODO
+}
+
+func (s *Server) reloadConfigFromKV() error {
+	// TODO
+	return nil
 }
 
 func (s *Server) etcdLeaderLoop() {
@@ -289,7 +316,7 @@ func checkClusterID(localClusterID types.ID, um types.URLsMap, logger *zap.Logge
 		trp.CloseIdleConnections()
 		if err != nil {
 			// Do not return error, because other members may be not ready.
-			logger.Warn("failed to get cluster from remote", zap.Error(err))
+			logger.Warn("failed to get cluster from remote.", zap.Error(err))
 			continue
 		}
 

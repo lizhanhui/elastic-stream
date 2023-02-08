@@ -34,6 +34,8 @@ import (
 )
 
 const (
+	CheckAgainInterval = 200 * time.Millisecond
+
 	_memberPathPrefix = "member"
 
 	_leaderPathPrefix   = "leader"
@@ -91,32 +93,29 @@ func (m *Member) Init(cfg *config.Config, name string, clusterRootPath string) {
 
 // CheckLeader checks returns true if it is needed to check later.
 func (m *Member) CheckLeader() (*Info, etcdutil.ModRevision, bool) {
-	const (
-		checkAgainInterval = 200 * time.Millisecond
-	)
 	logger := m.lg
 
 	if m.EtcdLeaderID() == 0 {
-		logger.Info("no etcd leader, check PM leader later")
-		time.Sleep(checkAgainInterval)
+		logger.Info("no etcd leader, check PM leader later.")
+		time.Sleep(CheckAgainInterval)
 		return nil, 0, true
 	}
 
 	leader, rev, err := m.GetLeader()
 	if err != nil {
-		logger.Warn("failed to get PM leader", zap.Error(err))
-		time.Sleep(checkAgainInterval)
+		logger.Warn("failed to get PM leader.", zap.Error(err))
+		time.Sleep(CheckAgainInterval)
 		return nil, 0, true
 	}
 
 	if leader != nil && leader.MemberID == m.id {
 		// oh, we are already a PM leader, which indicates we may meet something wrong
 		// in previous CampaignLeader. We should delete the leadership and campaign again.
-		logger.Warn("PM leader has not changed, delete and campaign again", zap.Object("old-pm-leader", leader))
+		logger.Warn("PM leader has not changed, delete and campaign again.", zap.Object("old-pm-leader", leader))
 		// Delete the leader itself and let others start a new election again.
 		if err = m.leadership.DeleteLeaderKey(); err != nil {
-			logger.Warn("deleting PM leader key meets error", zap.Error(err))
-			time.Sleep(200 * time.Millisecond)
+			logger.Warn("deleting PM leader key meets error.", zap.Error(err))
+			time.Sleep(CheckAgainInterval)
 			return nil, 0, true
 		}
 		// Return nil and false to make sure the campaign will start immediately.
@@ -145,6 +144,13 @@ func (m *Member) GetLeader() (*Info, etcdutil.ModRevision, error) {
 	return info, kv.ModRevision, nil
 }
 
+// WatchLeader is used to watch the changes of the leader.
+func (m *Member) WatchLeader(serverCtx context.Context, leader *Info, revision etcdutil.ModRevision) {
+	m.setLeader(leader)
+	m.leadership.Watch(serverCtx, revision)
+	m.unsetLeader()
+}
+
 // CheckPriorityAndMoveLeader checks whether the etcd leader should be moved according to the priority, and moves if so
 func (m *Member) CheckPriorityAndMoveLeader(ctx context.Context) error {
 	etcdLeaderID := m.EtcdLeaderID()
@@ -167,7 +173,7 @@ func (m *Member) CheckPriorityAndMoveLeader(ctx context.Context) error {
 		if err != nil {
 			return errors.Wrap(err, "transfer etcd leader")
 		} else {
-			logger.Info("transfer etcd leader", zap.Uint64("from", etcdLeaderID), zap.Uint64("to", m.id))
+			logger.Info("transfer etcd leader.", zap.Uint64("from", etcdLeaderID), zap.Uint64("to", m.id))
 		}
 	}
 	return nil
@@ -221,6 +227,19 @@ func (m *Member) Leader() *Info {
 		return nil
 	}
 	return leader
+}
+
+// ID returns the unique etcd ID for this server in etcd cluster.
+func (m *Member) ID() uint64 {
+	return m.id
+}
+
+func (m *Member) setLeader(member *Info) {
+	m.leader.Store(member)
+}
+
+func (m *Member) unsetLeader() {
+	m.leader.Store(&Info{})
 }
 
 func (m *Member) getLeaderPath() string {
