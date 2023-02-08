@@ -52,7 +52,7 @@ func TestSlowTxn(t *testing.T) {
 
 	_, err := txn.Commit()
 	re.NoError(err)
-	re.Equal(1, obsLogs.FilterMessage("txn runs too slow").Len())
+	re.Equal(1, obsLogs.FilterMessage("txn runs too slow.").Len())
 }
 
 func TestNormalTxn(t *testing.T) {

@@ -53,6 +53,106 @@ func NewLeadership(client *clientv3.Client, leaderKey, purpose string, logger *z
 	return leadership
 }
 
+// Watch is used to watch the changes of the leadership, usually is used to
+// detect the leadership stepping down and restart an election as soon as possible.
+func (ls *Leadership) Watch(serverCtx context.Context, revision etcdutil.ModRevision) {
+	logger := ls.lg
+
+	watcher := clientv3.NewWatcher(ls.client)
+	defer func(watcher clientv3.Watcher) {
+		err := watcher.Close()
+		if err != nil {
+			logger.Error("failed to close watcher", zap.Error(err))
+		}
+	}(watcher)
+
+	ctx, cancel := context.WithCancel(serverCtx)
+	defer cancel()
+
+	// The revision is the revision of last modification on this key.
+	// If the revision is compacted, will meet required revision has been compacted error.
+	// In this case, use the compact revision to re-watch the key.
+	for {
+		rch := watcher.Watch(ctx, ls.leaderKey, clientv3.WithRev(revision))
+		for watchResp := range rch {
+			// meet compacted error, use the compact revision.
+			if watchResp.CompactRevision != 0 {
+				logger.Warn("required revision has been compacted, use the compact revision.",
+					zap.Int64("required-revision", revision), zap.Int64("compact-revision", watchResp.CompactRevision))
+				revision = watchResp.CompactRevision
+				break
+			}
+			if watchResp.Canceled {
+				logger.Error("leadership watcher is canceled with.", zap.Int64("revision", revision),
+					zap.String("leader-key", ls.leaderKey), zap.String("purpose", ls.purpose), zap.Error(watchResp.Err()))
+				return
+			}
+
+			for _, ev := range watchResp.Events {
+				if ev.Type == mvccpb.DELETE {
+					logger.Info("current leadership is deleted.",
+						zap.String("leader-key", ls.leaderKey), zap.String("purpose", ls.purpose))
+					return
+				}
+			}
+		}
+
+		select {
+		case <-ctx.Done():
+			// server closed, return
+			return
+		default:
+		}
+	}
+}
+
+// Campaign is used to campaign the leader with given lease and returns a leadership
+// returns true if successfully campaign leader
+func (ls *Leadership) Campaign(leaseTimeout int64, leaderData string) (bool, error) {
+	logger := ls.lg
+
+	ls.leaderValue = leaderData
+	// Create a new lease to campaign
+	newLease := &lease{
+		Purpose: ls.purpose,
+		client:  ls.client,
+		lease:   clientv3.NewLease(ls.client),
+	}
+	ls.lease.Store(newLease)
+
+	if err := newLease.Grant(leaseTimeout, ls.lg); err != nil {
+		return false, errors.Wrap(err, "grant lease")
+	}
+
+	resp, err := etcdutil.NewTxn(ls.client).
+		// The leader key must not exist, so the CreateRevision is 0.
+		If(clientv3.Compare(clientv3.CreateRevision(ls.leaderKey), "=", 0)).
+		Then(clientv3.OpPut(ls.leaderKey, leaderData, clientv3.WithLease(newLease.ID))).
+		Commit()
+
+	logger.Info("check campaign resp.", zap.Any("response", resp))
+	if err != nil {
+		newLease.Close()
+		return false, errors.Wrap(err, "etcd transaction: compare and put leader info")
+	}
+	if !resp.Succeeded {
+		newLease.Close()
+		logger.Info("etcd transaction failed: leader key already exists")
+		return false, nil
+	}
+	logger.Info("campaign leader success.", zap.String("leaderPath", ls.leaderKey), zap.String("purpose", ls.purpose))
+	return true, nil
+}
+
+// Keep will keep the leadership available by update the lease's expired time continuously
+func (ls *Leadership) Keep(ctx context.Context) {
+	if ls == nil {
+		return
+	}
+	ls.keepAliveCtx, ls.keepAliveCancelFunc = context.WithCancel(ctx)
+	go ls.getLease().KeepAlive(ls.keepAliveCtx)
+}
+
 // DeleteLeaderKey deletes the corresponding leader from etcd by the leaderPath as the key.
 func (ls *Leadership) DeleteLeaderKey() error {
 	logger := ls.lg
@@ -81,61 +181,6 @@ func (ls *Leadership) Reset() {
 	}
 	if l := ls.getLease(); l != nil {
 		l.Close()
-	}
-}
-
-// Watch is used to watch the changes of the leadership, usually is used to
-// detect the leadership stepping down and restart an election as soon as possible.
-func (ls *Leadership) Watch(serverCtx context.Context, revision etcdutil.ModRevision) {
-	logger := ls.lg
-
-	watcher := clientv3.NewWatcher(ls.client)
-	defer func(watcher clientv3.Watcher) {
-		err := watcher.Close()
-		if err != nil {
-			logger.Error("failed to close watcher", zap.Error(err))
-		}
-	}(watcher)
-
-	ctx, cancel := context.WithCancel(serverCtx)
-	defer cancel()
-
-	// The revision is the revision of last modification on this key.
-	// If the revision is compacted, will meet required revision has been compacted error.
-	// In this case, use the compact revision to re-watch the key.
-	for {
-		rch := watcher.Watch(ctx, ls.leaderKey, clientv3.WithRev(revision))
-		for watchResp := range rch {
-			// meet compacted error, use the compact revision.
-			if watchResp.CompactRevision != 0 {
-				logger.Warn("required revision has been compacted, use the compact revision.",
-					zap.Int64("required-revision", revision),
-					zap.Int64("compact-revision", watchResp.CompactRevision))
-				revision = watchResp.CompactRevision
-				break
-			}
-			if watchResp.Canceled {
-				logger.Error("leadership watcher is canceled with.", zap.Int64("revision", revision),
-					zap.String("leader-key", ls.leaderKey), zap.String("purpose", ls.purpose),
-					zap.Error(watchResp.Err()))
-				return
-			}
-
-			for _, ev := range watchResp.Events {
-				if ev.Type == mvccpb.DELETE {
-					logger.Info("current leadership is deleted.",
-						zap.String("leader-key", ls.leaderKey), zap.String("purpose", ls.purpose))
-					return
-				}
-			}
-		}
-
-		select {
-		case <-ctx.Done():
-			// server closed, return
-			return
-		default:
-		}
 	}
 }
 

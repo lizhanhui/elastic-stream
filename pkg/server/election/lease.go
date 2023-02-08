@@ -19,7 +19,11 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/pkg/errors"
 	clientv3 "go.etcd.io/etcd/client/v3"
+	"go.uber.org/zap"
+
+	"github.com/AutoMQ/placement-manager/pkg/util/etcdutil"
 )
 
 const (
@@ -39,6 +43,33 @@ type lease struct {
 	// leaseTimeout and expireTime are used to control the lease's lifetime
 	leaseTimeout time.Duration
 	expireTime   atomic.Pointer[time.Time]
+}
+
+// Grant uses `lease.Grant` to initialize the lease and expireTime.
+func (l *lease) Grant(leaseTimeout int64, logger *zap.Logger) error {
+	start := time.Now()
+	ctx, cancel := context.WithTimeout(l.client.Ctx(), etcdutil.DefaultRequestTimeout)
+	leaseResp, err := l.lease.Grant(ctx, leaseTimeout)
+	cancel()
+
+	if err != nil {
+		return errors.Wrap(err, "etcd grant lease")
+	}
+	if cost := time.Since(start); cost > etcdutil.DefaultSlowRequestTime {
+		logger.Warn("lease grants too slow.", zap.Duration("cost", cost), zap.String("purpose", l.Purpose))
+	}
+	logger.Info("lease granted.", zap.Int64("lease-id", int64(leaseResp.ID)), zap.Int64("lease-timeout", leaseTimeout), zap.String("purpose", l.Purpose))
+
+	l.ID = leaseResp.ID
+	l.leaseTimeout = time.Duration(leaseTimeout) * time.Second
+	eTime := start.Add(time.Duration(leaseResp.TTL) * time.Second)
+	l.expireTime.Store(&eTime)
+	return nil
+}
+
+// KeepAlive auto-renews the lease and update expireTime.
+func (l *lease) KeepAlive(ctx context.Context) {
+	// TODO
 }
 
 // Close releases the lease.

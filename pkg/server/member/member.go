@@ -151,6 +151,28 @@ func (m *Member) WatchLeader(serverCtx context.Context, leader *Info, revision e
 	m.unsetLeader()
 }
 
+// CampaignLeader is used to campaign a PM member's leadership and make it become a PM leader.
+// returns true if successfully campaign leader
+func (m *Member) CampaignLeader(leaseTimeout int64) (bool, error) {
+	bytes, err := json.Marshal(m.info)
+	if err != nil {
+		return false, errors.Wrap(err, "marshal member info")
+	}
+	return m.leadership.Campaign(leaseTimeout, string(bytes))
+}
+
+// KeepLeader is used to keep the PM leader's leadership.
+func (m *Member) KeepLeader(ctx context.Context) {
+	m.leadership.Keep(ctx)
+}
+
+// ResetLeader is used to reset the PM member's current leadership.
+// Basically it will reset the leader lease and unset leader info.
+func (m *Member) ResetLeader() {
+	m.leadership.Reset()
+	m.unsetLeader()
+}
+
 // CheckPriorityAndMoveLeader checks whether the etcd leader should be moved according to the priority, and moves if so
 func (m *Member) CheckPriorityAndMoveLeader(ctx context.Context) error {
 	etcdLeaderID := m.EtcdLeaderID()

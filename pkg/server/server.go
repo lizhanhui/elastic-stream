@@ -222,9 +222,8 @@ func (s *Server) leaderLoop() {
 
 		// To make sure the etcd leader and PM leader are on the same server.
 		if leaderID := s.member.EtcdLeaderID(); leaderID != s.member.ID() {
-			logger.Info("etcd leader and PM leader are not on the same server, skip campaigning of PM leader"+
-				" and check later.", zap.String("server-name", s.Name()),
-				zap.Uint64("etcd-leader-id", leaderID), zap.Uint64("member-id", s.member.ID()))
+			logger.Info("etcd leader and PM leader are not on the same server, skip campaigning of PM leader and check later.",
+				zap.String("server-name", s.Name()), zap.Uint64("etcd-leader-id", leaderID), zap.Uint64("member-id", s.member.ID()))
 			time.Sleep(member.CheckAgainInterval)
 			continue
 		}
@@ -235,6 +234,28 @@ func (s *Server) leaderLoop() {
 func (s *Server) campaignLeader() {
 	logger := s.lg
 	logger.Info("start to campaign PM leader.", zap.String("campaign-pm-leader-name", s.Name()))
+
+	success, err := s.member.CampaignLeader(s.cfg.LeaderLease)
+	if err != nil {
+		logger.Error("an error when campaign leader.", zap.String("campaign-pm-leader-name", s.Name()), zap.Error(err))
+		return
+	}
+	if !success {
+		logger.Info("failed to campaign leader.", zap.String("campaign-pm-leader-name", s.Name()))
+		return
+	}
+
+	// Start keepalive the leadership
+	ctx, cancel := context.WithCancel(s.loopCtx)
+	var resetLeaderOnce sync.Once
+	defer resetLeaderOnce.Do(func() {
+		cancel()
+		s.member.ResetLeader()
+	})
+	// maintain the PM leadership
+	s.member.KeepLeader(ctx)
+	logger.Info("success to campaign leader.", zap.String("campaign-pm-leader-name", s.Name()))
+
 	// TODO
 }
 
