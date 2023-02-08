@@ -55,7 +55,6 @@ type Member struct {
 	client          *clientv3.Client
 	id              uint64 // etcd server id.
 	clusterRootPath string // cluster root path in etcd
-	rootPath        string // root path in etcd
 
 	// info is current PM's info.
 	// It will be serialized and saved in etcd leader key when the PM node
@@ -87,7 +86,6 @@ func (m *Member) Init(cfg *config.Config, name string, clusterRootPath string) {
 
 	m.info = info
 	m.clusterRootPath = clusterRootPath
-	m.rootPath = path.Join(clusterRootPath, _memberPathPrefix, strconv.FormatUint(m.id, 10))
 	m.leadership = election.NewLeadership(m.client, m.getLeaderPath(), _leaderElectionPurpose, m.lg)
 }
 

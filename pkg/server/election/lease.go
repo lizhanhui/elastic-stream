@@ -33,7 +33,7 @@ const (
 // lease is used as the low-level mechanism for campaigning and renewing elected leadership.
 // The way to gain and maintain leadership is to update and keep the lease alive continuously.
 type lease struct {
-	Purpose string // purpose is used to show what this election for
+	purpose string // purpose is used to show what this election for
 
 	// etcd client and lease
 	client *clientv3.Client
@@ -56,9 +56,9 @@ func (l *lease) Grant(leaseTimeout int64, logger *zap.Logger) error {
 		return errors.Wrap(err, "etcd grant lease")
 	}
 	if cost := time.Since(start); cost > etcdutil.DefaultSlowRequestTime {
-		logger.Warn("lease grants too slow.", zap.Duration("cost", cost), zap.String("purpose", l.Purpose))
+		logger.Warn("lease grants too slow.", zap.Duration("cost", cost), zap.String("purpose", l.purpose))
 	}
-	logger.Info("lease granted.", zap.Int64("lease-id", int64(leaseResp.ID)), zap.Int64("lease-timeout", leaseTimeout), zap.String("purpose", l.Purpose))
+	logger.Info("lease granted.", zap.Int64("lease-id", int64(leaseResp.ID)), zap.Int64("lease-timeout", leaseTimeout), zap.String("purpose", l.purpose))
 
 	l.ID = leaseResp.ID
 	l.leaseTimeout = time.Duration(leaseTimeout) * time.Second
@@ -88,7 +88,7 @@ func (l *lease) KeepAlive(ctx context.Context, logger *zap.Logger) {
 				}
 			}
 		case <-time.After(l.leaseTimeout):
-			logger.Info("lease timeout.", zap.Time("expire", *l.expireTime.Load()), zap.String("purpose", l.Purpose))
+			logger.Info("lease timeout.", zap.Time("expire", *l.expireTime.Load()), zap.String("purpose", l.purpose))
 			return
 		case <-ctx.Done():
 			return
@@ -126,8 +126,8 @@ func (l *lease) keepAliveWorker(ctx context.Context, interval time.Duration, log
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 
-		logger.Info("start lease keep alive worker.", zap.Duration("interval", interval), zap.String("purpose", l.Purpose))
-		defer logger.Info("stop lease keep alive worker.", zap.String("purpose", l.Purpose))
+		logger.Info("start lease keep alive worker.", zap.Duration("interval", interval), zap.String("purpose", l.purpose))
+		defer logger.Info("stop lease keep alive worker.", zap.String("purpose", l.purpose))
 
 		for {
 			go func() {
@@ -136,7 +136,7 @@ func (l *lease) keepAliveWorker(ctx context.Context, interval time.Duration, log
 				defer cancel()
 				res, err := l.lease.KeepAliveOnce(ctx1, l.ID)
 				if err != nil {
-					logger.Warn("lease keep alive failed.", zap.String("purpose", l.Purpose), zap.Error(err))
+					logger.Warn("lease keep alive failed.", zap.String("purpose", l.purpose), zap.Error(err))
 					return
 				}
 				if res.TTL > 0 {

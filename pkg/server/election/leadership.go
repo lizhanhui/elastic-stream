@@ -114,7 +114,7 @@ func (ls *Leadership) Campaign(leaseTimeout int64, leaderData string) (bool, err
 	ls.leaderValue = leaderData
 	// Create a new lease to campaign
 	newLease := &lease{
-		Purpose: ls.purpose,
+		purpose: ls.purpose,
 		client:  ls.client,
 		lease:   clientv3.NewLease(ls.client),
 	}
