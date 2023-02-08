@@ -1,11 +1,14 @@
 run:
   timeout: 30m
+  build-tags:
+    - testing
 
 linters:
   disable-all: true
   enable: # please keep this alphabetized
     - errcheck
     - gocritic
+    - gocyclo
     - goimports
     - gosec
     - gosimple

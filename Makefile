@@ -55,8 +55,7 @@ MAKEFLAGS += --warn-undefined-variables
 .SUFFIXES:
 
 # Used internally.  Users should pass GOOS and/or GOARCH.
-#OS := $(if $(GOOS),$(GOOS),$(shell go env GOOS))
-OS := $(if $(GOOS),$(GOOS),linux)
+OS := $(if $(GOOS),$(GOOS),$(shell go env GOOS))
 ARCH := $(if $(GOARCH),$(GOARCH),$(shell go env GOARCH))
 
 TAG := $(VERSION)__$(OS)_$(ARCH)
@@ -129,7 +128,7 @@ build: $(OUTBINS)
 
 # Directories that we need created to build/test.
 BUILD_DIRS := bin/$(OS)_$(ARCH)                   \
-              bin/tools                           \
+              bin/tool                            \
               .go/bin/$(OS)_$(ARCH)               \
               .go/bin/$(OS)_$(ARCH)/$(OS)_$(ARCH) \
               .go/cache
@@ -213,13 +212,13 @@ shell: | $(BUILD_DIRS)
 LICENSES = .licenses
 
 $(LICENSES): | $(BUILD_DIRS)
-	pushd tools >/dev/null;                      \
+	pushd tool >/dev/null;                       \
 	  unset GOOS; unset GOARCH;                  \
-	  export GOBIN=$$(pwd)/../bin/tools;         \
+	  export GOBIN=$$(pwd)/../bin/tool;          \
 	  go install github.com/google/go-licenses;  \
 	  popd >/dev/null
 	rm -rf $(LICENSES)
-	./bin/tools/go-licenses save ./... --save_path=$(LICENSES)
+	./bin/tool/go-licenses save ./... --save_path=$(LICENSES)
 	chmod -R a+rx $(LICENSES)
 
 CONTAINER_DOTFILES = $(foreach bin,$(BINS),.container-$(subst /,_,$(REGISTRY)/$(bin))-$(TAG))
@@ -287,13 +286,13 @@ push: container
 # This depends on github.com/estesp/manifest-tool.
 manifest-list: # @HELP builds a manifest list of containers for all platforms
 manifest-list: all-push
-	pushd tools >/dev/null;                                             \
-	  export GOBIN=$$(pwd)/../bin/tools;                                \
+	pushd tool >/dev/null;                                              \
+	  export GOBIN=$$(pwd)/../bin/tool;                                 \
 	  go install github.com/estesp/manifest-tool/v2/cmd/manifest-tool;  \
 	  popd >/dev/null
 	for bin in $(BINS); do                                                     \
 	    platforms=$$(echo $(ALL_PLATFORMS) | sed 's/ /,/g');                   \
-	    bin/tools/manifest-tool                                                \
+	    bin/tool/manifest-tool                                                 \
 	        --username=AWS                                                     \
 	        --password=$$(aws ecr get-login-password --region us-east-1)       \
 	        push from-args                                                     \

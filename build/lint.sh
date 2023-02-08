@@ -21,7 +21,7 @@ set -o pipefail
 export CGO_ENABLED=0
 export GO111MODULE=on
 
-cd tools >/dev/null
+cd tool >/dev/null
 go install github.com/golangci/golangci-lint/cmd/golangci-lint
 cd - >/dev/null
 
