@@ -49,3 +49,23 @@ func (o Operation) String() string {
 		return "Unknown"
 	}
 }
+
+func Ping() Operation {
+	return Operation{ping}
+}
+
+func GoAway() Operation {
+	return Operation{goAway}
+}
+
+func Publish() Operation {
+	return Operation{publish}
+}
+
+func Heartbeat() Operation {
+	return Operation{heartbeat}
+}
+
+func ListRange() Operation {
+	return Operation{listRange}
+}

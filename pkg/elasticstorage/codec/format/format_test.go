@@ -11,7 +11,7 @@ func TestMain(m *testing.M) {
 	goleak.VerifyTestMain(m)
 }
 
-func TestFormat(t *testing.T) {
+func TestNewFormat(t *testing.T) {
 	type fields struct {
 		code Code
 	}
@@ -55,6 +55,39 @@ func TestFormat(t *testing.T) {
 			f := NewFormat(tt.fields.code)
 
 			re.Equal(tt.want, f.String())
+		})
+	}
+}
+
+func TestFormat(t *testing.T) {
+	tests := []struct {
+		name string
+		f    func() Format
+		want Format
+	}{
+		{
+			name: "FlatBuffer",
+			f:    FlatBufferEnum,
+			want: NewFormat(flatBuffer),
+		},
+		{
+			name: "ProtoBuffer",
+			f:    ProtoBufferEnum,
+			want: NewFormat(protoBuffer),
+		},
+		{
+			name: "JSON",
+			f:    JSONEnum,
+			want: NewFormat(json),
+		},
+	}
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			re := require.New(t)
+
+			re.Equal(tt.want, tt.f())
 		})
 	}
 }

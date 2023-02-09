@@ -39,3 +39,15 @@ func (f Format) String() string {
 		return "Unknown"
 	}
 }
+
+func FlatBufferEnum() Format {
+	return Format{flatBuffer}
+}
+
+func ProtoBufferEnum() Format {
+	return Format{protoBuffer}
+}
+
+func JSONEnum() Format {
+	return Format{json}
+}

@@ -11,7 +11,7 @@ func TestMain(m *testing.M) {
 	goleak.VerifyTestMain(m)
 }
 
-func TestFormat(t *testing.T) {
+func TestNewOperation(t *testing.T) {
 	type fields struct {
 		code Code
 	}
@@ -65,6 +65,49 @@ func TestFormat(t *testing.T) {
 			o := NewOperation(tt.fields.code)
 
 			re.Equal(tt.want, o.String())
+		})
+	}
+}
+
+func TestOperation(t *testing.T) {
+	tests := []struct {
+		name   string
+		opFunc func() Operation
+		want   Operation
+	}{
+		{
+			name:   "Ping",
+			opFunc: Ping,
+			want:   NewOperation(ping),
+		},
+		{
+			name:   "GoAway",
+			opFunc: GoAway,
+			want:   NewOperation(goAway),
+		},
+		{
+			name:   "Publish",
+			opFunc: Publish,
+			want:   NewOperation(publish),
+		},
+		{
+			name:   "Heartbeat",
+			opFunc: Heartbeat,
+			want:   NewOperation(heartbeat),
+		},
+		{
+			name:   "ListRange",
+			opFunc: ListRange,
+			want:   NewOperation(listRange),
+		},
+	}
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			re := require.New(t)
+
+			re.Equal(tt.want, tt.opFunc())
 		})
 	}
 }
