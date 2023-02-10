@@ -17,6 +17,13 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
     - uses: actions/checkout@v3
+    - name: Cache Cargo Crates
+      uses: actions/cache@v3
+      with: 
+        path: |
+          ~/.cargo
+          ~/.rustup
+        key: ${{ runner.os }}-cargo
     - name: Install Flatbuffers
       run: |
         sudo apt-get update
