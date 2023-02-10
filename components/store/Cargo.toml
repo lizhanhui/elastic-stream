@@ -18,6 +18,8 @@ local-sync = { workspace = true }
 nix = { workspace = true }
 prometheus = { workspace = true }
 pin-project = { workspace = true }
+libc = { workspace = true }
+io-uring = { workspace = true }
 
 [dev-dependencies]
 slog-async =  { workspace = true }

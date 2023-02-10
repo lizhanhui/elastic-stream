@@ -1671,6 +1671,8 @@ dependencies = [
  "bytes",
  "cargo-llvm-cov",
  "futures",
+ "io-uring",
+ "libc",
  "local-sync",
  "monoio",
  "monoio-macros",

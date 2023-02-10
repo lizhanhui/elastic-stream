@@ -30,6 +30,7 @@ core_affinity = "0.7"
 crc = "3.0"
 futures = { version = "0.3" }
 pin-project = { version = "1" }
+io-uring = "0.5"
 monoio = { version = "0.0", features = ["splice"] }
 monoio-macros = "0.0"
 num_cpus = "1"
@@ -39,6 +40,7 @@ num_enum = "0.5"
 
 flatbuffers = { git = "https://github.com/google/flatbuffers.git", tag = "v23.1.4" }
 
+libc = "0.2"
 nix = "0.26"
 prometheus = "0.13"
 
