@@ -14,8 +14,8 @@ type Format struct {
 	code Code
 }
 
-func NewFormat(code Code) Format {
-	switch code {
+func NewFormat(code uint8) Format {
+	switch Code(code) {
 	case flatBuffer:
 		return Format{flatBuffer}
 	case protoBuffer:

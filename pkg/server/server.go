@@ -385,7 +385,7 @@ func checkClusterID(localClusterID types.ID, um types.URLsMap, logger *zap.Logge
 		}
 
 		if remoteClusterID := remoteCluster.ID(); remoteClusterID != localClusterID {
-			return errors.Errorf("Etcd cluster ID mismatch, expect %d, got %d", localClusterID, remoteClusterID)
+			return errors.Errorf("Etcd cluster ID mismatch, expected %d, got %d", localClusterID, remoteClusterID)
 		}
 	}
 	return nil

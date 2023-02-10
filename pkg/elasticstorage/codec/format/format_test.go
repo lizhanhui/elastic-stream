@@ -13,7 +13,7 @@ func TestMain(m *testing.M) {
 
 func TestNewFormat(t *testing.T) {
 	type fields struct {
-		code Code
+		code uint8
 	}
 	tests := []struct {
 		name   string
@@ -22,22 +22,22 @@ func TestNewFormat(t *testing.T) {
 	}{
 		{
 			name:   "FlatBuffer",
-			fields: fields{code: flatBuffer},
+			fields: fields{code: uint8(flatBuffer)},
 			want:   "FlatBuffer",
 		},
 		{
 			name:   "ProtoBuffer",
-			fields: fields{code: protoBuffer},
+			fields: fields{code: uint8(protoBuffer)},
 			want:   "ProtoBuffer",
 		},
 		{
 			name:   "JSON",
-			fields: fields{code: json},
+			fields: fields{code: uint8(json)},
 			want:   "JSON",
 		},
 		{
 			name:   "Unknown",
-			fields: fields{code: unknown},
+			fields: fields{code: uint8(unknown)},
 			want:   "Unknown",
 		},
 		{
@@ -68,17 +68,17 @@ func TestFormat(t *testing.T) {
 		{
 			name: "FlatBuffer",
 			f:    FlatBufferEnum,
-			want: NewFormat(flatBuffer),
+			want: NewFormat(uint8(flatBuffer)),
 		},
 		{
 			name: "ProtoBuffer",
 			f:    ProtoBufferEnum,
-			want: NewFormat(protoBuffer),
+			want: NewFormat(uint8(protoBuffer)),
 		},
 		{
 			name: "JSON",
 			f:    JSONEnum,
-			want: NewFormat(json),
+			want: NewFormat(uint8(json)),
 		},
 	}
 	for _, tt := range tests {

@@ -16,8 +16,8 @@ type Operation struct {
 	code Code
 }
 
-func NewOperation(code Code) Operation {
-	switch code {
+func NewOperation(code uint16) Operation {
+	switch Code(code) {
 	case ping:
 		return Operation{ping}
 	case goAway:

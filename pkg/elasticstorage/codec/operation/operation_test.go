@@ -13,7 +13,7 @@ func TestMain(m *testing.M) {
 
 func TestNewOperation(t *testing.T) {
 	type fields struct {
-		code Code
+		code uint16
 	}
 	tests := []struct {
 		name   string
@@ -22,32 +22,32 @@ func TestNewOperation(t *testing.T) {
 	}{
 		{
 			name:   "Ping",
-			fields: fields{code: ping},
+			fields: fields{code: uint16(ping)},
 			want:   "Ping",
 		},
 		{
 			name:   "GoAway",
-			fields: fields{code: goAway},
+			fields: fields{code: uint16(goAway)},
 			want:   "GoAway",
 		},
 		{
 			name:   "Publish",
-			fields: fields{code: publish},
+			fields: fields{code: uint16(publish)},
 			want:   "Publish",
 		},
 		{
 			name:   "Heartbeat",
-			fields: fields{code: heartbeat},
+			fields: fields{code: uint16(heartbeat)},
 			want:   "Heartbeat",
 		},
 		{
 			name:   "ListRange",
-			fields: fields{code: listRange},
+			fields: fields{code: uint16(listRange)},
 			want:   "ListRange",
 		},
 		{
 			name:   "Unknown",
-			fields: fields{code: unknown},
+			fields: fields{code: uint16(unknown)},
 			want:   "Unknown",
 		},
 		{
@@ -78,27 +78,27 @@ func TestOperation(t *testing.T) {
 		{
 			name:   "Ping",
 			opFunc: Ping,
-			want:   NewOperation(ping),
+			want:   NewOperation(uint16(ping)),
 		},
 		{
 			name:   "GoAway",
 			opFunc: GoAway,
-			want:   NewOperation(goAway),
+			want:   NewOperation(uint16(goAway)),
 		},
 		{
 			name:   "Publish",
 			opFunc: Publish,
-			want:   NewOperation(publish),
+			want:   NewOperation(uint16(publish)),
 		},
 		{
 			name:   "Heartbeat",
 			opFunc: Heartbeat,
-			want:   NewOperation(heartbeat),
+			want:   NewOperation(uint16(heartbeat)),
 		},
 		{
 			name:   "ListRange",
 			opFunc: ListRange,
-			want:   NewOperation(listRange),
+			want:   NewOperation(uint16(listRange)),
 		},
 	}
 	for _, tt := range tests {
