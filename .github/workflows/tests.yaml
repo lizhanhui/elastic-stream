@@ -11,7 +11,12 @@ jobs:
     runs-on: ${{ matrix.platform }}
     steps:
     - name: Checkout code
-      uses: actions/checkout@v2
+      uses: actions/checkout@v3
+    - name: Go Cache
+      uses: actions/cache@v3
+      with:
+        path: .go/cache
+        key: ${{matrix.platform}}-${{matrix.go-version}}-go-test
     - name: Test
       run: make test GOFLAGS="-v" GO_VERSION=${{ matrix.go-version }}
     - name: Send coverage
