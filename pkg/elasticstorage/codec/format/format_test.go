@@ -26,34 +26,34 @@ func TestNewFormat(t *testing.T) {
 	}{
 		{
 			name:   "FlatBuffer",
-			fields: fields{code: uint8(flatBuffer)},
+			fields: fields{code: flatBuffer},
 			wants: wants{
 				s:    "FlatBuffer",
-				code: uint8(flatBuffer),
+				code: flatBuffer,
 			},
 		},
 		{
 			name:   "ProtoBuffer",
-			fields: fields{code: uint8(protoBuffer)},
+			fields: fields{code: protoBuffer},
 			wants: wants{
 				s:    "ProtoBuffer",
-				code: uint8(protoBuffer),
+				code: protoBuffer,
 			},
 		},
 		{
 			name:   "JSON",
-			fields: fields{code: uint8(json)},
+			fields: fields{code: json},
 			wants: wants{
 				s:    "JSON",
-				code: uint8(json),
+				code: json,
 			},
 		},
 		{
 			name:   "Unknown",
-			fields: fields{code: uint8(unknown)},
+			fields: fields{code: unknown},
 			wants: wants{
 				s:    "Unknown",
-				code: uint8(unknown),
+				code: unknown,
 			},
 		},
 		{
@@ -61,7 +61,7 @@ func TestNewFormat(t *testing.T) {
 			fields: fields{code: 42},
 			wants: wants{
 				s:    "Unknown",
-				code: uint8(unknown),
+				code: unknown,
 			},
 		},
 	}
@@ -87,18 +87,18 @@ func TestFormat(t *testing.T) {
 	}{
 		{
 			name: "FlatBuffer",
-			f:    FlatBufferEnum,
-			want: NewFormat(uint8(flatBuffer)),
+			f:    FlatBuffer,
+			want: NewFormat(flatBuffer),
 		},
 		{
 			name: "ProtoBuffer",
-			f:    ProtoBufferEnum,
-			want: NewFormat(uint8(protoBuffer)),
+			f:    ProtoBuffer,
+			want: NewFormat(protoBuffer),
 		},
 		{
 			name: "JSON",
-			f:    JSONEnum,
-			want: NewFormat(uint8(json)),
+			f:    JSON,
+			want: NewFormat(json),
 		},
 	}
 	for _, tt := range tests {

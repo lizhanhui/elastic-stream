@@ -1,9 +1,7 @@
 package format
 
-type Code uint8
-
 const (
-	unknown Code = iota
+	unknown uint8 = iota
 	flatBuffer
 	protoBuffer
 	json
@@ -11,11 +9,12 @@ const (
 
 // Format is enumeration of Frame.headerFmt
 type Format struct {
-	code Code
+	code uint8
 }
 
+// NewFormat new a format with code
 func NewFormat(code uint8) Format {
-	switch Code(code) {
+	switch code {
 	case flatBuffer:
 		return Format{flatBuffer}
 	case protoBuffer:
@@ -27,6 +26,7 @@ func NewFormat(code uint8) Format {
 	}
 }
 
+// String implements fmt.Stringer
 func (f Format) String() string {
 	switch f.code {
 	case flatBuffer:
@@ -40,18 +40,22 @@ func (f Format) String() string {
 	}
 }
 
+// Code returns the format code
 func (f Format) Code() uint8 {
-	return uint8(f.code)
+	return f.code
 }
 
-func FlatBufferEnum() Format {
+// FlatBuffer serializes and deserializes the header using "github.com/google/flatbuffers/go"
+func FlatBuffer() Format {
 	return Format{flatBuffer}
 }
 
-func ProtoBufferEnum() Format {
+// ProtoBuffer serializes and deserializes the header using "github.com/golang/protobuf/proto"
+func ProtoBuffer() Format {
 	return Format{protoBuffer}
 }
 
-func JSONEnum() Format {
+// JSON serializes and deserializes the header using "encoding/json"
+func JSON() Format {
 	return Format{json}
 }

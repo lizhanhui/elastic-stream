@@ -25,7 +25,7 @@ import (
 )
 
 const (
-	URLSeparator = ","
+	URLSeparator = "," // URLSeparator is the separator in fields such as PeerUrls, ClientUrls, etc.
 )
 
 // Config is the configuration for [Server]

@@ -25,6 +25,7 @@ import (
 	"go.uber.org/zap"
 )
 
+// ModRevision in mvccpb.KeyValue
 type ModRevision = int64
 
 // GetOne gets KeyValue with key from etcd.
@@ -39,7 +40,7 @@ func GetOne(c *clientv3.Client, key string) (*mvccpb.KeyValue, error) {
 	if n := len(resp.Kvs); n == 0 {
 		return nil, nil
 	} else if n > 1 {
-		return nil, errors.New(fmt.Sprintf("etcd get multiple values, expected only one. response %v", resp.Kvs))
+		return nil, fmt.Errorf("etcd get multiple values, expected only one. response %v", resp.Kvs)
 	}
 
 	return resp.Kvs[0], nil

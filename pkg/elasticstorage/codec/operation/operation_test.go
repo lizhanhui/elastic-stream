@@ -26,50 +26,50 @@ func TestNewOperation(t *testing.T) {
 	}{
 		{
 			name:   "Ping",
-			fields: fields{code: uint16(ping)},
+			fields: fields{code: ping},
 			wants: wants{
 				s:    "Ping",
-				code: uint16(ping),
+				code: ping,
 			},
 		},
 		{
 			name:   "GoAway",
-			fields: fields{code: uint16(goAway)},
+			fields: fields{code: goAway},
 			wants: wants{
 				s:    "GoAway",
-				code: uint16(goAway),
+				code: goAway,
 			},
 		},
 		{
 			name:   "Publish",
-			fields: fields{code: uint16(publish)},
+			fields: fields{code: publish},
 			wants: wants{
 				s:    "Publish",
-				code: uint16(publish),
+				code: publish,
 			},
 		},
 		{
 			name:   "Heartbeat",
-			fields: fields{code: uint16(heartbeat)},
+			fields: fields{code: heartbeat},
 			wants: wants{
 				s:    "Heartbeat",
-				code: uint16(heartbeat),
+				code: heartbeat,
 			},
 		},
 		{
 			name:   "ListRange",
-			fields: fields{code: uint16(listRange)},
+			fields: fields{code: listRange},
 			wants: wants{
 				s:    "ListRange",
-				code: uint16(listRange),
+				code: listRange,
 			},
 		},
 		{
 			name:   "Unknown",
-			fields: fields{code: uint16(unknown)},
+			fields: fields{code: unknown},
 			wants: wants{
 				s:    "Unknown",
-				code: uint16(unknown),
+				code: unknown,
 			},
 		},
 		{
@@ -77,7 +77,7 @@ func TestNewOperation(t *testing.T) {
 			fields: fields{code: 42},
 			wants: wants{
 				s:    "Unknown",
-				code: uint16(unknown),
+				code: unknown,
 			},
 		},
 	}
@@ -104,27 +104,27 @@ func TestOperation(t *testing.T) {
 		{
 			name:   "Ping",
 			opFunc: Ping,
-			want:   NewOperation(uint16(ping)),
+			want:   NewOperation(ping),
 		},
 		{
 			name:   "GoAway",
 			opFunc: GoAway,
-			want:   NewOperation(uint16(goAway)),
+			want:   NewOperation(goAway),
 		},
 		{
 			name:   "Publish",
 			opFunc: Publish,
-			want:   NewOperation(uint16(publish)),
+			want:   NewOperation(publish),
 		},
 		{
 			name:   "Heartbeat",
 			opFunc: Heartbeat,
-			want:   NewOperation(uint16(heartbeat)),
+			want:   NewOperation(heartbeat),
 		},
 		{
 			name:   "ListRange",
 			opFunc: ListRange,
-			want:   NewOperation(uint16(listRange)),
+			want:   NewOperation(listRange),
 		},
 	}
 	for _, tt := range tests {

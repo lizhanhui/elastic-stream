@@ -34,6 +34,7 @@ import (
 )
 
 const (
+	// CheckAgainInterval is interval at which the CheckLeader method is rechecked if an unexpected event occurs
 	CheckAgainInterval = 200 * time.Millisecond
 
 	_memberPathPrefix = "member"
@@ -197,13 +198,13 @@ func (m *Member) CheckPriorityAndMoveLeader(ctx context.Context) error {
 		err := m.MoveEtcdLeader(ctx, etcdLeaderID, m.id)
 		if err != nil {
 			return errors.Wrap(err, "transfer etcd leader")
-		} else {
-			logger.Info("transfer etcd leader.", zap.Uint64("from", etcdLeaderID), zap.Uint64("to", m.id))
 		}
+		logger.Info("transfer etcd leader.", zap.Uint64("from", etcdLeaderID), zap.Uint64("to", m.id))
 	}
 	return nil
 }
 
+// EtcdLeaderID returns current leaderID in etcd cluster
 func (m *Member) EtcdLeaderID() uint64 {
 	return m.etcd.Server.Lead()
 }
@@ -238,6 +239,7 @@ func (m *Member) MoveEtcdLeader(ctx context.Context, old, new uint64) error {
 	return nil
 }
 
+// IsLeader returns whether current server is the leader
 func (m *Member) IsLeader() bool {
 	return m.leadership.Check() && m.Leader().MemberID == m.info.MemberID
 }
