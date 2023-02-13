@@ -15,35 +15,54 @@ func TestNewFormat(t *testing.T) {
 	type fields struct {
 		code uint8
 	}
+	type wants struct {
+		s    string
+		code uint8
+	}
 	tests := []struct {
 		name   string
 		fields fields
-		want   string
+		wants  wants
 	}{
 		{
 			name:   "FlatBuffer",
 			fields: fields{code: uint8(flatBuffer)},
-			want:   "FlatBuffer",
+			wants: wants{
+				s:    "FlatBuffer",
+				code: uint8(flatBuffer),
+			},
 		},
 		{
 			name:   "ProtoBuffer",
 			fields: fields{code: uint8(protoBuffer)},
-			want:   "ProtoBuffer",
+			wants: wants{
+				s:    "ProtoBuffer",
+				code: uint8(protoBuffer),
+			},
 		},
 		{
 			name:   "JSON",
 			fields: fields{code: uint8(json)},
-			want:   "JSON",
+			wants: wants{
+				s:    "JSON",
+				code: uint8(json),
+			},
 		},
 		{
 			name:   "Unknown",
 			fields: fields{code: uint8(unknown)},
-			want:   "Unknown",
+			wants: wants{
+				s:    "Unknown",
+				code: uint8(unknown),
+			},
 		},
 		{
 			name:   "Unknown code",
 			fields: fields{code: 42},
-			want:   "Unknown",
+			wants: wants{
+				s:    "Unknown",
+				code: uint8(unknown),
+			},
 		},
 	}
 	for _, tt := range tests {
@@ -54,7 +73,8 @@ func TestNewFormat(t *testing.T) {
 
 			f := NewFormat(tt.fields.code)
 
-			re.Equal(tt.want, f.String())
+			re.Equal(tt.wants.s, f.String())
+			re.Equal(tt.wants.code, f.Code())
 		})
 	}
 }

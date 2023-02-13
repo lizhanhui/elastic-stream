@@ -40,6 +40,10 @@ func (f Format) String() string {
 	}
 }
 
+func (f Format) Code() uint8 {
+	return uint8(f.code)
+}
+
 func FlatBufferEnum() Format {
 	return Format{flatBuffer}
 }

@@ -16,10 +16,10 @@ import (
 
 const (
 	_fixedHeaderLen = 16
-	_minFrameLen    = _fixedHeaderLen
+	_minFrameLen    = _fixedHeaderLen + 4 // fixed header + checksum
 	_maxFrameLen    = 16 * 1024 * 1024
 
-	_magicCode = 23
+	_magicCode uint8 = 23
 )
 
 // Frame is the load that communicates with Elastic Storage.
@@ -40,27 +40,29 @@ const (
 //	|                         Payload Checksum (32)                         |
 //	+-----------------------------------------------------------------------+
 type Frame struct {
-	opCode    operation.Operation // opCode determines the format and semantics of the frame
-	flag      uint8               // flag is reserved for boolean flags specific to the frame type
-	streamID  uint32              // streamID identifies which stream the frame belongs to
-	headerFmt format.Format       // headerFmt identifies the format of the header.
-	header    []byte
-	payload   []byte
+	OpCode    operation.Operation // OpCode determines the format and semantics of the frame
+	Flag      uint8               // Flag is reserved for boolean flags specific to the frame type
+	StreamID  uint32              // StreamID identifies which stream the frame belongs to
+	HeaderFmt format.Format       // HeaderFmt identifies the format of the Header.
+	Header    []byte              // nil for no extended header
+	Payload   []byte              // nil for no payload
 }
 
 // Framer reads and writes Frames
 type Framer struct {
-	w io.Writer
-	r io.Reader
-
 	streamID atomic.Uint32
 
+	r io.Reader
 	// fixedBuf is used to cache the fixed length portion in the frame
 	fixedBuf [_fixedHeaderLen]byte
+
+	w    io.Writer
+	wbuf []byte
 
 	lg *zap.Logger
 }
 
+// NewFramer returns a Framer that writes frames to w and reads them from r
 func NewFramer(w io.Writer, r io.Reader, logger *zap.Logger) *Framer {
 	framer := &Framer{
 		w:  w,
@@ -71,15 +73,8 @@ func NewFramer(w io.Writer, r io.Reader, logger *zap.Logger) *Framer {
 	return framer
 }
 
-func (fr *Framer) NewFrame(opCode uint16) Frame {
-	return Frame{
-		opCode:    operation.NewOperation(opCode),
-		streamID:  fr.nextID(),
-		headerFmt: format.FlatBufferEnum(),
-	}
-}
-
-func (fr *Framer) nextID() uint32 {
+// NextID generates the next new StreamID
+func (fr *Framer) NextID() uint32 {
 	return fr.streamID.Add(1)
 }
 
@@ -127,12 +122,13 @@ func (fr *Framer) ReadFrame() (Frame, error) {
 	header := tBuf[:headerLen]
 	payload := tBuf[headerLen:]
 
+	var checksum uint32
+	err = binary.Read(fr.r, binary.BigEndian, &checksum)
+	if err != nil {
+		return Frame{}, errors.Wrap(err, "read payload checksum")
+	}
+
 	if payloadLen > 0 {
-		var checksum uint32
-		err = binary.Read(fr.r, binary.BigEndian, &checksum)
-		if err != nil {
-			return Frame{}, errors.Wrap(err, "read payload checksum")
-		}
 		if ckm := crc32.ChecksumIEEE(payload); ckm != checksum {
 			logger.Error("payload checksum mismatch.", zap.Uint32("expected", checksum), zap.Uint32("got", ckm))
 			return Frame{}, errors.New("payload checksum mismatch")
@@ -140,13 +136,63 @@ func (fr *Framer) ReadFrame() (Frame, error) {
 	}
 
 	frame := Frame{
-		opCode:    operation.NewOperation(opCode),
-		flag:      flag,
-		streamID:  streamID,
-		headerFmt: format.NewFormat(headerFmt),
-		header:    header,
-		payload:   payload,
+		OpCode:    operation.NewOperation(opCode),
+		Flag:      flag,
+		StreamID:  streamID,
+		HeaderFmt: format.NewFormat(headerFmt),
+		Header:    header,
+		Payload:   payload,
 	}
 
 	return frame, nil
+}
+
+// WriteFrame writes a frame
+//
+// It will perform exactly one Write to the underlying Writer.
+// It is the caller's responsibility not to violate the maximum frame size
+// and to not call other Write methods concurrently.
+func (fr *Framer) WriteFrame(frame Frame) error {
+	fr.startWrite(frame)
+
+	if frame.Header != nil {
+		fr.wbuf = append(fr.wbuf, frame.Header...)
+	}
+	if frame.Payload != nil {
+		fr.wbuf = append(fr.wbuf, frame.Payload...)
+		fr.wbuf = binary.BigEndian.AppendUint32(fr.wbuf, crc32.ChecksumIEEE(frame.Payload))
+	} else {
+		// dummy checksum
+		fr.wbuf = binary.BigEndian.AppendUint32(fr.wbuf, 0)
+	}
+
+	return fr.endWrite()
+}
+
+// Write the fixed header
+func (fr *Framer) startWrite(frame Frame) {
+	fr.wbuf = binary.BigEndian.AppendUint32(fr.wbuf, 0) // 4 bytes of frame length, will be filled in endWrite
+	fr.wbuf = append(fr.wbuf, _magicCode)
+	fr.wbuf = binary.BigEndian.AppendUint16(fr.wbuf, frame.OpCode.Code())
+	fr.wbuf = append(fr.wbuf, frame.Flag)
+	fr.wbuf = binary.BigEndian.AppendUint32(fr.wbuf, frame.StreamID)
+	fr.wbuf = append(fr.wbuf, frame.HeaderFmt.Code())
+	headerLen := len(frame.Header)
+	fr.wbuf = append(fr.wbuf, byte(headerLen>>16), byte(headerLen>>8), byte(headerLen))
+}
+
+func (fr *Framer) endWrite() error {
+	// Now that we know the final size, fill in the FrameHeader in
+	// the space previously reserved for it. Abuse append.
+	length := len(fr.wbuf) - 4 // sub frameLen width
+	if length > (_maxFrameLen) {
+		return errors.New("frame too large")
+	}
+	_ = binary.BigEndian.AppendUint32(fr.wbuf[:0], uint32(length))
+
+	_, err := fr.w.Write(fr.wbuf)
+	if err != nil {
+		return errors.Wrap(err, "write frame")
+	}
+	return nil
 }

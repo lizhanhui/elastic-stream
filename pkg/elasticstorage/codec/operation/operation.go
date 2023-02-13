@@ -50,6 +50,10 @@ func (o Operation) String() string {
 	}
 }
 
+func (o Operation) Code() uint16 {
+	return uint16(o.code)
+}
+
 func Ping() Operation {
 	return Operation{ping}
 }

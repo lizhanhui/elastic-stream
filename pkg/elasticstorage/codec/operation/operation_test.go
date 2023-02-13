@@ -15,45 +15,70 @@ func TestNewOperation(t *testing.T) {
 	type fields struct {
 		code uint16
 	}
+	type wants struct {
+		s    string
+		code uint16
+	}
 	tests := []struct {
 		name   string
 		fields fields
-		want   string
+		wants  wants
 	}{
 		{
 			name:   "Ping",
 			fields: fields{code: uint16(ping)},
-			want:   "Ping",
+			wants: wants{
+				s:    "Ping",
+				code: uint16(ping),
+			},
 		},
 		{
 			name:   "GoAway",
 			fields: fields{code: uint16(goAway)},
-			want:   "GoAway",
+			wants: wants{
+				s:    "GoAway",
+				code: uint16(goAway),
+			},
 		},
 		{
 			name:   "Publish",
 			fields: fields{code: uint16(publish)},
-			want:   "Publish",
+			wants: wants{
+				s:    "Publish",
+				code: uint16(publish),
+			},
 		},
 		{
 			name:   "Heartbeat",
 			fields: fields{code: uint16(heartbeat)},
-			want:   "Heartbeat",
+			wants: wants{
+				s:    "Heartbeat",
+				code: uint16(heartbeat),
+			},
 		},
 		{
 			name:   "ListRange",
 			fields: fields{code: uint16(listRange)},
-			want:   "ListRange",
+			wants: wants{
+				s:    "ListRange",
+				code: uint16(listRange),
+			},
 		},
 		{
 			name:   "Unknown",
 			fields: fields{code: uint16(unknown)},
-			want:   "Unknown",
+			wants: wants{
+				s:    "Unknown",
+				code: uint16(unknown),
+			},
 		},
 		{
 			name:   "Unknown code",
 			fields: fields{code: 42},
-			want:   "Unknown",
+			wants: wants{
+				s:    "Unknown",
+				code: uint16(unknown),
+			},
 		},
 	}
 	for _, tt := range tests {
@@ -64,7 +89,8 @@ func TestNewOperation(t *testing.T) {
 
 			o := NewOperation(tt.fields.code)
 
-			re.Equal(tt.want, o.String())
+			re.Equal(tt.wants.s, o.String())
+			re.Equal(tt.wants.code, o.Code())
 		})
 	}
 }
