@@ -12,7 +12,7 @@ use protocol::rpc::header::{
 };
 use slog::{debug, trace, warn, Logger};
 use std::rc::Rc;
-use store::{elastic::ElasticStore, ops::put::PutResult, option::WriteOptions, Record, Store};
+use store::{ops::put::PutResult, option::WriteOptions, ElasticStore, Record, Store};
 
 /// Representation of the incoming request.
 ///

@@ -31,12 +31,14 @@ use futures::Future;
 use ops::put::PutResult;
 
 pub mod cursor;
-pub mod elastic;
 pub mod ops;
 pub mod option;
 pub mod segment;
 
 mod io;
+mod store;
+
+pub use crate::store::ElasticStore;
 
 pub struct Record {
     pub buffer: bytes::Bytes,

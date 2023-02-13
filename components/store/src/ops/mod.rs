@@ -2,8 +2,8 @@
 //!
 //!
 use bytes::Bytes;
-use local_sync::oneshot::Sender;
 use pin_project::pin_project;
+use tokio::sync::oneshot::Sender;
 
 use crate::error::StoreError;
 

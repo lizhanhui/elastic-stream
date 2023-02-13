@@ -16,7 +16,7 @@ use slog::{debug, error, info, o, trace, warn, Drain, Logger};
 use slog_async::Async;
 use slog_term::{CompactFormat, TermDecorator};
 use store::{
-    elastic::ElasticStore,
+    ElasticStore,
     option::{StoreOptions, StorePath},
 };
 use transport::channel::{ChannelReader, ChannelWriter};
@@ -29,15 +29,15 @@ struct NodeConfig {
 
 struct Node {
     config: NodeConfig,
-    store: Option<Rc<ElasticStore>>,
+    store: Rc<ElasticStore>,
     logger: Logger,
 }
 
 impl Node {
-    pub fn new(config: NodeConfig, logger: &Logger) -> Self {
+    pub fn new(config: NodeConfig, store: ElasticStore, logger: &Logger) -> Self {
         Self {
             config,
-            store: None,
+            store: Rc::new(store),
             logger: logger.clone(),
         }
     }
@@ -62,25 +62,6 @@ impl Node {
         };
 
         driver.block_on(async {
-            let store_path = StorePath::new("/data", 0);
-            let store_options = StoreOptions::new(&store_path);
-            let store = match ElasticStore::new(&store_options, &self.logger) {
-                Ok(store) => store,
-                Err(e) => {
-                    error!(self.logger, "Failed to create ElasticStore. Cause: {:?}", e);
-                    panic!("Failed to create ElasticStore");
-                }
-            };
-
-            match store.open().await {
-                Ok(_) => {}
-                Err(e) => {
-                    error!(self.logger, "Failed to initiaize store. Cause: {:?}", e);
-                }
-            };
-
-            self.store = Some(store);
-
             let bind_address = format!("0.0.0.0:{}", self.config.server_config.port);
             let listener = match TcpListener::bind(&bind_address) {
                 Ok(listener) => {
@@ -126,15 +107,10 @@ impl Node {
                 }
             };
 
-            if let Some(ref store) = self.store {
-                let store = Rc::clone(store);
-                monoio::spawn(async move {
-                    Node::process(store, stream, logger).await;
-                });
-            } else {
-                error!(self.logger, "Store is not properly initilialized");
-                break;
-            }
+            let store = Rc::clone(&self.store);
+            monoio::spawn(async move {
+                Node::process(store, stream, logger).await;
+            });
         }
 
         Ok(())
@@ -259,13 +235,15 @@ pub fn launch(cfg: &ServerConfig) -> Result<(), Box<dyn Error>> {
 
     let uring_fd = storage_uring.as_raw_fd();
 
+    let store = ElasticStore::new()?;
+
     let handles = core_ids
         .into_iter()
         .skip(available_core_len - cfg.concurrency)
         .map(|core_id| {
             let server_config = cfg.clone();
             let logger = log.new(o!());
-
+            let store = store.clone();
             std::thread::Builder::new()
                 .name("Worker".to_owned())
                 .spawn(move || {
@@ -274,7 +252,7 @@ pub fn launch(cfg: &ServerConfig) -> Result<(), Box<dyn Error>> {
                         server_config: server_config.clone(),
                         sharing_uring: uring_fd,
                     };
-                    let mut node = Node::new(node_config, &logger);
+                    let mut node = Node::new(node_config, store, &logger);
                     node.serve()
                 })
         })

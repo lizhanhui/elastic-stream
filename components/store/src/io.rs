@@ -7,7 +7,7 @@ const DEFAULT_SQPOLL_CPU: u32 = 1;
 const DEFAULT_MAX_BOUNDED_URING_WORKER_COUNT: u32 = 2;
 const DEFAULT_MAX_UNBOUNDED_URING_WORKER_COUNT: u32 = 2;
 
-struct Options {
+pub(crate) struct Options {
     io_depth: u32,
 
     /// Bind the kernel's poll thread to the specified cpu.
@@ -29,21 +29,21 @@ impl Default for Options {
     }
 }
 
-struct IO {
+pub(crate) struct IO {
     uring: io_uring::IoUring,
-    sender: Sender<()>,
+    pub(crate) sender: Sender<()>,
     receiver: Receiver<()>,
 }
 
 impl IO {
-    pub(crate) fn new(mut options: Options) -> Result<Self, StoreError> {
+    pub(crate) fn new(options: &mut Options) -> Result<Self, StoreError> {
         let uring = io_uring::IoUring::builder()
             .dontfork()
             .setup_iopoll()
             .setup_sqpoll_cpu(options.sqpoll_cpu)
             .setup_r_disabled()
             .build(options.io_depth)
-            .map_err(|_e| StoreError::IO_URING)?;
+            .map_err(|_e| StoreError::IoUring)?;
 
         let submitter = uring.submitter();
         submitter.register_iowq_max_workers(&mut options.max_workers)?;
@@ -79,7 +79,6 @@ impl IO {
                 }
                 completion.sync();
             } else {
-                todo!("Log error");
                 break;
             }
         }

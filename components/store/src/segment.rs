@@ -7,7 +7,7 @@
 //! Placement managers will periodically check if replica requirement is met or not for each segment.
 //! Once a violation is found, placement manager would instruct data nodes of choice to add or remove replica.
 
-use monoio::fs::File;
+use std::fs::File;
 
 pub trait Segment {}
 

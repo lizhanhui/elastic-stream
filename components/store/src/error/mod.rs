@@ -21,8 +21,8 @@ pub enum StoreError {
     #[error("Internal IO error")]
     IO(#[from] std::io::Error),
 
-    #[error("Create to create IO_Uring instance")]
-    IO_URING,
+    #[error("Create to create I/O Uring instance")]
+    IoUring,
 }
 
 #[derive(Debug, Error)]
