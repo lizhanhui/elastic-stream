@@ -31,7 +31,9 @@ crc = "3.0"
 futures = { version = "0.3" }
 pin-project = { version = "1" }
 io-uring = "0.5"
-monoio = { version = "0.0", features = ["splice"] }
+tokio-uring = "0.4"
+crossbeam = "0.8"
+monoio = { git = "https://github.com/lizhanhui/monoio.git", features = ["splice"], branch = "config_uring" }
 monoio-macros = "0.0"
 num_cpus = "1"
 thiserror = "1.0"

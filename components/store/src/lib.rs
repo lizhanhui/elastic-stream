@@ -36,6 +36,8 @@ pub mod ops;
 pub mod option;
 pub mod segment;
 
+mod io;
+
 pub struct Record {
     pub buffer: bytes::Bytes,
 }

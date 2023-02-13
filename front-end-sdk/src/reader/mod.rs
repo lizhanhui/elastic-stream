@@ -17,7 +17,7 @@ use model::Record;
 /// use std::error::Error;
 /// use front_end_sdk::{Reader, Whence};
 /// use futures::StreamExt;
-/// 
+///
 /// #[tokio::main]
 /// async fn main() -> Result<(), Box<dyn Error>>  {
 ///    let access_point = "localhost:80";

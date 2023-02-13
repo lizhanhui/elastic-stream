@@ -67,10 +67,16 @@ mod tests {
         assert_eq!(headers.key(), None);
         assert_eq!(headers.offset(), None);
 
-        headers.common.entry(Common::Offset).or_insert("123".to_string());
+        headers
+            .common
+            .entry(Common::Offset)
+            .or_insert("123".to_string());
         assert_eq!(headers.offset(), Some(123));
 
-        headers.common.entry(Common::Key).or_insert("order_123".to_string());
+        headers
+            .common
+            .entry(Common::Key)
+            .or_insert("order_123".to_string());
         assert_eq!(headers.key(), Some("order_123"));
     }
 }

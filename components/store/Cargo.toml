@@ -7,6 +7,7 @@ edition = "2021"
 
 [dependencies]
 bytes = { workspace = true }
+tokio-uring = { workspace = true }
 monoio = { workspace = true }
 monoio-macros = { workspace = true }
 futures = { workspace = true }
@@ -20,6 +21,7 @@ prometheus = { workspace = true }
 pin-project = { workspace = true }
 libc = { workspace = true }
 io-uring = { workspace = true }
+crossbeam = { workspace = true }
 
 [dev-dependencies]
 slog-async =  { workspace = true }

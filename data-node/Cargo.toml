@@ -28,3 +28,4 @@ service = { path = "../components/service" }
 store = { path = "../components/store" }
 local-sync = { workspace = true }
 placement-client = { path = "../components/placement-client" }
+io-uring = { workspace = true }

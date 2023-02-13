@@ -1,4 +1,8 @@
-use std::{error::Error, rc::Rc};
+use std::{
+    error::Error,
+    os::fd::{AsRawFd, RawFd},
+    rc::Rc,
+};
 
 use crate::{cfg::ServerConfig, handler::ServerCall};
 
@@ -20,6 +24,7 @@ use transport::channel::{ChannelReader, ChannelWriter};
 struct NodeConfig {
     core_id: CoreId,
     server_config: ServerConfig,
+    sharing_uring: RawFd,
 }
 
 struct Node {
@@ -42,6 +47,7 @@ impl Node {
         let mut driver = match RuntimeBuilder::<FusionDriver>::new()
             .enable_timer()
             .with_entries(self.config.server_config.queue_depth)
+            .uring_builder(io_uring::IoUring::builder().setup_attach_wq(self.config.sharing_uring))
             .build()
         {
             Ok(driver) => driver,
@@ -226,20 +232,32 @@ impl Node {
     }
 }
 
-pub fn launch(cfg: &ServerConfig) {
+pub fn launch(cfg: &ServerConfig) -> Result<(), Box<dyn Error>> {
     let decorator = TermDecorator::new().build();
     let drain = CompactFormat::new(decorator).build().fuse();
     let drain = Async::new(drain).build().fuse();
     let log = Logger::root(drain, o!());
 
-    let core_ids = match core_affinity::get_core_ids() {
-        Some(ids) => ids,
-        None => {
-            warn!(log, "No cores are available to set affinity");
-            return;
-        }
-    };
+    let core_ids = core_affinity::get_core_ids().ok_or_else(|| {
+        warn!(log, "No cores are available to set affinity");
+        crate::error::LaunchError::NoCoresAvailable
+    })?;
     let available_core_len = core_ids.len();
+
+    let storage_uring = io_uring::IoUring::builder()
+        .setup_iopoll()
+        .setup_sqpoll(2000)
+        .setup_sqpoll_cpu(1)
+        .setup_r_disabled()
+        .dontfork()
+        .build(cfg.concurrency as u32)?;
+
+    let submitter = storage_uring.submitter();
+    submitter.register_iowq_max_workers(&mut [2, 2])?;
+    // Register buffers
+    submitter.register_enable_rings()?;
+
+    let uring_fd = storage_uring.as_raw_fd();
 
     let handles = core_ids
         .into_iter()
@@ -254,6 +272,7 @@ pub fn launch(cfg: &ServerConfig) {
                     let node_config = NodeConfig {
                         core_id: core_id.clone(),
                         server_config: server_config.clone(),
+                        sharing_uring: uring_fd,
                     };
                     let mut node = Node::new(node_config, &logger);
                     node.serve()
@@ -264,6 +283,8 @@ pub fn launch(cfg: &ServerConfig) {
     for handle in handles.into_iter() {
         let _result = handle.unwrap().join();
     }
+
+    Ok(())
 }
 
 #[cfg(test)]
