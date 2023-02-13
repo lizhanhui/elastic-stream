@@ -18,8 +18,7 @@ use model::{error::RecordError, Record, RecordMetadata};
 ///
 ///     let body = BytesMut::with_capacity(128).freeze();
 ///     let record = Record::new_builder()
-///         .with_topic(String::from("topic"))
-///         .with_partition(1)
+///         .with_stream(1)
 ///         .with_body(body)
 ///         .build()?;
 ///
@@ -55,7 +54,7 @@ impl Writer {
     pub async fn append(&self, record: &Record) -> Result<RecordMetadata, Box<dyn Error>> {
         Ok(RecordMetadata::new(
             record
-                .partition()
+                .stream()
                 .ok_or(RecordError::RequiredFieldMissing)?,
             0,
         ))

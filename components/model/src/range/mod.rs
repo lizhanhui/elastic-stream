@@ -6,13 +6,13 @@ pub trait Range {
     fn seal(&mut self) -> Result<u64, RangeError>;
 }
 
-/// Representation of a partition range in form of `[start, end)` in which `start` is inclusive and `end` is exclusive.
+/// Representation of a stream range in form of `[start, end)` in which `start` is inclusive and `end` is exclusive.
 /// If `start` == `end`, there will be no valid records in the range.
 ///
 /// At the beginning, `end` will be `None` and it would grow as more slots are taken from the range.
 /// Once the range is sealed, it becomes immutable and its right boundary becomes fixed.
 #[derive(Debug, PartialEq, Clone, Copy)]
-pub struct PartitionRange {
+pub struct StreamRange {
     /// The start slot index, inclusive.
     start: u64,
 
@@ -23,7 +23,7 @@ pub struct PartitionRange {
     end: Option<u64>,
 }
 
-impl PartitionRange {
+impl StreamRange {
     pub fn new(start: u64, next: u64, end: Option<u64>) -> Self {
         Self { start, next, end }
     }
@@ -41,13 +41,13 @@ impl PartitionRange {
     }
 
     /// Length of the range.
-    /// That is, number of records in the partition range.
+    /// That is, number of records in the stream range.
     pub fn len(&self) -> u64 {
         self.next - self.start
     }
 }
 
-impl Range for PartitionRange {
+impl Range for StreamRange {
     fn sealed(&self) -> bool {
         self.end.is_some()
     }
@@ -69,7 +69,7 @@ mod tests {
 
     #[test]
     fn test_take_slot() {
-        let mut range = PartitionRange::new(0, 0, None);
+        let mut range = StreamRange::new(0, 0, None);
         assert_eq!(range.sealed(), false);
         assert_eq!(range.len(), 0);
 

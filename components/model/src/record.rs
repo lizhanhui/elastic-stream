@@ -2,11 +2,27 @@ use crate::{error::RecordError, header::Headers};
 use bytes::Bytes;
 use std::{collections::HashMap, error::Error, time::Instant};
 
+// The below definitions of Record and BatchRecord are inspired by Kafka's protocols
 #[derive(Debug, Clone)]
 pub struct Record {
+    length: i32,
+    offset_delta: i32,
+    timestamp_delta: i32,
     headers: Headers,
     properties: HashMap<String, String>,
     body: Bytes,
+}
+
+pub struct BatchRecord {
+    base_offset: i64,
+    last_offset_delta: i32,
+    batch_length: i32,
+    magic: i8,
+    crc: i32,
+    first_timestamp: i64,
+    last_timestamp: i64,
+    attributes: i8,
+    records: Vec<Record>,
 }
 
 impl Record {
@@ -15,6 +31,9 @@ impl Record {
             headers,
             properties: HashMap::new(),
             body,
+            length: todo!(),
+            offset_delta: todo!(),
+            timestamp_delta: todo!(),
         }
     }
 
@@ -22,20 +41,12 @@ impl Record {
         RecordBuilder::default()
     }
 
-    pub fn topic(&self) -> Option<&str> {
-        self.headers.topic()
-    }
-
-    pub fn partition(&self) -> Option<i32> {
-        self.headers.partition()
-    }
-
     pub fn key(&self) -> Option<&str> {
         self.headers.key()
     }
 
-    pub fn offset(&self) -> Option<i64> {
-        self.headers.offset()
+    pub fn stream(&self) -> Option<i32> {
+        self.headers.stream()
     }
 
     pub fn properties(&self) -> &HashMap<String, String> {
@@ -53,42 +64,35 @@ impl Record {
 
 #[derive(Debug, Default)]
 pub struct RecordBuilder {
-    topic: Option<String>,
     body: Option<Bytes>,
-    partition: Option<i32>,
+    stream: Option<i32>,
 }
 
 impl RecordBuilder {
-    pub fn with_topic(mut self, topic: String) -> Self {
-        self.topic = Some(topic);
-        self
-    }
-
     pub fn with_body(mut self, body: Bytes) -> Self {
         self.body = Some(body);
         self
     }
 
-    pub fn with_partition(mut self, partition: i32) -> Self {
-        self.partition = Some(partition);
+    pub fn with_stream(mut self, partition: i32) -> Self {
+        self.stream = Some(partition);
         self
     }
 
     pub fn build(self) -> Result<Record, Box<dyn Error>> {
-        let topic = self.topic.ok_or(RecordError::RequiredFieldMissing)?;
         let body = self.body.ok_or(RecordError::RequiredFieldMissing)?;
-        let partition = self.partition.ok_or(RecordError::RequiredFieldMissing)?;
-        let header = Headers::new(topic, partition);
+        let stream = self.stream.ok_or(RecordError::RequiredFieldMissing)?;
+        let header = Headers::new(stream);
         Ok(Record::new(header, body))
     }
 }
 
 #[derive(Debug)]
 pub struct RecordMetadata {
-    /// The partition the record was saved into
-    pub partition: i32,
+    /// The stream the record was saved into
+    pub stream: i32,
 
-    /// The offset of the record in the topic/partition.
+    /// The offset of the record in the stream.
     pub offset: i64,
 
     /// Timestamp when the record was received and persisted by `ElasticStore`.
@@ -98,7 +102,7 @@ pub struct RecordMetadata {
 impl Default for RecordMetadata {
     fn default() -> Self {
         Self {
-            partition: -1,
+            stream: -1,
             offset: -1,
             timestamp: Instant::now(),
         }
@@ -106,9 +110,9 @@ impl Default for RecordMetadata {
 }
 
 impl RecordMetadata {
-    pub fn new(partition: i32, offset: i64) -> Self {
+    pub fn new(stream: i32, offset: i64) -> Self {
         Self {
-            partition,
+            stream,
             offset,
             ..Default::default()
         }

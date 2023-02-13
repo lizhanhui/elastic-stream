@@ -1,4 +1,4 @@
-use model::range::PartitionRange;
+use model::range::StreamRange;
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum Status {
@@ -27,6 +27,6 @@ pub(crate) enum Response {
     },
     ListRange {
         status: Status,
-        ranges: Option<Vec<PartitionRange>>,
+        ranges: Option<Vec<StreamRange>>,
     },
 }

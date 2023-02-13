@@ -1,6 +1,6 @@
 pub mod error;
 pub mod header;
-pub mod partition;
+pub mod stream;
 pub mod range;
 mod record;
 

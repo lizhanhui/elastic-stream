@@ -2,10 +2,10 @@ use std::collections::HashMap;
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub enum Common {
-    Topic,
-    Partition,
+    Stream,
     Key,
-    Offset,
+    Tag,
+    RecordId,
 }
 
 #[derive(Debug, Clone)]
@@ -15,12 +15,11 @@ pub struct Headers {
 }
 
 impl Headers {
-    pub fn new(topic: String, partition: i32) -> Self {
+    pub fn new(stream: i32) -> Self {
         let mut common = HashMap::new();
-        common.entry(Common::Topic).or_insert(topic);
         common
-            .entry(Common::Partition)
-            .or_insert(partition.to_string());
+            .entry(Common::Stream)
+            .or_insert(stream.to_string());
 
         Self {
             common,
@@ -28,12 +27,8 @@ impl Headers {
         }
     }
 
-    pub(crate) fn topic(&self) -> Option<&str> {
-        self.common.get(&Common::Topic).map(|s| &s[..])
-    }
-
-    pub(crate) fn partition(&self) -> Option<i32> {
-        if let Some(s) = self.common.get(&Common::Partition) {
+    pub(crate) fn stream(&self) -> Option<i32> {
+        if let Some(s) = self.common.get(&Common::Stream) {
             return s.parse::<i32>().ok();
         }
         None
@@ -41,13 +36,6 @@ impl Headers {
 
     pub(crate) fn key(&self) -> Option<&str> {
         self.common.get(&Common::Key).map(|s| &s[..])
-    }
-
-    pub(crate) fn offset(&self) -> Option<i64> {
-        if let Some(s) = self.common.get(&Common::Offset) {
-            return s.parse::<i64>().ok();
-        }
-        None
     }
 
     pub(crate) fn add_property(&mut self, key: String, value: String) -> Option<String> {
@@ -61,17 +49,9 @@ mod tests {
 
     #[test]
     fn test_headers() {
-        let mut headers = Headers::new("test_topic".to_string(), 0);
-        assert_eq!(headers.topic(), Some("test_topic"));
-        assert_eq!(headers.partition(), Some(0));
+        let mut headers = Headers::new(123);
+        assert_eq!(headers.stream(), Some(123));
         assert_eq!(headers.key(), None);
-        assert_eq!(headers.offset(), None);
-
-        headers
-            .common
-            .entry(Common::Offset)
-            .or_insert("123".to_string());
-        assert_eq!(headers.offset(), Some(123));
 
         headers
             .common
