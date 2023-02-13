@@ -13,6 +13,7 @@ type Info struct {
 	ClientUrls []string `json:"client_urls"` // Member.etcd.Config().ACUrls
 }
 
+// MarshalLogObject implements zapcore.ObjectMarshaler
 func (i Info) MarshalLogObject(encoder zapcore.ObjectEncoder) error {
 	encoder.AddString("name", i.Name)
 	encoder.AddUint64("member_id", i.MemberID)
