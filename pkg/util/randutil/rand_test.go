@@ -8,6 +8,7 @@ import (
 
 func TestUint64(t *testing.T) {
 	re := require.New(t)
-	_, err := Uint64()
+	result, err := Uint64()
 	re.NoError(err)
+	re.NotZero(result)
 }
