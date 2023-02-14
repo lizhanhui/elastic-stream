@@ -5,22 +5,22 @@ namespace DataMeta;
 
 table BatchRecordMeta {
     /// The record format version of this record batch.
-    magic: byte;
+    magic: byte (id: 0);
     /// The attributes of this record batch. Each bit is used to indicate a specific attribute.
-    attributes: byte;
+    attributes: byte (id: 1);
     /// The base offset of the batch record, also is the logical offset of the first record.
-    base_offset: int64;
+    base_offset: int64 (id: 2);
     /// The delta value between the last offset and the base offset. 
-    last_offset_delta: int32;
+    last_offset_delta: int32 (id: 3);
     /// The create timestap of the first record in this batch.
-    first_timestamp: int64;
+    first_timestamp: int64 (id: 4);
     /// The max timestamp among all records contained in this batch.
-    max_timestamp: int64;
+    max_timestamp: int64 (id: 5);
 }
 
 table Property {
-    key: string;
-    value: string;
+    key: string (id: 0);
+    value: string (id: 1);
 }
 
 /// Enum values should only ever be added. Never remove or renumber them.
@@ -34,13 +34,13 @@ enum SystemKeys : byte {
 }
 
 table Header {
-    key: SystemKeys;
-    value: string;
+    key: SystemKeys (id: 0);
+    value: string (id: 1);
 }
 
 table RecordMeta {
-    offset_delta: int32;
-    timestamp_delta: int32;
-    headers: [Header];
-    properties: [Property];
+    offset_delta: int32 (id: 0);
+    timestamp_delta: int32 (id: 1);
+    headers: [Header] (id: 2);
+    properties: [Property] (id: 3);
 }
