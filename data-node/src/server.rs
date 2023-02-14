@@ -200,21 +200,6 @@ pub fn launch(cfg: &ServerConfig) -> Result<(), Box<dyn Error>> {
     })?;
     let available_core_len = core_ids.len();
 
-    let storage_uring = io_uring::IoUring::builder()
-        .setup_iopoll()
-        .setup_sqpoll(2000)
-        .setup_sqpoll_cpu(1)
-        .setup_r_disabled()
-        .dontfork()
-        .build(cfg.concurrency as u32)?;
-
-    let submitter = storage_uring.submitter();
-    submitter.register_iowq_max_workers(&mut [2, 2])?;
-    // Register buffers
-    submitter.register_enable_rings()?;
-
-    let uring_fd = storage_uring.as_raw_fd();
-
     let store = ElasticStore::new()?;
 
     let handles = core_ids
@@ -230,7 +215,7 @@ pub fn launch(cfg: &ServerConfig) -> Result<(), Box<dyn Error>> {
                     let node_config = NodeConfig {
                         core_id: core_id.clone(),
                         server_config: server_config.clone(),
-                        sharing_uring: uring_fd,
+                        sharing_uring: store.as_raw_fd(),
                     };
                     let mut node = Node::new(node_config, store, &logger);
                     node.serve()

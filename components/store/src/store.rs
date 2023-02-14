@@ -1,4 +1,7 @@
-use std::thread::{Builder, JoinHandle};
+use std::{
+    os::fd::{AsRawFd, RawFd},
+    thread::{Builder, JoinHandle},
+};
 
 use crate::{
     error::{PutError, StoreError},
@@ -10,20 +13,26 @@ use crate::{
 use core_affinity::CoreId;
 use crossbeam::channel::Sender;
 use futures::Future;
-use tokio::sync::oneshot::{self, error::RecvError};
+use tokio::sync::oneshot;
 
 #[derive(Clone)]
 pub struct ElasticStore {
+    /// The channel for server layer to communicate with storage.
     tx: Sender<()>,
+
+    /// Expose underlying I/O Uring FD so that its worker pool may be shared with
+    /// server layer I/O Uring instances.
+    sharing_uring: RawFd,
 }
 
 impl ElasticStore {
     pub fn new() -> Result<Self, StoreError> {
         let mut opt = io::Options::default();
         let mut io = io::IO::new(&mut opt)?;
+        let sharing_uring = io.as_raw_fd();
         let tx = io.sender.clone();
         let _io_thread_handle = Self::with_thread("IO", move || io.run(), None)?;
-        Ok(Self { tx })
+        Ok(Self { tx, sharing_uring })
     }
 
     fn with_thread<F>(
@@ -95,5 +104,12 @@ impl Store for ElasticStore {
 
     fn scan(&self, options: ReadOptions) -> Scan {
         todo!()
+    }
+}
+
+impl AsRawFd for ElasticStore {
+    /// FD of the underlying I/O Uring instance, for the purpose of sharing worker pool with other I/O Uring instances.
+    fn as_raw_fd(&self) -> RawFd {
+        self.sharing_uring
     }
 }
