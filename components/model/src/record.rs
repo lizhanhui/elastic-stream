@@ -31,9 +31,9 @@ impl Record {
             headers,
             properties: HashMap::new(),
             body,
-            length: todo!(),
-            offset_delta: todo!(),
-            timestamp_delta: todo!(),
+            length: 0,
+            offset_delta: 0,
+            timestamp_delta: 0,
         }
     }
 

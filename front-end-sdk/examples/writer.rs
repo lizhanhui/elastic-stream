@@ -11,8 +11,7 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
 
     let body = BytesMut::with_capacity(128).freeze();
     let record = Record::new_builder()
-        .with_topic(String::from("topic"))
-        .with_partition(1)
+        .with_stream(1)
         .with_body(body)
         .build()?;
 
