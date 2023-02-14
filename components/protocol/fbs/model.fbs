@@ -1,8 +1,7 @@
 /// Don't delete any field from the schema once released.
 /// Asign a id for each filed to keep compatibility easily.
 
-namespace DataMeta;
-
+// The below definitions of Record and BatchRecord are inspired by Kafka's protocols
 table BatchRecordMeta {
     /// The record format version of this record batch.
     magic: byte (id: 0);

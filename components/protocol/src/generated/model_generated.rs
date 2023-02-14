@@ -9,15 +9,6 @@ use core::cmp::Ordering;
 extern crate flatbuffers;
 use self::flatbuffers::{EndianScalar, Follow};
 
-#[allow(unused_imports, dead_code)]
-pub mod data_meta {
-
-  use core::mem;
-  use core::cmp::Ordering;
-
-  extern crate flatbuffers;
-  use self::flatbuffers::{EndianScalar, Follow};
-
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 pub const ENUM_MIN_SYSTEM_KEYS: i8 = 0;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
@@ -114,6 +105,8 @@ impl flatbuffers::SimpleToVerifyInSlice for SystemKeys {}
 pub enum BatchRecordMetaOffset {}
 #[derive(Copy, Clone, PartialEq)]
 
+/// Don't delete any field from the schema once released.
+/// Asign a id for each filed to keep compatibility easily.
 pub struct BatchRecordMeta<'a> {
   pub _tab: flatbuffers::Table<'a>,
 }
@@ -675,5 +668,3 @@ impl core::fmt::Debug for RecordMeta<'_> {
       ds.finish()
   }
 }
-}  // pub mod DataMeta
-
