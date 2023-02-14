@@ -2,7 +2,6 @@
 //!
 //! See details docs for each operation code
 
-use async_channel::Sender;
 use bytes::{BufMut, Bytes, BytesMut};
 use codec::frame::{Frame, OperationCode};
 use flatbuffers::FlatBufferBuilder;
@@ -24,7 +23,7 @@ pub struct ServerCall {
     /// Sender for future response
     ///
     /// Note the receiver part is polled by `ChannelWriter` in a spawned task.
-    pub(crate) sender: Sender<Frame>,
+    pub(crate) sender: tokio::sync::mpsc::UnboundedSender<Frame>,
 
     /// Logger
     pub(crate) logger: Logger,
@@ -70,7 +69,7 @@ impl ServerCall {
         // Send response to channel.
         // Note there is a spawned task, in which channel writer is polling the channel.
         // Once the response is received, it would immediately get written to network.
-        match self.sender.send(response).await {
+        match self.sender.send(response) {
             Ok(_) => {
                 trace!(
                     self.logger,

@@ -7,18 +7,14 @@ use std::{
 use crate::{cfg::ServerConfig, handler::ServerCall};
 
 use core_affinity::CoreId;
-use monoio::{
-    io::Splitable,
-    net::{TcpListener, TcpStream},
-    FusionDriver, RuntimeBuilder,
-};
 use slog::{debug, error, info, o, trace, warn, Drain, Logger};
 use slog_async::Async;
 use slog_term::{CompactFormat, TermDecorator};
 use store::{
-    ElasticStore,
     option::{StoreOptions, StorePath},
+    ElasticStore,
 };
+use tokio_uring::net::{TcpListener, TcpStream};
 use transport::channel::{ChannelReader, ChannelWriter};
 
 struct NodeConfig {
@@ -43,51 +39,42 @@ impl Node {
     }
 
     pub fn serve(&mut self) {
-        monoio::utils::bind_to_cpu_set([self.config.core_id.id]).unwrap();
-        let mut driver = match RuntimeBuilder::<FusionDriver>::new()
-            .enable_timer()
-            .with_entries(self.config.server_config.queue_depth)
-            .uring_builder(io_uring::IoUring::builder().setup_attach_wq(self.config.sharing_uring))
-            .build()
-        {
-            Ok(driver) => driver,
-            Err(e) => {
-                error!(
-                    self.logger,
-                    "Failed to create runtime. Cause: {}",
-                    e.to_string()
-                );
-                panic!("Failed to create runtime driver. {}", e.to_string());
-            }
-        };
+        core_affinity::set_for_current(self.config.core_id);
+        tokio_uring::builder()
+            .entries(self.config.server_config.queue_depth)
+            .uring_builder(
+                tokio_uring::uring_builder()
+                    .dontfork()
+                    .setup_attach_wq(self.config.sharing_uring),
+            )
+            .start(async {
+                let bind_address = format!("0.0.0.0:{}", self.config.server_config.port);
+                let listener =
+                    match TcpListener::bind(bind_address.parse().expect("Failed to bind")) {
+                        Ok(listener) => {
+                            info!(self.logger, "Server starts OK, listening {}", bind_address);
+                            listener
+                        }
+                        Err(e) => {
+                            eprintln!("{}", e.to_string());
+                            return;
+                        }
+                    };
 
-        driver.block_on(async {
-            let bind_address = format!("0.0.0.0:{}", self.config.server_config.port);
-            let listener = match TcpListener::bind(&bind_address) {
-                Ok(listener) => {
-                    info!(self.logger, "Server starts OK, listening {}", bind_address);
-                    listener
+                match self.run(listener, self.logger.new(o!())).await {
+                    Ok(_) => {}
+                    Err(e) => {
+                        error!(self.logger, "Runtime failed. Cause: {}", e.to_string());
+                    }
                 }
-                Err(e) => {
-                    eprintln!("{}", e.to_string());
-                    return;
-                }
-            };
-
-            match self.run(listener, self.logger.new(o!())).await {
-                Ok(_) => {}
-                Err(e) => {
-                    error!(self.logger, "Runtime failed. Cause: {}", e.to_string());
-                }
-            }
-        });
+            });
     }
 
     async fn run(&self, listener: TcpListener, logger: Logger) -> Result<(), Box<dyn Error>> {
         loop {
             let incoming = listener.accept().await;
             let logger = logger.new(o!());
-            let (stream, _socket_address) = match incoming {
+            let (stream, peer_socket_address) = match incoming {
                 Ok((stream, socket_addr)) => {
                     debug!(logger, "Accepted a new connection from {socket_addr:?}");
                     stream.set_nodelay(true).unwrap_or_else(|e| {
@@ -108,27 +95,30 @@ impl Node {
             };
 
             let store = Rc::clone(&self.store);
-            monoio::spawn(async move {
-                Node::process(store, stream, logger).await;
+            let peer_address = peer_socket_address.to_string();
+            tokio_uring::spawn(async move {
+                Node::process(store, stream, peer_address, logger).await;
             });
         }
 
         Ok(())
     }
 
-    async fn process(store: Rc<ElasticStore>, stream: TcpStream, logger: Logger) {
-        let peer_address = match stream.peer_addr() {
-            Ok(addr) => addr.to_string(),
-            Err(_e) => "Unknown".to_owned(),
-        };
-
-        let (read_half, write_half) = stream.into_split();
-        let mut channel_reader = ChannelReader::new(read_half, &peer_address, logger.new(o!()));
-        let mut channel_writer = ChannelWriter::new(write_half, &peer_address, logger.new(o!()));
-        let (tx, rx) = async_channel::unbounded();
+    async fn process(
+        store: Rc<ElasticStore>,
+        stream: TcpStream,
+        peer_address: String,
+        logger: Logger,
+    ) {
+        let stream = Rc::new(stream);
+        let mut channel_reader =
+            ChannelReader::new(Rc::clone(&stream), &peer_address, logger.new(o!()));
+        let mut channel_writer =
+            ChannelWriter::new(Rc::clone(&stream), &peer_address, logger.new(o!()));
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
 
         let request_logger = logger.clone();
-        monoio::spawn(async move {
+        tokio_uring::spawn(async move {
             let logger = request_logger;
             loop {
                 match channel_reader.read_frame().await {
@@ -142,7 +132,7 @@ impl Node {
                             logger: log,
                             store,
                         };
-                        monoio::spawn(async move {
+                        tokio_uring::spawn(async move {
                             server_call.call().await;
                         });
                     }
@@ -161,11 +151,11 @@ impl Node {
             }
         });
 
-        monoio::spawn(async move {
+        tokio_uring::spawn(async move {
             let peer_address = channel_writer.peer_address().to_owned();
             loop {
                 match rx.recv().await {
-                    Ok(frame) => match channel_writer.write_frame(&frame).await {
+                    Some(frame) => match channel_writer.write_frame(&frame).await {
                         Ok(_) => {
                             trace!(
                                 logger,
@@ -185,21 +175,11 @@ impl Node {
                             break;
                         }
                     },
-                    Err(e) => {
-                        if rx.is_closed() {
-                            debug!(
-                                logger,
-                                "Multiplex channel is closed. Session to {} will be terminated",
-                                peer_address
-                            );
-                            break;
-                        }
-
+                    None => {
                         info!(
                             logger,
-                            "Failed to receive response frame from channel. Session to {} will be terminated due to RecvError: `{}`",
-                            peer_address,
-                            e);
+                            "Failed to receive response frame from channel. Session to {} will be terminated",
+                            peer_address);
                         break;
                     }
                 }

@@ -1,9 +1,8 @@
-use std::{rc::Rc, time::Duration};
-
 use crate::error::{ClientError, ListRangeError};
-use local_sync::{mpsc::unbounded, oneshot};
-use monoio::time::{self, error::Elapsed};
 use slog::{error, o, trace, warn, Discard, Logger};
+use std::{rc::Rc, time::Duration};
+use tokio::sync::{mpsc, oneshot};
+use tokio::time;
 
 mod config;
 mod naming;
@@ -48,12 +47,12 @@ impl PlacementClientBuilder {
     }
 
     pub(crate) async fn build(self) -> Result<PlacementClient, ClientError> {
-        let (tx, rx) = unbounded::channel();
+        let (tx, rx) = mpsc::unbounded_channel();
 
         let config = Rc::new(self.config);
 
         let mut session_manager = SessionManager::new(&self.target, &config, rx, &self.log)?;
-        monoio::spawn(async move {
+        tokio_uring::spawn(async move {
             session_manager.run().await;
         });
 
@@ -66,7 +65,7 @@ impl PlacementClientBuilder {
 }
 
 pub(crate) struct PlacementClient {
-    tx: unbounded::Tx<(request::Request, oneshot::Sender<response::Response>)>,
+    tx: mpsc::UnboundedSender<(request::Request, oneshot::Sender<response::Response>)>,
     log: Logger,
     config: Rc<ClientConfig>,
 }
@@ -110,43 +109,47 @@ mod tests {
 
     use super::*;
 
-    #[monoio::test(timer = true)]
-    async fn test_builder() -> Result<(), ClientError> {
-        let log = terminal_logger();
+    #[test]
+    fn test_builder() -> Result<(), ClientError> {
+        tokio_uring::start(async {
+            let log = terminal_logger();
 
-        let config = config::ClientConfig::default();
+            let config = config::ClientConfig::default();
 
-        let logger = log.clone();
-        let port = run_listener(logger).await;
-        let addr = format!("dns:localhost:{}", port);
-        trace!(log, "Target endpoint: `{}`", addr);
+            let logger = log.clone();
+            let port = run_listener(logger).await;
+            let addr = format!("dns:localhost:{}", port);
+            trace!(log, "Target endpoint: `{}`", addr);
 
-        PlacementClientBuilder::new(&addr)
-            .set_log(log)
-            .set_config(config)
-            .build()
-            .await?;
-        Ok(())
+            PlacementClientBuilder::new(&addr)
+                .set_log(log)
+                .set_config(config)
+                .build()
+                .await?;
+            Ok(())
+        })
     }
 
-    #[monoio::test(timer = true)]
-    async fn test_list_range() -> Result<(), ListRangeError> {
-        let log = terminal_logger();
+    #[test]
+    fn test_list_range() -> Result<(), ListRangeError> {
+        tokio_uring::start(async {
+            let log = terminal_logger();
 
-        let port = run_listener(log.clone()).await;
-        let addr = format!("dns:localhost:{}", port);
-        let client = PlacementClientBuilder::new(&addr)
-            .set_log(log)
-            .build()
-            .await
-            .map_err(|_e| ListRangeError::Internal)?;
+            let port = run_listener(log.clone()).await;
+            let addr = format!("dns:localhost:{}", port);
+            let client = PlacementClientBuilder::new(&addr)
+                .set_log(log)
+                .build()
+                .await
+                .map_err(|_e| ListRangeError::Internal)?;
 
-        let timeout = Duration::from_millis(100);
+            let timeout = Duration::from_millis(100);
 
-        for i in 0..3 {
-            client.list_range(i as i64, timeout).await.unwrap();
-        }
+            for i in 0..3 {
+                client.list_range(i as i64, timeout).await.unwrap();
+            }
 
-        Ok(())
+            Ok(())
+        })
     }
 }

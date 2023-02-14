@@ -17,13 +17,6 @@ members = [
 ]
 
 [workspace.dependencies]
-
-# Communicate among tasks of the same thread
-local-sync = { version = "0.0" }
-
-# Communicate among multiple threads
-async-channel = { version = "1.8" }
-
 byteorder = "1"
 bytes = "1"
 core_affinity = "0.8"
@@ -31,11 +24,9 @@ crc = "3.0"
 futures = { version = "0.3" }
 pin-project = { version = "1" }
 io-uring = "0.5"
-tokio-uring = "0.4"
-tokio = { version = "1", features = ["full"] }
+tokio-uring = { git = "https://github.com/tokio-rs/tokio-uring.git", branch = "master", features = ["bytes"] }
+tokio = { version = "1", features = ["sync", "time"] }
 crossbeam = "0.8"
-monoio = { git = "https://github.com/lizhanhui/monoio.git", features = ["splice"], branch = "config_uring" }
-monoio-macros = "0.0"
 num_cpus = "1"
 thiserror = "1.0"
 clap = { version = "4.0", features = ["derive"] }

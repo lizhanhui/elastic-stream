@@ -22,6 +22,7 @@ thread_local! {
     static STREAM_ID: RefCell<u32> = RefCell::new(1);
 }
 
+#[derive(Debug)]
 pub struct Frame {
     pub operation_code: OperationCode,
 

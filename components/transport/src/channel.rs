@@ -1,27 +1,24 @@
 use std::io::Cursor;
+use std::rc::Rc;
 
 use bytes::{Buf, BytesMut};
-use monoio::io::{AsyncReadRent, AsyncWriteRent, AsyncWriteRentExt};
-
 use slog::{debug, error, info, trace, warn, Logger};
+use tokio_uring::{buf::IoBuf, net::TcpStream};
 
 use codec::error::FrameError;
 use codec::frame::Frame;
 
 const BUFFER_SIZE: usize = 4 * 1024;
 
-pub struct ChannelReader<T> {
-    stream: T,
+pub struct ChannelReader {
+    stream: Rc<TcpStream>,
     buffer: BytesMut,
     peer_address: String,
     logger: Logger,
 }
 
-impl<T> ChannelReader<T>
-where
-    T: AsyncReadRent,
-{
-    pub fn new(stream: T, peer_address: &str, logger: Logger) -> Self {
+impl ChannelReader {
+    pub fn new(stream: Rc<TcpStream>, peer_address: &str, logger: Logger) -> Self {
         Self {
             stream,
             buffer: BytesMut::with_capacity(BUFFER_SIZE),
@@ -160,17 +157,14 @@ where
     }
 }
 
-pub struct ChannelWriter<T> {
-    stream: T,
+pub struct ChannelWriter {
+    stream: Rc<TcpStream>,
     peer_address: String,
     logger: Logger,
 }
 
-impl<T> ChannelWriter<T>
-where
-    T: AsyncWriteRent,
-{
-    pub fn new(stream: T, peer_address: &str, logger: Logger) -> Self {
+impl ChannelWriter {
+    pub fn new(stream: Rc<TcpStream>, peer_address: &str, logger: Logger) -> Self {
         Self {
             stream,
             peer_address: peer_address.to_owned(),
@@ -198,9 +192,13 @@ where
 
         let (res, _buf) = self.stream.write_all(buffer).await;
         match res {
-            Ok(n) => {
-                trace!(self.logger, "Wrote {} bytes to {}", n, self.peer_address);
-                debug_assert!(n == bytes_to_write);
+            Ok(_) => {
+                trace!(
+                    self.logger,
+                    "Wrote {} bytes to {}",
+                    bytes_to_write,
+                    self.peer_address
+                );
             }
             Err(e) => {
                 error!(
@@ -210,27 +208,7 @@ where
                 return Err(e);
             }
         };
-
-        // Keep the following code even if TcpStream#flush is noop for now.
-        match self.stream.flush().await {
-            Ok(_) => {
-                trace!(
-                    self.logger,
-                    "Flushed {} bytes to {}",
-                    bytes_to_write,
-                    self.peer_address
-                );
-
-                trace!(
-                    self.logger,
-                    "Frame[stream-id={}] is written",
-                    frame.stream_id
-                );
-
-                Ok(())
-            }
-            Err(e) => Err(e),
-        }
+        Ok(())
     }
 }
 

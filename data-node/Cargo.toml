@@ -6,12 +6,10 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-async-channel = { workspace = true }
 byteorder =  { workspace = true }
 bytes =  { workspace = true }
 core_affinity =  { workspace = true }
 crc =  { workspace = true }
-monoio =  { workspace = true }
 num_cpus =  { workspace = true }
 thiserror =  { workspace = true }
 clap = { workspace = true }
@@ -26,6 +24,7 @@ protocol = {path = "../components/protocol" }
 transport = { path = "../components/transport" }
 service = { path = "../components/service" }
 store = { path = "../components/store" }
-local-sync = { workspace = true }
 placement-client = { path = "../components/placement-client" }
 io-uring = { workspace = true }
+tokio-uring = { workspace = true }
+tokio = { workspace = true }

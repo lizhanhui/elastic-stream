@@ -1,21 +1,23 @@
 //! Util functions for tests.
 //!
 
+use std::rc::Rc;
+
 use codec::frame::OperationCode;
-use local_sync::oneshot;
-use monoio::{io::Splitable, net::TcpListener};
 use slog::{debug, error, info, o, warn, Drain, Logger};
 use slog_async::OverflowStrategy;
+use tokio::sync::oneshot;
+use tokio_uring::net::TcpListener;
 use transport::channel::{ChannelReader, ChannelWriter};
 
 /// Run a dummy listening server.
 /// Once it accepts a connection, it quits immediately.
 pub async fn run_listener(logger: Logger) -> u16 {
     let (tx, rx) = oneshot::channel();
-    monoio::spawn(async move {
+    tokio_uring::spawn(async move {
         // We are using dual-stack mode.
         // Binding to "[::]:0", the any address for IPv6, will also listen for IPv4.
-        let listener = TcpListener::bind("[::]:0").unwrap();
+        let listener = TcpListener::bind("[::]:0".parse().unwrap()).unwrap();
         let port = listener.local_addr().unwrap().port();
         debug!(logger, "TestServer is up, listening {}", port);
         tx.send(port).unwrap();
@@ -27,12 +29,12 @@ pub async fn run_listener(logger: Logger) -> u16 {
                 );
                 let log = logger.clone();
 
-                monoio::spawn(async move {
+                tokio_uring::spawn(async move {
                     let logger = log.clone();
                     let addr = sock_addr.to_string();
-                    let (read_half, write_half) = conn.into_split();
-                    let mut reader = ChannelReader::new(read_half, &addr, logger.clone());
-                    let mut writer = ChannelWriter::new(write_half, &addr, logger.clone());
+                    let stream = Rc::new(conn);
+                    let mut reader = ChannelReader::new(Rc::clone(&stream), &addr, logger.clone());
+                    let mut writer = ChannelWriter::new(Rc::clone(&stream), &addr, logger.clone());
 
                     loop {
                         if let Ok(frame) = reader.read_frame().await {

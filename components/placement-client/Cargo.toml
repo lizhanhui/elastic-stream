@@ -11,16 +11,16 @@ model = { path = "../model" }
 protocol = { path = "../protocol" }
 transport = { path = "../transport" }
 bytes = { workspace = true }
-monoio = { workspace = true }
 slog = { workspace = true }
-local-sync = { workspace = true }
 thiserror = { workspace = true }
 pin-project = { workspace = true }
 futures = { workspace = true }
-async-channel = { workspace = true }
 flatbuffers = { workspace = true }
 gethostname = { workspace = true }
 ordinal = { workspace = true }
+tokio-uring = { workspace = true }
+tokio = { workspace = true }
+crossbeam = { workspace = true }
 
 [dev-dependencies]
 slog-async =  { workspace = true }

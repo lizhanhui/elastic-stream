@@ -51,17 +51,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8da52d66c7071e2e3fa2a1e5c6d088fec47b593032b254f5e980de8ea54454d6"
 
 [[package]]
-name = "async-channel"
-version = "1.8.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cf46fee83e5ccffc220104713af3292ff9bc7c64c7de289f66dae8e38d826833"
-dependencies = [
- "concurrent-queue",
- "event-listener",
- "futures-core",
-]
-
-[[package]]
 name = "atty"
 version = "0.2.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -70,17 +59,6 @@ dependencies = [
  "hermit-abi 0.1.19",
  "libc",
  "winapi",
-]
-
-[[package]]
-name = "auto-const-array"
-version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "336c4771be12bbacae182a5ad2a788bfa27d2c21c5837731480ab5cf161c0e04"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
 ]
 
 [[package]]
@@ -289,15 +267,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "concurrent-queue"
-version = "2.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c278839b831783b70278b14df4d45e1beb1aad306c07bb796637de9a0e323e8e"
-dependencies = [
- "crossbeam-utils",
-]
-
-[[package]]
 name = "core_affinity"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -376,7 +345,7 @@ dependencies = [
  "autocfg",
  "cfg-if",
  "crossbeam-utils",
- "memoffset 0.7.1",
+ "memoffset",
  "scopeguard",
 ]
 
@@ -403,7 +372,6 @@ dependencies = [
 name = "data-node"
 version = "0.1.0"
 dependencies = [
- "async-channel",
  "byteorder",
  "bytes",
  "clap",
@@ -412,8 +380,6 @@ dependencies = [
  "crc",
  "flatbuffers",
  "io-uring",
- "local-sync",
- "monoio",
  "num_cpus",
  "num_enum",
  "placement-client",
@@ -425,6 +391,8 @@ dependencies = [
  "slog-term",
  "store",
  "thiserror",
+ "tokio",
+ "tokio-uring",
  "transport",
 ]
 
@@ -508,12 +476,6 @@ dependencies = [
  "cc",
  "libc",
 ]
-
-[[package]]
-name = "event-listener"
-version = "2.5.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0206175f82b8d6bf6652ff7d71a1e27fd2e4efde587fd368662814d6ec1d9ce0"
 
 [[package]]
 name = "fastrand"
@@ -683,15 +645,6 @@ dependencies = [
  "pin-project-lite",
  "pin-utils",
  "slab",
-]
-
-[[package]]
-name = "fxhash"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c31b6d751ae2c7f11320402d34e41349dd1016f8d5d45e48c4312bc8625af50c"
-dependencies = [
- "byteorder",
 ]
 
 [[package]]
@@ -902,17 +855,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f051f77a7c8e6957c0696eac88f26b0117e54f52d3fc682ab19397a8812846a4"
 
 [[package]]
-name = "local-sync"
-version = "0.0.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "56ae84de7298d25e454f7c95077e85e04585445626f9b2606b1634f125667eff"
-dependencies = [
- "futures-core",
- "futures-sink",
- "futures-util",
-]
-
-[[package]]
 name = "lock_api"
 version = "0.4.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -944,15 +886,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4b182332558b18d807c4ce1ca8ca983b34c3ee32765e47b3f0f69b90355cc1dc"
 dependencies = [
  "libc",
-]
-
-[[package]]
-name = "memoffset"
-version = "0.6.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5aa361d4faea93603064a027415f07bd8e1d5c88c9fbf68bf56a285428fd79ce"
-dependencies = [
- "autocfg",
 ]
 
 [[package]]
@@ -1021,45 +954,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "monoio"
-version = "0.0.9"
-source = "git+https://github.com/lizhanhui/monoio.git?branch=config_uring#8399acd34b108534631efa87d1397f68bcfc997c"
-dependencies = [
- "auto-const-array",
- "bytes",
- "fxhash",
- "io-uring",
- "libc",
- "mio",
- "monoio-macros 0.0.3 (git+https://github.com/lizhanhui/monoio.git?branch=config_uring)",
- "nix 0.25.1",
- "pin-project-lite",
- "socket2",
- "windows",
-]
-
-[[package]]
-name = "monoio-macros"
-version = "0.0.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c85c9d2114c190b1ec18da29bfbe399a95d81657633b0d2333d4084515aa9f95"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
-]
-
-[[package]]
-name = "monoio-macros"
-version = "0.0.3"
-source = "git+https://github.com/lizhanhui/monoio.git?branch=config_uring#8399acd34b108534631efa87d1397f68bcfc997c"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
-]
-
-[[package]]
 name = "nix"
 version = "0.24.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1072,20 +966,6 @@ dependencies = [
 
 [[package]]
 name = "nix"
-version = "0.25.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f346ff70e7dbfd675fe90590b92d59ef2de15a8779ae305ebcbfd3f0caf59be4"
-dependencies = [
- "autocfg",
- "bitflags",
- "cfg-if",
- "libc",
- "memoffset 0.6.5",
- "pin-utils",
-]
-
-[[package]]
-name = "nix"
 version = "0.26.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bfdda3d196821d6af13126e40375cdf7da646a96114af134d5f417a9a1dc8e1a"
@@ -1093,7 +973,7 @@ dependencies = [
  "bitflags",
  "cfg-if",
  "libc",
- "memoffset 0.7.1",
+ "memoffset",
  "pin-utils",
  "static_assertions",
 ]
@@ -1291,17 +1171,15 @@ checksum = "8b870d8c151b6f2fb93e84a13146138f05d02ed11c7e7c54f8826aaaf7c9f184"
 name = "placement-client"
 version = "0.1.0"
 dependencies = [
- "async-channel",
  "bytes",
  "cargo-llvm-cov",
  "codec",
+ "crossbeam",
  "flatbuffers",
  "futures",
  "gethostname",
- "local-sync",
  "mockall",
  "model",
- "monoio",
  "ordinal",
  "pin-project",
  "protocol",
@@ -1309,6 +1187,8 @@ dependencies = [
  "slog-async",
  "slog-term",
  "thiserror",
+ "tokio",
+ "tokio-uring",
  "transport",
  "util",
 ]
@@ -1602,12 +1482,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "scoped-tls"
-version = "1.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e1cf6437eb19a8f4a6cc0f7dca544973b0b78843adbfeb3683d1a94a0024a294"
-
-[[package]]
 name = "scopeguard"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1667,9 +1541,8 @@ name = "service"
 version = "0.1.0"
 dependencies = [
  "futures",
- "monoio",
- "monoio-macros 0.0.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "thiserror",
+ "tokio-uring",
 ]
 
 [[package]]
@@ -1974,12 +1847,12 @@ dependencies = [
 [[package]]
 name = "tokio-uring"
 version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0d5e02bb137e030b3a547c65a3bd2f1836d66a97369fdcc69034002b10e155ef"
+source = "git+https://github.com/tokio-rs/tokio-uring.git?branch=master#96ad6339b1f367c070725a44ec56a28ac9f6fb0d"
 dependencies = [
+ "bytes",
+ "futures",
  "io-uring",
  "libc",
- "scoped-tls",
  "slab",
  "socket2",
  "tokio",
@@ -2043,8 +1916,8 @@ dependencies = [
  "bytes",
  "cargo-llvm-cov",
  "codec",
- "monoio",
  "slog",
+ "tokio-uring",
 ]
 
 [[package]]
@@ -2059,12 +1932,12 @@ version = "0.1.0"
 dependencies = [
  "bytes",
  "codec",
- "local-sync",
  "model",
- "monoio",
  "slog",
  "slog-async",
  "slog-term",
+ "tokio",
+ "tokio-uring",
  "transport",
 ]
 

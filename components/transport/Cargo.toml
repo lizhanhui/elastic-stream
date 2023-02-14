@@ -8,8 +8,8 @@ edition = "2021"
 [dependencies]
 codec = { path = "../codec" }
 bytes = { workspace = true }
-monoio = { workspace = true }
 slog = { workspace = true }
+tokio-uring = { workspace = true }
 
 [dev-dependencies]
 cargo-llvm-cov = { workspace = true }

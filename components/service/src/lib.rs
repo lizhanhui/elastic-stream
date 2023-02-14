@@ -171,11 +171,13 @@ mod tests {
     //     }
     // }
 
-    #[monoio_macros::test]
-    async fn test_service_builder() {
-        let svc = LogService {};
-        let req = TestRequest {};
-        let mut s = ServiceBuilder::new().service(svc);
-        assert_eq!(TestResposne { val: 1 }, s.call(req).await.unwrap());
+    #[test]
+    fn test_service_builder() {
+        tokio_uring::start(async {
+            let svc = LogService {};
+            let req = TestRequest {};
+            let mut s = ServiceBuilder::new().service(svc);
+            assert_eq!(TestResposne { val: 1 }, s.call(req).await.unwrap());
+        })
     }
 }

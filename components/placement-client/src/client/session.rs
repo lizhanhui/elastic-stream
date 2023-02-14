@@ -1,15 +1,16 @@
-use std::{cell::UnsafeCell, collections::HashMap, rc::Rc, time::Duration};
+use std::{
+    cell::UnsafeCell,
+    collections::HashMap,
+    rc::Rc,
+    time::{Duration, Instant},
+};
 
 use bytes::BytesMut;
 use codec::frame::{Frame, OperationCode};
-use local_sync::oneshot;
-use monoio::{
-    io::{OwnedWriteHalf, Splitable},
-    net::TcpStream,
-    time::Instant,
-};
 use protocol::rpc::header::{Heartbeat, HeartbeatArgs, ListRange, ListRangeArgs};
 use slog::{error, trace, warn, Logger};
+use tokio::sync::oneshot;
+use tokio_uring::net::TcpStream;
 use transport::channel::{ChannelReader, ChannelWriter};
 
 use crate::{client::response::Status, SessionState};
@@ -27,7 +28,7 @@ pub(crate) struct Session {
 
     state: SessionState,
 
-    writer: ChannelWriter<OwnedWriteHalf<TcpStream>>,
+    writer: ChannelWriter,
 
     /// In-flight requests.
     inflight_requests: Rc<UnsafeCell<HashMap<u32, oneshot::Sender<response::Response>>>>,
@@ -42,15 +43,15 @@ impl Session {
         config: &Rc<config::ClientConfig>,
         logger: &Logger,
     ) -> Self {
-        let (read_half, write_half) = stream.into_split();
-        let writer = ChannelWriter::new(write_half, &endpoint, logger.clone());
-        let mut reader = ChannelReader::new(read_half, &endpoint, logger.clone());
+        let stream = Rc::new(stream);
+        let writer = ChannelWriter::new(Rc::clone(&stream), &endpoint, logger.clone());
+        let mut reader = ChannelReader::new(Rc::clone(&stream), &endpoint, logger.clone());
         let inflights = Rc::new(UnsafeCell::new(HashMap::new()));
 
         {
             let inflights = Rc::clone(&inflights);
             let log = logger.clone();
-            monoio::spawn(async move {
+            tokio_uring::spawn(async move {
                 let inflight_requests = inflights;
                 loop {
                     match reader.read_frame().await {
@@ -275,34 +276,38 @@ mod tests {
     use super::*;
 
     /// Verify it's OK to create a new session.
-    #[monoio::test]
-    async fn test_new() -> Result<(), Box<dyn Error>> {
-        let logger = terminal_logger();
-        let port = run_listener(logger.clone()).await;
-        let target = format!("127.0.0.1:{}", port);
-        let stream = TcpStream::connect(&target).await?;
-        let config = Rc::new(config::ClientConfig::default());
-        let session = Session::new(stream, &target, &config, &logger);
+    #[test]
+    fn test_new() -> Result<(), Box<dyn Error>> {
+        tokio_uring::start(async {
+            let logger = terminal_logger();
+            let port = run_listener(logger.clone()).await;
+            let target = format!("127.0.0.1:{}", port);
+            let stream = TcpStream::connect(target.parse()?).await?;
+            let config = Rc::new(config::ClientConfig::default());
+            let session = Session::new(stream, &target, &config, &logger);
 
-        assert_eq!(SessionState::Active, session.state());
+            assert_eq!(SessionState::Active, session.state());
 
-        assert_eq!(false, session.need_heartbeat(&Duration::from_secs(1)));
+            assert_eq!(false, session.need_heartbeat(&Duration::from_secs(1)));
 
-        Ok(())
+            Ok(())
+        })
     }
 
-    #[monoio::test]
-    async fn test_heartbeat() -> Result<(), Box<dyn Error>> {
-        let logger = terminal_logger();
-        let port = run_listener(logger.clone()).await;
-        let target = format!("127.0.0.1:{}", port);
-        let stream = TcpStream::connect(&target).await?;
-        let config = Rc::new(config::ClientConfig::default());
-        let mut session = Session::new(stream, &target, &config, &logger);
+    #[test]
+    fn test_heartbeat() -> Result<(), Box<dyn Error>> {
+        tokio_uring::start(async {
+            let logger = terminal_logger();
+            let port = run_listener(logger.clone()).await;
+            let target = format!("127.0.0.1:{}", port);
+            let stream = TcpStream::connect(target.parse()?).await?;
+            let config = Rc::new(config::ClientConfig::default());
+            let mut session = Session::new(stream, &target, &config, &logger);
 
-        let result = session.heartbeat().await;
-        let response = result.unwrap().await;
-        assert_eq!(true, response.is_ok());
-        Ok(())
+            let result = session.heartbeat().await;
+            let response = result.unwrap().await;
+            assert_eq!(true, response.is_ok());
+            Ok(())
+        })
     }
 }

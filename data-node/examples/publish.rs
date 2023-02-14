@@ -1,31 +1,34 @@
+use std::rc::Rc;
+
 use bytes::{BufMut, BytesMut};
 use clap::Parser;
 use codec::frame::{Frame, HeaderFormat, OperationCode};
-use monoio::{io::Splitable, net::TcpStream};
 use slog::{debug, error, info, o, trace, warn, Drain, Logger};
+use tokio_uring::net::TcpStream;
 use transport::channel::{ChannelReader, ChannelWriter};
 
-#[monoio::main(timer_enabled = true, driver = "fusion")]
-async fn main() {
-    let args = Args::parse();
+fn main() {
+    tokio_uring::start(async {
+        let args = Args::parse();
 
-    let decorator = slog_term::TermDecorator::new().build();
-    let drain = slog_term::CompactFormat::new(decorator).build().fuse();
-    let drain = slog_async::Async::new(drain).build().fuse();
-    let log = slog::Logger::root(drain, o!());
+        let decorator = slog_term::TermDecorator::new().build();
+        let drain = slog_term::CompactFormat::new(decorator).build().fuse();
+        let drain = slog_async::Async::new(drain).build().fuse();
+        let log = slog::Logger::root(drain, o!());
 
-    let handles: Vec<_> = (0..1024)
-        .into_iter()
-        .map(|_| {
-            let log = log.clone();
-            let args = args.clone();
-            monoio::spawn(async move { launch(&args, log).await })
-        })
-        .collect();
+        let handles: Vec<_> = (0..1024)
+            .into_iter()
+            .map(|_| {
+                let log = log.clone();
+                let args = args.clone();
+                tokio_uring::spawn(async move { launch(&args, log).await })
+            })
+            .collect();
 
-    for handle in handles.into_iter() {
-        handle.await;
-    }
+        for handle in handles.into_iter() {
+            handle.await;
+        }
+    })
 }
 
 pub const DEFAULT_DATA_NODE_PORT: u16 = 10911;
@@ -44,7 +47,7 @@ async fn launch(args: &Args, logger: Logger) {
     let connect = format!("{}:{}", args.host, args.port);
     info!(logger, "Start to connect to {connect}");
 
-    let mut stream = match TcpStream::connect(&connect).await {
+    let stream = match TcpStream::connect(connect.parse().expect("Failed to connect")).await {
         Ok(stream) => {
             info!(logger, "Connected to {connect:?}");
             match stream.set_nodelay(true) {
@@ -84,9 +87,9 @@ async fn launch(args: &Args, logger: Logger) {
         error!(logger, "Failed to encode frame. Cause: {e:#?}");
     });
 
-    let (read_half, write_half) = stream.split();
-    let mut read_channel = ChannelReader::new(read_half, &connect, logger.new(o!()));
-    let mut write_channel = ChannelWriter::new(write_half, &connect, logger.new(o!()));
+    let stream = Rc::new(stream);
+    let mut read_channel = ChannelReader::new(Rc::clone(&stream), &connect, logger.new(o!()));
+    let mut write_channel = ChannelWriter::new(Rc::clone(&stream), &connect, logger.new(o!()));
     write_channel.write_frame(&frame).await.unwrap();
     let mut cnt = 0;
     trace!(logger, "{cnt} Publish");

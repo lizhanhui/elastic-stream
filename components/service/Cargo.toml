@@ -8,5 +8,4 @@ edition = "2021"
 [dependencies]
 futures = { workspace = true }
 thiserror = { workspace = true }
-monoio = { workspace = true }
-monoio-macros = { workspace = true }
+tokio-uring = { workspace = true }

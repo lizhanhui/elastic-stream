@@ -3,9 +3,12 @@ use std::{
     time::Duration,
 };
 
-use local_sync::{mpsc::unbounded, oneshot};
-use monoio::time::Instant;
 use slog::{debug, error, info, trace, warn, Logger};
+use tokio::{
+    sync::{mpsc, oneshot},
+    time::{timeout, Instant},
+};
+use tokio_uring::net::TcpStream;
 
 use crate::{client::response::Status, error::ClientError};
 
@@ -24,7 +27,7 @@ pub struct SessionManager {
     /// Receiver of SubmitRequestChannel.
     /// It is used by `Client` to submit requst to `SessionManager`. Requests are expected to be converted into `Command`s and then
     /// forwarded to transport layer.
-    rx: unbounded::Rx<(request::Request, oneshot::Sender<response::Response>)>,
+    rx: mpsc::UnboundedReceiver<(request::Request, oneshot::Sender<response::Response>)>,
 
     log: Logger,
 
@@ -34,21 +37,21 @@ pub struct SessionManager {
     // Session management
     lb_policy: LBPolicy,
     sessions: Rc<UnsafeCell<HashMap<SocketAddr, Session>>>,
-    session_mgr_tx: unbounded::Tx<(SocketAddr, oneshot::Sender<bool>)>,
+    session_mgr_tx: mpsc::UnboundedSender<(SocketAddr, oneshot::Sender<bool>)>,
 
     // MPMC channel
-    stop_tx: async_channel::Sender<()>,
+    stop_tx: mpsc::Sender<()>,
 }
 
 impl SessionManager {
     pub(crate) fn new(
         target: &str,
         config: &Rc<config::ClientConfig>,
-        rx: unbounded::Rx<(request::Request, oneshot::Sender<response::Response>)>,
+        rx: mpsc::UnboundedReceiver<(request::Request, oneshot::Sender<response::Response>)>,
         log: &Logger,
     ) -> Result<Self, ClientError> {
         let (session_mgr_tx, mut session_mgr_rx) =
-            unbounded::channel::<(SocketAddr, oneshot::Sender<bool>)>();
+            mpsc::unbounded_channel::<(SocketAddr, oneshot::Sender<bool>)>();
         let sessions = Rc::new(UnsafeCell::new(HashMap::new()));
 
         // Handle session re-connect event.
@@ -57,7 +60,7 @@ impl SessionManager {
             let timeout = config.connect_timeout;
             let logger = log.clone();
             let _config = Rc::clone(config);
-            monoio::spawn(async move {
+            tokio_uring::spawn(async move {
                 let config = _config;
                 loop {
                     match session_mgr_rx.recv().await {
@@ -106,22 +109,22 @@ impl SessionManager {
         }
 
         // Heartbeat
-        let (stop_tx, stop_rx) = async_channel::bounded::<()>(1);
+        let (stop_tx, mut stop_rx) = mpsc::channel::<()>(1);
         {
             let sessions = Rc::clone(&sessions);
             let logger = log.clone();
             let idle_interval = config.heartbeat_interval;
 
-            monoio::spawn(async move {
-                monoio::pin! {
+            tokio_uring::spawn(async move {
+                tokio::pin! {
                     let stop_fut = stop_rx.recv();
 
                     // Interval to check if a session needs to send a heartbeat request.
-                    let sleep = monoio::time::sleep(idle_interval);
+                    let sleep = tokio::time::sleep(idle_interval);
                 }
 
                 loop {
-                    monoio::select! {
+                    tokio::select! {
                         _ = &mut stop_fut => {
                             info!(logger, "Got notified to stop");
                             break;
@@ -285,43 +288,37 @@ impl SessionManager {
 
     async fn connect(
         addr: &SocketAddr,
-        timeout: Duration,
+        duration: Duration,
         config: &Rc<config::ClientConfig>,
         log: &Logger,
     ) -> Result<Session, ClientError> {
         trace!(log, "Establishing connection to {:?}", addr);
         let endpoint = addr.to_string();
-        let stream = monoio::net::TcpStream::connect_addr(addr.clone());
-        let timeout = monoio::time::sleep(timeout);
-        monoio::pin!(stream, timeout);
-        let stream = monoio::select! {
-            _ = timeout => {
-                error!(log, "Timeout when connecting {}", endpoint);
-                return Err(ClientError::ConnectTimeout(format!("Timeout when connecting {:?}", endpoint)));
-            }
-            conn = stream => {
-                match conn {
-                    Ok( connection) => {
-                        trace!(log, "Connection to {:?} established", addr);
-                        connection.set_nodelay(true).map_err(|e| {
-                            error!(log, "Failed to disable Nagle's algorithm. Cause: {:?}", e);
-                            ClientError::DisableNagleAlgorithm
-                        })?;
-                        connection
-                    },
-                    Err(e) => {
-                        match e.kind() {
-                            ErrorKind::ConnectionRefused => {
-                                error!(log, "Connection to {} is refused", endpoint);
-                                return Err(ClientError::ConnectionRefused(format!("{:?}", endpoint)));
-                            }
-                            _ => {
-                                return Err(ClientError::ConnectFailure(format!("{:?}", e)));
-                            }
-                        }
-
-                    }
+        let connect = TcpStream::connect(addr.clone());
+        let stream = match timeout(duration, connect).await {
+            Ok(res) => match res {
+                Ok(connection) => {
+                    trace!(log, "Connection to {:?} established", addr);
+                    connection.set_nodelay(true).map_err(|e| {
+                        error!(log, "Failed to disable Nagle's algorithm. Cause: {:?}", e);
+                        ClientError::DisableNagleAlgorithm
+                    })?;
+                    connection
                 }
+                Err(e) => match e.kind() {
+                    ErrorKind::ConnectionRefused => {
+                        error!(log, "Connection to {} is refused", endpoint);
+                        return Err(ClientError::ConnectionRefused(format!("{:?}", endpoint)));
+                    }
+                    _ => {
+                        return Err(ClientError::ConnectFailure(format!("{:?}", e)));
+                    }
+                },
+            },
+            Err(e) => {
+                let description = format!("Timeout when connecting {}, elapsed: {}", endpoint, e);
+                error!(log, "{}", description);
+                return Err(ClientError::ConnectTimeout(description));
             }
         };
 
