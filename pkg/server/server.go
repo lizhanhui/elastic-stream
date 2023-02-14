@@ -77,7 +77,7 @@ func NewServer(ctx context.Context, cfg *config.Config) (*Server, error) {
 	s.started.Store(false)
 
 	// etcd Config
-	etcdCfg, err := s.cfg.GenEmbedEtcdConfig()
+	etcdCfg, err := s.cfg.Etcd()
 	if err != nil {
 		return nil, errors.Wrap(err, "generate etcd config")
 	}
