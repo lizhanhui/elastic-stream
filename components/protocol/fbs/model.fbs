@@ -1,0 +1,46 @@
+/// Don't delete any field from the schema once released.
+/// Asign a id for each filed to keep compatibility easily.
+
+namespace DataMeta;
+
+table BatchRecordMeta {
+    /// The record format version of this record batch.
+    magic: byte;
+    /// The attributes of this record batch. Each bit is used to indicate a specific attribute.
+    attributes: byte;
+    /// The base offset of the batch record, also is the logical offset of the first record.
+    base_offset: int64;
+    /// The delta value between the last offset and the base offset. 
+    last_offset_delta: int32;
+    /// The create timestap of the first record in this batch.
+    first_timestamp: int64;
+    /// The max timestamp among all records contained in this batch.
+    max_timestamp: int64;
+}
+
+table Property {
+    key: string;
+    value: string;
+}
+
+/// Enum values should only ever be added. Never remove or renumber them.
+enum SystemKeys : byte {
+    /// The tag marks the record, is used to filter records in server side.
+    Tag = 0,
+    /// The list of index keys for records.
+    Keys,
+    /// The unique id of the record. It's not neccessary to be unique in the whole cluster.
+    RecordId,
+}
+
+table Header {
+    key: SystemKeys;
+    value: string;
+}
+
+table RecordMeta {
+    offset_delta: int32;
+    timestamp_delta: int32;
+    headers: [Header];
+    properties: [Property];
+}
