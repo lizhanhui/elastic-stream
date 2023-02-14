@@ -13,6 +13,7 @@ use crate::{
 use core_affinity::CoreId;
 use crossbeam::channel::Sender;
 use futures::Future;
+use slog::{trace, Logger};
 use tokio::sync::oneshot;
 
 #[derive(Clone)]
@@ -23,16 +24,26 @@ pub struct ElasticStore {
     /// Expose underlying I/O Uring FD so that its worker pool may be shared with
     /// server layer I/O Uring instances.
     sharing_uring: RawFd,
+
+    log: Logger,
 }
 
 impl ElasticStore {
-    pub fn new() -> Result<Self, StoreError> {
+    pub fn new(log: Logger) -> Result<Self, StoreError> {
         let mut opt = io::Options::default();
-        let mut io = io::IO::new(&mut opt)?;
+        let mut io = io::IO::new(&mut opt, log.clone())?;
         let sharing_uring = io.as_raw_fd();
         let tx = io.sender.clone();
+        
+        // IO thread will be left in detached state.
         let _io_thread_handle = Self::with_thread("IO", move || io.run(), None)?;
-        Ok(Self { tx, sharing_uring })
+        let store = Self {
+            tx,
+            sharing_uring,
+            log,
+        };
+        trace!(store.log, "ElasticStore launched");
+        Ok(store)
     }
 
     fn with_thread<F>(

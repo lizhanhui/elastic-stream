@@ -200,7 +200,13 @@ pub fn launch(cfg: &ServerConfig) -> Result<(), Box<dyn Error>> {
     })?;
     let available_core_len = core_ids.len();
 
-    let store = ElasticStore::new()?;
+    let store = match ElasticStore::new(log.clone()) {
+        Ok(store) => store,
+        Err(e) => {
+            error!(log, "Failed to launch ElasticStore: {:?}", e);
+            return Err(Box::new(e));
+        }
+    };
 
     let handles = core_ids
         .into_iter()
@@ -210,7 +216,7 @@ pub fn launch(cfg: &ServerConfig) -> Result<(), Box<dyn Error>> {
             let logger = log.new(o!());
             let store = store.clone();
             std::thread::Builder::new()
-                .name("Worker".to_owned())
+                .name("Server".to_owned())
                 .spawn(move || {
                     let node_config = NodeConfig {
                         core_id: core_id.clone(),

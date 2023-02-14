@@ -3,5 +3,7 @@ use data_node::cfg::ServerConfig;
 
 fn main() {
     let server_config = ServerConfig::parse();
-    data_node::server::launch(&server_config);
+    if let Err(e) = data_node::server::launch(&server_config) {
+        eprintln!("Failed to start data-node: {:?}", e);
+    }
 }
