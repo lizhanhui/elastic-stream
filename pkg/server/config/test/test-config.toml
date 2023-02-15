@@ -1,0 +1,13 @@
+peer-urls = "test-peer-urls"
+client-urls = "test-client-urls"
+advertise-peer-urls = "test-advertise-peer-urls"
+advertise-client-urls = "test-advertise-client-urls"
+
+name = "test-name"
+data-dir = "test-data-dir"
+initial-cluster = "test-initial-cluster"
+leader-lease = 123
+leader-priority-check-interval = 3661000000000
+
+[etcd]
+initialClusterToken = "test-initial-cluster-token"

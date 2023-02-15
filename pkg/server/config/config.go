@@ -27,19 +27,20 @@ import (
 	"github.com/spf13/viper"
 	"go.etcd.io/etcd/server/v3/embed"
 	"go.uber.org/zap"
+)
 
-	"github.com/AutoMQ/placement-manager/pkg/util/typeutil"
+var (
+	_defaultConfigFilePaths = []string{".", "$CONFIG_DIR/"}
 )
 
 const (
 	URLSeparator = "," // URLSeparator is the separator in fields such as PeerUrls, ClientUrls, etc.
 
-	_defaultClientUrls                        = "http://127.0.0.1:2379"
 	_defaultPeerUrls                          = "http://127.0.0.1:2380"
+	_defaultClientUrls                        = "http://127.0.0.1:2379"
 	_defaultNameFormat                        = "pm-%s"
 	_defaultDataDirFormat                     = "default.%s"
 	_defaultInitialClusterPrefix              = "pm="
-	_defaultEnableGRPCGateway                 = true
 	_defaultInitialClusterToken               = "pm-cluster"
 	_defaultLeaderLease                 int64 = 3
 	_defaultLeaderPriorityCheckInterval       = time.Minute
@@ -49,7 +50,7 @@ const (
 type Config struct {
 	v *viper.Viper
 
-	etcd *embed.Config
+	Etcd *embed.Config
 
 	PeerUrls            string
 	ClientUrls          string
@@ -66,7 +67,7 @@ type Config struct {
 	// Etcd only supports seconds TTL, so here is second too.
 	LeaderLease int64
 
-	LeaderPriorityCheckInterval typeutil.Duration
+	LeaderPriorityCheckInterval time.Duration
 
 	lg *zap.Logger
 }
@@ -74,7 +75,7 @@ type Config struct {
 // NewConfig creates a new config.
 func NewConfig(arguments []string) (*Config, error) {
 	cfg := &Config{}
-	cfg.etcd = embed.NewConfig()
+	cfg.Etcd = embed.NewConfig()
 
 	v, fs := configure()
 
@@ -102,7 +103,8 @@ func NewConfig(arguments []string) (*Config, error) {
 	}
 
 	// TODO new and set logger
-	logger := cfg.lg
+	// logger := cfg.lg
+	logger := zap.NewExample() // TODO DELETE
 
 	if configFile := v.ConfigFileUsed(); configFile != "" {
 		logger.Info("load configuration from file.", zap.String("file-name", configFile))
@@ -137,6 +139,13 @@ func (c *Config) Adjust() error {
 		initialCluster := strings.Join(items, URLSeparator+_defaultInitialClusterPrefix)
 		c.InitialCluster += _defaultInitialClusterPrefix + initialCluster
 	}
+
+	// set etcd config
+	err := c.AdjustEtcd()
+	if err != nil {
+		return errors.Wrap(err, "adjust etcd config")
+	}
+
 	return nil
 }
 
@@ -149,33 +158,33 @@ func (c *Config) Validate() error {
 	return nil
 }
 
-// Etcd generates a configuration for embedded etcd.
-func (c *Config) Etcd() (*embed.Config, error) {
-	cfg := c.etcd
+// AdjustEtcd set configurations in embed.Config
+func (c *Config) AdjustEtcd() error {
+	cfg := c.Etcd
 	cfg.Name = c.Name
 	cfg.Dir = c.DataDir
 	cfg.InitialCluster = c.InitialCluster
-	cfg.EnablePprof = true // TODO
+	// cfg.EnablePprof = true
 
 	var err error
 	cfg.LPUrls, err = parseUrls(c.PeerUrls)
 	if err != nil {
-		return nil, errors.Wrap(err, "parse peer url")
+		return errors.Wrap(err, "parse peer url")
 	}
 	cfg.LCUrls, err = parseUrls(c.ClientUrls)
 	if err != nil {
-		return nil, errors.Wrap(err, "parse client url")
+		return errors.Wrap(err, "parse client url")
 	}
 	cfg.APUrls, err = parseUrls(c.AdvertisePeerUrls)
 	if err != nil {
-		return nil, errors.Wrap(err, "parse advertise peer url")
+		return errors.Wrap(err, "parse advertise peer url")
 	}
 	cfg.ACUrls, err = parseUrls(c.AdvertiseClientUrls)
 	if err != nil {
-		return nil, errors.Wrap(err, "parse advertise client url")
+		return errors.Wrap(err, "parse advertise client url")
 	}
 
-	return cfg, nil
+	return nil
 }
 
 // Logger returns logger generated based on the config
@@ -185,11 +194,12 @@ func (c *Config) Logger() *zap.Logger {
 
 func configure() (*viper.Viper, *pflag.FlagSet) {
 	v := viper.New()
-	fs := pflag.NewFlagSet("PM", pflag.ContinueOnError)
+	fs := pflag.NewFlagSet("placement-manager", pflag.ContinueOnError)
 
 	// Viper settings
-	v.AddConfigPath(".")
-	v.AddConfigPath("$CONFIG_DIR/")
+	for _, filePath := range _defaultConfigFilePaths {
+		v.AddConfigPath(filePath)
+	}
 
 	// etcd urls settings
 	fs.String("peer-urls", _defaultPeerUrls, "urls for peer traffic")
@@ -218,10 +228,9 @@ func configure() (*viper.Viper, *pflag.FlagSet) {
 	_ = v.BindPFlag("leader-priority-check-interval", fs.Lookup("leader-priority-check-interval"))
 	v.RegisterAlias("DataDir", "data-dir")
 	v.RegisterAlias("InitialCluster", "initial-cluster")
-	v.RegisterAlias("LeaderLease", "lease-lease")
+	v.RegisterAlias("LeaderLease", "leader-lease")
 	v.RegisterAlias("LeaderPriorityCheckInterval", "leader-priority-check-interval")
 	v.SetDefault("etcd.initialClusterToken", _defaultInitialClusterToken)
-	v.SetDefault("etcd.enableGRPCGateway", _defaultEnableGRPCGateway)
 
 	return v, fs
 }

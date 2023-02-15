@@ -23,5 +23,3 @@ leader-priority-check-interval = 60000000000 # 1 minute
 [etcd]
 # set different tokens to prevent communication between PMs in different clusters
 initialClusterToken = "pm-cluster"
-# enable grpc gateway, the gateway translates a RESTful HTTP API into gRPC
-enableGRPCGateway = true
