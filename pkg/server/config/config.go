@@ -15,7 +15,10 @@
 package config
 
 import (
+	"fmt"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -33,6 +36,9 @@ const (
 
 	_defaultClientUrls                        = "http://127.0.0.1:2379"
 	_defaultPeerUrls                          = "http://127.0.0.1:2380"
+	_defaultNameFormat                        = "PM-%s"
+	_defaultDataDirFormat                     = "default.%s"
+	_defaultInitialClusterPrefix              = "pm="
 	_defaultEnableGRPCGateway                 = true
 	_defaultInitialClusterToken               = "pm-cluster"
 	_defaultLeaderLease                 int64 = 3
@@ -108,13 +114,38 @@ func NewConfig(arguments []string) (*Config, error) {
 
 // Adjust generates default values for some fields (if they are empty)
 func (c *Config) Adjust() error {
-	// TODO
+	if c.AdvertisePeerUrls == "" {
+		c.AdvertisePeerUrls = c.PeerUrls
+	}
+	if c.AdvertiseClientUrls == "" {
+		c.AdvertiseClientUrls = c.ClientUrls
+	}
+	if c.Name == "" {
+		hostname, err := os.Hostname()
+		if err != nil {
+			return errors.Wrap(err, "get hostname")
+		}
+		c.Name = fmt.Sprintf(_defaultNameFormat, hostname)
+	}
+	if c.DataDir == "" {
+		c.DataDir = fmt.Sprintf(_defaultDataDirFormat, c.Name)
+	}
+	if c.InitialCluster == "" {
+		// For example, when AdvertisePeerUrls is set to "http://127.0.0.1:2380,http://127.0.0.1:2381",
+		// the InitialCluster is "pm=http://127.0.0.1:2380,pm=http://127.0.0.1:2381".
+		items := strings.Split(c.AdvertisePeerUrls, URLSeparator)
+		initialCluster := strings.Join(items, URLSeparator+_defaultInitialClusterPrefix)
+		c.InitialCluster += _defaultInitialClusterPrefix + initialCluster
+	}
 	return nil
 }
 
 // Validate checks whether the configuration is valid. It should be called after Adjust
 func (c *Config) Validate() error {
-	// TODO
+	_, err := filepath.Abs(c.DataDir)
+	if err != nil {
+		return errors.Wrap(err, "invalid data dir path")
+	}
 	return nil
 }
 
@@ -154,7 +185,7 @@ func (c *Config) Logger() *zap.Logger {
 
 func configure() (*viper.Viper, *pflag.FlagSet) {
 	v := viper.New()
-	fs := pflag.NewFlagSet("PD", pflag.ContinueOnError)
+	fs := pflag.NewFlagSet("PM", pflag.ContinueOnError)
 
 	// Viper settings
 	v.AddConfigPath(".")
@@ -177,7 +208,7 @@ func configure() (*viper.Viper, *pflag.FlagSet) {
 	// PM members settings
 	fs.String("name", "", "human-readable name for this PM member (default 'PM-${hostname}')")
 	fs.String("data-dir", "", "path to the data directory (default 'default.${name}')")
-	fs.String("initial-cluster", "", "initial cluster configuration for bootstrapping, e.g. pd=http://127.0.0.1:2380. (default 'pd=${advertise-peer-urls}')")
+	fs.String("initial-cluster", "", "initial cluster configuration for bootstrapping, e.g. pm=http://127.0.0.1:2380. (default 'pm=${advertise-peer-urls}')")
 	fs.Int64("leader-lease", _defaultLeaderLease, "expiration time of the leader, in seconds")
 	fs.Duration("leader-priority-check-interval", _defaultLeaderPriorityCheckInterval, "time interval for checking the leader's priority")
 	_ = v.BindPFlag("name", fs.Lookup("name"))
