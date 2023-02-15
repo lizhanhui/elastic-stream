@@ -2,7 +2,7 @@ use std::{error::Error, net::ToSocketAddrs};
 
 use model::{error::RecordError, Record, RecordMetadata};
 
-/// Writes `Record`s to `Partition`s.
+/// Writes `Record`s to `Stream`s.
 ///
 ///# Examples
 /// ```
@@ -18,7 +18,7 @@ use model::{error::RecordError, Record, RecordMetadata};
 ///
 ///     let body = BytesMut::with_capacity(128).freeze();
 ///     let record = Record::new_builder()
-///         .with_stream(1)
+///         .with_stream_name("test_stream_name")
 ///         .with_body(body)
 ///         .build()?;
 ///
@@ -53,9 +53,7 @@ impl Writer {
     ///
     pub async fn append(&self, record: &Record) -> Result<RecordMetadata, Box<dyn Error>> {
         Ok(RecordMetadata::new(
-            record
-                .stream()
-                .ok_or(RecordError::RequiredFieldMissing)?,
+            record.stream_name(),
             0,
         ))
     }
