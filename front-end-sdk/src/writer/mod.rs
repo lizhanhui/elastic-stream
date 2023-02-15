@@ -18,7 +18,7 @@ use model::{error::RecordError, Record, RecordMetadata};
 ///
 ///     let body = BytesMut::with_capacity(128).freeze();
 ///     let record = Record::new_builder()
-///         .with_stream_name("test_stream_name")
+///         .with_stream_name("test_stream_name").to_string()
 ///         .with_body(body)
 ///         .build()?;
 ///
