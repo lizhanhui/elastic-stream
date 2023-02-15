@@ -25,16 +25,18 @@ fn main() -> Result<(), Box<dyn Error>> {
     let uring = Rc::new(UnsafeCell::new(uring));
 
     let stdin = std::io::stdin();
+    println!("Please input the file name to create. For example, abc.txt, /tmp/ip.dat");
     loop {
         let mut handle = stdin.lock();
         let mut file_name = String::new();
         handle.read_line(&mut file_name)?;
         let file_name = file_name.trim_end().to_owned();
-        println!("File to create: {}", file_name);
 
         if file_name.eq_ignore_ascii_case("quit") {
             break;
         }
+
+        println!("File to create: {}", file_name);
 
         let sqe = opcode::OpenAt::new(types::Fd(libc::AT_FDCWD), file_name.as_ptr() as *const i8)
             .flags(libc::O_CREAT | libc::O_RDWR | libc::O_DIRECT)
@@ -101,5 +103,6 @@ fn fallocate(
         .user_data(0);
     unsafe { (&mut *ring.get()).submission().push(&sqe)? };
     *in_flights += 1;
+    println!("Fallocate for FD: {}", fd);
     Ok(())
 }
