@@ -102,58 +102,68 @@ impl<'a> flatbuffers::Verifiable for SystemKeys {
 }
 
 impl flatbuffers::SimpleToVerifyInSlice for SystemKeys {}
-pub enum BatchRecordMetaOffset {}
+pub enum RecordBatchMetaOffset {}
 #[derive(Copy, Clone, PartialEq)]
 
 /// Don't delete any field from the schema once released.
 /// Asign a id for each filed to keep compatibility easily.
-pub struct BatchRecordMeta<'a> {
+pub struct RecordBatchMeta<'a> {
   pub _tab: flatbuffers::Table<'a>,
 }
 
-impl<'a> flatbuffers::Follow<'a> for BatchRecordMeta<'a> {
-  type Inner = BatchRecordMeta<'a>;
+impl<'a> flatbuffers::Follow<'a> for RecordBatchMeta<'a> {
+  type Inner = RecordBatchMeta<'a>;
   #[inline]
   unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
     Self { _tab: flatbuffers::Table::new(buf, loc) }
   }
 }
 
-impl<'a> BatchRecordMeta<'a> {
-  pub const VT_MAGIC: flatbuffers::VOffsetT = 4;
-  pub const VT_ATTRIBUTES: flatbuffers::VOffsetT = 6;
-  pub const VT_BASE_OFFSET: flatbuffers::VOffsetT = 8;
-  pub const VT_LAST_OFFSET_DELTA: flatbuffers::VOffsetT = 10;
-  pub const VT_FIRST_TIMESTAMP: flatbuffers::VOffsetT = 12;
-  pub const VT_MAX_TIMESTAMP: flatbuffers::VOffsetT = 14;
+impl<'a> RecordBatchMeta<'a> {
+  pub const VT_STREAM_NAME: flatbuffers::VOffsetT = 4;
+  pub const VT_MAGIC: flatbuffers::VOffsetT = 6;
+  pub const VT_ATTRIBUTES: flatbuffers::VOffsetT = 8;
+  pub const VT_BASE_OFFSET: flatbuffers::VOffsetT = 10;
+  pub const VT_LAST_OFFSET_DELTA: flatbuffers::VOffsetT = 12;
+  pub const VT_FIRST_TIMESTAMP: flatbuffers::VOffsetT = 14;
+  pub const VT_MAX_TIMESTAMP: flatbuffers::VOffsetT = 16;
 
   #[inline]
   pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
-    BatchRecordMeta { _tab: table }
+    RecordBatchMeta { _tab: table }
   }
   #[allow(unused_mut)]
   pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr>(
     _fbb: &'mut_bldr mut flatbuffers::FlatBufferBuilder<'bldr>,
-    args: &'args BatchRecordMetaArgs
-  ) -> flatbuffers::WIPOffset<BatchRecordMeta<'bldr>> {
-    let mut builder = BatchRecordMetaBuilder::new(_fbb);
+    args: &'args RecordBatchMetaArgs<'args>
+  ) -> flatbuffers::WIPOffset<RecordBatchMeta<'bldr>> {
+    let mut builder = RecordBatchMetaBuilder::new(_fbb);
     builder.add_max_timestamp(args.max_timestamp);
     builder.add_first_timestamp(args.first_timestamp);
     builder.add_base_offset(args.base_offset);
     builder.add_last_offset_delta(args.last_offset_delta);
+    if let Some(x) = args.stream_name { builder.add_stream_name(x); }
     builder.add_attributes(args.attributes);
     builder.add_magic(args.magic);
     builder.finish()
   }
 
 
+  /// The stream name of this record batch.
+  #[inline]
+  pub fn stream_name(&self) -> Option<&'a str> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(RecordBatchMeta::VT_STREAM_NAME, None)}
+  }
   /// The record format version of this record batch.
   #[inline]
   pub fn magic(&self) -> i8 {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<i8>(BatchRecordMeta::VT_MAGIC, Some(0)).unwrap()}
+    unsafe { self._tab.get::<i8>(RecordBatchMeta::VT_MAGIC, Some(0)).unwrap()}
   }
   /// The attributes of this record batch. Each bit is used to indicate a specific attribute.
   #[inline]
@@ -161,7 +171,7 @@ impl<'a> BatchRecordMeta<'a> {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<i8>(BatchRecordMeta::VT_ATTRIBUTES, Some(0)).unwrap()}
+    unsafe { self._tab.get::<i8>(RecordBatchMeta::VT_ATTRIBUTES, Some(0)).unwrap()}
   }
   /// The base offset of the batch record, also is the logical offset of the first record.
   #[inline]
@@ -169,7 +179,7 @@ impl<'a> BatchRecordMeta<'a> {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<i64>(BatchRecordMeta::VT_BASE_OFFSET, Some(0)).unwrap()}
+    unsafe { self._tab.get::<i64>(RecordBatchMeta::VT_BASE_OFFSET, Some(0)).unwrap()}
   }
   /// The delta value between the last offset and the base offset. 
   #[inline]
@@ -177,7 +187,7 @@ impl<'a> BatchRecordMeta<'a> {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<i32>(BatchRecordMeta::VT_LAST_OFFSET_DELTA, Some(0)).unwrap()}
+    unsafe { self._tab.get::<i32>(RecordBatchMeta::VT_LAST_OFFSET_DELTA, Some(0)).unwrap()}
   }
   /// The create timestap of the first record in this batch.
   #[inline]
@@ -185,7 +195,7 @@ impl<'a> BatchRecordMeta<'a> {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<i64>(BatchRecordMeta::VT_FIRST_TIMESTAMP, Some(0)).unwrap()}
+    unsafe { self._tab.get::<i64>(RecordBatchMeta::VT_FIRST_TIMESTAMP, Some(0)).unwrap()}
   }
   /// The max timestamp among all records contained in this batch.
   #[inline]
@@ -193,17 +203,18 @@ impl<'a> BatchRecordMeta<'a> {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<i64>(BatchRecordMeta::VT_MAX_TIMESTAMP, Some(0)).unwrap()}
+    unsafe { self._tab.get::<i64>(RecordBatchMeta::VT_MAX_TIMESTAMP, Some(0)).unwrap()}
   }
 }
 
-impl flatbuffers::Verifiable for BatchRecordMeta<'_> {
+impl flatbuffers::Verifiable for RecordBatchMeta<'_> {
   #[inline]
   fn run_verifier(
     v: &mut flatbuffers::Verifier, pos: usize
   ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
     use self::flatbuffers::Verifiable;
     v.visit_table(pos)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("stream_name", Self::VT_STREAM_NAME, false)?
      .visit_field::<i8>("magic", Self::VT_MAGIC, false)?
      .visit_field::<i8>("attributes", Self::VT_ATTRIBUTES, false)?
      .visit_field::<i64>("base_offset", Self::VT_BASE_OFFSET, false)?
@@ -214,7 +225,8 @@ impl flatbuffers::Verifiable for BatchRecordMeta<'_> {
     Ok(())
   }
 }
-pub struct BatchRecordMetaArgs {
+pub struct RecordBatchMetaArgs<'a> {
+    pub stream_name: Option<flatbuffers::WIPOffset<&'a str>>,
     pub magic: i8,
     pub attributes: i8,
     pub base_offset: i64,
@@ -222,10 +234,11 @@ pub struct BatchRecordMetaArgs {
     pub first_timestamp: i64,
     pub max_timestamp: i64,
 }
-impl<'a> Default for BatchRecordMetaArgs {
+impl<'a> Default for RecordBatchMetaArgs<'a> {
   #[inline]
   fn default() -> Self {
-    BatchRecordMetaArgs {
+    RecordBatchMetaArgs {
+      stream_name: None,
       magic: 0,
       attributes: 0,
       base_offset: 0,
@@ -236,53 +249,58 @@ impl<'a> Default for BatchRecordMetaArgs {
   }
 }
 
-pub struct BatchRecordMetaBuilder<'a: 'b, 'b> {
+pub struct RecordBatchMetaBuilder<'a: 'b, 'b> {
   fbb_: &'b mut flatbuffers::FlatBufferBuilder<'a>,
   start_: flatbuffers::WIPOffset<flatbuffers::TableUnfinishedWIPOffset>,
 }
-impl<'a: 'b, 'b> BatchRecordMetaBuilder<'a, 'b> {
+impl<'a: 'b, 'b> RecordBatchMetaBuilder<'a, 'b> {
+  #[inline]
+  pub fn add_stream_name(&mut self, stream_name: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(RecordBatchMeta::VT_STREAM_NAME, stream_name);
+  }
   #[inline]
   pub fn add_magic(&mut self, magic: i8) {
-    self.fbb_.push_slot::<i8>(BatchRecordMeta::VT_MAGIC, magic, 0);
+    self.fbb_.push_slot::<i8>(RecordBatchMeta::VT_MAGIC, magic, 0);
   }
   #[inline]
   pub fn add_attributes(&mut self, attributes: i8) {
-    self.fbb_.push_slot::<i8>(BatchRecordMeta::VT_ATTRIBUTES, attributes, 0);
+    self.fbb_.push_slot::<i8>(RecordBatchMeta::VT_ATTRIBUTES, attributes, 0);
   }
   #[inline]
   pub fn add_base_offset(&mut self, base_offset: i64) {
-    self.fbb_.push_slot::<i64>(BatchRecordMeta::VT_BASE_OFFSET, base_offset, 0);
+    self.fbb_.push_slot::<i64>(RecordBatchMeta::VT_BASE_OFFSET, base_offset, 0);
   }
   #[inline]
   pub fn add_last_offset_delta(&mut self, last_offset_delta: i32) {
-    self.fbb_.push_slot::<i32>(BatchRecordMeta::VT_LAST_OFFSET_DELTA, last_offset_delta, 0);
+    self.fbb_.push_slot::<i32>(RecordBatchMeta::VT_LAST_OFFSET_DELTA, last_offset_delta, 0);
   }
   #[inline]
   pub fn add_first_timestamp(&mut self, first_timestamp: i64) {
-    self.fbb_.push_slot::<i64>(BatchRecordMeta::VT_FIRST_TIMESTAMP, first_timestamp, 0);
+    self.fbb_.push_slot::<i64>(RecordBatchMeta::VT_FIRST_TIMESTAMP, first_timestamp, 0);
   }
   #[inline]
   pub fn add_max_timestamp(&mut self, max_timestamp: i64) {
-    self.fbb_.push_slot::<i64>(BatchRecordMeta::VT_MAX_TIMESTAMP, max_timestamp, 0);
+    self.fbb_.push_slot::<i64>(RecordBatchMeta::VT_MAX_TIMESTAMP, max_timestamp, 0);
   }
   #[inline]
-  pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a>) -> BatchRecordMetaBuilder<'a, 'b> {
+  pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a>) -> RecordBatchMetaBuilder<'a, 'b> {
     let start = _fbb.start_table();
-    BatchRecordMetaBuilder {
+    RecordBatchMetaBuilder {
       fbb_: _fbb,
       start_: start,
     }
   }
   #[inline]
-  pub fn finish(self) -> flatbuffers::WIPOffset<BatchRecordMeta<'a>> {
+  pub fn finish(self) -> flatbuffers::WIPOffset<RecordBatchMeta<'a>> {
     let o = self.fbb_.end_table(self.start_);
     flatbuffers::WIPOffset::new(o.value())
   }
 }
 
-impl core::fmt::Debug for BatchRecordMeta<'_> {
+impl core::fmt::Debug for RecordBatchMeta<'_> {
   fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-    let mut ds = f.debug_struct("BatchRecordMeta");
+    let mut ds = f.debug_struct("RecordBatchMeta");
+      ds.field("stream_name", &self.stream_name());
       ds.field("magic", &self.magic());
       ds.field("attributes", &self.attributes());
       ds.field("base_offset", &self.base_offset());

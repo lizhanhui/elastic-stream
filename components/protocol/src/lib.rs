@@ -1,12 +1,12 @@
-use flat_model::{BatchRecordMeta, RecordMeta};
+use flat_model::{RecordBatchMeta, RecordMeta};
 
 #[path = "generated/model_generated.rs"]
 pub mod flat_model;
 #[path = "generated/rpc_generated.rs"]
 pub mod rpc;
 
-pub fn root_as_batch_record_meta(buf: &[u8]) -> Result<BatchRecordMeta, flatbuffers::InvalidFlatbuffer> {
-    flatbuffers::root::<BatchRecordMeta>(buf)
+pub fn root_as_record_batch_meta(buf: &[u8]) -> Result<RecordBatchMeta, flatbuffers::InvalidFlatbuffer> {
+    flatbuffers::root::<RecordBatchMeta>(buf)
 }
 
 pub fn root_as_record_meta(buf: &[u8]) -> Result<RecordMeta, flatbuffers::InvalidFlatbuffer> {

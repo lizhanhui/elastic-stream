@@ -1,20 +1,22 @@
 /// Don't delete any field from the schema once released.
 /// Asign a id for each filed to keep compatibility easily.
 
-// The below definitions of Record and BatchRecord are inspired by Kafka's protocols
-table BatchRecordMeta {
+// The below definitions of Record and RecordBatch are inspired by Kafka's protocols
+table RecordBatchMeta {
+    /// The stream name of this record batch.
+    stream_name: string (id: 0);
     /// The record format version of this record batch.
-    magic: byte (id: 0);
+    magic: byte (id: 1);
     /// The attributes of this record batch. Each bit is used to indicate a specific attribute.
-    attributes: byte (id: 1);
+    attributes: byte (id: 2);
     /// The base offset of the batch record, also is the logical offset of the first record.
-    base_offset: int64 (id: 2);
+    base_offset: int64 (id: 3);
     /// The delta value between the last offset and the base offset. 
-    last_offset_delta: int32 (id: 3);
+    last_offset_delta: int32 (id: 4);
     /// The create timestap of the first record in this batch.
-    first_timestamp: int64 (id: 4);
+    first_timestamp: int64 (id: 5);
     /// The max timestamp among all records contained in this batch.
-    max_timestamp: int64 (id: 5);
+    max_timestamp: int64 (id: 6);
 }
 
 table Property {
