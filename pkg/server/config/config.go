@@ -36,7 +36,7 @@ const (
 
 	_defaultClientUrls                        = "http://127.0.0.1:2379"
 	_defaultPeerUrls                          = "http://127.0.0.1:2380"
-	_defaultNameFormat                        = "PM-%s"
+	_defaultNameFormat                        = "pm-%s"
 	_defaultDataDirFormat                     = "default.%s"
 	_defaultInitialClusterPrefix              = "pm="
 	_defaultEnableGRPCGateway                 = true
@@ -206,7 +206,7 @@ func configure() (*viper.Viper, *pflag.FlagSet) {
 	v.RegisterAlias("AdvertiseClientUrls", "advertise-client-urls")
 
 	// PM members settings
-	fs.String("name", "", "human-readable name for this PM member (default 'PM-${hostname}')")
+	fs.String("name", "", "human-readable name for this PM member (default 'pm-${hostname}')")
 	fs.String("data-dir", "", "path to the data directory (default 'default.${name}')")
 	fs.String("initial-cluster", "", "initial cluster configuration for bootstrapping, e.g. pm=http://127.0.0.1:2380. (default 'pm=${advertise-peer-urls}')")
 	fs.Int64("leader-lease", _defaultLeaderLease, "expiration time of the leader, in seconds")
