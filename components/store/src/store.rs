@@ -34,7 +34,7 @@ impl ElasticStore {
         let mut io = io::IO::new(&mut opt, log.clone())?;
         let sharing_uring = io.as_raw_fd();
         let tx = io.sender.clone();
-        
+
         // IO thread will be left in detached state.
         let _io_thread_handle = Self::with_thread("IO", move || io.run(), None)?;
         let store = Self {

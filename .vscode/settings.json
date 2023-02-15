@@ -1,7 +1,9 @@
 {
     "cSpell.words": [
         "byteorder",
-        "monoio"
+        "libc",
+        "monoio",
+        "Uring"
     ],
     "rust-analyzer.updates.askBeforeDownload": false,
     "[rust]": {
