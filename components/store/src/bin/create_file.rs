@@ -106,3 +106,36 @@ fn fallocate(
     println!("Fallocate for FD: {}", fd);
     Ok(())
 }
+
+fn sync_file_range(
+    ring: Rc<UnsafeCell<IoUring>>,
+    fd: RawFd,
+    offset: i64,
+    len: u32,
+    probe: &register::Probe,
+    in_flights: &mut u32,
+) -> Result<(), Box<dyn Error>> {
+    let sqe = if probe.is_supported(opcode::SyncFileRange::CODE) {
+        opcode::SyncFileRange::new(types::Fd(fd), len)
+            .offset(offset)
+            .flags(
+                libc::SYNC_FILE_RANGE_WAIT_BEFORE
+                    | libc::SYNC_FILE_RANGE_WRITE
+                    | libc::SYNC_FILE_RANGE_WAIT_BEFORE,
+            )
+            .build()
+            .user_data(0)
+    } else if probe.is_supported(opcode::Fsync::CODE) {
+        opcode::Fsync::new(types::Fd(fd))
+            .flags(types::FsyncFlags::DATASYNC)
+            .build()
+            .user_data(0)
+    } else {
+        panic!("The kernel is not supported");
+    };
+
+    unsafe { (&mut *ring.get()).submission().push(&sqe)? };
+    *in_flights += 1;
+
+    Ok(())
+}
