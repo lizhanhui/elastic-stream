@@ -1,4 +1,4 @@
-use crate::{error::RecordError, header::Headers};
+use crate::{error::RecordError};
 use bytes::Bytes;
 use std::{collections::HashMap, error::Error, time::Instant};
 
@@ -13,7 +13,8 @@ pub struct Record {
     body: Bytes,
 }
 
-pub struct BatchRecord {
+#[derive(Debug, Clone)]
+pub struct RecordBatch {
     stream_name: String,
     records: Vec<Record>,
 }
@@ -49,6 +50,23 @@ impl Record {
 
     pub fn body(&self) -> Bytes {
         self.body.clone()
+    }
+}
+
+impl RecordBatch {
+    pub fn new(stream_name: String, records: Vec<Record>) -> Self {
+        Self {
+            stream_name,
+            records,
+        }
+    }
+
+    pub fn stream_name(&self) -> String {
+        self.stream_name.clone()
+    }
+
+    pub fn records(&self) -> &Vec<Record> {
+        &self.records
     }
 }
 

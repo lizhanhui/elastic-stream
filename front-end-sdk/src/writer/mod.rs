@@ -1,6 +1,6 @@
 use std::{error::Error, net::ToSocketAddrs};
 
-use model::{error::RecordError, Record, RecordMetadata};
+use model::{RecordBatch, Record, RecordMetadata};
 
 /// Writes `Record`s to `Stream`s.
 ///
@@ -18,7 +18,7 @@ use model::{error::RecordError, Record, RecordMetadata};
 ///
 ///     let body = BytesMut::with_capacity(128).freeze();
 ///     let record = Record::new_builder()
-///         .with_stream_name("test_stream_name").to_string()
+///         .with_stream_name("test_stream_name".to_string())
 ///         .with_body(body)
 ///         .build()?;
 ///
@@ -56,5 +56,12 @@ impl Writer {
             record.stream_name(),
             0,
         ))
+    }
+
+    pub async fn append_batch(&self, record_batch: &RecordBatch) -> Result<Vec<RecordMetadata>, Box<dyn Error>> {
+        Ok(vec![RecordMetadata::new(
+            record_batch.stream_name(),
+            0,
+        )])
     }
 }
