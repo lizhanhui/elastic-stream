@@ -1,0 +1,25 @@
+# PM Configuration.
+
+# urls for peer traffic
+peer-urls: "http://127.0.0.1:2380"
+# urls for client traffic
+client-urls: "http://127.0.0.1:2379"
+# advertise urls for peer traffic
+advertise-peer-urls: "http://127.0.0.1:2380"
+# advertise urls for client traffic
+advertise-client-urls: "http://127.0.0.1:2379"
+
+# human-readable name for this PM member
+name: "pm-hostname"
+# path to the data directory
+data-dir: "default.pm-hostname"
+# the initial cluster configuration for bootstrapping
+initial-cluster: "pm=http://127.0.0.1:2380"
+# expiration time of the leader, in seconds
+leader-lease: 3
+# time interval for checking the leader's priority
+leader-priority-check-interval: 60000000000 # 1 minute
+
+etcd:
+  # set different tokens to prevent communication between PMs in different clusters
+  initialClusterToken: "pm-cluster"

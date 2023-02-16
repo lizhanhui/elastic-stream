@@ -51,8 +51,7 @@ const (
 type Server struct {
 	started atomic.Bool // server status, true for started
 
-	cfg     *config.Config // Server configuration
-	etcdCfg *embed.Config  // etcd configuration
+	cfg *config.Config // Server configuration
 
 	ctx        context.Context // main context
 	loopCtx    context.Context // loop context
@@ -76,13 +75,6 @@ func NewServer(ctx context.Context, cfg *config.Config) (*Server, error) {
 	}
 	s.started.Store(false)
 
-	// etcd Config
-	etcdCfg, err := s.cfg.GenEmbedEtcdConfig()
-	if err != nil {
-		return nil, errors.Wrap(err, "generate etcd config")
-	}
-	s.etcdCfg = etcdCfg
-
 	return s, nil
 }
 
@@ -103,7 +95,7 @@ func (s *Server) startEtcd(ctx context.Context) error {
 	startTimeoutCtx, cancel := context.WithTimeout(ctx, _etcdStartTimeout)
 	defer cancel()
 
-	etcd, err := embed.StartEtcd(s.etcdCfg)
+	etcd, err := embed.StartEtcd(s.cfg.Etcd)
 	if err != nil {
 		return errors.Wrap(err, "start etcd by config")
 	}
@@ -127,8 +119,8 @@ func (s *Server) startEtcd(ctx context.Context) error {
 	s.lg.Info("etcd started.")
 
 	// init client
-	endpoints := make([]string, 0, len(s.etcdCfg.ACUrls))
-	for _, url := range s.etcdCfg.ACUrls {
+	endpoints := make([]string, 0, len(s.cfg.Etcd.ACUrls))
+	for _, url := range s.cfg.Etcd.ACUrls {
 		endpoints = append(endpoints, url.String())
 	}
 	client, err := clientv3.New(clientv3.Config{
@@ -315,7 +307,7 @@ func (s *Server) etcdLeaderLoop() {
 	defer cancel()
 	for {
 		select {
-		case <-time.After(s.cfg.LeaderPriorityCheckInterval.Duration):
+		case <-time.After(s.cfg.LeaderPriorityCheckInterval):
 			err := s.member.CheckPriorityAndMoveLeader(ctx)
 			if err != nil {
 				logger.Error("failed to check priority and move leader.", zap.Error(err))
