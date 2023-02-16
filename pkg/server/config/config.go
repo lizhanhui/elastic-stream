@@ -200,14 +200,10 @@ func configure() (*viper.Viper, *pflag.FlagSet) {
 	fs.String("client-urls", _defaultClientUrls, "urls for client traffic")
 	fs.String("advertise-peer-urls", "", "advertise urls for peer traffic (default '${peer-urls}')")
 	fs.String("advertise-client-urls", "", "advertise urls for client traffic (default '${client-urls}')")
-	_ = v.BindPFlag("peer-urls", fs.Lookup("peer-urls"))
-	_ = v.BindPFlag("client-urls", fs.Lookup("client-urls"))
-	_ = v.BindPFlag("advertise-peer-urls", fs.Lookup("advertise-peer-urls"))
-	_ = v.BindPFlag("advertise-client-urls", fs.Lookup("advertise-client-urls"))
-	v.RegisterAlias("PeerUrls", "peer-urls")
-	v.RegisterAlias("ClientUrls", "client-urls")
-	v.RegisterAlias("AdvertisePeerUrls", "advertise-peer-urls")
-	v.RegisterAlias("AdvertiseClientUrls", "advertise-client-urls")
+	_ = v.BindPFlag("peerUrls", fs.Lookup("peer-urls"))
+	_ = v.BindPFlag("clientUrls", fs.Lookup("client-urls"))
+	_ = v.BindPFlag("advertisePeerUrls", fs.Lookup("advertise-peer-urls"))
+	_ = v.BindPFlag("advertiseClientUrls", fs.Lookup("advertise-client-urls"))
 
 	// PM members settings
 	fs.String("name", "", "human-readable name for this PM member (default 'pm-${hostname}')")
@@ -217,15 +213,11 @@ func configure() (*viper.Viper, *pflag.FlagSet) {
 	fs.Duration("leader-priority-check-interval", _defaultLeaderPriorityCheckInterval, "time interval for checking the leader's priority")
 	fs.String("etcd-initial-cluster-token", _defaultInitialClusterToken, "set different tokens to prevent communication between PMs in different clusters")
 	_ = v.BindPFlag("name", fs.Lookup("name"))
-	_ = v.BindPFlag("data-dir", fs.Lookup("data-dir"))
-	_ = v.BindPFlag("initial-cluster", fs.Lookup("initial-cluster"))
-	_ = v.BindPFlag("leader-lease", fs.Lookup("leader-lease"))
-	_ = v.BindPFlag("leader-priority-check-interval", fs.Lookup("leader-priority-check-interval"))
+	_ = v.BindPFlag("dataDir", fs.Lookup("data-dir"))
+	_ = v.BindPFlag("initialCluster", fs.Lookup("initial-cluster"))
+	_ = v.BindPFlag("leaderLease", fs.Lookup("leader-lease"))
+	_ = v.BindPFlag("leaderPriorityCheckInterval", fs.Lookup("leader-priority-check-interval"))
 	_ = v.BindPFlag("etcd.initialClusterToken", fs.Lookup("etcd-initial-cluster-token"))
-	v.RegisterAlias("DataDir", "data-dir")
-	v.RegisterAlias("InitialCluster", "initial-cluster")
-	v.RegisterAlias("LeaderLease", "leader-lease")
-	v.RegisterAlias("LeaderPriorityCheckInterval", "leader-priority-check-interval")
 
 	return v, fs
 }
