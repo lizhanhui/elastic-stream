@@ -141,7 +141,7 @@ func (c *Config) Adjust() error {
 	}
 
 	// set etcd config
-	err := c.AdjustEtcd()
+	err := c.adjustEtcd()
 	if err != nil {
 		return errors.Wrap(err, "adjust etcd config")
 	}
@@ -149,17 +149,8 @@ func (c *Config) Adjust() error {
 	return nil
 }
 
-// Validate checks whether the configuration is valid. It should be called after Adjust
-func (c *Config) Validate() error {
-	_, err := filepath.Abs(c.DataDir)
-	if err != nil {
-		return errors.Wrap(err, "invalid data dir path")
-	}
-	return nil
-}
-
-// AdjustEtcd set configurations in embed.Config
-func (c *Config) AdjustEtcd() error {
+// adjustEtcd set configurations in embed.Config
+func (c *Config) adjustEtcd() error {
 	cfg := c.Etcd
 	cfg.Name = c.Name
 	cfg.Dir = c.DataDir
@@ -184,6 +175,15 @@ func (c *Config) AdjustEtcd() error {
 		return errors.Wrap(err, "parse advertise client url")
 	}
 
+	return nil
+}
+
+// Validate checks whether the configuration is valid. It should be called after Adjust
+func (c *Config) Validate() error {
+	_, err := filepath.Abs(c.DataDir)
+	if err != nil {
+		return errors.Wrap(err, "invalid data dir path")
+	}
 	return nil
 }
 
