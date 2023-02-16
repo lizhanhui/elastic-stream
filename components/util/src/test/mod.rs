@@ -21,85 +21,81 @@ pub async fn run_listener(logger: Logger) -> u16 {
         let port = listener.local_addr().unwrap().port();
         debug!(logger, "TestServer is up, listening {}", port);
         tx.send(port).unwrap();
-        loop {
-            if let Ok((conn, sock_addr)) = listener.accept().await {
-                debug!(
-                    logger,
-                    "TestServer accepted a connection from {:?}", sock_addr
-                );
-                let log = logger.clone();
+        while let Ok((conn, sock_addr)) = listener.accept().await {
+            debug!(
+                logger,
+                "TestServer accepted a connection from {:?}", sock_addr
+            );
+            let log = logger.clone();
 
-                tokio_uring::spawn(async move {
-                    let logger = log.clone();
-                    let addr = sock_addr.to_string();
-                    let stream = Rc::new(conn);
-                    let mut reader = ChannelReader::new(Rc::clone(&stream), &addr, logger.clone());
-                    let mut writer = ChannelWriter::new(Rc::clone(&stream), &addr, logger.clone());
+            tokio_uring::spawn(async move {
+                let logger = log.clone();
+                let addr = sock_addr.to_string();
+                let stream = Rc::new(conn);
+                let mut reader = ChannelReader::new(Rc::clone(&stream), &addr, logger.clone());
+                let mut writer = ChannelWriter::new(Rc::clone(&stream), &addr, logger.clone());
 
-                    loop {
-                        if let Ok(frame) = reader.read_frame().await {
-                            if let Some(frame) = frame {
-                                info!(
-                                    logger,
-                                    "TestServer is processing a `{}` request", frame.operation_code
-                                );
-                                match frame.operation_code {
-                                    OperationCode::Heartbeat => {
-                                        match writer.write_frame(&frame).await {
-                                            Ok(_) => {
-                                                info!(
-                                                    logger,
-                                                    "TestServer writes the `{}` request back directly",
-                                                    frame.operation_code
-                                                );
-                                            }
-                                            Err(e) => {
-                                                error!(
-                                                    logger,
-                                                    "TestServer failed to process `{}`. Cause: {:?}",
-                                                    frame.operation_code,
-                                                    e
-                                                );
-                                            }
-                                        };
-                                    }
-                                    OperationCode::ListRange => {
-                                        match writer.write_frame(&frame).await {
-                                            Ok(_) => {
-                                                info!(
-                                                    logger,
-                                                    "TestServer writes the `{}` request back directly",
-                                                    frame.operation_code
-                                                );
-                                            }
-                                            Err(e) => {
-                                                error!(
-                                                    logger,
-                                                    "TestServer failed to process `{}`. Cause: {:?}",
-                                                    frame.operation_code,
-                                                    e
-                                                );
-                                            }
-                                        };
-                                    }
-                                    _ => {}
+                loop {
+                    if let Ok(frame) = reader.read_frame().await {
+                        if let Some(frame) = frame {
+                            info!(
+                                logger,
+                                "TestServer is processing a `{}` request", frame.operation_code
+                            );
+                            match frame.operation_code {
+                                OperationCode::Heartbeat => {
+                                    match writer.write_frame(&frame).await {
+                                        Ok(_) => {
+                                            info!(
+                                                logger,
+                                                "TestServer writes the `{}` request back directly",
+                                                frame.operation_code
+                                            );
+                                        }
+                                        Err(e) => {
+                                            error!(
+                                                logger,
+                                                "TestServer failed to process `{}`. Cause: {:?}",
+                                                frame.operation_code,
+                                                e
+                                            );
+                                        }
+                                    };
                                 }
-                            } else {
-                                debug!(logger, "Connection from {} is closed", addr);
-                                break;
+                                OperationCode::ListRange => {
+                                    match writer.write_frame(&frame).await {
+                                        Ok(_) => {
+                                            info!(
+                                                logger,
+                                                "TestServer writes the `{}` request back directly",
+                                                frame.operation_code
+                                            );
+                                        }
+                                        Err(e) => {
+                                            error!(
+                                                logger,
+                                                "TestServer failed to process `{}`. Cause: {:?}",
+                                                frame.operation_code,
+                                                e
+                                            );
+                                        }
+                                    };
+                                }
+                                _ => {}
                             }
                         } else {
-                            warn!(
-                                logger,
-                                "Connection from {} is reset, dropping some buffered data", addr
-                            );
+                            debug!(logger, "Connection from {} is closed", addr);
                             break;
                         }
+                    } else {
+                        warn!(
+                            logger,
+                            "Connection from {} is reset, dropping some buffered data", addr
+                        );
+                        break;
                     }
-                });
-            } else {
-                break;
-            }
+                }
+            });
         }
         info!(logger, "TestServer shut down OK");
     });

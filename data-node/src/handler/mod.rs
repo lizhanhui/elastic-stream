@@ -177,7 +177,7 @@ impl ServerCall {
     fn build_proof_of_concept_record(&self) -> Record {
         let mut buffer = bytes::BytesMut::new();
 
-        if let Ok(_) = self.request.encode(&mut buffer) {
+        if self.request.encode(&mut buffer).is_ok() {
             trace!(self.logger, "PoC: header section");
         }
 

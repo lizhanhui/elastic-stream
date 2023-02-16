@@ -44,15 +44,15 @@ impl Session {
         logger: &Logger,
     ) -> Self {
         let stream = Rc::new(stream);
-        let writer = ChannelWriter::new(Rc::clone(&stream), &endpoint, logger.clone());
-        let mut reader = ChannelReader::new(Rc::clone(&stream), &endpoint, logger.clone());
-        let inflights = Rc::new(UnsafeCell::new(HashMap::new()));
+        let writer = ChannelWriter::new(Rc::clone(&stream), endpoint, logger.clone());
+        let mut reader = ChannelReader::new(Rc::clone(&stream), endpoint, logger.clone());
+        let in_flights = Rc::new(UnsafeCell::new(HashMap::new()));
 
         {
-            let inflights = Rc::clone(&inflights);
+            let in_flights = Rc::clone(&in_flights);
             let log = logger.clone();
             tokio_uring::spawn(async move {
-                let inflight_requests = inflights;
+                let inflight_requests = in_flights;
                 loop {
                     match reader.read_frame().await {
                         Err(e) => {
@@ -77,7 +77,7 @@ impl Session {
             log: logger.clone(),
             state: SessionState::Active,
             writer,
-            inflight_requests: inflights,
+            inflight_requests: in_flights,
             last_rw_instant: Instant::now(),
         }
     }
@@ -198,7 +198,7 @@ impl Session {
             client_id: self.config.client_id.clone(),
         };
         let (response_observer, rx) = oneshot::channel();
-        if let Ok(_) = self.write(&request, response_observer).await {
+        if self.write(&request, response_observer).await.is_ok() {
             trace!(self.log, "Heartbeat sent to {}", self.writer.peer_address());
         }
         Some(rx)

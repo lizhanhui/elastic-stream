@@ -10,10 +10,7 @@ use core_affinity::CoreId;
 use slog::{debug, error, info, o, trace, warn, Drain, Logger};
 use slog_async::Async;
 use slog_term::{CompactFormat, TermDecorator};
-use store::{
-    option::{StoreOptions, StorePath},
-    ElasticStore,
-};
+use store::ElasticStore;
 use tokio_uring::net::{TcpListener, TcpStream};
 use transport::channel::{ChannelReader, ChannelWriter};
 
@@ -56,7 +53,7 @@ impl Node {
                             listener
                         }
                         Err(e) => {
-                            eprintln!("{}", e.to_string());
+                            eprintln!("{}", e);
                             return;
                         }
                     };
@@ -219,7 +216,7 @@ pub fn launch(cfg: &ServerConfig) -> Result<(), Box<dyn Error>> {
                 .name("Server".to_owned())
                 .spawn(move || {
                     let node_config = NodeConfig {
-                        core_id: core_id.clone(),
+                        core_id,
                         server_config: server_config.clone(),
                         sharing_uring: store.as_raw_fd(),
                     };

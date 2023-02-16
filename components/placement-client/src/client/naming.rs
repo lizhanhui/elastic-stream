@@ -52,8 +52,7 @@ impl FromStr for Endpoints {
     /// - `ipv4:address:port[,address:port,...]`
     /// - `ipv6:address:port[,address:port,...]`
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        if s.starts_with(DNS_PREFIX) {
-            let host_port = &s[DNS_PREFIX.len()..];
+        if let Some(host_port) = s.strip_prefix(DNS_PREFIX) {
             let addrs: Vec<_> = host_port
                 .to_socket_addrs()
                 .map_err(|_e| ClientError::BadAddress)?
@@ -61,24 +60,22 @@ impl FromStr for Endpoints {
             return Ok(Self::new(addrs));
         }
 
-        if s.starts_with(IPV4_PREFIX) {
-            let ip_port_list = &s[IPV4_PREFIX.len()..];
+        if let Some(ip_port_list) = s.strip_prefix(IPV4_PREFIX) {
             let addrs: Vec<_> = ip_port_list
                 .split(',')
                 .map_while(|addr| match addr.trim().to_socket_addrs() {
-                    Ok(mut addrs) => addrs.nth(0),
+                    Ok(mut addrs) => addrs.next(),
                     Err(_e) => None,
                 })
                 .collect();
             return Ok(Self::new(addrs));
         }
 
-        if s.starts_with(IPV6_PREFIX) {
-            let ip_port_list = &s[IPV6_PREFIX.len()..];
+        if let Some(ip_port_list) = s.strip_prefix(IPV6_PREFIX) {
             let addrs: Vec<_> = ip_port_list
                 .split(',')
                 .map_while(|addr| match addr.trim().to_socket_addrs() {
-                    Ok(mut addrs) => addrs.nth(0),
+                    Ok(mut addrs) => addrs.next(),
                     Err(_e) => None,
                 })
                 .collect();

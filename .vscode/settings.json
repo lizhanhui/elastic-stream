@@ -4,6 +4,7 @@
         "fallocate",
         "libc",
         "monoio",
+        "oneshot",
         "Uring"
     ],
     "rust-analyzer.updates.askBeforeDownload": false,

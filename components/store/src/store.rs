@@ -105,8 +105,7 @@ impl Store for ElasticStore {
             }
         };
 
-        let put = Put { inner };
-        put
+        Put { inner }
     }
 
     fn get(&self, options: ReadOptions) -> Get {

@@ -83,7 +83,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         let _ = uring.submit_and_wait(1)?;
 
         let mut cq = uring.completion();
-        while let Some(_entry) = cq.next() {
+        for _entry in cq.by_ref() {
             writes -= 1;
         }
         cq.sync();

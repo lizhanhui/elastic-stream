@@ -2,8 +2,8 @@ use std::io::Cursor;
 use std::rc::Rc;
 
 use bytes::{Buf, BytesMut};
-use slog::{debug, error, info, trace, warn, Logger};
-use tokio_uring::{buf::IoBuf, net::TcpStream};
+use slog::{error, info, trace, warn, Logger};
+use tokio_uring::net::TcpStream;
 
 use codec::error::FrameError;
 use codec::frame::Frame;

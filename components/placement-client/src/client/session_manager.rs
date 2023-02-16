@@ -62,46 +62,37 @@ impl SessionManager {
             let _config = Rc::clone(config);
             tokio_uring::spawn(async move {
                 let config = _config;
-                loop {
-                    match session_mgr_rx.recv().await {
-                        Some((addr, tx)) => {
-                            let sessions = unsafe { &mut *sessions.get() };
-                            match SessionManager::connect(&addr, timeout, &config, &logger).await {
-                                Ok(session) => {
-                                    sessions.insert(addr.clone(), session);
-                                    match tx.send(true) {
-                                        Ok(_) => {
-                                            trace!(logger, "Session creation is notified");
-                                        }
-                                        Err(res) => {
-                                            debug!(
-                                                logger,
-                                                "Failed to notify session creation result: `{}`",
-                                                res
-                                            );
-                                        }
-                                    }
+                while let Some((addr, tx)) = session_mgr_rx.recv().await {
+                    let sessions = unsafe { &mut *sessions.get() };
+                    match SessionManager::connect(&addr, timeout, &config, &logger).await {
+                        Ok(session) => {
+                            sessions.insert(addr, session);
+                            match tx.send(true) {
+                                Ok(_) => {
+                                    trace!(logger, "Session creation is notified");
                                 }
-                                Err(e) => {
-                                    error!(
+                                Err(res) => {
+                                    debug!(
                                         logger,
-                                        "Failed to connect to `{:?}`. Cause: `{:?}`", addr, e
+                                        "Failed to notify session creation result: `{}`", res
                                     );
-                                    match tx.send(false) {
-                                        Ok(_) => {}
-                                        Err(res) => {
-                                            debug!(
-                                                logger,
-                                                "Failed to notify session creation result: `{}`",
-                                                res
-                                            );
-                                        }
-                                    }
                                 }
                             }
                         }
-                        None => {
-                            break;
+                        Err(e) => {
+                            error!(
+                                logger,
+                                "Failed to connect to `{:?}`. Cause: `{:?}`", addr, e
+                            );
+                            match tx.send(false) {
+                                Ok(_) => {}
+                                Err(res) => {
+                                    debug!(
+                                        logger,
+                                        "Failed to notify session creation result: `{}`", res
+                                    );
+                                }
+                            }
                         }
                     }
                 }
@@ -192,7 +183,7 @@ impl SessionManager {
                     if let Some(&socket_addr) = self.endpoints.get() {
                         let (tx, rx) = oneshot::channel();
                         self.session_mgr_tx
-                            .send((socket_addr.clone(), tx))
+                            .send((socket_addr, tx))
                             .unwrap_or_else(|e| {
                                 error!(self.log, "Failed to create a new session. Cause: {:?}", e);
                             });
@@ -294,7 +285,7 @@ impl SessionManager {
     ) -> Result<Session, ClientError> {
         trace!(log, "Establishing connection to {:?}", addr);
         let endpoint = addr.to_string();
-        let connect = TcpStream::connect(addr.clone());
+        let connect = TcpStream::connect(*addr);
         let stream = match timeout(duration, connect).await {
             Ok(res) => match res {
                 Ok(connection) => {

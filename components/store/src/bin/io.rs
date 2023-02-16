@@ -1,9 +1,7 @@
 use std::{
     alloc::{self, Layout},
     error::Error,
-    ffi::CStr,
-    fs::OpenOptions,
-    os::{fd::AsRawFd, unix::prelude::OpenOptionsExt},
+    os::fd::AsRawFd,
 };
 
 use io_uring::{opcode, register, types, IoUring};
@@ -32,7 +30,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         .setup_attach_wq(uring.as_raw_fd())
         .build(1024)?;
 
-    const len: i64 = 1024 * 4;
+    const LEN: i64 = 1024 * 4;
 
     let mut fd = 0;
     // Create file
@@ -55,7 +53,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // Fallocate to change file size
     {
-        let fallocate_e = opcode::Fallocate64::new(types::Fd(fd), len)
+        let fallocate_e = opcode::Fallocate64::new(types::Fd(fd), LEN)
             .mode(0)
             .offset64(0)
             .build()
@@ -65,7 +63,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         ring.submit_and_wait(1)?;
 
         let mut cq = ring.completion();
-        while let Some(cqe) = cq.next() {
+        for cqe in cq.by_ref() {
             println!("{cqe:#?}");
         }
         cq.sync();
@@ -89,9 +87,10 @@ fn main() -> Result<(), Box<dyn Error>> {
         unsafe { uring.submission().push_multiple(&[write_e])? };
         uring.submit_and_wait(1)?;
         let mut cq = uring.completion();
-        while let Some(cqe) = cq.next() {
+        for cqe in cq.by_ref() {
             println!("{cqe:#?}");
         }
+        cq.sync();
     }
 
     Ok(())
