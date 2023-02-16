@@ -1,17 +1,3 @@
-// Copyright 2016 TiKV Project Authors.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-
 package config
 
 import (
@@ -51,6 +37,7 @@ type Config struct {
 	v *viper.Viper
 
 	Etcd *embed.Config
+	Log  *Log
 
 	PeerUrls            string
 	ClientUrls          string
@@ -76,8 +63,10 @@ type Config struct {
 func NewConfig(arguments []string) (*Config, error) {
 	cfg := &Config{}
 	cfg.Etcd = embed.NewConfig()
+	cfg.Log = NewLog()
 
 	v, fs := configure()
+	cfg.v = v
 
 	// parse from command line
 	fs.String("config", "", "configuration file")
@@ -102,15 +91,21 @@ func NewConfig(arguments []string) (*Config, error) {
 		return nil, errors.Wrap(err, "unmarshal configuration")
 	}
 
-	// TODO new and set logger
-	// logger := cfg.lg
-	logger := zap.NewExample() // TODO DELETE
+	// new and set logger (first thing after configuration loaded)
+	err = cfg.Log.Adjust()
+	if err != nil {
+		return nil, errors.Wrap(err, "adjust log config")
+	}
+	logger, err := cfg.Log.Logger()
+	if err != nil {
+		return nil, errors.Wrap(err, "create logger")
+	}
+	cfg.lg = logger
 
 	if configFile := v.ConfigFileUsed(); configFile != "" {
 		logger.Info("load configuration from file.", zap.String("file-name", configFile))
 	}
 
-	cfg.v = v
 	return cfg, nil
 }
 
@@ -149,7 +144,6 @@ func (c *Config) Adjust() error {
 	return nil
 }
 
-// adjustEtcd set configurations in embed.Config
 func (c *Config) adjustEtcd() error {
 	cfg := c.Etcd
 	cfg.Name = c.Name
@@ -221,16 +215,17 @@ func configure() (*viper.Viper, *pflag.FlagSet) {
 	fs.String("initial-cluster", "", "initial cluster configuration for bootstrapping, e.g. pm=http://127.0.0.1:2380. (default 'pm=${advertise-peer-urls}')")
 	fs.Int64("leader-lease", _defaultLeaderLease, "expiration time of the leader, in seconds")
 	fs.Duration("leader-priority-check-interval", _defaultLeaderPriorityCheckInterval, "time interval for checking the leader's priority")
+	fs.String("etcd-initial-cluster-token", _defaultInitialClusterToken, "set different tokens to prevent communication between PMs in different clusters")
 	_ = v.BindPFlag("name", fs.Lookup("name"))
 	_ = v.BindPFlag("data-dir", fs.Lookup("data-dir"))
 	_ = v.BindPFlag("initial-cluster", fs.Lookup("initial-cluster"))
 	_ = v.BindPFlag("leader-lease", fs.Lookup("leader-lease"))
 	_ = v.BindPFlag("leader-priority-check-interval", fs.Lookup("leader-priority-check-interval"))
+	_ = v.BindPFlag("etcd.initialClusterToken", fs.Lookup("etcd-initial-cluster-token"))
 	v.RegisterAlias("DataDir", "data-dir")
 	v.RegisterAlias("InitialCluster", "initial-cluster")
 	v.RegisterAlias("LeaderLease", "leader-lease")
 	v.RegisterAlias("LeaderPriorityCheckInterval", "leader-priority-check-interval")
-	v.SetDefault("etcd.initialClusterToken", _defaultInitialClusterToken)
 
 	return v, fs
 }

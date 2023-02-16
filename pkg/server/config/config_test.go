@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/pflag"
 	"github.com/stretchr/testify/require"
 	"go.etcd.io/etcd/server/v3/embed"
+	"go.uber.org/zap"
 )
 
 func TestNewConfig(t *testing.T) {
@@ -32,6 +33,7 @@ func TestNewConfig(t *testing.T) {
 					config.InitialClusterToken = "pm-cluster"
 					return config
 				}(),
+				Log:                         NewLog(),
 				PeerUrls:                    "http://127.0.0.1:2380",
 				ClientUrls:                  "http://127.0.0.1:2379",
 				AdvertisePeerUrls:           "",
@@ -55,13 +57,15 @@ func TestNewConfig(t *testing.T) {
 				"--initial-cluster=test-initial-cluster",
 				"--leader-lease=123",
 				"--leader-priority-check-interval=1h1m1s",
+				"--etcd-initial-cluster-token=test-initial-cluster-token",
 			}},
 			want: Config{
 				Etcd: func() *embed.Config {
 					config := embed.NewConfig()
-					config.InitialClusterToken = "pm-cluster"
+					config.InitialClusterToken = "test-initial-cluster-token"
 					return config
 				}(),
+				Log:                         NewLog(),
 				PeerUrls:                    "test-peer-urls",
 				ClientUrls:                  "test-client-urls",
 				AdvertisePeerUrls:           "test-advertise-peer-urls",
@@ -84,6 +88,7 @@ func TestNewConfig(t *testing.T) {
 					config.InitialClusterToken = "test-initial-cluster-token"
 					return config
 				}(),
+				Log:                         NewLog(),
 				PeerUrls:                    "test-peer-urls",
 				ClientUrls:                  "test-client-urls",
 				AdvertisePeerUrls:           "test-advertise-peer-urls",
@@ -106,6 +111,7 @@ func TestNewConfig(t *testing.T) {
 					config.InitialClusterToken = "test-initial-cluster-token"
 					return config
 				}(),
+				Log:                         NewLog(),
 				PeerUrls:                    "test-peer-urls",
 				ClientUrls:                  "test-client-urls",
 				AdvertisePeerUrls:           "test-advertise-peer-urls",
@@ -150,6 +156,7 @@ func TestNewConfig(t *testing.T) {
 			wantErr: true,
 			errMsg:  "unmarshal configuration",
 		},
+		// TODO error case when setup logger
 	}
 	for _, tt := range tests {
 		tt := tt
@@ -164,9 +171,15 @@ func TestNewConfig(t *testing.T) {
 				return
 			}
 			re.NoError(err)
+
 			// do not check auxiliary fields
 			config.v = nil
 			config.lg = nil
+
+			equal(re, tt.want.Log.Zap, config.Log.Zap)
+			tt.want.Log.Zap = zap.Config{}
+			config.Log.Zap = zap.Config{}
+
 			re.Equal(tt.want, *config)
 		})
 	}
@@ -199,6 +212,7 @@ func TestAdjust(t *testing.T) {
 					config.InitialClusterToken = "pm-cluster"
 					return config
 				}(),
+				Log:                         NewLog(),
 				PeerUrls:                    "http://127.0.0.1:2380",
 				ClientUrls:                  "http://127.0.0.1:2379",
 				AdvertisePeerUrls:           "http://127.0.0.1:2380",
@@ -232,6 +246,7 @@ func TestAdjust(t *testing.T) {
 					config.InitialClusterToken = "pm-cluster"
 					return config
 				}(),
+				Log:                         NewLog(),
 				PeerUrls:                    "http://example.com:2380,http://10.0.0.1:2380",
 				ClientUrls:                  "http://example.com:2379,http://10.0.0.1:2379",
 				AdvertisePeerUrls:           "http://example.com:2380,http://10.0.0.1:2380",
@@ -297,12 +312,29 @@ func TestAdjust(t *testing.T) {
 				re.ErrorContains(err, tt.errMsg)
 				return
 			}
-			re.NoError(err) // do not check auxiliary fields
+			re.NoError(err)
+
+			// do not check auxiliary fields
 			config.v = nil
 			config.lg = nil
+
+			equal(re, tt.want.Log.Zap, config.Log.Zap)
+			tt.want.Log.Zap = zap.Config{}
+			config.Log.Zap = zap.Config{}
+
 			re.Equal(tt.want, config)
 		})
 	}
+}
+
+func equal(re *require.Assertions, wantZap zap.Config, actualZap zap.Config) {
+	re.Equal(wantZap.Level.String(), actualZap.Level.String())
+	re.Equal(wantZap.Encoding, actualZap.Encoding)
+	re.Equal(wantZap.OutputPaths, actualZap.OutputPaths)
+	re.Equal(wantZap.ErrorOutputPaths, actualZap.ErrorOutputPaths)
+	re.Equal(wantZap.Development, actualZap.Development)
+	re.Equal(wantZap.DisableStacktrace, actualZap.DisableStacktrace)
+	re.Equal(wantZap.DisableCaller, actualZap.DisableCaller)
 }
 
 func TestValidate(t *testing.T) {
