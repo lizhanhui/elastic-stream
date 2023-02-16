@@ -9,15 +9,6 @@ use std::{
 use io_uring::{opcode, register, types, IoUring};
 
 fn main() -> Result<(), Box<dyn Error>> {
-    let file = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .read(true)
-        .write(true)
-        .custom_flags(libc::O_DIRECT)
-        .mode(libc::S_IRWXU | libc::S_IRWXG)
-        .open("/data/abc.txt")?;
-
     let mut uring = IoUring::builder()
         .dontfork()
         .setup_iopoll()
@@ -41,11 +32,30 @@ fn main() -> Result<(), Box<dyn Error>> {
         .setup_attach_wq(uring.as_raw_fd())
         .build(1024)?;
 
-    const len: i64 = 1024 * 1024;
+    const len: i64 = 1024 * 4;
+
+    let mut fd = 0;
+    // Create file
+    {
+        let file_name = "/data/abc.txt".to_owned();
+        let open_at_e =
+            opcode::OpenAt::new(types::Fd(libc::AT_FDCWD), file_name.as_ptr() as *const i8)
+                .flags(libc::O_CREAT | libc::O_RDWR | libc::O_DIRECT)
+                .mode(libc::S_IRWXU | libc::S_IRWXG)
+                .build()
+                .user_data(0);
+        unsafe { ring.submission().push(&open_at_e)? };
+        ring.submit_and_wait(1)?;
+        let mut cq = ring.completion();
+        if let Some(cqe) = cq.next() {
+            println!("{cqe:#?}");
+            fd = cqe.result();
+        }
+    }
 
     // Fallocate to change file size
     {
-        let fallocate_e = opcode::Fallocate64::new(types::Fd(file.as_raw_fd()), len)
+        let fallocate_e = opcode::Fallocate64::new(types::Fd(fd), len)
             .mode(0)
             .offset64(0)
             .build()
@@ -57,7 +67,6 @@ fn main() -> Result<(), Box<dyn Error>> {
         let mut cq = ring.completion();
         while let Some(cqe) = cq.next() {
             println!("{cqe:#?}");
-            perror(cqe.result())?;
         }
         cq.sync();
     }
@@ -72,7 +81,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
         unsafe { libc::memset(ptr as *mut libc::c_void, 65, buf_size as libc::size_t) };
 
-        let write_e = opcode::Write::new(types::Fd(file.as_raw_fd()), ptr, buf_size as u32)
+        let write_e = opcode::Write::new(types::Fd(fd), ptr, buf_size as u32)
             .offset(0)
             .build()
             .user_data(2);
@@ -82,19 +91,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         let mut cq = uring.completion();
         while let Some(cqe) = cq.next() {
             println!("{cqe:#?}");
-            perror(cqe.result())?;
         }
     }
 
-    Ok(())
-}
-
-fn perror(errno: i32) -> Result<(), Box<dyn Error>> {
-    if errno >= 0 {
-        return Ok(());
-    }
-    let ptr = unsafe { libc::strerror(-errno) };
-    let str = unsafe { CStr::from_ptr(ptr) };
-    println!("Reported Error Message: {}", str.to_str()?);
     Ok(())
 }
