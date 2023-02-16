@@ -35,7 +35,24 @@ impl Default for Options {
 }
 
 pub(crate) struct IO {
-    uring: io_uring::IoUring,
+    /// Full fledged I/O Uring instance with setup of `SQPOLL` and `IOPOLL` features
+    ///
+    /// This io_uring instance is supposed to take up two CPU processors/cores. Namely, both the kernel and user-land are performing
+    /// busy polling, submitting and reaping requests.
+    ///
+    /// With `IOPOLL`, the kernel thread is polling block device drivers for completed tasks, thus no interrupts are required any more on
+    /// IO completion.
+    ///
+    /// With `SQPOLL`, once application thread submits the IO request to `SQ` and compare-and-swap queue head, kernel thread would `see`
+    /// and start to process them without `io_uring_enter` syscall.
+    ///
+    /// At the time of writing(kernel 5.15 and 5.19), `io_uring` instance with `IOPOLL` feature is restricted to file descriptor opened
+    /// with `O_DIRECT`. That is, `Currently, this feature is usable only  on  a file  descriptor opened using the O_DIRECT flag.`
+    ///
+    /// As a result, Opcode `OpenAt` and`OpenAt2` are not compatible with this `io_uring` instance.
+    /// `Fallocate64`, for some unknown reason, is not working either.
+    poll_ring: io_uring::IoUring,
+
     pub(crate) sender: Sender<()>,
     receiver: Receiver<()>,
     log: Logger,
@@ -63,7 +80,7 @@ impl IO {
         let (sender, receiver) = crossbeam::channel::unbounded();
 
         Ok(Self {
-            uring,
+            poll_ring: uring,
             sender,
             receiver,
             log,
@@ -74,7 +91,7 @@ impl IO {
         let mut in_flight_requests = 0;
         loop {
             loop {
-                if self.uring.params().sq_entries() <= in_flight_requests {
+                if self.poll_ring.params().sq_entries() <= in_flight_requests {
                     break;
                 }
 
@@ -84,8 +101,8 @@ impl IO {
                 }
             }
 
-            if let Ok(_reaped) = self.uring.submit_and_wait(1) {
-                let mut completion = self.uring.completion();
+            if let Ok(_reaped) = self.poll_ring.submit_and_wait(1) {
+                let mut completion = self.poll_ring.completion();
                 while let Some(_cqe) = completion.next() {
                     in_flight_requests -= 1;
                 }
@@ -99,6 +116,6 @@ impl IO {
 
 impl AsRawFd for IO {
     fn as_raw_fd(&self) -> std::os::fd::RawFd {
-        self.uring.as_raw_fd()
+        self.poll_ring.as_raw_fd()
     }
 }

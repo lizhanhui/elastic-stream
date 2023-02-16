@@ -2,9 +2,12 @@
     "cSpell.words": [
         "byteorder",
         "fallocate",
+        "IOPOLL",
         "libc",
         "monoio",
         "oneshot",
+        "SQPOLL",
+        "syscall",
         "Uring"
     ],
     "rust-analyzer.updates.askBeforeDownload": false,

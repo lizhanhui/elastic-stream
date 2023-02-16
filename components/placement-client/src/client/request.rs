@@ -12,7 +12,7 @@ pub(crate) enum Request {
 impl Request {
     pub(crate) fn build_frame_header(&self) -> Option<Bytes> {
         match *self {
-            Self::ListRange { partition_id:_ } => {}
+            Self::ListRange { partition_id: _ } => {}
             Self::Heartbeat { .. } => {}
         }
         None
