@@ -1,6 +1,7 @@
 {
     "cSpell.words": [
         "byteorder",
+        "fallocate",
         "libc",
         "monoio",
         "Uring"

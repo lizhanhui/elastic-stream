@@ -1,11 +1,4 @@
-use std::{
-    cell::UnsafeCell,
-    error::Error,
-    ffi::{CStr, CString},
-    io::BufRead,
-    os::fd::RawFd,
-    rc::Rc,
-};
+use std::{cell::UnsafeCell, error::Error, ffi::CStr, io::BufRead, os::fd::RawFd, rc::Rc};
 
 use io_uring::{opcode, register, types, IoUring};
 
