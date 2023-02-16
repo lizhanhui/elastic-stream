@@ -1,4 +1,4 @@
 /target
 .idea
 .vscode/launch.json
-components/protocol/src/generated/rpc_generated.rs
+./components/protocol/src/generated/rpc_generated.rs

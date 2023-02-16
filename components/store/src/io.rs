@@ -53,6 +53,12 @@ pub(crate) struct IO {
     /// `Fallocate64`, for some unknown reason, is not working either.
     poll_ring: io_uring::IoUring,
 
+    /// I/O Uring instance for write-ahead-log segment file management.
+    ///
+    /// Unlike `poll_uring`, this instance is used to create/fallocate/delete log segment files because these opcodes are not
+    /// properly supported by the instance armed with the `IOPOLL` feature.
+    ring: io_uring::IoUring,
+
     pub(crate) sender: Sender<()>,
     receiver: Receiver<()>,
     log: Logger,
@@ -60,7 +66,12 @@ pub(crate) struct IO {
 
 impl IO {
     pub(crate) fn new(options: &mut Options, log: Logger) -> Result<Self, StoreError> {
-        let uring = io_uring::IoUring::builder()
+        let ring = io_uring::IoUring::builder().dontfork().build(32).map_err(|e| {
+            error!(log, "Failed to build I/O Uring instance for write-ahead-log segment file management: {:#?}", e);
+            StoreError::IoUring
+        })?;
+
+        let poll_ring = io_uring::IoUring::builder()
             .dontfork()
             .setup_iopoll()
             .setup_sqpoll(options.sqpoll_idle_ms)
@@ -68,19 +79,20 @@ impl IO {
             .setup_r_disabled()
             .build(options.io_depth)
             .map_err(|e| {
-                error!(log, "Failed to build I/O Uring instance: {:#?}", e);
+                error!(log, "Failed to build polling I/O Uring instance: {:#?}", e);
                 StoreError::IoUring
             })?;
 
-        let submitter = uring.submitter();
+        let submitter = poll_ring.submitter();
         submitter.register_iowq_max_workers(&mut options.max_workers)?;
         submitter.register_enable_rings()?;
-        trace!(log, "I/O Uring instance created");
+        trace!(log, "Polling I/O Uring instance created");
 
         let (sender, receiver) = crossbeam::channel::unbounded();
 
         Ok(Self {
-            poll_ring: uring,
+            poll_ring,
+            ring,
             sender,
             receiver,
             log,
@@ -88,10 +100,11 @@ impl IO {
     }
 
     pub(crate) fn run(&mut self) {
+        let io_depth = self.poll_ring.params().sq_entries();
         let mut in_flight_requests = 0;
         loop {
             loop {
-                if self.poll_ring.params().sq_entries() <= in_flight_requests {
+                if in_flight_requests >= io_depth {
                     break;
                 }
 

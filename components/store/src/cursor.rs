@@ -1,6 +1,7 @@
 //! Manage write and `sync` progress of each `FileSegment`.
 //!
 //!
+#[derive(Debug, Default)]
 pub struct Cursor {
     written: u64,
     committed: u64,
@@ -8,10 +9,7 @@ pub struct Cursor {
 
 impl Cursor {
     pub fn new() -> Self {
-        Self {
-            written: 0,
-            committed: 0,
-        }
+        Self::default()
     }
 
     pub fn alloc(&mut self, len: u64) -> u64 {
