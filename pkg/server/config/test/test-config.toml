@@ -11,3 +11,17 @@ leaderPriorityCheckInterval = 3661000000000
 
 [etcd]
 initialClusterToken = "test-initial-cluster-token"
+
+[log]
+level = "FATAL"
+enableRotation = false
+[log.zap]
+outputPaths = ["stdout", "stderr"]
+errorOutputPaths = ["stdout", "stderr"]
+encoding = "console"
+[log.rotate]
+maxSize = 1234
+maxAge = 12345
+maxBackups = 123456
+localTime = true
+compress = true

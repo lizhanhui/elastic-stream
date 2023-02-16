@@ -33,7 +33,13 @@ func TestNewConfig(t *testing.T) {
 					config.InitialClusterToken = "pm-cluster"
 					return config
 				}(),
-				Log:                         NewLog(),
+				Log: func() *Log {
+					log := NewLog()
+					log.Level = "INFO"
+					log.Rotate.MaxSize = 64
+					log.Rotate.MaxAge = 180
+					return log
+				}(),
 				PeerUrls:                    "http://127.0.0.1:2380",
 				ClientUrls:                  "http://127.0.0.1:2379",
 				AdvertisePeerUrls:           "",
@@ -58,6 +64,16 @@ func TestNewConfig(t *testing.T) {
 				"--leader-lease=123",
 				"--leader-priority-check-interval=1h1m1s",
 				"--etcd-initial-cluster-token=test-initial-cluster-token",
+				"--log-level=FATAL",
+				"--log-zap-encoding=console",
+				"--log-zap-output-paths=stdout,stderr",
+				"--log-zap-error-output-paths=stdout,stderr",
+				"--log-enable-rotation=false",
+				"--log-rotate-max-size=1234",
+				"--log-rotate-max-age=12345",
+				"--log-rotate-max-backups=123456",
+				"--log-rotate-local-time=true",
+				"--log-rotate-compress=true",
 			}},
 			want: Config{
 				Etcd: func() *embed.Config {
@@ -65,7 +81,21 @@ func TestNewConfig(t *testing.T) {
 					config.InitialClusterToken = "test-initial-cluster-token"
 					return config
 				}(),
-				Log:                         NewLog(),
+				Log: func() *Log {
+					log := NewLog()
+					log.Level = "FATAL"
+					log.Zap.Level = zap.NewAtomicLevelAt(5)
+					log.Zap.Encoding = "console"
+					log.Zap.OutputPaths = []string{"stdout", "stderr"}
+					log.Zap.ErrorOutputPaths = []string{"stdout", "stderr"}
+					log.EnableRotation = false
+					log.Rotate.MaxSize = 1234
+					log.Rotate.MaxAge = 12345
+					log.Rotate.MaxBackups = 123456
+					log.Rotate.LocalTime = true
+					log.Rotate.Compress = true
+					return log
+				}(),
 				PeerUrls:                    "test-peer-urls",
 				ClientUrls:                  "test-client-urls",
 				AdvertisePeerUrls:           "test-advertise-peer-urls",
@@ -88,7 +118,21 @@ func TestNewConfig(t *testing.T) {
 					config.InitialClusterToken = "test-initial-cluster-token"
 					return config
 				}(),
-				Log:                         NewLog(),
+				Log: func() *Log {
+					log := NewLog()
+					log.Level = "FATAL"
+					log.Zap.Level = zap.NewAtomicLevelAt(5)
+					log.Zap.Encoding = "console"
+					log.Zap.OutputPaths = []string{"stdout", "stderr"}
+					log.Zap.ErrorOutputPaths = []string{"stdout", "stderr"}
+					log.EnableRotation = false
+					log.Rotate.MaxSize = 1234
+					log.Rotate.MaxAge = 12345
+					log.Rotate.MaxBackups = 123456
+					log.Rotate.LocalTime = true
+					log.Rotate.Compress = true
+					return log
+				}(),
 				PeerUrls:                    "test-peer-urls",
 				ClientUrls:                  "test-client-urls",
 				AdvertisePeerUrls:           "test-advertise-peer-urls",
@@ -111,7 +155,21 @@ func TestNewConfig(t *testing.T) {
 					config.InitialClusterToken = "test-initial-cluster-token"
 					return config
 				}(),
-				Log:                         NewLog(),
+				Log: func() *Log {
+					log := NewLog()
+					log.Level = "FATAL"
+					log.Zap.Level = zap.NewAtomicLevelAt(5)
+					log.Zap.Encoding = "console"
+					log.Zap.OutputPaths = []string{"stdout", "stderr"}
+					log.Zap.ErrorOutputPaths = []string{"stdout", "stderr"}
+					log.EnableRotation = false
+					log.Rotate.MaxSize = 1234
+					log.Rotate.MaxAge = 12345
+					log.Rotate.MaxBackups = 123456
+					log.Rotate.LocalTime = true
+					log.Rotate.Compress = true
+					return log
+				}(),
 				PeerUrls:                    "test-peer-urls",
 				ClientUrls:                  "test-client-urls",
 				AdvertisePeerUrls:           "test-advertise-peer-urls",
@@ -156,7 +214,22 @@ func TestNewConfig(t *testing.T) {
 			wantErr: true,
 			errMsg:  "unmarshal configuration",
 		},
-		// TODO error case when setup logger
+		{
+			name: "adjust log config error",
+			args: args{arguments: []string{
+				"--log-level=LEVEL",
+			}},
+			wantErr: true,
+			errMsg:  "adjust log config",
+		},
+		{
+			name: "create logger error",
+			args: args{arguments: []string{
+				"--log-zap-encoding=raw",
+			}},
+			wantErr: true,
+			errMsg:  "build logger",
+		},
 	}
 	for _, tt := range tests {
 		tt := tt
@@ -212,7 +285,13 @@ func TestAdjust(t *testing.T) {
 					config.InitialClusterToken = "pm-cluster"
 					return config
 				}(),
-				Log:                         NewLog(),
+				Log: func() *Log {
+					log := NewLog()
+					log.Level = "INFO"
+					log.Rotate.MaxSize = 64
+					log.Rotate.MaxAge = 180
+					return log
+				}(),
 				PeerUrls:                    "http://127.0.0.1:2380",
 				ClientUrls:                  "http://127.0.0.1:2379",
 				AdvertisePeerUrls:           "http://127.0.0.1:2380",
@@ -246,7 +325,13 @@ func TestAdjust(t *testing.T) {
 					config.InitialClusterToken = "pm-cluster"
 					return config
 				}(),
-				Log:                         NewLog(),
+				Log: func() *Log {
+					log := NewLog()
+					log.Level = "INFO"
+					log.Rotate.MaxSize = 64
+					log.Rotate.MaxAge = 180
+					return log
+				}(),
 				PeerUrls:                    "http://example.com:2380,http://10.0.0.1:2380",
 				ClientUrls:                  "http://example.com:2379,http://10.0.0.1:2379",
 				AdvertisePeerUrls:           "http://example.com:2380,http://10.0.0.1:2380",
@@ -289,7 +374,7 @@ func TestAdjust(t *testing.T) {
 			errMsg:  "parse advertise peer url",
 		},
 		{
-			name: "invalid client url",
+			name: "invalid advertise client url",
 			in: func() *Config {
 				config, _ := NewConfig([]string{})
 				config.AdvertiseClientUrls = "http://example.com:2379,://10.0.0.1:2379"

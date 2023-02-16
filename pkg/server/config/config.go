@@ -16,7 +16,8 @@ import (
 )
 
 var (
-	_defaultConfigFilePaths = []string{".", "$CONFIG_DIR/"}
+	_defaultConfigFilePaths   = []string{".", "$CONFIG_DIR/"}
+	_defaultLogZapOutputPaths = []string{"stderr"}
 )
 
 const (
@@ -30,6 +31,15 @@ const (
 	_defaultInitialClusterToken               = "pm-cluster"
 	_defaultLeaderLease                 int64 = 3
 	_defaultLeaderPriorityCheckInterval       = time.Minute
+
+	_defaultLogLevel            = "INFO"
+	_defaultLogZapEncoding      = "json"
+	_defaultLogEnableRotation   = false
+	_defaultLogRotateMaxSize    = 64
+	_defaultLogRotateMaxAge     = 180
+	_defaultLogRotateMaxBackups = 0
+	_defaultLogRotateLocalTime  = false
+	_defaultLogRotateCompress   = false
 )
 
 // Config is the configuration for [Server]
@@ -218,6 +228,28 @@ func configure() (*viper.Viper, *pflag.FlagSet) {
 	_ = v.BindPFlag("leaderLease", fs.Lookup("leader-lease"))
 	_ = v.BindPFlag("leaderPriorityCheckInterval", fs.Lookup("leader-priority-check-interval"))
 	_ = v.BindPFlag("etcd.initialClusterToken", fs.Lookup("etcd-initial-cluster-token"))
+
+	// log settings
+	fs.String("log-level", _defaultLogLevel, "the minimum enabled logging level")
+	fs.StringSlice("log-zap-output-paths", _defaultLogZapOutputPaths, "a list of URLs or file paths to write logging output to")
+	fs.StringSlice("log-zap-error-output-paths", []string{}, "a list of URLs to write internal logger errors to (default ${log-zap-output-paths})")
+	fs.String("log-zap-encoding", _defaultLogZapEncoding, "the logger's encoding, \"json\" or \"console\"")
+	fs.Bool("log-enable-rotation", _defaultLogEnableRotation, "whether to enable log rotation")
+	fs.Int("log-rotate-max-size", _defaultLogRotateMaxSize, "maximum size in megabytes of the log file before it gets rotated")
+	fs.Int("log-rotate-max-age", _defaultLogRotateMaxAge, "maximum number of days to retain old log files based on the timestamp encoded in their filename")
+	fs.Int("log-rotate-max-backups", _defaultLogRotateMaxBackups, "maximum number of old log files to retain, default is to retain all old log files (though MaxAge may still cause them to get deleted)")
+	fs.Bool("log-rotate-local-time", _defaultLogRotateLocalTime, "whether the time used for formatting the timestamps in backup files is the computer's local time, default is to use UTC time")
+	fs.Bool("log-rotate-compress", _defaultLogRotateCompress, "whether the rotated log files should be compressed using gzip")
+	_ = v.BindPFlag("log.level", fs.Lookup("log-level"))
+	_ = v.BindPFlag("log.zap.outputPaths", fs.Lookup("log-zap-output-paths"))
+	_ = v.BindPFlag("log.zap.errorOutputPaths", fs.Lookup("log-zap-error-output-paths"))
+	_ = v.BindPFlag("log.zap.encoding", fs.Lookup("log-zap-encoding"))
+	_ = v.BindPFlag("log.enableRotation", fs.Lookup("log-enable-rotation"))
+	_ = v.BindPFlag("log.rotate.maxSize", fs.Lookup("log-rotate-max-size"))
+	_ = v.BindPFlag("log.rotate.maxAge", fs.Lookup("log-rotate-max-age"))
+	_ = v.BindPFlag("log.rotate.maxBackups", fs.Lookup("log-rotate-max-backups"))
+	_ = v.BindPFlag("log.rotate.localTime", fs.Lookup("log-rotate-local-time"))
+	_ = v.BindPFlag("log.rotate.compress", fs.Lookup("log-rotate-compress"))
 
 	return v, fs
 }

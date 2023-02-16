@@ -6,6 +6,7 @@ import (
 
 	"github.com/pkg/errors"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 	"gopkg.in/natefinch/lumberjack.v2"
 )
 
@@ -18,28 +19,34 @@ type Log struct {
 	Zap            zap.Config
 	Rotate         Rotate
 	EnableRotation bool
+	Level          string
 }
 
 // NewLog creates a default logging configuration.
 func NewLog() *Log {
 	log := &Log{
 		Zap: zap.NewProductionConfig(),
-		Rotate: Rotate{
-			MaxSize: 64,
-			MaxAge:  180,
-		},
 	}
-
 	return log
 }
 
 // Adjust adjusts the configuration in Log.Zap based on additional settings
 func (l *Log) Adjust() error {
+	if l.Zap.ErrorOutputPaths == nil {
+		copy(l.Zap.ErrorOutputPaths, l.Zap.OutputPaths)
+	}
+
 	if l.EnableRotation {
 		l.Zap.OutputPaths = addRotationSchema(l.Zap.OutputPaths)
 		l.Zap.ErrorOutputPaths = addRotationSchema(l.Zap.ErrorOutputPaths)
 	}
-	// TODO
+
+	level, err := zapcore.ParseLevel(l.Level)
+	if err != nil {
+		return errors.Wrap(err, "parse log level")
+	}
+	l.Zap.Level = zap.NewAtomicLevelAt(level)
+
 	return nil
 }
 
