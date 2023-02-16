@@ -1,4 +1,11 @@
-use std::{cell::UnsafeCell, error::Error, ffi::CString, io::BufRead, os::fd::RawFd, rc::Rc};
+use std::{
+    cell::UnsafeCell,
+    error::Error,
+    ffi::{CStr, CString},
+    io::BufRead,
+    os::fd::RawFd,
+    rc::Rc,
+};
 
 use io_uring::{opcode, register, types, IoUring};
 
@@ -11,7 +18,7 @@ const WAL_FILE_SEGMENT_LENGTH: i64 = 1024 * 1024;
 fn main() -> Result<(), Box<dyn Error>> {
     let uring = IoUring::builder()
         .dontfork()
-        // .setup_iopoll()
+        .setup_iopoll()
         .setup_sqpoll(2000)
         .setup_sqpoll_cpu(1)
         .setup_r_disabled()
@@ -58,12 +65,15 @@ fn main() -> Result<(), Box<dyn Error>> {
                 println!("{cqe:#?}");
                 if cqe.result() < 0 {
                     let ptr = unsafe { libc::strerror(-cqe.result()) };
-                    match unsafe { CString::from_raw(ptr) }.into_string() {
+                    match unsafe { CStr::from_ptr(ptr) }.to_str() {
                         Ok(s) => {
-                            println!("{}", s);
+                            println!("I/O Uring reported error message: {}", s);
                         }
                         Err(e) => {
-                            eprintln!("Failed to convert CString to String: {:?}", e);
+                            eprintln!(
+                                "Failed to convert `null` terminated C string to Rust &str: {:?}",
+                                e
+                            );
                         }
                     };
                     // Something is wrong
