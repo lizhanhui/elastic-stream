@@ -111,8 +111,10 @@ func TestNewConfig(t *testing.T) {
 			},
 		},
 		{
-			name: "config from command line",
+			name: "config from command line (override config in file)",
 			args: args{arguments: []string{
+				"--config=../../../conf/config.toml",
+
 				"--peer-urls=test-peer-urls",
 				"--client-urls=test-client-urls",
 				"--advertise-peer-urls=test-advertise-peer-urls",
@@ -175,6 +177,8 @@ func TestNewConfig(t *testing.T) {
 				Etcd: func() *embed.Config {
 					config := embed.NewConfig()
 					config.InitialClusterToken = "test-initial-cluster-token"
+					config.TickMs = 123
+					config.ElectionMs = 1234
 					return config
 				}(),
 				Log: func() *Log {
@@ -184,6 +188,9 @@ func TestNewConfig(t *testing.T) {
 					log.Zap.Encoding = "console"
 					log.Zap.OutputPaths = []string{"stdout", "stderr"}
 					log.Zap.ErrorOutputPaths = []string{"stdout", "stderr"}
+					log.Zap.DisableCaller = true
+					log.Zap.DisableStacktrace = true
+					log.Zap.EncoderConfig.MessageKey = "test-msg"
 					log.EnableRotation = false
 					log.Rotate.MaxSize = 1234
 					log.Rotate.MaxAge = 12345
@@ -212,6 +219,8 @@ func TestNewConfig(t *testing.T) {
 				Etcd: func() *embed.Config {
 					config := embed.NewConfig()
 					config.InitialClusterToken = "test-initial-cluster-token"
+					config.TickMs = 123
+					config.ElectionMs = 1234
 					return config
 				}(),
 				Log: func() *Log {
@@ -221,6 +230,9 @@ func TestNewConfig(t *testing.T) {
 					log.Zap.Encoding = "console"
 					log.Zap.OutputPaths = []string{"stdout", "stderr"}
 					log.Zap.ErrorOutputPaths = []string{"stdout", "stderr"}
+					log.Zap.DisableCaller = true
+					log.Zap.DisableStacktrace = true
+					log.Zap.EncoderConfig.MessageKey = "test-msg"
 					log.EnableRotation = false
 					log.Rotate.MaxSize = 1234
 					log.Rotate.MaxAge = 12345

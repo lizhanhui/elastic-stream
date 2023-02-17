@@ -11,6 +11,8 @@ leaderPriorityCheckInterval: 3661000000000
 
 etcd:
   initialClusterToken: test-initial-cluster-token
+  tickMs: 123
+  electionMs: 1234
 
 log:
   level: FATAL
@@ -23,6 +25,10 @@ log:
       - stdout
       - stderr
     encoding: console
+    disableCaller: true
+    disableStacktrace: true
+    encoderConfig:
+      messageKey: test-msg
   rotate:
     maxSize: 1234
     maxAge: 12345
