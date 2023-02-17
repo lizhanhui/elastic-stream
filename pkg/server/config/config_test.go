@@ -52,6 +52,64 @@ func TestNewConfig(t *testing.T) {
 			},
 		},
 		{
+			name: "default config in toml",
+			args: args{arguments: []string{
+				"--config=../../../conf/config.toml",
+			}},
+			want: Config{
+				Etcd: func() *embed.Config {
+					config := embed.NewConfig()
+					config.InitialClusterToken = "pm-cluster"
+					return config
+				}(),
+				Log: func() *Log {
+					log := NewLog()
+					log.Level = "INFO"
+					log.Rotate.MaxSize = 64
+					log.Rotate.MaxAge = 180
+					return log
+				}(),
+				PeerUrls:                    "http://127.0.0.1:2380",
+				ClientUrls:                  "http://127.0.0.1:2379",
+				AdvertisePeerUrls:           "http://127.0.0.1:2380",
+				AdvertiseClientUrls:         "http://127.0.0.1:2379",
+				Name:                        "pm-hostname",
+				DataDir:                     "default.pm-hostname",
+				InitialCluster:              "pm=http://127.0.0.1:2380",
+				LeaderLease:                 3,
+				LeaderPriorityCheckInterval: time.Minute,
+			},
+		},
+		{
+			name: "default config in yaml",
+			args: args{arguments: []string{
+				"--config=../../../conf/config.yaml",
+			}},
+			want: Config{
+				Etcd: func() *embed.Config {
+					config := embed.NewConfig()
+					config.InitialClusterToken = "pm-cluster"
+					return config
+				}(),
+				Log: func() *Log {
+					log := NewLog()
+					log.Level = "INFO"
+					log.Rotate.MaxSize = 64
+					log.Rotate.MaxAge = 180
+					return log
+				}(),
+				PeerUrls:                    "http://127.0.0.1:2380",
+				ClientUrls:                  "http://127.0.0.1:2379",
+				AdvertisePeerUrls:           "http://127.0.0.1:2380",
+				AdvertiseClientUrls:         "http://127.0.0.1:2379",
+				Name:                        "pm-hostname",
+				DataDir:                     "default.pm-hostname",
+				InitialCluster:              "pm=http://127.0.0.1:2380",
+				LeaderLease:                 3,
+				LeaderPriorityCheckInterval: time.Minute,
+			},
+		},
+		{
 			name: "config from command line",
 			args: args{arguments: []string{
 				"--peer-urls=test-peer-urls",
