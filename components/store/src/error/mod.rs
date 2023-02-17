@@ -9,6 +9,9 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum StoreError {
+    #[error("Configuration invalid: `{0}`")]
+    Configuration(String),
+
     #[error("Disk of `{0}` is full")]
     DiskFull(String),
 

@@ -2,14 +2,14 @@
 //!
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct StorePath {
+pub struct WalPath {
     pub(crate) path: String,
 
     /// Target size of total files under the path, in byte.
     pub(crate) target_size: u64,
 }
 
-impl StorePath {
+impl WalPath {
     pub fn new(path: &str, target_size: u64) -> Self {
         Self {
             path: path.to_owned(),
@@ -21,13 +21,13 @@ impl StorePath {
 #[derive(Debug, Clone, PartialEq)]
 pub struct StoreOptions {
     pub(crate) create_if_missing: bool,
-    pub(crate) store_path: StorePath,
+    pub(crate) store_path: WalPath,
     pub(crate) destroy_on_exit: bool,
     pub(crate) command_queue_depth: usize,
 }
 
 impl StoreOptions {
-    pub fn new(store_path: &StorePath) -> Self {
+    pub fn new(store_path: &WalPath) -> Self {
         Self {
             create_if_missing: true,
             store_path: store_path.clone(),

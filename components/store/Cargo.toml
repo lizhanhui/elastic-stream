@@ -21,6 +21,7 @@ io-uring = { workspace = true }
 crossbeam = { workspace = true }
 core_affinity = { workspace = true }
 tokio = { workspace = true }
+util = { path = "../util" }
 
 [dev-dependencies]
 slog-async =  { workspace = true }

@@ -1,10 +1,11 @@
 mod segment;
 
 use crate::error::StoreError;
+use crate::option::WalPath;
 use crossbeam::channel::{Receiver, Sender};
 use segment::{LogSegmentFile, Status, TimeRange};
 use slog::{error, trace, Logger};
-use std::os::fd::AsRawFd;
+use std::{collections::VecDeque, os::fd::AsRawFd, path::Path};
 
 const DEFAULT_MAX_IO_DEPTH: u32 = 4096;
 const DEFAULT_SQPOLL_IDLE_MS: u32 = 2000;
@@ -12,7 +13,17 @@ const DEFAULT_SQPOLL_CPU: u32 = 1;
 const DEFAULT_MAX_BOUNDED_URING_WORKER_COUNT: u32 = 2;
 const DEFAULT_MAX_UNBOUNDED_URING_WORKER_COUNT: u32 = 2;
 
+#[derive(Debug, Clone)]
 pub(crate) struct Options {
+    /// A list of paths where write-ahead-log segment files can be put into, with its target_size considered.
+    ///
+    /// Newer data is placed into paths specified earlier in the vector while the older data are gradually moved
+    /// to paths specified later in the vector.
+    ///
+    /// For example, we have a SSD device with 100GiB for hot data as well as 1TiB S3-backed tiered storage.
+    /// Configuration for it should be `[{"/ssd", 100GiB}, {"/s3", 1TiB}]`.
+    wal_paths: Vec<WalPath>,
+
     io_depth: u32,
 
     sqpoll_idle_ms: u32,
@@ -26,6 +37,7 @@ pub(crate) struct Options {
 impl Default for Options {
     fn default() -> Self {
         Self {
+            wal_paths: Vec::new(),
             io_depth: DEFAULT_MAX_IO_DEPTH,
             sqpoll_idle_ms: DEFAULT_SQPOLL_IDLE_MS,
             sqpoll_cpu: DEFAULT_SQPOLL_CPU,
@@ -38,6 +50,8 @@ impl Default for Options {
 }
 
 pub(crate) struct IO {
+    options: Options,
+
     /// Full fledged I/O Uring instance with setup of `SQPOLL` and `IOPOLL` features
     ///
     /// This io_uring instance is supposed to take up two CPU processors/cores. Namely, both the kernel and user-land are performing
@@ -66,11 +80,20 @@ pub(crate) struct IO {
     receiver: Receiver<()>,
     log: Logger,
 
-    segments: Vec<LogSegmentFile>,
+    segments: VecDeque<LogSegmentFile>,
 }
 
 impl IO {
     pub(crate) fn new(options: &mut Options, log: Logger) -> Result<Self, StoreError> {
+        if options.wal_paths.is_empty() {
+            return Err(StoreError::Configuration("WAL path required".to_owned()));
+        }
+
+        // Ensure WAL directories exists.
+        for dir in &options.wal_paths {
+            util::fs::mkdirs_if_missing(&dir.path)?;
+        }
+
         let ring = io_uring::IoUring::builder().dontfork().build(32).map_err(|e| {
             error!(log, "Failed to build I/O Uring instance for write-ahead-log segment file management: {:#?}", e);
             StoreError::IoUring
@@ -96,15 +119,36 @@ impl IO {
         let (sender, receiver) = crossbeam::channel::unbounded();
 
         Ok(Self {
+            options: options.clone(),
             poll_ring,
             ring,
             sender,
             receiver,
             log,
+            segments: VecDeque::new(),
         })
     }
 
-    pub(crate) fn run(&mut self) {
+    fn load_wals(&mut self) -> Result<(), StoreError> {
+        // self.options
+        //     .wal_paths
+        //     .iter()
+        //     .rev()
+        //     .map(|wal_path| Path::new(&wal_path.path).read_dir()?)
+        //     .flatten()
+        //     .map(|dir_entry| {});
+
+        Ok(())
+    }
+
+    fn load(&mut self) -> Result<(), StoreError> {
+        self.load_wals()?;
+        Ok(())
+    }
+
+    pub(crate) fn run(&mut self) -> Result<(), StoreError> {
+        self.load()?;
+
         let io_depth = self.poll_ring.params().sq_entries();
         let mut in_flight_requests = 0;
         loop {
@@ -129,6 +173,7 @@ impl IO {
                 break;
             }
         }
+        Ok(())
     }
 }
 

@@ -52,14 +52,16 @@ impl ElasticStore {
         affinity: Option<CoreId>,
     ) -> Result<JoinHandle<()>, StoreError>
     where
-        F: FnOnce() + Send + 'static,
+        F: FnOnce() -> Result<(), StoreError> + Send + 'static,
     {
         if let Some(core) = affinity {
             let closure = move || {
                 if !core_affinity::set_for_current(core) {
                     todo!("Log error when setting core affinity");
                 }
-                task();
+                if let Err(_e) = task() {
+                    todo!("Log internal store error");
+                }
             };
             let handle = Builder::new()
                 .name(name.to_owned())
@@ -68,7 +70,9 @@ impl ElasticStore {
             Ok(handle)
         } else {
             let closure = move || {
-                task();
+                if let Err(_e) = task() {
+                    todo!("Log internal store error");
+                }
             };
             let handle = Builder::new()
                 .name(name.to_owned())

@@ -1,9 +1,11 @@
 {
     "cSpell.words": [
         "byteorder",
+        "Deque",
         "fallocate",
         "IOPOLL",
         "libc",
+        "mkdirs",
         "monoio",
         "oneshot",
         "SQPOLL",
@@ -15,4 +17,6 @@
         "editor.defaultFormatter": "rust-lang.rust-analyzer",
         "editor.formatOnSave": true,
     },
+    "terminal.integrated.cursorStyle": "line",
+    "terminal.integrated.cursorBlinking": true,
 }
