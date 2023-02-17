@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.etcd.io/etcd/server/v3/embed"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
 
 func TestNewConfig(t *testing.T) {
@@ -142,7 +143,7 @@ func TestNewConfig(t *testing.T) {
 				Log: func() *Log {
 					log := NewLog()
 					log.Level = "FATAL"
-					log.Zap.Level = zap.NewAtomicLevelAt(5)
+					log.Zap.Level = zap.NewAtomicLevelAt(zapcore.FatalLevel)
 					log.Zap.Encoding = "console"
 					log.Zap.OutputPaths = []string{"stdout", "stderr"}
 					log.Zap.ErrorOutputPaths = []string{"stdout", "stderr"}
@@ -179,7 +180,7 @@ func TestNewConfig(t *testing.T) {
 				Log: func() *Log {
 					log := NewLog()
 					log.Level = "FATAL"
-					log.Zap.Level = zap.NewAtomicLevelAt(5)
+					log.Zap.Level = zap.NewAtomicLevelAt(zapcore.FatalLevel)
 					log.Zap.Encoding = "console"
 					log.Zap.OutputPaths = []string{"stdout", "stderr"}
 					log.Zap.ErrorOutputPaths = []string{"stdout", "stderr"}
@@ -216,7 +217,7 @@ func TestNewConfig(t *testing.T) {
 				Log: func() *Log {
 					log := NewLog()
 					log.Level = "FATAL"
-					log.Zap.Level = zap.NewAtomicLevelAt(5)
+					log.Zap.Level = zap.NewAtomicLevelAt(zapcore.FatalLevel)
 					log.Zap.Encoding = "console"
 					log.Zap.OutputPaths = []string{"stdout", "stderr"}
 					log.Zap.ErrorOutputPaths = []string{"stdout", "stderr"}
@@ -316,7 +317,7 @@ func TestNewConfig(t *testing.T) {
 	}
 }
 
-func TestAdjust(t *testing.T) {
+func TestConfig_Adjust(t *testing.T) {
 	hostname, e := os.Hostname()
 	require.NoError(t, e)
 
@@ -480,7 +481,7 @@ func equal(re *require.Assertions, wantZap zap.Config, actualZap zap.Config) {
 	re.Equal(wantZap.DisableCaller, actualZap.DisableCaller)
 }
 
-func TestValidate(t *testing.T) {
+func TestConfig_Validate(t *testing.T) {
 	tests := []struct {
 		name    string
 		in      *Config

@@ -3,6 +3,8 @@ package config
 import (
 	"fmt"
 	"net/url"
+	"os"
+	"path/filepath"
 
 	"github.com/pkg/errors"
 	"go.uber.org/zap"
@@ -33,12 +35,17 @@ func NewLog() *Log {
 // Adjust adjusts the configuration in Log.Zap based on additional settings
 func (l *Log) Adjust() error {
 	if l.Zap.ErrorOutputPaths == nil {
+		l.Zap.ErrorOutputPaths = make([]string, len(l.Zap.OutputPaths))
 		copy(l.Zap.ErrorOutputPaths, l.Zap.OutputPaths)
 	}
 
 	if l.EnableRotation {
-		l.Zap.OutputPaths = addRotationSchema(l.Zap.OutputPaths)
-		l.Zap.ErrorOutputPaths = addRotationSchema(l.Zap.ErrorOutputPaths)
+		wd, err := os.Getwd()
+		if err != nil {
+			return errors.Wrap(err, "get current directory")
+		}
+		l.Zap.OutputPaths = addRotationSchema(l.Zap.OutputPaths, wd)
+		l.Zap.ErrorOutputPaths = addRotationSchema(l.Zap.ErrorOutputPaths, wd)
 	}
 
 	level, err := zapcore.ParseLevel(l.Level)
@@ -104,10 +111,11 @@ func (rotation) Sync() error {
 	return nil
 }
 
+// setupRotation can only be called ONCE since a fixed schema is being used
 func (l *Log) setupRotation() error {
 	err := zap.RegisterSink(RotationSchema, func(url *url.URL) (zap.Sink, error) {
 		return rotation{&lumberjack.Logger{
-			Filename:   url.Opaque,
+			Filename:   url.Path,
 			MaxSize:    l.Rotate.MaxSize,
 			MaxAge:     l.Rotate.MaxAge,
 			MaxBackups: l.Rotate.MaxBackups,
@@ -121,7 +129,7 @@ func (l *Log) setupRotation() error {
 	return nil
 }
 
-func addRotationSchema(paths []string) []string {
+func addRotationSchema(paths []string, wd string) []string {
 	results := make([]string, len(paths))
 	for i, path := range paths {
 		switch path {
@@ -129,7 +137,10 @@ func addRotationSchema(paths []string) []string {
 			results[i] = path
 		default:
 			// add schema for file paths
-			results[i] = fmt.Sprintf("%s:/%s", RotationSchema, path)
+			if !filepath.IsAbs(path) {
+				path = filepath.Join(wd, path)
+			}
+			results[i] = fmt.Sprintf("%s:%s", RotationSchema, path)
 		}
 	}
 	return results
