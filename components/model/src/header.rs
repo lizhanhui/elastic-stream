@@ -2,44 +2,30 @@ use std::collections::HashMap;
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub enum Common {
-    Stream,
-    Key,
+    Keys,
     Tag,
     RecordId,
+    CreatedAt,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Headers {
-    pub common: HashMap<Common, String>,
-    pub ext: HashMap<String, String>,
+    common: HashMap<Common, String>,
 }
 
 impl Headers {
-    pub fn new(stream: i32) -> Self {
-        let mut common = HashMap::new();
-        common
-            .entry(Common::Stream)
-            .or_insert(stream.to_string());
-
+    pub fn new() -> Self {
         Self {
-            common,
-            ext: HashMap::new(),
+            common: HashMap::new(),
         }
     }
 
-    pub(crate) fn stream(&self) -> Option<i32> {
-        if let Some(s) = self.common.get(&Common::Stream) {
-            return s.parse::<i32>().ok();
-        }
-        None
+    pub(crate) fn add_header(&mut self, key: Common, value: String) -> Option<String> {
+        self.common.insert(key, value)
     }
 
-    pub(crate) fn key(&self) -> Option<&str> {
-        self.common.get(&Common::Key).map(|s| &s[..])
-    }
-
-    pub(crate) fn add_property(&mut self, key: String, value: String) -> Option<String> {
-        self.ext.insert(key, value)
+    pub(crate) fn get_header(&self, key: Common) -> Option<&String> {
+        self.common.get(&key)
     }
 }
 
@@ -49,14 +35,15 @@ mod tests {
 
     #[test]
     fn test_headers() {
-        let mut headers = Headers::new(123);
-        assert_eq!(headers.stream(), Some(123));
-        assert_eq!(headers.key(), None);
+        let mut headers = Headers::new();
+        headers.add_header(Common::RecordId, "record_id_123".to_string());
+        headers.add_header(Common::Keys, "key1 key2".to_string());
+        headers.add_header(Common::Tag, "tag".to_string());
+        headers.add_header(Common::CreatedAt, "2020-01-01T00:00:00Z".to_string());
 
-        headers
-            .common
-            .entry(Common::Key)
-            .or_insert("order_123".to_string());
-        assert_eq!(headers.key(), Some("order_123"));
+        assert_eq!(headers.get_header(Common::RecordId), Some(&"record_id_123".to_string()));
+        assert_eq!(headers.get_header(Common::Keys), Some(&"key1 key2".to_string()));
+        assert_eq!(headers.get_header(Common::Tag), Some(&"tag".to_string()));
+        assert_eq!(headers.get_header(Common::CreatedAt), Some(&"2020-01-01T00:00:00Z".to_string()));
     }
 }

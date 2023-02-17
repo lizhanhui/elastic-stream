@@ -13,6 +13,8 @@ pub enum StreamError {}
 pub enum RecordError {
     #[error("Required record field is missing")]
     RequiredFieldMissing,
+    #[error("The stream id of the record does not match the stream id of the record batch")]
+    StreamIdMismatch,
 }
 
 #[derive(Debug, Error)]
