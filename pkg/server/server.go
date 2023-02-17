@@ -95,6 +95,8 @@ func (s *Server) startEtcd(ctx context.Context) error {
 	startTimeoutCtx, cancel := context.WithTimeout(ctx, _etcdStartTimeout)
 	defer cancel()
 
+	logger := s.lg
+
 	etcd, err := embed.StartEtcd(s.cfg.Etcd)
 	if err != nil {
 		return errors.Wrap(err, "start etcd by config")
@@ -103,9 +105,10 @@ func (s *Server) startEtcd(ctx context.Context) error {
 	// Check cluster ID
 	urlMap, err := types.NewURLsMap(s.cfg.InitialCluster)
 	if err != nil {
+		logger.Error("failed to parse urls map from config", zap.String("config-initial-cluster", s.cfg.InitialCluster), zap.Error(err))
 		return errors.Wrap(err, "parse urlMap from config")
 	}
-	err = checkClusterID(etcd.Server.Cluster().ID(), urlMap, s.lg)
+	err = checkClusterID(etcd.Server.Cluster().ID(), urlMap, logger)
 	if err != nil {
 		return errors.Wrap(err, "check cluster ID")
 	}
@@ -116,7 +119,7 @@ func (s *Server) startEtcd(ctx context.Context) error {
 	case <-startTimeoutCtx.Done():
 		return errors.New("failed to start etcd: timeout")
 	}
-	s.lg.Info("etcd started.")
+	logger.Info("etcd started")
 
 	// init client
 	endpoints := make([]string, 0, len(s.cfg.Etcd.ACUrls))
@@ -126,16 +129,16 @@ func (s *Server) startEtcd(ctx context.Context) error {
 	client, err := clientv3.New(clientv3.Config{
 		Endpoints:   endpoints,
 		DialTimeout: _etcdTimeout,
-		Logger:      s.lg,
+		Logger:      logger,
 	})
 	if err != nil {
 		return errors.Wrap(err, "new client")
 	}
-	s.lg.Info("new etcd client.", zap.Strings("endpoints", endpoints))
+	logger.Info("new etcd client", zap.Strings("endpoints", endpoints))
 	s.client = client
 
 	// init member
-	s.member = member.NewMember(etcd, client, uint64(etcd.Server.ID()), s.lg)
+	s.member = member.NewMember(etcd, client, uint64(etcd.Server.ID()), logger)
 
 	return nil
 }
@@ -145,33 +148,43 @@ func (s *Server) startServer() error {
 	if err := s.initClusterID(); err != nil {
 		return errors.Wrap(err, "init cluster ID")
 	}
-	s.lg.Info("init cluster ID.", zap.Uint64("cluster-id", s.clusterID))
+
+	logger := s.lg
+	logger.Info("init cluster ID", zap.Uint64("cluster-id", s.clusterID))
 
 	s.rootPath = path.Join(_rootPathPrefix, strconv.FormatUint(s.clusterID, 10))
 	s.member.Init(s.cfg, s.Name(), s.rootPath)
 
 	if s.started.Swap(true) {
-		s.lg.Warn("server already started.")
+		logger.Warn("server already started")
 	}
 	return nil
 }
 
 func (s *Server) initClusterID() error {
+	logger := s.lg
+
 	// query any existing ID in etcd
 	kv, err := etcdutil.GetOne(s.client, _clusterIDPath)
 	if err != nil {
+		logger.Error("failed to query cluster id", zap.String("cluster-id-path", _clusterIDPath), zap.Error(err))
 		return errors.Wrap(err, "get value from etcd")
 	}
 
 	// use an existed ID
 	if kv != nil {
 		s.clusterID, err = typeutil.BytesToUint64(kv.Value)
+		logger.Info("use an existing cluster id", zap.Uint64("cluster-id", s.clusterID))
 		return errors.Wrap(err, "convert bytes to uint64")
 	}
 
 	// new an ID
 	s.clusterID, err = initOrGetClusterID(s.client, _clusterIDPath)
-	return errors.Wrap(err, "new an ID")
+	if err != nil {
+		return errors.Wrap(err, "new an ID")
+	}
+	logger.Info("use a new cluster id", zap.Uint64("cluster-id", s.clusterID))
+	return nil
 }
 
 func (s *Server) startLoop(ctx context.Context) {
@@ -191,7 +204,7 @@ func (s *Server) leaderLoop() {
 
 	for {
 		if s.IsClosed() {
-			logger.Info("server is closed. stop leader loop.")
+			logger.Info("server is closed. stop leader loop")
 			return
 		}
 
@@ -203,19 +216,19 @@ func (s *Server) leaderLoop() {
 		if leader != nil {
 			err := s.reloadConfigFromKV()
 			if err != nil {
-				logger.Error("failed to reload config.", zap.Error(err))
+				logger.Error("failed to reload config", zap.Error(err))
 				continue
 			}
 
-			logger.Info("start to watch PM leader.", zap.Object("pm-leader", leader))
+			logger.Info("start to watch PM leader", zap.Object("pm-leader", leader))
 			// WatchLeader will keep looping and never return unless the PM leader has changed.
 			s.member.WatchLeader(s.loopCtx, leader, rev)
-			logger.Info("PM leader has changed, try to re-campaign a PM leader.")
+			logger.Info("PM leader has changed, try to re-campaign a PM leader")
 		}
 
 		// To make sure the etcd leader and PM leader are on the same server.
 		if leaderID := s.member.EtcdLeaderID(); leaderID != s.member.ID() {
-			logger.Info("etcd leader and PM leader are not on the same server, skip campaigning of PM leader and check later.",
+			logger.Info("etcd leader and PM leader are not on the same server, skip campaigning of PM leader and check later",
 				zap.String("server-name", s.Name()), zap.Uint64("etcd-leader-id", leaderID), zap.Uint64("member-id", s.member.ID()))
 			time.Sleep(member.CheckAgainInterval)
 			continue
@@ -226,16 +239,16 @@ func (s *Server) leaderLoop() {
 
 func (s *Server) campaignLeader() {
 	logger := s.lg
-	logger.Info("start to campaign PM leader.", zap.String("campaign-pm-leader-name", s.Name()))
+	logger.Info("start to campaign PM leader", zap.String("campaign-pm-leader-name", s.Name()))
 
 	// campaign leader
 	success, err := s.member.CampaignLeader(s.cfg.LeaderLease)
 	if err != nil {
-		logger.Error("an error when campaign leader.", zap.String("campaign-pm-leader-name", s.Name()), zap.Error(err))
+		logger.Error("an error when campaign leader", zap.String("campaign-pm-leader-name", s.Name()), zap.Error(err))
 		return
 	}
 	if !success {
-		logger.Info("failed to campaign leader.", zap.String("campaign-pm-leader-name", s.Name()))
+		logger.Info("failed to campaign leader", zap.String("campaign-pm-leader-name", s.Name()))
 		return
 	}
 
@@ -249,12 +262,12 @@ func (s *Server) campaignLeader() {
 	defer resetLeaderOnce.Do(resetLeaderFunc)
 	// maintain the PM leadership
 	s.member.KeepLeader(ctx)
-	logger.Info("success to campaign leader.", zap.String("campaign-pm-leader-name", s.Name()))
+	logger.Info("success to campaign leader", zap.String("campaign-pm-leader-name", s.Name()))
 
 	// reload config
 	err = s.reloadConfigFromKV()
 	if err != nil {
-		logger.Error("failed to reload config.", zap.Error(err))
+		logger.Error("failed to reload config", zap.Error(err))
 	}
 
 	// TODO start raft cluster
@@ -263,7 +276,7 @@ func (s *Server) campaignLeader() {
 	s.member.EnableLeader()
 	// as soon as cancel the leadership keepalive, then other member have chance to be new leader.
 	defer resetLeaderOnce.Do(resetLeaderFunc)
-	logger.Info("PM cluster leader is ready to serve.", zap.String("pm-leader-name", s.Name()))
+	logger.Info("PM cluster leader is ready to serve", zap.String("pm-leader-name", s.Name()))
 
 	s.checkLeaderLoop(ctx)
 }
@@ -278,16 +291,16 @@ func (s *Server) checkLeaderLoop(ctx context.Context) {
 		select {
 		case <-leaderTicker.C:
 			if !s.member.IsLeader() {
-				logger.Info("no longer a leader because lease has expired, pm leader will step down.")
+				logger.Info("no longer a leader because lease has expired, pm leader will step down")
 				return
 			}
 			if etcdLeader := s.member.EtcdLeaderID(); etcdLeader != s.member.ID() {
-				logger.Info("etcd leader changed, resigns pm leadership.", zap.String("old-pm-leader-name", s.Name()))
+				logger.Info("etcd leader changed, resigns pm leadership", zap.String("old-pm-leader-name", s.Name()))
 				return
 			}
 		case <-ctx.Done():
 			// Server is closed and it should return nil.
-			logger.Info("server is closed.")
+			logger.Info("server is closed")
 			return
 		}
 	}
@@ -310,10 +323,10 @@ func (s *Server) etcdLeaderLoop() {
 		case <-time.After(s.cfg.LeaderPriorityCheckInterval):
 			err := s.member.CheckPriorityAndMoveLeader(ctx)
 			if err != nil {
-				logger.Error("failed to check priority and move leader.", zap.Error(err))
+				logger.Error("failed to check priority and move leader", zap.Error(err))
 			}
 		case <-ctx.Done():
-			logger.Info("server is closed, stop etcd leader loop.")
+			logger.Info("server is closed, stop etcd leader loop")
 			return
 		}
 	}
@@ -337,13 +350,13 @@ func (s *Server) Close() {
 	}
 
 	logger := s.lg
-	logger.Info("closing server.")
+	logger.Info("closing server")
 
 	s.stopServerLoop()
 
 	if s.client != nil {
 		if err := s.client.Close(); err != nil {
-			logger.Error("failed to close etcd client.", zap.Error(err))
+			logger.Error("failed to close etcd client", zap.Error(err))
 		}
 	}
 
@@ -351,7 +364,7 @@ func (s *Server) Close() {
 		s.member.Etcd().Close()
 	}
 
-	logger.Info("server closed.")
+	logger.Info("server closed")
 }
 
 func (s *Server) stopServerLoop() {
@@ -359,7 +372,7 @@ func (s *Server) stopServerLoop() {
 	s.loopWg.Wait()
 }
 
-// checkClusterID checks etcd cluster ID, returns an error if mismatch.
+// checkClusterID checks etcd cluster ID, returns an error if mismatched.
 // This function will never block even quorum is not satisfied.
 func checkClusterID(localClusterID types.ID, um types.URLsMap, logger *zap.Logger) error {
 	if len(um) == 0 {
@@ -372,11 +385,12 @@ func checkClusterID(localClusterID types.ID, um types.URLsMap, logger *zap.Logge
 		trp.CloseIdleConnections()
 		if err != nil {
 			// Do not return error, because other members may be not ready.
-			logger.Warn("failed to get cluster from remote.", zap.Error(err))
+			logger.Warn("failed to get cluster from remote", zap.Error(err))
 			continue
 		}
 
 		if remoteClusterID := remoteCluster.ID(); remoteClusterID != localClusterID {
+			logger.Error("invalid cluster id", zap.Uint64("expected", uint64(localClusterID)), zap.Uint64("got", uint64(remoteClusterID)))
 			return errors.Errorf("Etcd cluster ID mismatch, expected %d, got %d", localClusterID, remoteClusterID)
 		}
 	}

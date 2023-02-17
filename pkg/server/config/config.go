@@ -1,17 +1,3 @@
-// Copyright 2016 TiKV Project Authors.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-
 package config
 
 import (
@@ -30,7 +16,8 @@ import (
 )
 
 var (
-	_defaultConfigFilePaths = []string{".", "$CONFIG_DIR/"}
+	_defaultConfigFilePaths   = []string{".", "$CONFIG_DIR/"}
+	_defaultLogZapOutputPaths = []string{"stderr"}
 )
 
 const (
@@ -44,6 +31,15 @@ const (
 	_defaultInitialClusterToken               = "pm-cluster"
 	_defaultLeaderLease                 int64 = 3
 	_defaultLeaderPriorityCheckInterval       = time.Minute
+
+	_defaultLogLevel            = "INFO"
+	_defaultLogZapEncoding      = "json"
+	_defaultLogEnableRotation   = false
+	_defaultLogRotateMaxSize    = 64
+	_defaultLogRotateMaxAge     = 180
+	_defaultLogRotateMaxBackups = 0
+	_defaultLogRotateLocalTime  = false
+	_defaultLogRotateCompress   = false
 )
 
 // Config is the configuration for [Server]
@@ -51,6 +47,7 @@ type Config struct {
 	v *viper.Viper
 
 	Etcd *embed.Config
+	Log  *Log
 
 	PeerUrls            string
 	ClientUrls          string
@@ -76,8 +73,10 @@ type Config struct {
 func NewConfig(arguments []string) (*Config, error) {
 	cfg := &Config{}
 	cfg.Etcd = embed.NewConfig()
+	cfg.Log = NewLog()
 
 	v, fs := configure()
+	cfg.v = v
 
 	// parse from command line
 	fs.String("config", "", "configuration file")
@@ -102,15 +101,21 @@ func NewConfig(arguments []string) (*Config, error) {
 		return nil, errors.Wrap(err, "unmarshal configuration")
 	}
 
-	// TODO new and set logger
-	// logger := cfg.lg
-	logger := zap.NewExample() // TODO DELETE
+	// new and set logger (first thing after configuration loaded)
+	err = cfg.Log.Adjust()
+	if err != nil {
+		return nil, errors.Wrap(err, "adjust log config")
+	}
+	logger, err := cfg.Log.Logger()
+	if err != nil {
+		return nil, errors.Wrap(err, "create logger")
+	}
+	cfg.lg = logger
 
 	if configFile := v.ConfigFileUsed(); configFile != "" {
-		logger.Info("load configuration from file.", zap.String("file-name", configFile))
+		logger.Info("load configuration from file", zap.String("file-name", configFile))
 	}
 
-	cfg.v = v
 	return cfg, nil
 }
 
@@ -149,7 +154,6 @@ func (c *Config) Adjust() error {
 	return nil
 }
 
-// adjustEtcd set configurations in embed.Config
 func (c *Config) adjustEtcd() error {
 	cfg := c.Etcd
 	cfg.Name = c.Name
@@ -206,14 +210,10 @@ func configure() (*viper.Viper, *pflag.FlagSet) {
 	fs.String("client-urls", _defaultClientUrls, "urls for client traffic")
 	fs.String("advertise-peer-urls", "", "advertise urls for peer traffic (default '${peer-urls}')")
 	fs.String("advertise-client-urls", "", "advertise urls for client traffic (default '${client-urls}')")
-	_ = v.BindPFlag("peer-urls", fs.Lookup("peer-urls"))
-	_ = v.BindPFlag("client-urls", fs.Lookup("client-urls"))
-	_ = v.BindPFlag("advertise-peer-urls", fs.Lookup("advertise-peer-urls"))
-	_ = v.BindPFlag("advertise-client-urls", fs.Lookup("advertise-client-urls"))
-	v.RegisterAlias("PeerUrls", "peer-urls")
-	v.RegisterAlias("ClientUrls", "client-urls")
-	v.RegisterAlias("AdvertisePeerUrls", "advertise-peer-urls")
-	v.RegisterAlias("AdvertiseClientUrls", "advertise-client-urls")
+	_ = v.BindPFlag("peerUrls", fs.Lookup("peer-urls"))
+	_ = v.BindPFlag("clientUrls", fs.Lookup("client-urls"))
+	_ = v.BindPFlag("advertisePeerUrls", fs.Lookup("advertise-peer-urls"))
+	_ = v.BindPFlag("advertiseClientUrls", fs.Lookup("advertise-client-urls"))
 
 	// PM members settings
 	fs.String("name", "", "human-readable name for this PM member (default 'pm-${hostname}')")
@@ -221,16 +221,35 @@ func configure() (*viper.Viper, *pflag.FlagSet) {
 	fs.String("initial-cluster", "", "initial cluster configuration for bootstrapping, e.g. pm=http://127.0.0.1:2380. (default 'pm=${advertise-peer-urls}')")
 	fs.Int64("leader-lease", _defaultLeaderLease, "expiration time of the leader, in seconds")
 	fs.Duration("leader-priority-check-interval", _defaultLeaderPriorityCheckInterval, "time interval for checking the leader's priority")
+	fs.String("etcd-initial-cluster-token", _defaultInitialClusterToken, "set different tokens to prevent communication between PMs in different clusters")
 	_ = v.BindPFlag("name", fs.Lookup("name"))
-	_ = v.BindPFlag("data-dir", fs.Lookup("data-dir"))
-	_ = v.BindPFlag("initial-cluster", fs.Lookup("initial-cluster"))
-	_ = v.BindPFlag("leader-lease", fs.Lookup("leader-lease"))
-	_ = v.BindPFlag("leader-priority-check-interval", fs.Lookup("leader-priority-check-interval"))
-	v.RegisterAlias("DataDir", "data-dir")
-	v.RegisterAlias("InitialCluster", "initial-cluster")
-	v.RegisterAlias("LeaderLease", "leader-lease")
-	v.RegisterAlias("LeaderPriorityCheckInterval", "leader-priority-check-interval")
-	v.SetDefault("etcd.initialClusterToken", _defaultInitialClusterToken)
+	_ = v.BindPFlag("dataDir", fs.Lookup("data-dir"))
+	_ = v.BindPFlag("initialCluster", fs.Lookup("initial-cluster"))
+	_ = v.BindPFlag("leaderLease", fs.Lookup("leader-lease"))
+	_ = v.BindPFlag("leaderPriorityCheckInterval", fs.Lookup("leader-priority-check-interval"))
+	_ = v.BindPFlag("etcd.initialClusterToken", fs.Lookup("etcd-initial-cluster-token"))
+
+	// log settings
+	fs.String("log-level", _defaultLogLevel, "the minimum enabled logging level")
+	fs.StringSlice("log-zap-output-paths", _defaultLogZapOutputPaths, "a list of URLs or file paths to write logging output to")
+	fs.StringSlice("log-zap-error-output-paths", []string{}, "a list of URLs to write internal logger errors to (default ${log-zap-output-paths})")
+	fs.String("log-zap-encoding", _defaultLogZapEncoding, "the logger's encoding, \"json\" or \"console\"")
+	fs.Bool("log-enable-rotation", _defaultLogEnableRotation, "whether to enable log rotation")
+	fs.Int("log-rotate-max-size", _defaultLogRotateMaxSize, "maximum size in megabytes of the log file before it gets rotated")
+	fs.Int("log-rotate-max-age", _defaultLogRotateMaxAge, "maximum number of days to retain old log files based on the timestamp encoded in their filename")
+	fs.Int("log-rotate-max-backups", _defaultLogRotateMaxBackups, "maximum number of old log files to retain, default is to retain all old log files (though MaxAge may still cause them to get deleted)")
+	fs.Bool("log-rotate-local-time", _defaultLogRotateLocalTime, "whether the time used for formatting the timestamps in backup files is the computer's local time, default is to use UTC time")
+	fs.Bool("log-rotate-compress", _defaultLogRotateCompress, "whether the rotated log files should be compressed using gzip")
+	_ = v.BindPFlag("log.level", fs.Lookup("log-level"))
+	_ = v.BindPFlag("log.zap.outputPaths", fs.Lookup("log-zap-output-paths"))
+	_ = v.BindPFlag("log.zap.errorOutputPaths", fs.Lookup("log-zap-error-output-paths"))
+	_ = v.BindPFlag("log.zap.encoding", fs.Lookup("log-zap-encoding"))
+	_ = v.BindPFlag("log.enableRotation", fs.Lookup("log-enable-rotation"))
+	_ = v.BindPFlag("log.rotate.maxSize", fs.Lookup("log-rotate-max-size"))
+	_ = v.BindPFlag("log.rotate.maxAge", fs.Lookup("log-rotate-max-age"))
+	_ = v.BindPFlag("log.rotate.maxBackups", fs.Lookup("log-rotate-max-backups"))
+	_ = v.BindPFlag("log.rotate.localTime", fs.Lookup("log-rotate-local-time"))
+	_ = v.BindPFlag("log.rotate.compress", fs.Lookup("log-rotate-compress"))
 
 	return v, fs
 }

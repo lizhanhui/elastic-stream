@@ -85,24 +85,24 @@ func (fr *Framer) ReadFrame() (Frame, error) {
 	buf := fr.fixedBuf[:_fixedHeaderLen]
 	_, err := io.ReadFull(fr.r, buf)
 	if err != nil {
-		logger.Error("failed to read fixed header.", zap.Error(err))
+		logger.Error("failed to read fixed header", zap.Error(err))
 		return Frame{}, errors.Wrap(err, "read fixed header")
 	}
 	headerBuf := bytes.NewBuffer(buf)
 
 	frameLen := binary.BigEndian.Uint32(headerBuf.Next(4))
 	if frameLen < _minFrameLen {
-		logger.Error("illegal frame length, fewer than minimum.", zap.Uint32("frame-length", frameLen), zap.Uint32("min-length", _minFrameLen))
+		logger.Error("illegal frame length, fewer than minimum", zap.Uint32("frame-length", frameLen), zap.Uint32("min-length", _minFrameLen))
 		return Frame{}, errors.New("frame too small")
 	}
 	if frameLen > _maxFrameLen {
-		logger.Error("illegal frame length, greater than maximum.", zap.Uint32("frame-length", frameLen), zap.Uint32("max-length", _maxFrameLen))
+		logger.Error("illegal frame length, greater than maximum", zap.Uint32("frame-length", frameLen), zap.Uint32("max-length", _maxFrameLen))
 		return Frame{}, errors.New("frame too large")
 	}
 
 	magicCode := headerBuf.Next(1)[0]
 	if magicCode != _magicCode {
-		logger.Error("illegal magic code.", zap.Uint8("expected", _magicCode), zap.Uint8("got", magicCode))
+		logger.Error("illegal magic code", zap.Uint8("expected", _magicCode), zap.Uint8("got", magicCode))
 		return Frame{}, errors.New("magic code mismatch")
 	}
 
@@ -117,7 +117,7 @@ func (fr *Framer) ReadFrame() (Frame, error) {
 	tBuf := make([]byte, headerLen+payloadLen)
 	_, err = io.ReadFull(fr.r, tBuf)
 	if err != nil {
-		logger.Error("failed to read extended header and payload.", zap.Error(err))
+		logger.Error("failed to read extended header and payload", zap.Error(err))
 		return Frame{}, errors.Wrap(err, "read extended header and payload")
 	}
 
@@ -137,12 +137,12 @@ func (fr *Framer) ReadFrame() (Frame, error) {
 	var checksum uint32
 	err = binary.Read(fr.r, binary.BigEndian, &checksum)
 	if err != nil {
-		logger.Error("failed to read payload checksum.", zap.Error(err))
+		logger.Error("failed to read payload checksum", zap.Error(err))
 		return Frame{}, errors.Wrap(err, "read payload checksum")
 	}
 	if payloadLen > 0 {
 		if ckm := crc32.ChecksumIEEE(payload); ckm != checksum {
-			logger.Error("payload checksum mismatch.", zap.Uint32("expected", ckm), zap.Uint32("got", checksum))
+			logger.Error("payload checksum mismatch", zap.Uint32("expected", ckm), zap.Uint32("got", checksum))
 			return Frame{}, errors.New("payload checksum mismatch")
 		}
 	}
@@ -199,14 +199,14 @@ func (fr *Framer) endWrite() error {
 	// the space previously reserved for it. Abuse append.
 	length := len(fr.wbuf) - 4 // sub frameLen width
 	if length > (_maxFrameLen) {
-		logger.Error("frame too large, greater than maximum.", zap.Int("frame-length", length), zap.Uint32("max-length", _maxFrameLen))
+		logger.Error("frame too large, greater than maximum", zap.Int("frame-length", length), zap.Uint32("max-length", _maxFrameLen))
 		return errors.New("frame too large")
 	}
 	_ = binary.BigEndian.AppendUint32(fr.wbuf[:0], uint32(length))
 
 	_, err := fr.w.Write(fr.wbuf)
 	if err != nil {
-		logger.Error("failed to write frame.", zap.Error(err))
+		logger.Error("failed to write frame", zap.Error(err))
 		return errors.Wrap(err, "write frame")
 	}
 	return nil

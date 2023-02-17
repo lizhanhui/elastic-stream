@@ -1,25 +1,59 @@
 # PM Configuration.
 
 # urls for peer traffic
-peer-urls = "http://127.0.0.1:2380"
+peerUrls = "http://127.0.0.1:2380"
 # urls for client traffic
-client-urls = "http://127.0.0.1:2379"
+clientUrls = "http://127.0.0.1:2379"
 # advertise urls for peer traffic
-advertise-peer-urls = "http://127.0.0.1:2380"
+advertisePeerUrls = "http://127.0.0.1:2380"
 # advertise urls for client traffic
-advertise-client-urls = "http://127.0.0.1:2379"
+advertiseClientUrls = "http://127.0.0.1:2379"
 
 # human-readable name for this PM member
 name = "pm-hostname"
 # path to the data directory
-data-dir = "default.pm-hostname"
+dataDir = "default.pm-hostname"
 # the initial cluster configuration for bootstrapping
-initial-cluster = "pm=http://127.0.0.1:2380"
+initialCluster = "pm=http://127.0.0.1:2380"
 # expiration time of the leader, in seconds
-leader-lease = 3
+leaderLease = 3
 # time interval for checking the leader's priority
-leader-priority-check-interval = 60000000000 # 1 minute
+leaderPriorityCheckInterval = 60000000000 # 1 minute
 
 [etcd]
 # set different tokens to prevent communication between PMs in different clusters
 initialClusterToken = "pm-cluster"
+# Any configuration in embed.Config can also be set here
+#tickMs = 500
+#electionMs = 3000
+#...
+
+[log]
+# the minimum enabled logging level
+level = "INFO"
+# whether to enable log rotation
+enableRotation = false
+[log.zap]
+# a list of URLs or file paths to write logging output to
+outputPaths = ["stderr"]
+# a list of URLs to write internal logger errors to
+errorOutputPaths = ["stderr"]
+# the logger's encoding, "json" or "console"
+encoding = "json"
+# Any configuration in zap.Config can alse be set here
+#disableCaller = false
+#disableStacktrace = false
+#[log.zap.encoderConfig]
+#messageKey = "msg"
+#...
+[log.rotate]
+# maximum size in megabytes of the log file before it gets rotated
+maxSize = 64
+# maximum number of days to retain old log files based on the timestamp encoded in their filename
+maxAge = 180
+# maximum number of old log files to retain, default is to retain all old log files (though MaxAge may still cause them to get deleted)
+maxBackups = 0
+# whether the time used for formatting the timestamps in backup files is the computer's local time, default is to use UTC time
+localTime = false
+# whether the rotated log files should be compressed using gzip
+compress = false

@@ -77,20 +77,20 @@ func (ls *Leadership) Watch(serverCtx context.Context, revision etcdutil.ModRevi
 		for watchResp := range rch {
 			// meet compacted error, use the compact revision.
 			if watchResp.CompactRevision != 0 {
-				logger.Warn("required revision has been compacted, use the compact revision.",
+				logger.Warn("required revision has been compacted, use the compact revision",
 					zap.Int64("required-revision", revision), zap.Int64("compact-revision", watchResp.CompactRevision))
 				revision = watchResp.CompactRevision
 				break
 			}
 			if watchResp.Canceled {
-				logger.Error("leadership watcher is canceled with.", zap.Int64("revision", revision),
+				logger.Error("leadership watcher is canceled with", zap.Int64("revision", revision),
 					zap.String("leader-key", ls.leaderKey), zap.String("purpose", ls.purpose), zap.Error(watchResp.Err()))
 				return
 			}
 
 			for _, ev := range watchResp.Events {
 				if ev.Type == mvccpb.DELETE {
-					logger.Info("current leadership is deleted.",
+					logger.Info("current leadership is deleted",
 						zap.String("leader-key", ls.leaderKey), zap.String("purpose", ls.purpose))
 					return
 				}
@@ -130,9 +130,11 @@ func (ls *Leadership) Campaign(leaseTimeout int64, leaderData string) (bool, err
 		Then(clientv3.OpPut(ls.leaderKey, leaderData, clientv3.WithLease(newLease.ID))).
 		Commit()
 
-	logger.Info("check campaign resp.", zap.Any("response", resp))
+	logger.Info("check campaign resp", zap.Any("response", resp))
 	if err != nil {
 		newLease.Close()
+		logger.Error("failed to set leader info", zap.String("leader-key", ls.leaderKey),
+			zap.String("leader-info", leaderData), zap.Int64("lease-id", int64(newLease.ID)), zap.Error(err))
 		return false, errors.Wrap(err, "etcd transaction: compare and put leader info")
 	}
 	if !resp.Succeeded {
@@ -140,7 +142,7 @@ func (ls *Leadership) Campaign(leaseTimeout int64, leaderData string) (bool, err
 		logger.Info("etcd transaction failed: leader key already exists")
 		return false, nil
 	}
-	logger.Info("campaign leader success.", zap.String("leaderPath", ls.leaderKey), zap.String("purpose", ls.purpose))
+	logger.Info("campaign leader success", zap.String("leader-path", ls.leaderKey), zap.String("purpose", ls.purpose))
 	return true, nil
 }
 
@@ -163,15 +165,17 @@ func (ls *Leadership) DeleteLeaderKey() error {
 
 	resp, err := etcdutil.NewTxn(ls.client).Then(clientv3.OpDelete(ls.leaderKey)).Commit()
 	if err != nil {
+		logger.Error("failed to delete leader key", zap.String("leader-key", ls.leaderKey))
 		return errors.Wrap(err, "delete etcd key")
 	}
 	if !resp.Succeeded {
+		logger.Error("failed to delete etcd key, transaction failed", zap.String("leader-key", ls.leaderKey))
 		return errors.New("failed to delete etcd key: transaction failed")
 	}
 
 	// Reset the lease as soon as possible.
 	ls.Reset()
-	logger.Info("delete the leader key ok", zap.String("leaderPath", ls.leaderKey), zap.String("purpose", ls.purpose))
+	logger.Info("delete the leader key ok", zap.String("leader-path", ls.leaderKey), zap.String("purpose", ls.purpose))
 	return nil
 }
 
