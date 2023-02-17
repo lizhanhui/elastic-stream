@@ -56,11 +56,11 @@ func Get(c *clientv3.Client, key string, opts ...clientv3.OpOption) (*clientv3.G
 	start := time.Now()
 	resp, err := clientv3.NewKV(c).Get(ctx, key, opts...)
 	if cost := time.Since(start); cost > DefaultSlowRequestTime {
-		logger.Warn("getting value is to slow.", zap.String("key", key), zap.Duration("cost", cost), zap.Error(err))
+		logger.Warn("getting value is to slow", zap.String("key", key), zap.Duration("cost", cost), zap.Error(err))
 	}
 
 	if err != nil {
-		logger.Error("failed to get value.", zap.String("key", key), zap.Error(err))
+		logger.Error("failed to get value", zap.String("key", key), zap.Error(err))
 		return resp, errors.Wrapf(err, "get value by key %s", key)
 	}
 

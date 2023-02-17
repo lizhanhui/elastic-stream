@@ -95,14 +95,14 @@ func (m *Member) CheckLeader() (*Info, etcdutil.ModRevision, bool) {
 	logger := m.lg
 
 	if m.EtcdLeaderID() == 0 {
-		logger.Info("no etcd leader, check PM leader later.")
+		logger.Info("no etcd leader, check PM leader later")
 		time.Sleep(CheckAgainInterval)
 		return nil, 0, true
 	}
 
 	leader, rev, err := m.GetLeader()
 	if err != nil {
-		logger.Warn("failed to get PM leader.", zap.Error(err))
+		logger.Warn("failed to get PM leader", zap.Error(err))
 		time.Sleep(CheckAgainInterval)
 		return nil, 0, true
 	}
@@ -110,10 +110,10 @@ func (m *Member) CheckLeader() (*Info, etcdutil.ModRevision, bool) {
 	if leader != nil && leader.MemberID == m.id {
 		// oh, we are already a PM leader, which indicates we may meet something wrong
 		// in previous CampaignLeader. We should delete the leadership and campaign again.
-		logger.Warn("PM leader has not changed, delete and campaign again.", zap.Object("old-pm-leader", leader))
+		logger.Warn("PM leader has not changed, delete and campaign again", zap.Object("old-pm-leader", leader))
 		// Delete the leader itself and let others start a new election again.
 		if err = m.leadership.DeleteLeaderKey(); err != nil {
-			logger.Warn("deleting PM leader key meets error.", zap.Error(err))
+			logger.Warn("deleting PM leader key meets error", zap.Error(err))
 			time.Sleep(CheckAgainInterval)
 			return nil, 0, true
 		}
@@ -126,8 +126,11 @@ func (m *Member) CheckLeader() (*Info, etcdutil.ModRevision, bool) {
 
 // GetLeader gets the corresponding leader from etcd by given leaderPath (as the key).
 func (m *Member) GetLeader() (*Info, etcdutil.ModRevision, error) {
+	logger := m.lg
+
 	kv, err := etcdutil.GetOne(m.client, m.getLeaderPath())
 	if err != nil {
+		logger.Error("failed to get leader", zap.String("leader-key", m.getLeaderPath()), zap.Error(err))
 		return nil, 0, errors.Wrap(err, "get kv from etcd")
 	}
 	if kv == nil {
@@ -137,6 +140,7 @@ func (m *Member) GetLeader() (*Info, etcdutil.ModRevision, error) {
 	info := &Info{}
 	err = json.Unmarshal(kv.Value, info)
 	if err != nil {
+		logger.Error("failed to unmarshal leader info", zap.ByteString("raw-string", kv.Value), zap.Error(err))
 		return nil, 0, errors.Wrap(err, "unmarshal leader info")
 	}
 
@@ -199,7 +203,7 @@ func (m *Member) CheckPriorityAndMoveLeader(ctx context.Context) error {
 		if err != nil {
 			return errors.Wrap(err, "transfer etcd leader")
 		}
-		logger.Info("transfer etcd leader.", zap.Uint64("from", etcdLeaderID), zap.Uint64("to", m.id))
+		logger.Info("transfer etcd leader", zap.Uint64("from", etcdLeaderID), zap.Uint64("to", m.id))
 	}
 	return nil
 }
@@ -232,8 +236,11 @@ func (m *Member) MoveEtcdLeader(ctx context.Context, old, new uint64) error {
 	moveCtx, cancel := context.WithTimeout(ctx, _moveLeaderTimeout)
 	defer cancel()
 
+	logger := m.lg
+
 	err := m.etcd.Server.MoveLeader(moveCtx, old, new)
 	if err != nil {
+		logger.Error("failed to move etcd leader", zap.Uint64("from", old), zap.Uint64("to", new), zap.Error(err))
 		return errors.Wrap(err, "move leader")
 	}
 	return nil

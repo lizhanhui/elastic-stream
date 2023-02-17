@@ -113,7 +113,7 @@ func NewConfig(arguments []string) (*Config, error) {
 	cfg.lg = logger
 
 	if configFile := v.ConfigFileUsed(); configFile != "" {
-		logger.Info("load configuration from file.", zap.String("file-name", configFile))
+		logger.Info("load configuration from file", zap.String("file-name", configFile))
 	}
 
 	return cfg, nil
