@@ -9,99 +9,6 @@ use core::cmp::Ordering;
 extern crate flatbuffers;
 use self::flatbuffers::{EndianScalar, Follow};
 
-#[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
-pub const ENUM_MIN_SYSTEM_KEYS: i8 = 0;
-#[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
-pub const ENUM_MAX_SYSTEM_KEYS: i8 = 2;
-#[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
-#[allow(non_camel_case_types)]
-pub const ENUM_VALUES_SYSTEM_KEYS: [SystemKeys; 3] = [
-  SystemKeys::Tag,
-  SystemKeys::Keys,
-  SystemKeys::RecordId,
-];
-
-/// Enum values should only ever be added. Never remove or renumber them.
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
-#[repr(transparent)]
-pub struct SystemKeys(pub i8);
-#[allow(non_upper_case_globals)]
-impl SystemKeys {
-  /// The tag marks the record, is used to filter records in server side.
-  pub const Tag: Self = Self(0);
-  /// The list of index keys for records.
-  pub const Keys: Self = Self(1);
-  /// The unique id of the record. It's not neccessary to be unique in the whole cluster.
-  pub const RecordId: Self = Self(2);
-
-  pub const ENUM_MIN: i8 = 0;
-  pub const ENUM_MAX: i8 = 2;
-  pub const ENUM_VALUES: &'static [Self] = &[
-    Self::Tag,
-    Self::Keys,
-    Self::RecordId,
-  ];
-  /// Returns the variant's name or "" if unknown.
-  pub fn variant_name(self) -> Option<&'static str> {
-    match self {
-      Self::Tag => Some("Tag"),
-      Self::Keys => Some("Keys"),
-      Self::RecordId => Some("RecordId"),
-      _ => None,
-    }
-  }
-}
-impl core::fmt::Debug for SystemKeys {
-  fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
-    if let Some(name) = self.variant_name() {
-      f.write_str(name)
-    } else {
-      f.write_fmt(format_args!("<UNKNOWN {:?}>", self.0))
-    }
-  }
-}
-impl<'a> flatbuffers::Follow<'a> for SystemKeys {
-  type Inner = Self;
-  #[inline]
-  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
-    let b = flatbuffers::read_scalar_at::<i8>(buf, loc);
-    Self(b)
-  }
-}
-
-impl flatbuffers::Push for SystemKeys {
-    type Output = SystemKeys;
-    #[inline]
-    unsafe fn push(&self, dst: &mut [u8], _written_len: usize) {
-        flatbuffers::emplace_scalar::<i8>(dst, self.0);
-    }
-}
-
-impl flatbuffers::EndianScalar for SystemKeys {
-  type Scalar = i8;
-  #[inline]
-  fn to_little_endian(self) -> i8 {
-    self.0.to_le()
-  }
-  #[inline]
-  #[allow(clippy::wrong_self_convention)]
-  fn from_little_endian(v: i8) -> Self {
-    let b = i8::from_le(v);
-    Self(b)
-  }
-}
-
-impl<'a> flatbuffers::Verifiable for SystemKeys {
-  #[inline]
-  fn run_verifier(
-    v: &mut flatbuffers::Verifier, pos: usize
-  ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
-    use self::flatbuffers::Verifiable;
-    i8::run_verifier(v, pos)
-  }
-}
-
-impl flatbuffers::SimpleToVerifyInSlice for SystemKeys {}
 pub enum RecordBatchMetaOffset {}
 #[derive(Copy, Clone, PartialEq)]
 
@@ -122,11 +29,10 @@ impl<'a> flatbuffers::Follow<'a> for RecordBatchMeta<'a> {
 impl<'a> RecordBatchMeta<'a> {
   pub const VT_STREAM_NAME: flatbuffers::VOffsetT = 4;
   pub const VT_MAGIC: flatbuffers::VOffsetT = 6;
-  pub const VT_ATTRIBUTES: flatbuffers::VOffsetT = 8;
+  pub const VT_FLAGS: flatbuffers::VOffsetT = 8;
   pub const VT_BASE_OFFSET: flatbuffers::VOffsetT = 10;
   pub const VT_LAST_OFFSET_DELTA: flatbuffers::VOffsetT = 12;
-  pub const VT_FIRST_TIMESTAMP: flatbuffers::VOffsetT = 14;
-  pub const VT_MAX_TIMESTAMP: flatbuffers::VOffsetT = 16;
+  pub const VT_BASE_TIMESTAMP: flatbuffers::VOffsetT = 14;
 
   #[inline]
   pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
@@ -138,12 +44,11 @@ impl<'a> RecordBatchMeta<'a> {
     args: &'args RecordBatchMetaArgs<'args>
   ) -> flatbuffers::WIPOffset<RecordBatchMeta<'bldr>> {
     let mut builder = RecordBatchMetaBuilder::new(_fbb);
-    builder.add_max_timestamp(args.max_timestamp);
-    builder.add_first_timestamp(args.first_timestamp);
+    builder.add_base_timestamp(args.base_timestamp);
     builder.add_base_offset(args.base_offset);
     builder.add_last_offset_delta(args.last_offset_delta);
     if let Some(x) = args.stream_name { builder.add_stream_name(x); }
-    builder.add_attributes(args.attributes);
+    builder.add_flags(args.flags);
     builder.add_magic(args.magic);
     builder.finish()
   }
@@ -165,13 +70,13 @@ impl<'a> RecordBatchMeta<'a> {
     // which contains a valid value in this slot
     unsafe { self._tab.get::<i8>(RecordBatchMeta::VT_MAGIC, Some(0)).unwrap()}
   }
-  /// The attributes of this record batch. Each bit is used to indicate a specific attribute.
+  /// The flags of this record batch. Each bit is used to indicate a specific flag.
   #[inline]
-  pub fn attributes(&self) -> i8 {
+  pub fn flags(&self) -> i8 {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<i8>(RecordBatchMeta::VT_ATTRIBUTES, Some(0)).unwrap()}
+    unsafe { self._tab.get::<i8>(RecordBatchMeta::VT_FLAGS, Some(0)).unwrap()}
   }
   /// The base offset of the batch record, also is the logical offset of the first record.
   #[inline]
@@ -191,19 +96,11 @@ impl<'a> RecordBatchMeta<'a> {
   }
   /// The create timestap of the first record in this batch.
   #[inline]
-  pub fn first_timestamp(&self) -> i64 {
+  pub fn base_timestamp(&self) -> i64 {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<i64>(RecordBatchMeta::VT_FIRST_TIMESTAMP, Some(0)).unwrap()}
-  }
-  /// The max timestamp among all records contained in this batch.
-  #[inline]
-  pub fn max_timestamp(&self) -> i64 {
-    // Safety:
-    // Created from valid Table for this object
-    // which contains a valid value in this slot
-    unsafe { self._tab.get::<i64>(RecordBatchMeta::VT_MAX_TIMESTAMP, Some(0)).unwrap()}
+    unsafe { self._tab.get::<i64>(RecordBatchMeta::VT_BASE_TIMESTAMP, Some(0)).unwrap()}
   }
 }
 
@@ -216,11 +113,10 @@ impl flatbuffers::Verifiable for RecordBatchMeta<'_> {
     v.visit_table(pos)?
      .visit_field::<flatbuffers::ForwardsUOffset<&str>>("stream_name", Self::VT_STREAM_NAME, false)?
      .visit_field::<i8>("magic", Self::VT_MAGIC, false)?
-     .visit_field::<i8>("attributes", Self::VT_ATTRIBUTES, false)?
+     .visit_field::<i8>("flags", Self::VT_FLAGS, false)?
      .visit_field::<i64>("base_offset", Self::VT_BASE_OFFSET, false)?
      .visit_field::<i32>("last_offset_delta", Self::VT_LAST_OFFSET_DELTA, false)?
-     .visit_field::<i64>("first_timestamp", Self::VT_FIRST_TIMESTAMP, false)?
-     .visit_field::<i64>("max_timestamp", Self::VT_MAX_TIMESTAMP, false)?
+     .visit_field::<i64>("base_timestamp", Self::VT_BASE_TIMESTAMP, false)?
      .finish();
     Ok(())
   }
@@ -228,11 +124,10 @@ impl flatbuffers::Verifiable for RecordBatchMeta<'_> {
 pub struct RecordBatchMetaArgs<'a> {
     pub stream_name: Option<flatbuffers::WIPOffset<&'a str>>,
     pub magic: i8,
-    pub attributes: i8,
+    pub flags: i8,
     pub base_offset: i64,
     pub last_offset_delta: i32,
-    pub first_timestamp: i64,
-    pub max_timestamp: i64,
+    pub base_timestamp: i64,
 }
 impl<'a> Default for RecordBatchMetaArgs<'a> {
   #[inline]
@@ -240,11 +135,10 @@ impl<'a> Default for RecordBatchMetaArgs<'a> {
     RecordBatchMetaArgs {
       stream_name: None,
       magic: 0,
-      attributes: 0,
+      flags: 0,
       base_offset: 0,
       last_offset_delta: 0,
-      first_timestamp: 0,
-      max_timestamp: 0,
+      base_timestamp: 0,
     }
   }
 }
@@ -263,8 +157,8 @@ impl<'a: 'b, 'b> RecordBatchMetaBuilder<'a, 'b> {
     self.fbb_.push_slot::<i8>(RecordBatchMeta::VT_MAGIC, magic, 0);
   }
   #[inline]
-  pub fn add_attributes(&mut self, attributes: i8) {
-    self.fbb_.push_slot::<i8>(RecordBatchMeta::VT_ATTRIBUTES, attributes, 0);
+  pub fn add_flags(&mut self, flags: i8) {
+    self.fbb_.push_slot::<i8>(RecordBatchMeta::VT_FLAGS, flags, 0);
   }
   #[inline]
   pub fn add_base_offset(&mut self, base_offset: i64) {
@@ -275,12 +169,8 @@ impl<'a: 'b, 'b> RecordBatchMetaBuilder<'a, 'b> {
     self.fbb_.push_slot::<i32>(RecordBatchMeta::VT_LAST_OFFSET_DELTA, last_offset_delta, 0);
   }
   #[inline]
-  pub fn add_first_timestamp(&mut self, first_timestamp: i64) {
-    self.fbb_.push_slot::<i64>(RecordBatchMeta::VT_FIRST_TIMESTAMP, first_timestamp, 0);
-  }
-  #[inline]
-  pub fn add_max_timestamp(&mut self, max_timestamp: i64) {
-    self.fbb_.push_slot::<i64>(RecordBatchMeta::VT_MAX_TIMESTAMP, max_timestamp, 0);
+  pub fn add_base_timestamp(&mut self, base_timestamp: i64) {
+    self.fbb_.push_slot::<i64>(RecordBatchMeta::VT_BASE_TIMESTAMP, base_timestamp, 0);
   }
   #[inline]
   pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a>) -> RecordBatchMetaBuilder<'a, 'b> {
@@ -302,43 +192,42 @@ impl core::fmt::Debug for RecordBatchMeta<'_> {
     let mut ds = f.debug_struct("RecordBatchMeta");
       ds.field("stream_name", &self.stream_name());
       ds.field("magic", &self.magic());
-      ds.field("attributes", &self.attributes());
+      ds.field("flags", &self.flags());
       ds.field("base_offset", &self.base_offset());
       ds.field("last_offset_delta", &self.last_offset_delta());
-      ds.field("first_timestamp", &self.first_timestamp());
-      ds.field("max_timestamp", &self.max_timestamp());
+      ds.field("base_timestamp", &self.base_timestamp());
       ds.finish()
   }
 }
-pub enum PropertyOffset {}
+pub enum KeyValueOffset {}
 #[derive(Copy, Clone, PartialEq)]
 
-pub struct Property<'a> {
+pub struct KeyValue<'a> {
   pub _tab: flatbuffers::Table<'a>,
 }
 
-impl<'a> flatbuffers::Follow<'a> for Property<'a> {
-  type Inner = Property<'a>;
+impl<'a> flatbuffers::Follow<'a> for KeyValue<'a> {
+  type Inner = KeyValue<'a>;
   #[inline]
   unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
     Self { _tab: flatbuffers::Table::new(buf, loc) }
   }
 }
 
-impl<'a> Property<'a> {
+impl<'a> KeyValue<'a> {
   pub const VT_KEY: flatbuffers::VOffsetT = 4;
   pub const VT_VALUE: flatbuffers::VOffsetT = 6;
 
   #[inline]
   pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
-    Property { _tab: table }
+    KeyValue { _tab: table }
   }
   #[allow(unused_mut)]
   pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr>(
     _fbb: &'mut_bldr mut flatbuffers::FlatBufferBuilder<'bldr>,
-    args: &'args PropertyArgs<'args>
-  ) -> flatbuffers::WIPOffset<Property<'bldr>> {
-    let mut builder = PropertyBuilder::new(_fbb);
+    args: &'args KeyValueArgs<'args>
+  ) -> flatbuffers::WIPOffset<KeyValue<'bldr>> {
+    let mut builder = KeyValueBuilder::new(_fbb);
     if let Some(x) = args.value { builder.add_value(x); }
     if let Some(x) = args.key { builder.add_key(x); }
     builder.finish()
@@ -350,18 +239,18 @@ impl<'a> Property<'a> {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(Property::VT_KEY, None)}
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(KeyValue::VT_KEY, None)}
   }
   #[inline]
   pub fn value(&self) -> Option<&'a str> {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(Property::VT_VALUE, None)}
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(KeyValue::VT_VALUE, None)}
   }
 }
 
-impl flatbuffers::Verifiable for Property<'_> {
+impl flatbuffers::Verifiable for KeyValue<'_> {
   #[inline]
   fn run_verifier(
     v: &mut flatbuffers::Verifier, pos: usize
@@ -374,165 +263,51 @@ impl flatbuffers::Verifiable for Property<'_> {
     Ok(())
   }
 }
-pub struct PropertyArgs<'a> {
+pub struct KeyValueArgs<'a> {
     pub key: Option<flatbuffers::WIPOffset<&'a str>>,
     pub value: Option<flatbuffers::WIPOffset<&'a str>>,
 }
-impl<'a> Default for PropertyArgs<'a> {
+impl<'a> Default for KeyValueArgs<'a> {
   #[inline]
   fn default() -> Self {
-    PropertyArgs {
+    KeyValueArgs {
       key: None,
       value: None,
     }
   }
 }
 
-pub struct PropertyBuilder<'a: 'b, 'b> {
+pub struct KeyValueBuilder<'a: 'b, 'b> {
   fbb_: &'b mut flatbuffers::FlatBufferBuilder<'a>,
   start_: flatbuffers::WIPOffset<flatbuffers::TableUnfinishedWIPOffset>,
 }
-impl<'a: 'b, 'b> PropertyBuilder<'a, 'b> {
+impl<'a: 'b, 'b> KeyValueBuilder<'a, 'b> {
   #[inline]
   pub fn add_key(&mut self, key: flatbuffers::WIPOffset<&'b  str>) {
-    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Property::VT_KEY, key);
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(KeyValue::VT_KEY, key);
   }
   #[inline]
   pub fn add_value(&mut self, value: flatbuffers::WIPOffset<&'b  str>) {
-    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Property::VT_VALUE, value);
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(KeyValue::VT_VALUE, value);
   }
   #[inline]
-  pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a>) -> PropertyBuilder<'a, 'b> {
+  pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a>) -> KeyValueBuilder<'a, 'b> {
     let start = _fbb.start_table();
-    PropertyBuilder {
+    KeyValueBuilder {
       fbb_: _fbb,
       start_: start,
     }
   }
   #[inline]
-  pub fn finish(self) -> flatbuffers::WIPOffset<Property<'a>> {
+  pub fn finish(self) -> flatbuffers::WIPOffset<KeyValue<'a>> {
     let o = self.fbb_.end_table(self.start_);
     flatbuffers::WIPOffset::new(o.value())
   }
 }
 
-impl core::fmt::Debug for Property<'_> {
+impl core::fmt::Debug for KeyValue<'_> {
   fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-    let mut ds = f.debug_struct("Property");
-      ds.field("key", &self.key());
-      ds.field("value", &self.value());
-      ds.finish()
-  }
-}
-pub enum HeaderOffset {}
-#[derive(Copy, Clone, PartialEq)]
-
-pub struct Header<'a> {
-  pub _tab: flatbuffers::Table<'a>,
-}
-
-impl<'a> flatbuffers::Follow<'a> for Header<'a> {
-  type Inner = Header<'a>;
-  #[inline]
-  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
-    Self { _tab: flatbuffers::Table::new(buf, loc) }
-  }
-}
-
-impl<'a> Header<'a> {
-  pub const VT_KEY: flatbuffers::VOffsetT = 4;
-  pub const VT_VALUE: flatbuffers::VOffsetT = 6;
-
-  #[inline]
-  pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
-    Header { _tab: table }
-  }
-  #[allow(unused_mut)]
-  pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr>(
-    _fbb: &'mut_bldr mut flatbuffers::FlatBufferBuilder<'bldr>,
-    args: &'args HeaderArgs<'args>
-  ) -> flatbuffers::WIPOffset<Header<'bldr>> {
-    let mut builder = HeaderBuilder::new(_fbb);
-    if let Some(x) = args.value { builder.add_value(x); }
-    builder.add_key(args.key);
-    builder.finish()
-  }
-
-
-  #[inline]
-  pub fn key(&self) -> SystemKeys {
-    // Safety:
-    // Created from valid Table for this object
-    // which contains a valid value in this slot
-    unsafe { self._tab.get::<SystemKeys>(Header::VT_KEY, Some(SystemKeys::Tag)).unwrap()}
-  }
-  #[inline]
-  pub fn value(&self) -> Option<&'a str> {
-    // Safety:
-    // Created from valid Table for this object
-    // which contains a valid value in this slot
-    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(Header::VT_VALUE, None)}
-  }
-}
-
-impl flatbuffers::Verifiable for Header<'_> {
-  #[inline]
-  fn run_verifier(
-    v: &mut flatbuffers::Verifier, pos: usize
-  ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
-    use self::flatbuffers::Verifiable;
-    v.visit_table(pos)?
-     .visit_field::<SystemKeys>("key", Self::VT_KEY, false)?
-     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("value", Self::VT_VALUE, false)?
-     .finish();
-    Ok(())
-  }
-}
-pub struct HeaderArgs<'a> {
-    pub key: SystemKeys,
-    pub value: Option<flatbuffers::WIPOffset<&'a str>>,
-}
-impl<'a> Default for HeaderArgs<'a> {
-  #[inline]
-  fn default() -> Self {
-    HeaderArgs {
-      key: SystemKeys::Tag,
-      value: None,
-    }
-  }
-}
-
-pub struct HeaderBuilder<'a: 'b, 'b> {
-  fbb_: &'b mut flatbuffers::FlatBufferBuilder<'a>,
-  start_: flatbuffers::WIPOffset<flatbuffers::TableUnfinishedWIPOffset>,
-}
-impl<'a: 'b, 'b> HeaderBuilder<'a, 'b> {
-  #[inline]
-  pub fn add_key(&mut self, key: SystemKeys) {
-    self.fbb_.push_slot::<SystemKeys>(Header::VT_KEY, key, SystemKeys::Tag);
-  }
-  #[inline]
-  pub fn add_value(&mut self, value: flatbuffers::WIPOffset<&'b  str>) {
-    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Header::VT_VALUE, value);
-  }
-  #[inline]
-  pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a>) -> HeaderBuilder<'a, 'b> {
-    let start = _fbb.start_table();
-    HeaderBuilder {
-      fbb_: _fbb,
-      start_: start,
-    }
-  }
-  #[inline]
-  pub fn finish(self) -> flatbuffers::WIPOffset<Header<'a>> {
-    let o = self.fbb_.end_table(self.start_);
-    flatbuffers::WIPOffset::new(o.value())
-  }
-}
-
-impl core::fmt::Debug for Header<'_> {
-  fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-    let mut ds = f.debug_struct("Header");
+    let mut ds = f.debug_struct("KeyValue");
       ds.field("key", &self.key());
       ds.field("value", &self.value());
       ds.finish()
@@ -592,18 +367,18 @@ impl<'a> RecordMeta<'a> {
     unsafe { self._tab.get::<i32>(RecordMeta::VT_TIMESTAMP_DELTA, Some(0)).unwrap()}
   }
   #[inline]
-  pub fn headers(&self) -> Option<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<Header<'a>>>> {
+  pub fn headers(&self) -> Option<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<KeyValue<'a>>>> {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<Header>>>>(RecordMeta::VT_HEADERS, None)}
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<KeyValue>>>>(RecordMeta::VT_HEADERS, None)}
   }
   #[inline]
-  pub fn properties(&self) -> Option<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<Property<'a>>>> {
+  pub fn properties(&self) -> Option<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<KeyValue<'a>>>> {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<Property>>>>(RecordMeta::VT_PROPERTIES, None)}
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<KeyValue>>>>(RecordMeta::VT_PROPERTIES, None)}
   }
 }
 
@@ -616,8 +391,8 @@ impl flatbuffers::Verifiable for RecordMeta<'_> {
     v.visit_table(pos)?
      .visit_field::<i32>("offset_delta", Self::VT_OFFSET_DELTA, false)?
      .visit_field::<i32>("timestamp_delta", Self::VT_TIMESTAMP_DELTA, false)?
-     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<Header>>>>("headers", Self::VT_HEADERS, false)?
-     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<Property>>>>("properties", Self::VT_PROPERTIES, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<KeyValue>>>>("headers", Self::VT_HEADERS, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<KeyValue>>>>("properties", Self::VT_PROPERTIES, false)?
      .finish();
     Ok(())
   }
@@ -625,8 +400,8 @@ impl flatbuffers::Verifiable for RecordMeta<'_> {
 pub struct RecordMetaArgs<'a> {
     pub offset_delta: i32,
     pub timestamp_delta: i32,
-    pub headers: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<Header<'a>>>>>,
-    pub properties: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<Property<'a>>>>>,
+    pub headers: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<KeyValue<'a>>>>>,
+    pub properties: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<KeyValue<'a>>>>>,
 }
 impl<'a> Default for RecordMetaArgs<'a> {
   #[inline]
@@ -654,11 +429,11 @@ impl<'a: 'b, 'b> RecordMetaBuilder<'a, 'b> {
     self.fbb_.push_slot::<i32>(RecordMeta::VT_TIMESTAMP_DELTA, timestamp_delta, 0);
   }
   #[inline]
-  pub fn add_headers(&mut self, headers: flatbuffers::WIPOffset<flatbuffers::Vector<'b , flatbuffers::ForwardsUOffset<Header<'b >>>>) {
+  pub fn add_headers(&mut self, headers: flatbuffers::WIPOffset<flatbuffers::Vector<'b , flatbuffers::ForwardsUOffset<KeyValue<'b >>>>) {
     self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(RecordMeta::VT_HEADERS, headers);
   }
   #[inline]
-  pub fn add_properties(&mut self, properties: flatbuffers::WIPOffset<flatbuffers::Vector<'b , flatbuffers::ForwardsUOffset<Property<'b >>>>) {
+  pub fn add_properties(&mut self, properties: flatbuffers::WIPOffset<flatbuffers::Vector<'b , flatbuffers::ForwardsUOffset<KeyValue<'b >>>>) {
     self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(RecordMeta::VT_PROPERTIES, properties);
   }
   #[inline]
