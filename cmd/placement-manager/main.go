@@ -1,28 +1,100 @@
-/*
-Copyright 2016 The Kubernetes Authors.
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-    http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-*/
-
 // Package main is the entrypoint for placement-manager.
 package main
 
 import (
-	"log"
+	"context"
+	"fmt"
+	"os"
+	"os/signal"
+	"syscall"
 
-	"github.com/AutoMQ/placement-manager/pkg/version"
+	"github.com/pkg/errors"
+	"github.com/spf13/pflag"
+	"go.uber.org/zap"
+
+	"github.com/AutoMQ/placement-manager/pkg/server"
+	"github.com/AutoMQ/placement-manager/pkg/server/config"
 )
 
 func main() {
-	log.Printf("version: %s\n", version.Version)
+	cfg, err := config.NewConfig(os.Args[1:])
+	if errors.Cause(err) == pflag.ErrHelp {
+		os.Exit(0)
+	}
+
+	// create a logger first
+	logger := cfg.Logger()
+	if logger == nil {
+		// something went wrong, create a new temporary logger
+		var zapErr error
+		logger, zapErr = zap.NewProduction()
+		if zapErr != nil {
+			fmt.Printf("error creating zap logger %v", zapErr)
+			os.Exit(1)
+		}
+	}
+	logger.Info("running", zap.Strings("args", os.Args))
+	if err != nil {
+		logger.Error("failed to parse config", zap.Error(err))
+		os.Exit(1)
+	}
+
+	syncLogger := func() { _ = cfg.Logger().Sync() }
+
+	// check config
+	err = cfg.Adjust()
+	if err != nil {
+		logger.Error("failed to adjust config", zap.Error(err))
+		exit(1, syncLogger)
+	}
+	err = cfg.Validate()
+	if err != nil {
+		logger.Error("failed to validate config", zap.Error(err))
+		exit(1, syncLogger)
+	}
+
+	// create server
+	ctx, cancel := context.WithCancel(context.Background())
+	svr, err := server.NewServer(ctx, cfg)
+	if err != nil {
+		logger.Error("failed to create server", zap.Error(err))
+		exit(1, syncLogger)
+	}
+
+	// start server
+	sc := make(chan os.Signal, 1)
+	signal.Notify(sc,
+		syscall.SIGHUP,
+		syscall.SIGINT,
+		syscall.SIGTERM,
+		syscall.SIGQUIT)
+
+	var sig os.Signal
+	go func() {
+		sig = <-sc
+		cancel()
+	}()
+
+	err = svr.Start()
+	if err != nil {
+		logger.Error("failed to start server", zap.Error(err))
+		exit(1, syncLogger)
+	}
+
+	// close server
+	<-ctx.Done()
+	logger.Info("got signal to exit", zap.String("signal", sig.String()))
+
+	svr.Close()
+	switch sig {
+	case syscall.SIGTERM:
+		exit(0, syncLogger)
+	default:
+		exit(1, syncLogger)
+	}
+}
+
+func exit(code int, deferred func()) {
+	deferred()
+	os.Exit(code)
 }
