@@ -11,7 +11,7 @@ table RecordBatchMeta {
     flags: byte (id: 2);
     /// The base offset of the batch record, also is the logical offset of the first record.
     base_offset: int64 (id: 3);
-    /// The delta value between the last offset and the base offset. 
+    /// The delta value between the last offset and the base offset.
     last_offset_delta: int32 (id: 4);
     /// The create timestap of the first record in this batch.
     base_timestamp: int64 (id: 5);

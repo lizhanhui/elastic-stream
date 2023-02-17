@@ -86,7 +86,7 @@ impl<'a> RecordBatchMeta<'a> {
     // which contains a valid value in this slot
     unsafe { self._tab.get::<i64>(RecordBatchMeta::VT_BASE_OFFSET, Some(0)).unwrap()}
   }
-  /// The delta value between the last offset and the base offset. 
+  /// The delta value between the last offset and the base offset.
   #[inline]
   pub fn last_offset_delta(&self) -> i32 {
     // Safety:
