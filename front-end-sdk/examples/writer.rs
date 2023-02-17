@@ -11,7 +11,7 @@ pub async fn main() -> Result<(), Box<dyn Error>> {
 
     let body = BytesMut::with_capacity(128).freeze();
     let record = Record::new_builder()
-        .with_stream_name("test_stream_name".to_string())
+        .with_stream_id(3)
         .with_body(body)
         .build()?;
 

@@ -102,7 +102,7 @@ impl Stream for Cursor {
         use bytes::BytesMut;
         let body = BytesMut::with_capacity(128).freeze();
         let record = match Record::new_builder()
-            .with_stream_name("test_stream_name".to_string())
+            .with_stream_id(3)
             .with_body(body)
             .build()
         {

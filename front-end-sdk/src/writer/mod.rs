@@ -18,7 +18,7 @@ use model::{RecordBatch, Record, RecordMetadata};
 ///
 ///     let body = BytesMut::with_capacity(128).freeze();
 ///     let record = Record::new_builder()
-///         .with_stream_name("test_stream_name".to_string())
+///         .with_stream_id(3)
 ///         .with_body(body)
 ///         .build()?;
 ///
@@ -53,14 +53,17 @@ impl Writer {
     ///
     pub async fn append(&self, record: &Record) -> Result<RecordMetadata, Box<dyn Error>> {
         Ok(RecordMetadata::new(
-            record.stream_name(),
+            record.stream_id(),
             0,
         ))
     }
 
+    /// Append the specified record batch to partition.
+    /// 
+    /// * `record_batch` - A `RecordBatch` that contains a vector of record.
     pub async fn append_batch(&self, record_batch: &RecordBatch) -> Result<Vec<RecordMetadata>, Box<dyn Error>> {
         Ok(vec![RecordMetadata::new(
-            record_batch.stream_name(),
+            record_batch.stream_id(),
             0,
         )])
     }
