@@ -1,5 +1,8 @@
+mod segment;
+
 use crate::error::StoreError;
 use crossbeam::channel::{Receiver, Sender};
+use segment::{LogSegmentFile, Status, TimeRange};
 use slog::{error, trace, Logger};
 use std::os::fd::AsRawFd;
 
@@ -62,6 +65,8 @@ pub(crate) struct IO {
     pub(crate) sender: Sender<()>,
     receiver: Receiver<()>,
     log: Logger,
+
+    segments: Vec<LogSegmentFile>,
 }
 
 impl IO {

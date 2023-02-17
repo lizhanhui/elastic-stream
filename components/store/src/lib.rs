@@ -33,7 +33,6 @@ use ops::put::PutResult;
 pub mod cursor;
 pub mod ops;
 pub mod option;
-pub mod segment;
 
 mod io;
 mod store;
