@@ -8,7 +8,7 @@ table RecordBatchMeta {
     /// The record format version of this record batch.
     magic: byte (id: 1);
     /// The flags of this record batch. Each bit is used to indicate a specific flag.
-    flags: byte (id: 2);
+    flags: short (id: 2);
     /// The base offset of the batch record, also is the logical offset of the first record.
     base_offset: int64 (id: 3);
     /// The delta value between the last offset and the base offset.

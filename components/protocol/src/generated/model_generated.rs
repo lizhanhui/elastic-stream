@@ -72,11 +72,11 @@ impl<'a> RecordBatchMeta<'a> {
   }
   /// The flags of this record batch. Each bit is used to indicate a specific flag.
   #[inline]
-  pub fn flags(&self) -> i8 {
+  pub fn flags(&self) -> i16 {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<i8>(RecordBatchMeta::VT_FLAGS, Some(0)).unwrap()}
+    unsafe { self._tab.get::<i16>(RecordBatchMeta::VT_FLAGS, Some(0)).unwrap()}
   }
   /// The base offset of the batch record, also is the logical offset of the first record.
   #[inline]
@@ -113,7 +113,7 @@ impl flatbuffers::Verifiable for RecordBatchMeta<'_> {
     v.visit_table(pos)?
      .visit_field::<i64>("stream_id", Self::VT_STREAM_ID, false)?
      .visit_field::<i8>("magic", Self::VT_MAGIC, false)?
-     .visit_field::<i8>("flags", Self::VT_FLAGS, false)?
+     .visit_field::<i16>("flags", Self::VT_FLAGS, false)?
      .visit_field::<i64>("base_offset", Self::VT_BASE_OFFSET, false)?
      .visit_field::<i32>("last_offset_delta", Self::VT_LAST_OFFSET_DELTA, false)?
      .visit_field::<i64>("base_timestamp", Self::VT_BASE_TIMESTAMP, false)?
@@ -124,7 +124,7 @@ impl flatbuffers::Verifiable for RecordBatchMeta<'_> {
 pub struct RecordBatchMetaArgs {
     pub stream_id: i64,
     pub magic: i8,
-    pub flags: i8,
+    pub flags: i16,
     pub base_offset: i64,
     pub last_offset_delta: i32,
     pub base_timestamp: i64,
@@ -157,8 +157,8 @@ impl<'a: 'b, 'b> RecordBatchMetaBuilder<'a, 'b> {
     self.fbb_.push_slot::<i8>(RecordBatchMeta::VT_MAGIC, magic, 0);
   }
   #[inline]
-  pub fn add_flags(&mut self, flags: i8) {
-    self.fbb_.push_slot::<i8>(RecordBatchMeta::VT_FLAGS, flags, 0);
+  pub fn add_flags(&mut self, flags: i16) {
+    self.fbb_.push_slot::<i16>(RecordBatchMeta::VT_FLAGS, flags, 0);
   }
   #[inline]
   pub fn add_base_offset(&mut self, base_offset: i64) {
