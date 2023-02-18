@@ -4,8 +4,8 @@
 use std::rc::Rc;
 
 use codec::frame::OperationCode;
-use slog::{debug, error, info, o, warn, Drain, Logger};
-use slog_async::OverflowStrategy;
+use slog::{debug, error, info, warn, Drain, Logger};
+
 use tokio::sync::oneshot;
 use tokio_uring::net::TcpListener;
 use transport::channel::{ChannelReader, ChannelWriter};
@@ -102,17 +102,5 @@ pub async fn run_listener(logger: Logger) -> u16 {
     rx.await.unwrap()
 }
 
-/// Create logger with terminal sinks.
-///
-/// # Note
-/// The created logger has only a buffer size of 1, thus, is test-purpose only.
-pub fn terminal_logger() -> Logger {
-    let decorator = slog_term::TermDecorator::new().build();
-    let drain = slog_term::FullFormat::new(decorator).build().fuse();
-    let drain = slog_async::Async::new(drain)
-        .overflow_strategy(OverflowStrategy::Block)
-        .chan_size(1)
-        .build()
-        .fuse();
-    slog::Logger::root(drain, o!())
-}
+pub mod fs;
+pub mod log;

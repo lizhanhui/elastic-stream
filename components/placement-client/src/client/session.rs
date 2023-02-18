@@ -271,7 +271,7 @@ mod tests {
 
     use std::error::Error;
 
-    use util::test::{run_listener, terminal_logger};
+    use util::{run_listener, terminal_logger};
 
     use super::*;
 

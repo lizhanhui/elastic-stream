@@ -15,3 +15,6 @@ bytes = { workspace = true }
 transport = { path = "../transport" }
 codec = { path = "../codec" }
 model = { path = "../model" }
+
+[dev-dependencies]
+uuid = { workspace = true}

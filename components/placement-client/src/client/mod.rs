@@ -105,7 +105,7 @@ mod tests {
     use std::time::Duration;
 
     use slog::trace;
-    use util::test::{run_listener, terminal_logger};
+    use util::{run_listener, terminal_logger};
 
     use super::*;
 

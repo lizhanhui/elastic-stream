@@ -216,7 +216,7 @@ mod tests {
         let mut options = super::Options::default();
         let wal_dir = super::WalPath::new("/tmp", 1234);
         options.wal_paths.push(wal_dir);
-        let logger = util::test::terminal_logger();
+        let logger = util::terminal_logger();
         let mut io = super::IO::new(&mut options, logger.clone())?;
         io.load_wals()?;
         Ok(())
