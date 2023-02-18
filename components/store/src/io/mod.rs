@@ -4,7 +4,7 @@ use crate::error::StoreError;
 use crate::option::WalPath;
 use crossbeam::channel::{Receiver, Sender};
 use segment::{LogSegmentFile, Status, TimeRange};
-use slog::{error, trace, Logger};
+use slog::{error, info, trace, warn, Logger};
 use std::{collections::VecDeque, os::fd::AsRawFd, path::Path};
 
 const DEFAULT_MAX_IO_DEPTH: u32 = 4096;
@@ -130,13 +130,37 @@ impl IO {
     }
 
     fn load_wals(&mut self) -> Result<(), StoreError> {
-        // self.options
-        //     .wal_paths
-        //     .iter()
-        //     .rev()
-        //     .map(|wal_path| Path::new(&wal_path.path).read_dir()?)
-        //     .flatten()
-        //     .map(|dir_entry| {});
+        self.options
+            .wal_paths
+            .iter()
+            .rev()
+            .map(|wal_path| Path::new(&wal_path.path).read_dir())
+            .flatten()
+            .flatten() // Note Result implements FromIterator trait, so `flatten` applies and potential `Err` will be propagated.
+            .flatten()
+            .map(|entry| {
+                if let Ok(metadata) = entry.metadata() {
+                    if metadata.file_type().is_dir() {
+                        warn!(self.log, "Skip {:?} as it is a directory", entry.path());
+                        None
+                    } else {
+                        let log_segment_file = LogSegmentFile::new(
+                            entry.path().as_os_str().to_str().unwrap(),
+                            metadata.len() as u32,
+                            segment::Medium::SSD,
+                        );
+                        Some(log_segment_file)
+                    }
+                } else {
+                    None
+                }
+            })
+            .filter_map(|f| f)
+            .for_each(|f| {
+                // f.open();
+                info!(self.log, "Adding {:?}", f);
+                self.segments.push_back(f);
+            });
 
         Ok(())
     }
@@ -180,5 +204,21 @@ impl IO {
 impl AsRawFd for IO {
     fn as_raw_fd(&self) -> std::os::fd::RawFd {
         self.poll_ring.as_raw_fd()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{error::Error, path::Path};
+
+    #[test]
+    fn test_load_wals() -> Result<(), Box<dyn Error>> {
+        let mut options = super::Options::default();
+        let wal_dir = super::WalPath::new("/tmp", 1234);
+        options.wal_paths.push(wal_dir);
+        let logger = util::test::terminal_logger();
+        let mut io = super::IO::new(&mut options, logger.clone())?;
+        io.load_wals()?;
+        Ok(())
     }
 }
