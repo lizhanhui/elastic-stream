@@ -27,7 +27,7 @@ impl<'a> flatbuffers::Follow<'a> for RecordBatchMeta<'a> {
 }
 
 impl<'a> RecordBatchMeta<'a> {
-  pub const VT_STREAM_NAME: flatbuffers::VOffsetT = 4;
+  pub const VT_STREAM_ID: flatbuffers::VOffsetT = 4;
   pub const VT_MAGIC: flatbuffers::VOffsetT = 6;
   pub const VT_FLAGS: flatbuffers::VOffsetT = 8;
   pub const VT_BASE_OFFSET: flatbuffers::VOffsetT = 10;
@@ -41,26 +41,26 @@ impl<'a> RecordBatchMeta<'a> {
   #[allow(unused_mut)]
   pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr>(
     _fbb: &'mut_bldr mut flatbuffers::FlatBufferBuilder<'bldr>,
-    args: &'args RecordBatchMetaArgs<'args>
+    args: &'args RecordBatchMetaArgs
   ) -> flatbuffers::WIPOffset<RecordBatchMeta<'bldr>> {
     let mut builder = RecordBatchMetaBuilder::new(_fbb);
     builder.add_base_timestamp(args.base_timestamp);
     builder.add_base_offset(args.base_offset);
+    builder.add_stream_id(args.stream_id);
     builder.add_last_offset_delta(args.last_offset_delta);
-    if let Some(x) = args.stream_name { builder.add_stream_name(x); }
     builder.add_flags(args.flags);
     builder.add_magic(args.magic);
     builder.finish()
   }
 
 
-  /// The stream name of this record batch.
+  /// The stream id of this record batch.
   #[inline]
-  pub fn stream_name(&self) -> Option<&'a str> {
+  pub fn stream_id(&self) -> i64 {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(RecordBatchMeta::VT_STREAM_NAME, None)}
+    unsafe { self._tab.get::<i64>(RecordBatchMeta::VT_STREAM_ID, Some(0)).unwrap()}
   }
   /// The record format version of this record batch.
   #[inline]
@@ -111,7 +111,7 @@ impl flatbuffers::Verifiable for RecordBatchMeta<'_> {
   ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
     use self::flatbuffers::Verifiable;
     v.visit_table(pos)?
-     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("stream_name", Self::VT_STREAM_NAME, false)?
+     .visit_field::<i64>("stream_id", Self::VT_STREAM_ID, false)?
      .visit_field::<i8>("magic", Self::VT_MAGIC, false)?
      .visit_field::<i8>("flags", Self::VT_FLAGS, false)?
      .visit_field::<i64>("base_offset", Self::VT_BASE_OFFSET, false)?
@@ -121,19 +121,19 @@ impl flatbuffers::Verifiable for RecordBatchMeta<'_> {
     Ok(())
   }
 }
-pub struct RecordBatchMetaArgs<'a> {
-    pub stream_name: Option<flatbuffers::WIPOffset<&'a str>>,
+pub struct RecordBatchMetaArgs {
+    pub stream_id: i64,
     pub magic: i8,
     pub flags: i8,
     pub base_offset: i64,
     pub last_offset_delta: i32,
     pub base_timestamp: i64,
 }
-impl<'a> Default for RecordBatchMetaArgs<'a> {
+impl<'a> Default for RecordBatchMetaArgs {
   #[inline]
   fn default() -> Self {
     RecordBatchMetaArgs {
-      stream_name: None,
+      stream_id: 0,
       magic: 0,
       flags: 0,
       base_offset: 0,
@@ -149,8 +149,8 @@ pub struct RecordBatchMetaBuilder<'a: 'b, 'b> {
 }
 impl<'a: 'b, 'b> RecordBatchMetaBuilder<'a, 'b> {
   #[inline]
-  pub fn add_stream_name(&mut self, stream_name: flatbuffers::WIPOffset<&'b  str>) {
-    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(RecordBatchMeta::VT_STREAM_NAME, stream_name);
+  pub fn add_stream_id(&mut self, stream_id: i64) {
+    self.fbb_.push_slot::<i64>(RecordBatchMeta::VT_STREAM_ID, stream_id, 0);
   }
   #[inline]
   pub fn add_magic(&mut self, magic: i8) {
@@ -190,7 +190,7 @@ impl<'a: 'b, 'b> RecordBatchMetaBuilder<'a, 'b> {
 impl core::fmt::Debug for RecordBatchMeta<'_> {
   fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
     let mut ds = f.debug_struct("RecordBatchMeta");
-      ds.field("stream_name", &self.stream_name());
+      ds.field("stream_id", &self.stream_id());
       ds.field("magic", &self.magic());
       ds.field("flags", &self.flags());
       ds.field("base_offset", &self.base_offset());
