@@ -1,4 +1,14 @@
-use std::{os::fd::RawFd, time::SystemTime};
+use std::{
+    fs::File,
+    os::{
+        fd::{FromRawFd, IntoRawFd, RawFd},
+        unix::prelude::OpenOptionsExt,
+    },
+    path::Path,
+    time::SystemTime,
+};
+
+use crate::error::StoreError;
 
 /// Write-ahead-log segment file status.
 ///
@@ -36,6 +46,8 @@ pub(crate) struct LogSegmentFile {
     pub(crate) size: u32,
     pub(crate) medium: Medium,
     pub(crate) status: Status,
+
+    // Use File or RawFd?
     pub(crate) fd: Option<RawFd>,
 
     /// Position where this log segment file has been written.
@@ -54,6 +66,36 @@ impl LogSegmentFile {
             fd: None,
             written: 0,
             time_range: None,
+        }
+    }
+
+    pub(crate) fn open(&mut self) -> Result<(), StoreError> {
+        if self.fd.is_some() {
+            return Ok(());
+        }
+
+        // Open the file for direct read/write
+        let mut opts = std::fs::OpenOptions::new();
+        let file = opts
+            .read(true)
+            .write(true)
+            .custom_flags(libc::O_DIRECT)
+            .open(Path::new(&self.path))?;
+        self.fd = Some(file.into_raw_fd());
+
+        // Acquire file size by `fstat`
+
+        // Read time_range
+
+        Ok(())
+    }
+}
+
+impl Drop for LogSegmentFile {
+    fn drop(&mut self) {
+        // Close these open FD
+        if let Some(fd) = self.fd {
+            let _file = unsafe { File::from_raw_fd(fd) };
         }
     }
 }

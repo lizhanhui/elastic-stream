@@ -156,8 +156,8 @@ impl IO {
                 }
             })
             .filter_map(|f| f)
-            .for_each(|f| {
-                // f.open();
+            .for_each(|mut f| {
+                f.open();
                 info!(self.log, "Adding {:?}", f);
                 self.segments.push_back(f);
             });
