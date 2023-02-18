@@ -27,3 +27,4 @@ util = { path = "../util" }
 slog-async =  { workspace = true }
 slog-term =  { workspace = true }
 cargo-llvm-cov = { workspace = true }
+uuid = { workspace = true }

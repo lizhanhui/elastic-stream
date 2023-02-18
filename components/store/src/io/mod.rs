@@ -209,16 +209,41 @@ impl AsRawFd for IO {
 
 #[cfg(test)]
 mod tests {
+    use std::fs::File;
     use std::{error::Error, path::Path};
+
+    use std::env;
+    use uuid::Uuid;
 
     #[test]
     fn test_load_wals() -> Result<(), Box<dyn Error>> {
         let mut options = super::Options::default();
-        let wal_dir = super::WalPath::new("/tmp", 1234);
-        options.wal_paths.push(wal_dir);
+        let uuid = Uuid::new_v4();
+        let mut wal_dir = env::temp_dir();
+        wal_dir.push(uuid.simple().to_string());
+        let wal_dir = wal_dir.as_path();
+        std::fs::create_dir_all(wal_dir)?;
+        let _wal_dir_guard = util::DirectoryRemovalGuard::new(wal_dir);
+
         let logger = util::terminal_logger();
+
+        // Prepare log segment files
+        let files: Vec<_> = (0..10)
+            .into_iter()
+            .map(|i| {
+                let f = wal_dir.join(format!("file-{}", i));
+                File::create(f.as_path())
+            })
+            .flatten()
+            .collect();
+        assert_eq!(10, files.len());
+
+        let wal_dir = super::WalPath::new(wal_dir.to_str().unwrap(), 1234);
+        options.wal_paths.push(wal_dir);
+
         let mut io = super::IO::new(&mut options, logger.clone())?;
         io.load_wals()?;
+        assert_eq!(files.len(), io.segments.len());
         Ok(())
     }
 }
