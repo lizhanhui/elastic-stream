@@ -5,7 +5,7 @@ use crate::option::WalPath;
 use crossbeam::channel::{Receiver, Sender};
 use segment::{LogSegmentFile, Status, TimeRange};
 use slog::{error, info, trace, warn, Logger};
-use std::{collections::VecDeque, os::fd::AsRawFd, path::Path};
+use std::{cmp::Ordering, collections::VecDeque, os::fd::AsRawFd, path::Path};
 
 const DEFAULT_MAX_IO_DEPTH: u32 = 4096;
 const DEFAULT_SQPOLL_IDLE_MS: u32 = 2000;
@@ -129,8 +129,8 @@ impl IO {
         })
     }
 
-    fn load_wals(&mut self) -> Result<(), StoreError> {
-        let mut segment_files: VecDeque<_> = self
+    fn load_wal_segment_files(&mut self) -> Result<(), StoreError> {
+        let mut segment_files: Vec<_> = self
             .options
             .wal_paths
             .iter()
@@ -158,19 +158,20 @@ impl IO {
             })
             .filter_map(|f| f)
             .collect();
-        self.segments.append(&mut segment_files);
 
-        self.segments
-            .iter_mut()
-            .map(|file| file.open())
-            .flatten()
-            .for_each(|_| {});
+        // Sort log segment file by file name.
+        segment_files.sort();
+
+        for mut segment_file in segment_files.into_iter() {
+            segment_file.open()?;
+            self.segments.push_back(segment_file);
+        }
 
         Ok(())
     }
 
     fn load(&mut self) -> Result<(), StoreError> {
-        self.load_wals()?;
+        self.load_wal_segment_files()?;
         Ok(())
     }
 
@@ -246,7 +247,7 @@ mod tests {
         options.wal_paths.push(wal_dir);
 
         let mut io = super::IO::new(&mut options, logger.clone())?;
-        io.load_wals()?;
+        io.load_wal_segment_files()?;
         assert_eq!(files.len(), io.segments.len());
         Ok(())
     }

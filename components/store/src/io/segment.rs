@@ -1,4 +1,5 @@
 use std::{
+    cmp::Ordering,
     fs::File,
     os::{
         fd::{FromRawFd, IntoRawFd, RawFd},
@@ -13,7 +14,7 @@ use crate::error::StoreError;
 /// Write-ahead-log segment file status.
 ///
 /// `Status` indicates the opcode allowed on it.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Status {
     OpenAt,
     Fallocate64,
@@ -21,14 +22,14 @@ pub(crate) enum Status {
     Read,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Medium {
     SSD,
     HDD,
     S3,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct TimeRange {
     pub(crate) begin: SystemTime,
     pub(crate) end: Option<SystemTime>,
@@ -40,7 +41,7 @@ impl TimeRange {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct LogSegmentFile {
     pub(crate) path: String,
     pub(crate) size: u64,
@@ -101,6 +102,34 @@ impl Drop for LogSegmentFile {
         // Close these open FD
         if let Some(fd) = self.fd {
             let _file = unsafe { File::from_raw_fd(fd) };
+        }
+    }
+}
+
+impl PartialOrd for LogSegmentFile {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        let this = Path::new(&self.path);
+        let that = Path::new(&other.path);
+        let lhs = match this.file_name() {
+            Some(name) => name,
+            None => return None,
+        };
+        let rhs = match that.file_name() {
+            Some(name) => name,
+            None => return None,
+        };
+
+        lhs.partial_cmp(rhs)
+    }
+}
+
+impl Ord for LogSegmentFile {
+    fn cmp(&self, other: &Self) -> Ordering {
+        match self.partial_cmp(other) {
+            Some(res) => res,
+            None => {
+                unreachable!("Should not reach here");
+            }
         }
     }
 }
