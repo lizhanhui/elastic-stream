@@ -55,7 +55,7 @@ func main() {
 
 	// create server
 	ctx, cancel := context.WithCancel(context.Background())
-	svr, err := server.NewServer(ctx, cfg)
+	svr, err := server.NewServer(ctx, cfg, logger)
 	if err != nil {
 		logger.Error("failed to create server", zap.Error(err))
 		exit(1, syncLogger)

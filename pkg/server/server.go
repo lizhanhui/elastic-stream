@@ -67,11 +67,12 @@ type Server struct {
 }
 
 // NewServer creates the UNINITIALIZED PM server with given configuration.
-func NewServer(ctx context.Context, cfg *config.Config) (*Server, error) {
+func NewServer(ctx context.Context, cfg *config.Config, logger *zap.Logger) (*Server, error) {
 	s := &Server{
 		cfg:    cfg,
 		ctx:    ctx,
 		member: &member.Member{},
+		lg:     logger,
 	}
 	s.started.Store(false)
 
