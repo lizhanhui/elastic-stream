@@ -130,7 +130,8 @@ impl IO {
     }
 
     fn load_wals(&mut self) -> Result<(), StoreError> {
-        self.options
+        let mut segment_files: VecDeque<_> = self
+            .options
             .wal_paths
             .iter()
             .rev()
@@ -146,7 +147,7 @@ impl IO {
                     } else {
                         let log_segment_file = LogSegmentFile::new(
                             entry.path().as_os_str().to_str().unwrap(),
-                            metadata.len() as u32,
+                            metadata.len(),
                             segment::Medium::SSD,
                         );
                         Some(log_segment_file)
@@ -156,11 +157,14 @@ impl IO {
                 }
             })
             .filter_map(|f| f)
-            .for_each(|mut f| {
-                f.open();
-                info!(self.log, "Adding {:?}", f);
-                self.segments.push_back(f);
-            });
+            .collect();
+        self.segments.append(&mut segment_files);
+
+        self.segments
+            .iter_mut()
+            .map(|file| file.open())
+            .flatten()
+            .for_each(|_| {});
 
         Ok(())
     }

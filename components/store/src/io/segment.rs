@@ -43,7 +43,7 @@ impl TimeRange {
 #[derive(Debug, Clone)]
 pub(crate) struct LogSegmentFile {
     pub(crate) path: String,
-    pub(crate) size: u32,
+    pub(crate) size: u64,
     pub(crate) medium: Medium,
     pub(crate) status: Status,
 
@@ -57,7 +57,7 @@ pub(crate) struct LogSegmentFile {
 }
 
 impl LogSegmentFile {
-    pub(crate) fn new(path: &str, size: u32, medium: Medium) -> Self {
+    pub(crate) fn new(path: &str, size: u64, medium: Medium) -> Self {
         Self {
             path: path.to_owned(),
             size,
@@ -81,11 +81,16 @@ impl LogSegmentFile {
             .write(true)
             .custom_flags(libc::O_DIRECT)
             .open(Path::new(&self.path))?;
+        let metadata = file.metadata()?;
+        self.size = metadata.len();
+        if 0 == self.size {
+            self.status = Status::Fallocate64;
+        } else {
+            self.status = Status::Read;
+        }
         self.fd = Some(file.into_raw_fd());
 
-        // Acquire file size by `fstat`
-
-        // Read time_range
+        // Read time_range from meta-blocks
 
         Ok(())
     }
