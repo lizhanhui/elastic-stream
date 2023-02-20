@@ -73,12 +73,12 @@ func (s *GrpcServer) LoadGlobalConfig(ctx context.Context, request *kvpb.LoadGlo
 		res := make([]*kvpb.GlobalConfigItem, len(request.Names))
 		for i, name := range request.Names {
 			r, err := s.client.Get(ctx, path.Join(configPath, name))
-			if err != nil {
+			switch {
+			case err != nil:
 				res[i] = &kvpb.GlobalConfigItem{Name: name, Error: &kvpb.Error{Type: kvpb.ErrorType_UNKNOWN, Message: err.Error()}}
-			} else if len(r.Kvs) == 0 {
-				msg := "key " + name + " not found"
-				res[i] = &kvpb.GlobalConfigItem{Name: name, Error: &kvpb.Error{Type: kvpb.ErrorType_NOT_FOUND, Message: msg}}
-			} else {
+			case len(r.Kvs) == 0:
+				res[i] = &kvpb.GlobalConfigItem{Name: name, Error: &kvpb.Error{Type: kvpb.ErrorType_NOT_FOUND, Message: fmt.Sprintf("key %s not found", name)}}
+			default:
 				res[i] = &kvpb.GlobalConfigItem{Name: name, Payload: r.Kvs[0].Value, Kind: kvpb.EventType_PUT}
 			}
 		}
