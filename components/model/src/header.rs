@@ -1,6 +1,8 @@
 use std::{collections::HashMap, fmt};
+use strum_macros::EnumString;
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
+#[derive(EnumString)]
 pub enum Common {
     Keys,
     Tag,
@@ -41,6 +43,8 @@ impl Headers {
 
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+
     use super::*;
 
     #[test]
@@ -63,5 +67,10 @@ mod tests {
         assert_eq!(Common::Keys.to_string(), "Keys");
         assert_eq!(Common::Tag.to_string(), "Tag");
         assert_eq!(Common::CreatedAt.to_string(), "CreatedAt");
+
+        assert_eq!(Common::RecordId, Common::from_str("RecordId").unwrap());
+        assert_eq!(Common::Keys, Common::from_str("Keys").unwrap());
+        assert_eq!(Common::Tag, Common::from_str("Tag").unwrap());
+        assert_eq!(Common::CreatedAt, Common::from_str("CreatedAt").unwrap());
     }
 }
