@@ -5,13 +5,20 @@ use crate::option::WalPath;
 use crossbeam::channel::{Receiver, Sender};
 use segment::{LogSegmentFile, Status, TimeRange};
 use slog::{error, info, trace, warn, Logger};
-use std::{cmp::Ordering, collections::VecDeque, os::fd::AsRawFd, path::Path};
+use std::{
+    cmp::Ordering,
+    collections::{BTreeMap, VecDeque},
+    os::fd::AsRawFd,
+    path::Path,
+};
 
 const DEFAULT_MAX_IO_DEPTH: u32 = 4096;
 const DEFAULT_SQPOLL_IDLE_MS: u32 = 2000;
 const DEFAULT_SQPOLL_CPU: u32 = 1;
 const DEFAULT_MAX_BOUNDED_URING_WORKER_COUNT: u32 = 2;
 const DEFAULT_MAX_UNBOUNDED_URING_WORKER_COUNT: u32 = 2;
+
+const DEFAULT_LOG_SEGMENT_FILE_SIZE: u64 = 1024u64 * 1024 * 1024;
 
 #[derive(Debug, Clone)]
 pub(crate) struct Options {
@@ -32,6 +39,8 @@ pub(crate) struct Options {
     sqpoll_cpu: u32,
 
     max_workers: [u32; 2],
+
+    file_size: u64,
 }
 
 impl Default for Options {
@@ -45,6 +54,7 @@ impl Default for Options {
                 DEFAULT_MAX_BOUNDED_URING_WORKER_COUNT,
                 DEFAULT_MAX_UNBOUNDED_URING_WORKER_COUNT,
             ],
+            file_size: DEFAULT_LOG_SEGMENT_FILE_SIZE,
         }
     }
 }
@@ -91,7 +101,7 @@ impl IO {
 
         // Ensure WAL directories exists.
         for dir in &options.wal_paths {
-            util::fs::mkdirs_if_missing(&dir.path)?;
+            util::mkdirs_if_missing(&dir.path)?;
         }
 
         let ring = io_uring::IoUring::builder().dontfork().build(32).map_err(|e| {
@@ -145,12 +155,24 @@ impl IO {
                         warn!(self.log, "Skip {:?} as it is a directory", entry.path());
                         None
                     } else {
-                        let log_segment_file = LogSegmentFile::new(
-                            entry.path().as_os_str().to_str().unwrap(),
-                            metadata.len(),
-                            segment::Medium::SSD,
-                        );
-                        Some(log_segment_file)
+                        let path = entry.path();
+                        let path = path.as_path();
+                        if let Some(offset) = LogSegmentFile::parse_offset(path) {
+                            let log_segment_file = LogSegmentFile::new(
+                                offset,
+                                entry.path().to_str()?,
+                                metadata.len(),
+                                segment::Medium::SSD,
+                            );
+                            Some(log_segment_file)
+                        } else {
+                            error!(
+                                self.log,
+                                "Failed to parse offset from file name: {:?}",
+                                entry.path()
+                            );
+                            None
+                        }
                     }
                 } else {
                     None
@@ -175,16 +197,86 @@ impl IO {
         Ok(())
     }
 
+    fn launch_indexer(&self) -> Result<(), StoreError> {
+        Ok(())
+    }
+
+    fn alloc_segment(&self) -> Option<LogSegmentFile> {
+        let offset = if self.segments.is_empty() {
+            0
+        } else {
+            if let Some(last) = self.segments.back() {
+                last.offset + self.options.file_size
+            } else {
+                unreachable!("Should-not-reach-here")
+            }
+        };
+        let dir = self.options.wal_paths.first()?;
+        let path = Path::new(&dir.path);
+        let path = path.join(LogSegmentFile::format(offset));
+        Some(LogSegmentFile::new(
+            offset,
+            path.to_str()?,
+            self.options.file_size,
+            segment::Medium::SSD,
+        ))
+    }
+
+    fn acquire_writable_segment(&mut self) -> Option<LogSegmentFile> {
+        let mut create = true;
+        if let Some(file) = self.segments.back() {
+            if !file.is_full() {
+                create = false;
+            }
+        }
+
+        if create {
+            self.alloc_segment()
+        } else {
+            // Reuse previously allocated segment file since it's not full yet.
+            self.segments.pop_back()
+        }
+    }
+
     pub(crate) fn run(&mut self) -> Result<(), StoreError> {
         self.load()?;
 
+        // let (tx, rx) = tokio::sync::oneshot::channel();
+        self.launch_indexer()?;
+
         let io_depth = self.poll_ring.params().sq_entries();
         let mut in_flight_requests = 0;
+
+        let wal_dir = self
+            .options
+            .wal_paths
+            .first()
+            .expect("Failed to acquire tier-0 WAL directory")
+            .clone();
+        let wal_path = Path::new(&wal_dir.path);
+
+        let file_size = self.options.file_size;
+
+        let mut current_segment = self
+            .acquire_writable_segment()
+            .ok_or(StoreError::AllocLogSegment)?;
+        current_segment.open()?;
+
+        let mut next_segment =
+            LogSegmentFile::with_offset(wal_path, current_segment.offset + file_size, file_size)
+                .ok_or(StoreError::AllocLogSegment)?;
+
+        let mut pos = current_segment.offset + current_segment.written;
+
+        let mut io_tasks: BTreeMap<u64, u32> = BTreeMap::new();
+
         loop {
             loop {
                 if in_flight_requests >= io_depth {
                     break;
                 }
+
+                // if the log segment file is full, break loop.
 
                 if let Ok(_) = self.receiver.try_recv() {
                     in_flight_requests += 1;
@@ -192,6 +284,7 @@ impl IO {
                 }
             }
 
+            // Reap completed IO tasks
             if let Ok(_reaped) = self.poll_ring.submit_and_wait(1) {
                 let mut completion = self.poll_ring.completion();
                 while let Some(_cqe) = completion.next() {
@@ -214,11 +307,13 @@ impl AsRawFd for IO {
 
 #[cfg(test)]
 mod tests {
+    use std::error::Error;
     use std::fs::File;
-    use std::{error::Error, path::Path};
 
     use std::env;
     use uuid::Uuid;
+
+    use crate::io::segment::LogSegmentFile;
 
     #[test]
     fn test_load_wals() -> Result<(), Box<dyn Error>> {
@@ -236,7 +331,7 @@ mod tests {
         let files: Vec<_> = (0..10)
             .into_iter()
             .map(|i| {
-                let f = wal_dir.join(format!("file-{}", i));
+                let f = wal_dir.join(LogSegmentFile::format(i * 100));
                 File::create(f.as_path())
             })
             .flatten()

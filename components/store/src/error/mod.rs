@@ -18,11 +18,20 @@ pub enum StoreError {
     #[error("Request path `{0}` is invalid")]
     InvalidPath(String),
 
+    #[error("Invalid log segment file name")]
+    InvalidLogSegmentFileName,
+
+    #[error("Failed to allocate log segment")]
+    AllocLogSegment,
+
     #[error("`{0}`")]
     NotFound(String),
 
     #[error("Internal IO error")]
     IO(#[from] std::io::Error),
+
+    #[error("System error with errno: `{0}`")]
+    System(i32),
 
     #[error("Create to create I/O Uring instance")]
     IoUring,

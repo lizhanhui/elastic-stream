@@ -2,7 +2,9 @@
     "cSpell.words": [
         "byteorder",
         "Deque",
+        "errno",
         "fallocate",
+        "fcntl",
         "IOPOLL",
         "libc",
         "mkdirs",
