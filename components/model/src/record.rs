@@ -9,7 +9,6 @@ pub struct Record {
     properties: HashMap<String, String>,
     body: Bytes,
 }
-
 #[derive(Debug, Clone)]
 pub struct RecordBatch {
     stream_id: i64,
@@ -73,6 +72,16 @@ impl Record {
     pub fn add_header(&mut self, key: crate::header::Common, value: String) -> Option<String> {
         self.headers.add_header(key, value)
     }
+
+    /// Returns a iterator that iterates over the headers.
+    pub fn headers_iter(&self) -> impl Iterator<Item = (&crate::header::Common, &String)> {
+        self.headers.iter()
+    }
+
+    /// Returns a iterator that iterates over the properties.
+    pub fn properties_iter(&self) -> impl Iterator<Item = (&String, &String)> {
+        self.properties.iter()
+    }
 }
 
 impl RecordBatch {
@@ -90,6 +99,10 @@ impl RecordBatch {
 
     pub fn stream_id(&self) -> i64 {
         self.stream_id
+    }
+
+    pub fn base_timestamp(&self) -> i64 {
+        self.base_timestamp
     }
 
     pub fn records(&self) -> &Vec<Record> {
