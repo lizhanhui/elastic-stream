@@ -1,14 +1,17 @@
 package client
 
 import (
+	"io"
 	"sync"
 )
 
-// clientStream is the state for a single stream
+// stream is the state for a single stream
 type stream struct {
 	cc *Conn
 
-	ID uint32
+	id uint32
+	rp io.PipeReader
+	wp io.PipeReader
 
 	abortOnce sync.Once
 	abort     chan struct{} // closed to signal stream should end immediately
