@@ -2,7 +2,6 @@ use crate::{error::RecordError, header::Headers};
 use bytes::Bytes;
 use std::{collections::HashMap, error::Error};
 use chrono::prelude::*;
-
 #[derive(Debug, Clone, PartialEq)]
 pub struct Record {
     stream_id: i64,
@@ -14,6 +13,7 @@ pub struct Record {
 #[derive(Debug, Clone)]
 pub struct RecordBatch {
     stream_id: i64,
+    base_timestamp: i64,
     records: Vec<Record>,
 }
 
@@ -80,6 +80,7 @@ impl RecordBatch {
         Self {
             stream_id,
             records,
+            base_timestamp: 0,
         }
     }
 
@@ -115,14 +116,20 @@ impl RecordBatchBuilder {
 
     pub fn build(self) -> Result<RecordBatch, Box<dyn Error>> {
         let stream_id = self.stream_id.ok_or(RecordError::RequiredFieldMissing)?;
+        let mut base_timestamp = 0;
 
         for record in self.records.iter() {
             if record.stream_id != stream_id {
                 Err(RecordError::StreamIdMismatch)?
             }
+            if base_timestamp == 0 {
+                base_timestamp = record.created_at().unwrap_or(&"0".to_string()).parse::<i64>()?;
+            }
         }
 
-        Ok(RecordBatch::new(stream_id, self.records))
+        let mut record_batch = RecordBatch::new(stream_id, self.records);
+        record_batch.base_timestamp = base_timestamp;
+        Ok(record_batch)
     }
 }
 
@@ -278,6 +285,7 @@ mod tests {
               .with_record_id("123".to_string())
               .build()
               .unwrap();
+         let base_timestamp = record1.created_at().unwrap().parse::<i64>().unwrap();
          let record2 = RecordBuilder::default()
               .with_stream_id(1)
               .with_body(Bytes::from("world"))
@@ -294,5 +302,6 @@ mod tests {
               .unwrap();
          assert_eq!(batch.stream_id(), 1);
          assert_eq!(batch.records().len(), 2);
+         assert_eq!(batch.base_timestamp, base_timestamp);
    }
 }
