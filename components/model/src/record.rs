@@ -53,6 +53,11 @@ impl Record {
         self.headers.get_header(crate::header::Common::CreatedAt)
     }
 
+    /// Returns the body of the record and take the ownership.
+    pub fn take_body(self) -> Bytes {
+        self.body
+    }
+
     pub fn body(&self) -> &Bytes {
         &self.body
     }
@@ -108,6 +113,11 @@ impl RecordBatch {
     pub fn records(&self) -> &Vec<Record> {
         &self.records
     }
+
+    // Take the ownership of the records.
+    pub fn take_records(self) -> Vec<Record> {
+        self.records
+    }
 }
 
 #[derive(Debug, Default)]
@@ -127,7 +137,7 @@ impl RecordBatchBuilder {
         self
     }
 
-    pub fn build(self) -> Result<RecordBatch, Box<dyn Error>> {
+    pub fn build(self) -> Result<RecordBatch, RecordError> {
         let stream_id = self.stream_id.ok_or(RecordError::RequiredFieldMissing)?;
         let mut base_timestamp = 0;
 
@@ -136,7 +146,10 @@ impl RecordBatchBuilder {
                 Err(RecordError::StreamIdMismatch)?
             }
             if base_timestamp == 0 {
-                base_timestamp = record.created_at().unwrap_or(&"0".to_string()).parse::<i64>()?;
+                base_timestamp = match record.created_at().unwrap_or(&"0".to_string()).parse::<i64>() {
+                    Ok(it) => it,
+                    Err(_) => return Err(RecordError::ParseHeader)
+                };
             }
         }
 
@@ -187,7 +200,7 @@ impl RecordBuilder {
         self
     }
 
-    pub fn build(self) -> Result<Record, Box<dyn Error>> {
+    pub fn build(self) -> Result<Record, RecordError> {
         let body = self.body.ok_or(RecordError::RequiredFieldMissing)?;
         let stream_id = self.stream_id.ok_or(RecordError::RequiredFieldMissing)?;
         let mut record = Record::new(stream_id, body);

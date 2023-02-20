@@ -1,0 +1,269 @@
+use std::str::FromStr;
+
+use bytes::{Bytes, Buf, BytesMut, BufMut};
+
+use chrono::Utc;
+use flatbuffers::FlatBufferBuilder;
+use protocol::flat_model::{RecordMeta, RecordBatchMeta, RecordBatchMetaArgs, RecordMetaArgs, KeyValueArgs, KeyValue};
+
+use crate::{RecordBatch, record, Record, error::DecodeError, header::Common};
+
+enum RecordMagic {
+    Magic0 = 0, // The first version of the record batch format.
+}
+
+/// FlatRecordBatch is a flattened version of RecordBatch that is used for serialization.
+/// As the storage and network layout, the schema of FlatRecordBatch with magic 0 is given below:
+///
+/// RecordBatch =>
+///  Magic => Int8
+///  Checksum => Int32
+///  RecordsCount => Int32
+///  MetaLength => Int32
+///  Meta => RecordBatchMeta
+///  Records => [Record]
+/// 
+/// The record scheam is given below:
+/// Record =>
+///   MetaLength => Int32
+///   BodyLength => Int32
+///   Meta => RecordMeta
+///   Body => Bytes
+/// 
+/// The RecordMeta and RecordBatchMeta are under the layout of the flatbuffers schema, other contents are mananged by ourselves.
+#[derive(Debug, Default)]
+struct FlatRecordBatch {
+    magic: Option<i8>,
+    checksum: Option<i32>,
+    meta_buffer: Bytes,
+    records: Vec<FlatRecord>,
+}
+
+impl FlatRecordBatch {
+    /// Converts a RecordBatch to a FlatRecordBatch.
+    pub fn init_from_struct(record_batch: RecordBatch) -> Self {
+        // Build up a serialized buffer for the specfic record_batch.
+        // Initialize it with a capacity of 1024 bytes.
+        let mut builder = FlatBufferBuilder::with_capacity(1024);
+
+        // Make a RecordBatchMeta
+        let args = RecordBatchMetaArgs {
+            stream_id: record_batch.stream_id(),
+            base_timestamp: record_batch.base_timestamp(),
+            // TODO: add other meta fields
+            ..Default::default()
+        };
+
+        // Serialize the data to the FlatBuffer
+        // The returned value is an offset used to track the location of this serializaed data.
+        let record_batch_meta_offset = RecordBatchMeta::create(&mut builder, &args);
+
+        // Serialize the root of the object, without providing a file identifier.
+        builder.finish(record_batch_meta_offset, None);
+
+        let result_buf = builder.finished_data();
+
+        let mut flat_record_batch = FlatRecordBatch {
+            magic: Some(RecordMagic::Magic0 as i8),
+            checksum: None, // TODO: calculate the checksum later
+            meta_buffer: Bytes::copy_from_slice(result_buf),
+            records: Vec::new()
+        };
+
+        let base_timestamp = record_batch.base_timestamp();
+
+        for (index, record) in record_batch.take_records().into_iter().enumerate() {
+            // Reuse the builder
+            builder.reset();
+
+            let mut headers = Vec::new();
+            let mut properties = Vec::new();
+            for (key, value) in record.headers_iter() {
+                let args = KeyValueArgs {
+                    key: Some(builder.create_string(&key.to_string())),
+                    value: Some(builder.create_string(value)),
+                };
+                headers.push(KeyValue::create(&mut builder, &args));
+            }
+
+            for (key, value) in record.properties_iter() {
+                let args = KeyValueArgs {
+                    key: Some(builder.create_string(key)),
+                    value: Some(builder.create_string(value)),
+                };
+                properties.push(KeyValue::create(&mut builder, &args));
+            }
+
+            let now = Utc::now().timestamp();
+            let record_timestamp = record.created_at().map_or(now, |ts| ts.parse().unwrap_or(now));
+
+            let args = RecordMetaArgs {
+                offset_delta: index as i32,
+                timestamp_delta: (record_timestamp - base_timestamp) as i32,
+                headers: Some(builder.create_vector(headers.as_slice())),
+                properties: Some(builder.create_vector(properties.as_slice())),
+            };
+
+            let record_meta_offset = RecordMeta::create(&mut builder, &args);
+            builder.finish(record_meta_offset, None);
+            let result_buf = builder.finished_data();
+
+            let flat_record = FlatRecord {
+                meta_buffer: Bytes::copy_from_slice(result_buf),
+                body: record.take_body(),
+            };
+            flat_record_batch.records.push(flat_record);
+        }
+
+        flat_record_batch
+    }
+
+    /// Inits a FlatRecordBatch from a buffer of bytes received from storage or network layer.
+    /// TODO: Handle the error case.
+    pub fn init_from_buf(mut buf: Bytes) -> Self {
+        // Read the magic
+        let magic = buf.get_i8();
+
+        // Read the checksum
+        let checksum = buf.get_i32();
+        
+        // Read the records count
+        let records_count = buf.get_i32();
+
+        // Read the meta length
+        let meta_len = buf.get_i32();
+    
+        // Read the meta buffer
+        let meta_buffer = buf.slice(..meta_len as usize);
+
+        let mut flat_record_batch = FlatRecordBatch {
+            magic: Some(magic),
+            checksum: Some(checksum),
+            meta_buffer,
+            records: Vec::new()
+        };
+
+        for _ in 0..records_count {
+            // Read the meta length
+            let meta_len = buf.get_i32();
+            
+            // Read the body length
+            let body_len = buf.get_i32();
+
+            // Read the meta buffer
+            let meta_buffer = buf.slice(..meta_len as usize);
+
+            // Read the body buffer
+            let body = buf.slice(..body_len as usize);
+
+            let flat_record = FlatRecord {
+                meta_buffer,
+                body,
+            };
+            flat_record_batch.records.push(flat_record);
+        };
+
+        flat_record_batch
+
+    }
+
+    pub fn encode(self) -> Vec<Bytes> {
+        let mut bytes_vec = Vec::new();
+        
+        // Store the Magic to MetaLength
+        let mut basic_part = BytesMut::with_capacity(13);
+        basic_part.put_i8(self.magic.unwrap_or(0));
+        basic_part.put_i32(self.checksum.unwrap_or(0));
+        basic_part.put_i32(self.records.len() as i32);
+        basic_part.put_i32(self.meta_buffer.len() as i32);
+        
+        bytes_vec.push(basic_part.freeze());
+        bytes_vec.push(self.meta_buffer);
+
+        for record in self.records {
+            let mut meta_part = BytesMut::with_capacity(8);
+            meta_part.put_i32(record.meta_buffer.len() as i32);
+            meta_part.put_i32(record.body.len() as i32);
+
+            bytes_vec.push(meta_part.freeze());
+            bytes_vec.push(record.meta_buffer);
+            bytes_vec.push(record.body);
+        }
+
+        bytes_vec
+    }
+
+    pub fn decode(self) -> Result<RecordBatch, DecodeError> {
+        // TODO: Validate the checksum and do decode according to the magic
+        let mut record_batch_builder = RecordBatch::new_builder();
+
+        let batch_meta = root_as_record_batch_meta_unchecked(self.meta_buffer.as_ref());
+        let stream_id = batch_meta.stream_id();
+        record_batch_builder = record_batch_builder.with_stream_id(stream_id);
+        
+        for flat_record in self.records {
+            let record_meta = root_as_record_meta_unchecked(flat_record.meta_buffer.as_ref());
+            let mut record = Record::new_builder()
+                            .with_stream_id(stream_id)
+                            .with_body(flat_record.body)
+                            .build()?;
+
+            if let Some(properties) = record_meta.properties() {
+                for property in properties {
+                    if let Some(key) = property.key() {
+                        if let Some(value) = property.value() {
+                            record.add_property(key.to_string(), value.to_string());
+                        }
+                    }
+                }
+            }
+            
+            if let Some(headers) = record_meta.headers() {
+                for header in headers {
+                    if let (Some(key), Some(value)) = (header.key(), header.value()) {
+                        if let Ok(header_key) = Common::from_str(key) {
+                            record.add_header(header_key, value.to_string());
+                        }
+                    }
+                }
+            }
+            record_batch_builder = record_batch_builder.add_record(record);
+        }
+        let record_batch = record_batch_builder.build()?;
+        Ok(record_batch)
+    }
+    
+}
+
+/// FlatRecord is a flattened version of Record that is used for serialization and zero deserialization.
+#[derive(Debug, Default)]
+struct FlatRecord {
+    meta_buffer: Bytes,
+    body: Bytes,
+}
+
+/// Verifies that a buffer of bytes contains a `RecordBatchMeta` and returns it.
+/// For this unchecked behavior to be maximally peformant, use unchecked function
+fn root_as_record_batch_meta(buf: &[u8]) -> Result<RecordBatchMeta, flatbuffers::InvalidFlatbuffer> {
+    flatbuffers::root::<RecordBatchMeta>(buf)
+}
+
+/// Assumes, without verification, that a buffer of bytes contains a RecordBatchMeta and returns it.
+/// # Safety
+/// Callers must trust the given bytes do indeed contain a valid `RecordBatchMeta`.
+fn root_as_record_batch_meta_unchecked(buf: &[u8]) -> RecordBatchMeta {
+    unsafe { flatbuffers::root_unchecked::<RecordBatchMeta>(buf) }
+}
+
+/// Verifies that a buffer of bytes contains a `RecordMeta` and returns it.
+/// For this unchecked behavior to be maximally peformant, use unchecked function
+fn root_as_record_meta(buf: &[u8]) -> Result<RecordMeta, flatbuffers::InvalidFlatbuffer> {
+    flatbuffers::root::<RecordMeta>(buf)
+}
+
+/// Assumes, without verification, that a buffer of bytes contains a RecordMeta and returns it.
+/// # Safety
+/// Callers must trust the given bytes do indeed contain a valid `RecordMeta`.
+fn root_as_record_meta_unchecked(buf: &[u8]) -> RecordMeta {
+    unsafe { flatbuffers::root_unchecked::<RecordMeta>(buf) }
+}
