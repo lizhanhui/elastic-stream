@@ -337,6 +337,11 @@ func (s *Server) Name() string {
 	return s.cfg.Name
 }
 
+// Context returns the context of server.
+func (s *Server) Context() context.Context {
+	return s.ctx
+}
+
 // IsClosed checks whether server is closed or not.
 func (s *Server) IsClosed() bool {
 	return !s.started.Load()
