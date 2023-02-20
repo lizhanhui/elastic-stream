@@ -1,6 +1,12 @@
 package client
 
-// Client provides and manages a session with Elastic Storage
+import (
+	"time"
+)
+
+// A Client is used to communicate with the Elastic Storage
+// TODO
 type Client struct {
-	// TODO
+	Transport Transport
+	Timeout   time.Duration
 }
