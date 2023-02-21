@@ -18,6 +18,7 @@ enum RecordMagic {
 /// As the storage and network layout, the schema of FlatRecordBatch with magic 0 is given below:
 ///
 /// RecordBatch =>
+///  TotalLen => Int32
 ///  Magic => Int8
 ///  Checksum => Int32
 ///  RecordsCount => Int32
@@ -125,10 +126,18 @@ impl FlatRecordBatch {
     /// Inits a FlatRecordBatch from a buffer of bytes received from storage or network layer.
     /// TODO: Handle the error case.
     pub fn init_from_buf(mut buf: Bytes) -> Result<Self, DecodeError> {
+        if buf.len() < 4 {
+            return Err(DecodeError::DataLengthMismatch)
+        }
         // Backup the buffer for the slice operation.
         let buf_for_slice = buf.slice(0..);
 
         let mut cur_ptr = 0;
+        // Read the total length
+        let total_len = buf.get_i32();
+        if total_len as usize - 4 != buf.len() {
+            return Err(DecodeError::DataLengthMismatch)
+        }
         // Read the magic
         let magic = buf.get_i8();
         // Read the checksum
@@ -138,7 +147,7 @@ impl FlatRecordBatch {
         // Read the meta length
         let meta_len = buf.get_i32();
 
-        cur_ptr = cur_ptr + 1 + 4 + 4 + 4;
+        cur_ptr += 1 + 4 + 4 + 4 + 4;
         // Read the meta buffer
         let meta_buffer = buf_for_slice.slice(cur_ptr..(cur_ptr + meta_len as usize));
 
@@ -159,16 +168,16 @@ impl FlatRecordBatch {
             // Read the body length
             let body_len = buf.get_i32();
 
-            cur_ptr = cur_ptr + 4 + 4;
+            cur_ptr += 4 + 4;
             // Read the meta buffer
             let meta_buffer = buf_for_slice.slice(cur_ptr..(cur_ptr + meta_len as usize));
             buf.advance(meta_len as usize);
-            cur_ptr = cur_ptr + meta_len as usize;
+            cur_ptr += meta_len as usize;
 
             // Read the body buffer
             let body = buf_for_slice.slice(cur_ptr..(cur_ptr + body_len as usize));
             buf.advance(body_len as usize);
-            cur_ptr = cur_ptr + body_len as usize;
+            cur_ptr += body_len as usize;
 
             let flat_record = FlatRecord { meta_buffer, body };
             flat_record_batch.records.push(flat_record);
@@ -179,26 +188,33 @@ impl FlatRecordBatch {
 
     pub fn encode(self) -> Vec<Bytes> {
         let mut bytes_vec = Vec::new();
-
+        let mut total_len = 0;
+        let meta_len = self.meta_buffer.len();
+        let records_count = self.records.len();
         // Store the Magic to MetaLength
-        let mut basic_part = BytesMut::with_capacity(13);
-        basic_part.put_i8(self.magic.unwrap_or(0));
-        basic_part.put_i32(self.checksum.unwrap_or(0));
-        basic_part.put_i32(self.records.len() as i32);
-        basic_part.put_i32(self.meta_buffer.len() as i32);
-
-        bytes_vec.push(basic_part.freeze());
         bytes_vec.push(self.meta_buffer);
+        total_len += meta_len;
 
         for record in self.records {
             let mut meta_part = BytesMut::with_capacity(8);
             meta_part.put_i32(record.meta_buffer.len() as i32);
             meta_part.put_i32(record.body.len() as i32);
 
+            total_len += 8 + record.meta_buffer.len() + record.body.len();
             bytes_vec.push(meta_part.freeze());
             bytes_vec.push(record.meta_buffer);
             bytes_vec.push(record.body);
         }
+
+        total_len += 17;
+        let mut basic_part = BytesMut::with_capacity(17);
+        basic_part.put_i32(total_len as i32);
+        basic_part.put_i8(self.magic.unwrap_or(0));
+        basic_part.put_i32(self.checksum.unwrap_or(0));
+        basic_part.put_i32(records_count as i32);
+        basic_part.put_i32(meta_len as i32);
+
+        bytes_vec.insert(0, basic_part.freeze());
 
         bytes_vec
     }
