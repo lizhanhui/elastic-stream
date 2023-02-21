@@ -5,7 +5,7 @@ use std::{
 
 use crate::{
     error::{PutError, StoreError},
-    io,
+    io::{self, IoTask},
     ops::{put::PutResult, Get, Put, Scan},
     option::{ReadOptions, WriteOptions},
     Record, Store,
@@ -19,7 +19,7 @@ use tokio::sync::oneshot;
 #[derive(Clone)]
 pub struct ElasticStore {
     /// The channel for server layer to communicate with storage.
-    tx: Sender<()>,
+    tx: Sender<IoTask>,
 
     /// Expose underlying I/O Uring FD so that its worker pool may be shared with
     /// server layer I/O Uring instances.

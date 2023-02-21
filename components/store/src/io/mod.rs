@@ -2,11 +2,12 @@ mod segment;
 
 use crate::error::StoreError;
 use crate::option::WalPath;
+use bytes::Bytes;
 use crossbeam::channel::{Receiver, Sender};
-use segment::{LogSegmentFile, Status, TimeRange};
+use io_uring::{opcode::Write, types};
+use segment::LogSegmentFile;
 use slog::{error, info, trace, warn, Logger};
 use std::{
-    cmp::Ordering,
     collections::{BTreeMap, VecDeque},
     os::fd::AsRawFd,
     path::Path,
@@ -59,6 +60,31 @@ impl Default for Options {
     }
 }
 
+pub(crate) struct ReadTask {
+    stream_id: u64,
+    offset: u64,
+}
+
+pub(crate) struct WriteTask {
+    stream_id: u64,
+    offset: u64,
+    buffer: Bytes,
+}
+
+pub(crate) enum IoTask {
+    Read(ReadTask),
+    Write(WriteTask),
+}
+
+#[repr(u8)]
+pub(crate) enum RecordType {
+    Zero = 0,
+    Full = 1,
+    First = 2,
+    Middle = 3,
+    Last = 4,
+}
+
 pub(crate) struct IO {
     options: Options,
 
@@ -86,8 +112,8 @@ pub(crate) struct IO {
     /// properly supported by the instance armed with the `IOPOLL` feature.
     ring: io_uring::IoUring,
 
-    pub(crate) sender: Sender<()>,
-    receiver: Receiver<()>,
+    pub(crate) sender: Sender<IoTask>,
+    receiver: Receiver<IoTask>,
     log: Logger,
 
     segments: VecDeque<LogSegmentFile>,
@@ -278,7 +304,41 @@ impl IO {
 
                 // if the log segment file is full, break loop.
 
-                if let Ok(_) = self.receiver.try_recv() {
+                if let Ok(io_task) = self.receiver.try_recv() {
+                    match io_task {
+                        IoTask::Read(ReadTask { stream_id, offset }) => {}
+                        IoTask::Write(WriteTask {
+                            stream_id,
+                            offset,
+                            buffer,
+                        }) => {
+                            let ptr = pos;
+                            let file_offset = pos - current_segment.offset;
+                            if file_offset > current_segment.size {}
+
+                            let sqe = Write::new(
+                                types::Fd(
+                                    current_segment
+                                        .fd
+                                        .expect("LogSegmentFile should have opened"),
+                                ),
+                                buffer.as_ptr(),
+                                buffer.len() as u32,
+                            )
+                            .offset64(file_offset as libc::off_t)
+                            .build()
+                            .user_data(ptr);
+                            io_tasks.insert(ptr, buffer.len() as u32);
+                            unsafe {
+                                self.poll_ring
+                                    .submission()
+                                    .push(&sqe)
+                                    .map_err(|e| StoreError::IoUring)?
+                            };
+
+                            pos += buffer.len() as u64;
+                        }
+                    }
                     in_flight_requests += 1;
                     todo!("Convert item to IO task");
                 }
