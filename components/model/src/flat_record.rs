@@ -373,4 +373,14 @@ mod tests {
         assert_eq!(record_batch.records()[0].keys(), Some(&"foo bar".to_string()));
         assert_eq!(record_batch.records()[1].keys(), Some(&"foo bar".to_string()));
     }
+
+    #[test]
+    fn test_decode_error() {
+        let mut bytes_mut = BytesMut::with_capacity(10);
+        bytes_mut.put_i32(1024); // Length
+        bytes_mut.put_i32(10); // Data
+
+        let result = FlatRecordBatch::init_from_buf(bytes_mut.freeze());
+        assert_eq!(result.is_err(), true);
+    }
 }
