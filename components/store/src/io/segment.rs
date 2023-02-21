@@ -43,6 +43,11 @@ impl TimeRange {
     }
 }
 
+/// `LogSegmentFile` consists of fixed length blocks, which are groups of variable-length records.
+///
+/// The writer writes and reader reads in chunks of blocks. `BlockSize` are normally multiple of the
+/// underlying storage block size, which is medium and cloud-vendor specific. By default, `BlockSize` is
+/// `256KiB`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct LogSegmentFile {
     pub(crate) offset: u64,
