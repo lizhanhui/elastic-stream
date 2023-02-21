@@ -1,0 +1,44 @@
+name: Deploy to AWS EKS
+
+on:
+  pull_request:
+    branches: [ "main" ]
+    types:
+      - closed
+
+jobs:
+  deploy:
+    strategy:
+      matrix:
+        go-version: [ "1.19" ]
+        platform: [ "ubuntu-latest" ]
+    runs-on: ${{ matrix.platform }}
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+    - name: Go Cache
+      uses: actions/cache@v3
+      with:
+        path: .go/cache
+        key: ${{matrix.platform}}-${{matrix.go-version}}-go-build
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v1
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: us-east-1
+    - name: Login to Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v1
+    - name: Build images
+      run: make manifest-list GO_VERSION=${{ matrix.go-version }} VERSION=latest
+    - name: Deploy
+      uses: safe2008/eks-actions@v0.0.4
+      env:
+        aws_access_key_id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws_secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws_region: us-east-1
+        cluster_name: Storage
+      with:
+        args: |
+          kubectl apply -f distribution/cloud/pm.yaml

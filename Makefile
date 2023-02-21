@@ -293,8 +293,6 @@ manifest-list: all-push
 	for bin in $(BINS); do                                                     \
 	    platforms=$$(echo $(ALL_PLATFORMS) | sed 's/ /,/g');                   \
 	    bin/tool/manifest-tool                                                 \
-	        --username=AWS                                                     \
-	        --password=$$(aws ecr get-login-password --region us-east-1)       \
 	        push from-args                                                     \
 	        --platforms "$$platforms"                                          \
 	        --template $(REGISTRY)/$$bin:$(VERSION)__OS_ARCH                   \
