@@ -53,8 +53,10 @@ impl FlatRecordBatch {
         let args = RecordBatchMetaArgs {
             stream_id: record_batch.stream_id(),
             base_timestamp: record_batch.base_timestamp(),
-            // TODO: add other meta fields
-            ..Default::default()
+            magic: RecordMagic::Magic0 as i8,
+            last_offset_delta: record_batch.records().len() as i32,
+            base_offset: 0, // The base offset will be set by the storage.
+            flags: 0, // We now only support the default flag.
         };
 
         // Serialize the data to the FlatBuffer
@@ -68,7 +70,7 @@ impl FlatRecordBatch {
 
         let mut flat_record_batch = FlatRecordBatch {
             magic: Some(RecordMagic::Magic0 as i8),
-            checksum: None, // TODO: calculate the checksum later
+            checksum: None, // Checksum will be calculated later, we don't need it now.
             meta_buffer: Bytes::copy_from_slice(result_buf),
             records: Vec::new(),
         };
@@ -124,7 +126,6 @@ impl FlatRecordBatch {
     }
 
     /// Inits a FlatRecordBatch from a buffer of bytes received from storage or network layer.
-    /// TODO: Handle the error case.
     pub fn init_from_buf(mut buf: Bytes) -> Result<Self, DecodeError> {
         if buf.len() < 4 {
             return Err(DecodeError::DataLengthMismatch)
@@ -141,7 +142,7 @@ impl FlatRecordBatch {
         // Read the magic
         let magic = buf.get_i8();
         // Read the checksum
-        let checksum = buf.get_i32();
+        let checksum = buf.get_i32(); // TODO: Verify the checksum
         // Read the records count
         let records_count = buf.get_i32();
         // Read the meta length
@@ -210,7 +211,7 @@ impl FlatRecordBatch {
         let mut basic_part = BytesMut::with_capacity(17);
         basic_part.put_i32(total_len as i32);
         basic_part.put_i8(self.magic.unwrap_or(0));
-        basic_part.put_i32(self.checksum.unwrap_or(0));
+        basic_part.put_i32(self.checksum.unwrap_or(0)); // TODO: Calculate the checksum
         basic_part.put_i32(records_count as i32);
         basic_part.put_i32(meta_len as i32);
 
@@ -220,7 +221,6 @@ impl FlatRecordBatch {
     }
 
     pub fn decode(self) -> Result<RecordBatch, DecodeError> {
-        // TODO: Validate the checksum and do decode according to the magic
         let mut record_batch_builder = RecordBatch::new_builder();
 
         let batch_meta = root_as_record_batch_meta_unchecked(self.meta_buffer.as_ref());
