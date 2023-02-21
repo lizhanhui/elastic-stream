@@ -329,6 +329,32 @@ func TestNewConfig(t *testing.T) {
 	}
 }
 
+func TestConfigFromEnv(t *testing.T) {
+	re := require.New(t)
+
+	t.Setenv("PM_NAME", "env-test-name")
+	t.Setenv("PM_ETCD_INITIALCLUSTERTOKEN", "env-test-token")
+	t.Setenv("PM_LOG_ZAP_ENCODERCONFIG_MESSAGEKEY", "env-test-msg-key")
+	t.Setenv("PM_LOG_ZAP_DISABLECALLER", "true")
+	t.Setenv("PM_ETCD_TICKMS", "4321")
+
+	config, err := NewConfig([]string{
+		"--config=./test/test-config.toml",
+		"--advertise-peer-urls=cmd-test-advertise-peer-urls",
+	})
+	re.NoError(err)
+
+	// flag > env > config > default
+	re.Equal("cmd-test-advertise-peer-urls", config.AdvertisePeerUrls)
+	re.Equal("env-test-name", config.Name)
+	re.Equal("test-client-urls", config.ClientUrls)
+
+	re.Equal("env-test-token", config.Etcd.InitialClusterToken)
+	re.Equal("env-test-msg-key", config.Log.Zap.EncoderConfig.MessageKey)
+	re.Equal(true, config.Log.Zap.DisableCaller)
+	re.Equal(uint(4321), config.Etcd.TickMs)
+}
+
 func TestConfig_Adjust(t *testing.T) {
 	hostname, e := os.Hostname()
 	require.NoError(t, e)

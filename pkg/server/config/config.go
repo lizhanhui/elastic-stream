@@ -23,6 +23,8 @@ var (
 const (
 	URLSeparator = "," // URLSeparator is the separator in fields such as PeerUrls, ClientUrls, etc.
 
+	_envPrefix = "PM"
+
 	_defaultPeerUrls                          = "http://127.0.0.1:2380"
 	_defaultClientUrls                        = "http://127.0.0.1:2379"
 	_defaultNameFormat                        = "pm-%s"
@@ -200,6 +202,11 @@ func (c *Config) Logger() *zap.Logger {
 func configure() (*viper.Viper, *pflag.FlagSet) {
 	v := viper.New()
 	fs := pflag.NewFlagSet("placement-manager", pflag.ContinueOnError)
+
+	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_", "-", "_"))
+	v.AllowEmptyEnv(true)
+	v.SetEnvPrefix(_envPrefix)
+	v.AutomaticEnv()
 
 	// Viper settings
 	for _, filePath := range _defaultConfigFilePaths {
