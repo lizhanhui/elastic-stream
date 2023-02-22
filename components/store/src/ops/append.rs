@@ -9,7 +9,10 @@ use super::Append;
 use futures::Future;
 
 #[derive(Debug)]
-pub struct AppendResult {}
+pub struct AppendResult {
+    pub(crate) stream_id: i64,
+    pub(crate) offset: i64,
+}
 
 impl<Op> Future for Append<Op>
 where

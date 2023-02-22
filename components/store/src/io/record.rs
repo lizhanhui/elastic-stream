@@ -21,5 +21,3 @@ pub(crate) enum RecordType {
     Middle = 3,
     Last = 4,
 }
-
-

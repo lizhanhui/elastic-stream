@@ -1,10 +1,12 @@
 pub(crate) mod buf;
 mod record;
 mod segment;
+mod state;
 pub(crate) mod task;
 
-use crate::error::StoreError;
+use crate::error::AppendError;
 use crate::option::WalPath;
+use crate::{error::StoreError, ops::append::AppendResult};
 use buf::RecordBuf;
 use crossbeam::channel::{Receiver, Sender};
 use io_uring::{
@@ -20,6 +22,9 @@ use std::{
     path::Path,
 };
 use task::{IoTask, WriteTask};
+
+use self::record::RecordType;
+use self::state::OpState;
 
 const DEFAULT_MAX_IO_DEPTH: u32 = 4096;
 const DEFAULT_SQPOLL_IDLE_MS: u32 = 2000;
@@ -265,13 +270,119 @@ impl IO {
             .find(|&segment| segment.offset < offset)
     }
 
+    fn receive_io_tasks(&self, in_flight_requests: &mut u32, io_depth: u32) -> Vec<IoTask> {
+        let mut pending = vec![];
+        loop {
+            if *in_flight_requests >= io_depth {
+                break;
+            }
+
+            // if the log segment file is full, break loop.
+
+            if *in_flight_requests == 0 {
+                // Block the thread until at least one IO task arrives
+                if let Ok(io_task) = self.receiver.recv() {
+                    pending.push(io_task);
+                    *in_flight_requests += 1;
+                } else {
+                    break;
+                }
+            } else if let Ok(io_task) = self.receiver.try_recv() {
+                pending.push(io_task);
+                *in_flight_requests += 1;
+            } else {
+                break;
+            }
+        }
+        pending
+    }
+
+    fn to_sqe(
+        &mut self,
+        pending: Vec<IoTask>,
+        tag: &mut u64,
+        pos: &mut u64,
+        alignment: u32,
+        tasks: &mut HashMap<u64, OpState>,
+    ) -> Vec<squeue::Entry> {
+        pending
+            .into_iter()
+            .flat_map(|io_task| match io_task {
+                IoTask::Read(read_task) => {
+                    let segment = self
+                        .segment_file_of(read_task.offset, read_task.len)
+                        .ok_or(StoreError::AllocLogSegment)?;
+
+                    let mut record_buf = RecordBuf::new();
+                    record_buf.alloc(read_task.len as usize, alignment as usize)?;
+                    let buf = record_buf
+                        .write_buf()
+                        .expect("Should have allocated aligned memory for read");
+                    let ptr = buf.ptr;
+                    let state = OpState {
+                        task: io_task,
+                        record_buf,
+                    };
+                    tasks.insert(*tag, state);
+
+                    let sqe = opcode::Read::new(
+                        types::Fd(segment.fd.ok_or(StoreError::AllocLogSegment)?),
+                        ptr,
+                        read_task.len,
+                    )
+                    .offset((read_task.offset - segment.offset) as i64)
+                    .build()
+                    .user_data(*tag);
+                    *tag += 1;
+                    Ok::<squeue::Entry, StoreError>(sqe)
+                }
+                IoTask::Write(task) => {
+                    if let Some(segment) = self.acquire_writable_segment() {
+                        let file_offset = *pos - segment.offset;
+                        let buf_len = task.buffer.len();
+                        if file_offset + buf_len as u64 > segment.size {
+                            todo!("Switch to next log segment file");
+                        }
+
+                        let mut record_buf = RecordBuf::new();
+                        record_buf.alloc(buf_len, alignment as usize)?;
+                        let buf = record_buf.write_buf().ok_or(StoreError::MemoryAlignment)?;
+                        unsafe { std::ptr::copy(task.buffer.as_ptr(), buf.ptr, buf_len) };
+
+                        let sqe = Write::new(
+                            types::Fd(segment.fd.expect("LogSegmentFile should have opened")),
+                            buf.ptr,
+                            task.buffer.len() as u32,
+                        )
+                        .offset64(file_offset as libc::off_t)
+                        .build()
+                        .user_data(*tag);
+
+                        // Track state of write op
+                        let state = OpState {
+                            task: IoTask::Write(task),
+                            record_buf,
+                        };
+                        tasks.insert(*tag, state);
+                        *tag += 1;
+                        *pos += buf_len as u64;
+                        Ok(sqe)
+                    } else {
+                        error!(self.log, "Failed to allocate ");
+                        Err(StoreError::AllocLogSegment)
+                    }
+                }
+            })
+            .collect()
+    }
+
     pub(crate) fn run(io: RefCell<IO>) -> Result<(), StoreError> {
         io.borrow_mut().load()?;
 
         // let (tx, rx) = tokio::sync::oneshot::channel();
         io.borrow().launch_indexer()?;
 
-        let read_alignment = io
+        let alignment = io
             .borrow()
             .options
             .wal_paths
@@ -297,123 +408,84 @@ impl IO {
 
         let mut pos = {
             let mut io_ref = io.borrow_mut();
-            let current_segment = io_ref
+            let segment = io_ref
                 .acquire_writable_segment()
                 .ok_or(StoreError::AllocLogSegment)?;
-            current_segment.open()?;
-            current_segment.offset + current_segment.written
+            segment.open()?;
+            segment.offset + segment.written
         };
 
-        let mut write_tasks: BTreeMap<u64, u32> = BTreeMap::new();
-        let mut read_tasks = HashMap::new();
+        // Mapping between tag to OpState
+        let mut tasks = HashMap::new();
+        let mut tag: u64 = 0;
 
+        // Entries that are originated from completed ones.
+        let mut generated_entries = VecDeque::new();
+
+        // Entries should be submitted to poll_uring this round.
+        let mut pending_entries = vec![];
+
+        // Main loop
         loop {
-            let mut pending = vec![];
-            loop {
-                if in_flight_requests >= io_depth {
-                    break;
-                }
+            // Move as many generated entries to pending as possible
+            {
+                loop {
+                    if in_flight_requests >= io_depth {
+                        break;
+                    }
 
-                // if the log segment file is full, break loop.
-
-                if in_flight_requests == 0 {
-                    if let Ok(io_task) = io.borrow().receiver.recv() {
-                        pending.push(io_task);
+                    if let Some(entry) = generated_entries.pop_front() {
+                        pending_entries.push(entry);
                         in_flight_requests += 1;
                     } else {
                         break;
                     }
-                } else if let Ok(io_task) = io.borrow().receiver.try_recv() {
-                    pending.push(io_task);
-                    in_flight_requests += 1;
-                } else {
-                    break;
                 }
             }
 
-            let entries: Vec<_> = pending
-                .into_iter()
-                .flat_map(|io_task| match io_task {
-                    IoTask::Read(read_task) => {
-                        let io_ref = io.borrow();
-                        let segment = io_ref
-                            .segment_file_of(read_task.offset, read_task.len)
-                            .ok_or(StoreError::AllocLogSegment)?;
+            // Receive IO tasks from channel
+            {
+                let pending = io
+                    .borrow()
+                    .receive_io_tasks(&mut in_flight_requests, io_depth);
 
-                        let mut record_buf = RecordBuf::new();
-                        record_buf.alloc(read_task.len as usize, read_alignment as usize)?;
-                        let buf = record_buf
-                            .write_buf()
-                            .expect("Should have allocated aligned memory for read");
-                        let ptr = buf.ptr;
-                        read_tasks.insert(read_task, record_buf);
+                // Convert IO tasks into io_uring entries
+                let entries = io
+                    .borrow_mut()
+                    .to_sqe(pending, &mut tag, &mut pos, alignment, &mut tasks);
+                pending_entries.reserve(entries.len());
+                pending_entries.extend(entries.into_iter());
+            }
 
-                        let sqe = opcode::Read::new(
-                            types::Fd(segment.fd.ok_or(StoreError::AllocLogSegment)?),
-                            ptr,
-                            read_task.len,
-                        )
-                        .offset((read_task.offset - segment.offset) as i64)
-                        .build()
-                        .user_data(0);
-                        Ok::<squeue::Entry, StoreError>(sqe)
-                    }
-                    IoTask::Write(WriteTask {
-                        stream_id,
-                        offset,
-                        buffer,
-                        observer,
-                    }) => {
-                        let mut io_ref = io.borrow_mut();
-                        if let Some(current_segment) = io_ref.acquire_writable_segment() {
-                            let ptr = pos;
-                            let file_offset = pos - current_segment.offset;
-                            if file_offset > current_segment.size {
-                                // A few issues are still not resolved
-                                // todo!("buffer is NOT 4k-aligned for now");
-                                // todo!("Switch current log segment file");
-                            }
-
-                            let sqe = Write::new(
-                                types::Fd(
-                                    current_segment
-                                        .fd
-                                        .expect("LogSegmentFile should have opened"),
-                                ),
-                                buffer.as_ptr(),
-                                buffer.len() as u32,
-                            )
-                            .offset64(file_offset as libc::off_t)
-                            .build()
-                            .user_data(ptr);
-                            write_tasks.insert(ptr, buffer.len() as u32);
-                            pos += buffer.len() as u64;
-                            Ok(sqe)
-                        } else {
-                            Err(StoreError::AllocLogSegment)
-                        }
-                    }
-                })
-                .collect();
-
-            if !entries.is_empty() {
+            // Submit io_uring entries into submission queue, aka, SQ.
+            if !pending_entries.is_empty() {
                 unsafe {
                     io.borrow_mut()
                         .poll_ring
                         .submission()
-                        .push_multiple(&entries)
+                        .push_multiple(&pending_entries)
                         .map_err(|e| StoreError::IoUring)?
                 };
             }
 
+            // Wait complete asynchronous IO
             if let Ok(_reaped) = io.borrow().poll_ring.submit_and_wait(1) {
                 let mut io_ref = io.borrow_mut();
+                let log = io_ref.log.clone();
                 let mut completion = io_ref.poll_ring.completion();
                 loop {
-                    for _cqe in completion.by_ref() {
+                    for cqe in completion.by_ref() {
                         in_flight_requests -= 1;
-                    }
+                        let tag = cqe.user_data();
+                        if let Some(state) = tasks.remove(&tag) {
+                            if let Some(entry) = on_complete(tag, state, cqe.result(), &log) {
+                                // tasks.insert(tag, state);
 
+                                // Submit it in the next round
+                                generated_entries.push_back(entry);
+                            }
+                        }
+                    }
                     // This will flush any entries consumed in this iterator and will make available new entries in the queue
                     // if the kernel has produced some entries in the meantime.
                     completion.sync();
@@ -427,6 +499,43 @@ impl IO {
             }
         }
         Ok(())
+    }
+}
+
+///
+/// Returns additional IO operation if the requested data are splitted into multiple blocks and files.
+///
+/// # Arguments
+///
+/// * `tag` - Used to generate additional IO read if not all data are read yet.
+/// * `state` - Operation state, including original IO request, buffer and response observer.
+/// * `result` - Result code, exactly same to system call return value.
+/// * `log` - Logger instance.
+///
+fn on_complete(_tag: u64, state: OpState, result: i32, log: &Logger) -> Option<squeue::Entry> {
+    match state.task {
+        IoTask::Write(write) => {
+            if 0 == result {
+                let append_result = AppendResult {
+                    stream_id: write.stream_id,
+                    offset: write.offset,
+                };
+                if let Err(_e) = write.observer.send(Ok(append_result)) {
+                    error!(log, "Failed to write append result to oneshot channel");
+                }
+            } else {
+                if let Err(_) = write.observer.send(Err(AppendError::System(result))) {
+                    error!(log, "Failed to propagate system error {} to caller", result);
+                }
+            }
+            None
+        }
+        IoTask::Read(_read) => {
+            // Note reads performed in chunks of `BlockSize`, as a result, we have to
+            // parse `RecordType` of each records to ensure the whole requested IO has been fulfilled.
+            // If the target data spans two or more blocks, we need to generate an additional read request.
+            todo!()
+        }
     }
 }
 

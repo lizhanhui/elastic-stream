@@ -51,6 +51,9 @@ pub enum AppendError {
     #[error("Recv from oneshot channel failed")]
     ChannelRecv,
 
+    #[error("System error with errno: `{0}`")]
+    System(i32),
+
     #[error("Internal error")]
     Internal,
 }
