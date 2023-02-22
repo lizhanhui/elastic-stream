@@ -9,7 +9,7 @@ use crate::{
     io::{
         self,
         task::{
-            IoTask::{self, Read, Write},
+            IoTask::{self, Write},
             WriteTask,
         },
     },
@@ -113,14 +113,11 @@ impl ElasticStore {
         };
         let io_task = Write(task);
         if let Err(e) = self.tx.send(io_task) {
-            match e.0 {
-                Write(task) => {
-                    if let Err(e) = task.observer.send(Err(AppendError::SubmissionQueue)) {
-                        error!(self.log, "Failed to propagate error: {:?}", e);
-                    }
+            if let Write(task) = e.0 {
+                if let Err(e) = task.observer.send(Err(AppendError::SubmissionQueue)) {
+                    error!(self.log, "Failed to propagate error: {:?}", e);
                 }
-                _ => {}
-            };
+            }
         }
     }
 }

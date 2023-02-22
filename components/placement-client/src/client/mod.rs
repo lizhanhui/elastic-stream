@@ -78,9 +78,7 @@ impl PlacementClient {
     ) -> Result<response::Response, ListRangeError> {
         trace!(self.log, "list_range"; "partition-id" => partition_id);
         let (tx, rx) = oneshot::channel();
-        let request = request::Request::ListRange {
-            partition_id: partition_id,
-        };
+        let request = request::Request::ListRange { partition_id };
         self.tx.send((request, tx)).map_err(|e| {
             error!(self.log, "Failed to forward request. Cause: {:?}", e; "struct" => "Client");
             ListRangeError::Internal

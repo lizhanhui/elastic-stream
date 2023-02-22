@@ -31,5 +31,3 @@ pub(crate) enum IoTask {
     Read(ReadTask),
     Write(WriteTask),
 }
-
-fn foo() {}

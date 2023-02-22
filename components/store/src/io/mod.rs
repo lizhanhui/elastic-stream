@@ -12,16 +12,14 @@ use io_uring::{
     squeue, types,
 };
 use segment::LogSegmentFile;
-use slog::{error, info, trace, warn, Logger};
+use slog::{error, trace, warn, Logger};
 use std::{
     cell::RefCell,
     collections::{BTreeMap, HashMap, VecDeque},
     os::fd::AsRawFd,
     path::Path,
-    rc::Rc,
-    str::FromStr,
 };
-use task::{IoTask, ReadTask, WriteTask};
+use task::{IoTask, WriteTask};
 
 const DEFAULT_MAX_IO_DEPTH: u32 = 4096;
 const DEFAULT_SQPOLL_IDLE_MS: u32 = 2000;
@@ -163,11 +161,10 @@ impl IO {
             .wal_paths
             .iter()
             .rev()
-            .map(|wal_path| Path::new(&wal_path.path).read_dir())
-            .flatten()
+            .flat_map(|wal_path| Path::new(&wal_path.path).read_dir())
             .flatten() // Note Result implements FromIterator trait, so `flatten` applies and potential `Err` will be propagated.
             .flatten()
-            .map(|entry| {
+            .flat_map(|entry| {
                 if let Ok(metadata) = entry.metadata() {
                     if metadata.file_type().is_dir() {
                         warn!(self.log, "Skip {:?} as it is a directory", entry.path());
@@ -180,7 +177,7 @@ impl IO {
                                 offset,
                                 entry.path().to_str()?,
                                 metadata.len(),
-                                segment::Medium::SSD,
+                                segment::Medium::Ssd,
                             );
                             Some(log_segment_file)
                         } else {
@@ -196,7 +193,6 @@ impl IO {
                     None
                 }
             })
-            .filter_map(|f| f)
             .collect();
 
         // Sort log segment file by file name.
@@ -222,12 +218,10 @@ impl IO {
     fn alloc_segment(&mut self) -> Result<(), StoreError> {
         let offset = if self.segments.is_empty() {
             0
+        } else if let Some(last) = self.segments.back() {
+            last.offset + self.options.file_size
         } else {
-            if let Some(last) = self.segments.back() {
-                last.offset + self.options.file_size
-            } else {
-                unreachable!("Should-not-reach-here")
-            }
+            unreachable!("Should-not-reach-here")
         };
         let dir = self
             .options
@@ -240,7 +234,7 @@ impl IO {
             offset,
             path.to_str().ok_or(StoreError::AllocLogSegment)?,
             self.options.file_size,
-            segment::Medium::SSD,
+            segment::Medium::Ssd,
         );
         self.segments.push_back(segment);
         Ok(())
@@ -255,19 +249,20 @@ impl IO {
         }
 
         if create {
-            self.alloc_segment();
+            if let Err(e) = self.alloc_segment() {
+                error!(self.log, "Failed to allocate LogSegmentFile: {:?}", e);
+                return None;
+            }
         }
         // Reuse previously allocated segment file since it's not full yet.
         self.segments.back_mut()
     }
 
     fn segment_file_of(&self, offset: u64, len: u32) -> Option<&LogSegmentFile> {
-        for segment in self.segments.iter().rev() {
-            if segment.offset < offset {
-                return Some(segment);
-            }
-        }
-        None
+        self.segments
+            .iter()
+            .rev()
+            .find(|&segment| segment.offset < offset)
     }
 
     pub(crate) fn run(io: RefCell<IO>) -> Result<(), StoreError> {
@@ -328,19 +323,17 @@ impl IO {
                     } else {
                         break;
                     }
+                } else if let Ok(io_task) = io.borrow().receiver.try_recv() {
+                    pending.push(io_task);
+                    in_flight_requests += 1;
                 } else {
-                    if let Ok(io_task) = io.borrow().receiver.try_recv() {
-                        pending.push(io_task);
-                        in_flight_requests += 1;
-                    } else {
-                        break;
-                    }
+                    break;
                 }
             }
 
             let entries: Vec<_> = pending
                 .into_iter()
-                .map(|io_task| match io_task {
+                .flat_map(|io_task| match io_task {
                     IoTask::Read(read_task) => {
                         let io_ref = io.borrow();
                         let segment = io_ref
@@ -401,7 +394,6 @@ impl IO {
                         }
                     }
                 })
-                .flatten()
                 .collect();
 
             if !entries.is_empty() {
@@ -418,7 +410,7 @@ impl IO {
                 let mut io_ref = io.borrow_mut();
                 let mut completion = io_ref.poll_ring.completion();
                 loop {
-                    while let Some(_cqe) = completion.next() {
+                    for _cqe in completion.by_ref() {
                         in_flight_requests -= 1;
                     }
 

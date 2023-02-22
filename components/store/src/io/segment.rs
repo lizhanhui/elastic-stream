@@ -26,8 +26,8 @@ pub(crate) enum Status {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Medium {
-    SSD,
-    HDD,
+    Ssd,
+    Hdd,
     S3,
 }
 
@@ -102,7 +102,7 @@ impl LogSegmentFile {
             offset,
             file_path.to_str()?,
             file_size,
-            Medium::SSD,
+            Medium::Ssd,
         ))
     }
 

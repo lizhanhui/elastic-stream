@@ -1,8 +1,7 @@
 use std::{collections::HashMap, fmt};
 use strum_macros::EnumString;
 
-#[derive(Debug, Clone, Eq, PartialEq, Hash)]
-#[derive(EnumString)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash, EnumString)]
 pub enum Common {
     Keys,
     Tag,
@@ -19,6 +18,12 @@ impl fmt::Display for Common {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Headers {
     common: HashMap<Common, String>,
+}
+
+impl Default for Headers {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Headers {
@@ -55,10 +60,19 @@ mod tests {
         headers.add_header(Common::Tag, "tag".to_string());
         headers.add_header(Common::CreatedAt, "2020-01-01T00:00:00Z".to_string());
 
-        assert_eq!(headers.get_header(Common::RecordId), Some(&"record_id_123".to_string()));
-        assert_eq!(headers.get_header(Common::Keys), Some(&"key1 key2".to_string()));
+        assert_eq!(
+            headers.get_header(Common::RecordId),
+            Some(&"record_id_123".to_string())
+        );
+        assert_eq!(
+            headers.get_header(Common::Keys),
+            Some(&"key1 key2".to_string())
+        );
         assert_eq!(headers.get_header(Common::Tag), Some(&"tag".to_string()));
-        assert_eq!(headers.get_header(Common::CreatedAt), Some(&"2020-01-01T00:00:00Z".to_string()));
+        assert_eq!(
+            headers.get_header(Common::CreatedAt),
+            Some(&"2020-01-01T00:00:00Z".to_string())
+        );
     }
 
     #[test]

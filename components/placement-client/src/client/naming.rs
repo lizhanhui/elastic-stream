@@ -13,10 +13,7 @@ pub struct Endpoints {
 
 impl Endpoints {
     fn new(addrs: Vec<SocketAddr>) -> Self {
-        Self {
-            addrs: addrs,
-            index: 0,
-        }
+        Self { addrs, index: 0 }
     }
 
     pub(crate) fn current(&self) -> Option<&SocketAddr> {
@@ -38,9 +35,9 @@ impl Endpoints {
     }
 }
 
-const DNS_PREFIX: &'static str = "dns:";
-const IPV4_PREFIX: &'static str = "ipv4:";
-const IPV6_PREFIX: &'static str = "ipv6:";
+const DNS_PREFIX: &str = "dns:";
+const IPV4_PREFIX: &str = "ipv4:";
+const IPV6_PREFIX: &str = "ipv6:";
 
 impl FromStr for Endpoints {
     type Err = ClientError;
