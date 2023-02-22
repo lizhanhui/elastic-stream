@@ -28,11 +28,10 @@ impl<'a> flatbuffers::Follow<'a> for RecordBatchMeta<'a> {
 
 impl<'a> RecordBatchMeta<'a> {
   pub const VT_STREAM_ID: flatbuffers::VOffsetT = 4;
-  pub const VT_MAGIC: flatbuffers::VOffsetT = 6;
-  pub const VT_FLAGS: flatbuffers::VOffsetT = 8;
-  pub const VT_BASE_OFFSET: flatbuffers::VOffsetT = 10;
-  pub const VT_LAST_OFFSET_DELTA: flatbuffers::VOffsetT = 12;
-  pub const VT_BASE_TIMESTAMP: flatbuffers::VOffsetT = 14;
+  pub const VT_FLAGS: flatbuffers::VOffsetT = 6;
+  pub const VT_BASE_OFFSET: flatbuffers::VOffsetT = 8;
+  pub const VT_LAST_OFFSET_DELTA: flatbuffers::VOffsetT = 10;
+  pub const VT_BASE_TIMESTAMP: flatbuffers::VOffsetT = 12;
 
   #[inline]
   pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
@@ -49,7 +48,6 @@ impl<'a> RecordBatchMeta<'a> {
     builder.add_stream_id(args.stream_id);
     builder.add_last_offset_delta(args.last_offset_delta);
     builder.add_flags(args.flags);
-    builder.add_magic(args.magic);
     builder.finish()
   }
 
@@ -62,14 +60,6 @@ impl<'a> RecordBatchMeta<'a> {
     // which contains a valid value in this slot
     unsafe { self._tab.get::<i64>(RecordBatchMeta::VT_STREAM_ID, Some(0)).unwrap()}
   }
-  /// The record format version of this record batch.
-  #[inline]
-  pub fn magic(&self) -> i8 {
-    // Safety:
-    // Created from valid Table for this object
-    // which contains a valid value in this slot
-    unsafe { self._tab.get::<i8>(RecordBatchMeta::VT_MAGIC, Some(0)).unwrap()}
-  }
   /// The flags of this record batch. Each bit is used to indicate a specific flag.
   #[inline]
   pub fn flags(&self) -> i16 {
@@ -79,6 +69,7 @@ impl<'a> RecordBatchMeta<'a> {
     unsafe { self._tab.get::<i16>(RecordBatchMeta::VT_FLAGS, Some(0)).unwrap()}
   }
   /// The base offset of the batch record, also is the logical offset of the first record.
+  /// This field may be empty, since rust flatbuffers doesn't support update in place.
   #[inline]
   pub fn base_offset(&self) -> i64 {
     // Safety:
@@ -112,7 +103,6 @@ impl flatbuffers::Verifiable for RecordBatchMeta<'_> {
     use self::flatbuffers::Verifiable;
     v.visit_table(pos)?
      .visit_field::<i64>("stream_id", Self::VT_STREAM_ID, false)?
-     .visit_field::<i8>("magic", Self::VT_MAGIC, false)?
      .visit_field::<i16>("flags", Self::VT_FLAGS, false)?
      .visit_field::<i64>("base_offset", Self::VT_BASE_OFFSET, false)?
      .visit_field::<i32>("last_offset_delta", Self::VT_LAST_OFFSET_DELTA, false)?
@@ -123,7 +113,6 @@ impl flatbuffers::Verifiable for RecordBatchMeta<'_> {
 }
 pub struct RecordBatchMetaArgs {
     pub stream_id: i64,
-    pub magic: i8,
     pub flags: i16,
     pub base_offset: i64,
     pub last_offset_delta: i32,
@@ -134,7 +123,6 @@ impl<'a> Default for RecordBatchMetaArgs {
   fn default() -> Self {
     RecordBatchMetaArgs {
       stream_id: 0,
-      magic: 0,
       flags: 0,
       base_offset: 0,
       last_offset_delta: 0,
@@ -151,10 +139,6 @@ impl<'a: 'b, 'b> RecordBatchMetaBuilder<'a, 'b> {
   #[inline]
   pub fn add_stream_id(&mut self, stream_id: i64) {
     self.fbb_.push_slot::<i64>(RecordBatchMeta::VT_STREAM_ID, stream_id, 0);
-  }
-  #[inline]
-  pub fn add_magic(&mut self, magic: i8) {
-    self.fbb_.push_slot::<i8>(RecordBatchMeta::VT_MAGIC, magic, 0);
   }
   #[inline]
   pub fn add_flags(&mut self, flags: i16) {
@@ -191,7 +175,6 @@ impl core::fmt::Debug for RecordBatchMeta<'_> {
   fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
     let mut ds = f.debug_struct("RecordBatchMeta");
       ds.field("stream_id", &self.stream_id());
-      ds.field("magic", &self.magic());
       ds.field("flags", &self.flags());
       ds.field("base_offset", &self.base_offset());
       ds.field("last_offset_delta", &self.last_offset_delta());

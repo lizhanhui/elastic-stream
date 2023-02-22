@@ -21,7 +21,7 @@ enum RecordMagic {
 ///  TotalLen => Int32
 ///  Magic => Int8
 ///  Checksum => Int32
-///  RecordsCount => Int32
+///  BaseOffset => Int32
 ///  MetaLength => Int32
 ///  Meta => RecordBatchMeta
 ///  Records => [Record]
@@ -38,6 +38,10 @@ enum RecordMagic {
 struct FlatRecordBatch {
     magic: Option<i8>,
     checksum: Option<i32>,
+    // The base offset of the record batch.
+    // Note: the meta_buffer already contains the base_offset,
+    // but we need to store it here since the rust flatbuffers doesn't support update the value so far.
+    base_offset: Option<i64>,
     meta_buffer: Bytes,
     records: Vec<FlatRecord>,
 }
@@ -53,7 +57,6 @@ impl FlatRecordBatch {
         let args = RecordBatchMetaArgs {
             stream_id: record_batch.stream_id(),
             base_timestamp: record_batch.base_timestamp(),
-            magic: RecordMagic::Magic0 as i8,
             last_offset_delta: record_batch.records().len() as i32,
             base_offset: 0, // The base offset will be set by the storage.
             flags: 0, // We now only support the default flag.
@@ -71,6 +74,7 @@ impl FlatRecordBatch {
         let mut flat_record_batch = FlatRecordBatch {
             magic: Some(RecordMagic::Magic0 as i8),
             checksum: None, // Checksum will be calculated later, we don't need it now.
+            base_offset: None, // The base offset will be set by the storage.
             meta_buffer: Bytes::copy_from_slice(result_buf),
             records: Vec::new(),
         };
@@ -144,11 +148,11 @@ impl FlatRecordBatch {
         // Read the checksum
         let checksum = buf.get_i32(); // TODO: Verify the checksum
         // Read the records count
-        let records_count = buf.get_i32();
+        let base_offset = buf.get_i64();
         // Read the meta length
         let meta_len = buf.get_i32();
 
-        cur_ptr += 1 + 4 + 4 + 4 + 4;
+        cur_ptr += 1 + 4 + 4 + 8 + 4;
         // Read the meta buffer
         let meta_buffer = buf_for_slice.slice(cur_ptr..(cur_ptr + meta_len as usize));
 
@@ -159,10 +163,11 @@ impl FlatRecordBatch {
             magic: Some(magic),
             checksum: Some(checksum),
             meta_buffer,
+            base_offset: Some(base_offset as i64),
             records: Vec::new(),
         };
 
-        for _ in 0..records_count {
+        while buf.len() > 0 {
             // Read the meta length
             let meta_len = buf.get_i32();
 
@@ -191,7 +196,6 @@ impl FlatRecordBatch {
         let mut bytes_vec = Vec::new();
         let mut total_len = 0;
         let meta_len = self.meta_buffer.len();
-        let records_count = self.records.len();
         // Store the Magic to MetaLength
         bytes_vec.push(self.meta_buffer);
         total_len += meta_len;
@@ -207,12 +211,12 @@ impl FlatRecordBatch {
             bytes_vec.push(record.body);
         }
 
-        total_len += 17;
-        let mut basic_part = BytesMut::with_capacity(17);
+        total_len += 21; // The total length of the basic part
+        let mut basic_part = BytesMut::with_capacity(21);
         basic_part.put_i32(total_len as i32);
         basic_part.put_i8(self.magic.unwrap_or(0));
         basic_part.put_i32(self.checksum.unwrap_or(0)); // TODO: Calculate the checksum
-        basic_part.put_i32(records_count as i32);
+        basic_part.put_i64(self.base_offset.unwrap_or(0));
         basic_part.put_i32(meta_len as i32);
 
         bytes_vec.insert(0, basic_part.freeze());
@@ -257,6 +261,10 @@ impl FlatRecordBatch {
         }
         let record_batch = record_batch_builder.build()?;
         Ok(record_batch)
+    }
+
+    pub fn set_base_offset(&mut self, base_offset: i64) {
+        self.base_offset = Some(base_offset);
     }
 }
 
@@ -332,12 +340,15 @@ mod tests {
             .unwrap();
 
         // Init a FlatRecordBatch from original RecordBatch
-        let flat_batch = FlatRecordBatch::init_from_struct(batch);
+        let mut flat_batch = FlatRecordBatch::init_from_struct(batch);
 
         assert_eq!(flat_batch.magic, Some(0));
         assert_eq!(flat_batch.records.len(), 2);
         assert_eq!(flat_batch.records[0].body, Bytes::from("hello"));
         assert_eq!(flat_batch.records[1].body, Bytes::from("world"));
+
+        // Update the base offset
+        flat_batch.set_base_offset(1024 as i64);
 
         // Encode the above flat_batch to Vec[Bytes]
         let bytes_vec = flat_batch.encode();
@@ -348,6 +359,9 @@ mod tests {
 
         // Decode the above bytes to FlatRecordBatch
         let flat_batch = FlatRecordBatch::init_from_buf(bytes_mute.freeze()).unwrap();
+        // Test base_offset
+        assert_eq!(flat_batch.base_offset.unwrap(), 1024 as i64);
+        
         let record_batch = flat_batch.decode().unwrap();
 
         assert_eq!(record_batch.stream_id(), stream_id);
