@@ -5,7 +5,7 @@ use std::{
 
 use crate::{
     error::{PutError, StoreError},
-    io::{self, IoTask},
+    io::{self, task::IoTask},
     ops::{put::PutResult, Get, Put, Scan},
     option::{ReadOptions, WriteOptions},
     Record, Store,

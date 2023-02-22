@@ -1,13 +1,12 @@
 use bytes::Bytes;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) struct ReadTask {
     /// Offset, in term of WAL, of the record to read.
-    offset: u64,
+    pub(crate) offset: u64,
 
     /// Number of bytes to read.
-    len: u32,
-
-    buffer: *mut u8,
+    pub(crate) len: u32,
 }
 
 pub(crate) struct WriteTask {

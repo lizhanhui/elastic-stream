@@ -1,20 +1,37 @@
 //! Options of various kinds to modify their action behaviors
 //!
 
+use std::{error::Error, fs::File, os::fd::AsRawFd, path::Path};
+
+use crate::error::StoreError;
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct WalPath {
     pub(crate) path: String,
 
     /// Target size of total files under the path, in byte.
     pub(crate) target_size: u64,
+
+    /// For read, it's preferred to read expected amount of data and
+    /// reply on storage driver to merge automatically.
+    ///
+    /// Refer to https://aws.amazon.com/premiumsupport/knowledge-center/ebs-calculate-optimal-io-size/
+    pub(crate) block_size: u32,
 }
 
 impl WalPath {
-    pub fn new(path: &str, target_size: u64) -> Self {
-        Self {
+    pub fn new(path: &str, target_size: u64) -> Result<Self, StoreError> {
+        let mut dir_path = Path::new(path);
+        if !dir_path.exists() {
+            std::fs::create_dir_all(dir_path)?;
+        }
+        let file = File::open(path)?;
+        let block_size = unsafe { libc::ioctl(file.as_raw_fd(), libc::BLKSSZGET) } as u32;
+        Ok(Self {
             path: path.to_owned(),
             target_size,
-        }
+            block_size,
+        })
     }
 }
 

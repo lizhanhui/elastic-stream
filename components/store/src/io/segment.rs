@@ -1,6 +1,6 @@
 use std::{
     cmp::Ordering,
-    fs::File,
+    fs::{File, OpenOptions},
     os::{
         fd::{AsRawFd, FromRawFd, IntoRawFd, RawFd},
         unix::prelude::OpenOptionsExt,
@@ -112,7 +112,7 @@ impl LogSegmentFile {
         }
 
         // Open the file for direct read/write
-        let mut opts = std::fs::OpenOptions::new();
+        let mut opts = OpenOptions::new();
         let file = opts
             .create(true)
             .read(true)

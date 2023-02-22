@@ -35,6 +35,9 @@ pub enum StoreError {
 
     #[error("Create to create I/O Uring instance")]
     IoUring,
+
+    #[error("Memory alignment issue")]
+    MemoryAlignment,
 }
 
 #[derive(Debug, Error)]
