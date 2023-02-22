@@ -3,6 +3,8 @@ kind: Service
 metadata:
   name: pm
   namespace: placement-manager
+  labels:
+    app: placement-manager
 spec:
   clusterIP: None
   ports:
@@ -24,7 +26,7 @@ spec:
   selector:
     matchLabels:
       app: placement-manager
-  serviceName: "placement-manager"
+  serviceName: "pm"
   replicas: 3
   template:
     metadata:
@@ -47,7 +49,7 @@ spec:
             - name: pm-data
               mountPath: /data/placement-manager
           env:
-            - name: HOSTNAME
+            - name: NAME
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.name
@@ -56,13 +58,13 @@ spec:
             - name: PM_CLIENTURLS
               value: "http://0.0.0.0:2379"
             - name: PM_ADVERTISEPEERURLS
-              value: "http://$(HOSTNAME).pm:2380"
+              value: "http://$(NAME).pm:2380"
             - name: PM_ADVERTISECLIENTURLS
-              value: "http://$(HOSTNAME).pm:2379"
+              value: "http://$(NAME).pm:2379"
             - name: PM_NAME
-              value: "$(HOSTNAME)"
+              value: "$(NAME)"
             - name: PM_DATADIR
-              value: "/data/placement-manager/default.$(HOSTNAME)"
+              value: "/data/placement-manager/default.$(NAME)"
             - name: PM_INITIALCLUSTER
               value: "pm-0=http://pm-0.pm:2380,pm-1=http://pm-1.pm:2380,pm-2=http://pm-2.pm:2380"
             - name: PM_ETCD_INITIALCLUSTERTOKEN
