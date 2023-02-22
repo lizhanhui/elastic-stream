@@ -1,5 +1,7 @@
 use std::{
+    cell::RefCell,
     os::fd::{AsRawFd, RawFd},
+    rc::Rc,
     thread::{Builder, JoinHandle},
 };
 
@@ -7,7 +9,7 @@ use crate::{
     error::{PutError, StoreError},
     io::{self, task::IoTask},
     ops::{put::PutResult, Get, Put, Scan},
-    option::{ReadOptions, WriteOptions},
+    option::{ReadOptions, WalPath, WriteOptions},
     Record, Store,
 };
 use core_affinity::CoreId;
@@ -31,12 +33,19 @@ pub struct ElasticStore {
 impl ElasticStore {
     pub fn new(log: Logger) -> Result<Self, StoreError> {
         let mut opt = io::Options::default();
-        let mut io = io::IO::new(&mut opt, log.clone())?;
+
+        // Customize IO options from store options.
+        let size_10g = 10u64 * (1 << 30);
+        opt.add_wal_path(WalPath::new("/data/store", size_10g)?);
+
+        let io = io::IO::new(&mut opt, log.clone())?;
         let sharing_uring = io.as_raw_fd();
         let tx = io.sender.clone();
 
+        let io = RefCell::new(io);
+
         // IO thread will be left in detached state.
-        let _io_thread_handle = Self::with_thread("IO", move || io.run(), None)?;
+        let _io_thread_handle = Self::with_thread("IO", move || io::IO::run(io), None)?;
         let store = Self {
             tx,
             sharing_uring,

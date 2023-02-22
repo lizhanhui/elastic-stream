@@ -14,9 +14,11 @@ use io_uring::{
 use segment::LogSegmentFile;
 use slog::{error, info, trace, warn, Logger};
 use std::{
+    cell::RefCell,
     collections::{BTreeMap, HashMap, VecDeque},
     os::fd::AsRawFd,
     path::Path,
+    rc::Rc,
     str::FromStr,
 };
 use task::{IoTask, ReadTask, WriteTask};
@@ -65,6 +67,12 @@ impl Default for Options {
             ],
             file_size: DEFAULT_LOG_SEGMENT_FILE_SIZE,
         }
+    }
+}
+
+impl Options {
+    pub fn add_wal_path(&mut self, wal_path: WalPath) {
+        self.wal_paths.push(wal_path);
     }
 }
 
@@ -211,7 +219,7 @@ impl IO {
         Ok(())
     }
 
-    fn alloc_segment(&mut self) -> Result<bool, StoreError> {
+    fn alloc_segment(&mut self) -> Result<(), StoreError> {
         let offset = if self.segments.is_empty() {
             0
         } else {
@@ -235,7 +243,7 @@ impl IO {
             segment::Medium::SSD,
         );
         self.segments.push_back(segment);
-        Ok(true)
+        Ok(())
     }
 
     fn acquire_writable_segment(&mut self) -> Option<&mut LogSegmentFile> {
@@ -253,7 +261,7 @@ impl IO {
         self.segments.back_mut()
     }
 
-    fn segment_file_of(&mut self, offset: u64, len: u32) -> Option<&LogSegmentFile> {
+    fn segment_file_of(&self, offset: u64, len: u32) -> Option<&LogSegmentFile> {
         for segment in self.segments.iter().rev() {
             if segment.offset < offset {
                 return Some(segment);
@@ -262,13 +270,14 @@ impl IO {
         None
     }
 
-    pub(crate) fn run(&mut self) -> Result<(), StoreError> {
-        self.load()?;
+    pub(crate) fn run(io: RefCell<IO>) -> Result<(), StoreError> {
+        io.borrow_mut().load()?;
 
         // let (tx, rx) = tokio::sync::oneshot::channel();
-        self.launch_indexer()?;
+        io.borrow().launch_indexer()?;
 
-        let read_alignment = self
+        let read_alignment = io
+            .borrow()
             .options
             .wal_paths
             .first()
@@ -277,10 +286,11 @@ impl IO {
             )))?
             .block_size;
 
-        let io_depth = self.poll_ring.params().sq_entries();
+        let io_depth = io.borrow().poll_ring.params().sq_entries();
         let mut in_flight_requests = 0;
 
-        let wal_dir = self
+        let wal_dir = io
+            .borrow()
             .options
             .wal_paths
             .first()
@@ -288,17 +298,19 @@ impl IO {
             .clone();
         let wal_path = Path::new(&wal_dir.path);
 
-        let file_size = self.options.file_size;
+        let file_size = io.borrow().options.file_size;
 
-        let mut current_segment = self
-            .acquire_writable_segment()
-            .ok_or(StoreError::AllocLogSegment)?;
-        current_segment.open()?;
-
-        let mut pos = current_segment.offset + current_segment.written;
+        let mut pos = {
+            let mut io_ref = io.borrow_mut();
+            let current_segment = io_ref
+                .acquire_writable_segment()
+                .ok_or(StoreError::AllocLogSegment)?;
+            current_segment.open()?;
+            current_segment.offset + current_segment.written
+        };
 
         let mut write_tasks: BTreeMap<u64, u32> = BTreeMap::new();
-        // let mut read_tasks = HashMap::new();
+        let mut read_tasks = HashMap::new();
 
         loop {
             let mut pending = vec![];
@@ -310,14 +322,14 @@ impl IO {
                 // if the log segment file is full, break loop.
 
                 if in_flight_requests == 0 {
-                    if let Ok(io_task) = self.receiver.recv() {
+                    if let Ok(io_task) = io.borrow().receiver.recv() {
                         pending.push(io_task);
                         in_flight_requests += 1;
                     } else {
                         break;
                     }
                 } else {
-                    if let Ok(io_task) = self.receiver.try_recv() {
+                    if let Ok(io_task) = io.borrow().receiver.try_recv() {
                         pending.push(io_task);
                         in_flight_requests += 1;
                     } else {
@@ -326,75 +338,84 @@ impl IO {
                 }
             }
 
-            // let entries: Vec<_> = pending
-            //     .into_iter()
-            //     .map(|io_task| match io_task {
-            //         IoTask::Read(read_task) => {
-            //             let segment = self
-            //                 .segment_file_of(read_task.offset, read_task.len)
-            //                 .ok_or(StoreError::AllocLogSegment)?;
+            let entries: Vec<_> = pending
+                .into_iter()
+                .map(|io_task| match io_task {
+                    IoTask::Read(read_task) => {
+                        let io_ref = io.borrow();
+                        let segment = io_ref
+                            .segment_file_of(read_task.offset, read_task.len)
+                            .ok_or(StoreError::AllocLogSegment)?;
 
-            //             let mut record_buf = RecordBuf::new();
-            //             record_buf.alloc(read_task.len as usize, read_alignment as usize)?;
-            //             let ptr = record_buf
-            //                 .write_ptr()
-            //                 .expect("Should have allocated aligned memory for read");
-            //             read_tasks.insert(read_task, record_buf);
+                        let mut record_buf = RecordBuf::new();
+                        record_buf.alloc(read_task.len as usize, read_alignment as usize)?;
+                        let buf = record_buf
+                            .write_buf()
+                            .expect("Should have allocated aligned memory for read");
+                        let ptr = buf.ptr;
+                        read_tasks.insert(read_task, record_buf);
 
-            //             let sqe = opcode::Read::new(
-            //                 types::Fd(segment.fd.ok_or(StoreError::AllocLogSegment)?),
-            //                 ptr,
-            //                 read_task.len,
-            //             )
-            //             .offset((read_task.offset - segment.offset) as i64)
-            //             .build()
-            //             .user_data(0);
-            //             Ok::<squeue::Entry, StoreError>(sqe)
-            //         }
-            //         IoTask::Write(WriteTask {
-            //             stream_id,
-            //             offset,
-            //             buffer,
-            //         }) => {
-            //             let ptr = pos;
-            //             let file_offset = pos - current_segment.offset;
-            //             if file_offset > current_segment.size {
-            //                 // A few issues are still not resolved
-            //                 // todo!("buffer is NOT 4k-aligned for now");
-            //                 // todo!("Switch current log segment file");
-            //             }
+                        let sqe = opcode::Read::new(
+                            types::Fd(segment.fd.ok_or(StoreError::AllocLogSegment)?),
+                            ptr,
+                            read_task.len,
+                        )
+                        .offset((read_task.offset - segment.offset) as i64)
+                        .build()
+                        .user_data(0);
+                        Ok::<squeue::Entry, StoreError>(sqe)
+                    }
+                    IoTask::Write(WriteTask {
+                        stream_id,
+                        offset,
+                        buffer,
+                    }) => {
+                        let mut io_ref = io.borrow_mut();
+                        if let Some(current_segment) = io_ref.acquire_writable_segment() {
+                            let ptr = pos;
+                            let file_offset = pos - current_segment.offset;
+                            if file_offset > current_segment.size {
+                                // A few issues are still not resolved
+                                // todo!("buffer is NOT 4k-aligned for now");
+                                // todo!("Switch current log segment file");
+                            }
 
-            //             let sqe = Write::new(
-            //                 types::Fd(
-            //                     current_segment
-            //                         .fd
-            //                         .expect("LogSegmentFile should have opened"),
-            //                 ),
-            //                 buffer.as_ptr(),
-            //                 buffer.len() as u32,
-            //             )
-            //             .offset64(file_offset as libc::off_t)
-            //             .build()
-            //             .user_data(ptr);
-            //             write_tasks.insert(ptr, buffer.len() as u32);
-            //             pos += buffer.len() as u64;
-            //             Ok(sqe)
-            //         }
-            //     })
-            //     .flatten()
-            //     .collect();
+                            let sqe = Write::new(
+                                types::Fd(
+                                    current_segment
+                                        .fd
+                                        .expect("LogSegmentFile should have opened"),
+                                ),
+                                buffer.as_ptr(),
+                                buffer.len() as u32,
+                            )
+                            .offset64(file_offset as libc::off_t)
+                            .build()
+                            .user_data(ptr);
+                            write_tasks.insert(ptr, buffer.len() as u32);
+                            pos += buffer.len() as u64;
+                            Ok(sqe)
+                        } else {
+                            Err(StoreError::AllocLogSegment)
+                        }
+                    }
+                })
+                .flatten()
+                .collect();
 
-            // if !entries.is_empty() {
-            //     unsafe {
-            //         self.poll_ring
-            //             .submission()
-            //             .push_multiple(&entries)
-            //             .map_err(|e| StoreError::IoUring)?
-            //     };
-            // }
+            if !entries.is_empty() {
+                unsafe {
+                    io.borrow_mut()
+                        .poll_ring
+                        .submission()
+                        .push_multiple(&entries)
+                        .map_err(|e| StoreError::IoUring)?
+                };
+            }
 
-            if let Ok(_reaped) = self.poll_ring.submit_and_wait(1) {
-                let mut completion = self.poll_ring.completion();
+            if let Ok(_reaped) = io.borrow().poll_ring.submit_and_wait(1) {
+                let mut io_ref = io.borrow_mut();
+                let mut completion = io_ref.poll_ring.completion();
                 loop {
                     while let Some(_cqe) = completion.next() {
                         in_flight_requests -= 1;

@@ -11,15 +11,15 @@ pub(crate) struct ReadTask {
 
 pub(crate) struct WriteTask {
     /// Stream ID of the record.
-    stream_id: u64,
+    pub(crate) stream_id: u64,
     /// Logical primary index offset
-    offset: u64,
+    pub(crate) offset: u64,
 
     /// `Record` serialized.
     ///
     /// Note: An application `Record` may be splitted into multiple WAL blocks/records,
     /// with enhancing digest/checksum and integrity guarantee.
-    buffer: Bytes,
+    pub(crate) buffer: Bytes,
 }
 
 pub(crate) enum IoTask {
