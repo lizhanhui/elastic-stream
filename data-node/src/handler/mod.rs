@@ -11,7 +11,9 @@ use protocol::rpc::header::{
 };
 use slog::{debug, trace, warn, Logger};
 use std::rc::Rc;
-use store::{ops::put::PutResult, option::WriteOptions, ElasticStore, Record, Store};
+use store::{
+    ops::append::AppendResult, option::WriteOptions, AppendRecordRequest, ElasticStore, Store,
+};
 
 /// Representation of the incoming request.
 ///
@@ -116,7 +118,7 @@ impl ServerCall {
     async fn on_publish(&self, response: &mut Frame) {
         let options = WriteOptions::default();
         let record = self.build_proof_of_concept_record();
-        match self.store.put(options, record).await {
+        match self.store.append(options, record).await {
             Ok(result) => {
                 response.header = self.build_publish_response_header(&result);
             }
@@ -127,7 +129,7 @@ impl ServerCall {
     /// Build frame header according to `PutResult` with FlatBuffers encoding.
     ///
     /// `_result` - PutResult from underlying `Store`
-    fn build_publish_response_header(&self, _result: &PutResult) -> Option<Bytes> {
+    fn build_publish_response_header(&self, _result: &AppendResult) -> Option<Bytes> {
         let mut builder = FlatBufferBuilder::with_capacity(256);
         let status = Status::create(
             &mut builder,
@@ -174,7 +176,7 @@ impl ServerCall {
     /// 2. If step-1 returns None, query placement manager;
     /// 3. Ensure current data-node is the leader of the writable range;
     /// 4. If
-    fn build_proof_of_concept_record(&self) -> Record {
+    fn build_proof_of_concept_record(&self) -> AppendRecordRequest {
         let mut buffer = bytes::BytesMut::new();
 
         if self.request.encode(&mut buffer).is_ok() {
@@ -185,7 +187,9 @@ impl ServerCall {
             buffer.extend_from_slice(body);
         }
 
-        Record {
+        AppendRecordRequest {
+            stream_id: 0,
+            offset: 0,
             buffer: buffer.freeze(),
         }
     }

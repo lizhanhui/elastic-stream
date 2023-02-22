@@ -1,16 +1,15 @@
 use std::{
     cell::RefCell,
     os::fd::{AsRawFd, RawFd},
-    rc::Rc,
     thread::{Builder, JoinHandle},
 };
 
 use crate::{
-    error::{PutError, StoreError},
+    error::{AppendError, StoreError},
     io::{self, task::IoTask},
-    ops::{put::PutResult, Get, Put, Scan},
+    ops::{append::AppendResult, Append, Get, Scan},
     option::{ReadOptions, WalPath, WriteOptions},
-    Record, Store,
+    AppendRecordRequest, Store,
 };
 use core_affinity::CoreId;
 use crossbeam::channel::Sender;
@@ -93,32 +92,31 @@ impl ElasticStore {
 
     fn append(
         &self,
-        record: Record,
-        response_observer: oneshot::Sender<Result<PutResult, PutError>>,
+        record: AppendRecordRequest,
+        response_observer: oneshot::Sender<Result<AppendResult, AppendError>>,
     ) {
     }
 }
 
 impl Store for ElasticStore {
-    // type PutOp = impl Future<Output = Result<PutResult, PutError>>;
-    type PutOp = impl Future<Output = Result<PutResult, PutError>>;
+    type AppendOp = impl Future<Output = Result<AppendResult, AppendError>>;
 
-    fn put(&self, opt: WriteOptions, record: Record) -> Put<Self::PutOp>
+    fn append(&self, opt: WriteOptions, record: AppendRecordRequest) -> Append<Self::AppendOp>
     where
-        <Self as Store>::PutOp: Future<Output = Result<PutResult, PutError>>,
+        <Self as Store>::AppendOp: Future<Output = Result<AppendResult, AppendError>>,
     {
         let (sender, receiver) = oneshot::channel();
 
         self.append(record, sender);
 
         let inner = async {
-            match receiver.await.map_err(|_e| PutError::ChannelRecv) {
+            match receiver.await.map_err(|_e| AppendError::ChannelRecv) {
                 Ok(res) => res,
                 Err(e) => Err(e),
             }
         };
 
-        Put { inner }
+        Append { inner }
     }
 
     fn get(&self, options: ReadOptions) -> Get {

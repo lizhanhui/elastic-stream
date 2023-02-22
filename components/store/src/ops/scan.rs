@@ -5,12 +5,12 @@ use std::{
 
 use futures::Stream;
 
-use crate::Record;
+use crate::AppendRecordRequest;
 
 use super::Scan;
 
 impl Stream for Scan {
-    type Item = Record;
+    type Item = AppendRecordRequest;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         todo!()

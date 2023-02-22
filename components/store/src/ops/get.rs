@@ -6,10 +6,10 @@ use std::{
 use futures::Future;
 
 use super::Get;
-use crate::{error::ReadError, Record};
+use crate::{error::ReadError, AppendRecordRequest};
 
 impl Future for Get {
-    type Output = Result<Record, ReadError>;
+    type Output = Result<AppendRecordRequest, ReadError>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         todo!()

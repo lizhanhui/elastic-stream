@@ -23,12 +23,12 @@ pub mod error;
 pub mod util;
 
 use self::{
-    ops::{Get, Put, Scan},
+    ops::{Append, Get, Scan},
     option::{ReadOptions, WriteOptions},
 };
-use error::PutError;
+use error::AppendError;
 use futures::Future;
-use ops::put::PutResult;
+use ops::append::AppendResult;
 
 pub mod cursor;
 pub mod ops;
@@ -39,7 +39,9 @@ mod store;
 
 pub use crate::store::ElasticStore;
 
-pub struct Record {
+pub struct AppendRecordRequest {
+    pub stream_id: i64,
+    pub offset: i64,
     pub buffer: bytes::Bytes,
 }
 
@@ -47,16 +49,16 @@ pub struct Record {
 ///
 ///
 pub trait Store {
-    /// Inner operation that actually puts record into store.
-    type PutOp;
+    /// Inner operation that actually appends record into store.
+    type AppendOp;
 
-    /// Put a new record into store.
+    /// Append a new record into store.
     ///
     /// * `options` - Write options, specifying how the record is written to persistent medium.
     /// * `record` - Data record to append.
-    fn put(&self, options: WriteOptions, record: Record) -> Put<Self::PutOp>
+    fn append(&self, options: WriteOptions, request: AppendRecordRequest) -> Append<Self::AppendOp>
     where
-        <Self as Store>::PutOp: Future<Output = Result<PutResult, PutError>>;
+        <Self as Store>::AppendOp: Future<Output = Result<AppendResult, AppendError>>;
 
     /// Retrieve a single existing record at the given partition and offset.
     /// * `options` - Read options, specifying target partition and offset.

@@ -3,17 +3,17 @@ use std::{
     task::{Context, Poll},
 };
 
-use crate::error::PutError;
+use crate::error::AppendError;
 
-use super::Put;
+use super::Append;
 use futures::Future;
 
 #[derive(Debug)]
-pub struct PutResult {}
+pub struct AppendResult {}
 
-impl<Op> Future for Put<Op>
+impl<Op> Future for Append<Op>
 where
-    Op: Future<Output = Result<PutResult, PutError>>,
+    Op: Future<Output = Result<AppendResult, AppendError>>,
 {
     type Output = <Op as Future>::Output;
 

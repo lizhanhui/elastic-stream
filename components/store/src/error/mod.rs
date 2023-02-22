@@ -44,8 +44,8 @@ pub enum StoreError {
 pub enum ReadError {}
 
 #[derive(Debug, Error)]
-pub enum PutError {
-    #[error("Failed to send PutRequest")]
+pub enum AppendError {
+    #[error("Failed to submit AppendRecordRequest")]
     SubmissionQueue,
 
     #[error("Recv from oneshot channel failed")]

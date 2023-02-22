@@ -1,7 +1,7 @@
 //! Options of various kinds to modify their action behaviors
 //!
 
-use std::{error::Error, fs::File, os::fd::AsRawFd, path::Path};
+use std::{fs::File, os::fd::AsRawFd, path::Path};
 
 use crate::error::StoreError;
 
@@ -21,7 +21,7 @@ pub struct WalPath {
 
 impl WalPath {
     pub fn new(path: &str, target_size: u64) -> Result<Self, StoreError> {
-        let mut dir_path = Path::new(path);
+        let dir_path = Path::new(path);
         if !dir_path.exists() {
             std::fs::create_dir_all(dir_path)?;
         }
