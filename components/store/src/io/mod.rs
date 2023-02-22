@@ -369,6 +369,7 @@ impl IO {
                         stream_id,
                         offset,
                         buffer,
+                        observer,
                     }) => {
                         let mut io_ref = io.borrow_mut();
                         if let Some(current_segment) = io_ref.acquire_writable_segment() {

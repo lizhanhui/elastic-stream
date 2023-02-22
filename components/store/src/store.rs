@@ -6,7 +6,13 @@ use std::{
 
 use crate::{
     error::{AppendError, StoreError},
-    io::{self, task::IoTask},
+    io::{
+        self,
+        task::{
+            IoTask::{self, Read, Write},
+            WriteTask,
+        },
+    },
     ops::{append::AppendResult, Append, Get, Scan},
     option::{ReadOptions, WalPath, WriteOptions},
     AppendRecordRequest, Store,
@@ -14,7 +20,7 @@ use crate::{
 use core_affinity::CoreId;
 use crossbeam::channel::Sender;
 use futures::Future;
-use slog::{trace, Logger};
+use slog::{error, trace, Logger};
 use tokio::sync::oneshot;
 
 #[derive(Clone)]
@@ -90,24 +96,45 @@ impl ElasticStore {
         }
     }
 
-    fn append(
+    /// Send append request to IO module.
+    ///
+    /// * `request` - Append record request, which includes target stream_id, logical offset and serialized `Record` data.
+    /// * `observer` - Oneshot sender, used to return `AppendResult` or propagate error.
+    fn do_append(
         &self,
-        record: AppendRecordRequest,
-        response_observer: oneshot::Sender<Result<AppendResult, AppendError>>,
+        request: AppendRecordRequest,
+        observer: oneshot::Sender<Result<AppendResult, AppendError>>,
     ) {
+        let task = WriteTask {
+            stream_id: request.stream_id,
+            offset: request.offset,
+            buffer: request.buffer,
+            observer,
+        };
+        let io_task = Write(task);
+        if let Err(e) = self.tx.send(io_task) {
+            match e.0 {
+                Write(task) => {
+                    if let Err(e) = task.observer.send(Err(AppendError::SubmissionQueue)) {
+                        error!(self.log, "Failed to propagate error: {:?}", e);
+                    }
+                }
+                _ => {}
+            };
+        }
     }
 }
 
 impl Store for ElasticStore {
     type AppendOp = impl Future<Output = Result<AppendResult, AppendError>>;
 
-    fn append(&self, opt: WriteOptions, record: AppendRecordRequest) -> Append<Self::AppendOp>
+    fn append(&self, opt: WriteOptions, request: AppendRecordRequest) -> Append<Self::AppendOp>
     where
         <Self as Store>::AppendOp: Future<Output = Result<AppendResult, AppendError>>,
     {
         let (sender, receiver) = oneshot::channel();
 
-        self.append(record, sender);
+        self.do_append(request, sender);
 
         let inner = async {
             match receiver.await.map_err(|_e| AppendError::ChannelRecv) {

@@ -35,15 +35,11 @@ pub mod ops;
 pub mod option;
 
 mod io;
+mod request;
 mod store;
 
 pub use crate::store::ElasticStore;
-
-pub struct AppendRecordRequest {
-    pub stream_id: i64,
-    pub offset: i64,
-    pub buffer: bytes::Bytes,
-}
+pub use request::AppendRecordRequest;
 
 /// Definition of core storage trait.
 ///
