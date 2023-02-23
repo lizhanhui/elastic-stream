@@ -1,6 +1,6 @@
 use std::{error::Error, net::ToSocketAddrs};
 
-use model::{RecordBatch, Record, RecordMetadata};
+use model::{Record, RecordBatch, RecordMetadata};
 
 /// Writes `Record`s to `Stream`s.
 ///
@@ -52,19 +52,16 @@ impl Writer {
     /// * `record` - A `Record` that contains headers, properties and body.
     ///
     pub async fn append(&self, record: &Record) -> Result<RecordMetadata, Box<dyn Error>> {
-        Ok(RecordMetadata::new(
-            record.stream_id(),
-            0,
-        ))
+        Ok(RecordMetadata::new(record.stream_id(), 0))
     }
 
     /// Append the specified record batch to partition.
-    /// 
+    ///
     /// * `record_batch` - A `RecordBatch` that contains a vector of record.
-    pub async fn append_batch(&self, record_batch: &RecordBatch) -> Result<Vec<RecordMetadata>, Box<dyn Error>> {
-        Ok(vec![RecordMetadata::new(
-            record_batch.stream_id(),
-            0,
-        )])
+    pub async fn append_batch(
+        &self,
+        record_batch: &RecordBatch,
+    ) -> Result<Vec<RecordMetadata>, Box<dyn Error>> {
+        Ok(vec![RecordMetadata::new(record_batch.stream_id(), 0)])
     }
 }

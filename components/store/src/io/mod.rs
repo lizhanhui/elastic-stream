@@ -547,26 +547,41 @@ impl AsRawFd for IO {
 
 #[cfg(test)]
 mod tests {
-    use std::error::Error;
+    use std::collections::HashMap;
     use std::fs::File;
 
+    use bytes::BytesMut;
     use std::env;
+    use std::path::{Path, PathBuf};
+    use tokio::sync::oneshot;
     use uuid::Uuid;
 
+    use crate::error::StoreError;
     use crate::io::segment::LogSegmentFile;
+    use crate::io::DEFAULT_LOG_SEGMENT_FILE_SIZE;
+    use crate::option::WalPath;
 
-    #[test]
-    fn test_load_wals() -> Result<(), Box<dyn Error>> {
+    use super::task::{IoTask, WriteTask};
+
+    fn create_io(wal_dir: WalPath) -> Result<super::IO, StoreError> {
         let mut options = super::Options::default();
+        let logger = util::terminal_logger();
+        options.wal_paths.push(wal_dir);
+        super::IO::new(&mut options, logger.clone())
+    }
+
+    fn random_wal_dir() -> Result<PathBuf, StoreError> {
         let uuid = Uuid::new_v4();
         let mut wal_dir = env::temp_dir();
         wal_dir.push(uuid.simple().to_string());
-        let wal_dir = wal_dir.as_path();
-        std::fs::create_dir_all(wal_dir)?;
-        let _wal_dir_guard = util::DirectoryRemovalGuard::new(wal_dir);
+        let wal_path = wal_dir.as_path();
+        std::fs::create_dir_all(wal_path)?;
+        Ok(wal_dir)
+    }
 
-        let logger = util::terminal_logger();
-
+    #[test]
+    fn test_load_wals() -> Result<(), StoreError> {
+        let wal_dir = random_wal_dir()?;
         // Prepare log segment files
         let files: Vec<_> = (0..10)
             .into_iter()
@@ -578,12 +593,130 @@ mod tests {
             .collect();
         assert_eq!(10, files.len());
 
+        let _wal_dir_guard = util::DirectoryRemovalGuard::new(wal_dir.as_path());
         let wal_dir = super::WalPath::new(wal_dir.to_str().unwrap(), 1234)?;
-        options.wal_paths.push(wal_dir);
 
-        let mut io = super::IO::new(&mut options, logger.clone())?;
+        let mut io = create_io(wal_dir)?;
         io.load_wal_segment_files()?;
         assert_eq!(files.len(), io.segments.len());
+        Ok(())
+    }
+
+    #[test]
+    fn test_alloc_segment() -> Result<(), StoreError> {
+        let wal_dir = random_wal_dir()?;
+        let _wal_dir_guard = util::DirectoryRemovalGuard::new(wal_dir.as_path());
+        let mut io = create_io(super::WalPath::new(wal_dir.to_str().unwrap(), 1234)?)?;
+        io.alloc_segment()?;
+        assert_eq!(1, io.segments.len());
+
+        io.alloc_segment()?;
+        assert_eq!(
+            DEFAULT_LOG_SEGMENT_FILE_SIZE,
+            io.segments.get(1).unwrap().offset
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_acquire_writable_segment() -> Result<(), StoreError> {
+        let wal_dir = random_wal_dir()?;
+        let _wal_dir_guard = util::DirectoryRemovalGuard::new(wal_dir.as_path());
+        let mut io = create_io(super::WalPath::new(wal_dir.to_str().unwrap(), 1234)?)?;
+        io.acquire_writable_segment()
+            .ok_or(StoreError::AllocLogSegment)?;
+        assert_eq!(1, io.segments.len());
+        // Verify `acquire_writable_segment()` is reentrant
+        io.acquire_writable_segment()
+            .ok_or(StoreError::AllocLogSegment)?;
+        assert_eq!(1, io.segments.len());
+        Ok(())
+    }
+
+    #[test]
+    fn test_segment_file_of() -> Result<(), StoreError> {
+        let wal_dir = random_wal_dir()?;
+        let _wal_dir_guard = util::DirectoryRemovalGuard::new(wal_dir.as_path());
+        let mut io = create_io(super::WalPath::new(wal_dir.to_str().unwrap(), 1234)?)?;
+        io.acquire_writable_segment()
+            .ok_or(StoreError::AllocLogSegment)?;
+        assert_eq!(1, io.segments.len());
+
+        // Ensure we can get the right
+        let segment = io
+            .segment_file_of(DEFAULT_LOG_SEGMENT_FILE_SIZE - 100, 80)
+            .ok_or(StoreError::AllocLogSegment)?;
+        assert_eq!(0, segment.offset);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_receive_io_tasks() -> Result<(), StoreError> {
+        let wal_dir = random_wal_dir()?;
+        let _wal_dir_guard = util::DirectoryRemovalGuard::new(wal_dir.as_path());
+        let io = create_io(super::WalPath::new(wal_dir.to_str().unwrap(), 1234)?)?;
+        let sender = &io.sender;
+        let buffer = BytesMut::with_capacity(128);
+        let buffer = buffer.freeze();
+
+        // Send IoTask to channel
+        (0..16)
+            .into_iter()
+            .flat_map(|_| {
+                let (tx, _rx) = oneshot::channel();
+                let io_task = IoTask::Write(WriteTask {
+                    stream_id: 0,
+                    offset: 0,
+                    buffer: buffer.clone(),
+                    observer: tx,
+                });
+                sender.send(io_task)
+            })
+            .count();
+
+        let mut in_flight_requests = 0;
+        let io_depth = 16;
+        let tasks = io.receive_io_tasks(&mut in_flight_requests, io_depth);
+        assert_eq!(16, tasks.len());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_to_sqe() -> Result<(), StoreError> {
+        let wal_dir = random_wal_dir()?;
+        let _wal_dir_guard = util::DirectoryRemovalGuard::new(wal_dir.as_path());
+        let mut io = create_io(super::WalPath::new(wal_dir.to_str().unwrap(), 1234)?)?;
+
+        let segment = io.acquire_writable_segment().unwrap();
+        segment.open()?;
+
+        let buffer = BytesMut::with_capacity(128);
+        let buffer = buffer.freeze();
+
+        // Send IoTask to channel
+        let pending: Vec<_> = (0..16)
+            .into_iter()
+            .map(|_| {
+                let (tx, _rx) = oneshot::channel();
+                IoTask::Write(WriteTask {
+                    stream_id: 0,
+                    offset: 0,
+                    buffer: buffer.clone(),
+                    observer: tx,
+                })
+            })
+            .collect();
+
+        let mut tag = 0;
+        let mut pos = 0;
+        let alignment = 512;
+
+        let mut tasks = HashMap::new();
+
+        let entries = io.to_sqe(pending, &mut tag, &mut pos, alignment, &mut tasks);
+        assert_eq!(16, entries.len());
         Ok(())
     }
 }

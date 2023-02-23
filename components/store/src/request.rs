@@ -3,4 +3,3 @@ pub struct AppendRecordRequest {
     pub offset: i64,
     pub buffer: bytes::Bytes,
 }
-

@@ -4,8 +4,8 @@
 
 use pin_project::pin_project;
 
-mod get;
 pub mod append;
+mod get;
 mod scan;
 
 #[pin_project]

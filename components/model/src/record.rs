@@ -1,7 +1,7 @@
 use crate::{error::RecordError, header::Headers};
 use bytes::Bytes;
-use std::{collections::HashMap, error::Error};
 use chrono::prelude::*;
+use std::{collections::HashMap, error::Error};
 #[derive(Debug, Clone, PartialEq)]
 pub struct Record {
     stream_id: i64,
@@ -24,7 +24,10 @@ impl Record {
             properties: HashMap::new(),
             body,
         };
-        record.headers.add_header(crate::header::Common::CreatedAt, Utc::now().timestamp().to_string());
+        record.headers.add_header(
+            crate::header::Common::CreatedAt,
+            Utc::now().timestamp().to_string(),
+        );
         record
     }
 
@@ -146,9 +149,13 @@ impl RecordBatchBuilder {
                 Err(RecordError::StreamIdMismatch)?
             }
             if base_timestamp == 0 {
-                base_timestamp = match record.created_at().unwrap_or(&"0".to_string()).parse::<i64>() {
+                base_timestamp = match record
+                    .created_at()
+                    .unwrap_or(&"0".to_string())
+                    .parse::<i64>()
+                {
                     Ok(it) => it,
-                    Err(_) => return Err(RecordError::ParseHeader)
+                    Err(_) => return Err(RecordError::ParseHeader),
                 };
             }
         }
@@ -193,7 +200,7 @@ impl RecordBuilder {
     }
 
     /// Assoaciate a record id with the record
-    /// The record id acts as primary key of a record, can be used to do a search. 
+    /// The record id acts as primary key of a record, can be used to do a search.
     /// But it is not necessary, since the store uses the stream-id/offset to identify the record in the stream.
     pub fn with_record_id(mut self, record_id: String) -> Self {
         self.record_id = Some(record_id);
@@ -269,65 +276,65 @@ mod tests {
 
     #[test]
     fn test_record_batch_new() {
-       // Create an empty record batch, pass in stream ID 
-       let batch_empty = RecordBatch::new(3, vec![]);
-       assert_eq!(batch_empty.stream_id(), 3);
-       assert_eq!(batch_empty.records().len(), 0);
-       // Create two new records 
-       let record1 = Record::new(3, Bytes::from("foo"));
-       let record2 = Record::new(3, Bytes::from("bar"));
-       
-       let batch_two = RecordBatch::new(3, vec![record1.clone(), record2.clone()]);
-       // Assert that there are two records in the batch 
-       assert_eq!(batch_two.records().len(), 2);
-       assert_eq!(batch_two.records()[0], record1);
-       assert_eq!(batch_two.records()[1], record2);
-   }
+        // Create an empty record batch, pass in stream ID
+        let batch_empty = RecordBatch::new(3, vec![]);
+        assert_eq!(batch_empty.stream_id(), 3);
+        assert_eq!(batch_empty.records().len(), 0);
+        // Create two new records
+        let record1 = Record::new(3, Bytes::from("foo"));
+        let record2 = Record::new(3, Bytes::from("bar"));
 
-   #[test]
-   fn test_record_builder() {
-         let record = RecordBuilder::default()
-              .with_stream_id(1)
-              .with_body(Bytes::from("hello"))
-              .with_keys("foo bar".to_string())
-              .with_tag("baz".to_string())
-              .with_record_id("123".to_string())
-              .build()
-              .unwrap();
-         assert_eq!(record.stream_id(), 1);
-         assert_eq!(record.body(), &Bytes::from("hello"));
-         assert_eq!(record.keys().unwrap(), "foo bar");
-         assert_eq!(record.tag().unwrap(), "baz");
-         assert_eq!(record.record_id().unwrap(), "123");
-   }
+        let batch_two = RecordBatch::new(3, vec![record1.clone(), record2.clone()]);
+        // Assert that there are two records in the batch
+        assert_eq!(batch_two.records().len(), 2);
+        assert_eq!(batch_two.records()[0], record1);
+        assert_eq!(batch_two.records()[1], record2);
+    }
 
-   #[test]
-   fn test_record_batch_builder() {
-         let record1 = RecordBuilder::default()
-              .with_stream_id(1)
-              .with_body(Bytes::from("hello"))
-              .with_keys("foo bar".to_string())
-              .with_tag("baz".to_string())
-              .with_record_id("123".to_string())
-              .build()
-              .unwrap();
-         let base_timestamp = record1.created_at().unwrap().parse::<i64>().unwrap();
-         let record2 = RecordBuilder::default()
-              .with_stream_id(1)
-              .with_body(Bytes::from("world"))
-              .with_keys("foo bar".to_string())
-              .with_tag("baz".to_string())
-              .with_record_id("123".to_string())
-              .build()
-              .unwrap();
-         let batch = RecordBatchBuilder::default()
-              .with_stream_id(1)
-              .add_record(record1)
-              .add_record(record2)
-              .build()
-              .unwrap();
-         assert_eq!(batch.stream_id(), 1);
-         assert_eq!(batch.records().len(), 2);
-         assert_eq!(batch.base_timestamp, base_timestamp);
-   }
+    #[test]
+    fn test_record_builder() {
+        let record = RecordBuilder::default()
+            .with_stream_id(1)
+            .with_body(Bytes::from("hello"))
+            .with_keys("foo bar".to_string())
+            .with_tag("baz".to_string())
+            .with_record_id("123".to_string())
+            .build()
+            .unwrap();
+        assert_eq!(record.stream_id(), 1);
+        assert_eq!(record.body(), &Bytes::from("hello"));
+        assert_eq!(record.keys().unwrap(), "foo bar");
+        assert_eq!(record.tag().unwrap(), "baz");
+        assert_eq!(record.record_id().unwrap(), "123");
+    }
+
+    #[test]
+    fn test_record_batch_builder() {
+        let record1 = RecordBuilder::default()
+            .with_stream_id(1)
+            .with_body(Bytes::from("hello"))
+            .with_keys("foo bar".to_string())
+            .with_tag("baz".to_string())
+            .with_record_id("123".to_string())
+            .build()
+            .unwrap();
+        let base_timestamp = record1.created_at().unwrap().parse::<i64>().unwrap();
+        let record2 = RecordBuilder::default()
+            .with_stream_id(1)
+            .with_body(Bytes::from("world"))
+            .with_keys("foo bar".to_string())
+            .with_tag("baz".to_string())
+            .with_record_id("123".to_string())
+            .build()
+            .unwrap();
+        let batch = RecordBatchBuilder::default()
+            .with_stream_id(1)
+            .add_record(record1)
+            .add_record(record2)
+            .build()
+            .unwrap();
+        assert_eq!(batch.stream_id(), 1);
+        assert_eq!(batch.records().len(), 2);
+        assert_eq!(batch.base_timestamp, base_timestamp);
+    }
 }

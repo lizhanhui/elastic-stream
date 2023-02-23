@@ -35,7 +35,7 @@ pub enum EncodeError {
 pub enum DecodeError {
     #[error("Build record error")]
     BuildRecord(#[from] RecordError),
-    
+
     #[error("The total length of record batch is not equal to the length of the data")]
     DataLengthMismatch,
 }

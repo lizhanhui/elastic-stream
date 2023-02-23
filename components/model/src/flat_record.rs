@@ -59,7 +59,7 @@ impl FlatRecordBatch {
             base_timestamp: record_batch.base_timestamp(),
             last_offset_delta: record_batch.records().len() as i32,
             base_offset: 0, // The base offset will be set by the storage.
-            flags: 0, // We now only support the default flag.
+            flags: 0,       // We now only support the default flag.
         };
 
         // Serialize the data to the FlatBuffer
@@ -132,7 +132,7 @@ impl FlatRecordBatch {
     /// Inits a FlatRecordBatch from a buffer of bytes received from storage or network layer.
     pub fn init_from_buf(mut buf: Bytes) -> Result<Self, DecodeError> {
         if buf.len() < 4 {
-            return Err(DecodeError::DataLengthMismatch)
+            return Err(DecodeError::DataLengthMismatch);
         }
         // Backup the buffer for the slice operation.
         let buf_for_slice = buf.slice(0..);
@@ -141,13 +141,13 @@ impl FlatRecordBatch {
         // Read the total length
         let total_len = buf.get_i32();
         if total_len as usize - 4 != buf.len() {
-            return Err(DecodeError::DataLengthMismatch)
+            return Err(DecodeError::DataLengthMismatch);
         }
         // Read the magic
         let magic = buf.get_i8();
         // Read the checksum
         let checksum = buf.get_i32(); // TODO: Verify the checksum
-        // Read the records count
+                                      // Read the records count
         let base_offset = buf.get_i64();
         // Read the meta length
         let meta_len = buf.get_i32();
@@ -320,8 +320,14 @@ mod tests {
             .with_record_id("123".to_string())
             .build()
             .unwrap();
-        record1.add_property("my_property_key".to_string(), "my_property_value".to_string());
-        record1.add_property("my_another_property_key".to_string(), "my_another_property_value".to_string());  
+        record1.add_property(
+            "my_property_key".to_string(),
+            "my_property_value".to_string(),
+        );
+        record1.add_property(
+            "my_another_property_key".to_string(),
+            "my_another_property_value".to_string(),
+        );
         let base_timestamp = record1.created_at().unwrap().parse::<i64>().unwrap();
         let mut record2 = RecordBuilder::default()
             .with_stream_id(stream_id)
@@ -331,7 +337,10 @@ mod tests {
             .with_record_id("234".to_string())
             .build()
             .unwrap();
-        record2.add_property("my_property_key".to_string(), "my_property_value".to_string());  
+        record2.add_property(
+            "my_property_key".to_string(),
+            "my_property_value".to_string(),
+        );
         let batch = RecordBatchBuilder::default()
             .with_stream_id(stream_id)
             .add_record(record1)
@@ -361,7 +370,7 @@ mod tests {
         let flat_batch = FlatRecordBatch::init_from_buf(bytes_mute.freeze()).unwrap();
         // Test base_offset
         assert_eq!(flat_batch.base_offset.unwrap(), 1024 as i64);
-        
+
         let record_batch = flat_batch.decode().unwrap();
 
         assert_eq!(record_batch.stream_id(), stream_id);
@@ -371,7 +380,8 @@ mod tests {
         assert_eq!(record_batch.records()[1].body(), &Bytes::from("world"));
 
         // Test the properties
-        let mut properties: Vec<(&String, &String)> = record_batch.records()[0].properties_iter().collect();
+        let mut properties: Vec<(&String, &String)> =
+            record_batch.records()[0].properties_iter().collect();
         assert_eq!(properties.len(), 2);
         properties.sort_by(|a, b| a.0.cmp(b.0));
         assert_eq!(properties[1].0, "my_property_key");
@@ -382,10 +392,22 @@ mod tests {
         // Test the headers
         assert_eq!(record_batch.records()[0].tag(), Some(&"baz".to_string()));
         assert_eq!(record_batch.records()[1].tag(), Some(&"baz".to_string()));
-        assert_eq!(record_batch.records()[0].record_id(), Some(&"123".to_string()));
-        assert_eq!(record_batch.records()[1].record_id(), Some(&"234".to_string()));
-        assert_eq!(record_batch.records()[0].keys(), Some(&"foo bar".to_string()));
-        assert_eq!(record_batch.records()[1].keys(), Some(&"foo bar".to_string()));
+        assert_eq!(
+            record_batch.records()[0].record_id(),
+            Some(&"123".to_string())
+        );
+        assert_eq!(
+            record_batch.records()[1].record_id(),
+            Some(&"234".to_string())
+        );
+        assert_eq!(
+            record_batch.records()[0].keys(),
+            Some(&"foo bar".to_string())
+        );
+        assert_eq!(
+            record_batch.records()[1].keys(),
+            Some(&"foo bar".to_string())
+        );
     }
 
     #[test]
