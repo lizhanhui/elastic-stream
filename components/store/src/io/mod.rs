@@ -701,12 +701,17 @@ mod tests {
             .count();
 
         let mut in_flight_requests = 0;
-        let mut io_depth = 16;
+        
+        // Device IO queue depths
+        let io_depth = 16;
+
         let tasks = io.receive_io_tasks(&mut in_flight_requests, io_depth);
         assert_eq!(16, tasks.len());
 
         drop(sender);
-        io_depth = 32;
+
+        // Mock that some in-flight IO tasks were reaped
+        in_flight_requests = 8;
 
         let tasks = io.receive_io_tasks(&mut in_flight_requests, io_depth);
 
