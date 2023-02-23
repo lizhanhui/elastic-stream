@@ -34,6 +34,8 @@ const DEFAULT_MAX_UNBOUNDED_URING_WORKER_COUNT: u32 = 2;
 
 const DEFAULT_LOG_SEGMENT_FILE_SIZE: u64 = 1024u64 * 1024 * 1024;
 
+const DEFAULT_MIN_PREALLOCATED_SEGMENT_FILES: usize = 1;
+
 #[derive(Debug, Clone)]
 pub(crate) struct Options {
     /// A list of paths where write-ahead-log segment files can be put into, with its target_size considered.
@@ -55,6 +57,8 @@ pub(crate) struct Options {
     max_workers: [u32; 2],
 
     file_size: u64,
+
+    min_preallocated_segment_files: usize,
 }
 
 impl Default for Options {
@@ -69,6 +73,7 @@ impl Default for Options {
                 DEFAULT_MAX_UNBOUNDED_URING_WORKER_COUNT,
             ],
             file_size: DEFAULT_LOG_SEGMENT_FILE_SIZE,
+            min_preallocated_segment_files: DEFAULT_MIN_PREALLOCATED_SEGMENT_FILES,
         }
     }
 }
@@ -416,6 +421,38 @@ impl IO {
             .collect()
     }
 
+    fn async_open(&mut self, file_op: &mut HashMap<u64, Status>) -> Result<(), StoreError> {
+        let segment = self.alloc_segment()?;
+        let offset = segment.offset;
+        debug_assert_eq!(segment.status, Status::OpenAt);
+        file_op.insert(offset, segment.status);
+
+        let sqe = opcode::OpenAt::new(
+            types::Fd(libc::AT_FDCWD),
+            segment.path.as_ptr() as *const i8,
+        )
+        .flags(libc::O_CREAT | libc::O_RDWR | libc::O_DIRECT)
+        .mode(libc::S_IRWXU | libc::S_IRWXG)
+        .build()
+        .user_data(offset);
+        unsafe {
+            self.ring.submission().push(&sqe).map_err(|e| {
+                error!(
+                    self.log,
+                    "Failed to push OpenAt SQE to submission queue: {:?}", e
+                );
+                StoreError::IoUring
+            })?
+        };
+        Ok(())
+    }
+
+    fn async_fallocate(&mut self, file_op: &mut HashMap<u64, Status>) -> Result<(), StoreError> {
+        let mut cq = self.ring.completion();
+        // TODO: resume here
+        Ok(())
+    }
+
     pub(crate) fn run(io: RefCell<IO>) -> Result<(), StoreError> {
         let log = io.borrow().log.clone();
 
@@ -435,6 +472,7 @@ impl IO {
             .block_size;
 
         let io_depth = io.borrow().poll_ring.params().sq_entries();
+        let min_preallocated_segment_files = io.borrow().options.min_preallocated_segment_files;
 
         // Number of inflight IO tasks submitted to block layer.
         let mut inflight = 0;
@@ -473,7 +511,12 @@ impl IO {
         // Main loop
         loop {
             // Check if we need to create a new log segment
-            {}
+            loop {
+                if io.borrow().writable_segment_count() >= min_preallocated_segment_files + 1 {
+                    break;
+                }
+                io.borrow_mut().async_open(&mut file_op)?;
+            }
 
             let entries = {
                 let mut io_mut = io.borrow_mut();
@@ -571,6 +614,13 @@ impl IO {
                     }
                 }
                 trace!(log, "Reaped {} CQE(s)", prev - inflight);
+            }
+
+            // Perform file operation
+            {
+                if !file_op.is_empty() {
+                    io.borrow_mut().async_fallocate(&mut file_op)?;
+                }
             }
         }
         info!(log, "Main loop quit");
