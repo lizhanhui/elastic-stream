@@ -43,9 +43,12 @@ impl ElasticStore {
         let size_10g = 10u64 * (1 << 30);
         opt.add_wal_path(WalPath::new("/data/store", size_10g)?);
 
-        let io = io::IO::new(&mut opt, log.clone())?;
+        let mut io = io::IO::new(&mut opt, log.clone())?;
         let sharing_uring = io.as_raw_fd();
-        let tx = io.sender.clone();
+        let tx = io
+            .sender
+            .take()
+            .ok_or(StoreError::Configuration("IO channel".to_owned()))?;
 
         let io = RefCell::new(io);
 

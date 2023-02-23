@@ -8,13 +8,13 @@ use crate::error::AppendError;
 use crate::option::WalPath;
 use crate::{error::StoreError, ops::append::AppendResult};
 use buf::RecordBuf;
-use crossbeam::channel::{Receiver, Sender};
+use crossbeam::channel::{Receiver, RecvError, Sender, TryRecvError};
 use io_uring::{
     opcode::{self, Write},
     squeue, types,
 };
 use segment::LogSegmentFile;
-use slog::{error, trace, warn, Logger};
+use slog::{error, info, trace, warn, Logger};
 use std::{
     cell::RefCell,
     collections::{BTreeMap, HashMap, VecDeque},
@@ -106,12 +106,14 @@ pub(crate) struct IO {
     /// properly supported by the instance armed with the `IOPOLL` feature.
     ring: io_uring::IoUring,
 
-    pub(crate) sender: Sender<IoTask>,
+    pub(crate) sender: Option<Sender<IoTask>>,
     receiver: Receiver<IoTask>,
     log: Logger,
 
     segments: VecDeque<LogSegmentFile>,
+
     // Runtime data structure
+    channel_disconnected: bool,
 }
 
 impl IO {
@@ -153,10 +155,11 @@ impl IO {
             options: options.clone(),
             poll_ring,
             ring,
-            sender,
+            sender: Some(sender),
             receiver,
             log,
             segments: VecDeque::new(),
+            channel_disconnected: false,
         })
     }
 
@@ -270,7 +273,7 @@ impl IO {
             .find(|&segment| segment.offset < offset)
     }
 
-    fn receive_io_tasks(&self, in_flight_requests: &mut u32, io_depth: u32) -> Vec<IoTask> {
+    fn receive_io_tasks(&mut self, in_flight_requests: &mut u32, io_depth: u32) -> Vec<IoTask> {
         let mut pending = vec![];
         loop {
             if *in_flight_requests >= io_depth {
@@ -281,17 +284,32 @@ impl IO {
 
             if *in_flight_requests == 0 {
                 // Block the thread until at least one IO task arrives
-                if let Ok(io_task) = self.receiver.recv() {
-                    pending.push(io_task);
-                    *in_flight_requests += 1;
-                } else {
-                    break;
+                match self.receiver.recv() {
+                    Ok(io_task) => {
+                        pending.push(io_task);
+                        *in_flight_requests += 1;
+                    }
+                    Err(_e) => {
+                        info!(self.log, "Channel for submitting IO task disconnected");
+                        self.channel_disconnected = true;
+                        break;
+                    }
                 }
-            } else if let Ok(io_task) = self.receiver.try_recv() {
-                pending.push(io_task);
-                *in_flight_requests += 1;
             } else {
-                break;
+                match self.receiver.try_recv() {
+                    Ok(io_task) => {
+                        pending.push(io_task);
+                        *in_flight_requests += 1;
+                    }
+                    Err(TryRecvError::Empty) => {
+                        break;
+                    }
+                    Err(TryRecvError::Disconnected) => {
+                        info!(self.log, "Channel for submitting IO task disconnected");
+                        self.channel_disconnected = true;
+                        break;
+                    }
+                }
             }
         }
         pending
@@ -420,7 +438,7 @@ impl IO {
         let mut tag: u64 = 0;
 
         // Entries that are originated from completed ones.
-        let mut generated_entries = VecDeque::new();
+        let mut incurred_entries = VecDeque::new();
 
         // Entries should be submitted to poll_uring this round.
         let mut pending_entries = vec![];
@@ -434,7 +452,7 @@ impl IO {
                         break;
                     }
 
-                    if let Some(entry) = generated_entries.pop_front() {
+                    if let Some(entry) = incurred_entries.pop_front() {
                         pending_entries.push(entry);
                         in_flight_requests += 1;
                     } else {
@@ -446,7 +464,7 @@ impl IO {
             // Receive IO tasks from channel
             {
                 let pending = io
-                    .borrow()
+                    .borrow_mut()
                     .receive_io_tasks(&mut in_flight_requests, io_depth);
 
                 // Convert IO tasks into io_uring entries
@@ -455,6 +473,10 @@ impl IO {
                     .to_sqe(pending, &mut tag, &mut pos, alignment, &mut tasks);
                 pending_entries.reserve(entries.len());
                 pending_entries.extend(entries.into_iter());
+            }
+
+            if 0 == in_flight_requests && io.borrow().channel_disconnected {
+                break;
             }
 
             // Submit io_uring entries into submission queue, aka, SQ.
@@ -482,7 +504,7 @@ impl IO {
                                 // tasks.insert(tag, state);
 
                                 // Submit it in the next round
-                                generated_entries.push_back(entry);
+                                incurred_entries.push_back(entry);
                             }
                         }
                     }
@@ -549,6 +571,7 @@ impl AsRawFd for IO {
 
 #[cfg(test)]
 mod tests {
+    use std::cell::RefCell;
     use std::collections::HashMap;
     use std::fs::File;
 
@@ -657,8 +680,8 @@ mod tests {
     fn test_receive_io_tasks() -> Result<(), StoreError> {
         let wal_dir = random_wal_dir()?;
         let _wal_dir_guard = util::DirectoryRemovalGuard::new(wal_dir.as_path());
-        let io = create_io(super::WalPath::new(wal_dir.to_str().unwrap(), 1234)?)?;
-        let sender = &io.sender;
+        let mut io = create_io(super::WalPath::new(wal_dir.to_str().unwrap(), 1234)?)?;
+        let sender = io.sender.take().unwrap();
         let buffer = BytesMut::with_capacity(128);
         let buffer = buffer.freeze();
 
@@ -678,9 +701,17 @@ mod tests {
             .count();
 
         let mut in_flight_requests = 0;
-        let io_depth = 16;
+        let mut io_depth = 16;
         let tasks = io.receive_io_tasks(&mut in_flight_requests, io_depth);
         assert_eq!(16, tasks.len());
+
+        drop(sender);
+        io_depth = 32;
+
+        let tasks = io.receive_io_tasks(&mut in_flight_requests, io_depth);
+
+        assert_eq!(true, tasks.is_empty());
+        assert_eq!(true, io.channel_disconnected);
 
         Ok(())
     }
@@ -719,6 +750,27 @@ mod tests {
 
         let entries = io.to_sqe(pending, &mut tag, &mut pos, alignment, &mut tasks);
         assert_eq!(16, entries.len());
+        Ok(())
+    }
+
+    #[test]
+    fn test_run() -> Result<(), StoreError> {
+        let wal_dir = random_wal_dir()?;
+        let _wal_dir_guard = util::DirectoryRemovalGuard::new(wal_dir.as_path());
+        let mut io = create_io(super::WalPath::new(wal_dir.to_str().unwrap(), 1234)?)?;
+        let sender = io
+            .sender
+            .take()
+            .ok_or(StoreError::Configuration("IO channel".to_owned()));
+        let io = RefCell::new(io);
+        let handle = std::thread::spawn(move || {
+            super::IO::run(io).unwrap();
+        });
+
+        drop(sender);
+
+        handle.join().map_err(|_| StoreError::AllocLogSegment)?;
+
         Ok(())
     }
 }
