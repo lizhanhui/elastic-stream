@@ -429,8 +429,8 @@ impl IO {
         let _file_size = io.borrow().options.file_size;
 
         let mut pos = {
-            let mut io_ref = io.borrow_mut();
-            let segment = io_ref
+            let mut io_mut = io.borrow_mut();
+            let segment = io_mut
                 .acquire_writable_segment()
                 .ok_or(StoreError::AllocLogSegment)?;
             segment.open()?;
@@ -444,16 +444,18 @@ impl IO {
         // Main loop
         loop {
             // Receive IO tasks from channel
-            let tasks = io.borrow_mut().receive_io_tasks(&mut inflight, io_depth);
-
-            // Convert IO tasks into io_uring entries
-            let entries = io.borrow_mut().convert_task_to_sqe(
-                tasks,
-                &mut tag,
-                &mut pos,
-                alignment,
-                &mut inflight_tasks,
-            );
+            let entries = {
+                let mut io_mut = io.borrow_mut();
+                let tasks = io_mut.receive_io_tasks(&mut inflight, io_depth);
+                // Convert IO tasks into io_uring entries
+                io_mut.convert_task_to_sqe(
+                    tasks,
+                    &mut tag,
+                    &mut pos,
+                    alignment,
+                    &mut inflight_tasks,
+                )
+            };
 
             if 0 == inflight && io.borrow().channel_disconnected {
                 break;
