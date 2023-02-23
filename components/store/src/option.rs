@@ -1,7 +1,8 @@
 //! Options of various kinds to modify their action behaviors
 //!
 
-use std::{fs::File, os::fd::AsRawFd, path::Path};
+use nix::sys::stat;
+use std::path::Path;
 
 use crate::error::StoreError;
 
@@ -25,12 +26,14 @@ impl WalPath {
         if !dir_path.exists() {
             std::fs::create_dir_all(dir_path)?;
         }
-        let file = File::open(path)?;
-        let block_size = unsafe { libc::ioctl(file.as_raw_fd(), libc::BLKSSZGET) } as u32;
+
+        let p = Path::new(path);
+        let file_stat = stat::stat(p).map_err(|e| StoreError::System(e as i32))?;
+
         Ok(Self {
             path: path.to_owned(),
             target_size,
-            block_size,
+            block_size: file_stat.st_blksize as u32,
         })
     }
 }
@@ -84,4 +87,18 @@ pub struct ReadOptions {
 
     /// Maximum number of records to read.
     pub(crate) limit: Option<usize>,
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::error::StoreError;
+
+    use super::WalPath;
+
+    #[test]
+    fn test_alignment() -> Result<(), StoreError> {
+        let wal_path = WalPath::new("/tmp", 1234)?;
+        assert_eq!(true, wal_path.block_size <= 4096);
+        Ok(())
+    }
 }

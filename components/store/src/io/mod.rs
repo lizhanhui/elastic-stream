@@ -273,6 +273,27 @@ impl IO {
             .find(|&segment| segment.offset <= offset)
     }
 
+    fn validate_io_task(io_task: &mut IoTask, log: &Logger) -> bool {
+        if let IoTask::Write(ref mut task) = io_task {
+            if 0 == task.buffer.len() {
+                warn!(log, "WriteTask buffer length is 0");
+                return false;
+            }
+        }
+        return true;
+    }
+
+    fn on_bad_request(io_task: IoTask) {
+        match io_task {
+            IoTask::Read(_) => {
+                todo!()
+            }
+            IoTask::Write(write_task) => {
+                let _ = write_task.observer.send(Err(AppendError::Internal));
+            }
+        }
+    }
+
     fn receive_io_tasks(&mut self, inflight: &mut u32, io_depth: u32) -> Vec<IoTask> {
         let mut tasks = vec![];
         loop {
@@ -285,7 +306,11 @@ impl IO {
             if *inflight == 0 {
                 // Block the thread until at least one IO task arrives
                 match self.receiver.recv() {
-                    Ok(io_task) => {
+                    Ok(mut io_task) => {
+                        if !IO::validate_io_task(&mut io_task, &self.log) {
+                            IO::on_bad_request(io_task);
+                            continue;
+                        }
                         tasks.push(io_task);
                         *inflight += 1;
                     }
@@ -297,7 +322,11 @@ impl IO {
                 }
             } else {
                 match self.receiver.try_recv() {
-                    Ok(io_task) => {
+                    Ok(mut io_task) => {
+                        if !IO::validate_io_task(&mut io_task, &self.log) {
+                            IO::on_bad_request(io_task);
+                            continue;
+                        }
                         tasks.push(io_task);
                         *inflight += 1;
                     }
@@ -386,7 +415,7 @@ impl IO {
                         *pos += buf_len as u64;
                         Ok(sqe)
                     } else {
-                        error!(self.log, "Failed to allocate ");
+                        error!(self.log, "Failed to allocate log segment");
                         Err(StoreError::AllocLogSegment)
                     }
                 }
@@ -441,12 +470,17 @@ impl IO {
         let mut inflight_tasks = HashMap::new();
         let mut tag: u64 = 0;
 
+        let cqe_wanted = 1;
+
         // Main loop
         loop {
-            // Receive IO tasks from channel
             let entries = {
                 let mut io_mut = io.borrow_mut();
+
+                // Receive IO tasks from channel
                 let tasks = io_mut.receive_io_tasks(&mut inflight, io_depth);
+                trace!(log, "Received {} IO requests from channel", tasks.len());
+
                 // Convert IO tasks into io_uring entries
                 io_mut.convert_task_to_sqe(
                     tasks,
@@ -458,11 +492,22 @@ impl IO {
             };
 
             if 0 == inflight && io.borrow().channel_disconnected {
+                info!(
+                    log,
+                    "Now that all IO requests are served and channel disconnects, stop main loop"
+                );
                 break;
             }
 
-            // Submit io_uring entries into submission queue, aka, SQ.
+            // Submit io_uring entries into submission queue.
+            trace!(
+                log,
+                "Get {} incoming SQE(s) to submit, inflight: {}",
+                entries.len(),
+                inflight
+            );
             if !entries.is_empty() {
+                let cnt = entries.len();
                 unsafe {
                     io.borrow_mut()
                         .poll_ring
@@ -476,10 +521,30 @@ impl IO {
                             StoreError::IoUring
                         })?
                 };
+                trace!(log, "Pushed {} SQEs into submission queue", cnt);
             }
 
             // Wait complete asynchronous IO
-            if let Ok(_reaped) = io.borrow().poll_ring.submit_and_wait(1) {
+            trace!(
+                log,
+                "Waiting for at least {}/{} CQE(s) to reap",
+                cqe_wanted,
+                inflight
+            );
+            let now = std::time::Instant::now();
+            if let Ok(_reaped) = io.borrow().poll_ring.submit_and_wait(cqe_wanted) {
+                trace!(
+                    log,
+                    "Reaped {} completed IO CQE(s), costs {}us",
+                    _reaped,
+                    now.elapsed().as_micros()
+                );
+            } else {
+                break;
+            }
+
+            // Reap CQE(s)
+            {
                 let mut io_mut = io.borrow_mut();
                 let mut completion = io_mut.poll_ring.completion();
                 loop {
@@ -498,10 +563,9 @@ impl IO {
                         break;
                     }
                 }
-            } else {
-                break;
             }
         }
+        info!(log, "Main loop quit");
         Ok(())
     }
 }
@@ -518,7 +582,8 @@ impl IO {
 fn on_complete(_tag: u64, state: OpState, result: i32, log: &Logger) {
     match state.task {
         IoTask::Write(write) => {
-            if 0 == result {
+            if -1 != result {
+                trace!(log, "{} bytes written", result);
                 let append_result = AppendResult {
                     stream_id: write.stream_id,
                     offset: write.offset,
@@ -526,12 +591,15 @@ fn on_complete(_tag: u64, state: OpState, result: i32, log: &Logger) {
                 if let Err(_e) = write.observer.send(Ok(append_result)) {
                     error!(log, "Failed to write append result to oneshot channel");
                 }
-            } else if write
-                .observer
-                .send(Err(AppendError::System(result)))
-                .is_err()
-            {
-                error!(log, "Failed to propagate system error {} to caller", result);
+            } else {
+                error!(log, "Internal IO error: errno: {}", result);
+                if write
+                    .observer
+                    .send(Err(AppendError::System(result)))
+                    .is_err()
+                {
+                    error!(log, "Failed to propagate system error {} to caller", result);
+                }
             }
         }
         IoTask::Read(_read) => {
@@ -717,7 +785,7 @@ mod tests {
         let buffer = buffer.freeze();
 
         // Send IoTask to channel
-        let pending: Vec<_> = (0..16)
+        let tasks: Vec<_> = (0..16)
             .into_iter()
             .map(|_| {
                 let (tx, _rx) = oneshot::channel();
@@ -734,9 +802,10 @@ mod tests {
         let mut pos = 0;
         let alignment = 512;
 
-        let mut tasks = HashMap::new();
+        let mut inflight_tasks = HashMap::new();
 
-        let entries = io.convert_task_to_sqe(pending, &mut tag, &mut pos, alignment, &mut tasks);
+        let entries =
+            io.convert_task_to_sqe(tasks, &mut tag, &mut pos, alignment, &mut inflight_tasks);
         assert_eq!(16, entries.len());
         Ok(())
     }
@@ -749,11 +818,31 @@ mod tests {
         let sender = io
             .sender
             .take()
-            .ok_or(StoreError::Configuration("IO channel".to_owned()));
+            .ok_or(StoreError::Configuration("IO channel".to_owned()))?;
         let io = RefCell::new(io);
         let handle = std::thread::spawn(move || {
             super::IO::run(io).unwrap();
+            println!("Module io stopped");
         });
+
+        let mut buffer = BytesMut::with_capacity(4096);
+        buffer.resize(4096, 65);
+        let buffer = buffer.freeze();
+
+        (0..16)
+            .into_iter()
+            .map(|i| {
+                let (tx, _rx) = oneshot::channel();
+                IoTask::Write(WriteTask {
+                    stream_id: 0,
+                    offset: i as i64,
+                    buffer: buffer.clone(),
+                    observer: tx,
+                })
+            })
+            .for_each(|task| {
+                sender.send(task).unwrap();
+            });
 
         drop(sender);
 

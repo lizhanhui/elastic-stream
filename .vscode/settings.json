@@ -11,6 +11,7 @@
         "monoio",
         "oneshot",
         "SQPOLL",
+        "squeue",
         "syscall",
         "Uring"
     ],
