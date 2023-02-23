@@ -152,7 +152,7 @@ impl ChannelReader {
             // An error was encountered while parsing the frame. The connection
             // is now in an invalid state. Returning `Err` from here will result
             // in the connection being closed.
-            Err(e) => Err(e.into()),
+            Err(e) => Err(e),
         }
     }
 }

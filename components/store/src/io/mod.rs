@@ -523,10 +523,12 @@ fn on_complete(_tag: u64, state: OpState, result: i32, log: &Logger) -> Option<s
                 if let Err(_e) = write.observer.send(Ok(append_result)) {
                     error!(log, "Failed to write append result to oneshot channel");
                 }
-            } else {
-                if let Err(_) = write.observer.send(Err(AppendError::System(result))) {
-                    error!(log, "Failed to propagate system error {} to caller", result);
-                }
+            } else if write
+                .observer
+                .send(Err(AppendError::System(result)))
+                .is_err()
+            {
+                error!(log, "Failed to propagate system error {} to caller", result);
             }
             None
         }
