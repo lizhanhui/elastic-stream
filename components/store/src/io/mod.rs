@@ -624,6 +624,7 @@ mod tests {
     use std::fs::File;
 
     use bytes::BytesMut;
+    use slog::info;
     use std::env;
     use std::path::PathBuf;
     use tokio::sync::oneshot;
@@ -733,7 +734,8 @@ mod tests {
         let _wal_dir_guard = util::DirectoryRemovalGuard::new(wal_dir.as_path());
         let mut io = create_io(super::WalPath::new(wal_dir.to_str().unwrap(), 1234)?)?;
         let sender = io.sender.take().unwrap();
-        let buffer = BytesMut::with_capacity(128);
+        let mut buffer = BytesMut::with_capacity(128);
+        buffer.resize(128, 65);
         let buffer = buffer.freeze();
 
         // Send IoTask to channel
@@ -815,13 +817,14 @@ mod tests {
         let wal_dir = random_wal_dir()?;
         let _wal_dir_guard = util::DirectoryRemovalGuard::new(wal_dir.as_path());
         let mut io = create_io(super::WalPath::new(wal_dir.to_str().unwrap(), 1234)?)?;
+        info!(io.log, "PID={}", std::process::id());
         let sender = io
             .sender
             .take()
             .ok_or(StoreError::Configuration("IO channel".to_owned()))?;
         let io = RefCell::new(io);
         let handle = std::thread::spawn(move || {
-            super::IO::run(io).unwrap();
+            let _ = super::IO::run(io);
             println!("Module io stopped");
         });
 
