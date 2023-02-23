@@ -8,7 +8,7 @@ use crate::error::AppendError;
 use crate::option::WalPath;
 use crate::{error::StoreError, ops::append::AppendResult};
 use buf::RecordBuf;
-use crossbeam::channel::{Receiver, RecvError, Sender, TryRecvError};
+use crossbeam::channel::{Receiver, Sender, TryRecvError};
 use io_uring::{
     opcode::{self, Write},
     squeue, types,
@@ -17,13 +17,13 @@ use segment::LogSegmentFile;
 use slog::{error, info, trace, warn, Logger};
 use std::{
     cell::RefCell,
-    collections::{BTreeMap, HashMap, VecDeque},
+    collections::{HashMap, VecDeque},
     os::fd::AsRawFd,
     path::Path,
 };
-use task::{IoTask, WriteTask};
+use task::IoTask;
 
-use self::record::RecordType;
+use self::segment::Status;
 use self::state::OpState;
 
 const DEFAULT_MAX_IO_DEPTH: u32 = 4096;
@@ -250,6 +250,7 @@ impl IO {
 
     fn acquire_writable_segment(&mut self) -> Option<&mut LogSegmentFile> {
         let mut create = true;
+
         if let Some(file) = self.segments.back() {
             if !file.is_full() {
                 create = false;
@@ -266,11 +267,11 @@ impl IO {
         self.segments.back_mut()
     }
 
-    fn segment_file_of(&self, offset: u64) -> Option<&LogSegmentFile> {
+    fn segment_file_of(&mut self, offset: u64) -> Option<&mut LogSegmentFile> {
         self.segments
-            .iter()
+            .iter_mut()
             .rev()
-            .find(|&segment| segment.offset <= offset)
+            .find(|segment| segment.offset <= offset && (segment.offset + segment.size > offset))
     }
 
     fn validate_io_task(io_task: &mut IoTask, log: &Logger) -> bool {
@@ -344,6 +345,13 @@ impl IO {
         tasks
     }
 
+    fn writable_segment_count(&self) -> usize {
+        self.segments
+            .iter()
+            .filter(|segment| segment.status != Status::Read)
+            .count()
+    }
+
     fn convert_task_to_sqe(
         &mut self,
         tasks: Vec<IoTask>,
@@ -358,7 +366,7 @@ impl IO {
                 IoTask::Read(read_task) => {
                     let segment = self
                         .segment_file_of(read_task.offset)
-                        .ok_or(StoreError::AllocLogSegment)?;
+                        .ok_or(StoreError::OffsetOutOfRange(read_task.offset))?;
 
                     let mut record_buf = RecordBuf::new();
                     record_buf.alloc(read_task.len as usize, alignment as usize)?;
@@ -384,39 +392,42 @@ impl IO {
                     Ok::<squeue::Entry, StoreError>(sqe)
                 }
                 IoTask::Write(task) => {
-                    if let Some(segment) = self.acquire_writable_segment() {
-                        let file_offset = *pos - segment.offset;
-                        let buf_len = task.buffer.len();
-                        if file_offset + buf_len as u64 > segment.size {
-                            todo!("Switch to next log segment file");
+                    loop {
+                        if let Some(segment) = self.segment_file_of(*pos) {
+                            let buf_len = task.buffer.len();
+                            let file_offset = *pos - segment.offset;
+                            if !segment.can_hold(buf_len as u64) {
+                                segment.append_footer(pos);
+                                // Switch to a new log segment
+                                continue;
+                            }
+
+                            let mut record_buf = RecordBuf::new();
+                            record_buf.alloc(buf_len, alignment as usize)?;
+                            let buf = record_buf.write_buf().ok_or(StoreError::MemoryAlignment)?;
+                            unsafe { std::ptr::copy(task.buffer.as_ptr(), buf.ptr, buf_len) };
+
+                            let sqe = Write::new(
+                                types::Fd(segment.fd.expect("LogSegmentFile should have opened")),
+                                buf.ptr,
+                                task.buffer.len() as u32,
+                            )
+                            .offset64(file_offset as libc::off_t)
+                            .build()
+                            .user_data(*tag);
+
+                            // Track state of write op
+                            let state = OpState {
+                                task: IoTask::Write(task),
+                                record_buf,
+                            };
+                            inflight_tasks.insert(*tag, state);
+                            *tag += 1;
+                            *pos += buf_len as u64;
+                            break Ok(sqe);
+                        } else {
+                            self.alloc_segment()?;
                         }
-
-                        let mut record_buf = RecordBuf::new();
-                        record_buf.alloc(buf_len, alignment as usize)?;
-                        let buf = record_buf.write_buf().ok_or(StoreError::MemoryAlignment)?;
-                        unsafe { std::ptr::copy(task.buffer.as_ptr(), buf.ptr, buf_len) };
-
-                        let sqe = Write::new(
-                            types::Fd(segment.fd.expect("LogSegmentFile should have opened")),
-                            buf.ptr,
-                            task.buffer.len() as u32,
-                        )
-                        .offset64(file_offset as libc::off_t)
-                        .build()
-                        .user_data(*tag);
-
-                        // Track state of write op
-                        let state = OpState {
-                            task: IoTask::Write(task),
-                            record_buf,
-                        };
-                        inflight_tasks.insert(*tag, state);
-                        *tag += 1;
-                        *pos += buf_len as u64;
-                        Ok(sqe)
-                    } else {
-                        error!(self.log, "Failed to allocate log segment");
-                        Err(StoreError::AllocLogSegment)
                     }
                 }
             })
@@ -457,6 +468,7 @@ impl IO {
 
         let _file_size = io.borrow().options.file_size;
 
+        // `pos` will be initialized when loading store during start-up procedure.
         let mut pos = {
             let mut io_mut = io.borrow_mut();
             let segment = io_mut

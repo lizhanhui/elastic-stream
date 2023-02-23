@@ -13,6 +13,9 @@ use nix::fcntl;
 
 use crate::error::StoreError;
 
+// magic_code(4bytes) + earliest_record_time(8bytes) + latest_record_time(8bytes)
+const FOOTER_LEN: u64 = 20;
+
 /// Write-ahead-log segment file status.
 ///
 /// `Status` indicates the opcode allowed on it.
@@ -144,6 +147,16 @@ impl LogSegmentFile {
 
     pub fn is_full(&self) -> bool {
         self.written >= self.size
+    }
+
+    pub(crate) fn can_hold(&self, len: u64) -> bool {
+        self.status != Status::Read && self.written + FOOTER_LEN + len <= self.size
+    }
+
+    pub fn append_footer(&mut self, pos: &mut u64) {
+        *pos += self.size - self.written;
+        self.written = self.size;
+        todo!("Padding footer");
     }
 }
 
