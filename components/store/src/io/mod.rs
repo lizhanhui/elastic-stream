@@ -348,7 +348,8 @@ impl IO {
     fn writable_segment_count(&self) -> usize {
         self.segments
             .iter()
-            .filter(|segment| segment.status != Status::Read)
+            .rev() // from back to front
+            .take_while(|segment| segment.status != Status::Read)
             .count()
     }
 
@@ -484,8 +485,17 @@ impl IO {
 
         let cqe_wanted = 1;
 
+        // Mapping between segment offset to Status
+        //
+        // Status migration: OpenAt --> Fallocate --> ReadWrite. Once the status of segment is driven to ReadWrite,
+        // this mapping should be removed.
+        let mut file_op: HashMap<u64, Status> = HashMap::new();
+
         // Main loop
         loop {
+            // Check if we need to create a new log segment
+            {}
+
             let entries = {
                 let mut io_mut = io.borrow_mut();
 
@@ -649,10 +659,10 @@ mod tests {
     use tokio::sync::oneshot;
     use uuid::Uuid;
 
-    use crate::error::StoreError;
     use crate::io::segment::LogSegmentFile;
     use crate::io::DEFAULT_LOG_SEGMENT_FILE_SIZE;
     use crate::option::WalPath;
+    use crate::{error::StoreError, io::segment::Status};
 
     use super::task::{IoTask, WriteTask};
 
@@ -708,6 +718,22 @@ mod tests {
             DEFAULT_LOG_SEGMENT_FILE_SIZE,
             io.segments.get(1).unwrap().offset
         );
+        Ok(())
+    }
+
+    #[test]
+    fn test_writable_segment_count() -> Result<(), StoreError> {
+        let wal_dir = random_wal_dir()?;
+        let _wal_dir_guard = util::DirectoryRemovalGuard::new(wal_dir.as_path());
+        let mut io = create_io(super::WalPath::new(wal_dir.to_str().unwrap(), 1234)?)?;
+        io.alloc_segment()?;
+        assert_eq!(1, io.writable_segment_count());
+        io.alloc_segment()?;
+        assert_eq!(2, io.writable_segment_count());
+
+        io.segments.front_mut().unwrap().status = Status::Read;
+        assert_eq!(1, io.writable_segment_count());
+
         Ok(())
     }
 
