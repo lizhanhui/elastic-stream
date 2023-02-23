@@ -266,28 +266,28 @@ impl IO {
         self.segments.back_mut()
     }
 
-    fn segment_file_of(&self, offset: u64, len: u32) -> Option<&LogSegmentFile> {
+    fn segment_file_of(&self, offset: u64) -> Option<&LogSegmentFile> {
         self.segments
             .iter()
             .rev()
-            .find(|&segment| segment.offset < offset)
+            .find(|&segment| segment.offset <= offset)
     }
 
-    fn receive_io_tasks(&mut self, in_flight_requests: &mut u32, io_depth: u32) -> Vec<IoTask> {
-        let mut pending = vec![];
+    fn receive_io_tasks(&mut self, inflight: &mut u32, io_depth: u32) -> Vec<IoTask> {
+        let mut tasks = vec![];
         loop {
-            if *in_flight_requests >= io_depth {
+            if *inflight >= io_depth {
                 break;
             }
 
             // if the log segment file is full, break loop.
 
-            if *in_flight_requests == 0 {
+            if *inflight == 0 {
                 // Block the thread until at least one IO task arrives
                 match self.receiver.recv() {
                     Ok(io_task) => {
-                        pending.push(io_task);
-                        *in_flight_requests += 1;
+                        tasks.push(io_task);
+                        *inflight += 1;
                     }
                     Err(_e) => {
                         info!(self.log, "Channel for submitting IO task disconnected");
@@ -298,8 +298,8 @@ impl IO {
             } else {
                 match self.receiver.try_recv() {
                     Ok(io_task) => {
-                        pending.push(io_task);
-                        *in_flight_requests += 1;
+                        tasks.push(io_task);
+                        *inflight += 1;
                     }
                     Err(TryRecvError::Empty) => {
                         break;
@@ -312,23 +312,23 @@ impl IO {
                 }
             }
         }
-        pending
+        tasks
     }
 
-    fn to_sqe(
+    fn convert_task_to_sqe(
         &mut self,
-        pending: Vec<IoTask>,
+        tasks: Vec<IoTask>,
         tag: &mut u64,
         pos: &mut u64,
         alignment: u32,
-        tasks: &mut HashMap<u64, OpState>,
+        inflight_tasks: &mut HashMap<u64, OpState>,
     ) -> Vec<squeue::Entry> {
-        pending
+        tasks
             .into_iter()
             .flat_map(|io_task| match io_task {
                 IoTask::Read(read_task) => {
                     let segment = self
-                        .segment_file_of(read_task.offset, read_task.len)
+                        .segment_file_of(read_task.offset)
                         .ok_or(StoreError::AllocLogSegment)?;
 
                     let mut record_buf = RecordBuf::new();
@@ -341,7 +341,7 @@ impl IO {
                         task: io_task,
                         record_buf,
                     };
-                    tasks.insert(*tag, state);
+                    inflight_tasks.insert(*tag, state);
 
                     let sqe = opcode::Read::new(
                         types::Fd(segment.fd.ok_or(StoreError::AllocLogSegment)?),
@@ -381,7 +381,7 @@ impl IO {
                             task: IoTask::Write(task),
                             record_buf,
                         };
-                        tasks.insert(*tag, state);
+                        inflight_tasks.insert(*tag, state);
                         *tag += 1;
                         *pos += buf_len as u64;
                         Ok(sqe)
@@ -395,6 +395,8 @@ impl IO {
     }
 
     pub(crate) fn run(io: RefCell<IO>) -> Result<(), StoreError> {
+        let log = io.borrow().log.clone();
+
         io.borrow_mut().load()?;
 
         // let (tx, rx) = tokio::sync::oneshot::channel();
@@ -411,7 +413,9 @@ impl IO {
             .block_size;
 
         let io_depth = io.borrow().poll_ring.params().sq_entries();
-        let mut in_flight_requests = 0;
+
+        // Number of inflight IO tasks submitted to block layer.
+        let mut inflight = 0;
 
         let wal_dir = io
             .borrow()
@@ -420,9 +424,9 @@ impl IO {
             .first()
             .expect("Failed to acquire tier-0 WAL directory")
             .clone();
-        let wal_path = Path::new(&wal_dir.path);
+        let _wal_path = Path::new(&wal_dir.path);
 
-        let file_size = io.borrow().options.file_size;
+        let _file_size = io.borrow().options.file_size;
 
         let mut pos = {
             let mut io_ref = io.borrow_mut();
@@ -434,78 +438,54 @@ impl IO {
         };
 
         // Mapping between tag to OpState
-        let mut tasks = HashMap::new();
+        let mut inflight_tasks = HashMap::new();
         let mut tag: u64 = 0;
-
-        // Entries that are originated from completed ones.
-        let mut incurred_entries = VecDeque::new();
-
-        // Entries should be submitted to poll_uring this round.
-        let mut pending_entries = vec![];
 
         // Main loop
         loop {
-            // Move as many generated entries to pending as possible
-            {
-                loop {
-                    if in_flight_requests >= io_depth {
-                        break;
-                    }
-
-                    if let Some(entry) = incurred_entries.pop_front() {
-                        pending_entries.push(entry);
-                        in_flight_requests += 1;
-                    } else {
-                        break;
-                    }
-                }
-            }
-
             // Receive IO tasks from channel
-            {
-                let pending = io
-                    .borrow_mut()
-                    .receive_io_tasks(&mut in_flight_requests, io_depth);
+            let tasks = io.borrow_mut().receive_io_tasks(&mut inflight, io_depth);
 
-                // Convert IO tasks into io_uring entries
-                let entries = io
-                    .borrow_mut()
-                    .to_sqe(pending, &mut tag, &mut pos, alignment, &mut tasks);
-                pending_entries.reserve(entries.len());
-                pending_entries.extend(entries.into_iter());
-            }
+            // Convert IO tasks into io_uring entries
+            let entries = io.borrow_mut().convert_task_to_sqe(
+                tasks,
+                &mut tag,
+                &mut pos,
+                alignment,
+                &mut inflight_tasks,
+            );
 
-            if 0 == in_flight_requests && io.borrow().channel_disconnected {
+            if 0 == inflight && io.borrow().channel_disconnected {
                 break;
             }
 
             // Submit io_uring entries into submission queue, aka, SQ.
-            if !pending_entries.is_empty() {
+            if !entries.is_empty() {
                 unsafe {
                     io.borrow_mut()
                         .poll_ring
                         .submission()
-                        .push_multiple(&pending_entries)
-                        .map_err(|e| StoreError::IoUring)?
+                        .push_multiple(&entries)
+                        .map_err(|e| {
+                            info!(
+                                log,
+                                "Failed to push SQE entries into submission queue: {:?}", e
+                            );
+                            StoreError::IoUring
+                        })?
                 };
             }
 
             // Wait complete asynchronous IO
             if let Ok(_reaped) = io.borrow().poll_ring.submit_and_wait(1) {
-                let mut io_ref = io.borrow_mut();
-                let log = io_ref.log.clone();
-                let mut completion = io_ref.poll_ring.completion();
+                let mut io_mut = io.borrow_mut();
+                let mut completion = io_mut.poll_ring.completion();
                 loop {
                     for cqe in completion.by_ref() {
-                        in_flight_requests -= 1;
+                        inflight -= 1;
                         let tag = cqe.user_data();
-                        if let Some(state) = tasks.remove(&tag) {
-                            if let Some(entry) = on_complete(tag, state, cqe.result(), &log) {
-                                // tasks.insert(tag, state);
-
-                                // Submit it in the next round
-                                incurred_entries.push_back(entry);
-                            }
+                        if let Some(state) = inflight_tasks.remove(&tag) {
+                            on_complete(tag, state, cqe.result(), &log);
                         }
                     }
                     // This will flush any entries consumed in this iterator and will make available new entries in the queue
@@ -524,8 +504,7 @@ impl IO {
     }
 }
 
-///
-/// Returns additional IO operation if the requested data are splitted into multiple blocks and files.
+/// Process reaped IO completion.
 ///
 /// # Arguments
 ///
@@ -534,7 +513,7 @@ impl IO {
 /// * `result` - Result code, exactly same to system call return value.
 /// * `log` - Logger instance.
 ///
-fn on_complete(_tag: u64, state: OpState, result: i32, log: &Logger) -> Option<squeue::Entry> {
+fn on_complete(_tag: u64, state: OpState, result: i32, log: &Logger) {
     match state.task {
         IoTask::Write(write) => {
             if 0 == result {
@@ -552,7 +531,6 @@ fn on_complete(_tag: u64, state: OpState, result: i32, log: &Logger) -> Option<s
             {
                 error!(log, "Failed to propagate system error {} to caller", result);
             }
-            None
         }
         IoTask::Read(_read) => {
             // Note reads performed in chunks of `BlockSize`, as a result, we have to
@@ -577,7 +555,7 @@ mod tests {
 
     use bytes::BytesMut;
     use std::env;
-    use std::path::{Path, PathBuf};
+    use std::path::PathBuf;
     use tokio::sync::oneshot;
     use uuid::Uuid;
 
@@ -669,8 +647,11 @@ mod tests {
 
         // Ensure we can get the right
         let segment = io
-            .segment_file_of(DEFAULT_LOG_SEGMENT_FILE_SIZE - 100, 80)
+            .segment_file_of(io.options.file_size - 1)
             .ok_or(StoreError::AllocLogSegment)?;
+        assert_eq!(0, segment.offset);
+
+        let segment = io.segment_file_of(0).ok_or(StoreError::AllocLogSegment)?;
         assert_eq!(0, segment.offset);
 
         Ok(())
@@ -701,7 +682,7 @@ mod tests {
             .count();
 
         let mut in_flight_requests = 0;
-        
+
         // Device IO queue depths
         let io_depth = 16;
 
@@ -753,7 +734,7 @@ mod tests {
 
         let mut tasks = HashMap::new();
 
-        let entries = io.to_sqe(pending, &mut tag, &mut pos, alignment, &mut tasks);
+        let entries = io.convert_task_to_sqe(pending, &mut tag, &mut pos, alignment, &mut tasks);
         assert_eq!(16, entries.len());
         Ok(())
     }
