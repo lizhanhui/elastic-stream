@@ -532,21 +532,27 @@ impl IO {
                 inflight
             );
             let now = std::time::Instant::now();
-            if let Ok(_reaped) = io.borrow().poll_ring.submit_and_wait(cqe_wanted) {
-                trace!(
-                    log,
-                    "Reaped {} completed IO CQE(s), costs {}us",
-                    _reaped,
-                    now.elapsed().as_micros()
-                );
-            } else {
-                break;
+            match io.borrow().poll_ring.submit_and_wait(cqe_wanted) {
+                Ok(_reaped) => {
+                    trace!(
+                        log,
+                        "io_uring_enter waited {}us to reap completed IO CQE(s)",
+                        now.elapsed().as_micros()
+                    );
+                }
+                Err(e) => {
+                    error!(log, "io_uring_enter got an error: {:?}", e);
+
+                    // Fatal errors, crash the process and let watchdog to restart.
+                    panic!("io_uring_enter returns error {:?}", e);
+                }
             }
 
             // Reap CQE(s)
             {
                 let mut io_mut = io.borrow_mut();
                 let mut completion = io_mut.poll_ring.completion();
+                let prev = inflight;
                 loop {
                     for cqe in completion.by_ref() {
                         inflight -= 1;
@@ -563,6 +569,7 @@ impl IO {
                         break;
                     }
                 }
+                trace!(log, "Reaped {} CQE(s)", prev - inflight);
             }
         }
         info!(log, "Main loop quit");
@@ -817,7 +824,6 @@ mod tests {
         let wal_dir = random_wal_dir()?;
         let _wal_dir_guard = util::DirectoryRemovalGuard::new(wal_dir.as_path());
         let mut io = create_io(super::WalPath::new(wal_dir.to_str().unwrap(), 1234)?)?;
-        info!(io.log, "PID={}", std::process::id());
         let sender = io
             .sender
             .take()

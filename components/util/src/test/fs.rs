@@ -13,9 +13,16 @@ impl<'a> DirectoryRemovalGuard<'a> {
 impl<'a> Drop for DirectoryRemovalGuard<'a> {
     fn drop(&mut self) {
         let path = Path::new(&self.path);
-
+        let _ = path.read_dir().map(|read_dir| {
+            read_dir
+                .flatten()
+                .map(|entry| {
+                    println!("Deleting {:?}", entry.path());
+                })
+                .count();
+        });
         if let Err(e) = std::fs::remove_dir_all(path) {
-            eprintln!("Failed to remove directory: {:?}", e);
+            eprintln!("Failed to remove directory: {:?}. Error: {:?}", path, e);
         }
     }
 }
