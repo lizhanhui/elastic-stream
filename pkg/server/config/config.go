@@ -259,6 +259,9 @@ func configure() (*viper.Viper, *pflag.FlagSet) {
 	_ = v.BindPFlag("log.rotate.localTime", fs.Lookup("log-rotate-local-time"))
 	_ = v.BindPFlag("log.rotate.compress", fs.Lookup("log-rotate-compress"))
 
+	// bind env not set before
+	_ = v.BindEnv("etcd.clusterState")
+
 	return v, fs
 }
 

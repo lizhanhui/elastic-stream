@@ -337,6 +337,7 @@ func TestConfigFromEnv(t *testing.T) {
 	t.Setenv("PM_LOG_ZAP_ENCODERCONFIG_MESSAGEKEY", "env-test-msg-key")
 	t.Setenv("PM_LOG_ZAP_DISABLECALLER", "true")
 	t.Setenv("PM_ETCD_TICKMS", "4321")
+	t.Setenv("PM_ETCD_CLUSTERSTATE", "env-test-cluster-state")
 
 	config, err := NewConfig([]string{
 		"--config=./test/test-config.toml",
@@ -353,6 +354,7 @@ func TestConfigFromEnv(t *testing.T) {
 	re.Equal("env-test-msg-key", config.Log.Zap.EncoderConfig.MessageKey)
 	re.Equal(true, config.Log.Zap.DisableCaller)
 	re.Equal(uint(4321), config.Etcd.TickMs)
+	re.Equal("env-test-cluster-state", config.Etcd.ClusterState)
 }
 
 func TestConfig_Adjust(t *testing.T) {
