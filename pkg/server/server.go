@@ -19,6 +19,7 @@ import (
 	"net/http"
 	"path"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -99,6 +100,11 @@ func (s *Server) startEtcd(ctx context.Context) error {
 	logger := s.lg
 
 	etcd, err := embed.StartEtcd(s.cfg.Etcd)
+	if err != nil && strings.Contains(err.Error(), "has already been bootstrapped") {
+		logger.Warn("member has been bootstrapped, set ClusterState = \"existing\" and try again")
+		s.cfg.Etcd.ClusterState = embed.ClusterStateFlagExisting
+		etcd, err = embed.StartEtcd(s.cfg.Etcd)
+	}
 	if err != nil {
 		return errors.Wrap(err, "start etcd by config")
 	}
