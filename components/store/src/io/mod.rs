@@ -223,7 +223,7 @@ impl IO {
         Ok(())
     }
 
-    fn alloc_segment(&mut self) -> Result<(), StoreError> {
+    fn alloc_segment(&mut self) -> Result<&mut LogSegmentFile, StoreError> {
         let offset = if self.segments.is_empty() {
             0
         } else if let Some(last) = self.segments.back() {
@@ -245,26 +245,7 @@ impl IO {
             segment::Medium::Ssd,
         );
         self.segments.push_back(segment);
-        Ok(())
-    }
-
-    fn acquire_writable_segment(&mut self) -> Option<&mut LogSegmentFile> {
-        let mut create = true;
-
-        if let Some(file) = self.segments.back() {
-            if !file.is_full() {
-                create = false;
-            }
-        }
-
-        if create {
-            if let Err(e) = self.alloc_segment() {
-                error!(self.log, "Failed to allocate LogSegmentFile: {:?}", e);
-                return None;
-            }
-        }
-        // Reuse previously allocated segment file since it's not full yet.
-        self.segments.back_mut()
+        self.segments.back_mut().ok_or(StoreError::AllocLogSegment)
     }
 
     fn segment_file_of(&mut self, offset: u64) -> Option<&mut LogSegmentFile> {
@@ -472,9 +453,7 @@ impl IO {
         // `pos` will be initialized when loading store during start-up procedure.
         let mut pos = {
             let mut io_mut = io.borrow_mut();
-            let segment = io_mut
-                .acquire_writable_segment()
-                .ok_or(StoreError::AllocLogSegment)?;
+            let segment = io_mut.alloc_segment()?;
             segment.open()?;
             segment.offset + segment.written
         };
@@ -738,27 +717,11 @@ mod tests {
     }
 
     #[test]
-    fn test_acquire_writable_segment() -> Result<(), StoreError> {
-        let wal_dir = random_wal_dir()?;
-        let _wal_dir_guard = util::DirectoryRemovalGuard::new(wal_dir.as_path());
-        let mut io = create_io(super::WalPath::new(wal_dir.to_str().unwrap(), 1234)?)?;
-        io.acquire_writable_segment()
-            .ok_or(StoreError::AllocLogSegment)?;
-        assert_eq!(1, io.segments.len());
-        // Verify `acquire_writable_segment()` is reentrant
-        io.acquire_writable_segment()
-            .ok_or(StoreError::AllocLogSegment)?;
-        assert_eq!(1, io.segments.len());
-        Ok(())
-    }
-
-    #[test]
     fn test_segment_file_of() -> Result<(), StoreError> {
         let wal_dir = random_wal_dir()?;
         let _wal_dir_guard = util::DirectoryRemovalGuard::new(wal_dir.as_path());
         let mut io = create_io(super::WalPath::new(wal_dir.to_str().unwrap(), 1234)?)?;
-        io.acquire_writable_segment()
-            .ok_or(StoreError::AllocLogSegment)?;
+        io.alloc_segment()?;
         assert_eq!(1, io.segments.len());
 
         // Ensure we can get the right
@@ -825,7 +788,7 @@ mod tests {
         let _wal_dir_guard = util::DirectoryRemovalGuard::new(wal_dir.as_path());
         let mut io = create_io(super::WalPath::new(wal_dir.to_str().unwrap(), 1234)?)?;
 
-        let segment = io.acquire_writable_segment().unwrap();
+        let segment = io.alloc_segment().unwrap();
         segment.open()?;
 
         let buffer = BytesMut::with_capacity(128);
