@@ -47,6 +47,9 @@ pub enum StoreError {
 
     #[error("Internal error: `{0}`")]
     Internal(String),
+
+    #[error("Data corrupted")]
+    DataCorrupted,
 }
 
 #[derive(Debug, Error)]

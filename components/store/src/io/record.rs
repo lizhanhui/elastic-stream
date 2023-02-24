@@ -1,3 +1,5 @@
+use num_enum::TryFromPrimitive;
+
 /// Type of the
 ///
 /// +---------+-----------+-----------+--- ... ---+
@@ -11,6 +13,7 @@
 ///        The type is used to group a bunch of records together to represent
 ///        blocks that are larger than BlockSize
 /// Payload = Byte stream as long as specified by the payload size
+#[derive(Debug, TryFromPrimitive)]
 #[repr(u8)]
 pub(crate) enum RecordType {
     Zero = 0,

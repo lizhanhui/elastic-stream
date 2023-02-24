@@ -5,6 +5,7 @@ mod state;
 pub(crate) mod task;
 
 use crate::error::AppendError;
+use crate::index::Indexer;
 use crate::option::WalPath;
 use crate::{error::StoreError, ops::append::AppendResult};
 use buf::RecordBuf;
@@ -15,7 +16,10 @@ use io_uring::{
     squeue, types,
 };
 use segment::LogSegmentFile;
-use slog::{error, info, trace, warn, Logger};
+use slog::{debug, error, info, trace, warn, Logger};
+use std::fs::OpenOptions;
+use std::io::{Read, Seek, SeekFrom};
+use std::os::unix::prelude::{FileExt, OpenOptionsExt};
 use std::{
     cell::RefCell,
     collections::{HashMap, VecDeque},
@@ -24,8 +28,10 @@ use std::{
 };
 use task::IoTask;
 
+use self::record::RecordType;
 use self::segment::Status;
 use self::state::OpState;
+use crc::{Algorithm, Crc, CRC_32_ISCSI};
 
 const DEFAULT_MAX_IO_DEPTH: u32 = 4096;
 const DEFAULT_SQPOLL_IDLE_MS: u32 = 2000;
@@ -36,6 +42,8 @@ const DEFAULT_MAX_UNBOUNDED_URING_WORKER_COUNT: u32 = 2;
 const DEFAULT_LOG_SEGMENT_FILE_SIZE: u64 = 1024u64 * 1024 * 1024;
 
 const DEFAULT_MIN_PREALLOCATED_SEGMENT_FILES: usize = 1;
+
+const CRC32C: Crc<u32> = Crc::<u32>::new(&CRC_32_ISCSI);
 
 #[derive(Debug, Clone)]
 pub(crate) struct Options {
@@ -253,8 +261,120 @@ impl IO {
         Ok(())
     }
 
-    fn launch_indexer(&self) -> Result<(), StoreError> {
-        Ok(())
+    /// Return whether has reached end of the WAL
+    fn scan_record(
+        segment: &mut LogSegmentFile,
+        pos: &mut u64,
+        log: &Logger,
+    ) -> Result<bool, StoreError> {
+        let mut file_pos = *pos - segment.offset;
+        let mut file = OpenOptions::new()
+            .read(true)
+            .custom_flags(libc::O_NOATIME)
+            .open(segment.path.to_owned())?;
+
+        let mut meta_buf = [0; 4];
+
+        let mut buf = bytes::BytesMut::new();
+        let mut last_found = false;
+        // Find the last continuous record
+        loop {
+            file.read_exact_at(&mut meta_buf, file_pos)?;
+            file_pos += 4;
+            let crc = u32::from_be_bytes(meta_buf);
+
+            file.read_exact_at(&mut meta_buf, file_pos)?;
+            file_pos += 4;
+            let len_type = u32::from_be_bytes(meta_buf);
+            let len = (len_type >> 8) as usize;
+
+            // Verify the parsed `len` makes sense.
+            if file_pos + len as u64 > segment.size {
+                info!(
+                    log,
+                    "Got an invalid record length: `{}`. Stop scanning WAL", len
+                );
+                last_found = true;
+                break;
+            }
+
+            let record_type = (len_type & 0xFF) as u8;
+            if let Ok(t) = RecordType::try_from(record_type) {
+                match t {
+                    RecordType::Zero => {
+                        // TODO: validate CRC for Padding?
+                        // Padding
+                        file_pos += len as u64;
+                        // Should have reached EOF
+                        debug_assert_eq!(segment.size, file_pos);
+
+                        segment.written = segment.size;
+                        segment.status = Status::Read;
+                        info!(log, "Reached EOF of {}", segment.path);
+                    }
+                    RecordType::Full => {
+                        // Full record
+                        buf.resize(len, 0);
+                        file.read_exact_at(buf.as_mut(), file_pos)?;
+
+                        let ckm = CRC32C.checksum(buf.as_ref());
+                        if ckm != crc {
+                            segment.written = file_pos - 4 - 4;
+                            segment.status = Status::ReadWrite;
+                            info!(log, "Found a record failing CRC32c. Expecting: `{:#08x}`, Actual: `{:#08x}`", crc, ckm);
+                            last_found = true;
+                            break;
+                        }
+                        file_pos += len as u64;
+                    }
+                    RecordType::First => {
+                        unimplemented!("Support of RecordType::First not implemented")
+                    }
+                    RecordType::Middle => {
+                        unimplemented!("Support of RecordType::Middle not implemented")
+                    }
+                    RecordType::Last => {
+                        unimplemented!("Support of RecordType::Last not implemented")
+                    }
+                }
+            } else {
+                last_found = true;
+                break;
+            }
+
+            buf.resize(len, 0);
+        }
+        *pos = segment.offset + file_pos;
+        Ok(last_found)
+    }
+
+    fn recover(&mut self, offset: u64) -> Result<u64, StoreError> {
+        let mut pos = offset;
+        let log = self.log.clone();
+        info!(log, "Start to recover WAL segment files");
+        let mut need_scan = true;
+        for segment in &mut self.segments {
+            if segment.offset + segment.size <= offset {
+                segment.status = Status::Read;
+                segment.written = segment.size;
+                debug!(log, "Mark {} as read-only", segment.path);
+                continue;
+            }
+
+            if !need_scan {
+                segment.written = 0;
+                segment.status = Status::ReadWrite;
+                debug!(log, "Mark {} as read-write", segment.path);
+                continue;
+            }
+
+            if Self::scan_record(segment, &mut pos, &log)? {
+                need_scan = false;
+                info!(log, "Recovery completed at `{}`", pos);
+            }
+        }
+        info!(log, "Recovery of WAL segment files completed");
+        Ok(pos)
     }
 
     fn alloc_segment(&mut self) -> Result<&mut LogSegmentFile, StoreError> {
@@ -650,10 +770,10 @@ impl IO {
     pub(crate) fn run(io: RefCell<IO>) -> Result<(), StoreError> {
         let log = io.borrow().log.clone();
 
+        let indexer = Indexer::new();
         io.borrow_mut().load()?;
-
-        // let (tx, rx) = tokio::sync::oneshot::channel();
-        io.borrow().launch_indexer()?;
+        let pos = indexer.flushed_wal_offset();
+        let mut pos = io.borrow_mut().recover(pos)?;
 
         let alignment = io
             .borrow()
@@ -682,13 +802,13 @@ impl IO {
 
         let _file_size = io.borrow().options.file_size;
 
-        // `pos` will be initialized when loading store during start-up procedure.
-        let mut pos = {
+        // Preallocate a log segment file according to pos
+        {
+            // TODO: if pre-allocated file num is less than configured
             let mut io_mut = io.borrow_mut();
             let segment = io_mut.alloc_segment()?;
             segment.open()?;
-            segment.offset + segment.written
-        };
+        }
 
         // Mapping between tag to OpState
         let mut inflight_tasks = HashMap::new();
@@ -698,7 +818,8 @@ impl IO {
 
         // Mapping between segment offset to Status
         //
-        // Status migration: OpenAt --> Fallocate --> ReadWrite. Once the status of segment is driven to ReadWrite,
+        // Status migration: OpenAt --> Fallocate --> ReadWrite -> Read -> Close -> Unlink.
+        // Once the status of segment is driven to ReadWrite,
         // this mapping should be removed.
         let mut file_op: HashMap<u64, Status> = HashMap::new();
 

@@ -34,6 +34,7 @@ pub mod cursor;
 pub mod ops;
 pub mod option;
 
+mod index;
 mod io;
 mod request;
 mod store;
