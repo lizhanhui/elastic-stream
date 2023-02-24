@@ -6,7 +6,6 @@ pub(crate) mod task;
 
 use crate::error::AppendError;
 use crate::option::WalPath;
-use crate::Store;
 use crate::{error::StoreError, ops::append::AppendResult};
 use buf::RecordBuf;
 use crossbeam::channel::{Receiver, Sender, TryRecvError};
@@ -292,7 +291,7 @@ impl IO {
 
     fn validate_io_task(io_task: &mut IoTask, log: &Logger) -> bool {
         if let IoTask::Write(ref mut task) = io_task {
-            if 0 == task.buffer.len() {
+            if task.buffer.is_empty() {
                 warn!(log, "WriteTask buffer length is 0");
                 return false;
             }
@@ -598,7 +597,7 @@ impl IO {
         }
 
         m.into_iter()
-            .map(|(offset, result)| {
+            .flat_map(|(offset, result)| {
                 if file_op.remove(&offset).is_none() {
                     error!(
                         self.log,
@@ -611,7 +610,6 @@ impl IO {
                 }
                 self.on_file_op_completion(offset, result, file_op)
             })
-            .flatten()
             .count();
 
         Ok(())
