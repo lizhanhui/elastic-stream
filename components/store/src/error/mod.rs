@@ -41,6 +41,9 @@ pub enum StoreError {
 
     #[error("Memory alignment issue")]
     MemoryAlignment,
+
+    #[error("Internal error: `{0}`")]
+    Internal(String),
 }
 
 #[derive(Debug, Error)]

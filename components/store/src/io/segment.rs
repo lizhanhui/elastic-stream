@@ -1,5 +1,6 @@
 use std::{
     cmp::Ordering,
+    fmt::Display,
     fs::{File, OpenOptions},
     os::{
         fd::{AsRawFd, FromRawFd, IntoRawFd, RawFd},
@@ -39,6 +40,31 @@ pub(crate) enum Status {
 
     // Delete the file to reclaim disk space.
     UnlinkAt,
+}
+
+impl Display for Status {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match *self {
+            Self::OpenAt => {
+                write!(f, "open")
+            }
+            Self::Fallocate64 => {
+                write!(f, "fallocate")
+            }
+            Self::ReadWrite => {
+                write!(f, "read/write")
+            }
+            Self::Read => {
+                write!(f, "read")
+            }
+            Self::Close => {
+                write!(f, "close")
+            }
+            Self::UnlinkAt => {
+                write!(f, "unlink")
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -6,6 +6,7 @@ pub(crate) mod task;
 
 use crate::error::AppendError;
 use crate::option::WalPath;
+use crate::Store;
 use crate::{error::StoreError, ops::append::AppendResult};
 use buf::RecordBuf;
 use crossbeam::channel::{Receiver, Sender, TryRecvError};
@@ -422,11 +423,15 @@ impl IO {
     }
 
     fn async_open(&mut self, file_op: &mut HashMap<u64, Status>) -> Result<(), StoreError> {
+        let log = self.log.clone();
         let segment = self.alloc_segment()?;
         let offset = segment.offset;
         debug_assert_eq!(segment.status, Status::OpenAt);
         file_op.insert(offset, segment.status);
-
+        info!(
+            log,
+            "About to create/open LogSegmentFile: `{}`", segment.path
+        );
         let sqe = opcode::OpenAt::new(
             types::Fd(libc::AT_FDCWD),
             segment.path.as_ptr() as *const i8,
@@ -447,9 +452,171 @@ impl IO {
         Ok(())
     }
 
+    /// Delete segments when their backed file is deleted
+    fn delete_segments(&mut self, offsets: Vec<u64>) {
+        if offsets.is_empty() {
+            return;
+        }
+
+        self.segments.retain(|segment| {
+            !(segment.status == Status::UnlinkAt && offsets.contains(&segment.offset))
+        });
+    }
+
+    fn on_file_op_completion(
+        &mut self,
+        offset: u64,
+        result: i32,
+        op_table: &mut HashMap<u64, Status>,
+    ) -> Result<(), StoreError> {
+        let log = self.log.clone();
+        let mut to_remove = vec![];
+        if let Some(segment) = self.segment_file_of(offset) {
+            if -1 == result {
+                error!(log, "Failed to `{}` {}", segment.status, segment.path);
+                return Err(StoreError::System(result));
+            }
+            match segment.status {
+                Status::OpenAt => {
+                    info!(
+                        log,
+                        "LogSegmentFile: `{}` is created and open with FD: {}",
+                        segment.path,
+                        result
+                    );
+                    segment.fd = Some(result);
+                    segment.status = Status::Fallocate64;
+
+                    info!(
+                        log,
+                        "About to fallocate LogSegmentFile: `{}` with FD: {}", segment.path, result
+                    );
+                    let sqe = opcode::Fallocate64::new(types::Fd(result), segment.size as i64)
+                        .offset(0)
+                        .mode(0)
+                        .build()
+                        .user_data(offset);
+                    unsafe {
+                        self.ring.submission().push(&sqe).map_err(|e| {
+                            error!(
+                                log,
+                                "Failed to submit Fallocate SQE to io_uring SQ: {:?}", e
+                            );
+                            StoreError::IoUring
+                        })
+                    }?;
+                    op_table.insert(offset, Status::Fallocate64);
+                }
+                Status::Fallocate64 => {
+                    info!(
+                        log,
+                        "Fallocate of LogSegmentFile `{}` completed", segment.path
+                    );
+                    segment.status = Status::ReadWrite;
+                }
+                Status::Close => {
+                    info!(log, "LogSegmentFile: `{}` is closed", segment.path);
+                    segment.fd = None;
+
+                    info!(log, "About to delete LogSegmentFile `{}`", segment.path);
+                    let sqe = opcode::UnlinkAt::new(
+                        types::Fd(libc::AT_FDCWD),
+                        segment.path.as_ptr() as *const i8,
+                    )
+                    .build()
+                    .flags(squeue::Flags::empty())
+                    .user_data(offset);
+                    unsafe {
+                        self.ring.submission().push(&sqe).map_err(|e| {
+                            error!(log, "Failed to push Unlink SQE to SQ: {:?}", e);
+                            StoreError::IoUring
+                        })
+                    }?;
+                }
+                Status::UnlinkAt => {
+                    info!(log, "LogSegmentFile: `{}` is deleted", segment.path);
+                    to_remove.push(offset)
+                }
+                _ => {}
+            };
+        }
+
+        // It's OK to submit 0 entry.
+        self.ring.submit().map_err(|e| {
+            error!(log, "Failed to submit SQEs to SQ: {:?}", e);
+            StoreError::IoUring
+        })?;
+
+        self.delete_segments(to_remove);
+
+        Ok(())
+    }
+
     fn async_fallocate(&mut self, file_op: &mut HashMap<u64, Status>) -> Result<(), StoreError> {
-        let mut cq = self.ring.completion();
-        // TODO: resume here
+        // Map of segment offset to syscall result
+        let mut m = HashMap::new();
+        {
+            let mut cq = self.ring.completion();
+            loop {
+                for cqe in cq.by_ref() {
+                    m.insert(cqe.user_data(), cqe.result());
+                }
+                cq.sync();
+                if cq.is_empty() {
+                    break;
+                }
+            }
+        }
+
+        m.into_iter()
+            .map(|(offset, result)| {
+                if file_op.remove(&offset).is_none() {
+                    error!(
+                        self.log,
+                        "`file_op` map should have a record for log segment with offset: {}",
+                        offset
+                    );
+                    return Err(StoreError::Internal(
+                        "file_op misses expected in-progress offset-status entry".to_owned(),
+                    ));
+                }
+                self.on_file_op_completion(offset, result, file_op)
+            })
+            .flatten()
+            .count();
+
+        Ok(())
+    }
+
+    fn async_close(&mut self, file_op: &mut HashMap<u64, Status>) -> Result<(), StoreError> {
+        let to_close: HashMap<_, _> = self
+            .segments
+            .iter()
+            .take_while(|segment| segment.status == Status::Close)
+            .filter(|segment| !file_op.contains_key(&segment.offset))
+            .map(|segment| {
+                info!(self.log, "About to close LogSegmentFile: {}", segment.path);
+                (segment.offset, segment.fd)
+            })
+            .collect();
+
+        for (offset, fd) in to_close {
+            if let Some(fd) = fd {
+                let sqe = opcode::Close::new(types::Fd(fd)).build().user_data(offset);
+                unsafe {
+                    self.ring.submission().push(&sqe).map_err(|e| {
+                        error!(self.log, "Failed to submit close SQE to SQ: {:?}", e);
+                        StoreError::IoUring
+                    })
+                }?;
+            }
+        }
+
+        self.ring.submit().map_err(|e| {
+            error!(self.log, "io_uring_enter failed when submit: {:?}", e);
+            StoreError::IoUring
+        })?;
+
         Ok(())
     }
 
@@ -516,6 +683,11 @@ impl IO {
                     break;
                 }
                 io.borrow_mut().async_open(&mut file_op)?;
+            }
+
+            // check if we have expired log segments to close and delete
+            {
+                io.borrow_mut().async_close(&mut file_op)?;
             }
 
             let entries = {
@@ -679,10 +851,10 @@ impl AsRawFd for IO {
 mod tests {
     use std::cell::RefCell;
     use std::collections::HashMap;
+    use std::error::Error;
     use std::fs::File;
 
     use bytes::BytesMut;
-    use slog::info;
     use std::env;
     use std::path::PathBuf;
     use tokio::sync::oneshot;
@@ -867,6 +1039,26 @@ mod tests {
         let entries =
             io.convert_task_to_sqe(tasks, &mut tag, &mut pos, alignment, &mut inflight_tasks);
         assert_eq!(16, entries.len());
+        Ok(())
+    }
+
+    #[test]
+    fn test_delete_segments() -> Result<(), Box<dyn Error>> {
+        let wal_dir = random_wal_dir()?;
+        let _wal_dir_guard = util::DirectoryRemovalGuard::new(wal_dir.as_path());
+        let mut io = create_io(super::WalPath::new(wal_dir.to_str().unwrap(), 1234)?)?;
+        io.alloc_segment()?;
+        assert_eq!(1, io.segments.len());
+        let offsets = io
+            .segments
+            .iter_mut()
+            .map(|segment| {
+                segment.status = Status::UnlinkAt;
+                segment.offset
+            })
+            .collect();
+        io.delete_segments(offsets);
+        assert_eq!(0, io.segments.len());
         Ok(())
     }
 
