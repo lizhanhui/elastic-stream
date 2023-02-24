@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pm-benchmark
+  namespace: placement-manager
+spec:
+  containers:
+    - name: pm-benchmark
+      image: 716469478206.dkr.ecr.us-east-1.amazonaws.com/pm-benchmark:1.0.5
+      command:
+        - /bin/sh
+        - "-c"
+        - "while true; do /benchmark txn-mixed --endpoints=pm-client.placement-manager.svc.cluster.local:2379 --total=65536 --key-space-size=1024 --limit=512; done"
+      imagePullPolicy: Always
+  restartPolicy: Never
