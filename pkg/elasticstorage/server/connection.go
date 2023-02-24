@@ -1,3 +1,4 @@
+//nolint:unused
 package server
 
 import (
@@ -9,6 +10,7 @@ import (
 	"github.com/AutoMQ/placement-manager/pkg/elasticstorage/codec"
 )
 
+// Conn is the state of a connection between server and client.
 type Conn struct {
 	// Immutable:
 	srv  *Server
@@ -20,7 +22,7 @@ type Conn struct {
 	readFrameCh chan readFrameResult // written by serverConn.readFrames
 
 	// Everything following is owned by the serve loop; use serveG.check():
-	//serveG            goroutineLock // used to verify funcs are on serve()
+	// serveG            goroutineLock // used to verify funcs are on serve()
 	maxClientStreamID uint32 // max ever seen from client (odd), or 0 if there have been no client requests
 	maxPushPromiseID  uint32 // ID of the last push promise (even), or 0 if there have been no pushes
 	streams           map[uint32]*stream

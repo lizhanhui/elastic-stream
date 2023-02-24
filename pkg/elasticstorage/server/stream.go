@@ -1,3 +1,4 @@
+//nolint:unused
 package server
 
 import (
