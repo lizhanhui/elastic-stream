@@ -32,6 +32,8 @@ func TestNewConfig(t *testing.T) {
 				Etcd: func() *embed.Config {
 					config := embed.NewConfig()
 					config.InitialClusterToken = "pm-cluster"
+					config.AutoCompactionMode = "periodic"
+					config.AutoCompactionRetention = "1h"
 					return config
 				}(),
 				Log: func() *Log {
@@ -61,6 +63,8 @@ func TestNewConfig(t *testing.T) {
 				Etcd: func() *embed.Config {
 					config := embed.NewConfig()
 					config.InitialClusterToken = "pm-cluster"
+					config.AutoCompactionMode = "periodic"
+					config.AutoCompactionRetention = "1h"
 					return config
 				}(),
 				Log: func() *Log {
@@ -90,6 +94,8 @@ func TestNewConfig(t *testing.T) {
 				Etcd: func() *embed.Config {
 					config := embed.NewConfig()
 					config.InitialClusterToken = "pm-cluster"
+					config.AutoCompactionMode = "periodic"
+					config.AutoCompactionRetention = "1h"
 					return config
 				}(),
 				Log: func() *Log {
@@ -125,6 +131,8 @@ func TestNewConfig(t *testing.T) {
 				"--leader-lease=123",
 				"--leader-priority-check-interval=1h1m1s",
 				"--etcd-initial-cluster-token=test-initial-cluster-token",
+				"--etcd-auto-compaction-mode=test-auto-compaction-mode",
+				"--etcd-auto-compaction-retention=test-auto-compaction-retention",
 				"--log-level=FATAL",
 				"--log-zap-encoding=console",
 				"--log-zap-output-paths=stdout,stderr",
@@ -140,6 +148,8 @@ func TestNewConfig(t *testing.T) {
 				Etcd: func() *embed.Config {
 					config := embed.NewConfig()
 					config.InitialClusterToken = "test-initial-cluster-token"
+					config.AutoCompactionMode = "test-auto-compaction-mode"
+					config.AutoCompactionRetention = "test-auto-compaction-retention"
 					return config
 				}(),
 				Log: func() *Log {
@@ -177,6 +187,8 @@ func TestNewConfig(t *testing.T) {
 				Etcd: func() *embed.Config {
 					config := embed.NewConfig()
 					config.InitialClusterToken = "test-initial-cluster-token"
+					config.AutoCompactionMode = "test-auto-compaction-mode"
+					config.AutoCompactionRetention = "test-auto-compaction-retention"
 					config.TickMs = 123
 					config.ElectionMs = 1234
 					return config
@@ -219,6 +231,8 @@ func TestNewConfig(t *testing.T) {
 				Etcd: func() *embed.Config {
 					config := embed.NewConfig()
 					config.InitialClusterToken = "test-initial-cluster-token"
+					config.AutoCompactionMode = "test-auto-compaction-mode"
+					config.AutoCompactionRetention = "test-auto-compaction-retention"
 					config.TickMs = 123
 					config.ElectionMs = 1234
 					return config
@@ -382,6 +396,8 @@ func TestConfig_Adjust(t *testing.T) {
 					config.APUrls, _ = parseUrls("http://127.0.0.1:2380")
 					config.ACUrls, _ = parseUrls("http://127.0.0.1:2379")
 					config.InitialClusterToken = "pm-cluster"
+					config.AutoCompactionMode = "periodic"
+					config.AutoCompactionRetention = "1h"
 					return config
 				}(),
 				Log: func() *Log {
@@ -422,6 +438,8 @@ func TestConfig_Adjust(t *testing.T) {
 					config.APUrls, _ = parseUrls("http://example.com:2380,http://10.0.0.1:2380")
 					config.ACUrls, _ = parseUrls("http://example.com:2379,http://10.0.0.1:2379")
 					config.InitialClusterToken = "pm-cluster"
+					config.AutoCompactionMode = "periodic"
+					config.AutoCompactionRetention = "1h"
 					return config
 				}(),
 				Log: func() *Log {
