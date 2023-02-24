@@ -10,6 +10,7 @@ use crate::Store;
 use crate::{error::StoreError, ops::append::AppendResult};
 use buf::RecordBuf;
 use crossbeam::channel::{Receiver, Sender, TryRecvError};
+use io_uring::register;
 use io_uring::{
     opcode::{self, Write},
     squeue, types,
@@ -122,6 +123,28 @@ pub(crate) struct IO {
     channel_disconnected: bool,
 }
 
+/// Check if required opcodes are supported by the host operation system.
+///
+/// # Arguments
+/// * `probe` - Probe result, which contains all features that are supported.
+///
+fn check_io_uring(probe: &register::Probe) -> Result<(), StoreError> {
+    let codes = [
+        opcode::OpenAt::CODE,
+        opcode::Fallocate64::CODE,
+        opcode::Write::CODE,
+        opcode::Read::CODE,
+        opcode::Close::CODE,
+        opcode::UnlinkAt::CODE,
+    ];
+    for code in &codes {
+        if !probe.is_supported(*code) {
+            return Err(StoreError::OpCodeNotSupported(*code));
+        }
+    }
+    Ok(())
+}
+
 impl IO {
     pub(crate) fn new(options: &mut Options, log: Logger) -> Result<Self, StoreError> {
         if options.wal_paths.is_empty() {
@@ -150,9 +173,15 @@ impl IO {
                 StoreError::IoUring
             })?;
 
+        let mut probe = register::Probe::new();
+
         let submitter = poll_ring.submitter();
         submitter.register_iowq_max_workers(&mut options.max_workers)?;
+        submitter.register_probe(&mut probe)?;
         submitter.register_enable_rings()?;
+
+        check_io_uring(&probe)?;
+
         trace!(log, "Polling I/O Uring instance created");
 
         let (sender, receiver) = crossbeam::channel::unbounded();

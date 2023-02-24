@@ -39,6 +39,9 @@ pub enum StoreError {
     #[error("Create to create I/O Uring instance")]
     IoUring,
 
+    #[error("Required io_uring opcode `{0}` is not supported")]
+    OpCodeNotSupported(u8),
+
     #[error("Memory alignment issue")]
     MemoryAlignment,
 
