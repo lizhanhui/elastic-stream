@@ -21,10 +21,24 @@ const FOOTER_LEN: u64 = 20;
 /// `Status` indicates the opcode allowed on it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Status {
+    // Once a `LogSegmentFile` is constructed, there is no file in fs yet.
+    // Need to `open` with `O_CREAT` flag.
     OpenAt,
+
+    // Given `LogSegmentFile` are fixed in length, it would accelerate IO performance if space is pre-allocated.
     Fallocate64,
+
+    // Now the segment file is ready for read/write.
     ReadWrite,
+
+    // Once the segment file is full, it turns immutable, thus, read-only.
     Read,
+
+    // When data in the segment file expires and ref-count turns `0`, FD shall be closed and the file deleted.
+    Close,
+
+    // Delete the file to reclaim disk space.
+    UnlinkAt,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
