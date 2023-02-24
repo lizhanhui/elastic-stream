@@ -23,8 +23,12 @@ var (
 const (
 	URLSeparator = "," // URLSeparator is the separator in fields such as PeerUrls, ClientUrls, etc.
 
+	_envPrefix = "PM"
+
 	_defaultPeerUrls                          = "http://127.0.0.1:2380"
 	_defaultClientUrls                        = "http://127.0.0.1:2379"
+	defaultCompactionMode                     = "periodic"
+	defaultAutoCompactionRetention            = "1h"
 	_defaultNameFormat                        = "pm-%s"
 	_defaultDataDirFormat                     = "default.%s"
 	_defaultInitialClusterPrefix              = "pm="
@@ -192,6 +196,7 @@ func (c *Config) Validate() error {
 }
 
 // Logger returns logger generated based on the config
+// It can be used after calling NewConfig
 func (c *Config) Logger() *zap.Logger {
 	return c.lg
 }
@@ -199,6 +204,11 @@ func (c *Config) Logger() *zap.Logger {
 func configure() (*viper.Viper, *pflag.FlagSet) {
 	v := viper.New()
 	fs := pflag.NewFlagSet("placement-manager", pflag.ContinueOnError)
+
+	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_", "-", "_"))
+	v.AllowEmptyEnv(true)
+	v.SetEnvPrefix(_envPrefix)
+	v.AutomaticEnv()
 
 	// Viper settings
 	for _, filePath := range _defaultConfigFilePaths {
@@ -214,6 +224,12 @@ func configure() (*viper.Viper, *pflag.FlagSet) {
 	_ = v.BindPFlag("clientUrls", fs.Lookup("client-urls"))
 	_ = v.BindPFlag("advertisePeerUrls", fs.Lookup("advertise-peer-urls"))
 	_ = v.BindPFlag("advertiseClientUrls", fs.Lookup("advertise-client-urls"))
+
+	// other etcd settings
+	fs.String("etcd-auto-compaction-mode", defaultCompactionMode, "interpret 'auto-compaction-retention' one of: periodic|revision. 'periodic' for duration based retention, defaulting to hours if no time unit is provided (e.g. '5m'). 'revision' for revision number based retention.")
+	fs.String("etcd-auto-compaction-retention", defaultAutoCompactionRetention, "auto compaction retention for mvcc key value store. 0 means disable auto compaction.")
+	_ = v.BindPFlag("etcd.autoCompactionMode", fs.Lookup("etcd-auto-compaction-mode"))
+	_ = v.BindPFlag("etcd.autoCompactionRetention", fs.Lookup("etcd-auto-compaction-retention"))
 
 	// PM members settings
 	fs.String("name", "", "human-readable name for this PM member (default 'pm-${hostname}')")
@@ -250,6 +266,9 @@ func configure() (*viper.Viper, *pflag.FlagSet) {
 	_ = v.BindPFlag("log.rotate.maxBackups", fs.Lookup("log-rotate-max-backups"))
 	_ = v.BindPFlag("log.rotate.localTime", fs.Lookup("log-rotate-local-time"))
 	_ = v.BindPFlag("log.rotate.compress", fs.Lookup("log-rotate-compress"))
+
+	// bind env not set before
+	_ = v.BindEnv("etcd.clusterState")
 
 	return v, fs
 }

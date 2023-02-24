@@ -1,0 +1,94 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: pm-client
+spec:
+  type: LoadBalancer
+  ports:
+    - name: pm-client
+      port: 2379
+      protocol: TCP
+      targetPort: 2379
+  selector:
+    app: placement-manager
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: pm
+  namespace: placement-manager
+  labels:
+    app: placement-manager
+spec:
+  clusterIP: None
+  ports:
+    - port: 2379
+      name: client
+    - port: 2380
+      name: peer
+  selector:
+    app: placement-manager
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: pm
+  namespace: placement-manager
+  labels:
+    app: placement-manager
+spec:
+  selector:
+    matchLabels:
+      app: placement-manager
+  serviceName: "pm"
+  replicas: 3
+  template:
+    metadata:
+      name: placement-manager
+      labels:
+        app: placement-manager
+    spec:
+      securityContext:
+        fsGroup: 65535
+      containers:
+        - name: placement-manager
+          image: 716469478206.dkr.ecr.us-east-1.amazonaws.com/placement-manager:latest
+          imagePullPolicy: "Always"
+          ports:
+            - containerPort: 2379
+              name: client
+            - containerPort: 2380
+              name: peer
+          volumeMounts:
+            - name: pm-data
+              mountPath: /data/placement-manager
+          env:
+            - name: NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: PM_PEERURLS
+              value: "http://0.0.0.0:2380"
+            - name: PM_CLIENTURLS
+              value: "http://0.0.0.0:2379"
+            - name: PM_ADVERTISEPEERURLS
+              value: "http://$(NAME).pm:2380"
+            - name: PM_ADVERTISECLIENTURLS
+              value: "http://$(NAME).pm:2379"
+            - name: PM_NAME
+              value: "$(NAME)"
+            - name: PM_DATADIR
+              value: "/data/placement-manager/default.$(NAME)"
+            - name: PM_INITIALCLUSTER
+              value: "pm-0=http://pm-0.pm:2380,pm-1=http://pm-1.pm:2380,pm-2=http://pm-2.pm:2380"
+            - name: PM_ETCD_INITIALCLUSTERTOKEN
+              value: "pm-cluster"
+  volumeClaimTemplates:
+    - metadata:
+        name: pm-data
+      spec:
+        storageClassName: gp2
+        accessModes: [ "ReadWriteOnce" ]
+        resources:
+          requests:
+            storage: 1Gi
