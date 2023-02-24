@@ -11,16 +11,14 @@ use protocol::flat_model::{
 use crate::{error::DecodeError, header::Common, Record, RecordBatch};
 
 enum RecordMagic {
-    Magic0 = 0, // The first version of the record batch format.
+    Magic0 = 0x22, // The first version of the record batch format.
 }
 
 /// FlatRecordBatch is a flattened version of RecordBatch that is used for serialization.
 /// As the storage and network layout, the schema of FlatRecordBatch with magic 0 is given below:
 ///
 /// RecordBatch =>
-///  TotalLen => Int32
 ///  Magic => Int8
-///  Checksum => Int32
 ///  BaseOffset => Int32
 ///  MetaLength => Int32
 ///  Meta => RecordBatchMeta
@@ -37,7 +35,6 @@ enum RecordMagic {
 #[derive(Debug, Default)]
 struct FlatRecordBatch {
     magic: Option<i8>,
-    checksum: Option<i32>,
     // The base offset of the record batch.
     // Note: the meta_buffer already contains the base_offset,
     // but we need to store it here since the rust flatbuffers doesn't support update the value so far.
@@ -73,7 +70,6 @@ impl FlatRecordBatch {
 
         let mut flat_record_batch = FlatRecordBatch {
             magic: Some(RecordMagic::Magic0 as i8),
-            checksum: None, // Checksum will be calculated later, we don't need it now.
             base_offset: None, // The base offset will be set by the storage.
             meta_buffer: Bytes::copy_from_slice(result_buf),
             records: Vec::new(),
@@ -131,28 +127,25 @@ impl FlatRecordBatch {
 
     /// Inits a FlatRecordBatch from a buffer of bytes received from storage or network layer.
     pub fn init_from_buf(mut buf: Bytes) -> Result<Self, DecodeError> {
-        if buf.len() < 4 {
+        let mut basic_part_len = 13;
+        if buf.len() < basic_part_len {
             return Err(DecodeError::DataLengthMismatch);
         }
         // Backup the buffer for the slice operation.
         let buf_for_slice = buf.slice(0..);
-
         let mut cur_ptr = 0;
-        // Read the total length
-        let total_len = buf.get_i32();
-        if total_len as usize - 4 != buf.len() {
-            return Err(DecodeError::DataLengthMismatch);
-        }
+
         // Read the magic
         let magic = buf.get_i8();
-        // Read the checksum
-        let checksum = buf.get_i32(); // TODO: Verify the checksum
-                                      // Read the records count
+        // Read the records count
         let base_offset = buf.get_i64();
         // Read the meta length
         let meta_len = buf.get_i32();
 
-        cur_ptr += 1 + 4 + 4 + 8 + 4;
+        cur_ptr += basic_part_len;
+        if buf.len() < meta_len as usize {
+            return Err(DecodeError::DataLengthMismatch);
+        }
         // Read the meta buffer
         let meta_buffer = buf_for_slice.slice(cur_ptr..(cur_ptr + meta_len as usize));
 
@@ -161,20 +154,27 @@ impl FlatRecordBatch {
 
         let mut flat_record_batch = FlatRecordBatch {
             magic: Some(magic),
-            checksum: Some(checksum),
             meta_buffer,
             base_offset: Some(base_offset as i64),
             records: Vec::new(),
         };
 
         while buf.len() > 0 {
+            let record_basic_len = 4 + 4;
+            if buf.len() < record_basic_len as usize {
+                return Err(DecodeError::DataLengthMismatch);
+            }
             // Read the meta length
             let meta_len = buf.get_i32();
 
             // Read the body length
             let body_len = buf.get_i32();
 
-            cur_ptr += 4 + 4;
+            if buf.len() < meta_len as usize + body_len as usize {
+                return Err(DecodeError::DataLengthMismatch);
+            }
+
+            cur_ptr += record_basic_len;
             // Read the meta buffer
             let meta_buffer = buf_for_slice.slice(cur_ptr..(cur_ptr + meta_len as usize));
             buf.advance(meta_len as usize);
@@ -192,10 +192,22 @@ impl FlatRecordBatch {
         Ok(flat_record_batch)
     }
 
-    pub fn encode(self) -> Vec<Bytes> {
+    // Encodes the flat_record_batch to a vector of bytes, which can be sent to the storage or network layer.
+    // The first element of the returned vector of bytes, while the second element is the total length of the encoded bytes.
+    pub fn encode(self) -> (Vec<Bytes>, i32) {
         let mut bytes_vec = Vec::new();
-        let mut total_len = 0;
+
+        // The total length of encoded flat records.
+        let mut total_len = 13;
         let meta_len = self.meta_buffer.len();
+
+        let mut basic_part = BytesMut::with_capacity(total_len);
+        basic_part.put_i8(self.magic.unwrap_or(0));
+        basic_part.put_i64(self.base_offset.unwrap_or(0));
+        basic_part.put_i32(meta_len as i32);
+
+        bytes_vec.insert(0, basic_part.freeze());
+
         // Store the Magic to MetaLength
         bytes_vec.push(self.meta_buffer);
         total_len += meta_len;
@@ -211,17 +223,7 @@ impl FlatRecordBatch {
             bytes_vec.push(record.body);
         }
 
-        total_len += 21; // The total length of the basic part
-        let mut basic_part = BytesMut::with_capacity(21);
-        basic_part.put_i32(total_len as i32);
-        basic_part.put_i8(self.magic.unwrap_or(0));
-        basic_part.put_i32(self.checksum.unwrap_or(0)); // TODO: Calculate the checksum
-        basic_part.put_i64(self.base_offset.unwrap_or(0));
-        basic_part.put_i32(meta_len as i32);
-
-        bytes_vec.insert(0, basic_part.freeze());
-
-        bytes_vec
+        (bytes_vec, total_len as i32)
     }
 
     pub fn decode(self) -> Result<RecordBatch, DecodeError> {
@@ -351,7 +353,7 @@ mod tests {
         // Init a FlatRecordBatch from original RecordBatch
         let mut flat_batch = FlatRecordBatch::init_from_struct(batch);
 
-        assert_eq!(flat_batch.magic, Some(0));
+        assert_eq!(flat_batch.magic, Some(RecordMagic::Magic0 as i8));
         assert_eq!(flat_batch.records.len(), 2);
         assert_eq!(flat_batch.records[0].body, Bytes::from("hello"));
         assert_eq!(flat_batch.records[1].body, Bytes::from("world"));
@@ -360,8 +362,8 @@ mod tests {
         flat_batch.set_base_offset(1024 as i64);
 
         // Encode the above flat_batch to Vec[Bytes]
-        let bytes_vec = flat_batch.encode();
-        let mut bytes_mute = BytesMut::with_capacity(1024);
+        let (bytes_vec, total_len) = flat_batch.encode();
+        let mut bytes_mute = BytesMut::with_capacity(total_len as usize);
         for ele in bytes_vec {
             bytes_mute.put_slice(&ele);
         }
