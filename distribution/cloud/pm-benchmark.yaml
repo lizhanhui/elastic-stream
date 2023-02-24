@@ -6,7 +6,7 @@ metadata:
 spec:
   containers:
     - name: pm-benchmark
-      image: 716469478206.dkr.ecr.us-east-1.amazonaws.com/pm-benchmark:1.0.3
+      image: 716469478206.dkr.ecr.us-east-1.amazonaws.com/pm-benchmark:1.0.5
       command:
         - /bin/sh
         - "-c"
