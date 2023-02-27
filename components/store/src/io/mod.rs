@@ -18,7 +18,6 @@ use io_uring::{
 use segment::LogSegmentFile;
 use slog::{debug, error, info, trace, warn, Logger};
 use std::fs::OpenOptions;
-use std::io::{Read, Seek, SeekFrom};
 use std::os::unix::prelude::{FileExt, OpenOptionsExt};
 use std::{
     cell::RefCell,
@@ -31,7 +30,7 @@ use task::IoTask;
 use self::record::RecordType;
 use self::segment::Status;
 use self::state::OpState;
-use crc::{Algorithm, Crc, CRC_32_ISCSI};
+use crc::{Crc, CRC_32_ISCSI};
 
 const DEFAULT_MAX_IO_DEPTH: u32 = 4096;
 const DEFAULT_SQPOLL_IDLE_MS: u32 = 2000;
@@ -124,13 +123,26 @@ pub(crate) struct IO {
     /// properly supported by the instance armed with the `IOPOLL` feature.
     control_ring: io_uring::IoUring,
 
+    /// Sender of the IO task channel.
+    ///
+    /// Assumed to be taken by wrapping structs, which will offer APIs with semantics of choice.
     pub(crate) sender: Option<Sender<IoTask>>,
+
+    /// Receiver of the IO task channel.
+    ///
+    /// According to our design, there is only one instance.
     receiver: Receiver<IoTask>,
+
+    /// Logger instance.
     log: Logger,
 
+    /// List of log segment files, which forms abstract WAL as a whole.
+    ///
+    /// Note new segment files are appended to the back; while oldest segments are popped from the front.
     segments: VecDeque<LogSegmentFile>,
 
-    // Runtime data structure
+    // Following fields are runtime data structure
+    /// Flag indicating if the IO channel is disconnected, aka, all senders are dropped.
     channel_disconnected: bool,
 
     /// Mapping of on-going file operations between segment offset to file operation `Status`.
@@ -145,9 +157,21 @@ pub(crate) struct IO {
 
     /// Number of inflight data tasks that are submitted to `data_uring` and not yet reaped.
     inflight: usize,
-    pending_tasks: VecDeque<IoTask>,
 
-    // Write cursor in terms of WAL.
+    /// Pending IO tasks received from IO channel.
+    ///
+    /// Before converting `IoTask`s into io_uring SQEs, we need to ensure these tasks are bearing valid offset and
+    /// length if they are read; In case the tasks are write, we need to ensure targeting log segment file has enough
+    /// space for the incoming buffers.
+    ///
+    /// If there is no writable log segment files available or the write is so fast that preallocated ones are depleted
+    /// before a new segment file is ready, writes, though very unlikely, will stall.
+    pending_data_tasks: VecDeque<IoTask>,
+
+    /// Write cursor in terms of WAL.
+    ///
+    /// During start, the recovering procedure will scan continuous records from offset where primary index are built
+    /// up to.
     pos: u64,
 }
 
@@ -174,6 +198,10 @@ fn check_io_uring(probe: &register::Probe) -> Result<(), StoreError> {
 }
 
 impl IO {
+
+    /// Create new `IO` instance.
+    /// 
+    /// Behavior of the IO instance can be tuned through `Options`.
     pub(crate) fn new(options: &mut Options, log: Logger) -> Result<Self, StoreError> {
         if options.wal_paths.is_empty() {
             return Err(StoreError::Configuration("WAL path required".to_owned()));
@@ -227,7 +255,7 @@ impl IO {
             tag: 0,
             inflight_data_tasks: HashMap::new(),
             inflight: 0,
-            pending_tasks: VecDeque::new(),
+            pending_data_tasks: VecDeque::new(),
             pos: 0,
         })
     }
@@ -476,7 +504,7 @@ impl IO {
                             IO::on_bad_request(io_task);
                             continue;
                         }
-                        self.pending_tasks.push_back(io_task);
+                        self.pending_data_tasks.push_back(io_task);
                         received += 1;
                     }
                     Err(_e) => {
@@ -492,7 +520,7 @@ impl IO {
                             IO::on_bad_request(io_task);
                             continue;
                         }
-                        self.pending_tasks.push_back(io_task);
+                        self.pending_data_tasks.push_back(io_task);
                         received += 1;
                     }
                     Err(TryRecvError::Empty) => {
@@ -516,10 +544,10 @@ impl IO {
             .count()
     }
 
-    fn convert_task_to_sqe(&mut self, entries: &mut Vec<squeue::Entry>) {
+    fn poll_data_sqe(&mut self, entries: &mut Vec<squeue::Entry>) {
         let log = self.log.clone();
         let alignment = self.options.alignment;
-        'task_loop: while let Some(io_task) = self.pending_tasks.pop_front() {
+        'task_loop: while let Some(io_task) = self.pending_data_tasks.pop_front() {
             match io_task {
                 IoTask::Read(task) => {
                     let segment = match self.segment_file_of(task.offset) {
@@ -534,7 +562,7 @@ impl IO {
                         let mut record_buf = RecordBuf::new();
                         if let Err(_e) = record_buf.alloc(task.len as usize, alignment) {
                             // Put the IO task back, such that a second attempt is possible in the next loop round.
-                            self.pending_tasks.push_front(IoTask::Read(task));
+                            self.pending_data_tasks.push_front(IoTask::Read(task));
                             error!(log, "Failed to alloc {}-aligned memory", alignment);
                             break 'task_loop;
                         }
@@ -557,7 +585,7 @@ impl IO {
 
                         self.inflight_data_tasks.insert(self.tag, state);
                     } else {
-                        self.pending_tasks.push_front(IoTask::Read(task));
+                        self.pending_data_tasks.push_front(IoTask::Read(task));
                     }
                 }
                 IoTask::Write(task) => {
@@ -565,7 +593,7 @@ impl IO {
                     loop {
                         if let Some(segment) = self.segment_file_of(written) {
                             if segment.status != Status::ReadWrite {
-                                self.pending_tasks.push_front(IoTask::Write(task));
+                                self.pending_data_tasks.push_front(IoTask::Write(task));
                                 break 'task_loop;
                             }
 
@@ -580,7 +608,7 @@ impl IO {
 
                                 let mut record_buf = RecordBuf::new();
                                 if let Err(_e) = record_buf.alloc(buf_len, alignment) {
-                                    self.pending_tasks.push_front(IoTask::Write(task));
+                                    self.pending_data_tasks.push_front(IoTask::Write(task));
                                     error!(log, "Failed to alloc {}-aligned memory", alignment);
                                     break 'task_loop;
                                 }
@@ -618,7 +646,7 @@ impl IO {
                                 unreachable!("LogSegmentFile {} should have been with a valid FD if its status is read_write", segment.path);
                             }
                         } else {
-                            self.pending_tasks.push_front(IoTask::Write(task));
+                            self.pending_data_tasks.push_front(IoTask::Write(task));
                             break 'task_loop;
                         }
                     }
@@ -821,7 +849,7 @@ impl IO {
     }
 
     fn await_control_task_completion(&self) {
-        if self.pending_tasks.is_empty() {
+        if self.pending_data_tasks.is_empty() {
             return;
         }
 
@@ -911,7 +939,7 @@ impl IO {
 
     fn should_quit(&self) -> bool {
         0 == self.inflight
-            && self.pending_tasks.is_empty()
+            && self.pending_data_tasks.is_empty()
             && self.inflight_control_tasks.is_empty()
             && self.channel_disconnected
     }
@@ -988,7 +1016,7 @@ impl IO {
                 trace!(log, "Received {} IO requests from channel", cnt);
 
                 // Convert IO tasks into io_uring entries
-                io_mut.convert_task_to_sqe(&mut entries);
+                io_mut.poll_data_sqe(&mut entries);
             }
 
             if !entries.is_empty() {
@@ -1206,8 +1234,8 @@ mod tests {
             .count();
 
         io.receive_io_tasks();
-        assert_eq!(16, io.pending_tasks.len());
-        io.pending_tasks.clear();
+        assert_eq!(16, io.pending_data_tasks.len());
+        io.pending_data_tasks.clear();
 
         drop(sender);
 
@@ -1216,7 +1244,7 @@ mod tests {
 
         io.receive_io_tasks();
 
-        assert_eq!(true, io.pending_tasks.is_empty());
+        assert_eq!(true, io.pending_data_tasks.is_empty());
         assert_eq!(true, io.channel_disconnected);
 
         Ok(())
@@ -1247,12 +1275,12 @@ mod tests {
                 })
             })
             .for_each(|io_task| {
-                io.pending_tasks.push_back(io_task);
+                io.pending_data_tasks.push_back(io_task);
             });
 
         let mut entries = Vec::new();
 
-        io.convert_task_to_sqe(&mut entries);
+        io.poll_data_sqe(&mut entries);
         assert_eq!(16, entries.len());
         Ok(())
     }
