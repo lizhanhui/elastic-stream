@@ -23,6 +23,8 @@ impl AlignedBuf {
     }
 }
 
+unsafe impl Send for AlignedBuf {}
+
 /// Return the memory back to allocator.
 impl Drop for AlignedBuf {
     fn drop(&mut self) {

@@ -17,7 +17,7 @@ pub struct WalPath {
     /// reply on storage driver to merge automatically.
     ///
     /// Refer to https://aws.amazon.com/premiumsupport/knowledge-center/ebs-calculate-optimal-io-size/
-    pub(crate) block_size: u32,
+    pub(crate) block_size: usize,
 }
 
 impl WalPath {
@@ -33,7 +33,7 @@ impl WalPath {
         Ok(Self {
             path: path.to_owned(),
             target_size,
-            block_size: file_stat.st_blksize as u32,
+            block_size: file_stat.st_blksize as usize,
         })
     }
 }

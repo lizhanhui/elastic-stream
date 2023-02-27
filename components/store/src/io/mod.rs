@@ -67,6 +67,8 @@ pub(crate) struct Options {
 
     file_size: u64,
 
+    alignment: usize,
+
     min_preallocated_segment_files: usize,
 }
 
@@ -82,6 +84,7 @@ impl Default for Options {
                 DEFAULT_MAX_UNBOUNDED_URING_WORKER_COUNT,
             ],
             file_size: DEFAULT_LOG_SEGMENT_FILE_SIZE,
+            alignment: 4096,
             min_preallocated_segment_files: DEFAULT_MIN_PREALLOCATED_SEGMENT_FILES,
         }
     }
@@ -89,6 +92,7 @@ impl Default for Options {
 
 impl Options {
     pub fn add_wal_path(&mut self, wal_path: WalPath) {
+        self.alignment = wal_path.block_size;
         self.wal_paths.push(wal_path);
     }
 }
@@ -128,6 +132,23 @@ pub(crate) struct IO {
 
     // Runtime data structure
     channel_disconnected: bool,
+
+    /// Mapping of on-going file operations between segment offset to file operation `Status`.
+    ///
+    /// File `Status` migration road-map: OpenAt --> Fallocate --> ReadWrite -> Read -> Close -> Unlink.
+    /// Once the status of segment is driven to ReadWrite,
+    /// this mapping should be removed.
+    inflight_control_tasks: HashMap<u64, Status>,
+
+    tag: u64,
+    inflight_data_tasks: HashMap<u64, OpState>,
+
+    /// Number of inflight data tasks that are submitted to `data_uring` and not yet reaped.
+    inflight: usize,
+    pending_tasks: VecDeque<IoTask>,
+
+    // Write cursor in terms of WAL.
+    pos: u64,
 }
 
 /// Check if required opcodes are supported by the host operation system.
@@ -202,6 +223,12 @@ impl IO {
             log,
             segments: VecDeque::new(),
             channel_disconnected: false,
+            inflight_control_tasks: HashMap::new(),
+            tag: 0,
+            inflight_data_tasks: HashMap::new(),
+            inflight: 0,
+            pending_tasks: VecDeque::new(),
+            pos: 0,
         })
     }
 
@@ -348,7 +375,7 @@ impl IO {
         Ok(last_found)
     }
 
-    fn recover(&mut self, offset: u64) -> Result<u64, StoreError> {
+    fn recover(&mut self, offset: u64) -> Result<(), StoreError> {
         let mut pos = offset;
         let log = self.log.clone();
         info!(log, "Start to recover WAL segment files");
@@ -374,7 +401,8 @@ impl IO {
             }
         }
         info!(log, "Recovery of WAL segment files completed");
-        Ok(pos)
+        self.pos = pos;
+        Ok(())
     }
 
     fn alloc_segment(&mut self) -> Result<&mut LogSegmentFile, StoreError> {
@@ -430,20 +458,17 @@ impl IO {
         }
     }
 
-    fn receive_io_tasks(
-        &mut self,
-        inflight: &mut u32,
-        io_depth: u32,
-        tasks: &mut VecDeque<IoTask>,
-    ) {
+    fn receive_io_tasks(&mut self) -> usize {
+        let mut received = 0;
+        let io_depth = self.data_ring.params().sq_entries() as usize;
         loop {
-            if *inflight >= io_depth {
-                break;
+            if self.inflight + received >= io_depth {
+                break received;
             }
 
             // if the log segment file is full, break loop.
 
-            if *inflight == 0 {
+            if self.inflight + received == 0 {
                 // Block the thread until at least one IO task arrives
                 match self.receiver.recv() {
                     Ok(mut io_task) => {
@@ -451,13 +476,13 @@ impl IO {
                             IO::on_bad_request(io_task);
                             continue;
                         }
-                        tasks.push_back(io_task);
-                        *inflight += 1;
+                        self.pending_tasks.push_back(io_task);
+                        received += 1;
                     }
                     Err(_e) => {
                         info!(self.log, "Channel for submitting IO task disconnected");
                         self.channel_disconnected = true;
-                        break;
+                        break received;
                     }
                 }
             } else {
@@ -467,16 +492,16 @@ impl IO {
                             IO::on_bad_request(io_task);
                             continue;
                         }
-                        tasks.push_back(io_task);
-                        *inflight += 1;
+                        self.pending_tasks.push_back(io_task);
+                        received += 1;
                     }
                     Err(TryRecvError::Empty) => {
-                        break;
+                        break received;
                     }
                     Err(TryRecvError::Disconnected) => {
                         info!(self.log, "Channel for submitting IO task disconnected");
                         self.channel_disconnected = true;
-                        break;
+                        break received;
                     }
                 }
             }
@@ -491,17 +516,10 @@ impl IO {
             .count()
     }
 
-    fn convert_task_to_sqe(
-        &mut self,
-        tasks: &mut VecDeque<IoTask>,
-        tag: &mut u64,
-        pos: &mut u64,
-        alignment: u32,
-        inflight_tasks: &mut HashMap<u64, OpState>,
-        entries: &mut Vec<squeue::Entry>,
-    ) {
+    fn convert_task_to_sqe(&mut self, entries: &mut Vec<squeue::Entry>) {
         let log = self.log.clone();
-        'task_loop: while let Some(io_task) = tasks.pop_front() {
+        let alignment = self.options.alignment;
+        'task_loop: while let Some(io_task) = self.pending_tasks.pop_front() {
             match io_task {
                 IoTask::Read(task) => {
                     let segment = match self.segment_file_of(task.offset) {
@@ -514,9 +532,9 @@ impl IO {
 
                     if let Some(fd) = segment.fd {
                         let mut record_buf = RecordBuf::new();
-                        if let Err(_e) = record_buf.alloc(task.len as usize, alignment as usize) {
+                        if let Err(_e) = record_buf.alloc(task.len as usize, alignment) {
                             // Put the IO task back, such that a second attempt is possible in the next loop round.
-                            tasks.push_front(IoTask::Read(task));
+                            self.pending_tasks.push_front(IoTask::Read(task));
                             error!(log, "Failed to alloc {}-aligned memory", alignment);
                             break 'task_loop;
                         }
@@ -533,35 +551,36 @@ impl IO {
                         let sqe = opcode::Read::new(types::Fd(fd), ptr, task.len)
                             .offset((task.offset - segment.offset) as i64)
                             .build()
-                            .user_data(*tag);
-                        *tag += 1;
+                            .user_data(self.tag);
+                        self.tag += 1;
                         entries.push(sqe);
 
-                        inflight_tasks.insert(*tag, state);
+                        self.inflight_data_tasks.insert(self.tag, state);
                     } else {
-                        tasks.push_front(IoTask::Read(task));
+                        self.pending_tasks.push_front(IoTask::Read(task));
                     }
                 }
                 IoTask::Write(task) => {
+                    let mut written = self.pos;
                     loop {
-                        if let Some(segment) = self.segment_file_of(*pos) {
+                        if let Some(segment) = self.segment_file_of(written) {
                             if segment.status != Status::ReadWrite {
-                                tasks.push_front(IoTask::Write(task));
+                                self.pending_tasks.push_front(IoTask::Write(task));
                                 break 'task_loop;
                             }
 
                             if let Some(fd) = segment.fd {
                                 let buf_len = task.buffer.len();
-                                let file_offset = *pos - segment.offset;
+                                let file_offset = written - segment.offset;
                                 if !segment.can_hold(buf_len as u64) {
-                                    segment.append_footer(pos);
+                                    segment.append_footer(&mut written);
                                     // Switch to a new log segment
                                     continue;
                                 }
 
                                 let mut record_buf = RecordBuf::new();
-                                if let Err(_e) = record_buf.alloc(buf_len, alignment as usize) {
-                                    tasks.push_front(IoTask::Write(task));
+                                if let Err(_e) = record_buf.alloc(buf_len, alignment) {
+                                    self.pending_tasks.push_front(IoTask::Write(task));
                                     error!(log, "Failed to alloc {}-aligned memory", alignment);
                                     break 'task_loop;
                                 }
@@ -578,16 +597,16 @@ impl IO {
                                     )
                                     .offset64(file_offset as libc::off_t)
                                     .build()
-                                    .user_data(*tag);
+                                    .user_data(self.tag);
 
                                     // Track state of write op
                                     let state = OpState {
                                         task: IoTask::Write(task),
                                         record_buf,
                                     };
-                                    inflight_tasks.insert(*tag, state);
-                                    *tag += 1;
-                                    *pos += buf_len as u64;
+                                    self.inflight_data_tasks.insert(self.tag, state);
+                                    self.tag += 1;
+                                    written += buf_len as u64;
                                     entries.push(sqe);
                                     break;
                                 } else {
@@ -599,33 +618,33 @@ impl IO {
                                 unreachable!("LogSegmentFile {} should have been with a valid FD if its status is read_write", segment.path);
                             }
                         } else {
-                            tasks.push_front(IoTask::Write(task));
+                            self.pending_tasks.push_front(IoTask::Write(task));
                             break 'task_loop;
                         }
                     }
+                    self.pos = written;
                 }
             }
         }
     }
 
-    fn async_open(&mut self, file_op: &mut HashMap<u64, Status>) -> Result<(), StoreError> {
+    fn try_open(&mut self) -> Result<(), StoreError> {
         let log = self.log.clone();
         let segment = self.alloc_segment()?;
         let offset = segment.offset;
         debug_assert_eq!(segment.status, Status::OpenAt);
-        file_op.insert(offset, segment.status);
         info!(
             log,
             "About to create/open LogSegmentFile: `{}`", segment.path
         );
-        let sqe = opcode::OpenAt::new(
-            types::Fd(libc::AT_FDCWD),
-            segment.path.as_ptr() as *const i8,
-        )
-        .flags(libc::O_CREAT | libc::O_RDWR | libc::O_DIRECT)
-        .mode(libc::S_IRWXU | libc::S_IRWXG)
-        .build()
-        .user_data(offset);
+        let status = segment.status;
+        let ptr = segment.path.as_ptr() as *const i8;
+        self.inflight_control_tasks.insert(offset, status);
+        let sqe = opcode::OpenAt::new(types::Fd(libc::AT_FDCWD), ptr)
+            .flags(libc::O_CREAT | libc::O_RDWR | libc::O_DIRECT)
+            .mode(libc::S_IRWXU | libc::S_IRWXG)
+            .build()
+            .user_data(offset);
         unsafe {
             self.control_ring.submission().push(&sqe).map_err(|e| {
                 error!(
@@ -649,12 +668,7 @@ impl IO {
         });
     }
 
-    fn on_file_op_completion(
-        &mut self,
-        offset: u64,
-        result: i32,
-        op_table: &mut HashMap<u64, Status>,
-    ) -> Result<(), StoreError> {
+    fn on_file_op_completion(&mut self, offset: u64, result: i32) -> Result<(), StoreError> {
         let log = self.log.clone();
         let mut to_remove = vec![];
         if let Some(segment) = self.segment_file_of(offset) {
@@ -691,7 +705,8 @@ impl IO {
                             StoreError::IoUring
                         })
                     }?;
-                    op_table.insert(offset, Status::Fallocate64);
+                    self.inflight_control_tasks
+                        .insert(offset, Status::Fallocate64);
                 }
                 Status::Fallocate64 => {
                     info!(
@@ -738,7 +753,7 @@ impl IO {
         Ok(())
     }
 
-    fn async_fallocate(&mut self, file_op: &mut HashMap<u64, Status>) -> Result<(), StoreError> {
+    fn reap_control_tasks(&mut self) -> Result<(), StoreError> {
         // Map of segment offset to syscall result
         let mut m = HashMap::new();
         {
@@ -756,7 +771,7 @@ impl IO {
 
         m.into_iter()
             .flat_map(|(offset, result)| {
-                if file_op.remove(&offset).is_none() {
+                if self.inflight_control_tasks.remove(&offset).is_none() {
                     error!(
                         self.log,
                         "`file_op` map should have a record for log segment with offset: {}",
@@ -766,19 +781,19 @@ impl IO {
                         "file_op misses expected in-progress offset-status entry".to_owned(),
                     ));
                 }
-                self.on_file_op_completion(offset, result, file_op)
+                self.on_file_op_completion(offset, result)
             })
             .count();
 
         Ok(())
     }
 
-    fn async_close(&mut self, file_op: &mut HashMap<u64, Status>) -> Result<(), StoreError> {
+    fn try_close(&mut self) -> Result<(), StoreError> {
         let to_close: HashMap<_, _> = self
             .segments
             .iter()
             .take_while(|segment| segment.status == Status::Close)
-            .filter(|segment| !file_op.contains_key(&segment.offset))
+            .filter(|segment| !self.inflight_control_tasks.contains_key(&segment.offset))
             .map(|segment| {
                 info!(self.log, "About to close LogSegmentFile: {}", segment.path);
                 (segment.offset, segment.fd)
@@ -805,63 +820,149 @@ impl IO {
         Ok(())
     }
 
+    fn await_control_task_completion(&self) {
+        if self.pending_tasks.is_empty() {
+            return;
+        }
+
+        let now = std::time::Instant::now();
+        match self.control_ring.submit_and_wait(1) {
+            Ok(_) => {
+                info!(
+                    self.log,
+                    "Waiting {}us for control plane file system operation",
+                    now.elapsed().as_micros()
+                );
+            }
+            Err(e) => {
+                error!(self.log, "io_uring_enter got an error: {:?}", e);
+
+                // Fatal errors, crash the process and let watchdog to restart.
+                panic!("io_uring_enter returns error {:?}", e);
+            }
+        }
+    }
+
+    fn await_data_task_completion(&self, mut wanted: usize) {
+        if self.inflight == 0 {
+            trace!(
+                self.log,
+                "No inflight data task. Skip `await_data_task_completion`"
+            );
+            return;
+        }
+
+        trace!(
+            self.log,
+            "Waiting for at least {}/{} CQE(s) to reap",
+            wanted,
+            self.inflight
+        );
+
+        if wanted > self.inflight {
+            wanted = self.inflight;
+        }
+
+        let now = std::time::Instant::now();
+        match self.data_ring.submit_and_wait(wanted) {
+            Ok(_reaped) => {
+                trace!(
+                    self.log,
+                    "io_uring_enter waited {}us to reap completed data CQE(s)",
+                    now.elapsed().as_micros()
+                );
+            }
+            Err(e) => {
+                error!(self.log, "io_uring_enter got an error: {:?}", e);
+
+                // Fatal errors, crash the process and let watchdog to restart.
+                panic!("io_uring_enter returns error {:?}", e);
+            }
+        }
+    }
+
+    fn reap_data_tasks(&mut self) {
+        if 0 == self.inflight {
+            return;
+        }
+
+        let mut completion = self.data_ring.completion();
+        let mut count = 0;
+        loop {
+            for cqe in completion.by_ref() {
+                count += 1;
+                let tag = cqe.user_data();
+                if let Some(state) = self.inflight_data_tasks.remove(&tag) {
+                    on_complete(tag, state, cqe.result(), &self.log);
+                }
+            }
+            // This will flush any entries consumed in this iterator and will make available new entries in the queue
+            // if the kernel has produced some entries in the meantime.
+            completion.sync();
+
+            if completion.is_empty() {
+                break;
+            }
+        }
+        debug_assert!(self.inflight >= count);
+        self.inflight -= count;
+        trace!(self.log, "Reaped {} data CQE(s)", count);
+    }
+
+    fn should_quit(&self) -> bool {
+        0 == self.inflight
+            && self.pending_tasks.is_empty()
+            && self.inflight_control_tasks.is_empty()
+            && self.channel_disconnected
+    }
+
+    fn submit_data_tasks(&mut self, entries: &Vec<squeue::Entry>) -> Result<(), StoreError> {
+        // Submit io_uring entries into submission queue.
+        trace!(
+            self.log,
+            "Get {} incoming SQE(s) to submit, inflight: {}",
+            entries.len(),
+            self.inflight
+        );
+        if !entries.is_empty() {
+            let cnt = entries.len();
+            unsafe {
+                self.data_ring
+                    .submission()
+                    .push_multiple(entries)
+                    .map_err(|e| {
+                        info!(
+                            self.log,
+                            "Failed to push SQE entries into submission queue: {:?}", e
+                        );
+                        StoreError::IoUring
+                    })?
+            };
+            self.inflight += cnt;
+            trace!(self.log, "Pushed {} SQEs into submission queue", cnt);
+        }
+        Ok(())
+    }
+
     pub(crate) fn run(io: RefCell<IO>) -> Result<(), StoreError> {
         let log = io.borrow().log.clone();
 
         let indexer = Indexer::new();
         io.borrow_mut().load()?;
         let pos = indexer.flushed_wal_offset();
-        let mut pos = io.borrow_mut().recover(pos)?;
+        io.borrow_mut().recover(pos)?;
 
-        let alignment = io
-            .borrow()
-            .options
-            .wal_paths
-            .first()
-            .ok_or(StoreError::Configuration(String::from(
-                "Need at least one WAL path",
-            )))?
-            .block_size;
-
-        let io_depth = io.borrow().data_ring.params().sq_entries();
         let min_preallocated_segment_files = io.borrow().options.min_preallocated_segment_files;
 
-        // Number of inflight IO tasks submitted to block layer.
-        let mut inflight = 0;
-
-        let wal_dir = io
-            .borrow()
-            .options
-            .wal_paths
-            .first()
-            .expect("Failed to acquire tier-0 WAL directory")
-            .clone();
-        let _wal_path = Path::new(&wal_dir.path);
-
-        let _file_size = io.borrow().options.file_size;
-
         // Preallocate a log segment file according to pos
-        {
-            // TODO: if pre-allocated file num is less than configured
-            let mut io_mut = io.borrow_mut();
-            let segment = io_mut.alloc_segment()?;
-            segment.open()?;
-        }
-
-        // Mapping between tag to OpState
-        let mut inflight_data_tasks = HashMap::new();
-        let mut tag: u64 = 0;
+        // {
+        //     // TODO: if pre-allocated file num is less than configured
+        //     let mut io_mut = io.borrow_mut();
+        //     let segment = io_mut.alloc_segment()?;
+        //     segment.open()?;
+        // }
 
         let cqe_wanted = 1;
-
-        // Mapping between segment offset to file operation `Status`
-        //
-        // File `Status` migration road-map: OpenAt --> Fallocate --> ReadWrite -> Read -> Close -> Unlink.
-        // Once the status of segment is driven to ReadWrite,
-        // this mapping should be removed.
-        let mut inflight_control_tasks: HashMap<u64, Status> = HashMap::new();
-
-        let mut pending_tasks = VecDeque::new();
 
         // Main loop
         loop {
@@ -870,142 +971,50 @@ impl IO {
                 if io.borrow().writable_segment_count() >= min_preallocated_segment_files + 1 {
                     break;
                 }
-                io.borrow_mut().async_open(&mut inflight_control_tasks)?;
+                io.borrow_mut().try_open()?;
             }
 
-            // check if we have expired log segments to close and delete
+            // check if we have expired segment files to close and delete
             {
-                io.borrow_mut().async_close(&mut inflight_control_tasks)?;
+                io.borrow_mut().try_close()?;
             }
 
             let mut entries = vec![];
-
             {
                 let mut io_mut = io.borrow_mut();
 
                 // Receive IO tasks from channel
-                io_mut.receive_io_tasks(&mut inflight, io_depth, &mut pending_tasks);
-                trace!(
-                    log,
-                    "Received {} IO requests from channel",
-                    pending_tasks.len()
-                );
+                let cnt = io_mut.receive_io_tasks();
+                trace!(log, "Received {} IO requests from channel", cnt);
 
                 // Convert IO tasks into io_uring entries
-                io_mut.convert_task_to_sqe(
-                    &mut pending_tasks,
-                    &mut tag,
-                    &mut pos,
-                    alignment,
-                    &mut inflight_data_tasks,
-                    &mut entries,
-                );
+                io_mut.convert_task_to_sqe(&mut entries);
             }
 
-            if 0 == inflight && io.borrow().channel_disconnected {
-                info!(
-                    log,
-                    "Now that all IO requests are served and channel disconnects, stop main loop"
-                );
-                break;
-            }
-
-            // Submit io_uring entries into submission queue.
-            trace!(
-                log,
-                "Get {} incoming SQE(s) to submit, inflight: {}",
-                entries.len(),
-                inflight
-            );
             if !entries.is_empty() {
-                let cnt = entries.len();
-                unsafe {
-                    io.borrow_mut()
-                        .data_ring
-                        .submission()
-                        .push_multiple(&entries)
-                        .map_err(|e| {
-                            info!(
-                                log,
-                                "Failed to push SQE entries into submission queue: {:?}", e
-                            );
-                            StoreError::IoUring
-                        })?
-                };
-                trace!(log, "Pushed {} SQEs into submission queue", cnt);
-            } else if !pending_tasks.is_empty() && !inflight_control_tasks.is_empty() {
-                let now = std::time::Instant::now();
-                match io.borrow().control_ring.submit_and_wait(1) {
-                    Ok(_) => {
-                        warn!(
-                            log,
-                            "Waiting {}us for control plane file system operation",
-                            now.elapsed().as_micros()
-                        );
-                    }
-                    Err(e) => {
-                        error!(log, "io_uring_enter got an error: {:?}", e);
-
-                        // Fatal errors, crash the process and let watchdog to restart.
-                        panic!("io_uring_enter returns error {:?}", e);
-                    }
-                };
+                io.borrow_mut().submit_data_tasks(&entries)?;
+            } else {
+                let io_borrow = io.borrow();
+                if !io_borrow.should_quit() {
+                    io_borrow.await_control_task_completion();
+                } else {
+                    info!(
+                        log,
+                        "Now that all IO requests are served and channel disconnects, stop main loop"
+                    );
+                    break;
+                }
             }
 
             // Wait complete asynchronous IO
-            trace!(
-                log,
-                "Waiting for at least {}/{} CQE(s) to reap",
-                cqe_wanted,
-                inflight
-            );
-            let now = std::time::Instant::now();
-            match io.borrow().data_ring.submit_and_wait(cqe_wanted) {
-                Ok(_reaped) => {
-                    trace!(
-                        log,
-                        "io_uring_enter waited {}us to reap completed IO CQE(s)",
-                        now.elapsed().as_micros()
-                    );
-                }
-                Err(e) => {
-                    error!(log, "io_uring_enter got an error: {:?}", e);
+            io.borrow().await_data_task_completion(cqe_wanted);
 
-                    // Fatal errors, crash the process and let watchdog to restart.
-                    panic!("io_uring_enter returns error {:?}", e);
-                }
-            }
-
-            // Reap CQE(s)
             {
                 let mut io_mut = io.borrow_mut();
-                let mut completion = io_mut.data_ring.completion();
-                let prev = inflight;
-                loop {
-                    for cqe in completion.by_ref() {
-                        inflight -= 1;
-                        let tag = cqe.user_data();
-                        if let Some(state) = inflight_data_tasks.remove(&tag) {
-                            on_complete(tag, state, cqe.result(), &log);
-                        }
-                    }
-                    // This will flush any entries consumed in this iterator and will make available new entries in the queue
-                    // if the kernel has produced some entries in the meantime.
-                    completion.sync();
-
-                    if completion.is_empty() {
-                        break;
-                    }
-                }
-                trace!(log, "Reaped {} CQE(s)", prev - inflight);
-            }
-
-            // Perform file operation
-            {
-                if !inflight_control_tasks.is_empty() {
-                    io.borrow_mut()
-                        .async_fallocate(&mut inflight_control_tasks)?;
-                }
+                // Reap data CQE(s)
+                io_mut.reap_data_tasks();
+                // Perform file operation
+                io_mut.reap_control_tasks()?;
             }
         }
         info!(log, "Main loop quit");
@@ -1196,24 +1205,18 @@ mod tests {
             })
             .count();
 
-        let mut in_flight_requests = 0;
-
-        // Device IO queue depths
-        let io_depth = 16;
-
-        let mut tasks = VecDeque::new();
-        io.receive_io_tasks(&mut in_flight_requests, io_depth, &mut tasks);
-        assert_eq!(16, tasks.len());
-        tasks.clear();
+        io.receive_io_tasks();
+        assert_eq!(16, io.pending_tasks.len());
+        io.pending_tasks.clear();
 
         drop(sender);
 
         // Mock that some in-flight IO tasks were reaped
-        in_flight_requests = 8;
+        io.inflight = 0;
 
-        io.receive_io_tasks(&mut in_flight_requests, io_depth, &mut tasks);
+        io.receive_io_tasks();
 
-        assert_eq!(true, tasks.is_empty());
+        assert_eq!(true, io.pending_tasks.is_empty());
         assert_eq!(true, io.channel_disconnected);
 
         Ok(())
@@ -1232,7 +1235,7 @@ mod tests {
         let buffer = buffer.freeze();
 
         // Send IoTask to channel
-        let mut tasks: VecDeque<_> = (0..16)
+        (0..16)
             .into_iter()
             .map(|_| {
                 let (tx, _rx) = oneshot::channel();
@@ -1243,24 +1246,13 @@ mod tests {
                     observer: tx,
                 })
             })
-            .collect();
-
-        let mut tag = 0;
-        let mut pos = 0;
-        let alignment = 512;
-
-        let mut inflight_tasks = HashMap::new();
+            .for_each(|io_task| {
+                io.pending_tasks.push_back(io_task);
+            });
 
         let mut entries = Vec::new();
 
-        io.convert_task_to_sqe(
-            &mut tasks,
-            &mut tag,
-            &mut pos,
-            alignment,
-            &mut inflight_tasks,
-            &mut entries,
-        );
+        io.convert_task_to_sqe(&mut entries);
         assert_eq!(16, entries.len());
         Ok(())
     }
