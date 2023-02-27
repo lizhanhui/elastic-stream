@@ -10,11 +10,11 @@ import (
 	"github.com/AutoMQ/placement-manager/pkg/elasticstorage/codec"
 )
 
-// Conn is the state of a connection between server and client.
-type Conn struct {
+// conn is the state of a connection between server and client.
+type conn struct {
 	// Immutable:
-	srv  *Server
-	conn net.Conn
+	server *Server
+	rwc    net.Conn
 
 	ctx         context.Context
 	framer      *codec.Framer
@@ -33,6 +33,29 @@ type Conn struct {
 
 	// Used by startGracefulShutdown.
 	shutdownOnce sync.Once
+}
+
+func newConn(srv *Server, rwc net.Conn) *conn {
+	return &conn{
+		server: srv,
+		rwc:    rwc,
+	}
+}
+
+func (c *conn) serve(ctx context.Context) {
+	// TODO
+	_ = ctx
+}
+
+func (c *conn) close() {
+	// TODO
+	c.server.trackConn(c, false)
+	close(c.doneServing)
+	_ = c.rwc.Close()
+}
+
+func (c *conn) startGracefulShutdown() {
+	// TODO
 }
 
 type readFrameResult struct {

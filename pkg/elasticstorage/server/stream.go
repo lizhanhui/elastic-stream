@@ -7,7 +7,7 @@ import (
 
 // stream is the state for a single stream
 type stream struct {
-	cc *Conn
+	cc *conn
 
 	id uint32
 	rp io.PipeReader
