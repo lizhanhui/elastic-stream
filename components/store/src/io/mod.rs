@@ -198,9 +198,8 @@ fn check_io_uring(probe: &register::Probe) -> Result<(), StoreError> {
 }
 
 impl IO {
-
     /// Create new `IO` instance.
-    /// 
+    ///
     /// Behavior of the IO instance can be tuned through `Options`.
     pub(crate) fn new(options: &mut Options, log: Logger) -> Result<Self, StoreError> {
         if options.wal_paths.is_empty() {
@@ -544,9 +543,54 @@ impl IO {
             .count()
     }
 
-    fn poll_data_sqe(&mut self, entries: &mut Vec<squeue::Entry>) {
+    fn writable_segment(&self) -> Option<&LogSegmentFile> {
+        self.segments
+            .iter()
+            .rev()
+            .filter(|segment| segment.status == Status::ReadWrite)
+            .last()
+    }
+
+    fn calculate_write_buffers(&self) -> Vec<usize> {
+        let mut write_buf_list = vec![];
+        let mut requirement: VecDeque<_> = self
+            .pending_data_tasks
+            .iter()
+            .map(|task| match task {
+                IoTask::Write(task) => {
+                    task.buffer.len() + 4 /* CRC */ + 3 /* Record Size */ + 1 /* Record Type */
+                }
+                _ => 0,
+            })
+            .filter(|n| *n > 0)
+            .collect();
+
+        let mut size = 0;
+        self.segments
+            .iter()
+            .rev()
+            .filter(|segment| !segment.is_full())
+            .for_each(|segment| {
+                let remaining = segment.remaining() as usize;
+                while let Some(n) = requirement.front() {
+                    if size + n > remaining {
+                        write_buf_list.push(remaining);
+                        size = 0;
+                        return;
+                    } else {
+                        size += n;
+                        requirement.pop_front();
+                    }
+                }
+                write_buf_list.push(size);
+            });
+        write_buf_list
+    }
+
+    fn build_sqe(&mut self, entries: &mut Vec<squeue::Entry>) {
         let log = self.log.clone();
         let alignment = self.options.alignment;
+
         'task_loop: while let Some(io_task) = self.pending_data_tasks.pop_front() {
             match io_task {
                 IoTask::Read(task) => {
@@ -1016,7 +1060,7 @@ impl IO {
                 trace!(log, "Received {} IO requests from channel", cnt);
 
                 // Convert IO tasks into io_uring entries
-                io_mut.poll_data_sqe(&mut entries);
+                io_mut.build_sqe(&mut entries);
             }
 
             if !entries.is_empty() {
@@ -1120,7 +1164,7 @@ mod tests {
     fn create_io(wal_dir: WalPath) -> Result<super::IO, StoreError> {
         let mut options = super::Options::default();
         let logger = util::terminal_logger();
-        options.wal_paths.push(wal_dir);
+        options.add_wal_path(wal_dir);
         super::IO::new(&mut options, logger.clone())
     }
 
@@ -1280,7 +1324,7 @@ mod tests {
 
         let mut entries = Vec::new();
 
-        io.poll_data_sqe(&mut entries);
+        io.build_sqe(&mut entries);
         assert_eq!(16, entries.len());
         Ok(())
     }
@@ -1302,6 +1346,11 @@ mod tests {
             .collect();
         io.delete_segments(offsets);
         assert_eq!(0, io.segments.len());
+        Ok(())
+    }
+
+    #[test]
+    fn test_calculate_write_buffers() -> Result<(), StoreError> {
         Ok(())
     }
 

@@ -198,6 +198,15 @@ impl LogSegmentFile {
         self.written = self.size;
         todo!("Padding footer");
     }
+
+    pub(crate) fn remaining(&self) -> u64 {
+        if Status::ReadWrite != self.status {
+            0
+        } else {
+            debug_assert!(self.size >= self.written);
+            self.size - self.written
+        }
+    }
 }
 
 impl Drop for LogSegmentFile {
