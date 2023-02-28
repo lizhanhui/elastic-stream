@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/AutoMQ/placement-manager/pkg/elasticstorage/codec"
+	"github.com/AutoMQ/placement-manager/pkg/sbp/codec"
 )
 
 // Conn is the state of a single client connection to a server.

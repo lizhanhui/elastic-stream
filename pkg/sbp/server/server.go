@@ -23,7 +23,7 @@ type Handler interface {
 	Heartbeat(clientID string)
 }
 
-// A Server is used to serve requests from the Elastic Storage
+// Server is an SBP server
 type Server struct {
 
 	// IdleTimeout specifies how long until idle clients should be

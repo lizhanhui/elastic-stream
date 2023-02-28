@@ -8,8 +8,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 
-	"github.com/AutoMQ/placement-manager/pkg/elasticstorage/codec/format"
-	"github.com/AutoMQ/placement-manager/pkg/elasticstorage/codec/operation"
+	"github.com/AutoMQ/placement-manager/pkg/sbp/codec/format"
+	"github.com/AutoMQ/placement-manager/pkg/sbp/codec/operation"
 )
 
 func TestNextID(t *testing.T) {

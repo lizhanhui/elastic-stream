@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-// A Client is used to communicate with the Elastic Storage
+// Client is an SBP client
 // TODO
 type Client struct {
 	Transport Transport

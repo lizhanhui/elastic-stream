@@ -10,8 +10,8 @@ import (
 	"github.com/pkg/errors"
 	"go.uber.org/zap"
 
-	"github.com/AutoMQ/placement-manager/pkg/elasticstorage/codec/format"
-	"github.com/AutoMQ/placement-manager/pkg/elasticstorage/codec/operation"
+	"github.com/AutoMQ/placement-manager/pkg/sbp/codec/format"
+	"github.com/AutoMQ/placement-manager/pkg/sbp/codec/operation"
 )
 
 const (
@@ -22,7 +22,7 @@ const (
 	_magicCode uint8 = 23
 )
 
-// Frame is the load that communicates with Elastic Storage.
+// Frame is the load in SBP.
 //
 //	+-----------------------------------------------------------------------+
 //	|                           Frame Length (32)                           |
