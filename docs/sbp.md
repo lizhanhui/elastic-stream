@@ -61,3 +61,49 @@ The table below shows all the supported frame types along with a preallocated op
 | 0x3004 | GET_STREAMS | Fetch the metadata of a batch of streams. |
 | 0x3005 | TRIM_STREAMS | Trim the min offset of a batch of streams. |
 | 0x4001 | REPORT_METRICS | Data node reports metrics to the PM. |
+
+The below sub-sections describe the details of each frame type, including their usage, their binary format, and the meaning of their fields.
+
+### PING
+
+### GOAWAY
+
+### HEARTBEAT
+
+### APPEND
+
+### FETCH
+
+### LIST_RANGES
+
+### SEAL_RANGES
+
+### SYNC_RANGES
+
+### DESCRIBE_RANGES
+
+### CREATE_STREAMS
+
+### DELETE_STREAMS
+
+### UPDATE_STREAMS
+
+### GET_STREAMS
+
+### TRIM_STREAMS
+
+### REPORT_METRICS
+
+## Error Codes
+
+The SBP protocol defines a set of numeric error codes that are used to indicate the type of occurred error. These error codes are used in the error_code field of the response header, and can be translated by the client to a human-readable error message. The error codes are defined in the following table.
+
+| ERROR | CODE | RETRIABLE | DESCRIPTION |
+|-------|------|-----------|-------------|
+
+## References
+
+1. HTTP2: https://httpwg.org/specs/rfc7540.html
+2. FlatBuffers: https://google.github.io/flatbuffers/
+3. CQL BINARY PROTOCOL v4: https://github.com/apache/cassandra/blob/trunk/doc/native_protocol_v4.spec
+4. Kafka Protocol: https://kafka.apache.org/protocol.html#protocol_versioning
