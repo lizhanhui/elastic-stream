@@ -66,6 +66,9 @@ pub enum AppendError {
     #[error("System error with errno: `{0}`")]
     System(i32),
 
+    #[error("The request is illegal")]
+    BadRequest,
+
     #[error("Internal error")]
     Internal,
 }
