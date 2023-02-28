@@ -570,7 +570,12 @@ impl IO {
             .iter()
             .rev()
             .filter(|segment| !segment.is_full())
+            .rev()
             .for_each(|segment| {
+                if requirement.is_empty() {
+                    return;
+                }
+
                 let remaining = segment.remaining() as usize;
                 while let Some(n) = requirement.front() {
                     if size + n > remaining {
@@ -582,7 +587,11 @@ impl IO {
                         requirement.pop_front();
                     }
                 }
-                write_buf_list.push(size);
+
+                if size > 0 {
+                    write_buf_list.push(size);
+                    size = 0;
+                }
             });
         write_buf_list
     }
@@ -1147,6 +1156,7 @@ mod tests {
     use std::collections::{HashMap, VecDeque};
     use std::error::Error;
     use std::fs::File;
+    use std::rc::Rc;
 
     use bytes::BytesMut;
     use std::env;
@@ -1351,6 +1361,66 @@ mod tests {
 
     #[test]
     fn test_calculate_write_buffers() -> Result<(), StoreError> {
+        let wal_dir = random_wal_dir()?;
+        let _wal_dir_guard = util::DirectoryRemovalGuard::new(wal_dir.as_path());
+        let mut io = create_io(super::WalPath::new(wal_dir.to_str().unwrap(), 1234)?)?;
+        (0..3)
+            .into_iter()
+            .map(|_| io.alloc_segment().err())
+            .flatten()
+            .count();
+        io.segments.iter_mut().for_each(|segment| {
+            segment.status = Status::ReadWrite;
+        });
+
+        let mut buf = BytesMut::with_capacity(4096);
+        buf.resize(4096, 65);
+        let buf = buf.freeze();
+
+        (0..16).into_iter().for_each(|i| {
+            let (tx, _rx) = oneshot::channel();
+            io.pending_data_tasks.push_back(IoTask::Write(WriteTask {
+                stream_id: 0,
+                offset: i,
+                buffer: buf.clone(),
+                observer: tx,
+            }));
+        });
+
+        // Case when there are multiple writable log segment files
+        let buffers = io.calculate_write_buffers();
+        assert_eq!(1, buffers.len());
+        assert_eq!(Some(&65664), buffers.first());
+
+        // Case when the remaining of the first writable segment file can hold a record
+        let segment = io.segments.front_mut().unwrap();
+        segment.written = segment.size - 4096 - 8;
+        let buffers = io.calculate_write_buffers();
+        assert_eq!(2, buffers.len());
+        assert_eq!(Some(&4104), buffers.first());
+        assert_eq!(Some(&61560), buffers.iter().nth(1));
+
+        // Case when the last writable log segment file cannot hold a record
+        let segment = io.segments.front_mut().unwrap();
+        segment.written = segment.size - 4096 - 4;
+        let buffers = io.calculate_write_buffers();
+        assert_eq!(2, buffers.len());
+        assert_eq!(Some(&4100), buffers.first());
+        assert_eq!(Some(&65664), buffers.iter().nth(1));
+
+        // Case when the is only one writable segment file and it cannot hold all records
+        io.segments.iter_mut().for_each(|segment| {
+            segment.status = Status::Read;
+            segment.written = segment.size;
+        });
+        let segment = io.segments.back_mut().unwrap();
+        segment.status = Status::ReadWrite;
+        segment.written = segment.size - 4096;
+
+        let buffers = io.calculate_write_buffers();
+        assert_eq!(1, buffers.len());
+        assert_eq!(Some(&4096), buffers.first());
+
         Ok(())
     }
 

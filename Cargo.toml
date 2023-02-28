@@ -63,3 +63,5 @@ flatc-rust = { version = "0.2" }
 gethostname = "0.4"
 
 ordinal = "0.3"
+
+criterion = "0.4"

@@ -30,3 +30,12 @@ slog-async =  { workspace = true }
 slog-term =  { workspace = true }
 cargo-llvm-cov = { workspace = true }
 uuid = { workspace = true }
+criterion = { workspace = true }
+
+
+[profile.bench]
+debug = true
+
+[[bench]]
+name = "benchmark"
+harness = false
