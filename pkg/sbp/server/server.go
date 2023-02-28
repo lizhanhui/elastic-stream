@@ -2,6 +2,7 @@
 package server
 
 import (
+	"bufio"
 	"context"
 	"net"
 	"sync"
@@ -10,6 +11,8 @@ import (
 
 	"github.com/pkg/errors"
 	"go.uber.org/zap"
+
+	"github.com/AutoMQ/placement-manager/pkg/sbp/codec"
 )
 
 // ErrServerClosed is returned by the Server's Serve and ListenAndServe methods
@@ -99,9 +102,8 @@ func (s *Server) Serve(l net.Listener) error {
 			return err
 		}
 		tempDelay = 0
-		logger.Info("start connection", zap.String("remote-addr", rw.RemoteAddr().String()))
-		c := s.newConn(rw)
 
+		c := s.newConn(rw)
 		go c.serve()
 	}
 }
@@ -154,8 +156,13 @@ func (s *Server) Shutdown(ctx context.Context) error {
 
 func (s *Server) newConn(rwc net.Conn) *conn {
 	c := &conn{
-		server: s,
-		rwc:    rwc,
+		server:      s,
+		rwc:         rwc,
+		framer:      codec.NewFramer(bufio.NewWriter(rwc), bufio.NewReader(rwc), s.lg),
+		doneServing: make(chan struct{}),
+		readFrameCh: make(chan readFrameResult),
+		streams:     make(map[uint32]*stream),
+		lg:          s.lg,
 	}
 	c.ctx, c.cancelCtx = context.WithCancel(s.ctx)
 	s.trackConn(c, true)
