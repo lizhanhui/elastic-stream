@@ -2,3 +2,4 @@
 .idea
 .vscode/launch.json
 ./components/protocol/src/generated/rpc_generated.rs
+.DS_Store
