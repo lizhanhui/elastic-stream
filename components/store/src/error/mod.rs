@@ -50,6 +50,12 @@ pub enum StoreError {
 
     #[error("Data corrupted")]
     DataCorrupted,
+
+    #[error("Unsupported record type")]
+    UnsupportedRecordType,
+
+    #[error("Insufficient data")]
+    InsufficientData,
 }
 
 #[derive(Debug, Error)]
