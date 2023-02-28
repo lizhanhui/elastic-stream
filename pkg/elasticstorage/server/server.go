@@ -79,6 +79,8 @@ func (s *Server) Serve(l net.Listener) error {
 			select {
 			case <-s.getDoneChan():
 				return ErrServerClosed
+			case <-s.ctx.Done():
+				return ErrServerClosed
 			default:
 			}
 			if ne, ok := err.(net.Error); ok && ne.Timeout() {
@@ -98,10 +100,9 @@ func (s *Server) Serve(l net.Listener) error {
 		}
 		tempDelay = 0
 		logger.Info("start connection", zap.String("remote-addr", rw.RemoteAddr().String()))
-		c := newConn(s, rw)
-		s.trackConn(c, true)
+		c := s.newConn(rw)
 
-		go c.serve(s.ctx)
+		go c.serve()
 	}
 }
 
@@ -149,6 +150,16 @@ func (s *Server) Shutdown(ctx context.Context) error {
 
 	logger.Info("sbp server closed", zap.Error(err))
 	return err
+}
+
+func (s *Server) newConn(rwc net.Conn) *conn {
+	c := &conn{
+		server: s,
+		rwc:    rwc,
+	}
+	c.ctx, c.cancelCtx = context.WithCancel(s.ctx)
+	s.trackConn(c, true)
+	return c
 }
 
 // trackListener adds or removes a net.Listener to the set of tracked

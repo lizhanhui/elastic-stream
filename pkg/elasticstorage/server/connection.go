@@ -17,6 +17,7 @@ type conn struct {
 	rwc    net.Conn
 
 	ctx         context.Context
+	cancelCtx   context.CancelFunc
 	framer      *codec.Framer
 	doneServing chan struct{}        // closed when serverConn.serve ends
 	readFrameCh chan readFrameResult // written by serverConn.readFrames
@@ -24,7 +25,6 @@ type conn struct {
 	// Everything following is owned by the serve loop; use serveG.check():
 	// serveG            goroutineLock // used to verify funcs are on serve()
 	maxClientStreamID uint32 // max ever seen from client (odd), or 0 if there have been no client requests
-	maxPushPromiseID  uint32 // ID of the last push promise (even), or 0 if there have been no pushes
 	streams           map[uint32]*stream
 	inGoAway          bool        // we've started to or sent GOAWAY
 	needToSendGoAway  bool        // we need to schedule a GOAWAY frame write
@@ -35,16 +35,9 @@ type conn struct {
 	shutdownOnce sync.Once
 }
 
-func newConn(srv *Server, rwc net.Conn) *conn {
-	return &conn{
-		server: srv,
-		rwc:    rwc,
-	}
-}
-
-func (c *conn) serve(ctx context.Context) {
+func (c *conn) serve() {
 	// TODO
-	_ = ctx
+	_ = c.ctx
 }
 
 func (c *conn) close() {
