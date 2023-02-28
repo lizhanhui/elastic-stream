@@ -15,13 +15,13 @@ func TestGoroutineLock(t *testing.T) {
 	DebugGoroutines = true
 	defer func() { DebugGoroutines = oldDebug }()
 
-	g := newGoroutineLock()
-	g.check()
+	g := NewGoroutineLock()
+	g.Check()
 
 	sawPanic := make(chan interface{})
 	go func() {
 		defer func() { sawPanic <- recover() }()
-		g.check() // should panic
+		g.Check() // should panic
 	}()
 	e := <-sawPanic
 	if e == nil {

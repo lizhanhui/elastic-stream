@@ -19,16 +19,16 @@ import (
 
 var DebugGoroutines = os.Getenv("DEBUG_HTTP2_GOROUTINES") == "1"
 
-type goroutineLock uint64
+type GoroutineLock uint64
 
-func newGoroutineLock() goroutineLock {
+func NewGoroutineLock() GoroutineLock {
 	if !DebugGoroutines {
 		return 0
 	}
-	return goroutineLock(curGoroutineID())
+	return GoroutineLock(curGoroutineID())
 }
 
-func (g goroutineLock) check() {
+func (g GoroutineLock) Check() {
 	if !DebugGoroutines {
 		return
 	}
@@ -37,7 +37,7 @@ func (g goroutineLock) check() {
 	}
 }
 
-func (g goroutineLock) checkNotOn() {
+func (g GoroutineLock) CheckNotOn() {
 	if !DebugGoroutines {
 		return
 	}
