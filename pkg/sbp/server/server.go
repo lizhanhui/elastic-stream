@@ -1,4 +1,3 @@
-//nolint:unused
 package server
 
 import (
@@ -104,7 +103,11 @@ func (s *Server) Serve(l net.Listener) error {
 		tempDelay = 0
 
 		c := s.newConn(rw)
-		go c.serve()
+		s.trackConn(c, true)
+		go func() {
+			c.serve()
+			c.server.trackConn(c, false)
+		}()
 	}
 }
 
@@ -165,7 +168,6 @@ func (s *Server) newConn(rwc net.Conn) *conn {
 		lg:          s.lg,
 	}
 	c.ctx, c.cancelCtx = context.WithCancel(s.ctx)
-	s.trackConn(c, true)
 	return c
 }
 
