@@ -3,13 +3,13 @@ package queue
 import "testing"
 
 func TestQueueSimple(t *testing.T) {
-	q := New()
+	q := New[int]()
 
 	for i := 0; i < minQueueLen; i++ {
 		q.Add(i)
 	}
 	for i := 0; i < minQueueLen; i++ {
-		if q.Peek().(int) != i {
+		if q.Peek() != i {
 			t.Error("peek", i, "had value", q.Peek())
 		}
 		x := q.Remove()
@@ -20,7 +20,7 @@ func TestQueueSimple(t *testing.T) {
 }
 
 func TestQueueWrapping(t *testing.T) {
-	q := New()
+	q := New[int]()
 
 	for i := 0; i < minQueueLen; i++ {
 		q.Add(i)
@@ -31,7 +31,7 @@ func TestQueueWrapping(t *testing.T) {
 	}
 
 	for i := 0; i < minQueueLen; i++ {
-		if q.Peek().(int) != i+3 {
+		if q.Peek() != i+3 {
 			t.Error("peek", i, "had value", q.Peek())
 		}
 		q.Remove()
@@ -39,7 +39,7 @@ func TestQueueWrapping(t *testing.T) {
 }
 
 func TestQueueLength(t *testing.T) {
-	q := New()
+	q := New[int]()
 
 	if q.Length() != 0 {
 		t.Error("empty queue length not 0")
@@ -60,12 +60,12 @@ func TestQueueLength(t *testing.T) {
 }
 
 func TestQueueGet(t *testing.T) {
-	q := New()
+	q := New[int]()
 
 	for i := 0; i < 1000; i++ {
 		q.Add(i)
 		for j := 0; j < q.Length(); j++ {
-			if q.Get(j).(int) != j {
+			if q.Get(j) != j {
 				t.Errorf("index %d doesn't contain %d", j, j)
 			}
 		}
@@ -73,12 +73,12 @@ func TestQueueGet(t *testing.T) {
 }
 
 func TestQueueGetNegative(t *testing.T) {
-	q := New()
+	q := New[int]()
 
 	for i := 0; i < 1000; i++ {
 		q.Add(i)
 		for j := 1; j <= q.Length(); j++ {
-			if q.Get(-j).(int) != q.Length()-j {
+			if q.Get(-j) != q.Length()-j {
 				t.Errorf("index %d doesn't contain %d", -j, q.Length()-j)
 			}
 		}
@@ -86,7 +86,7 @@ func TestQueueGetNegative(t *testing.T) {
 }
 
 func TestQueueGetOutOfRangePanics(t *testing.T) {
-	q := New()
+	q := New[int]()
 
 	q.Add(1)
 	q.Add(2)
@@ -102,7 +102,7 @@ func TestQueueGetOutOfRangePanics(t *testing.T) {
 }
 
 func TestQueuePeekOutOfRangePanics(t *testing.T) {
-	q := New()
+	q := New[int]()
 
 	assertPanics(t, "should panic when peeking empty queue", func() {
 		q.Peek()
@@ -117,7 +117,7 @@ func TestQueuePeekOutOfRangePanics(t *testing.T) {
 }
 
 func TestQueueRemoveOutOfRangePanics(t *testing.T) {
-	q := New()
+	q := New[int]()
 
 	assertPanics(t, "should panic when removing empty queue", func() {
 		q.Remove()
@@ -147,7 +147,7 @@ func assertPanics(t *testing.T, name string, f func()) {
 // enough, but if you have less than that available and start swapping, then all bets are off.
 
 func BenchmarkQueueSerial(b *testing.B) {
-	q := New()
+	q := New[*int]()
 	for i := 0; i < b.N; i++ {
 		q.Add(nil)
 	}
@@ -158,7 +158,7 @@ func BenchmarkQueueSerial(b *testing.B) {
 }
 
 func BenchmarkQueueGet(b *testing.B) {
-	q := New()
+	q := New[int]()
 	for i := 0; i < b.N; i++ {
 		q.Add(i)
 	}
@@ -169,7 +169,7 @@ func BenchmarkQueueGet(b *testing.B) {
 }
 
 func BenchmarkQueueTickTock(b *testing.B) {
-	q := New()
+	q := New[*int]()
 	for i := 0; i < b.N; i++ {
 		q.Add(nil)
 		q.Peek()
