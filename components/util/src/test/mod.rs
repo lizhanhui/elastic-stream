@@ -62,7 +62,7 @@ pub async fn run_listener(logger: Logger) -> u16 {
                                         }
                                     };
                                 }
-                                OperationCode::ListRange => {
+                                OperationCode::ListRanges => {
                                     match writer.write_frame(&frame).await {
                                         Ok(_) => {
                                             info!(

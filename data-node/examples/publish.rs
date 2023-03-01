@@ -72,7 +72,7 @@ async fn launch(args: &Args, logger: Logger) {
 
     let payload = BytesMut::zeroed(1024).freeze();
     let mut frame = Frame {
-        operation_code: OperationCode::Publish,
+        operation_code: OperationCode::Append,
         flag: 0u8,
         stream_id: 0,
         header_format: HeaderFormat::FlatBuffer,

@@ -116,7 +116,7 @@ impl Session {
             }
 
             request::Request::ListRange { .. } => {
-                let mut list_range_frame = Frame::new(OperationCode::ListRange);
+                let mut list_range_frame = Frame::new(OperationCode::ListRanges);
                 Session::build_frame_header(&mut list_range_frame, request);
 
                 match self.writer.write_frame(&list_range_frame).await {
@@ -224,7 +224,7 @@ impl Session {
                         trace!(log, "Mock parsing {} response", response.operation_code);
                         response::Response::Heartbeat { status: Status::OK }
                     }
-                    OperationCode::ListRange => {
+                    OperationCode::ListRanges => {
                         trace!(log, "Mock parsing {} response", response.operation_code);
                         response::Response::ListRange {
                             status: Status::OK,

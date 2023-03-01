@@ -56,16 +56,26 @@ impl ServerCall {
             OperationCode::GoAway => {
                 response.operation_code = OperationCode::GoAway;
             }
-            OperationCode::Publish => {
-                response.operation_code = OperationCode::Publish;
+            OperationCode::Append => {
+                response.operation_code = OperationCode::Append;
                 self.on_publish(&mut response).await;
             }
             OperationCode::Heartbeat => {
                 response.operation_code = OperationCode::Heartbeat;
             }
-            OperationCode::ListRange => {
+            OperationCode::ListRanges => {
                 response.operation_code = OperationCode::Heartbeat;
             }
+            OperationCode::Fetch => todo!(),
+            OperationCode::SealRanges => todo!(),
+            OperationCode::SyncRanges => todo!(),
+            OperationCode::DescribeRanges => todo!(),
+            OperationCode::CreateStreams => todo!(),
+            OperationCode::DeleteStreams => todo!(),
+            OperationCode::UpdateStreams => todo!(),
+            OperationCode::GetStreams => todo!(),
+            OperationCode::TrimStreams => todo!(),
+            OperationCode::ReportMetrics => todo!(),
         };
 
         // Send response to channel.

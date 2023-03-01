@@ -336,14 +336,14 @@ pub enum OperationCode {
     // Initiate a shutdown of a connection or signal serious error conditions.
     GoAway = 0x0002,
     // To keep clients alive through periodic heartbeat frames.
-    HEARTBEAT = 0x0003,
+    Heartbeat = 0x0003,
 
     // 0x1000 ~ 0x1FFF is reserved for data communication
 
     // Append records to the data node.
-    APPEND = 0x1001,
+    Append = 0x1001,
     // Fetch records from the data node.
-    FETCH = 0x1002,
+    Fetch = 0x1002,
 
     // 0x2000 ~ 0x2FFF is reserved for range management
 
