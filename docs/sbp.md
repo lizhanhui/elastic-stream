@@ -627,10 +627,61 @@ Response Header => throttle_time_ms [streams]
 | end_offset | int64 | The end offset of the range. The field is omitted if the range is the last writable range. |
 
 ### REPORT_METRICS
+The REPORT_METRICS frame(opcode=0x4001) reports load metrics of Data Node to PM. PM uses these metrics to allocate ranges.
 
 **Request Frame:**
+```
+Request Header => hostname
+  hostname => string
+  disk_in_rate => int64
+  disk_out_rate => int64
+  disk_free_space => int64
+  disk_unindexed_data_size => int64
+  memory_used => int64
+  uring_task_rate => int16
+  uring_inflight_task_cnt => int16
+  uring_pending_task_cnt => int32
+  uring_task_avg_latency => int16
+  network_append_rate => int16
+  network_fetch_rate => int16
+  network_failed_append_rate => int16
+  network_failed_fetch_rate => int16
+  network_append_avg_latency => int16
+  network_fetch_avg_latency => int16
+  range_missing_replica_cnt => int16
+  range_active_cnt => int16
+
+Request Payload => Empty
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| hostname | string | Data Node's hostname. |
+| disk_in_rate | int64 | Number of bytes written to the disk per second. |
+| disk_out_rate | int64 | Number of bytes read from the disk per second. |
+| disk_free_space | int64 | Disk free space size, measured in bytes. |
+| disk_unindexed_data_size | int64 | Size of the data that has not yet been indexed, measured in bytes. |
+| memory_used | int64 | Used memory size, measured in bytes. |
+| uring_task_rate | int16 | Number of tasks completed per second in uring. |
+| uring_inflight_task_cnt | int16 | Number of inflight tasks in uring. |
+| uring_pending_task_cnt | int32 | Number of pending tasks in uring. |
+| uring_task_avg_latency | int16 | Average latency of completed tasks over the past minute in uring, measured in ms. |
+| network_append_rate | int16 | Number of append requests per second. |
+| network_fetch_rate | int16 | Number of fetch requests per second. |
+| network_failed_append_rate | int16 | Number of failed append requests per second. |
+| network_failed_fetch_rate | int16 | Number of failed fetch requests per second. |
+| network_append_avg_latency | int16 | Average latency of append requests over the past minute, measured in ms. |
+| network_fetch_avg_latency | int16 | Average latency of fetch requests over the past minute, measured in ms. |
+| range_missing_replica_cnt | int16 | Number of replicas that need to be copied from other Data Node. |
+| range_active_cnt | int16 | Number of active(recently read or write) ranges in the past minute. |
 
 **Response Frame:**
+```
+Response Header => hostname
+  hostname => string
+
+Response Payload => Empty
+```
 
 ## Error Codes
 
