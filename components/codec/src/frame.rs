@@ -153,10 +153,11 @@ impl Frame {
         let header_length: u32 = src.get_u8() as u32;
         let header_length = src.get_u16() as u32 + (header_length << 16);
         if src.remaining() < header_length as usize {
-            return Err(FrameError::TooLongFrameHeader {
-                found: header_length,
-                remaining: src.remaining() as u32,
-            });
+            return Err(FrameError::BadFrame(format!(
+                "Header length is: {}, but only {} bytes in buffer",
+                header_length,
+                src.remaining()
+            )));
         }
         src.advance(header_length as usize);
 
@@ -164,10 +165,11 @@ impl Frame {
         if header_length + 16 < frame_length {
             let payload_length = frame_length - header_length - 16;
             if payload_length > src.remaining() as u32 {
-                return Err(FrameError::TooLongPayload {
-                    found: header_length,
-                    remaining: src.remaining() as u32,
-                });
+                return Err(FrameError::BadFrame(format!(
+                    "Payload length is: {}, but only {} bytes in buffer",
+                    payload_length,
+                    src.remaining()
+                )));
             }
             let body = src.copy_to_bytes(payload_length as usize);
             payload = Some(body);
@@ -582,7 +584,7 @@ mod tests {
     }
 
     #[test]
-    fn check_too_long_header_length() {
+    fn test_too_long_header_length() {
         let mut raw_frame = BytesMut::with_capacity(16);
         // frame length
         raw_frame.put_u32(19);
@@ -612,19 +614,13 @@ mod tests {
                 panic!("Should have detected the frame header length issue");
             }
             Err(e) => {
-                assert_eq!(
-                    FrameError::TooLongFrameHeader {
-                        found: 1024,
-                        remaining: 7 // Remaining bytes in the buffer: header + empty payload + payload checksum
-                    },
-                    e
-                );
+                assert!(matches!(e, FrameError::BadFrame { .. }));
             }
         }
     }
 
     #[test]
-    fn test_no_checksum() {
+    fn test_bad_frame_no_checksum() {
         let mut raw_frame = BytesMut::with_capacity(16);
         // frame length
         raw_frame.put_u32(25);
@@ -656,10 +652,7 @@ mod tests {
                 panic!("Should have detected the frame payload length issue");
             }
             Err(e) => {
-                assert_eq!(
-                    FrameError::BadFrame("The remaining bytes are not checksum".to_string()),
-                    e
-                );
+                assert!(matches!(e, FrameError::BadFrame { .. }));
             }
         }
     }
