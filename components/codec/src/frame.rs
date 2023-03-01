@@ -4,7 +4,7 @@ use crc::Crc;
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 use slog::{trace, warn, Logger};
 use std::cell::RefCell;
-use std::fmt::{self, Display, Formatter};
+use std::fmt::{self, format, Display};
 use std::io::Cursor;
 
 use crate::error::FrameError;
@@ -59,7 +59,11 @@ impl Frame {
     }
 
     pub fn flag_response(&mut self) {
-        self.flag |= 1u8;
+        self.flag |= 0x01;
+    }
+
+    pub fn flag_end_response(&mut self) {
+        self.flag |= 0x03;
     }
 
     fn crc32(payload: &[u8]) -> u32 {
@@ -148,13 +152,32 @@ impl Frame {
         // header length
         let header_length: u32 = src.get_u8() as u32;
         let header_length = src.get_u16() as u32 + (header_length << 16);
+        if src.remaining() < header_length as usize {
+            return Err(FrameError::TooLongFrameHeader {
+                found: header_length,
+                remaining: src.remaining() as u32,
+            });
+        }
         src.advance(header_length as usize);
 
-        let payload_length = frame_length - header_length - 16;
         let mut payload = None;
-        if payload_length > 0 {
+        if header_length + 16 < frame_length {
+            let payload_length = frame_length - header_length - 16;
+            if payload_length > src.remaining() as u32 {
+                return Err(FrameError::TooLongPayload {
+                    found: header_length,
+                    remaining: src.remaining() as u32,
+                });
+            }
             let body = src.copy_to_bytes(payload_length as usize);
             payload = Some(body);
+        }
+
+        // Remaining bytes are checksum
+        if src.remaining() != 4 {
+            return Err(FrameError::BadFrame(
+                "The remaining bytes are not checksum".to_string(),
+            ));
         }
 
         if let Some(body) = payload {
@@ -291,44 +314,69 @@ impl Frame {
 #[repr(u8)]
 pub enum HeaderFormat {
     Unknown = 0,
-    FlatBuffer = 1,
-    ProtoBuffer = 2,
-    JSON = 3,
+    // FlatBuffers format indicates that the payload of the extended header is serialized by flatbuffers.
+    // This is the only supported format for now.
+    FlatBuffer = 0x01,
+    ProtoBuffer = 0x02,
+    JSON = 0x03,
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, TryFromPrimitive, IntoPrimitive)]
 #[repr(u16)]
 pub enum OperationCode {
-    Unknown = 0,
-    Ping = 1,
-    GoAway = 2,
-    Publish = 3,
-    Heartbeat = 4,
-    ListRange = 5,
+    // 0x0000 is reserved for unknown
+    Unknown = 0x0000,
+
+    // 0x0000 ~ 0x0FFF is reserved for system
+
+    // Measure a minimal round-trip time from the sender.
+    Ping = 0x0001,
+    // Initiate a shutdown of a connection or signal serious error conditions.
+    GoAway = 0x0002,
+    // To keep clients alive through periodic heartbeat frames.
+    HEARTBEAT = 0x0003,
+
+    // 0x1000 ~ 0x1FFF is reserved for data communication
+
+    // Append records to the data node.
+    APPEND = 0x1001,
+    // Fetch records from the data node.
+    FETCH = 0x1002,
+
+    // 0x2000 ~ 0x2FFF is reserved for range management
+
+    // List ranges from the PM of a batch of streams.
+    ListRanges = 0x2001,
+    // Request seal ranges of a batch of streams.
+    // The PM will provide the `SEAL_AND_NEW` semantic while Data Node only provide the `SEAL` semantic.
+    SealRanges = 0x2002,
+    // Syncs newly writable ranges to a data node to accelerate the availability of a newly created writable range.
+    SyncRanges = 0x2003,
+    // Describe the details of a batch of ranges, mainly used to get the max offset of the current writable range.
+    DescribeRanges = 0x2004,
+
+    // 0x3000 ~ 0x3FFF is reserved for stream management
+
+    // Create a batch of streams.
+    CreateStreams = 0x3001,
+    // Delete a batch of streams.
+    DeleteStreams = 0x3002,
+    // Update a batch of streams.
+    UpdateStreams = 0x3003,
+    // Fetch the metadata of a batch of streams.
+    GetStreams = 0x3004,
+    // Trim the min offset of a batch of streams.
+    TrimStreams = 0x3005,
+
+    // 0x4000 ~ 0x4FFF is reserved for observability
+
+    // Data node reports metrics to the PM.
+    ReportMetrics = 0x4001,
 }
 
 impl Display for OperationCode {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        match *self {
-            OperationCode::Unknown => {
-                write!(f, "Unknown")
-            }
-            OperationCode::Ping => {
-                write!(f, "Ping")
-            }
-            OperationCode::GoAway => {
-                write!(f, "GoAway")
-            }
-            OperationCode::Publish => {
-                write!(f, "Publish")
-            }
-            OperationCode::Heartbeat => {
-                write!(f, "Heartbeat")
-            }
-            OperationCode::ListRange => {
-                write!(f, "ListRange")
-            }
-        }
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{:?}", self)
     }
 }
 
@@ -533,6 +581,88 @@ mod tests {
         assert_eq!(0, buf.len());
     }
 
+    #[test]
+    fn check_too_long_header_length() {
+        let mut raw_frame = BytesMut::with_capacity(16);
+        // frame length
+        raw_frame.put_u32(19);
+        // magic code
+        raw_frame.put_u8(MAGIC_CODE);
+        // operation code
+        raw_frame.put_u16(OperationCode::Ping.into());
+        // flag
+        raw_frame.put_u8(1);
+        // stream identifier
+        raw_frame.put_u32(2);
+        // header format + header length
+        raw_frame.put_u8(HeaderFormat::FlatBuffer.into());
+        // Set a header length that is too long
+        raw_frame.extend_from_slice((1024_i32).to_be_bytes()[1..].as_ref());
+        // header
+        raw_frame.put(&b"abc"[..]);
+        // empty payload
+        // payload checksum
+        raw_frame.put_u32(0);
+
+        let mut cursor = Cursor::new(&raw_frame[..]);
+        let mut logger = get_logger();
+
+        match Frame::check(&mut cursor, &mut logger) {
+            Ok(_) => {
+                panic!("Should have detected the frame header length issue");
+            }
+            Err(e) => {
+                assert_eq!(
+                    FrameError::TooLongFrameHeader {
+                        found: 1024,
+                        remaining: 7 // Remaining bytes in the buffer: header + empty payload + payload checksum
+                    },
+                    e
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_no_checksum() {
+        let mut raw_frame = BytesMut::with_capacity(16);
+        // frame length
+        raw_frame.put_u32(25);
+        // magic code
+        raw_frame.put_u8(MAGIC_CODE);
+        // operation code
+        raw_frame.put_u16(OperationCode::Ping.into());
+        // flag
+        raw_frame.put_u8(1);
+        // stream identifier
+        raw_frame.put_u32(2);
+        // header format + header length
+        raw_frame.put_u8(HeaderFormat::FlatBuffer.into());
+        // header length
+        raw_frame.extend_from_slice((10_i32).to_be_bytes()[1..].as_ref());
+        // header
+        raw_frame.put(&b"header"[..]);
+        // payload length
+        // payload
+        raw_frame.put(&b"abc"[..]);
+        // payload checksum
+        raw_frame.put_u32(0);
+
+        let mut cursor = Cursor::new(&raw_frame[..]);
+        let mut logger = get_logger();
+
+        match Frame::check(&mut cursor, &mut logger) {
+            Ok(_) => {
+                panic!("Should have detected the frame payload length issue");
+            }
+            Err(e) => {
+                assert_eq!(
+                    FrameError::BadFrame("The remaining bytes are not checksum".to_string()),
+                    e
+                );
+            }
+        }
+    }
     #[test]
     fn test_check_and_parse() {
         let mut header = BytesMut::new();
