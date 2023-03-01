@@ -1,6 +1,10 @@
 package queue
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/stretchr/testify/require"
+)
 
 func TestQueueSimple(t *testing.T) {
 	q := New[int]()
@@ -129,6 +133,32 @@ func TestQueueRemoveOutOfRangePanics(t *testing.T) {
 	assertPanics(t, "should panic when removing emptied queue", func() {
 		q.Remove()
 	})
+}
+
+func TestReset(t *testing.T) {
+	re := require.New(t)
+
+	q := New[[]int]()
+	for i := 0; i < 100; i++ {
+		ints := []int{i}
+		q.Add(ints)
+	}
+	q.Reset()
+
+	re.Zero(q.head)
+	re.Zero(q.tail)
+	re.Zero(q.count)
+	for i := 0; i < 100; i++ {
+		re.Zero(q.buf[i])
+	}
+
+	for i := 0; i < 200; i++ {
+		ints := []int{i}
+		q.Add(ints)
+	}
+	for i := 0; i < 200; i++ {
+		re.Equal(i, q.Remove()[0])
+	}
 }
 
 func assertPanics(t *testing.T, name string, f func()) {

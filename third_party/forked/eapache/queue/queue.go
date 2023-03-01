@@ -102,3 +102,14 @@ func (q *Queue[T]) Remove() T {
 	}
 	return ret
 }
+
+// Reset resets the queue for reuse
+func (q *Queue[T]) Reset() {
+	var zero T
+	for i := range q.buf {
+		q.buf[i] = zero
+	}
+	q.head = 0
+	q.tail = 0
+	q.count = 0
+}
