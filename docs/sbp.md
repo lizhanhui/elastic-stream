@@ -431,7 +431,7 @@ Response Header => throttle_time_ms [responses]
     range => range_index start_offset end_offset
       range_index => int32
       start_offset => int64
-      end_offset => int64
+      next_offset => int64
 ```
 
 | Field | Type | Description |
@@ -444,7 +444,7 @@ Response Header => throttle_time_ms [responses]
 | range | array | The array of ranges, returned by the describe ranges request. |
 | range_index | int32 | The index of the range in the stream. |
 | start_offset | int64 | The start offset of the range. |
-| end_offset | int64 | The end offset of the range. It's a snapshot of the end offset of the range, and it may be changed after the response is sent. |
+| next_offset | int64 | The next writable offset for incoming records of the range. It's a snapshot of the next offset of the range, and it may be changed after the response is sent. |
 
 ### CREATE_STREAMS
 The CREATE_STREAMS frame(opcode=0x3001) creates a batch of streams to PM. This frame with batch ability is very useful for importing metadata from other systems.
