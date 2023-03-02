@@ -11,6 +11,7 @@ import (
 type frameQueue = queue.Queue[frameWriteRequest]
 
 // writeScheduler manages frames to be written in each streams
+// Methods are never called concurrently.
 type writeScheduler struct {
 	// Frames in ctrlQueue queue are control frames, and should be popped first.
 	ctrlQueue *frameQueue
@@ -27,12 +28,12 @@ type writeScheduler struct {
 // newWriteScheduler creates a new writeScheduler with empty queues
 func newWriteScheduler() *writeScheduler {
 	ws := &writeScheduler{
+		queues: make(map[uint32]*frameQueue),
 		queuePool: sync.Pool{
 			New: func() interface{} {
 				return queue.New[frameWriteRequest]()
 			},
 		},
-		queues: make(map[uint32]*frameQueue),
 	}
 	ws.ctrlQueue = ws.queuePool.Get().(*frameQueue)
 	return ws
@@ -97,4 +98,20 @@ type frameWriteRequest struct {
 	// 1 message and is sent the return value from write (or an
 	// earlier error) when the frame has been written.
 	done chan error
+
+	// whether f is the last frame to be written in the stream
+	endStream bool
+}
+
+// replyToWriter sends err to frameWriteRequest.done and panics if done is unbuffered
+// This does nothing if frameWriteRequest.done is nil.
+func (wr *frameWriteRequest) replyToWriter(err error) {
+	if wr.done == nil {
+		return
+	}
+	select {
+	case wr.done <- err:
+	default:
+		panic("unbuffered done channel")
+	}
 }

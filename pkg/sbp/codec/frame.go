@@ -1,6 +1,7 @@
 package codec
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/binary"
 	"hash/crc32"
@@ -46,6 +47,11 @@ type Frame struct {
 	HeaderFmt format.Format       // HeaderFmt identifies the format of the Header.
 	Header    []byte              // nil for no extended header
 	Payload   []byte              // nil for no payload
+}
+
+// Size returns the number of bytes that the Frame takes after encoding
+func (f Frame) Size() int {
+	return _fixedHeaderLen + len(f.Header) + len(f.Payload) + 4
 }
 
 // Framer reads and writes Frames
@@ -179,6 +185,22 @@ func (fr *Framer) WriteFrame(frame Frame) error {
 	}
 
 	return fr.endWrite()
+}
+
+// Flush writes any buffered data to the underlying io.Writer.
+func (fr *Framer) Flush() error {
+	if bw, ok := fr.w.(*bufio.Writer); ok {
+		return bw.Flush()
+	}
+	return nil
+}
+
+// Available returns how many bytes are unused in the buffer.
+func (fr *Framer) Available() int {
+	if bw, ok := fr.w.(*bufio.Writer); ok {
+		return bw.Available()
+	}
+	return 0
 }
 
 // Write the fixed header

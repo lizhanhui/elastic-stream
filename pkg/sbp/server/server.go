@@ -14,9 +14,10 @@ import (
 	"github.com/AutoMQ/placement-manager/pkg/sbp/codec"
 )
 
-// ErrServerClosed is returned by the Server's Serve and ListenAndServe methods
-// after a call to Shutdown or Close.
-var ErrServerClosed = errors.New("Server closed")
+var (
+	// ErrServerClosed is returned by the Server's Serve methods after a call to Server.Shutdown.
+	ErrServerClosed = errors.New("Server closed")
+)
 
 // Handler responds to a request
 type Handler interface {
@@ -159,13 +160,16 @@ func (s *Server) Shutdown(ctx context.Context) error {
 
 func (s *Server) newConn(rwc net.Conn) *conn {
 	c := &conn{
-		server:      s,
-		rwc:         rwc,
-		framer:      codec.NewFramer(bufio.NewWriter(rwc), bufio.NewReader(rwc), s.lg),
-		doneServing: make(chan struct{}),
-		readFrameCh: make(chan readFrameResult),
-		streams:     make(map[uint32]*stream),
-		lg:          s.lg,
+		server:           s,
+		rwc:              rwc,
+		framer:           codec.NewFramer(bufio.NewWriter(rwc), bufio.NewReader(rwc), s.lg),
+		doneServing:      make(chan struct{}),
+		readFrameCh:      make(chan frameReadResult),
+		wantWriteFrameCh: make(chan frameWriteRequest, 8),
+		wroteFrameCh:     make(chan frameWriteResult, 1), // buffered; one send in writeFrameAsync
+		streams:          make(map[uint32]*stream),
+		wScheduler:       newWriteScheduler(),
+		lg:               s.lg,
 	}
 	c.ctx, c.cancelCtx = context.WithCancel(s.ctx)
 	return c

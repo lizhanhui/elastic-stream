@@ -48,7 +48,7 @@ func TestWriteScheduler(t *testing.T) {
 
 	got := make(map[uint32]int)
 	for _, wr := range order[4:] {
-		got[wr.stream.id] += 1
+		got[wr.stream.id]++
 	}
 	re.Equal(1, got[2])
 	re.Equal(3, got[4])
