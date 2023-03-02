@@ -29,6 +29,10 @@ func (q *Queue[T]) Length() int {
 	return q.count
 }
 
+func (q *Queue[T]) IsEmpty() bool {
+	return q.count == 0
+}
+
 // resizes the queue to fit exactly twice its current contents
 // this can result in shrinking if the queue is less than half-full
 func (q *Queue[T]) resize() {

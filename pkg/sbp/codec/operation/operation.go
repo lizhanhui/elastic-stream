@@ -55,6 +55,16 @@ func (o Operation) Code() uint16 {
 	return o.code
 }
 
+// IsControl returns whether o is a control operation
+func (o Operation) IsControl() bool {
+	switch o.code {
+	case ping, goAway, heartbeat:
+		return true
+	default:
+		return false
+	}
+}
+
 // Ping frame is a mechanism for measuring a minimal round-trip time from the sender,
 // as well as determining whether an idle connection is still functional
 func Ping() Operation {

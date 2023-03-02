@@ -95,6 +95,18 @@ func TestNewOperation(t *testing.T) {
 	}
 }
 
+func TestIsControl(t *testing.T) {
+	t.Parallel()
+	re := require.New(t)
+
+	for _, operation := range []Operation{Ping(), GoAway(), Heartbeat()} {
+		re.True(operation.IsControl())
+	}
+	for _, operation := range []Operation{Publish(), ListRange()} {
+		re.False(operation.IsControl())
+	}
+}
+
 func TestOperation(t *testing.T) {
 	tests := []struct {
 		name   string

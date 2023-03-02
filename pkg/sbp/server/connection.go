@@ -193,18 +193,6 @@ func (c *conn) sendServeMsg(msg *serverMessage) {
 	}
 }
 
-type frameWriteRequest struct {
-	f codec.Frame
-
-	// stream is the stream on which this frame will be written.
-	stream *stream
-
-	// done, if non-nil, must be a buffered channel with space for
-	// 1 message and is sent the return value from write (or an
-	// earlier error) when the frame has been written.
-	done chan error
-}
-
 type readFrameResult struct {
 	f   codec.Frame
 	err error
