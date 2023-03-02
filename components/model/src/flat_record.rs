@@ -4,7 +4,7 @@ use bytes::{Buf, BufMut, Bytes, BytesMut};
 
 use chrono::Utc;
 use flatbuffers::FlatBufferBuilder;
-use protocol::flat_model::{
+use protocol::flat_model::records::{
     KeyValue, KeyValueArgs, RecordBatchMeta, RecordBatchMetaArgs, RecordMeta, RecordMetaArgs,
 };
 

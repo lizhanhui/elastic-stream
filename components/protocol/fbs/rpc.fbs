@@ -1,4 +1,4 @@
-namespace Header;
+namespace header;
 
 enum ErrorCode : int16 {
     None = 0,

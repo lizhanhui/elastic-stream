@@ -9,11 +9,18 @@ use core::cmp::Ordering;
 extern crate flatbuffers;
 use self::flatbuffers::{EndianScalar, Follow};
 
+#[allow(unused_imports, dead_code)]
+pub mod records {
+
+  use core::mem;
+  use core::cmp::Ordering;
+
+  extern crate flatbuffers;
+  use self::flatbuffers::{EndianScalar, Follow};
+
 pub enum RecordBatchMetaOffset {}
 #[derive(Copy, Clone, PartialEq)]
 
-/// Don't delete any field from the schema once released.
-/// Asign a id for each filed to keep compatibility easily.
 pub struct RecordBatchMeta<'a> {
   pub _tab: flatbuffers::Table<'a>,
 }
@@ -444,3 +451,5 @@ impl core::fmt::Debug for RecordMeta<'_> {
       ds.finish()
   }
 }
+}  // pub mod records
+

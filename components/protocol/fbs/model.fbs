@@ -1,6 +1,8 @@
 /// Don't delete any field from the schema once released.
 /// Asign a id for each filed to keep compatibility easily.
 
+namespace records;
+
 // The below definitions of Record and RecordBatch are inspired by Kafka's protocols
 table RecordBatchMeta {
     /// The stream id of this record batch.
