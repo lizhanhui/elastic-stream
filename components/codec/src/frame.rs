@@ -365,8 +365,8 @@ pub enum OperationCode {
     DeleteStreams = 0x3002,
     // Update a batch of streams.
     UpdateStreams = 0x3003,
-    // Fetch the metadata of a batch of streams.
-    GetStreams = 0x3004,
+    // Describe the details of a batch of streams.
+    DescribeStreams = 0x3004,
     // Trim the min offset of a batch of streams.
     TrimStreams = 0x3005,
 

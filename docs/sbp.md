@@ -58,7 +58,7 @@ The table below shows all the supported frame types along with a preallocated op
 | 0x3001 | CREATE_STREAMS | Create a batch of streams. |
 | 0x3002 | DELETE_STREAMS | Delete a batch of streams. |
 | 0x3003 | UPDATE_STREAMS | Update a batch of streams. |
-| 0x3004 | GET_STREAMS | Fetch the metadata of a batch of streams. |
+| 0x3004 | DESCRIBE_STREAMS | Fetch the details of a batch of streams. |
 | 0x3005 | TRIM_STREAMS | Trim the min offset of a batch of streams. |
 | 0x4001 | REPORT_METRICS | Data node reports metrics to the PM. |
 
