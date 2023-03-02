@@ -5,10 +5,7 @@
 use bytes::{BufMut, Bytes, BytesMut};
 use codec::frame::{Frame, OperationCode};
 use flatbuffers::FlatBufferBuilder;
-use protocol::rpc::header::{
-    Code, PublishRecordResponseHeader, PublishRecordResponseHeaderArgs, RecordMetadata,
-    RecordMetadataArgs, Status, StatusArgs,
-};
+
 use slog::{debug, trace, warn, Logger};
 use std::rc::Rc;
 use store::{
@@ -73,7 +70,7 @@ impl ServerCall {
             OperationCode::CreateStreams => todo!(),
             OperationCode::DeleteStreams => todo!(),
             OperationCode::UpdateStreams => todo!(),
-            OperationCode::GetStreams => todo!(),
+            OperationCode::DescribeStreams => todo!(),
             OperationCode::TrimStreams => todo!(),
             OperationCode::ReportMetrics => todo!(),
         };
@@ -130,7 +127,7 @@ impl ServerCall {
         let record = self.build_proof_of_concept_record();
         match self.store.append(options, record).await {
             Ok(result) => {
-                response.header = self.build_publish_response_header(&result);
+                // response.header = self.build_publish_response_header(&result);
             }
             Err(_e) => {}
         };
@@ -139,45 +136,45 @@ impl ServerCall {
     /// Build frame header according to `PutResult` with FlatBuffers encoding.
     ///
     /// `_result` - PutResult from underlying `Store`
-    fn build_publish_response_header(&self, _result: &AppendResult) -> Option<Bytes> {
-        let mut builder = FlatBufferBuilder::with_capacity(256);
-        let status = Status::create(
-            &mut builder,
-            &StatusArgs {
-                code: Code::OK,
-                message: None,
-                nodes: None,
-            },
-        );
+    // fn build_publish_response_header(&self, _result: &AppendResult) -> Option<Bytes> {
+    //     let mut builder = FlatBufferBuilder::with_capacity(256);
+    //     let status = Status::create(
+    //         &mut builder,
+    //         &StatusArgs {
+    //             code: Code::OK,
+    //             message: None,
+    //             nodes: None,
+    //         },
+    //     );
 
-        let topic = builder.create_string("topic");
-        let metadata = RecordMetadata::create(
-            &mut builder,
-            &RecordMetadataArgs {
-                offset: 0,
-                partition: 0,
-                serialized_key_size: 0,
-                serialized_value_size: 0,
-                timestamp: 0,
-                topic: Some(topic),
-            },
-        );
+    //     let topic = builder.create_string("topic");
+    //     let metadata = RecordMetadata::create(
+    //         &mut builder,
+    //         &RecordMetadataArgs {
+    //             offset: 0,
+    //             partition: 0,
+    //             serialized_key_size: 0,
+    //             serialized_value_size: 0,
+    //             timestamp: 0,
+    //             topic: Some(topic),
+    //         },
+    //     );
 
-        let response_header = PublishRecordResponseHeader::create(
-            &mut builder,
-            &PublishRecordResponseHeaderArgs {
-                status: Some(status),
-                metadata: Some(metadata),
-            },
-        );
+    //     let response_header = PublishRecordResponseHeader::create(
+    //         &mut builder,
+    //         &PublishRecordResponseHeaderArgs {
+    //             status: Some(status),
+    //             metadata: Some(metadata),
+    //         },
+    //     );
 
-        builder.finish(response_header, None);
-        let header_data = builder.finished_data();
-        let mut header = BytesMut::with_capacity(header_data.len());
-        // TODO: dig if memory copy here can be avoided...say moving finished data from flatbuffer builder to bytes::Bytes
-        header.extend_from_slice(header_data);
-        Some(header.into())
-    }
+    //     builder.finish(response_header, None);
+    //     let header_data = builder.finished_data();
+    //     let mut header = BytesMut::with_capacity(header_data.len());
+    //     // TODO: dig if memory copy here can be avoided...say moving finished data from flatbuffer builder to bytes::Bytes
+    //     header.extend_from_slice(header_data);
+    //     Some(header.into())
+    // }
 
     /// Build proof of concept record.
     ///

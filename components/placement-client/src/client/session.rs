@@ -7,7 +7,7 @@ use std::{
 
 use bytes::BytesMut;
 use codec::frame::{Frame, OperationCode};
-use protocol::rpc::header::{Heartbeat, HeartbeatArgs, ListRange, ListRangeArgs};
+use protocol::rpc::header::{HeartbeatRequest, HeartbeatRequestArgs, ListRangesRequest, ListRangesRequestArgs, ClientRole};
 use slog::{error, trace, warn, Logger};
 use tokio::sync::oneshot;
 use tokio_uring::net::TcpStream;
@@ -150,20 +150,23 @@ impl Session {
         match request {
             Request::Heartbeat { client_id } => {
                 let client_id = builder.create_string(client_id);
-                let heartbeat = Heartbeat::create(
+                let heartbeat = HeartbeatRequest::create(
                     &mut builder,
-                    &HeartbeatArgs {
+                    &HeartbeatRequestArgs {
                         client_id: Some(client_id),
+                        client_role: ClientRole::CLIENT_ROLE_DATA_NODE,
+                        data_node: None,
                     },
                 );
                 builder.finish(heartbeat, None);
             }
 
             Request::ListRange { partition_id } => {
-                let list_range = ListRange::create(
+                let list_range = ListRangesRequest::create(
                     &mut builder,
-                    &ListRangeArgs {
-                        partition_id: *partition_id,
+                    &ListRangesRequestArgs {
+                        timeout_ms: 3000,
+                        range_owners: None,
                     },
                 );
                 builder.finish(list_range, None);
