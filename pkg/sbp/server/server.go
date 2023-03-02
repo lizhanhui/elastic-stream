@@ -169,7 +169,7 @@ func (s *Server) newConn(rwc net.Conn) *conn {
 		wroteFrameCh:     make(chan frameWriteResult, 1), // buffered; one send in writeFrameAsync
 		streams:          make(map[uint32]*stream),
 		wScheduler:       newWriteScheduler(),
-		lg:               s.lg,
+		lg:               s.lg.With(zap.String("remote-addr", rwc.RemoteAddr().String())),
 	}
 	c.ctx, c.cancelCtx = context.WithCancel(s.ctx)
 	return c

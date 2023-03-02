@@ -4,14 +4,18 @@ package server
 import (
 	"context"
 	"fmt"
+	"io"
 	"net"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/pkg/errors"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 
 	"github.com/AutoMQ/placement-manager/pkg/sbp/codec"
+	"github.com/AutoMQ/placement-manager/pkg/sbp/codec/operation"
 	tphttp2 "github.com/AutoMQ/placement-manager/third_party/forked/golang/net/http2"
 )
 
@@ -55,7 +59,7 @@ func (c *conn) serve() {
 	logger := c.lg
 	defer c.close()
 
-	logger.Info("start to serve connection", zap.String("remote-addr", c.rwc.RemoteAddr().String()))
+	logger.Info("start to serve connection")
 
 	if c.server.IdleTimeout != 0 {
 		c.idleTimer = time.AfterFunc(c.server.IdleTimeout, func() { c.sendServeMsg(idleTimerMsg) })
@@ -86,12 +90,12 @@ func (c *conn) serve() {
 		case msg := <-c.serveMsgCh:
 			switch msg {
 			case idleTimerMsg:
-				logger.Info("connection is idle", zap.String("remote-addr", c.rwc.RemoteAddr().String()))
+				logger.Info("connection is idle")
 				c.goAway()
 			case shutdownTimerMsg:
-				logger.Info("GOAWAY close timer fired, closing connection", zap.String("remote-addr", c.rwc.RemoteAddr().String()))
+				logger.Info("GOAWAY close timer fired, closing connection")
 			case gracefulShutdownMsg:
-				logger.Info("start to shut down gracefully", zap.String("remote-addr", c.rwc.RemoteAddr().String()))
+				logger.Info("start to shut down gracefully")
 				c.goAway()
 			default:
 				panic("unknown timer")
@@ -268,9 +272,55 @@ func (c *conn) writeFrameAsync(wr frameWriteRequest) {
 // frame-reading goroutine.
 // processFrameFromReader returns whether the connection should be kept open.
 func (c *conn) processFrameFromReader(res frameReadResult) bool {
-	// TODO
-	_ = res
-	return false
+	c.serveG.Check()
+	logger := c.lg
+	err := res.err
+	if err != nil {
+		clientGone := err == io.EOF || err == io.ErrUnexpectedEOF || strings.Contains(err.Error(), "use of closed network connection")
+		if clientGone {
+			return false
+		}
+	} else {
+		f := res.f
+		if logger.Core().Enabled(zapcore.DebugLevel) {
+			logger.Debug("server read frame", zap.String("frame", f.Summarize()))
+		}
+
+		err = c.processFrame(f)
+		if err == nil {
+			return true
+		}
+	}
+	if res.err != nil {
+		logger.Error("failed to read frame from client connection", zap.Error(err))
+	} else {
+		logger.Error("failed to process frame", zap.Error(err))
+	}
+	c.goAway()
+	return true
+}
+
+func (c *conn) processFrame(f codec.Frame) error {
+	logger := c.lg
+	// Discard frames for streams initiated after the identified last stream sent in a GOAWAY
+	if c.inGoAway && f.StreamID > c.maxClientStreamID {
+		return nil
+	}
+
+	switch f.OpCode {
+	case operation.Ping():
+		// TODO
+		return nil
+	case operation.GoAway():
+		// TODO
+		return nil
+	case operation.Heartbeat():
+		// TODO
+		return nil
+	default:
+		logger.Warn("server ignoring frame", zap.String("frame", f.Info()))
+		return nil
+	}
 }
 
 func (c *conn) closeStream(st *stream) {

@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/binary"
+	"fmt"
 	"hash/crc32"
 	"io"
 	"sync/atomic"
@@ -52,6 +53,34 @@ type Frame struct {
 // Size returns the number of bytes that the Frame takes after encoding
 func (f Frame) Size() int {
 	return _fixedHeaderLen + len(f.Header) + len(f.Payload) + 4
+}
+
+// Summarize returns all info of the frame, only for debug use
+func (f Frame) Summarize() string {
+	var buf bytes.Buffer
+	buf.WriteString(f.Info())
+	_, _ = fmt.Fprintf(&buf, " header=%q", f.Header)
+	payload := f.Payload
+	const max = 256
+	if len(payload) > max {
+		payload = payload[:max]
+	}
+	_, _ = fmt.Fprintf(&buf, " payload=%q", payload)
+	if len(f.Payload) > max {
+		_, _ = fmt.Fprintf(&buf, " (%d bytes omitted)", len(f.Payload)-max)
+	}
+	return buf.String()
+}
+
+// Info returns fixed header info of the frame
+func (f Frame) Info() string {
+	var buf bytes.Buffer
+	_, _ = fmt.Fprintf(&buf, "size=%d", f.Size())
+	_, _ = fmt.Fprintf(&buf, " operation=%s", f.OpCode.String())
+	_, _ = fmt.Fprintf(&buf, " flag=%08b", f.Flag)
+	_, _ = fmt.Fprintf(&buf, " streamID=%d", f.StreamID)
+	_, _ = fmt.Fprintf(&buf, " format=%s", f.HeaderFmt.String())
+	return buf.String()
 }
 
 // Framer reads and writes Frames

@@ -249,6 +249,8 @@ func TestReadFrame(t *testing.T) {
 				return
 			}
 			re.NoError(err)
+			t.Log(frame.Summarize())
+			re.Equal(len(tt.input), frame.Size())
 			re.Equal(tt.want, frame)
 		})
 	}
