@@ -9,6 +9,15 @@ const (
 	listRange
 )
 
+var (
+	_ping      = Operation{ping}
+	_goAway    = Operation{goAway}
+	_publish   = Operation{publish}
+	_heartbeat = Operation{heartbeat}
+	_listRange = Operation{listRange}
+	_unknown   = Operation{unknown}
+)
+
 // Operation is enumeration of Frame.opCode
 type Operation struct {
 	code uint16
@@ -18,17 +27,17 @@ type Operation struct {
 func NewOperation(code uint16) Operation {
 	switch code {
 	case ping:
-		return Operation{ping}
+		return _ping
 	case goAway:
-		return Operation{goAway}
+		return _goAway
 	case publish:
-		return Operation{publish}
+		return _publish
 	case heartbeat:
-		return Operation{heartbeat}
+		return _heartbeat
 	case listRange:
-		return Operation{listRange}
+		return _listRange
 	default:
-		return Operation{unknown}
+		return _unknown
 	}
 }
 
@@ -68,25 +77,25 @@ func (o Operation) IsControl() bool {
 // Ping frame is a mechanism for measuring a minimal round-trip time from the sender,
 // as well as determining whether an idle connection is still functional
 func Ping() Operation {
-	return Operation{ping}
+	return _ping
 }
 
 // GoAway frame is used to initiate shutdown of a connection or to signal serious error conditions
 func GoAway() Operation {
-	return Operation{goAway}
+	return _goAway
 }
 
 // Publish frame is used to publish message(s)
 func Publish() Operation {
-	return Operation{publish}
+	return _publish
 }
 
 // Heartbeat frame is used to send heartbeat
 func Heartbeat() Operation {
-	return Operation{heartbeat}
+	return _heartbeat
 }
 
 // ListRange frame is used to list ranges in a stream
 func ListRange() Operation {
-	return Operation{listRange}
+	return _listRange
 }
