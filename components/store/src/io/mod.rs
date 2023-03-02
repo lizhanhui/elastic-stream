@@ -1,24 +1,26 @@
+mod block_cache;
 pub(crate) mod buf;
 mod record;
 mod segment;
 mod state;
 pub(crate) mod task;
+mod write_window;
 
 use crate::error::AppendError;
 use crate::index::Indexer;
 use crate::option::WalPath;
 use crate::{error::StoreError, ops::append::AppendResult};
-use buf::RecordBuf;
 use crossbeam::channel::{Receiver, Sender, TryRecvError};
 use io_uring::register;
 use io_uring::{
-    opcode::{self, Write},
+    opcode::{self, Read, Write},
     squeue, types,
 };
 use segment::LogSegmentFile;
 use slog::{debug, error, info, trace, warn, Logger};
 use std::fs::OpenOptions;
 use std::os::unix::prelude::{FileExt, OpenOptionsExt};
+use std::sync::Arc;
 use std::{
     cell::RefCell,
     collections::{HashMap, VecDeque},
@@ -27,9 +29,11 @@ use std::{
 };
 use task::IoTask;
 
-use self::record::RecordType;
+use self::buf::{AlignedBufReader, AlignedBufWriter};
+use self::record::{RecordType, RECORD_PREFIX_LENGTH};
 use self::segment::Status;
 use self::state::OpState;
+use self::write_window::WriteWindow;
 use crc::{Crc, CRC_32_ISCSI};
 
 const DEFAULT_MAX_IO_DEPTH: u32 = 4096;
@@ -40,9 +44,11 @@ const DEFAULT_MAX_UNBOUNDED_URING_WORKER_COUNT: u32 = 2;
 
 const DEFAULT_LOG_SEGMENT_FILE_SIZE: u64 = 1024u64 * 1024 * 1024;
 
+const DEFAULT_READ_BLOCK_SIZE: u32 = 1024 * 128;
+
 const DEFAULT_MIN_PREALLOCATED_SEGMENT_FILES: usize = 1;
 
-const CRC32C: Crc<u32> = Crc::<u32>::new(&CRC_32_ISCSI);
+pub(crate) const CRC32C: Crc<u32> = Crc::<u32>::new(&CRC_32_ISCSI);
 
 #[derive(Debug, Clone)]
 pub(crate) struct Options {
@@ -68,6 +74,8 @@ pub(crate) struct Options {
 
     alignment: usize,
 
+    read_block_size: u32,
+
     min_preallocated_segment_files: usize,
 }
 
@@ -84,6 +92,7 @@ impl Default for Options {
             ],
             file_size: DEFAULT_LOG_SEGMENT_FILE_SIZE,
             alignment: 4096,
+            read_block_size: DEFAULT_READ_BLOCK_SIZE,
             min_preallocated_segment_files: DEFAULT_MIN_PREALLOCATED_SEGMENT_FILES,
         }
     }
@@ -157,6 +166,7 @@ pub(crate) struct IO {
 
     /// Number of inflight data tasks that are submitted to `data_uring` and not yet reaped.
     inflight: usize,
+    write_inflight: usize,
 
     /// Pending IO tasks received from IO channel.
     ///
@@ -173,6 +183,10 @@ pub(crate) struct IO {
     /// During start, the recovering procedure will scan continuous records from offset where primary index are built
     /// up to.
     pos: u64,
+
+    buf_writer: AlignedBufWriter,
+
+    write_window: WriteWindow,
 }
 
 /// Check if required opcodes are supported by the host operation system.
@@ -254,8 +268,10 @@ impl IO {
             tag: 0,
             inflight_data_tasks: HashMap::new(),
             inflight: 0,
+            write_inflight: 0,
             pending_data_tasks: VecDeque::new(),
             pos: 0,
+            buf_writer: AlignedBufWriter::new(0, options.alignment),
         })
     }
 
@@ -429,6 +445,10 @@ impl IO {
         }
         info!(log, "Recovery of WAL segment files completed");
         self.pos = pos;
+
+        // Reset offset of write buffer
+        self.buf_writer.offset(pos);
+
         Ok(())
     }
 
@@ -578,7 +598,7 @@ impl IO {
 
                 let remaining = segment.remaining() as usize;
                 while let Some(n) = requirement.front() {
-                    if size + n > remaining {
+                    if size + n + segment::FOOTER_LENGTH as usize > remaining {
                         write_buf_list.push(remaining);
                         size = 0;
                         return;
@@ -596,13 +616,58 @@ impl IO {
         write_buf_list
     }
 
+    fn build_write_sqe(&mut self, entries: &mut Vec<squeue::Entry>) {
+        self.buf_writer.drain_full().into_iter().for_each(|buf| {
+            let ptr = buf.as_ptr();
+            if let Some(segment) = self.segment_file_of(buf.offset) {
+                debug_assert_eq!(Status::ReadWrite, segment.status);
+                if let Some(fd) = segment.fd {
+                    debug_assert!(buf.offset >= segment.offset);
+                    debug_assert!(buf.offset + buf.written as u64 <= segment.offset + segment.size);
+                    let file_offset = buf.offset - segment.offset;
+                    let sqe = Write::new(types::Fd(fd), ptr, buf.written as u32)
+                        .offset64(file_offset as libc::off_t)
+                        .build()
+                        .user_data(self.tag);
+                    entries.push(sqe);
+                    let state = OpState {
+                        opcode: Write::CODE,
+                        buf: Arc::new(buf),
+                        offset: None,
+                        len: None,
+                    };
+                    self.inflight_data_tasks.insert(self.tag, state);
+                    self.tag += 1;
+                } else {
+                    // fatal errors
+                    let msg = format!("Segment {} should be open and with valid FD", segment.path);
+                    error!(self.log, "{}", msg);
+                    panic!("{}", msg);
+                }
+            } else {
+                error!(self.log, "");
+            }
+        });
+    }
+
     fn build_sqe(&mut self, entries: &mut Vec<squeue::Entry>) {
         let log = self.log.clone();
         let alignment = self.options.alignment;
 
+        let mut buf_list = self.calculate_write_buffers();
+        let mut left = self.buf_writer.remaining();
+        buf_list.iter().enumerate().for_each(|(idx, n)| {
+            if 0 == idx {
+                self.buf_writer.reserve(*n - left);
+            } else {
+                self.buf_writer.reserve(*n);
+            }
+        });
+
         'task_loop: while let Some(io_task) = self.pending_data_tasks.pop_front() {
             match io_task {
                 IoTask::Read(task) => {
+                    // TODO: Check if there is an on-going read IO covering this request.
                     let segment = match self.segment_file_of(task.offset) {
                         Some(segment) => segment,
                         None => {
@@ -612,31 +677,27 @@ impl IO {
                     };
 
                     if let Some(fd) = segment.fd {
-                        let mut record_buf = RecordBuf::new();
-                        if let Err(_e) = record_buf.alloc(task.len as usize, alignment) {
-                            // Put the IO task back, such that a second attempt is possible in the next loop round.
-                            self.pending_data_tasks.push_front(IoTask::Read(task));
-                            error!(log, "Failed to alloc {}-aligned memory", alignment);
-                            break 'task_loop;
+                        if let Ok(buf) = AlignedBufReader::alloc_read_buf(
+                            task.offset,
+                            task.len as usize,
+                            alignment as u64,
+                        ) {
+                            let ptr = buf.as_ptr() as *mut u8;
+                            let sqe = opcode::Read::new(types::Fd(fd), ptr, task.len)
+                                .offset((task.offset - segment.offset) as i64)
+                                .build()
+                                .user_data(self.tag);
+                            self.tag += 1;
+                            entries.push(sqe);
+
+                            let state = OpState {
+                                opcode: opcode::Read::CODE,
+                                buf: Arc::new(buf),
+                                offset: Some(task.offset),
+                                len: Some(task.len),
+                            };
+                            self.inflight_data_tasks.insert(self.tag, state);
                         }
-
-                        let buf = record_buf
-                            .write_buf()
-                            .expect("Should have allocated aligned memory for read");
-                        let ptr = buf.ptr;
-                        let state = OpState {
-                            task: io_task,
-                            record_buf,
-                        };
-
-                        let sqe = opcode::Read::new(types::Fd(fd), ptr, task.len)
-                            .offset((task.offset - segment.offset) as i64)
-                            .build()
-                            .user_data(self.tag);
-                        self.tag += 1;
-                        entries.push(sqe);
-
-                        self.inflight_data_tasks.insert(self.tag, state);
                     } else {
                         self.pending_data_tasks.push_front(IoTask::Read(task));
                     }
@@ -651,49 +712,20 @@ impl IO {
                             }
 
                             if let Some(fd) = segment.fd {
-                                let buf_len = task.buffer.len();
+                                let payload_length = task.buffer.len();
                                 let file_offset = written - segment.offset;
-                                if !segment.can_hold(buf_len as u64) {
-                                    segment.append_footer(&mut written);
+                                if !segment.can_hold(payload_length as u64 + RECORD_PREFIX_LENGTH) {
+                                    segment.append_footer(&mut self.buf_writer, &mut written);
                                     // Switch to a new log segment
                                     continue;
                                 }
 
-                                let mut record_buf = RecordBuf::new();
-                                if let Err(_e) = record_buf.alloc(buf_len, alignment) {
-                                    self.pending_data_tasks.push_front(IoTask::Write(task));
-                                    error!(log, "Failed to alloc {}-aligned memory", alignment);
-                                    break 'task_loop;
-                                }
-
-                                if let Some(buf) = record_buf.write_buf() {
-                                    unsafe {
-                                        std::ptr::copy(task.buffer.as_ptr(), buf.ptr, buf_len)
-                                    };
-
-                                    let sqe = Write::new(
-                                        types::Fd(fd),
-                                        buf.ptr,
-                                        task.buffer.len() as u32,
-                                    )
-                                    .offset64(file_offset as libc::off_t)
-                                    .build()
-                                    .user_data(self.tag);
-
-                                    // Track state of write op
-                                    let state = OpState {
-                                        task: IoTask::Write(task),
-                                        record_buf,
-                                    };
-                                    self.inflight_data_tasks.insert(self.tag, state);
-                                    self.tag += 1;
-                                    written += buf_len as u64;
-                                    entries.push(sqe);
-                                    break;
-                                } else {
-                                    error!(log, "RecordBuf does not have a valid ptr after successful allocation");
-                                    unreachable!();
-                                }
+                                segment.append_full_record(
+                                    &mut self.buf_writer,
+                                    &task.buffer[..],
+                                    &mut written,
+                                );
+                                break;
                             } else {
                                 error!(log, "LogSegmentFile {} with read_write status does not have valid FD", segment.path);
                                 unreachable!("LogSegmentFile {} should have been with a valid FD if its status is read_write", segment.path);
@@ -703,6 +735,7 @@ impl IO {
                             break 'task_loop;
                         }
                     }
+                    self.build_write_sqe(entries);
                     self.pos = written;
                 }
             }

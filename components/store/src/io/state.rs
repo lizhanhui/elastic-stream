@@ -1,10 +1,12 @@
-use tokio::sync::oneshot;
+use std::sync::Arc;
 
-use crate::{error::AppendError, ops::append::AppendResult};
-
-use super::{buf::RecordBuf, task::IoTask};
+use super::buf::AlignedBuf;
 
 pub(crate) struct OpState {
-    pub(crate) task: IoTask,
-    pub(crate) record_buf: RecordBuf,
+    pub(crate) opcode: u8,
+
+    pub(crate) buf: Arc<AlignedBuf>,
+
+    pub(crate) offset: Option<u64>,
+    pub(crate) len: Option<u32>,
 }

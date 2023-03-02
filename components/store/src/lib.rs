@@ -18,6 +18,8 @@
 //! `TAIT` feature is employed to wrap async methods into Future, which would then be wrapped into `tower`-like service and layers. As a result,
 //! nightly rust-toolchain is required for the moment.
 #![feature(type_alias_impl_trait)]
+#![feature(drain_filter)]
+#![feature(hash_drain_filter)]
 
 pub mod error;
 pub mod util;

@@ -7,15 +7,22 @@ use std::{
         unix::prelude::OpenOptionsExt,
     },
     path::Path,
+    rc::Rc,
     time::SystemTime,
 };
 
+use bytes::{BufMut, BytesMut};
 use nix::fcntl;
 
-use crate::error::StoreError;
+use crate::{
+    error::StoreError,
+    io::{record::RecordType, CRC32C},
+};
 
-// magic_code(4bytes) + earliest_record_time(8bytes) + latest_record_time(8bytes)
-const FOOTER_LEN: u64 = 20;
+use super::{block_cache::BlockCache, buf::AlignedBufWriter, record::RECORD_PREFIX_LENGTH};
+
+// CRC(4B) + length(3B) + Type(1B) + earliest_record_time(8B) + latest_record_time(8B)
+pub(crate) const FOOTER_LENGTH: u64 = 24;
 
 /// Write-ahead-log segment file status.
 ///
@@ -91,7 +98,7 @@ impl TimeRange {
 /// The writer writes and reader reads in chunks of blocks. `BlockSize` are normally multiple of the
 /// underlying storage block size, which is medium and cloud-vendor specific. By default, `BlockSize` is
 /// `256KiB`.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq)]
 pub(crate) struct LogSegmentFile {
     pub(crate) offset: u64,
     pub(crate) path: String,
@@ -109,6 +116,8 @@ pub(crate) struct LogSegmentFile {
     pub(crate) written: u64,
 
     pub(crate) time_range: Option<TimeRange>,
+
+    pub(crate) block_cache: BlockCache,
 }
 
 impl LogSegmentFile {
@@ -122,6 +131,7 @@ impl LogSegmentFile {
             fd: None,
             written: 0,
             time_range: None,
+            block_cache: BlockCache::new(offset, 4096),
         }
     }
 
@@ -189,14 +199,33 @@ impl LogSegmentFile {
         self.written >= self.size
     }
 
-    pub(crate) fn can_hold(&self, len: u64) -> bool {
-        self.status != Status::Read && self.written + FOOTER_LEN + len <= self.size
+    pub(crate) fn can_hold(&self, record_length: u64) -> bool {
+        self.status != Status::Read && self.written + FOOTER_LENGTH + record_length <= self.size
     }
 
-    pub fn append_footer(&mut self, pos: &mut u64) {
+    pub(crate) fn append_footer(&mut self, writer: &mut AlignedBufWriter, pos: &mut u64) {
+        let padding_length = self.size - self.written - RECORD_PREFIX_LENGTH - 8 - 8;
+        let length_type: u32 = RecordType::Zero.with_length(padding_length as u32 + 8 + 8);
+        let earliest: u64 = 0;
+        let latest: u64 = 0;
+
+        // Fill padding with 0
+
+        let buf = BytesMut::with_capacity(padding_length as usize + 16);
+        if padding_length > 0 {
+            buf.resize(padding_length as usize, 0);
+        }
+        buf.put_u64(earliest);
+        buf.put_u64(latest);
+        let buf = buf.freeze();
+        let crc: u32 = CRC32C.checksum(&buf[..]);
+
+        writer.write_u32(crc);
+        writer.write_u32(length_type);
+
+        writer.write(&buf[..=padding_length as usize]);
+
         *pos += self.size - self.written;
-        self.written = self.size;
-        todo!("Padding footer");
     }
 
     pub(crate) fn remaining(&self) -> u64 {
@@ -206,6 +235,20 @@ impl LogSegmentFile {
             debug_assert!(self.size >= self.written);
             self.size - self.written
         }
+    }
+
+    pub(crate) fn append_full_record(
+        &self,
+        buf_writer: &mut AlignedBufWriter,
+        payload: &[u8],
+        pos: &mut u64,
+    ) {
+        let crc = CRC32C.checksum(payload);
+        let length_type = RecordType::Full.with_length(payload.len() as u32);
+        buf_writer.write_u32(crc);
+        buf_writer.write_u32(length_type);
+        buf_writer.write(payload);
+        *pos += 4 + 4 + payload.len() as u64;
     }
 }
 

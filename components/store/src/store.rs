@@ -43,17 +43,35 @@ impl ElasticStore {
         let size_10g = 10u64 * (1 << 30);
         opt.add_wal_path(WalPath::new("/data/store", size_10g)?);
 
-        let mut io = io::IO::new(&mut opt, log.clone())?;
-        let sharing_uring = io.as_raw_fd();
-        let tx = io
-            .sender
-            .take()
-            .ok_or(StoreError::Configuration("IO channel".to_owned()))?;
-
-        let io = RefCell::new(io);
+        let (sender, receiver) = oneshot::channel();
 
         // IO thread will be left in detached state.
-        let _io_thread_handle = Self::with_thread("IO", move || io::IO::run(io), None)?;
+        let _io_thread_handle = Self::with_thread(
+            "IO",
+            move || {
+                let log = log.clone();
+                let mut io = io::IO::new(&mut opt, log.clone())?;
+                let sharing_uring = io.as_raw_fd();
+                let tx = io
+                    .sender
+                    .take()
+                    .ok_or(StoreError::Configuration("IO channel".to_owned()))?;
+
+                let io = RefCell::new(io);
+                if let Err(e) = sender.send((tx, sharing_uring)) {
+                    error!(
+                        log,
+                        "Failed to expose sharing_uring and task channel sender"
+                    );
+                }
+                io::IO::run(io)
+            },
+            None,
+        )?;
+        let (tx, sharing_uring) = receiver
+            .blocking_recv()
+            .map_err(|e| StoreError::Internal("Start".to_owned()))?;
+
         let store = Self {
             tx,
             sharing_uring,

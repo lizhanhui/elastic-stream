@@ -1,91 +1,110 @@
-use std::{
-    alloc::{self, Layout},
-    collections::VecDeque,
-};
-
-use bytes::Bytes;
+use std::alloc::{self, Layout};
 
 use crate::error::StoreError;
 
 /// Memory buffer complying given memory alignment, which is supposed to be used for DirectIO.
 ///
 /// This struct is designed to be NOT `Copy` nor `Clone`; otherwise, we will have double-free issue.
+#[derive(Debug, PartialEq, Eq)]
 pub(crate) struct AlignedBuf {
-    pub(crate) ptr: *mut u8,
+    /// WAL offset
+    pub(crate) offset: u64,
+
+    /// Pointer to the allocated memory
+    /// TODO: use std::mem::NonNull
+    ptr: *mut u8,
     layout: Layout,
-    capacity: usize,
-    write_index: usize,
-    read_index: usize,
+    pub(crate) capacity: usize,
+
+    /// Write index
+    pub(crate) written: usize,
+
+    /// Read index
+    read: usize,
 }
 
 impl AlignedBuf {
-    fn new(len: usize, alignment: usize) -> Result<Self, StoreError> {
+    pub(crate) fn new(offset: u64, len: usize, alignment: usize) -> Result<Self, StoreError> {
         let capacity = (len + alignment - 1) / alignment * alignment;
         let layout = Layout::from_size_align(capacity, alignment)
             .map_err(|_e| StoreError::MemoryAlignment)?;
         let ptr = unsafe { alloc::alloc(layout) };
         Ok(Self {
+            offset,
             ptr,
             layout,
             capacity,
-            write_index: 0,
-            read_index: 0,
+            written: 0,
+            read: 0,
         })
     }
 
     pub(crate) fn write_u32(&mut self, value: u32) -> bool {
-        if self.write_index + 4 > self.capacity {
+        if self.written + 4 > self.capacity {
             return false;
         }
 
-        let src = std::ptr::addr_of!(value) as *const u8;
-
-        unsafe {
-            std::ptr::copy_nonoverlapping(src, self.ptr.offset(self.write_index as isize), 4)
-        };
-        self.write_index += 4;
-        true
+        let data = unsafe { std::slice::from_raw_parts(std::ptr::addr_of!(value) as *const u8, 4) };
+        self.write_buf(&data[..])
     }
 
     /// Get u32 in big-endian byte order.
     pub(crate) fn read_u32(&mut self) -> Result<u32, StoreError> {
-        debug_assert!(self.write_index >= self.read_index);
-        if self.write_index - self.read_index < std::mem::size_of::<u32>() {
+        debug_assert!(self.written >= self.read);
+        if self.written - self.read < std::mem::size_of::<u32>() {
             return Err(StoreError::InsufficientData);
         }
-        let value = unsafe { *(self.ptr.offset(self.read_index as isize) as *const u32) };
-        self.read_index += std::mem::size_of::<u32>();
+        let value = unsafe { *(self.ptr.offset(self.read as isize) as *const u32) };
+        self.read += std::mem::size_of::<u32>();
+        Ok(value)
+    }
+
+    pub(crate) fn write_u64(&mut self, value: u64) -> bool {
+        if self.written + 8 > self.capacity {
+            return false;
+        }
+
+        let data = unsafe { std::slice::from_raw_parts(std::ptr::addr_of!(value) as *const u8, 8) };
+        self.write_buf(&data[..])
+    }
+
+    pub(crate) fn read_u64(&mut self) -> Result<u64, StoreError> {
+        debug_assert!(self.written > self.read);
+        if self.read + 8 > self.written {
+            return Err(StoreError::InsufficientData);
+        }
+
+        let value = unsafe { *(self.ptr.offset(self.read as isize) as *const u64) };
+        self.read += 8;
         Ok(value)
     }
 
     pub(crate) fn as_ptr(&self) -> *const u8 {
-        debug_assert!(self.read_index < self.capacity);
-        unsafe { self.ptr.offset(self.read_index as isize) }
+        debug_assert!(self.read < self.capacity);
+        unsafe { self.ptr.offset(self.read as isize) }
     }
 
     pub(crate) fn write_buf(&mut self, buf: &[u8]) -> bool {
-        if self.write_index + buf.len() > self.capacity {
+        if self.written + buf.len() > self.capacity {
             return false;
         }
         unsafe {
             std::ptr::copy_nonoverlapping(
                 buf.as_ptr(),
-                self.ptr.offset(self.write_index as isize),
+                self.ptr.offset(self.written as isize),
                 buf.len(),
             )
         };
-        self.write_index += buf.len();
+        self.written += buf.len();
         true
     }
 
     /// Remaining space to write.
     pub(crate) fn remaining(&self) -> usize {
-        debug_assert!(self.write_index <= self.capacity);
-        self.capacity - self.write_index
+        debug_assert!(self.written <= self.capacity);
+        self.capacity - self.written
     }
 }
-
-unsafe impl Send for AlignedBuf {}
 
 /// Return the memory back to allocator.
 impl Drop for AlignedBuf {
@@ -94,48 +113,112 @@ impl Drop for AlignedBuf {
     }
 }
 
-/// Buffer for `Record` read/write in DirectIO.
-pub(crate) struct RecordBuf {
-    iov: VecDeque<AlignedBuf>,
+pub(crate) struct AlignedBufWriter {
+    offset: u64,
+    alignment: usize,
+    buffers: Vec<AlignedBuf>,
 }
 
-impl RecordBuf {
-    pub(crate) fn new() -> Self {
+impl AlignedBufWriter {
+    pub(crate) fn new(offset: u64, alignment: usize) -> Self {
         Self {
-            iov: VecDeque::new(),
+            offset,
+            alignment,
+            buffers: vec![],
         }
     }
 
-    /// Allocate a new buffer for write.
-    pub(crate) fn alloc(&mut self, len: usize, alignment: usize) -> Result<(), StoreError> {
-        let buf = AlignedBuf::new(len, alignment)?;
-        self.iov.push_back(buf);
+    /// Reset offset
+    pub(crate) fn offset(&mut self, offset: u64) {
+        self.offset = offset;
+    }
+
+    /// Must invoke this method to reserve enough memory before writing.
+    pub(crate) fn reserve(&mut self, additional: usize) -> Result<(), StoreError> {
+        let size = additional / self.alignment * self.alignment;
+
+        let buf = AlignedBuf::new(self.offset, size, self.alignment)?;
+        self.offset += size as u64;
+        self.buffers.push(buf);
+
+        let r = additional % self.alignment;
+        if 0 != r {
+            let buf = AlignedBuf::new(self.offset, self.alignment, self.alignment)?;
+            self.offset += self.alignment as u64;
+            self.buffers.push(buf);
+        }
+
         Ok(())
     }
 
-    /// Return the pointer to the buffer that is ready for write.
-    pub(crate) fn write_buf(&self) -> Option<&AlignedBuf> {
-        if let Some(buf) = self.iov.back() {
-            Some(buf)
-        } else {
-            None
-        }
-    }
-
-    /// Return pointer to the first buffer that is ready for read.
-    pub(crate) fn read_buf(&self) -> Option<&AlignedBuf> {
-        if let Some(buf) = self.iov.front() {
-            Some(buf)
-        } else {
-            None
-        }
-    }
-
-    /// Discard the internal buffer that has been read.
+    /// Assume enough aligned memory has been reserved.
     ///
-    /// Memory backing the internal buffer will automatically be deallocated.
-    pub(crate) fn discard_buf_read(&mut self) {
-        self.iov.pop_front();
+    pub(crate) fn write(&mut self, data: &[u8]) -> Result<(), StoreError> {
+        let remaining = data.len();
+        let mut pos = 0;
+
+        self.buffers
+            .iter_mut()
+            .skip_while(|buf| 0 == buf.remaining())
+            .map_while(|buf| {
+                let r = buf.remaining();
+                if r >= remaining - pos {
+                    buf.write_buf(&data[pos..]);
+                    None
+                } else {
+                    buf.write_buf(&data[pos..pos + r]);
+                    pos += r;
+                    Some(())
+                }
+            })
+            .count();
+
+        Ok(())
+    }
+
+    pub(crate) fn write_u32(&mut self, value: u32) -> Result<(), StoreError> {
+        let data = std::ptr::addr_of!(value);
+        let slice =
+            unsafe { std::slice::from_raw_parts(data as *const u8, std::mem::size_of::<u32>()) };
+        self.write(slice);
+        Ok(())
+    }
+
+    pub(crate) fn write_u64(&mut self, value: u64) -> Result<(), StoreError> {
+        let data = std::ptr::addr_of!(value);
+        let slice =
+            unsafe { std::slice::from_raw_parts(data as *const u8, std::mem::size_of::<u64>()) };
+        self.write(slice);
+        Ok(())
+    }
+
+    /// Drain buffers that are full and generate submission queue entry for each of buf.
+    pub(crate) fn drain_full(&mut self) -> Vec<AlignedBuf> {
+        self.buffers
+            .drain_filter(|buf| 0 == buf.remaining())
+            .collect()
+    }
+
+    pub(crate) fn remaining(&self) -> usize {
+        self.buffers.iter().map(|buf| buf.remaining()).sum()
+    }
+}
+
+pub(crate) struct AlignedBufReader {}
+
+impl AlignedBufReader {
+    pub(crate) fn alloc_read_buf(
+        offset: u64,
+        len: usize,
+        alignment: u64,
+    ) -> Result<AlignedBuf, StoreError> {
+        // Alignment must be positive
+        debug_assert_ne!(0, alignment);
+        // Alignment must be power of 2.
+        debug_assert_eq!(0, alignment & (alignment - 1));
+        let from = offset / alignment * alignment;
+        let to = (offset + len as u64 + alignment - 1) / alignment * alignment;
+        AlignedBuf::new(from, (to - from) as usize, alignment as usize)
     }
 }
 
@@ -184,7 +267,7 @@ mod tests {
     #[test]
     fn test_aligned_buf() -> Result<(), StoreError> {
         let alignment = 4096;
-        let mut buf = AlignedBuf::new(128, alignment)?;
+        let mut buf = AlignedBuf::new(0, 128, alignment)?;
         assert_eq!(alignment, buf.remaining());
         let v = 1;
         buf.write_u32(1);

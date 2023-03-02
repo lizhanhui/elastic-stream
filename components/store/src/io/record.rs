@@ -1,8 +1,9 @@
-use std::char::TryFromCharError;
-
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 
 use crate::error::StoreError;
+
+/// Length of record prefix: CRC(4B) + Size(3B) + Type(1B)
+pub(crate) const RECORD_PREFIX_LENGTH: u64 = 4 + 3 + 1;
 
 /// Type of the
 ///
@@ -20,7 +21,18 @@ use crate::error::StoreError;
 #[derive(Debug, TryFromPrimitive, IntoPrimitive, PartialEq, Eq)]
 #[repr(u8)]
 pub(crate) enum RecordType {
+    /// Type `Zero` is used as the last record of a log segment file, aka, footer of the segment.
+    /// A footer contains 0 or more `0`-filled bytes and timestamp of first and last records in unix timestamp.
+    ///
+    /// # Footer Example
+    ///
+    /// ...+---------+-----------+-----------+--- ... ---+-----+-----+
+    ///    |CRC (4B) | Size (3B) | Type (1B) |      0s   |  T1 | T2  |
+    /// ...+---------+-----------+-----------+--- ... ---+-----+-----+
+    ///
     Zero = 0,
+
+    /// Type `Full` is
     Full = 1,
     First = 2,
     Middle = 3,
