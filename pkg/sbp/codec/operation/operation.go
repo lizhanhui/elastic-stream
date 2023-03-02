@@ -18,7 +18,7 @@ var (
 	_unknown   = Operation{unknown}
 )
 
-// Operation is enumeration of Frame.opCode
+// Operation is enumeration of Frame.OpCode
 type Operation struct {
 	code uint16
 }

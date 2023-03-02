@@ -24,7 +24,21 @@ const (
 	_magicCode uint8 = 23
 )
 
-// Frame is the load in SBP.
+// Frame is the base interface implemented by all frame types
+type Frame interface {
+	Base() baseFrame
+
+	// Size returns the number of bytes that the Frame takes after encoding
+	Size() int
+
+	// Summarize returns all info of the frame, only for debug use
+	Summarize() string
+
+	// Info returns fixed header info of the frame
+	Info() string
+}
+
+// baseFrame is the load in SBP.
 //
 //	+-----------------------------------------------------------------------+
 //	|                           Frame Length (32)                           |
@@ -41,7 +55,7 @@ const (
 //	+-----------------------------------------------------------------------+
 //	|                         Payload Checksum (32)                         |
 //	+-----------------------------------------------------------------------+
-type Frame struct {
+type baseFrame struct {
 	OpCode    operation.Operation // OpCode determines the format and semantics of the frame
 	Flag      uint8               // Flag is reserved for boolean flags specific to the frame type
 	StreamID  uint32              // StreamID identifies which stream the frame belongs to
@@ -50,13 +64,16 @@ type Frame struct {
 	Payload   []byte              // nil for no payload
 }
 
-// Size returns the number of bytes that the Frame takes after encoding
-func (f Frame) Size() int {
+// Base implement the Frame interface
+func (f baseFrame) Base() baseFrame {
+	return f
+}
+
+func (f baseFrame) Size() int {
 	return _fixedHeaderLen + len(f.Header) + len(f.Payload) + 4
 }
 
-// Summarize returns all info of the frame, only for debug use
-func (f Frame) Summarize() string {
+func (f baseFrame) Summarize() string {
 	var buf bytes.Buffer
 	buf.WriteString(f.Info())
 	_, _ = fmt.Fprintf(&buf, " header=%q", f.Header)
@@ -72,8 +89,7 @@ func (f Frame) Summarize() string {
 	return buf.String()
 }
 
-// Info returns fixed header info of the frame
-func (f Frame) Info() string {
+func (f baseFrame) Info() string {
 	var buf bytes.Buffer
 	_, _ = fmt.Fprintf(&buf, "size=%d", f.Size())
 	_, _ = fmt.Fprintf(&buf, " operation=%s", f.OpCode.String())
@@ -121,24 +137,24 @@ func (fr *Framer) ReadFrame() (Frame, error) {
 	_, err := io.ReadFull(fr.r, buf)
 	if err != nil {
 		logger.Error("failed to read fixed header", zap.Error(err))
-		return Frame{}, errors.Wrap(err, "read fixed header")
+		return baseFrame{}, errors.Wrap(err, "read fixed header")
 	}
 	headerBuf := bytes.NewBuffer(buf)
 
 	frameLen := binary.BigEndian.Uint32(headerBuf.Next(4))
 	if frameLen < _minFrameLen {
 		logger.Error("illegal frame length, fewer than minimum", zap.Uint32("frame-length", frameLen), zap.Uint32("min-length", _minFrameLen))
-		return Frame{}, errors.New("frame too small")
+		return baseFrame{}, errors.New("frame too small")
 	}
 	if frameLen > _maxFrameLen {
 		logger.Error("illegal frame length, greater than maximum", zap.Uint32("frame-length", frameLen), zap.Uint32("max-length", _maxFrameLen))
-		return Frame{}, errors.New("frame too large")
+		return baseFrame{}, errors.New("frame too large")
 	}
 
 	magicCode := headerBuf.Next(1)[0]
 	if magicCode != _magicCode {
 		logger.Error("illegal magic code", zap.Uint8("expected", _magicCode), zap.Uint8("got", magicCode))
-		return Frame{}, errors.New("magic code mismatch")
+		return baseFrame{}, errors.New("magic code mismatch")
 	}
 
 	opCode := binary.BigEndian.Uint16(headerBuf.Next(2))
@@ -153,7 +169,7 @@ func (fr *Framer) ReadFrame() (Frame, error) {
 	_, err = io.ReadFull(fr.r, tBuf)
 	if err != nil {
 		logger.Error("failed to read extended header and payload", zap.Error(err))
-		return Frame{}, errors.Wrap(err, "read extended header and payload")
+		return baseFrame{}, errors.Wrap(err, "read extended header and payload")
 	}
 
 	header := func() []byte {
@@ -173,16 +189,16 @@ func (fr *Framer) ReadFrame() (Frame, error) {
 	err = binary.Read(fr.r, binary.BigEndian, &checksum)
 	if err != nil {
 		logger.Error("failed to read payload checksum", zap.Error(err))
-		return Frame{}, errors.Wrap(err, "read payload checksum")
+		return baseFrame{}, errors.Wrap(err, "read payload checksum")
 	}
 	if payloadLen > 0 {
 		if ckm := crc32.ChecksumIEEE(payload); ckm != checksum {
 			logger.Error("payload checksum mismatch", zap.Uint32("expected", ckm), zap.Uint32("got", checksum))
-			return Frame{}, errors.New("payload checksum mismatch")
+			return baseFrame{}, errors.New("payload checksum mismatch")
 		}
 	}
 
-	frame := Frame{
+	frame := baseFrame{
 		OpCode:    operation.NewOperation(opCode),
 		Flag:      flag,
 		StreamID:  streamID,
@@ -190,6 +206,7 @@ func (fr *Framer) ReadFrame() (Frame, error) {
 		Header:    header,
 		Payload:   payload,
 	}
+	// TODO
 
 	return frame, nil
 }
@@ -199,7 +216,8 @@ func (fr *Framer) ReadFrame() (Frame, error) {
 // It will perform exactly one Write to the underlying Writer.
 // It is the caller's responsibility not to violate the maximum frame size
 // and to not call other Write methods concurrently.
-func (fr *Framer) WriteFrame(frame Frame) error {
+func (fr *Framer) WriteFrame(f Frame) error {
+	frame := f.Base()
 	fr.startWrite(frame)
 
 	if frame.Header != nil {
@@ -233,7 +251,7 @@ func (fr *Framer) Available() int {
 }
 
 // Write the fixed header
-func (fr *Framer) startWrite(frame Frame) {
+func (fr *Framer) startWrite(frame baseFrame) {
 	fr.wbuf = binary.BigEndian.AppendUint32(fr.wbuf, 0) // 4 bytes of frame length, will be filled in endWrite
 	fr.wbuf = append(fr.wbuf, _magicCode)
 	fr.wbuf = binary.BigEndian.AppendUint16(fr.wbuf, frame.OpCode.Code())
@@ -261,4 +279,75 @@ func (fr *Framer) endWrite() error {
 		return errors.Wrap(err, "write frame")
 	}
 	return nil
+}
+
+// PingFrame is a mechanism for measuring a minimal round-trip time from the sender,
+// as well as determining whether an idle connection is still functional
+type PingFrame struct {
+	baseFrame
+}
+
+// NewPingFrameResp creates a pong with the provided ping
+func NewPingFrameResp(ping PingFrame) PingFrame {
+	pong := PingFrame{baseFrame{
+		OpCode:    operation.Ping(),
+		Flag:      0x3, // TODO
+		StreamID:  ping.StreamID,
+		HeaderFmt: ping.HeaderFmt,
+		Header:    make([]byte, len(ping.Header)),
+		Payload:   make([]byte, len(ping.Payload)),
+	}}
+	copy(pong.Header, ping.Header)
+	copy(pong.Payload, ping.Payload)
+	return pong
+}
+
+// GoAwayFrame is used to initiate the shutdown of a connection or to signal serious error conditions
+type GoAwayFrame struct {
+	baseFrame
+}
+
+// NewGoAwayFrameReq creates a new GoAway frame
+func NewGoAwayFrameReq(streamID uint32) GoAwayFrame {
+	return GoAwayFrame{baseFrame{
+		OpCode:    operation.GoAway(),
+		StreamID:  streamID,
+		HeaderFmt: format.Default(),
+	}}
+}
+
+// HeartbeatFrame is used to keep clients alive
+type HeartbeatFrame struct {
+	baseFrame
+}
+
+// NewHeartBeatFrameReq creates an out heartbeat with the in heartbeat
+func NewHeartBeatFrameReq(in HeartbeatFrame) HeartbeatFrame {
+	out := HeartbeatFrame{baseFrame{
+		OpCode:    operation.Heartbeat(),
+		Flag:      0x3, // TODO
+		StreamID:  in.StreamID,
+		HeaderFmt: in.HeaderFmt,
+		Header:    make([]byte, len(in.Header)),
+	}}
+	copy(in.Header, out.Header)
+	return out
+}
+
+// DataFrame is used to handle other user-defined requests and responses
+type DataFrame struct {
+	baseFrame
+}
+
+// NewDataFrameResp TODO
+func NewDataFrameResp(op operation.Operation) DataFrame {
+	// TODO
+	return DataFrame{baseFrame{
+		OpCode:    op,
+		Flag:      0,
+		StreamID:  0,
+		HeaderFmt: format.Format{},
+		Header:    nil,
+		Payload:   nil,
+	}}
 }

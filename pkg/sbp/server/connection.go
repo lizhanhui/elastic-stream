@@ -303,11 +303,11 @@ func (c *conn) processFrameFromReader(res frameReadResult) bool {
 func (c *conn) processFrame(f codec.Frame) error {
 	logger := c.lg
 	// Discard frames for streams initiated after the identified last stream sent in a GOAWAY
-	if c.inGoAway && f.StreamID > c.maxClientStreamID {
+	if c.inGoAway && f.Base().StreamID > c.maxClientStreamID {
 		return nil
 	}
 
-	switch f.OpCode {
+	switch f.Base().OpCode {
 	case operation.Ping():
 		// TODO
 		return nil

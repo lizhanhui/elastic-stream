@@ -14,7 +14,7 @@ var (
 	_unknown     = Format{unknown}
 )
 
-// Format is enumeration of Frame.headerFmt
+// Format is enumeration of Frame.HeaderFmt
 type Format struct {
 	code uint8
 }
@@ -50,6 +50,11 @@ func (f Format) String() string {
 // Code returns the format code
 func (f Format) Code() uint8 {
 	return f.code
+}
+
+// Default returns a default format, used when header is empty
+func Default() Format {
+	return _flatBuffer
 }
 
 // FlatBuffer serializes and deserializes the header using "github.com/google/flatbuffers/go"

@@ -57,9 +57,7 @@ func TestWriteScheduler(t *testing.T) {
 
 func makeControlWriteRequest(streamID uint32) frameWriteRequest {
 	return frameWriteRequest{
-		f: codec.Frame{
-			OpCode: operation.GoAway(),
-		},
+		f: codec.NewGoAwayFrameReq(streamID),
 		stream: &stream{
 			id: streamID,
 		},
@@ -68,9 +66,7 @@ func makeControlWriteRequest(streamID uint32) frameWriteRequest {
 
 func makeDataWriteRequest(streamID uint32) frameWriteRequest {
 	return frameWriteRequest{
-		f: codec.Frame{
-			OpCode: operation.ListRange(),
-		},
+		f: codec.NewDataFrameResp(operation.ListRange()),
 		stream: &stream{
 			id: streamID,
 		},

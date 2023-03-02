@@ -47,7 +47,7 @@ func TestReadFrame(t *testing.T) {
 				0x05, 0x06, 0x07, 0x08, // payload data
 				0x53, 0x8D, 0x4D, 0x69, // payload checksum
 			},
-			want: Frame{
+			want: baseFrame{
 				OpCode:    operation.ListRange(),
 				Flag:      3,
 				StreamID:  16909060,
@@ -69,7 +69,7 @@ func TestReadFrame(t *testing.T) {
 				0x05, 0x06, 0x07, 0x08, // payload data
 				0x53, 0x8D, 0x4D, 0x69, // payload checksum
 			},
-			want: Frame{
+			want: baseFrame{
 				OpCode:    operation.Ping(),
 				Flag:      3,
 				StreamID:  16909060,
@@ -91,7 +91,7 @@ func TestReadFrame(t *testing.T) {
 				0x01, 0x02, 0x03, 0x04, // header data
 				0x00, 0x00, 0x00, 0x00, // payload checksum
 			},
-			want: Frame{
+			want: baseFrame{
 				OpCode:    operation.Ping(),
 				Flag:      3,
 				StreamID:  16909060,
@@ -112,7 +112,7 @@ func TestReadFrame(t *testing.T) {
 				0x00, 0x00, 0x00, // header length
 				0x00, 0x00, 0x00, 0x00, // payload checksum
 			},
-			want: Frame{
+			want: baseFrame{
 				OpCode:    operation.Ping(),
 				Flag:      3,
 				StreamID:  16909060,
@@ -130,7 +130,7 @@ func TestReadFrame(t *testing.T) {
 				0x03,                   // flag
 				0x01, 0x02, 0x03, 0x04, // stream ID
 			},
-			want:    Frame{},
+			want:    baseFrame{},
 			wantErr: true,
 			errMsg:  "read fixed header",
 		},
@@ -145,7 +145,7 @@ func TestReadFrame(t *testing.T) {
 				0x01,             // header format
 				0x00, 0x00, 0x04, // header length
 			},
-			want:    Frame{},
+			want:    baseFrame{},
 			wantErr: true,
 			errMsg:  "frame too small",
 		},
@@ -161,7 +161,7 @@ func TestReadFrame(t *testing.T) {
 				0x00, 0x00, 0x00, // header length
 				0x00, 0x00, 0x00, 0x00, // payload checksum
 			},
-			want:    Frame{},
+			want:    baseFrame{},
 			wantErr: true,
 			errMsg:  "frame too large",
 		},
@@ -177,7 +177,7 @@ func TestReadFrame(t *testing.T) {
 				0x00, 0x00, 0x00, // header length
 				0x00, 0x00, 0x00, 0x00, // payload checksum
 			},
-			want:    Frame{},
+			want:    baseFrame{},
 			wantErr: true,
 			errMsg:  "magic code mismatch",
 		},
@@ -194,7 +194,7 @@ func TestReadFrame(t *testing.T) {
 				0x01, 0x02, 0x03, 0x04, // header data
 				0x05, 0x06, 0x07, // payload data
 			},
-			want:    Frame{},
+			want:    baseFrame{},
 			wantErr: true,
 			errMsg:  "read extended header and payload",
 		},
@@ -212,7 +212,7 @@ func TestReadFrame(t *testing.T) {
 				0x05, 0x06, 0x07, 0x08, // payload data
 				0x53, 0x8D, 0x4D, // payload checksum
 			},
-			want:    Frame{},
+			want:    baseFrame{},
 			wantErr: true,
 			errMsg:  "read payload checksum",
 		},
@@ -230,7 +230,7 @@ func TestReadFrame(t *testing.T) {
 				0x05, 0x06, 0x07, 0x08, // payload data
 				0x69, 0x4D, 0x8D, 0x53, // payload checksum
 			},
-			want:    Frame{},
+			want:    baseFrame{},
 			wantErr: true,
 			errMsg:  "payload checksum mismatch",
 		},
@@ -249,8 +249,8 @@ func TestReadFrame(t *testing.T) {
 				return
 			}
 			re.NoError(err)
-			t.Log(frame.Summarize())
-			re.Equal(len(tt.input), frame.Size())
+			t.Log(frame.Base().Summarize())
+			re.Equal(len(tt.input), frame.Base().Size())
 			re.Equal(tt.want, frame)
 		})
 	}
@@ -266,7 +266,7 @@ func TestWriteFrame(t *testing.T) {
 	}{
 		{
 			name: "normal case",
-			frame: Frame{
+			frame: baseFrame{
 				OpCode:    operation.ListRange(),
 				Flag:      3,
 				StreamID:  16909060,
@@ -289,7 +289,7 @@ func TestWriteFrame(t *testing.T) {
 		},
 		{
 			name: "normal case without header",
-			frame: Frame{
+			frame: baseFrame{
 				OpCode:    operation.Ping(),
 				Flag:      3,
 				StreamID:  16909060,
@@ -311,7 +311,7 @@ func TestWriteFrame(t *testing.T) {
 		},
 		{
 			name: "normal case without payload",
-			frame: Frame{
+			frame: baseFrame{
 				OpCode:    operation.Ping(),
 				Flag:      3,
 				StreamID:  16909060,
@@ -333,7 +333,7 @@ func TestWriteFrame(t *testing.T) {
 		},
 		{
 			name: "normal case without header and payload",
-			frame: Frame{
+			frame: baseFrame{
 				OpCode:    operation.Ping(),
 				Flag:      3,
 				StreamID:  16909060,
@@ -354,7 +354,7 @@ func TestWriteFrame(t *testing.T) {
 		},
 		{
 			name: "too large payload",
-			frame: Frame{
+			frame: baseFrame{
 				OpCode:    operation.Ping(),
 				Flag:      3,
 				StreamID:  16909060,
@@ -397,7 +397,7 @@ func TestWriteFrameError(t *testing.T) {
 	t.Parallel()
 	re := require.New(t)
 	framer := NewFramer(&errorWriter{}, nil, zap.NewExample())
-	err := framer.WriteFrame(Frame{
+	err := framer.WriteFrame(baseFrame{
 		OpCode:    operation.Ping(),
 		Flag:      3,
 		StreamID:  16909060,

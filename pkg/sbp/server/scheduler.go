@@ -41,7 +41,7 @@ func newWriteScheduler() *writeScheduler {
 
 // Push queues a frame in the scheduler.
 func (ws *writeScheduler) Push(wr frameWriteRequest) {
-	if wr.f.OpCode.IsControl() {
+	if wr.f.Base().OpCode.IsControl() {
 		ws.ctrlQueue.Add(wr)
 		return
 	}
