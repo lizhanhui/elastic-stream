@@ -121,7 +121,7 @@ Request Header => timeout_ms [append_requets]
   timeout_ms => int32
   append_requests => stream_id request_index batch_length
     stream_id => int64
-    request_index => int8
+    request_index => int32
     batch_length => int32
   
 Request Payload => [stream_data]
@@ -134,7 +134,7 @@ Request Payload => [stream_data]
 | timeout_ms | int32 | The timeout to await a response in milliseconds. |
 | append_requests | array | A batch of append requests. |
 | stream_id | int64 | The id of the stream. |
-| request_index | int8 | The index number of an append request in the batch requests. The response to each request may be out of order, even in different response frames. |
+| request_index | int32 | The index number of an append request in the batch requests. The response to each request may be out of order, even in different response frames. |
 | batch_length | int32 | The payload length of this record batch. |
 | stream_data | array | The array of record batches. |
 | record_batch | bytes | The payload of each record batch, already serialized by clients. |
@@ -145,7 +145,7 @@ Response Header => throttle_time_ms [append_responses]
   throttle_time_ms => int32
   append_responses => stream_id request_index base_offset stream_append_time_ms error_code error_message
     stream_id => int64
-    request_index => int8
+    request_index => int32
     base_offset => int64
     stream_append_time_ms => int64
     error_code => int16
@@ -159,7 +159,7 @@ Response Payload => Empty
 | throttle_time_ms | int32 | The time in milliseconds to throttle the client, due to a quota violation or the server is too busy. |
 | append_responses | array | A batch of append responses. |
 | stream_id | int64 | The target stream_id of the append record batch. |
-| request_index | int8 | The request_index that the append_response relates to. |
+| request_index | int32 | The request_index that the append_response relates to. |
 | base_offset | int64 | The base offset of the record batch. |
 | stream_append_time_ms | int64 | The timestamp returned by the data node server after appending the records. |
 | error_code | int16 | The error code, or 0 if there was no error. |
@@ -175,6 +175,7 @@ Request Header => max_wait_ms min_bytes [fetch_requests]
   min_bytes => int32
   fetch_requests => stream_id fetch_offset batch_max_bytes
     stream_id => int64
+    request_index => int32
     fetch_offset => int64
     batch_max_bytes => int32
   
@@ -187,6 +188,7 @@ Request Payload => Empty
 | min_bytes | int32 | The maximum time in milliseconds to wait for the response. |
 | fetch_requests | array | A batch of fetch requests to fetch data from different streams. |
 | stream_id | int64 | A specific stream to fetch data. |
+| request_index | int32 | The index number of a fetch request in the batch requests. The response to each request may be out of order, even in different response frames. |
 | fetch_offset | int64 | The start offset to fetch data in a specific stream. |
 | batch_max_bytes | int32 | The maximum bytes of the current batch to fetch from the stream. |
 
@@ -196,7 +198,7 @@ Response Header => throttle_time_ms [fetch_responses]
   throttle_time_ms => int32
   fetch_responses => stream_id request_index batch_length error_code error_message
     stream_id => int64
-    request_index => int8
+    request_index => int32
     batch_length => int32
     error_code => int16
     error_message => string
@@ -210,7 +212,7 @@ Response Payload => [stream_data]
 |-------|------|-------------|
 | throttle_time_ms | int32 | The time in milliseconds to throttle the client, due to a quota violation or the server is too busy. |
 | fetch_responses | array | A batch of fetch responses. |
-| stream_id | int64 | The target stream_id of the fetch record batch. |
+| stream_id | int64 | The id of the stream that the data is fetched from. |
 | request_index | int8 | The request_index that the fetch_response relates to. |
 | batch_length | int32 | The data length of the returned batch is used to decode the data from the payload. |
 | error_code | int16 | The error code, or 0 if there was no error. |
@@ -226,22 +228,15 @@ The LIST_RANGES frame(opcode=0x2001) lists the ranges of a batch of streams. Or 
 There are two types of LIST_RANGES request, one is to list the ranges of a batch of streams, and the other is to list the ranges of all the streams in a specific data node.
 
 ```
-// List the ranges of streams
-Request Header => timeout_ms [streams]
+Request Header => timeout_ms [range_owners]
   timeout_ms => int32
-  streams => stream_id
+  range_owners => union { stream_id, data_node }
+    // List the ranges of streams
     stream_id => int64
-  
-Request Payload => Empty
-```
-
-```
-// List the ranges of a specific data node
-Request Header => timeout_ms data_node
-  timeout_ms => int32
-  data_node => node_id advertise_addr
-    node_id => int32
-    advertise_addr => string
+    // List the ranges of a specific data node
+    data_node => node_id advertise_addr
+      node_id => int32
+      advertise_addr => string
   
 Request Payload => Empty
 ```
@@ -249,7 +244,7 @@ Request Payload => Empty
 | Field | Type | Description |
 |-------|------|-------------|
 | timeout_ms | int32 | The timeout in milliseconds to wait for the response. |
-| streams | array | A batch of stream ids to list the ranges. |
+| range_owners | union | The array of owner of the ranges to list. |
 | stream_id | int64 | A specific stream to list the ranges. |
 | data_node | struct | A specific data node to list the ranges of all the streams. |
 | node_id | int32 | The node id of the data node. |
@@ -258,19 +253,22 @@ Request Payload => Empty
 **Response Frame:**
 
 ```
-Response Header => throttle_time_ms [streams]
+Response Header => throttle_time_ms [list_responses]
   throttle_time_ms => int32
-  streams => stream_id error_code error_message [ranges]
+  list_responses => stream_id error_code error_message [ranges]
     stream_id => int64
     error_code => int16
     error_message => string
-    ranges => range_index start_offset end_offset [nodes]
+    ranges => stream_id range_index start_offset next_offset end_offset [replica_nodes]
+      stream_id => int64
       range_index => int32
       start_offset => int64
+      next_offset => int64
       end_offset => int64
-      nodes => node_id advertise_addr is_primary
-        node_id => int32
-        advertise_addr => string
+      replica_nodes => data_node is_primary
+        data_node => node_id advertise_addr
+          node_id => int32
+          advertise_addr => string
         is_primary => bool
   
 Response Payload => Empty
@@ -279,15 +277,17 @@ Response Payload => Empty
 | Field | Type | Description |
 |-------|------|-------------|
 | throttle_time_ms | int32 | The time in milliseconds to throttle the client, due to a quota violation or the server is too busy. |
-| streams | array | A batch of stream responses. |
+| list_responses | array | A batch of list range responses. |
 | stream_id | int64 | The target stream_id of the list ranges response. |
 | error_code | int16 | The error code, or 0 if there was no error. |
 | error_message | string | The error message, or null if there was no error. |
 | ranges | array | The array of ranges, belonging to a specific stream. |
 | range_index | int32 | The index of the range in the stream. |
 | start_offset | int64 | The start offset of the range. |
+| next_offset | int64 | The next writable offset for incoming records of the range. It's a snapshot of the next offset of the range, and it may be changed after the response is sent. |
 | end_offset | int64 | Optional. The end offset of the range. Empty if the range is open. |
-| nodes | array | The array of nodes, containing the data node information of the range. |
+| replica_nodes | array | The array of nodes that host the range, containing the data node information of the range. |
+| data_node | struct | The data node information of the range. |
 | node_id | int32 | The node id of the data node. |
 | advertise_addr | string | The advertise address of the data node. |
 | is_primary | bool | Whether the range in current data node is primary or secondary. | 
@@ -297,9 +297,9 @@ The SEAL_RANGES frame(opcode=0x2002) seals the current writable ranges of a batc
 
 **Request Frame:**
 ```
-Request Header => timeout_ms [streams]
+Request Header => timeout_ms [ranges]
   timeout_ms => int32
-  streams => stream_id range_index
+  ranges => stream_id range_index
     stream_id => int64
     range_index => int32
   
@@ -309,25 +309,19 @@ Request Payload => Empty
 | Field | Type | Description |
 |-------|------|-------------|
 | timeout_ms | int32 | The timeout in milliseconds to wait for the response. |
-| streams | array | A batch of stream ids to seal the ranges. |
-| stream_id | int64 | A specific stream to seal the ranges. |
-| range_index | int32 | A specific range to seal. |
+| ranges | array | A batch of ranges to seal. |
+| stream_id | int64 | A specific stream that the range belongs to. |
+| range_index | int32 | A specific range to seal in the stream. |
 
 **Response Frame:**
 ```
-Response Header => throttle_time_ms [responses]
+Response Header => throttle_time_ms [seal_responses]
   throttle_time_ms => int32
-  responses => stream_id error_code error_message [ranges]
+  seal_responses => stream_id error_code error_message [ranges]
     stream_id => int64
     error_code => int16
     error_message => string
-    ranges => range_index start_offset end_offset [locations]
-      range_index => int32
-      start_offset => int64
-      end_offset => int64
-      locations => node_id advertise_addr is_primary
-        address => string
-        is_primary => bool
+    ranges => ...
   
 Response Payload => Empty
 ```
@@ -335,35 +329,24 @@ Response Payload => Empty
 | Field | Type | Description |
 |-------|------|-------------|
 | throttle_time_ms | int32 | The time in milliseconds to throttle the client, due to a quota violation or the server is too busy. |
-| responses | array | A batch of stream responses. |
+| seal_responses | array | A batch of stream responses. |
 | stream_id | int64 | The target stream_id of the seal ranges response. |
 | error_code | int16 | The error code, or 0 if there was no error. |
 | error_message | string | The error message, or null if there was no error. |
 | ranges | array | The array of ranges, returned by the seal ranges request. Both the PM and the data node will handle the seal ranges request. Only the sealed ranges will be returned from the data node, while the sealed ranges and the newly writable ranges will be returned from the PM. |
-| range_index | int32 | The index of the range in the stream. |
-| start_offset | int64 | The start offset of the range. |
-| end_offset | int64 | Optional. The end offset of the range. Empty if the range is open. |
-| locations | array | The array of locations, containing the data node information of the range. |
-| node_id | int32 | The node id of the data node. |
-| advertise_addr | string | The advertise address of the data node. |
-| is_primary | bool | Whether the range in current data node is primary or secondary. |
 
 ### SYNC_RANGES
 The SYNC_RANGES frame(opcode=0x2003) syncs newly writable ranges to accelerate the availability of a newly created writable range.
 
+Or, it could be used to assign a new replics of a range to a new data node.
+
 **Request Frame:**
 ```
-Request Header => timeout_ms [streams]
+Request Header => timeout_ms [stream_ranges]
   timeout_ms => int32
-  streams => stream_id range
+  stream_ranges => stream_id [ranges]
     stream_id => int64
-    range => range_index start_offset [locations]
-      range_index => int32
-      start_offset => int64
-      locations => node_id advertise_addr is_primary
-        node_id => int32
-        advertise_addr => string
-        is_primary => bool
+    ranges => ...
   
 Request Payload => Empty
 ```
@@ -371,30 +354,19 @@ Request Payload => Empty
 | Field | Type | Description |
 |-------|-------|-------------|
 | timeout_ms | int32 | The timeout in milliseconds to wait for the response. |
-| streams | array | A batch of stream ids to sync the ranges. |
+| stream_ranges | array | A batch of stream ids to sync the ranges. |
 | stream_id | int64 | A specific stream to sync the ranges. |
-| range | array | A specific range to sync to the data node. |
-| range_index | int32 | The index of the range in the stream. |
-| start_offset | int64 | The start offset of the range. |
-| locations | array | The array of locations, containing the data node information of the range. |
-| node_id | int32 | The node id of the data node. |
-| advertise_addr | string | The advertise address of the data node. |
-| is_primary | bool | Whether the range in current data node is primary or secondary. |
+| ranges | array | A specific range to sync to the data node. |
 
 **Response Frame:**
 ```
-Response Header => throttle_time_ms [responses]
+Response Header => throttle_time_ms [sync_responses]
   throttle_time_ms
-  responses => stream_id error_code error_message range
+  sync_responses => stream_id error_code error_message range
     stream_id => int64
     error_code => int16
     error_message => string
-    range => range_index start_offset [locations]
-      range_index => int32
-      start_offset => int64
-      locations => address is_primary
-        address => string
-        is_primary => bool
+    ranges => ...
   
 Response Payload => Empty
 ```
@@ -406,9 +378,9 @@ The DESCRIBE_RANGES frame(opcode=0x2004) describes the ranges of a batch of stre
 
 **Request Frame:**
 ```
-Request Header => timeout_ms [streams]
+Request Header => timeout_ms [ranges]
   timeout_ms => int32
-  streams => stream_id range_index
+  ranges => stream_id range_index
     stream_id => int64
     range_index => int32
 ```
@@ -416,35 +388,29 @@ Request Header => timeout_ms [streams]
 | Field | Type | Description |
 |-------|------|-------------|
 | timeout_ms | int32 | The timeout in milliseconds to wait for the response. |
-| streams | array | A batch of stream ids to describe the ranges. |
+| ranges | array | A range array to describe. |
 | stream_id | int64 | A specific stream to describe the ranges. |
 | range_index | int32 | A specific range to describe. |
 
 **Response Frame:**
 ```
-Response Header => throttle_time_ms [responses]
+Response Header => throttle_time_ms [describe_responses]
   throttle_time_ms => int32
-  responses => stream_id error_code error_message range
+  describe_responses => stream_id error_code error_message range
     stream_id => int64
     error_code => int16
     error_message => string
-    range => range_index start_offset end_offset
-      range_index => int32
-      start_offset => int64
-      next_offset => int64
+    range => ...
 ```
 
 | Field | Type | Description |
 |-------|------|-------------|
 | throttle_time_ms | int32 | The time in milliseconds to throttle the client, due to a quota violation or the server is too busy. |
-| responses | array | A batch of stream responses. |
+| describe_responses | array | A batch of describe responses. |
 | stream_id | int64 | The target stream_id of the describe ranges response. |
 | error_code | int16 | The error code, or 0 if there was no error. |
 | error_message | string | The error message, or null if there was no error. |
-| range | array | The array of ranges, returned by the describe ranges request. |
-| range_index | int32 | The index of the range in the stream. |
-| start_offset | int64 | The start offset of the range. |
-| next_offset | int64 | The next writable offset for incoming records of the range. It's a snapshot of the next offset of the range, and it may be changed after the response is sent. |
+| range | struct | The range, returned by the describe ranges request. |
 
 ### CREATE_STREAMS
 The CREATE_STREAMS frame(opcode=0x3001) creates a batch of streams to PM. This frame with batch ability is very useful for importing metadata from other systems.
@@ -469,12 +435,13 @@ Request Payload => Empty
 
 **Response Frame:**
 ```
-Response Header => throttle_time_ms [streams]
+Response Header => throttle_time_ms [create_responses]
   throttle_time_ms
-  streams => stream_id replica_nums retention_period_ms error_code error_message
-    stream_id => int64
-    replica_nums => int8
-    retention_period_ms => int64
+  create_responses => stream replica_nums retention_period_ms error_code error_message
+    stream => stream_id replica_nums retention_period_ms
+        stream_id => int64
+        replica_nums => int8
+        retention_period_ms => int64
     error_code => int16
     error_message => string
 
@@ -484,7 +451,8 @@ Response Payload => Empty
 | Field | Type | Description |
 |-------|------|-------------|
 | throttle_time_ms | int32 | The time in milliseconds to throttle the client, due to a quota violation or the server is too busy. |
-| streams | array | A batch of stream responses. |
+| create_responses | array | A batch of create stream responses. |
+| stream | struct | The struct of createed stream, returned by the create streams request. |
 | stream_id | int64 | The stream_id of the create streams response. |
 | replica_nums | int8 | The number of replicas of the stream. |
 | retention_period_ms | int64 | The retention period of the records in the stream in milliseconds. |
@@ -498,25 +466,34 @@ The DELETE_STREAMS frame(opcode=0x3002) deletes a batch of streams to PM or data
 ```
 Request Header => timeout_ms [streams]
   timeout_ms
-  streams => stream_id
+  streams => stream_id replica_nums retention_period_ms
     stream_id => int64
+    replica_nums => int8
+    retention_period_ms => int64
   
 Request Payload => Empty
 ```
+
+Only the stream_id is required in the request frame, the other fields are ignored.
 
 The frame is simple, so the detailed description is omitted.
 
 **Response Frame:**
 ```
-Response Header => throttle_time_ms [responses]
+Response Header => throttle_time_ms [delete_responses]
   throttle_time_ms
-  responses => stream_id error_code error_message
-    stream_id => int64
+  responses => deleted_stream error_code error_message
+    deleted_stream => stream_id replica_nums retention_period_ms
+      stream_id => int64
+      replica_nums => int8
+      retention_period_ms => int64
     error_code => int16
     error_message => string
   
 Request Payload => Empty
 ```
+
+The deleted_stream will be returned if the stream is deleted successfully, otherwise the error_code and error_message will be returned.
 
 The frame is simple, so the detailed description is omitted.
 
@@ -537,12 +514,13 @@ Request Payload => Empty
 
 **Response Frame:**
 ```
-Response Header => throttle_time_ms [streams]
+Response Header => throttle_time_ms [update_responses]
   throttle_time_ms
-  streams => stream_id replica_nums retention_period_ms error_code error_message
-    stream_id => int64
-    replica_nums => int8
-    retention_period_ms => int64
+  update_responses => updated_stream error_code error_message
+    updated_stream => stream_id replica_nums retention_period_ms
+      stream_id => int64
+      replica_nums => int8
+      retention_period_ms => int64
     error_code => int16
     error_message => string
   
@@ -550,14 +528,14 @@ Response Payload => Empty
 ```
 
 These two frames are similar with the CREATE_STREAMS frame, so the detailed description is omitted.
-### GET_STREAMS
-The GET_STREAMS frame(opcode=0x3004) gets a batch of streams from PM. The response frame is similar to the CREATE_STREAMS frame.
+### DESCRIBE_STREAMS
+The DESCRIBE_STREAMS frame(opcode=0x3004) describes a batch of streams from PM. The response frame is similar to the CREATE_STREAMS frame.
 
 **Request Frame:**
 ```
-Request Header => timeout_ms [streams]
+Request Header => timeout_ms [stream_ids]
   timeout_ms
-  streams => stream_id
+  stream_ids => stream_id
     stream_id => int64
   
 Request Payload => Empty
@@ -565,12 +543,13 @@ Request Payload => Empty
 
 **Response Frame:**
 ```
-Response Header => throttle_time_ms [streams]
+Response Header => throttle_time_ms [describe_responses]
   throttle_time_ms
-  streams => stream_id replica_nums retention_period_ms error_code error_message
-    stream_id => int64
-    replica_nums => int8
-    retention_period_ms => int64
+  describe_responses => stream error_code error_message
+    stream => stream_id replica_nums retention_period_ms
+      stream_id => int64
+      replica_nums => int8
+      retention_period_ms => int64
     error_code => int16
     error_message => string
   
@@ -586,9 +565,9 @@ The data node will send the TRIM_STREAMS frame to the PM to trim the stream with
 
 **Request Frame:**
 ```
-Request Header => timeout_ms [streams]
+Request Header => timeout_ms [trimmed_streams]
   timeout_ms
-  streams => stream_id trim_offset
+  trimmed_streams => stream_id trim_offset
     stream_id => int64
     trim_offset => int64
 ```
@@ -596,7 +575,7 @@ Request Header => timeout_ms [streams]
 | Field | Type | Description |
 |-------|------|-------------|
 | timeout_ms | int32 | The timeout in milliseconds to wait for the response. |
-| streams | array | A batch of streams to trim. |
+| trimmed_streams | array | A batch of streams to trim. |
 | stream_id | int64 | The stream_id of the stream to trim. |
 | trim_offset | int64 | The trim offset of the stream. |
 
@@ -604,14 +583,14 @@ Request Header => timeout_ms [streams]
 ```
 Response Header => throttle_time_ms [streams]
   throttle_time_ms
-  streams => stream_id error_code error_message range
-    stream_id => int64
+  streams => trimmed_stream error_code error_message range
+    trimmed_stream => stream_id replica_nums retention_period_ms
+      stream_id => int64
+      replica_nums => int8
+      retention_period_ms => int64
     error_code => int16
     error_message => string
-    range => range_index start_offset end_offset
-      range_index => int32
-      start_offset => int64
-      end_offset => int64
+    range => ...
 ```
 
 | Field | Type | Description |
@@ -622,17 +601,16 @@ Response Header => throttle_time_ms [streams]
 | error_code | int16 | The error code, or 0 if there was no error. |
 | error_message | string | The error message, or null if there was no error. |
 | range | struct | The smallest range of the stream after a trim operation. |
-| range_index | int32 | The index of the range. |
-| start_offset | int64 | The start offset of the range. |
-| end_offset | int64 | The end offset of the range. The field is omitted if the range is the last writable range. |
 
 ### REPORT_METRICS
 The REPORT_METRICS frame(opcode=0x4001) reports load metrics of Data Node to PM. PM uses these metrics to allocate ranges.
 
 **Request Frame:**
 ```
-Request Header => hostname
-  hostname => string
+Request Header => data_node
+  data_node => node_id advertise_addr
+    node_id => int32
+    advertise_addr => string
   disk_in_rate => int64
   disk_out_rate => int64
   disk_free_space => int64
@@ -677,8 +655,10 @@ Request Payload => Empty
 
 **Response Frame:**
 ```
-Response Header => hostname
-  hostname => string
+Response Header => data_node
+  data_node => node_id advertise_addr
+    node_id => int32
+    advertise_addr => string
 
 Response Payload => Empty
 ```
