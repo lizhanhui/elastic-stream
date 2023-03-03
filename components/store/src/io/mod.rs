@@ -600,7 +600,6 @@ impl IO {
             })
             .filter(|n| *n > 0)
             .collect();
-
         let mut size = 0;
         unsafe { &mut *self.segments.get() }
             .iter()
@@ -1413,8 +1412,9 @@ mod tests {
             segment.status = Status::ReadWrite;
         });
 
-        let mut buf = BytesMut::with_capacity(4096);
-        buf.resize(4096, 65);
+        let len = 4096;
+        let mut buf = BytesMut::with_capacity(len);
+        buf.resize(len, 65);
         let buf = buf.freeze();
 
         (0..16).into_iter().for_each(|i| {
@@ -1434,10 +1434,10 @@ mod tests {
 
         // Case when the remaining of the first writable segment file can hold a record
         let segment = io.segments.get_mut().front_mut().unwrap();
-        segment.written = segment.size - 4096 - 8;
+        segment.written = segment.size - 4096 - 8 - crate::io::segment::FOOTER_LENGTH;
         let buffers = io.calculate_write_buffers();
         assert_eq!(2, buffers.len());
-        assert_eq!(Some(&4104), buffers.first());
+        assert_eq!(Some(&4128), buffers.first());
         assert_eq!(Some(&61560), buffers.iter().nth(1));
 
         // Case when the last writable log segment file cannot hold a record
