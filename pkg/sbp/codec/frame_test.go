@@ -47,14 +47,14 @@ func TestReadFrame(t *testing.T) {
 				0x05, 0x06, 0x07, 0x08, // payload data
 				0x53, 0x8D, 0x4D, 0x69, // payload checksum
 			},
-			want: baseFrame{
+			want: &DataFrame{baseFrame{
 				OpCode:    operation.ListRange(),
 				Flag:      3,
 				StreamID:  16909060,
 				HeaderFmt: format.FlatBuffer(),
 				Header:    []byte{0x01, 0x02, 0x03, 0x04},
 				Payload:   []byte{0x05, 0x06, 0x07, 0x08},
-			},
+			}},
 		},
 		{
 			name: "normal case without header",
@@ -69,14 +69,14 @@ func TestReadFrame(t *testing.T) {
 				0x05, 0x06, 0x07, 0x08, // payload data
 				0x53, 0x8D, 0x4D, 0x69, // payload checksum
 			},
-			want: baseFrame{
+			want: &PingFrame{baseFrame{
 				OpCode:    operation.Ping(),
 				Flag:      3,
 				StreamID:  16909060,
 				HeaderFmt: format.FlatBuffer(),
 				Header:    nil,
 				Payload:   []byte{0x05, 0x06, 0x07, 0x08},
-			},
+			}},
 		},
 		{
 			name: "normal case without payload",
@@ -91,14 +91,14 @@ func TestReadFrame(t *testing.T) {
 				0x01, 0x02, 0x03, 0x04, // header data
 				0x00, 0x00, 0x00, 0x00, // payload checksum
 			},
-			want: baseFrame{
+			want: &PingFrame{baseFrame{
 				OpCode:    operation.Ping(),
 				Flag:      3,
 				StreamID:  16909060,
 				HeaderFmt: format.FlatBuffer(),
 				Header:    []byte{0x01, 0x02, 0x03, 0x04},
 				Payload:   nil,
-			},
+			}},
 		},
 		{
 			name: "normal case without header and payload",
@@ -112,14 +112,14 @@ func TestReadFrame(t *testing.T) {
 				0x00, 0x00, 0x00, // header length
 				0x00, 0x00, 0x00, 0x00, // payload checksum
 			},
-			want: baseFrame{
+			want: &PingFrame{baseFrame{
 				OpCode:    operation.Ping(),
 				Flag:      3,
 				StreamID:  16909060,
 				HeaderFmt: format.FlatBuffer(),
 				Header:    nil,
 				Payload:   nil,
-			},
+			}},
 		},
 		{
 			name: "not long enough header",
@@ -266,14 +266,14 @@ func TestWriteFrame(t *testing.T) {
 	}{
 		{
 			name: "normal case",
-			frame: baseFrame{
+			frame: DataFrame{baseFrame{
 				OpCode:    operation.ListRange(),
 				Flag:      3,
 				StreamID:  16909060,
 				HeaderFmt: format.FlatBuffer(),
 				Header:    []byte{0x01, 0x02, 0x03, 0x04},
 				Payload:   []byte{0x05, 0x06, 0x07, 0x08},
-			},
+			}},
 			want: []byte{
 				0x00, 0x00, 0x00, 0x18, // frame length
 				0x17,       // magic code
@@ -289,14 +289,14 @@ func TestWriteFrame(t *testing.T) {
 		},
 		{
 			name: "normal case without header",
-			frame: baseFrame{
+			frame: PingFrame{baseFrame{
 				OpCode:    operation.Ping(),
 				Flag:      3,
 				StreamID:  16909060,
 				HeaderFmt: format.FlatBuffer(),
 				Header:    nil,
 				Payload:   []byte{0x05, 0x06, 0x07, 0x08},
-			},
+			}},
 			want: []byte{
 				0x00, 0x00, 0x00, 0x14, // frame length
 				0x17,       // magic code
@@ -311,14 +311,14 @@ func TestWriteFrame(t *testing.T) {
 		},
 		{
 			name: "normal case without payload",
-			frame: baseFrame{
+			frame: PingFrame{baseFrame{
 				OpCode:    operation.Ping(),
 				Flag:      3,
 				StreamID:  16909060,
 				HeaderFmt: format.FlatBuffer(),
 				Header:    []byte{0x01, 0x02, 0x03, 0x04},
 				Payload:   nil,
-			},
+			}},
 			want: []byte{
 				0x00, 0x00, 0x00, 0x14, // frame length
 				0x17,       // magic code
@@ -333,14 +333,14 @@ func TestWriteFrame(t *testing.T) {
 		},
 		{
 			name: "normal case without header and payload",
-			frame: baseFrame{
+			frame: PingFrame{baseFrame{
 				OpCode:    operation.Ping(),
 				Flag:      3,
 				StreamID:  16909060,
 				HeaderFmt: format.FlatBuffer(),
 				Header:    nil,
 				Payload:   nil,
-			},
+			}},
 			want: []byte{
 				0x00, 0x00, 0x00, 0x10, // frame length
 				0x17,       // magic code
@@ -354,14 +354,14 @@ func TestWriteFrame(t *testing.T) {
 		},
 		{
 			name: "too large payload",
-			frame: baseFrame{
+			frame: PingFrame{baseFrame{
 				OpCode:    operation.Ping(),
 				Flag:      3,
 				StreamID:  16909060,
 				HeaderFmt: format.FlatBuffer(),
 				Header:    nil,
 				Payload:   make([]byte, 16*1024*1024+1),
-			},
+			}},
 			want:    []byte{},
 			wantErr: true,
 			errMsg:  "frame too large",
