@@ -679,7 +679,11 @@ impl IO {
             .enumerate()
             .map(|(idx, n)| {
                 if 0 == idx {
-                    self.buf_writer.get_mut().reserve(*n - left)
+                    if *n > left {
+                        self.buf_writer.get_mut().reserve(*n - left)
+                    } else {
+                        Ok(())
+                    }
                 } else {
                     self.buf_writer.get_mut().reserve(*n)
                 }
