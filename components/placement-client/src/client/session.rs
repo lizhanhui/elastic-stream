@@ -7,7 +7,9 @@ use std::{
 
 use bytes::BytesMut;
 use codec::frame::{Frame, OperationCode};
-use protocol::rpc::header::{HeartbeatRequest, HeartbeatRequestArgs, ListRangesRequest, ListRangesRequestArgs, ClientRole};
+use protocol::rpc::header::{
+    ClientRole, HeartbeatRequest, HeartbeatRequestArgs, ListRangesRequest, ListRangesRequestArgs,
+};
 use slog::{error, trace, warn, Logger};
 use tokio::sync::oneshot;
 use tokio_uring::net::TcpStream;

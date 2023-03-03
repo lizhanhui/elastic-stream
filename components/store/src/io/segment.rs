@@ -203,7 +203,11 @@ impl LogSegmentFile {
             && self.written + RECORD_PREFIX_LENGTH + payload_length + FOOTER_LENGTH <= self.size
     }
 
-    pub(crate) fn append_footer(&mut self, buf_writer: &mut AlignedBufWriter, pos: &mut u64) {
+    pub(crate) fn append_footer(
+        &mut self,
+        buf_writer: &mut AlignedBufWriter,
+        pos: &mut u64,
+    ) -> Result<(), StoreError> {
         let padding_length = self.size - self.written - RECORD_PREFIX_LENGTH - 8 - 8;
         let length_type: u32 = RecordType::Zero.with_length(padding_length as u32 + 8 + 8);
         let earliest: u64 = 0;
@@ -219,11 +223,12 @@ impl LogSegmentFile {
         buf.put_u64(latest);
         let buf = buf.freeze();
         let crc: u32 = CRC32C.checksum(&buf[..]);
-        buf_writer.write_u32(crc);
-        buf_writer.write_u32(length_type);
-        buf_writer.write(&buf[..=padding_length as usize]);
+        buf_writer.write_u32(crc)?;
+        buf_writer.write_u32(length_type)?;
+        buf_writer.write(&buf[..=padding_length as usize])?;
 
         *pos += self.size - self.written;
+        Ok(())
     }
 
     pub(crate) fn remaining(&self) -> u64 {
@@ -240,13 +245,14 @@ impl LogSegmentFile {
         buf_writer: &mut AlignedBufWriter,
         payload: &[u8],
         pos: &mut u64,
-    ) {
+    ) -> Result<(), StoreError> {
         let crc = CRC32C.checksum(payload);
         let length_type = RecordType::Full.with_length(payload.len() as u32);
-        buf_writer.write_u32(crc);
-        buf_writer.write_u32(length_type);
-        buf_writer.write(payload);
+        buf_writer.write_u32(crc)?;
+        buf_writer.write_u32(length_type)?;
+        buf_writer.write(payload)?;
         *pos += 4 + 4 + payload.len() as u64;
+        Ok(())
     }
 }
 

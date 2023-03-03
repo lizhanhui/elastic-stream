@@ -1,5 +1,7 @@
 use std::alloc::{self, Layout};
 
+use slog::{trace, Logger};
+
 use crate::error::StoreError;
 
 /// Memory buffer complying given memory alignment, which is supposed to be used for DirectIO.
@@ -114,14 +116,16 @@ impl Drop for AlignedBuf {
 }
 
 pub(crate) struct AlignedBufWriter {
+    log: Logger,
     offset: u64,
     alignment: usize,
     buffers: Vec<AlignedBuf>,
 }
 
 impl AlignedBufWriter {
-    pub(crate) fn new(offset: u64, alignment: usize) -> Self {
+    pub(crate) fn new(log: Logger, offset: u64, alignment: usize) -> Self {
         Self {
+            log,
             offset,
             alignment,
             buffers: vec![],
@@ -135,16 +139,43 @@ impl AlignedBufWriter {
 
     /// Must invoke this method to reserve enough memory before writing.
     pub(crate) fn reserve(&mut self, additional: usize) -> Result<(), StoreError> {
-        let size = additional / self.alignment * self.alignment;
+        trace!(
+            self.log,
+            "Try to reserve additional {} bytes for WAL data",
+            additional
+        );
 
-        let buf = AlignedBuf::new(self.offset, size, self.alignment)?;
-        self.offset += size as u64;
-        self.buffers.push(buf);
+        // First, allocate memory in alignment blocks, which we enough data to fill and then generate SQEs to submit
+        // immediately.
+        if additional > self.alignment {
+            let size = additional / self.alignment * self.alignment;
+            let buf = AlignedBuf::new(self.offset, size, self.alignment)?;
+            trace!(
+                self.log,
+                "Reserved {} bytes for WAL data in complete blocks. [{}, {})",
+                buf.capacity,
+                self.offset,
+                self.offset + buf.capacity as u64
+            );
+            self.offset += buf.capacity as u64;
+            self.buffers.push(buf);
+        }
 
+        // Reserve memory block, for which we only partial data to fill.
+        //
+        // These partial data may be merged with future write tasks. Alternatively, we may issue stall-incurring writes if
+        // configured amount of time has elapsed before collecting enough data.
         let r = additional % self.alignment;
         if 0 != r {
             let buf = AlignedBuf::new(self.offset, self.alignment, self.alignment)?;
-            self.offset += self.alignment as u64;
+            trace!(
+                self.log,
+                "Reserved {} bytes for WAL data that may only fill partial of a block. [{}, {})",
+                buf.capacity,
+                self.offset,
+                self.offset + buf.capacity as u64
+            );
+            self.offset += buf.capacity as u64;
             self.buffers.push(buf);
         }
 
@@ -180,16 +211,14 @@ impl AlignedBufWriter {
         let data = std::ptr::addr_of!(value);
         let slice =
             unsafe { std::slice::from_raw_parts(data as *const u8, std::mem::size_of::<u32>()) };
-        self.write(slice);
-        Ok(())
+        self.write(slice)
     }
 
     pub(crate) fn write_u64(&mut self, value: u64) -> Result<(), StoreError> {
         let data = std::ptr::addr_of!(value);
         let slice =
             unsafe { std::slice::from_raw_parts(data as *const u8, std::mem::size_of::<u64>()) };
-        self.write(slice);
-        Ok(())
+        self.write(slice)
     }
 
     /// Drain buffers that are full and generate submission queue entry for each of buf.

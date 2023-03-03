@@ -51,11 +51,11 @@ pub(crate) enum WriteWindowError {
 ///     spans are less than the committed.
 /// 2.3  Once we found an expanding IO completion, we need to loop to advance more.
 pub(crate) struct WriteWindow {
+    log: Logger,
+
     /// An offset in WAL, all data prior to it should have been completely written. All write requests whose
     /// ranges fall into [0, committed) can be safely acknowledged.
     committed: u64,
-
-    log: Logger,
 
     /// Writes that have been submitted to IO device.
     submitted: BTreeMap<u64, u32>,
@@ -65,10 +65,10 @@ pub(crate) struct WriteWindow {
 }
 
 impl WriteWindow {
-    pub(crate) fn new(committed: u64, log: Logger) -> Self {
+    pub(crate) fn new(log: Logger, committed: u64) -> Self {
         Self {
-            committed,
             log,
+            committed,
             submitted: BTreeMap::new(),
             completed: BTreeMap::new(),
         }

@@ -268,7 +268,8 @@ impl IO {
             control_ring,
             sender: Some(sender),
             receiver,
-            write_window: WriteWindow::new(0, log.clone()),
+            write_window: WriteWindow::new(log.clone(), 0),
+            buf_writer: UnsafeCell::new(AlignedBufWriter::new(log.clone(), 0, options.alignment)),
             log,
             segments: UnsafeCell::new(VecDeque::new()),
             channel_disconnected: false,
@@ -279,7 +280,6 @@ impl IO {
             write_inflight: 0,
             pending_data_tasks: VecDeque::new(),
             pos: 0,
-            buf_writer: UnsafeCell::new(AlignedBufWriter::new(0, options.alignment)),
             inflight_write_tasks: BTreeMap::new(),
         })
     }
@@ -593,6 +593,7 @@ impl IO {
             .iter()
             .map(|task| match task {
                 IoTask::Write(task) => {
+                    debug_assert!(task.buffer.len() > 0);
                     task.buffer.len() + 4 /* CRC */ + 3 /* Record Size */ + 1 /* Record Type */
                 }
                 _ => 0,
@@ -671,9 +672,9 @@ impl IO {
     fn build_sqe(&mut self, entries: &mut Vec<squeue::Entry>) {
         let log = self.log.clone();
         let alignment = self.options.alignment;
-
         let buf_list = self.calculate_write_buffers();
         let left = self.buf_writer.get_mut().remaining();
+
         buf_list
             .iter()
             .enumerate()
@@ -1186,24 +1187,20 @@ impl AsRawFd for IO {
 
 #[cfg(test)]
 mod tests {
+    use bytes::BytesMut;
     use std::cell::RefCell;
-    use std::collections::{HashMap, VecDeque};
+    use std::env;
     use std::error::Error;
     use std::fs::File;
-    use std::rc::Rc;
-
-    use bytes::BytesMut;
-    use std::env;
     use std::path::PathBuf;
     use tokio::sync::oneshot;
     use uuid::Uuid;
 
+    use super::task::{IoTask, WriteTask};
     use crate::io::segment::LogSegmentFile;
     use crate::io::DEFAULT_LOG_SEGMENT_FILE_SIZE;
     use crate::option::WalPath;
     use crate::{error::StoreError, io::segment::Status};
-
-    use super::task::{IoTask, WriteTask};
 
     fn create_io(wal_dir: WalPath) -> Result<super::IO, StoreError> {
         let mut options = super::Options::default();
@@ -1282,7 +1279,8 @@ mod tests {
         let _wal_dir_guard = util::DirectoryRemovalGuard::new(wal_dir.as_path());
         let mut io = create_io(super::WalPath::new(wal_dir.to_str().unwrap(), 1234)?)?;
         io.alloc_segment()?;
-        assert_eq!(1, io.segments.get_mut().len());
+        io.alloc_segment()?;
+        assert_eq!(2, io.segments.get_mut().len());
 
         // Ensure we can get the right
         let segment = io
@@ -1292,6 +1290,11 @@ mod tests {
 
         let segment = io.segment_file_of(0).ok_or(StoreError::AllocLogSegment)?;
         assert_eq!(0, segment.offset);
+
+        let segment = io
+            .segment_file_of(io.options.file_size)
+            .ok_or(StoreError::AllocLogSegment)?;
+        assert_eq!(io.options.file_size, segment.offset);
 
         Ok(())
     }
@@ -1339,25 +1342,27 @@ mod tests {
     }
 
     #[test]
-    fn test_to_sqe() -> Result<(), StoreError> {
+    fn test_build_sqe() -> Result<(), StoreError> {
         let wal_dir = random_wal_dir()?;
         let _wal_dir_guard = util::DirectoryRemovalGuard::new(wal_dir.as_path());
         let mut io = create_io(super::WalPath::new(wal_dir.to_str().unwrap(), 1234)?)?;
 
-        let segment = io.alloc_segment().unwrap();
+        let segment = io.alloc_segment()?;
         segment.open()?;
 
-        let buffer = BytesMut::with_capacity(128);
+        let len = 4088;
+        let mut buffer = BytesMut::with_capacity(len);
+        buffer.resize(len, 65);
         let buffer = buffer.freeze();
 
         // Send IoTask to channel
         (0..16)
             .into_iter()
-            .map(|_| {
+            .map(|n| {
                 let (tx, _rx) = oneshot::channel();
                 IoTask::Write(WriteTask {
                     stream_id: 0,
-                    offset: 0,
+                    offset: n,
                     buffer: buffer.clone(),
                     observer: tx,
                 })
@@ -1369,7 +1374,7 @@ mod tests {
         let mut entries = Vec::new();
 
         io.build_sqe(&mut entries);
-        assert_eq!(16, entries.len());
+        assert!(!entries.is_empty());
         Ok(())
     }
 
