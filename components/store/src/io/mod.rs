@@ -28,7 +28,7 @@ use std::{
 use task::IoTask;
 
 use self::buf::{AlignedBufReader, AlignedBufWriter};
-use self::record::{RecordType, RECORD_PREFIX_LENGTH};
+use self::record::RecordType;
 use self::segment::Status;
 use self::state::OpState;
 use self::task::WriteTask;
