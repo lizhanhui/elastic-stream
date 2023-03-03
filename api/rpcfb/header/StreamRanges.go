@@ -33,16 +33,16 @@ func (rcv *StreamRanges) Table() flatbuffers.Table {
 	return rcv._tab
 }
 
-func (rcv *StreamRanges) StreamId() uint64 {
+func (rcv *StreamRanges) StreamId() int64 {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(4))
 	if o != 0 {
-		return rcv._tab.GetUint64(o + rcv._tab.Pos)
+		return rcv._tab.GetInt64(o + rcv._tab.Pos)
 	}
 	return 0
 }
 
-func (rcv *StreamRanges) MutateStreamId(n uint64) bool {
-	return rcv._tab.MutateUint64Slot(4, n)
+func (rcv *StreamRanges) MutateStreamId(n int64) bool {
+	return rcv._tab.MutateInt64Slot(4, n)
 }
 
 func (rcv *StreamRanges) Ranges(obj *Range, j int) bool {
@@ -68,8 +68,8 @@ func (rcv *StreamRanges) RangesLength() int {
 func StreamRangesStart(builder *flatbuffers.Builder) {
 	builder.StartObject(2)
 }
-func StreamRangesAddStreamId(builder *flatbuffers.Builder, streamId uint64) {
-	builder.PrependUint64Slot(0, streamId, 0)
+func StreamRangesAddStreamId(builder *flatbuffers.Builder, streamId int64) {
+	builder.PrependInt64Slot(0, streamId, 0)
 }
 func StreamRangesAddRanges(builder *flatbuffers.Builder, ranges flatbuffers.UOffsetT) {
 	builder.PrependUOffsetTSlot(1, flatbuffers.UOffsetT(ranges), 0)

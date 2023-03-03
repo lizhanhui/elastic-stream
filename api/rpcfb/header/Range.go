@@ -33,64 +33,64 @@ func (rcv *Range) Table() flatbuffers.Table {
 	return rcv._tab
 }
 
-func (rcv *Range) StreamId() uint64 {
+func (rcv *Range) StreamId() int64 {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(4))
 	if o != 0 {
-		return rcv._tab.GetUint64(o + rcv._tab.Pos)
+		return rcv._tab.GetInt64(o + rcv._tab.Pos)
 	}
 	return 0
 }
 
-func (rcv *Range) MutateStreamId(n uint64) bool {
-	return rcv._tab.MutateUint64Slot(4, n)
+func (rcv *Range) MutateStreamId(n int64) bool {
+	return rcv._tab.MutateInt64Slot(4, n)
 }
 
-func (rcv *Range) RangeIndex() uint32 {
+func (rcv *Range) RangeIndex() int32 {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(6))
 	if o != 0 {
-		return rcv._tab.GetUint32(o + rcv._tab.Pos)
+		return rcv._tab.GetInt32(o + rcv._tab.Pos)
 	}
 	return 0
 }
 
-func (rcv *Range) MutateRangeIndex(n uint32) bool {
-	return rcv._tab.MutateUint32Slot(6, n)
+func (rcv *Range) MutateRangeIndex(n int32) bool {
+	return rcv._tab.MutateInt32Slot(6, n)
 }
 
-func (rcv *Range) StartOffset() uint64 {
+func (rcv *Range) StartOffset() int64 {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(8))
 	if o != 0 {
-		return rcv._tab.GetUint64(o + rcv._tab.Pos)
+		return rcv._tab.GetInt64(o + rcv._tab.Pos)
 	}
 	return 0
 }
 
-func (rcv *Range) MutateStartOffset(n uint64) bool {
-	return rcv._tab.MutateUint64Slot(8, n)
+func (rcv *Range) MutateStartOffset(n int64) bool {
+	return rcv._tab.MutateInt64Slot(8, n)
 }
 
-func (rcv *Range) EndOffset() uint64 {
+func (rcv *Range) EndOffset() int64 {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(10))
 	if o != 0 {
-		return rcv._tab.GetUint64(o + rcv._tab.Pos)
+		return rcv._tab.GetInt64(o + rcv._tab.Pos)
 	}
 	return 0
 }
 
-func (rcv *Range) MutateEndOffset(n uint64) bool {
-	return rcv._tab.MutateUint64Slot(10, n)
+func (rcv *Range) MutateEndOffset(n int64) bool {
+	return rcv._tab.MutateInt64Slot(10, n)
 }
 
-func (rcv *Range) NextOffset() uint64 {
+func (rcv *Range) NextOffset() int64 {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(12))
 	if o != 0 {
-		return rcv._tab.GetUint64(o + rcv._tab.Pos)
+		return rcv._tab.GetInt64(o + rcv._tab.Pos)
 	}
 	return 0
 }
 
-func (rcv *Range) MutateNextOffset(n uint64) bool {
-	return rcv._tab.MutateUint64Slot(12, n)
+func (rcv *Range) MutateNextOffset(n int64) bool {
+	return rcv._tab.MutateInt64Slot(12, n)
 }
 
 func (rcv *Range) ReplicaNodes(obj *ReplicaNode, j int) bool {
@@ -116,20 +116,20 @@ func (rcv *Range) ReplicaNodesLength() int {
 func RangeStart(builder *flatbuffers.Builder) {
 	builder.StartObject(6)
 }
-func RangeAddStreamId(builder *flatbuffers.Builder, streamId uint64) {
-	builder.PrependUint64Slot(0, streamId, 0)
+func RangeAddStreamId(builder *flatbuffers.Builder, streamId int64) {
+	builder.PrependInt64Slot(0, streamId, 0)
 }
-func RangeAddRangeIndex(builder *flatbuffers.Builder, rangeIndex uint32) {
-	builder.PrependUint32Slot(1, rangeIndex, 0)
+func RangeAddRangeIndex(builder *flatbuffers.Builder, rangeIndex int32) {
+	builder.PrependInt32Slot(1, rangeIndex, 0)
 }
-func RangeAddStartOffset(builder *flatbuffers.Builder, startOffset uint64) {
-	builder.PrependUint64Slot(2, startOffset, 0)
+func RangeAddStartOffset(builder *flatbuffers.Builder, startOffset int64) {
+	builder.PrependInt64Slot(2, startOffset, 0)
 }
-func RangeAddEndOffset(builder *flatbuffers.Builder, endOffset uint64) {
-	builder.PrependUint64Slot(3, endOffset, 0)
+func RangeAddEndOffset(builder *flatbuffers.Builder, endOffset int64) {
+	builder.PrependInt64Slot(3, endOffset, 0)
 }
-func RangeAddNextOffset(builder *flatbuffers.Builder, nextOffset uint64) {
-	builder.PrependUint64Slot(4, nextOffset, 0)
+func RangeAddNextOffset(builder *flatbuffers.Builder, nextOffset int64) {
+	builder.PrependInt64Slot(4, nextOffset, 0)
 }
 func RangeAddReplicaNodes(builder *flatbuffers.Builder, replicaNodes flatbuffers.UOffsetT) {
 	builder.PrependUOffsetTSlot(5, flatbuffers.UOffsetT(replicaNodes), 0)

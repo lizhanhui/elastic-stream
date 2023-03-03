@@ -33,16 +33,16 @@ func (rcv *DataNode) Table() flatbuffers.Table {
 	return rcv._tab
 }
 
-func (rcv *DataNode) NodeId() uint32 {
+func (rcv *DataNode) NodeId() int32 {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(4))
 	if o != 0 {
-		return rcv._tab.GetUint32(o + rcv._tab.Pos)
+		return rcv._tab.GetInt32(o + rcv._tab.Pos)
 	}
 	return 0
 }
 
-func (rcv *DataNode) MutateNodeId(n uint32) bool {
-	return rcv._tab.MutateUint32Slot(4, n)
+func (rcv *DataNode) MutateNodeId(n int32) bool {
+	return rcv._tab.MutateInt32Slot(4, n)
 }
 
 func (rcv *DataNode) AdvertiseAddr() []byte {
@@ -56,8 +56,8 @@ func (rcv *DataNode) AdvertiseAddr() []byte {
 func DataNodeStart(builder *flatbuffers.Builder) {
 	builder.StartObject(2)
 }
-func DataNodeAddNodeId(builder *flatbuffers.Builder, nodeId uint32) {
-	builder.PrependUint32Slot(0, nodeId, 0)
+func DataNodeAddNodeId(builder *flatbuffers.Builder, nodeId int32) {
+	builder.PrependInt32Slot(0, nodeId, 0)
 }
 func DataNodeAddAdvertiseAddr(builder *flatbuffers.Builder, advertiseAddr flatbuffers.UOffsetT) {
 	builder.PrependUOffsetTSlot(1, flatbuffers.UOffsetT(advertiseAddr), 0)

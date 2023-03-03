@@ -33,28 +33,28 @@ func (rcv *SyncRangesResult) Table() flatbuffers.Table {
 	return rcv._tab
 }
 
-func (rcv *SyncRangesResult) StreamId() uint64 {
+func (rcv *SyncRangesResult) StreamId() int64 {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(4))
 	if o != 0 {
-		return rcv._tab.GetUint64(o + rcv._tab.Pos)
+		return rcv._tab.GetInt64(o + rcv._tab.Pos)
 	}
 	return 0
 }
 
-func (rcv *SyncRangesResult) MutateStreamId(n uint64) bool {
-	return rcv._tab.MutateUint64Slot(4, n)
+func (rcv *SyncRangesResult) MutateStreamId(n int64) bool {
+	return rcv._tab.MutateInt64Slot(4, n)
 }
 
 func (rcv *SyncRangesResult) ErrorCode() ErrorCode {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(6))
 	if o != 0 {
-		return ErrorCode(rcv._tab.GetUint16(o + rcv._tab.Pos))
+		return ErrorCode(rcv._tab.GetInt16(o + rcv._tab.Pos))
 	}
 	return 0
 }
 
 func (rcv *SyncRangesResult) MutateErrorCode(n ErrorCode) bool {
-	return rcv._tab.MutateUint16Slot(6, uint16(n))
+	return rcv._tab.MutateInt16Slot(6, int16(n))
 }
 
 func (rcv *SyncRangesResult) ErrorMessage() []byte {
@@ -88,11 +88,11 @@ func (rcv *SyncRangesResult) RangesLength() int {
 func SyncRangesResultStart(builder *flatbuffers.Builder) {
 	builder.StartObject(4)
 }
-func SyncRangesResultAddStreamId(builder *flatbuffers.Builder, streamId uint64) {
-	builder.PrependUint64Slot(0, streamId, 0)
+func SyncRangesResultAddStreamId(builder *flatbuffers.Builder, streamId int64) {
+	builder.PrependInt64Slot(0, streamId, 0)
 }
 func SyncRangesResultAddErrorCode(builder *flatbuffers.Builder, errorCode ErrorCode) {
-	builder.PrependUint16Slot(1, uint16(errorCode), 0)
+	builder.PrependInt16Slot(1, int16(errorCode), 0)
 }
 func SyncRangesResultAddErrorMessage(builder *flatbuffers.Builder, errorMessage flatbuffers.UOffsetT) {
 	builder.PrependUOffsetTSlot(2, flatbuffers.UOffsetT(errorMessage), 0)

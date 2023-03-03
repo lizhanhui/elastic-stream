@@ -33,38 +33,38 @@ func (rcv *RangeId) Table() flatbuffers.Table {
 	return rcv._tab
 }
 
-func (rcv *RangeId) StreamId() uint64 {
+func (rcv *RangeId) StreamId() int64 {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(4))
 	if o != 0 {
-		return rcv._tab.GetUint64(o + rcv._tab.Pos)
+		return rcv._tab.GetInt64(o + rcv._tab.Pos)
 	}
 	return 0
 }
 
-func (rcv *RangeId) MutateStreamId(n uint64) bool {
-	return rcv._tab.MutateUint64Slot(4, n)
+func (rcv *RangeId) MutateStreamId(n int64) bool {
+	return rcv._tab.MutateInt64Slot(4, n)
 }
 
-func (rcv *RangeId) RangeIndex() uint32 {
+func (rcv *RangeId) RangeIndex() int32 {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(6))
 	if o != 0 {
-		return rcv._tab.GetUint32(o + rcv._tab.Pos)
+		return rcv._tab.GetInt32(o + rcv._tab.Pos)
 	}
 	return 0
 }
 
-func (rcv *RangeId) MutateRangeIndex(n uint32) bool {
-	return rcv._tab.MutateUint32Slot(6, n)
+func (rcv *RangeId) MutateRangeIndex(n int32) bool {
+	return rcv._tab.MutateInt32Slot(6, n)
 }
 
 func RangeIdStart(builder *flatbuffers.Builder) {
 	builder.StartObject(2)
 }
-func RangeIdAddStreamId(builder *flatbuffers.Builder, streamId uint64) {
-	builder.PrependUint64Slot(0, streamId, 0)
+func RangeIdAddStreamId(builder *flatbuffers.Builder, streamId int64) {
+	builder.PrependInt64Slot(0, streamId, 0)
 }
-func RangeIdAddRangeIndex(builder *flatbuffers.Builder, rangeIndex uint32) {
-	builder.PrependUint32Slot(1, rangeIndex, 0)
+func RangeIdAddRangeIndex(builder *flatbuffers.Builder, rangeIndex int32) {
+	builder.PrependInt32Slot(1, rangeIndex, 0)
 }
 func RangeIdEnd(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
 	return builder.EndObject()

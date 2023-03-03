@@ -33,16 +33,16 @@ func (rcv *AppendRequest) Table() flatbuffers.Table {
 	return rcv._tab
 }
 
-func (rcv *AppendRequest) TimeoutMs() uint32 {
+func (rcv *AppendRequest) TimeoutMs() int32 {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(4))
 	if o != 0 {
-		return rcv._tab.GetUint32(o + rcv._tab.Pos)
+		return rcv._tab.GetInt32(o + rcv._tab.Pos)
 	}
 	return 0
 }
 
-func (rcv *AppendRequest) MutateTimeoutMs(n uint32) bool {
-	return rcv._tab.MutateUint32Slot(4, n)
+func (rcv *AppendRequest) MutateTimeoutMs(n int32) bool {
+	return rcv._tab.MutateInt32Slot(4, n)
 }
 
 func (rcv *AppendRequest) AppendRequests(obj *AppendInfo, j int) bool {
@@ -68,8 +68,8 @@ func (rcv *AppendRequest) AppendRequestsLength() int {
 func AppendRequestStart(builder *flatbuffers.Builder) {
 	builder.StartObject(2)
 }
-func AppendRequestAddTimeoutMs(builder *flatbuffers.Builder, timeoutMs uint32) {
-	builder.PrependUint32Slot(0, timeoutMs, 0)
+func AppendRequestAddTimeoutMs(builder *flatbuffers.Builder, timeoutMs int32) {
+	builder.PrependInt32Slot(0, timeoutMs, 0)
 }
 func AppendRequestAddAppendRequests(builder *flatbuffers.Builder, appendRequests flatbuffers.UOffsetT) {
 	builder.PrependUOffsetTSlot(1, flatbuffers.UOffsetT(appendRequests), 0)

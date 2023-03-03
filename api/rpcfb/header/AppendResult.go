@@ -33,64 +33,64 @@ func (rcv *AppendResult) Table() flatbuffers.Table {
 	return rcv._tab
 }
 
-func (rcv *AppendResult) StreamId() uint64 {
+func (rcv *AppendResult) StreamId() int64 {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(4))
 	if o != 0 {
-		return rcv._tab.GetUint64(o + rcv._tab.Pos)
+		return rcv._tab.GetInt64(o + rcv._tab.Pos)
 	}
 	return 0
 }
 
-func (rcv *AppendResult) MutateStreamId(n uint64) bool {
-	return rcv._tab.MutateUint64Slot(4, n)
+func (rcv *AppendResult) MutateStreamId(n int64) bool {
+	return rcv._tab.MutateInt64Slot(4, n)
 }
 
-func (rcv *AppendResult) RequestIndex() uint32 {
+func (rcv *AppendResult) RequestIndex() int32 {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(6))
 	if o != 0 {
-		return rcv._tab.GetUint32(o + rcv._tab.Pos)
+		return rcv._tab.GetInt32(o + rcv._tab.Pos)
 	}
 	return 0
 }
 
-func (rcv *AppendResult) MutateRequestIndex(n uint32) bool {
-	return rcv._tab.MutateUint32Slot(6, n)
+func (rcv *AppendResult) MutateRequestIndex(n int32) bool {
+	return rcv._tab.MutateInt32Slot(6, n)
 }
 
-func (rcv *AppendResult) BaseOffset() uint64 {
+func (rcv *AppendResult) BaseOffset() int64 {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(8))
 	if o != 0 {
-		return rcv._tab.GetUint64(o + rcv._tab.Pos)
+		return rcv._tab.GetInt64(o + rcv._tab.Pos)
 	}
 	return 0
 }
 
-func (rcv *AppendResult) MutateBaseOffset(n uint64) bool {
-	return rcv._tab.MutateUint64Slot(8, n)
+func (rcv *AppendResult) MutateBaseOffset(n int64) bool {
+	return rcv._tab.MutateInt64Slot(8, n)
 }
 
-func (rcv *AppendResult) StreamAppendTimeMs() uint64 {
+func (rcv *AppendResult) StreamAppendTimeMs() int64 {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(10))
 	if o != 0 {
-		return rcv._tab.GetUint64(o + rcv._tab.Pos)
+		return rcv._tab.GetInt64(o + rcv._tab.Pos)
 	}
 	return 0
 }
 
-func (rcv *AppendResult) MutateStreamAppendTimeMs(n uint64) bool {
-	return rcv._tab.MutateUint64Slot(10, n)
+func (rcv *AppendResult) MutateStreamAppendTimeMs(n int64) bool {
+	return rcv._tab.MutateInt64Slot(10, n)
 }
 
 func (rcv *AppendResult) ErrorCode() ErrorCode {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(12))
 	if o != 0 {
-		return ErrorCode(rcv._tab.GetUint16(o + rcv._tab.Pos))
+		return ErrorCode(rcv._tab.GetInt16(o + rcv._tab.Pos))
 	}
 	return 0
 }
 
 func (rcv *AppendResult) MutateErrorCode(n ErrorCode) bool {
-	return rcv._tab.MutateUint16Slot(12, uint16(n))
+	return rcv._tab.MutateInt16Slot(12, int16(n))
 }
 
 func (rcv *AppendResult) ErrorMessage() []byte {
@@ -104,20 +104,20 @@ func (rcv *AppendResult) ErrorMessage() []byte {
 func AppendResultStart(builder *flatbuffers.Builder) {
 	builder.StartObject(6)
 }
-func AppendResultAddStreamId(builder *flatbuffers.Builder, streamId uint64) {
-	builder.PrependUint64Slot(0, streamId, 0)
+func AppendResultAddStreamId(builder *flatbuffers.Builder, streamId int64) {
+	builder.PrependInt64Slot(0, streamId, 0)
 }
-func AppendResultAddRequestIndex(builder *flatbuffers.Builder, requestIndex uint32) {
-	builder.PrependUint32Slot(1, requestIndex, 0)
+func AppendResultAddRequestIndex(builder *flatbuffers.Builder, requestIndex int32) {
+	builder.PrependInt32Slot(1, requestIndex, 0)
 }
-func AppendResultAddBaseOffset(builder *flatbuffers.Builder, baseOffset uint64) {
-	builder.PrependUint64Slot(2, baseOffset, 0)
+func AppendResultAddBaseOffset(builder *flatbuffers.Builder, baseOffset int64) {
+	builder.PrependInt64Slot(2, baseOffset, 0)
 }
-func AppendResultAddStreamAppendTimeMs(builder *flatbuffers.Builder, streamAppendTimeMs uint64) {
-	builder.PrependUint64Slot(3, streamAppendTimeMs, 0)
+func AppendResultAddStreamAppendTimeMs(builder *flatbuffers.Builder, streamAppendTimeMs int64) {
+	builder.PrependInt64Slot(3, streamAppendTimeMs, 0)
 }
 func AppendResultAddErrorCode(builder *flatbuffers.Builder, errorCode ErrorCode) {
-	builder.PrependUint16Slot(4, uint16(errorCode), 0)
+	builder.PrependInt16Slot(4, int16(errorCode), 0)
 }
 func AppendResultAddErrorMessage(builder *flatbuffers.Builder, errorMessage flatbuffers.UOffsetT) {
 	builder.PrependUOffsetTSlot(5, flatbuffers.UOffsetT(errorMessage), 0)

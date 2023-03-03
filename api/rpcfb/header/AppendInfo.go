@@ -33,53 +33,53 @@ func (rcv *AppendInfo) Table() flatbuffers.Table {
 	return rcv._tab
 }
 
-func (rcv *AppendInfo) StreamId() uint64 {
+func (rcv *AppendInfo) StreamId() int64 {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(4))
 	if o != 0 {
-		return rcv._tab.GetUint64(o + rcv._tab.Pos)
+		return rcv._tab.GetInt64(o + rcv._tab.Pos)
 	}
 	return 0
 }
 
-func (rcv *AppendInfo) MutateStreamId(n uint64) bool {
-	return rcv._tab.MutateUint64Slot(4, n)
+func (rcv *AppendInfo) MutateStreamId(n int64) bool {
+	return rcv._tab.MutateInt64Slot(4, n)
 }
 
-func (rcv *AppendInfo) RequestIndex() uint32 {
+func (rcv *AppendInfo) RequestIndex() int32 {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(6))
 	if o != 0 {
-		return rcv._tab.GetUint32(o + rcv._tab.Pos)
+		return rcv._tab.GetInt32(o + rcv._tab.Pos)
 	}
 	return 0
 }
 
-func (rcv *AppendInfo) MutateRequestIndex(n uint32) bool {
-	return rcv._tab.MutateUint32Slot(6, n)
+func (rcv *AppendInfo) MutateRequestIndex(n int32) bool {
+	return rcv._tab.MutateInt32Slot(6, n)
 }
 
-func (rcv *AppendInfo) BatchLength() uint32 {
+func (rcv *AppendInfo) BatchLength() int32 {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(8))
 	if o != 0 {
-		return rcv._tab.GetUint32(o + rcv._tab.Pos)
+		return rcv._tab.GetInt32(o + rcv._tab.Pos)
 	}
 	return 0
 }
 
-func (rcv *AppendInfo) MutateBatchLength(n uint32) bool {
-	return rcv._tab.MutateUint32Slot(8, n)
+func (rcv *AppendInfo) MutateBatchLength(n int32) bool {
+	return rcv._tab.MutateInt32Slot(8, n)
 }
 
 func AppendInfoStart(builder *flatbuffers.Builder) {
 	builder.StartObject(3)
 }
-func AppendInfoAddStreamId(builder *flatbuffers.Builder, streamId uint64) {
-	builder.PrependUint64Slot(0, streamId, 0)
+func AppendInfoAddStreamId(builder *flatbuffers.Builder, streamId int64) {
+	builder.PrependInt64Slot(0, streamId, 0)
 }
-func AppendInfoAddRequestIndex(builder *flatbuffers.Builder, requestIndex uint32) {
-	builder.PrependUint32Slot(1, requestIndex, 0)
+func AppendInfoAddRequestIndex(builder *flatbuffers.Builder, requestIndex int32) {
+	builder.PrependInt32Slot(1, requestIndex, 0)
 }
-func AppendInfoAddBatchLength(builder *flatbuffers.Builder, batchLength uint32) {
-	builder.PrependUint32Slot(2, batchLength, 0)
+func AppendInfoAddBatchLength(builder *flatbuffers.Builder, batchLength int32) {
+	builder.PrependInt32Slot(2, batchLength, 0)
 }
 func AppendInfoEnd(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
 	return builder.EndObject()

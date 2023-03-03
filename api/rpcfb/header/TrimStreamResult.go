@@ -49,13 +49,13 @@ func (rcv *TrimStreamResult) TrimmedStream(obj *Stream) *Stream {
 func (rcv *TrimStreamResult) ErrorCode() ErrorCode {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(6))
 	if o != 0 {
-		return ErrorCode(rcv._tab.GetUint16(o + rcv._tab.Pos))
+		return ErrorCode(rcv._tab.GetInt16(o + rcv._tab.Pos))
 	}
 	return 0
 }
 
 func (rcv *TrimStreamResult) MutateErrorCode(n ErrorCode) bool {
-	return rcv._tab.MutateUint16Slot(6, uint16(n))
+	return rcv._tab.MutateInt16Slot(6, int16(n))
 }
 
 func (rcv *TrimStreamResult) ErrorMessage() []byte {
@@ -86,7 +86,7 @@ func TrimStreamResultAddTrimmedStream(builder *flatbuffers.Builder, trimmedStrea
 	builder.PrependUOffsetTSlot(0, flatbuffers.UOffsetT(trimmedStream), 0)
 }
 func TrimStreamResultAddErrorCode(builder *flatbuffers.Builder, errorCode ErrorCode) {
-	builder.PrependUint16Slot(1, uint16(errorCode), 0)
+	builder.PrependInt16Slot(1, int16(errorCode), 0)
 }
 func TrimStreamResultAddErrorMessage(builder *flatbuffers.Builder, errorMessage flatbuffers.UOffsetT) {
 	builder.PrependUOffsetTSlot(2, flatbuffers.UOffsetT(errorMessage), 0)

@@ -33,53 +33,53 @@ func (rcv *Stream) Table() flatbuffers.Table {
 	return rcv._tab
 }
 
-func (rcv *Stream) StreamId() uint64 {
+func (rcv *Stream) StreamId() int64 {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(4))
 	if o != 0 {
-		return rcv._tab.GetUint64(o + rcv._tab.Pos)
+		return rcv._tab.GetInt64(o + rcv._tab.Pos)
 	}
 	return 0
 }
 
-func (rcv *Stream) MutateStreamId(n uint64) bool {
-	return rcv._tab.MutateUint64Slot(4, n)
+func (rcv *Stream) MutateStreamId(n int64) bool {
+	return rcv._tab.MutateInt64Slot(4, n)
 }
 
-func (rcv *Stream) ReplicaNums() byte {
+func (rcv *Stream) ReplicaNums() int8 {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(6))
 	if o != 0 {
-		return rcv._tab.GetByte(o + rcv._tab.Pos)
+		return rcv._tab.GetInt8(o + rcv._tab.Pos)
 	}
 	return 0
 }
 
-func (rcv *Stream) MutateReplicaNums(n byte) bool {
-	return rcv._tab.MutateByteSlot(6, n)
+func (rcv *Stream) MutateReplicaNums(n int8) bool {
+	return rcv._tab.MutateInt8Slot(6, n)
 }
 
-func (rcv *Stream) RetentionPeriodMs() uint32 {
+func (rcv *Stream) RetentionPeriodMs() int32 {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(8))
 	if o != 0 {
-		return rcv._tab.GetUint32(o + rcv._tab.Pos)
+		return rcv._tab.GetInt32(o + rcv._tab.Pos)
 	}
 	return 0
 }
 
-func (rcv *Stream) MutateRetentionPeriodMs(n uint32) bool {
-	return rcv._tab.MutateUint32Slot(8, n)
+func (rcv *Stream) MutateRetentionPeriodMs(n int32) bool {
+	return rcv._tab.MutateInt32Slot(8, n)
 }
 
 func StreamStart(builder *flatbuffers.Builder) {
 	builder.StartObject(3)
 }
-func StreamAddStreamId(builder *flatbuffers.Builder, streamId uint64) {
-	builder.PrependUint64Slot(0, streamId, 0)
+func StreamAddStreamId(builder *flatbuffers.Builder, streamId int64) {
+	builder.PrependInt64Slot(0, streamId, 0)
 }
-func StreamAddReplicaNums(builder *flatbuffers.Builder, replicaNums byte) {
-	builder.PrependByteSlot(1, replicaNums, 0)
+func StreamAddReplicaNums(builder *flatbuffers.Builder, replicaNums int8) {
+	builder.PrependInt8Slot(1, replicaNums, 0)
 }
-func StreamAddRetentionPeriodMs(builder *flatbuffers.Builder, retentionPeriodMs uint32) {
-	builder.PrependUint32Slot(2, retentionPeriodMs, 0)
+func StreamAddRetentionPeriodMs(builder *flatbuffers.Builder, retentionPeriodMs int32) {
+	builder.PrependInt32Slot(2, retentionPeriodMs, 0)
 }
 func StreamEnd(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
 	return builder.EndObject()

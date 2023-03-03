@@ -33,16 +33,16 @@ func (rcv *AppendResponse) Table() flatbuffers.Table {
 	return rcv._tab
 }
 
-func (rcv *AppendResponse) ThrottleTimeMs() uint32 {
+func (rcv *AppendResponse) ThrottleTimeMs() int32 {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(4))
 	if o != 0 {
-		return rcv._tab.GetUint32(o + rcv._tab.Pos)
+		return rcv._tab.GetInt32(o + rcv._tab.Pos)
 	}
 	return 0
 }
 
-func (rcv *AppendResponse) MutateThrottleTimeMs(n uint32) bool {
-	return rcv._tab.MutateUint32Slot(4, n)
+func (rcv *AppendResponse) MutateThrottleTimeMs(n int32) bool {
+	return rcv._tab.MutateInt32Slot(4, n)
 }
 
 func (rcv *AppendResponse) AppendResponses(obj *AppendResult, j int) bool {
@@ -68,8 +68,8 @@ func (rcv *AppendResponse) AppendResponsesLength() int {
 func AppendResponseStart(builder *flatbuffers.Builder) {
 	builder.StartObject(2)
 }
-func AppendResponseAddThrottleTimeMs(builder *flatbuffers.Builder, throttleTimeMs uint32) {
-	builder.PrependUint32Slot(0, throttleTimeMs, 0)
+func AppendResponseAddThrottleTimeMs(builder *flatbuffers.Builder, throttleTimeMs int32) {
+	builder.PrependInt32Slot(0, throttleTimeMs, 0)
 }
 func AppendResponseAddAppendResponses(builder *flatbuffers.Builder, appendResponses flatbuffers.UOffsetT) {
 	builder.PrependUOffsetTSlot(1, flatbuffers.UOffsetT(appendResponses), 0)

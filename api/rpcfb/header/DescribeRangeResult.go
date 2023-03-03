@@ -33,28 +33,28 @@ func (rcv *DescribeRangeResult) Table() flatbuffers.Table {
 	return rcv._tab
 }
 
-func (rcv *DescribeRangeResult) StreamId() uint64 {
+func (rcv *DescribeRangeResult) StreamId() int64 {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(4))
 	if o != 0 {
-		return rcv._tab.GetUint64(o + rcv._tab.Pos)
+		return rcv._tab.GetInt64(o + rcv._tab.Pos)
 	}
 	return 0
 }
 
-func (rcv *DescribeRangeResult) MutateStreamId(n uint64) bool {
-	return rcv._tab.MutateUint64Slot(4, n)
+func (rcv *DescribeRangeResult) MutateStreamId(n int64) bool {
+	return rcv._tab.MutateInt64Slot(4, n)
 }
 
 func (rcv *DescribeRangeResult) ErrorCode() ErrorCode {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(6))
 	if o != 0 {
-		return ErrorCode(rcv._tab.GetUint16(o + rcv._tab.Pos))
+		return ErrorCode(rcv._tab.GetInt16(o + rcv._tab.Pos))
 	}
 	return 0
 }
 
 func (rcv *DescribeRangeResult) MutateErrorCode(n ErrorCode) bool {
-	return rcv._tab.MutateUint16Slot(6, uint16(n))
+	return rcv._tab.MutateInt16Slot(6, int16(n))
 }
 
 func (rcv *DescribeRangeResult) ErrorMessage() []byte {
@@ -81,11 +81,11 @@ func (rcv *DescribeRangeResult) Ranges(obj *Range) *Range {
 func DescribeRangeResultStart(builder *flatbuffers.Builder) {
 	builder.StartObject(4)
 }
-func DescribeRangeResultAddStreamId(builder *flatbuffers.Builder, streamId uint64) {
-	builder.PrependUint64Slot(0, streamId, 0)
+func DescribeRangeResultAddStreamId(builder *flatbuffers.Builder, streamId int64) {
+	builder.PrependInt64Slot(0, streamId, 0)
 }
 func DescribeRangeResultAddErrorCode(builder *flatbuffers.Builder, errorCode ErrorCode) {
-	builder.PrependUint16Slot(1, uint16(errorCode), 0)
+	builder.PrependInt16Slot(1, int16(errorCode), 0)
 }
 func DescribeRangeResultAddErrorMessage(builder *flatbuffers.Builder, errorMessage flatbuffers.UOffsetT) {
 	builder.PrependUOffsetTSlot(2, flatbuffers.UOffsetT(errorMessage), 0)

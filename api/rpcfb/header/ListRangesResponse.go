@@ -33,16 +33,16 @@ func (rcv *ListRangesResponse) Table() flatbuffers.Table {
 	return rcv._tab
 }
 
-func (rcv *ListRangesResponse) ThrottleTimeMs() uint32 {
+func (rcv *ListRangesResponse) ThrottleTimeMs() int32 {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(4))
 	if o != 0 {
-		return rcv._tab.GetUint32(o + rcv._tab.Pos)
+		return rcv._tab.GetInt32(o + rcv._tab.Pos)
 	}
 	return 0
 }
 
-func (rcv *ListRangesResponse) MutateThrottleTimeMs(n uint32) bool {
-	return rcv._tab.MutateUint32Slot(4, n)
+func (rcv *ListRangesResponse) MutateThrottleTimeMs(n int32) bool {
+	return rcv._tab.MutateInt32Slot(4, n)
 }
 
 func (rcv *ListRangesResponse) ListResponses(obj *ListRangesResult, j int) bool {
@@ -68,8 +68,8 @@ func (rcv *ListRangesResponse) ListResponsesLength() int {
 func ListRangesResponseStart(builder *flatbuffers.Builder) {
 	builder.StartObject(2)
 }
-func ListRangesResponseAddThrottleTimeMs(builder *flatbuffers.Builder, throttleTimeMs uint32) {
-	builder.PrependUint32Slot(0, throttleTimeMs, 0)
+func ListRangesResponseAddThrottleTimeMs(builder *flatbuffers.Builder, throttleTimeMs int32) {
+	builder.PrependInt32Slot(0, throttleTimeMs, 0)
 }
 func ListRangesResponseAddListResponses(builder *flatbuffers.Builder, listResponses flatbuffers.UOffsetT) {
 	builder.PrependUOffsetTSlot(1, flatbuffers.UOffsetT(listResponses), 0)
