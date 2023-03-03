@@ -66,7 +66,7 @@ func makeControlWriteRequest(streamID uint32) frameWriteRequest {
 
 func makeDataWriteRequest(streamID uint32) frameWriteRequest {
 	return frameWriteRequest{
-		f: codec.NewDataFrameResp(operation.ListRange()),
+		f: codec.NewDataFrameReq(codec.DataFrameReqParam{OpCode: operation.ListRange()}, 0, 0),
 		stream: &stream{
 			id: streamID,
 		},

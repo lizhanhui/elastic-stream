@@ -24,6 +24,26 @@ const (
 	_magicCode uint8 = 23
 )
 
+const (
+	// FlagResponse indicates whether the frame is a response frame.
+	// If set, the frame contains the response payload to a specific request frame identified by a stream identifier.
+	// If not set, the frame represents a request frame.
+	FlagResponse Flags = 0x1
+
+	// FlagResponseEnd indicates whether the response frame is the last frame of the response.
+	// If set, the frame is the last frame in a response sequence.
+	// If not set, the response sequence continues with more frames.
+	FlagResponseEnd Flags = 0x1 << 1
+)
+
+// Flags is a bitmask of SBP flags.
+type Flags uint8
+
+// Has reports whether f contains all (0 or more) flags in v.
+func (f Flags) Has(v Flags) bool {
+	return (f & v) == v
+}
+
 // Frame is the base interface implemented by all frame types
 type Frame interface {
 	Base() baseFrame
@@ -36,6 +56,12 @@ type Frame interface {
 
 	// Info returns fixed header info of the frame
 	Info() string
+
+	// IsRequest returns whether the frame is a request
+	IsRequest() bool
+
+	// IsResponse returns whether the frame is a response
+	IsResponse() bool
 }
 
 // baseFrame is the load in SBP.
@@ -57,7 +83,7 @@ type Frame interface {
 //	+-----------------------------------------------------------------------+
 type baseFrame struct {
 	OpCode    operation.Operation // OpCode determines the format and semantics of the frame
-	Flag      uint8               // Flag is reserved for boolean flags specific to the frame type
+	Flag      Flags               // Flag is reserved for boolean flags specific to the frame type
 	StreamID  uint32              // StreamID identifies which stream the frame belongs to
 	HeaderFmt format.Format       // HeaderFmt identifies the format of the Header.
 	Header    []byte              // nil for no extended header
@@ -97,6 +123,14 @@ func (f baseFrame) Info() string {
 	_, _ = fmt.Fprintf(&buf, " streamID=%d", f.StreamID)
 	_, _ = fmt.Fprintf(&buf, " format=%s", f.HeaderFmt.String())
 	return buf.String()
+}
+
+func (f baseFrame) IsRequest() bool {
+	return !f.Flag.Has(FlagResponse)
+}
+
+func (f baseFrame) IsResponse() bool {
+	return f.Flag.Has(FlagResponse)
 }
 
 // Framer reads and writes Frames
@@ -198,16 +232,28 @@ func (fr *Framer) ReadFrame() (Frame, error) {
 		}
 	}
 
-	frame := baseFrame{
+	bFrame := baseFrame{
 		OpCode:    operation.NewOperation(opCode),
-		Flag:      flag,
+		Flag:      Flags(flag),
 		StreamID:  streamID,
 		HeaderFmt: format.NewFormat(headerFmt),
 		Header:    header,
 		Payload:   payload,
 	}
-	// TODO
 
+	var frame Frame
+	switch bFrame.OpCode {
+	case operation.Ping():
+		frame = PingFrame{baseFrame: bFrame}
+	case operation.GoAway():
+		frame = GoAwayFrame{baseFrame: bFrame}
+	case operation.Heartbeat():
+		frame = HeartbeatFrame{baseFrame: bFrame}
+	case operation.Publish(), operation.ListRange():
+		frame = DataFrame{baseFrame: bFrame}
+	default:
+		frame = bFrame
+	}
 	return frame, nil
 }
 
@@ -255,7 +301,7 @@ func (fr *Framer) startWrite(frame baseFrame) {
 	fr.wbuf = binary.BigEndian.AppendUint32(fr.wbuf, 0) // 4 bytes of frame length, will be filled in endWrite
 	fr.wbuf = append(fr.wbuf, _magicCode)
 	fr.wbuf = binary.BigEndian.AppendUint16(fr.wbuf, frame.OpCode.Code())
-	fr.wbuf = append(fr.wbuf, frame.Flag)
+	fr.wbuf = append(fr.wbuf, uint8(frame.Flag))
 	fr.wbuf = binary.BigEndian.AppendUint32(fr.wbuf, frame.StreamID)
 	fr.wbuf = append(fr.wbuf, frame.HeaderFmt.Code())
 	headerLen := len(frame.Header)
@@ -291,7 +337,7 @@ type PingFrame struct {
 func NewPingFrameResp(ping PingFrame) PingFrame {
 	pong := PingFrame{baseFrame{
 		OpCode:    operation.Ping(),
-		Flag:      0x3, // TODO
+		Flag:      FlagResponse | FlagResponseEnd,
 		StreamID:  ping.StreamID,
 		HeaderFmt: ping.HeaderFmt,
 		Header:    make([]byte, len(ping.Header)),
@@ -321,11 +367,11 @@ type HeartbeatFrame struct {
 	baseFrame
 }
 
-// NewHeartBeatFrameReq creates an out heartbeat with the in heartbeat
-func NewHeartBeatFrameReq(in HeartbeatFrame) HeartbeatFrame {
+// NewHeartBeatFrameResp creates an out heartbeat with the in heartbeat
+func NewHeartBeatFrameResp(in HeartbeatFrame) HeartbeatFrame {
 	out := HeartbeatFrame{baseFrame{
 		OpCode:    operation.Heartbeat(),
-		Flag:      0x3, // TODO
+		Flag:      FlagResponse | FlagResponseEnd,
 		StreamID:  in.StreamID,
 		HeaderFmt: in.HeaderFmt,
 		Header:    make([]byte, len(in.Header)),
@@ -339,15 +385,38 @@ type DataFrame struct {
 	baseFrame
 }
 
-// NewDataFrameResp TODO
-func NewDataFrameResp(op operation.Operation) DataFrame {
-	// TODO
+// DataFrameReqParam is used to create a new DataFrame request
+type DataFrameReqParam struct {
+	OpCode    operation.Operation
+	HeaderFmt format.Format
+	Header    []byte
+	Payload   []byte
+}
+
+// NewDataFrameReq returns a new DataFrame request
+func NewDataFrameReq(req DataFrameReqParam, flag Flags, streamID uint32) DataFrame {
 	return DataFrame{baseFrame{
-		OpCode:    op,
-		Flag:      0,
-		StreamID:  0,
-		HeaderFmt: format.Format{},
-		Header:    nil,
-		Payload:   nil,
+		OpCode:    req.OpCode,
+		Flag:      flag,
+		StreamID:  streamID,
+		HeaderFmt: req.HeaderFmt,
+		Header:    req.Header,
+		Payload:   req.Payload,
 	}}
+}
+
+// NewDataFrameResp returns a new DataFrame response with the given header and payload
+func NewDataFrameResp(req DataFrame, header []byte, payload []byte, isEnd bool) DataFrame {
+	resp := DataFrame{baseFrame{
+		OpCode:    req.OpCode,
+		Flag:      FlagResponse,
+		StreamID:  req.StreamID,
+		HeaderFmt: req.HeaderFmt,
+		Header:    header,
+		Payload:   payload,
+	}}
+	if isEnd {
+		resp.Flag |= FlagResponseEnd
+	}
+	return resp
 }
