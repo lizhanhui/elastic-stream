@@ -674,13 +674,18 @@ impl IO {
 
         let buf_list = self.calculate_write_buffers();
         let left = self.buf_writer.get_mut().remaining();
-        buf_list.iter().enumerate().for_each(|(idx, n)| {
-            if 0 == idx {
-                self.buf_writer.get_mut().reserve(*n - left);
-            } else {
-                self.buf_writer.get_mut().reserve(*n);
-            }
-        });
+        buf_list
+            .iter()
+            .enumerate()
+            .map(|(idx, n)| {
+                if 0 == idx {
+                    self.buf_writer.get_mut().reserve(*n - left)
+                } else {
+                    self.buf_writer.get_mut().reserve(*n)
+                }
+            })
+            .flatten()
+            .count();
 
         'task_loop: while let Some(io_task) = self.pending_data_tasks.pop_front() {
             match io_task {
@@ -732,7 +737,7 @@ impl IO {
 
                             if let Some(_fd) = segment.fd {
                                 let payload_length = task.buffer.len();
-                                if !segment.can_hold(payload_length as u64 + RECORD_PREFIX_LENGTH) {
+                                if !segment.can_hold(payload_length as u64) {
                                     segment.append_footer(buf_writer, &mut written);
                                     // Switch to a new log segment
                                     continue;

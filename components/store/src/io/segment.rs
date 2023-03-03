@@ -198,8 +198,9 @@ impl LogSegmentFile {
         self.written >= self.size
     }
 
-    pub(crate) fn can_hold(&self, record_length: u64) -> bool {
-        self.status != Status::Read && self.written + FOOTER_LENGTH + record_length <= self.size
+    pub(crate) fn can_hold(&self, payload_length: u64) -> bool {
+        self.status != Status::Read
+            && self.written + RECORD_PREFIX_LENGTH + payload_length + FOOTER_LENGTH <= self.size
     }
 
     pub(crate) fn append_footer(&mut self, buf_writer: &mut AlignedBufWriter, pos: &mut u64) {
