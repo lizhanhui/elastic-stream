@@ -6,7 +6,7 @@ use std::{
     },
 };
 
-use slog::{trace, Logger};
+use slog::{debug, trace, Logger};
 
 use crate::error::StoreError;
 
@@ -15,6 +15,8 @@ use crate::error::StoreError;
 /// This struct is designed to be NOT `Copy` nor `Clone`; otherwise, we will have double-free issue.
 #[derive(Debug)]
 pub(crate) struct AlignedBuf {
+    log: Logger,
+
     /// WAL offset
     pub(crate) offset: u64,
 
@@ -32,12 +34,18 @@ pub(crate) struct AlignedBuf {
 }
 
 impl AlignedBuf {
-    pub(crate) fn new(offset: u64, len: usize, alignment: usize) -> Result<Self, StoreError> {
+    pub(crate) fn new(
+        log: Logger,
+        offset: u64,
+        len: usize,
+        alignment: usize,
+    ) -> Result<Self, StoreError> {
         let capacity = (len + alignment - 1) / alignment * alignment;
         let layout = Layout::from_size_align(capacity, alignment)
             .map_err(|_e| StoreError::MemoryAlignment)?;
         let ptr = unsafe { alloc::alloc(layout) };
         Ok(Self {
+            log,
             offset,
             ptr,
             layout,
@@ -120,12 +128,19 @@ impl AlignedBuf {
 impl Drop for AlignedBuf {
     fn drop(&mut self) {
         unsafe { alloc::dealloc(self.ptr, self.layout) };
+        debug!(
+            self.log,
+            "Deallocated `AlignedBuf`: (offset={}, writes: {}, capacity: {})",
+            self.offset,
+            self.write_pos(),
+            self.capacity
+        );
     }
 }
 
 pub(crate) struct AlignedBufWriter {
     log: Logger,
-    offset: u64,
+    pub(crate) offset: u64,
     alignment: usize,
     buffers: Vec<Arc<AlignedBuf>>,
 }
@@ -157,7 +172,7 @@ impl AlignedBufWriter {
         // immediately.
         if additional > self.alignment {
             let size = additional / self.alignment * self.alignment;
-            let buf = AlignedBuf::new(self.offset, size, self.alignment)?;
+            let buf = AlignedBuf::new(self.log.clone(), self.offset, size, self.alignment)?;
             trace!(
                 self.log,
                 "Reserved {} bytes for WAL data in complete blocks. [{}, {})",
@@ -175,7 +190,12 @@ impl AlignedBufWriter {
         // configured amount of time has elapsed before collecting enough data.
         let r = additional % self.alignment;
         if 0 != r {
-            let buf = AlignedBuf::new(self.offset, self.alignment, self.alignment)?;
+            let buf = AlignedBuf::new(
+                self.log.clone(),
+                self.offset,
+                self.alignment,
+                self.alignment,
+            )?;
             trace!(
                 self.log,
                 "Reserved {} bytes for WAL data that may only fill partial of a block. [{}, {})",
@@ -236,15 +256,26 @@ impl AlignedBufWriter {
             .collect()
     }
 
+    pub(crate) fn peek_partial(&self) -> Vec<Arc<AlignedBuf>> {
+        self.buffers
+            .iter()
+            .filter(|buf| buf.write_pos() > 0 && buf.write_pos() < buf.capacity)
+            .map(|buf| Arc::clone(buf))
+            .collect()
+    }
+
     pub(crate) fn remaining(&self) -> usize {
         self.buffers.iter().map(|buf| buf.remaining()).sum()
     }
 }
 
-pub(crate) struct AlignedBufReader {}
+pub(crate) struct AlignedBufReader {
+    log: Logger,
+}
 
 impl AlignedBufReader {
     pub(crate) fn alloc_read_buf(
+        log: Logger,
         offset: u64,
         len: usize,
         alignment: u64,
@@ -255,7 +286,7 @@ impl AlignedBufReader {
         debug_assert_eq!(0, alignment & (alignment - 1));
         let from = offset / alignment * alignment;
         let to = (offset + len as u64 + alignment - 1) / alignment * alignment;
-        AlignedBuf::new(from, (to - from) as usize, alignment as usize)
+        AlignedBuf::new(log, from, (to - from) as usize, alignment as usize)
     }
 }
 
@@ -303,8 +334,9 @@ mod tests {
 
     #[test]
     fn test_aligned_buf() -> Result<(), StoreError> {
+        let log = util::terminal_logger();
         let alignment = 4096;
-        let mut buf = AlignedBuf::new(0, 128, alignment)?;
+        let mut buf = AlignedBuf::new(log.clone(), 0, 128, alignment)?;
         assert_eq!(alignment, buf.remaining());
         let v = 1;
         buf.write_u32(1);

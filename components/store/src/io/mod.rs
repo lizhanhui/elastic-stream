@@ -177,14 +177,6 @@ pub(crate) struct IO {
     /// before a new segment file is ready, writes, though very unlikely, will stall.
     pending_data_tasks: VecDeque<IoTask>,
 
-    /// Write cursor in terms of WAL.
-    ///
-    /// During start, the recovering procedure will scan continuous records from offset where primary index are built
-    /// up to.
-    ///
-    /// Once a new write task is generated, it will be increased accordingly.
-    pos: u64,
-
     buf_writer: UnsafeCell<AlignedBufWriter>,
 
     /// Tracks write requests that are dispatched to underlying storage device and
@@ -197,7 +189,9 @@ pub(crate) struct IO {
     inflight_write_tasks: BTreeMap<u64, WriteTask>,
 
     /// Offsets of blocks that are partially filled with data and are still inflight.
-    stall: HashSet<u64>,
+    barrier: HashSet<u64>,
+
+    blocked: HashMap<u64, squeue::Entry>,
 }
 
 /// Check if required opcodes are supported by the host operation system.
@@ -283,9 +277,9 @@ impl IO {
             inflight: 0,
             write_inflight: 0,
             pending_data_tasks: VecDeque::new(),
-            pos: 0,
             inflight_write_tasks: BTreeMap::new(),
-            stall: HashSet::new(),
+            barrier: HashSet::new(),
+            blocked: HashMap::new(),
         })
     }
 
@@ -458,7 +452,6 @@ impl IO {
             }
         }
         info!(log, "Recovery of WAL segment files completed");
-        self.pos = pos;
 
         // Reset offset of write buffer
         self.buf_writer.get_mut().offset(pos);
@@ -629,6 +622,13 @@ impl IO {
     }
 
     fn build_write_sqe(&mut self, entries: &mut Vec<squeue::Entry>) {
+        // Add previously blocked entries.
+        self.blocked
+            .drain_filter(|offset, _entry| !self.barrier.contains(offset))
+            .for_each(|(_, entry)| {
+                entries.push(entry);
+            });
+
         let writer = self.buf_writer.get_mut();
         writer
             .drain_full()
@@ -649,7 +649,12 @@ impl IO {
                             .user_data(self.tag);
                         // Track write requests
                         self.write_window.add(buf.offset, buf.write_pos() as u32)?;
-                        entries.push(sqe);
+                        if self.barrier.contains(&buf.offset) {
+                            // Submit SQE to io_uring when the blocking IO task completed.
+                            self.blocked.insert(buf.offset, sqe);
+                        } else {
+                            entries.push(sqe);
+                        }
                         let state = OpState {
                             opcode: opcode::Write::CODE,
                             buf,
@@ -711,6 +716,7 @@ impl IO {
 
                     if let Some(fd) = segment.fd {
                         if let Ok(buf) = AlignedBufReader::alloc_read_buf(
+                            self.log.clone(),
                             task.offset,
                             task.len as usize,
                             alignment as u64,
@@ -736,10 +742,9 @@ impl IO {
                     }
                 }
                 IoTask::Write(task) => {
-                    let mut written = self.pos;
-                    let buf_writer = unsafe { &mut *self.buf_writer.get() };
+                    let writer = unsafe { &mut *self.buf_writer.get() };
                     loop {
-                        if let Some(segment) = self.segment_file_of(written) {
+                        if let Some(segment) = self.segment_file_of(writer.offset) {
                             if segment.status != Status::ReadWrite {
                                 self.pending_data_tasks.push_front(IoTask::Write(task));
                                 break 'task_loop;
@@ -748,16 +753,11 @@ impl IO {
                             if let Some(_fd) = segment.fd {
                                 let payload_length = task.buffer.len();
                                 if !segment.can_hold(payload_length as u64) {
-                                    segment.append_footer(buf_writer, &mut written);
+                                    segment.append_footer(writer);
                                     // Switch to a new log segment
                                     continue;
                                 }
-
-                                segment.append_full_record(
-                                    buf_writer,
-                                    &task.buffer[..],
-                                    &mut written,
-                                );
+                                segment.append_full_record(writer, &task.buffer[..]);
                                 break;
                             } else {
                                 error!(log, "LogSegmentFile {} with read_write status does not have valid FD", segment.path);
@@ -769,7 +769,6 @@ impl IO {
                         }
                     }
                     self.build_write_sqe(entries);
-                    self.pos = written;
                 }
             }
         }
