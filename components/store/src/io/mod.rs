@@ -1240,7 +1240,7 @@ mod tests {
 
         let mut io = create_io(wal_dir)?;
         io.load_wal_segment_files()?;
-        assert_eq!(files.len(), io.segments.len());
+        assert_eq!(files.len(), io.segments.get_mut().len());
         Ok(())
     }
 
@@ -1250,12 +1250,12 @@ mod tests {
         let _wal_dir_guard = util::DirectoryRemovalGuard::new(wal_dir.as_path());
         let mut io = create_io(super::WalPath::new(wal_dir.to_str().unwrap(), 1234)?)?;
         io.alloc_segment()?;
-        assert_eq!(1, io.segments.len());
+        assert_eq!(1, io.segments.get_mut().len());
 
         io.alloc_segment()?;
         assert_eq!(
             DEFAULT_LOG_SEGMENT_FILE_SIZE,
-            io.segments.get(1).unwrap().offset
+            io.segments.get_mut().get(1).unwrap().offset
         );
         Ok(())
     }
@@ -1270,7 +1270,7 @@ mod tests {
         io.alloc_segment()?;
         assert_eq!(2, io.writable_segment_count());
 
-        io.segments.front_mut().unwrap().status = Status::Read;
+        io.segments.get_mut().front_mut().unwrap().status = Status::Read;
         assert_eq!(1, io.writable_segment_count());
 
         Ok(())
@@ -1282,7 +1282,7 @@ mod tests {
         let _wal_dir_guard = util::DirectoryRemovalGuard::new(wal_dir.as_path());
         let mut io = create_io(super::WalPath::new(wal_dir.to_str().unwrap(), 1234)?)?;
         io.alloc_segment()?;
-        assert_eq!(1, io.segments.len());
+        assert_eq!(1, io.segments.get_mut().len());
 
         // Ensure we can get the right
         let segment = io
@@ -1379,9 +1379,10 @@ mod tests {
         let _wal_dir_guard = util::DirectoryRemovalGuard::new(wal_dir.as_path());
         let mut io = create_io(super::WalPath::new(wal_dir.to_str().unwrap(), 1234)?)?;
         io.alloc_segment()?;
-        assert_eq!(1, io.segments.len());
+        assert_eq!(1, io.segments.get_mut().len());
         let offsets = io
             .segments
+            .get_mut()
             .iter_mut()
             .map(|segment| {
                 segment.status = Status::UnlinkAt;
@@ -1389,7 +1390,7 @@ mod tests {
             })
             .collect();
         io.delete_segments(offsets);
-        assert_eq!(0, io.segments.len());
+        assert_eq!(0, io.segments.get_mut().len());
         Ok(())
     }
 
@@ -1403,7 +1404,7 @@ mod tests {
             .map(|_| io.alloc_segment().err())
             .flatten()
             .count();
-        io.segments.iter_mut().for_each(|segment| {
+        io.segments.get_mut().iter_mut().for_each(|segment| {
             segment.status = Status::ReadWrite;
         });
 
@@ -1427,7 +1428,7 @@ mod tests {
         assert_eq!(Some(&65664), buffers.first());
 
         // Case when the remaining of the first writable segment file can hold a record
-        let segment = io.segments.front_mut().unwrap();
+        let segment = io.segments.get_mut().front_mut().unwrap();
         segment.written = segment.size - 4096 - 8;
         let buffers = io.calculate_write_buffers();
         assert_eq!(2, buffers.len());
@@ -1435,7 +1436,7 @@ mod tests {
         assert_eq!(Some(&61560), buffers.iter().nth(1));
 
         // Case when the last writable log segment file cannot hold a record
-        let segment = io.segments.front_mut().unwrap();
+        let segment = io.segments.get_mut().front_mut().unwrap();
         segment.written = segment.size - 4096 - 4;
         let buffers = io.calculate_write_buffers();
         assert_eq!(2, buffers.len());
@@ -1443,11 +1444,11 @@ mod tests {
         assert_eq!(Some(&65664), buffers.iter().nth(1));
 
         // Case when the is only one writable segment file and it cannot hold all records
-        io.segments.iter_mut().for_each(|segment| {
+        io.segments.get_mut().iter_mut().for_each(|segment| {
             segment.status = Status::Read;
             segment.written = segment.size;
         });
-        let segment = io.segments.back_mut().unwrap();
+        let segment = io.segments.get_mut().back_mut().unwrap();
         segment.status = Status::ReadWrite;
         segment.written = segment.size - 4096;
 
@@ -1460,18 +1461,27 @@ mod tests {
 
     #[test]
     fn test_run() -> Result<(), StoreError> {
-        let wal_dir = random_wal_dir()?;
-        let _wal_dir_guard = util::DirectoryRemovalGuard::new(wal_dir.as_path());
-        let mut io = create_io(super::WalPath::new(wal_dir.to_str().unwrap(), 1234)?)?;
-        let sender = io
-            .sender
-            .take()
-            .ok_or(StoreError::Configuration("IO channel".to_owned()))?;
-        let io = RefCell::new(io);
+        let (tx, rx) = oneshot::channel();
         let handle = std::thread::spawn(move || {
+            let wal_dir = random_wal_dir().unwrap();
+            let _wal_dir_guard = util::DirectoryRemovalGuard::new(wal_dir.as_path());
+            let mut io =
+                create_io(super::WalPath::new(wal_dir.to_str().unwrap(), 1234).unwrap()).unwrap();
+            let sender = io
+                .sender
+                .take()
+                .ok_or(StoreError::Configuration("IO channel".to_owned()))
+                .unwrap();
+            tx.send(sender);
+            let io = RefCell::new(io);
+
             let _ = super::IO::run(io);
             println!("Module io stopped");
         });
+
+        let sender = rx
+            .blocking_recv()
+            .map_err(|_| StoreError::Internal("Internal error".to_owned()))?;
 
         let mut buffer = BytesMut::with_capacity(4096);
         buffer.resize(4096, 65);
