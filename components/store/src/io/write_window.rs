@@ -55,7 +55,7 @@ pub(crate) struct WriteWindow {
 
     /// An offset in WAL, all data prior to it should have been completely written. All write requests whose
     /// ranges fall into [0, committed) can be safely acknowledged.
-    committed: u64,
+    pub(crate) committed: u64,
 
     /// Writes that have been submitted to IO device.
     submitted: BTreeMap<u64, u32>,

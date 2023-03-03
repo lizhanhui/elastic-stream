@@ -8,6 +8,7 @@ mod write_window;
 
 use crate::error::{AppendError, StoreError};
 use crate::index::Indexer;
+use crate::ops::append::AppendResult;
 use crate::option::WalPath;
 use crossbeam::channel::{Receiver, Sender, TryRecvError};
 use io_uring::register;
@@ -1027,28 +1028,73 @@ impl IO {
         if 0 == self.inflight {
             return;
         }
+        let committed = self.write_window.committed;
+        {
+            let mut completion = self.data_ring.completion();
+            let mut count = 0;
+            loop {
+                for cqe in completion.by_ref() {
+                    count += 1;
+                    let tag = cqe.user_data();
+                    if let Some(state) = self.inflight_data_tasks.remove(&tag) {
+                        if let Err(e) =
+                            on_complete(&mut self.write_window, &state, cqe.result(), &self.log)
+                        {
+                            match e {
+                                StoreError::System(errno) => {
+                                    error!(
+                                        self.log,
+                                        "io_uring opcode `{}` failed. errno: `{}`",
+                                        state.opcode,
+                                        errno
+                                    );
 
-        let mut completion = self.data_ring.completion();
-        let mut count = 0;
-        loop {
-            for cqe in completion.by_ref() {
-                count += 1;
-                let tag = cqe.user_data();
-                if let Some(state) = self.inflight_data_tasks.remove(&tag) {
-                    on_complete(&mut self.write_window, state, cqe.result(), &self.log);
+                                    // TODO: Check if the errno is recoverable...
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                }
+                // This will flush any entries consumed in this iterator and will make available new entries in the queue
+                // if the kernel has produced some entries in the meantime.
+                completion.sync();
+
+                if completion.is_empty() {
+                    break;
                 }
             }
-            // This will flush any entries consumed in this iterator and will make available new entries in the queue
-            // if the kernel has produced some entries in the meantime.
-            completion.sync();
+            debug_assert!(self.inflight >= count);
+            self.inflight -= count;
+            trace!(self.log, "Reaped {} data CQE(s)", count);
+        }
 
-            if completion.is_empty() {
+        if self.write_window.committed > committed {
+            self.acknowledge_write_tasks();
+        }
+    }
+
+    fn acknowledge_write_tasks(&mut self) {
+        let committed = self.write_window.committed;
+        loop {
+            if let Some((offset, _)) = self.inflight_write_tasks.first_key_value() {
+                if *offset < committed {
+                    break;
+                }
+            } else {
                 break;
             }
+
+            if let Some((_, task)) = self.inflight_write_tasks.pop_first() {
+                let append_result = AppendResult {
+                    stream_id: task.stream_id,
+                    offset: task.offset,
+                };
+                if let Err(e) = task.observer.send(Ok(append_result)) {
+                    error!(self.log, "Failed to propagate AppendResult `{:?}`", e);
+                }
+            }
         }
-        debug_assert!(self.inflight >= count);
-        self.inflight -= count;
-        trace!(self.log, "Reaped {} data CQE(s)", count);
     }
 
     fn should_quit(&self) -> bool {
@@ -1171,15 +1217,30 @@ impl IO {
 /// * `state` - Operation state, including original IO request, buffer and response observer.
 /// * `result` - Result code, exactly same to system call return value.
 /// * `log` - Logger instance.
-///
-fn on_complete(write_window: &mut WriteWindow, state: OpState, result: i32, log: &Logger) {
+fn on_complete(
+    write_window: &mut WriteWindow,
+    state: &OpState,
+    result: i32,
+    log: &Logger,
+) -> Result<(), StoreError> {
     match state.opcode {
         opcode::Write::CODE => {
-            // write_win
+            if result < 0 {
+                error!(
+                    log,
+                    "Write to WAL range `[{}, {})` failed", state.buf.offset, state.buf.written
+                );
+                return Err(StoreError::System(-result));
+            } else {
+                write_window
+                    .commit(state.buf.offset, state.buf.written as u32)
+                    .map_err(|_e| StoreError::WriteWindow)?;
+            }
+            Ok(())
         }
-        opcode::Read::CODE => {}
-        _ => {}
-    };
+        opcode::Read::CODE => Ok(()),
+        _ => Ok(()),
+    }
 }
 
 impl AsRawFd for IO {

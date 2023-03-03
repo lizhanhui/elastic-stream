@@ -24,6 +24,9 @@ pub enum StoreError {
     #[error("Failed to allocate log segment")]
     AllocLogSegment,
 
+    #[error("Write window")]
+    WriteWindow,
+
     #[error("Request offset `{0}` is out of range")]
     OffsetOutOfRange(u64),
 
