@@ -33,23 +33,23 @@ func (rcv *DescribeStreamsRequest) Table() flatbuffers.Table {
 	return rcv._tab
 }
 
-func (rcv *DescribeStreamsRequest) TimeoutMs() int32 {
+func (rcv *DescribeStreamsRequest) TimeoutMs() uint32 {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(4))
 	if o != 0 {
-		return rcv._tab.GetInt32(o + rcv._tab.Pos)
+		return rcv._tab.GetUint32(o + rcv._tab.Pos)
 	}
 	return 0
 }
 
-func (rcv *DescribeStreamsRequest) MutateTimeoutMs(n int32) bool {
-	return rcv._tab.MutateInt32Slot(4, n)
+func (rcv *DescribeStreamsRequest) MutateTimeoutMs(n uint32) bool {
+	return rcv._tab.MutateUint32Slot(4, n)
 }
 
-func (rcv *DescribeStreamsRequest) StreamIds(j int) int64 {
+func (rcv *DescribeStreamsRequest) StreamIds(j int) uint64 {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(6))
 	if o != 0 {
 		a := rcv._tab.Vector(o)
-		return rcv._tab.GetInt64(a + flatbuffers.UOffsetT(j*8))
+		return rcv._tab.GetUint64(a + flatbuffers.UOffsetT(j*8))
 	}
 	return 0
 }
@@ -62,11 +62,11 @@ func (rcv *DescribeStreamsRequest) StreamIdsLength() int {
 	return 0
 }
 
-func (rcv *DescribeStreamsRequest) MutateStreamIds(j int, n int64) bool {
+func (rcv *DescribeStreamsRequest) MutateStreamIds(j int, n uint64) bool {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(6))
 	if o != 0 {
 		a := rcv._tab.Vector(o)
-		return rcv._tab.MutateInt64(a+flatbuffers.UOffsetT(j*8), n)
+		return rcv._tab.MutateUint64(a+flatbuffers.UOffsetT(j*8), n)
 	}
 	return false
 }
@@ -74,8 +74,8 @@ func (rcv *DescribeStreamsRequest) MutateStreamIds(j int, n int64) bool {
 func DescribeStreamsRequestStart(builder *flatbuffers.Builder) {
 	builder.StartObject(2)
 }
-func DescribeStreamsRequestAddTimeoutMs(builder *flatbuffers.Builder, timeoutMs int32) {
-	builder.PrependInt32Slot(0, timeoutMs, 0)
+func DescribeStreamsRequestAddTimeoutMs(builder *flatbuffers.Builder, timeoutMs uint32) {
+	builder.PrependUint32Slot(0, timeoutMs, 0)
 }
 func DescribeStreamsRequestAddStreamIds(builder *flatbuffers.Builder, streamIds flatbuffers.UOffsetT) {
 	builder.PrependUOffsetTSlot(1, flatbuffers.UOffsetT(streamIds), 0)

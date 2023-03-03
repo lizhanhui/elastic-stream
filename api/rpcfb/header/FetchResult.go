@@ -33,40 +33,40 @@ func (rcv *FetchResult) Table() flatbuffers.Table {
 	return rcv._tab
 }
 
-func (rcv *FetchResult) StreamId() int64 {
+func (rcv *FetchResult) StreamId() uint64 {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(4))
 	if o != 0 {
-		return rcv._tab.GetInt64(o + rcv._tab.Pos)
+		return rcv._tab.GetUint64(o + rcv._tab.Pos)
 	}
 	return 0
 }
 
-func (rcv *FetchResult) MutateStreamId(n int64) bool {
-	return rcv._tab.MutateInt64Slot(4, n)
+func (rcv *FetchResult) MutateStreamId(n uint64) bool {
+	return rcv._tab.MutateUint64Slot(4, n)
 }
 
-func (rcv *FetchResult) RequestIndex() int32 {
+func (rcv *FetchResult) RequestIndex() uint32 {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(6))
 	if o != 0 {
-		return rcv._tab.GetInt32(o + rcv._tab.Pos)
+		return rcv._tab.GetUint32(o + rcv._tab.Pos)
 	}
 	return 0
 }
 
-func (rcv *FetchResult) MutateRequestIndex(n int32) bool {
-	return rcv._tab.MutateInt32Slot(6, n)
+func (rcv *FetchResult) MutateRequestIndex(n uint32) bool {
+	return rcv._tab.MutateUint32Slot(6, n)
 }
 
 func (rcv *FetchResult) ErrorCode() ErrorCode {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(8))
 	if o != 0 {
-		return ErrorCode(rcv._tab.GetInt16(o + rcv._tab.Pos))
+		return ErrorCode(rcv._tab.GetUint16(o + rcv._tab.Pos))
 	}
 	return 0
 }
 
 func (rcv *FetchResult) MutateErrorCode(n ErrorCode) bool {
-	return rcv._tab.MutateInt16Slot(8, int16(n))
+	return rcv._tab.MutateUint16Slot(8, uint16(n))
 }
 
 func (rcv *FetchResult) ErrorMessage() []byte {
@@ -77,35 +77,35 @@ func (rcv *FetchResult) ErrorMessage() []byte {
 	return nil
 }
 
-func (rcv *FetchResult) BatchLength() int32 {
+func (rcv *FetchResult) BatchLength() uint32 {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(12))
 	if o != 0 {
-		return rcv._tab.GetInt32(o + rcv._tab.Pos)
+		return rcv._tab.GetUint32(o + rcv._tab.Pos)
 	}
 	return 0
 }
 
-func (rcv *FetchResult) MutateBatchLength(n int32) bool {
-	return rcv._tab.MutateInt32Slot(12, n)
+func (rcv *FetchResult) MutateBatchLength(n uint32) bool {
+	return rcv._tab.MutateUint32Slot(12, n)
 }
 
 func FetchResultStart(builder *flatbuffers.Builder) {
 	builder.StartObject(5)
 }
-func FetchResultAddStreamId(builder *flatbuffers.Builder, streamId int64) {
-	builder.PrependInt64Slot(0, streamId, 0)
+func FetchResultAddStreamId(builder *flatbuffers.Builder, streamId uint64) {
+	builder.PrependUint64Slot(0, streamId, 0)
 }
-func FetchResultAddRequestIndex(builder *flatbuffers.Builder, requestIndex int32) {
-	builder.PrependInt32Slot(1, requestIndex, 0)
+func FetchResultAddRequestIndex(builder *flatbuffers.Builder, requestIndex uint32) {
+	builder.PrependUint32Slot(1, requestIndex, 0)
 }
 func FetchResultAddErrorCode(builder *flatbuffers.Builder, errorCode ErrorCode) {
-	builder.PrependInt16Slot(2, int16(errorCode), 0)
+	builder.PrependUint16Slot(2, uint16(errorCode), 0)
 }
 func FetchResultAddErrorMessage(builder *flatbuffers.Builder, errorMessage flatbuffers.UOffsetT) {
 	builder.PrependUOffsetTSlot(3, flatbuffers.UOffsetT(errorMessage), 0)
 }
-func FetchResultAddBatchLength(builder *flatbuffers.Builder, batchLength int32) {
-	builder.PrependInt32Slot(4, batchLength, 0)
+func FetchResultAddBatchLength(builder *flatbuffers.Builder, batchLength uint32) {
+	builder.PrependUint32Slot(4, batchLength, 0)
 }
 func FetchResultEnd(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
 	return builder.EndObject()

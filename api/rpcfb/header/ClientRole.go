@@ -4,7 +4,7 @@ package header
 
 import "strconv"
 
-type ClientRole int8
+type ClientRole byte
 
 const (
 	ClientRoleCLIENT_ROLE_UNKNOWN   ClientRole = 0

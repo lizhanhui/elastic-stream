@@ -33,16 +33,16 @@ func (rcv *SyncRangesRequest) Table() flatbuffers.Table {
 	return rcv._tab
 }
 
-func (rcv *SyncRangesRequest) TimeoutMs() int32 {
+func (rcv *SyncRangesRequest) TimeoutMs() uint32 {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(4))
 	if o != 0 {
-		return rcv._tab.GetInt32(o + rcv._tab.Pos)
+		return rcv._tab.GetUint32(o + rcv._tab.Pos)
 	}
 	return 0
 }
 
-func (rcv *SyncRangesRequest) MutateTimeoutMs(n int32) bool {
-	return rcv._tab.MutateInt32Slot(4, n)
+func (rcv *SyncRangesRequest) MutateTimeoutMs(n uint32) bool {
+	return rcv._tab.MutateUint32Slot(4, n)
 }
 
 func (rcv *SyncRangesRequest) StreamRanges(obj *StreamRanges, j int) bool {
@@ -68,8 +68,8 @@ func (rcv *SyncRangesRequest) StreamRangesLength() int {
 func SyncRangesRequestStart(builder *flatbuffers.Builder) {
 	builder.StartObject(2)
 }
-func SyncRangesRequestAddTimeoutMs(builder *flatbuffers.Builder, timeoutMs int32) {
-	builder.PrependInt32Slot(0, timeoutMs, 0)
+func SyncRangesRequestAddTimeoutMs(builder *flatbuffers.Builder, timeoutMs uint32) {
+	builder.PrependUint32Slot(0, timeoutMs, 0)
 }
 func SyncRangesRequestAddStreamRanges(builder *flatbuffers.Builder, streamRanges flatbuffers.UOffsetT) {
 	builder.PrependUOffsetTSlot(1, flatbuffers.UOffsetT(streamRanges), 0)

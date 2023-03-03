@@ -46,208 +46,208 @@ func (rcv *ReportMetricsRequest) DataNode(obj *DataNode) *DataNode {
 	return nil
 }
 
-func (rcv *ReportMetricsRequest) DiskInRate() int64 {
+func (rcv *ReportMetricsRequest) DiskInRate() uint64 {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(6))
 	if o != 0 {
-		return rcv._tab.GetInt64(o + rcv._tab.Pos)
+		return rcv._tab.GetUint64(o + rcv._tab.Pos)
 	}
 	return 0
 }
 
-func (rcv *ReportMetricsRequest) MutateDiskInRate(n int64) bool {
-	return rcv._tab.MutateInt64Slot(6, n)
+func (rcv *ReportMetricsRequest) MutateDiskInRate(n uint64) bool {
+	return rcv._tab.MutateUint64Slot(6, n)
 }
 
-func (rcv *ReportMetricsRequest) DiskOutRate() int64 {
+func (rcv *ReportMetricsRequest) DiskOutRate() uint64 {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(8))
 	if o != 0 {
-		return rcv._tab.GetInt64(o + rcv._tab.Pos)
+		return rcv._tab.GetUint64(o + rcv._tab.Pos)
 	}
 	return 0
 }
 
-func (rcv *ReportMetricsRequest) MutateDiskOutRate(n int64) bool {
-	return rcv._tab.MutateInt64Slot(8, n)
+func (rcv *ReportMetricsRequest) MutateDiskOutRate(n uint64) bool {
+	return rcv._tab.MutateUint64Slot(8, n)
 }
 
-func (rcv *ReportMetricsRequest) DiskFreeSpace() int64 {
+func (rcv *ReportMetricsRequest) DiskFreeSpace() uint64 {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(10))
 	if o != 0 {
-		return rcv._tab.GetInt64(o + rcv._tab.Pos)
+		return rcv._tab.GetUint64(o + rcv._tab.Pos)
 	}
 	return 0
 }
 
-func (rcv *ReportMetricsRequest) MutateDiskFreeSpace(n int64) bool {
-	return rcv._tab.MutateInt64Slot(10, n)
+func (rcv *ReportMetricsRequest) MutateDiskFreeSpace(n uint64) bool {
+	return rcv._tab.MutateUint64Slot(10, n)
 }
 
-func (rcv *ReportMetricsRequest) DiskUnindexedDataSize() int64 {
+func (rcv *ReportMetricsRequest) DiskUnindexedDataSize() uint64 {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(12))
 	if o != 0 {
-		return rcv._tab.GetInt64(o + rcv._tab.Pos)
+		return rcv._tab.GetUint64(o + rcv._tab.Pos)
 	}
 	return 0
 }
 
-func (rcv *ReportMetricsRequest) MutateDiskUnindexedDataSize(n int64) bool {
-	return rcv._tab.MutateInt64Slot(12, n)
+func (rcv *ReportMetricsRequest) MutateDiskUnindexedDataSize(n uint64) bool {
+	return rcv._tab.MutateUint64Slot(12, n)
 }
 
-func (rcv *ReportMetricsRequest) MemoryUsed() int64 {
+func (rcv *ReportMetricsRequest) MemoryUsed() uint64 {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(14))
 	if o != 0 {
-		return rcv._tab.GetInt64(o + rcv._tab.Pos)
+		return rcv._tab.GetUint64(o + rcv._tab.Pos)
 	}
 	return 0
 }
 
-func (rcv *ReportMetricsRequest) MutateMemoryUsed(n int64) bool {
-	return rcv._tab.MutateInt64Slot(14, n)
+func (rcv *ReportMetricsRequest) MutateMemoryUsed(n uint64) bool {
+	return rcv._tab.MutateUint64Slot(14, n)
 }
 
-func (rcv *ReportMetricsRequest) UringTaskRate() int16 {
+func (rcv *ReportMetricsRequest) UringTaskRate() uint16 {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(16))
 	if o != 0 {
-		return rcv._tab.GetInt16(o + rcv._tab.Pos)
+		return rcv._tab.GetUint16(o + rcv._tab.Pos)
 	}
 	return 0
 }
 
-func (rcv *ReportMetricsRequest) MutateUringTaskRate(n int16) bool {
-	return rcv._tab.MutateInt16Slot(16, n)
+func (rcv *ReportMetricsRequest) MutateUringTaskRate(n uint16) bool {
+	return rcv._tab.MutateUint16Slot(16, n)
 }
 
-func (rcv *ReportMetricsRequest) UringInflightTaskCnt() int16 {
+func (rcv *ReportMetricsRequest) UringInflightTaskCnt() uint16 {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(18))
 	if o != 0 {
-		return rcv._tab.GetInt16(o + rcv._tab.Pos)
+		return rcv._tab.GetUint16(o + rcv._tab.Pos)
 	}
 	return 0
 }
 
-func (rcv *ReportMetricsRequest) MutateUringInflightTaskCnt(n int16) bool {
-	return rcv._tab.MutateInt16Slot(18, n)
+func (rcv *ReportMetricsRequest) MutateUringInflightTaskCnt(n uint16) bool {
+	return rcv._tab.MutateUint16Slot(18, n)
 }
 
-func (rcv *ReportMetricsRequest) UringPendingTaskCnt() int32 {
+func (rcv *ReportMetricsRequest) UringPendingTaskCnt() uint32 {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(20))
 	if o != 0 {
-		return rcv._tab.GetInt32(o + rcv._tab.Pos)
+		return rcv._tab.GetUint32(o + rcv._tab.Pos)
 	}
 	return 0
 }
 
-func (rcv *ReportMetricsRequest) MutateUringPendingTaskCnt(n int32) bool {
-	return rcv._tab.MutateInt32Slot(20, n)
+func (rcv *ReportMetricsRequest) MutateUringPendingTaskCnt(n uint32) bool {
+	return rcv._tab.MutateUint32Slot(20, n)
 }
 
-func (rcv *ReportMetricsRequest) UringTaskAvgLatency() int16 {
+func (rcv *ReportMetricsRequest) UringTaskAvgLatency() uint16 {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(22))
 	if o != 0 {
-		return rcv._tab.GetInt16(o + rcv._tab.Pos)
+		return rcv._tab.GetUint16(o + rcv._tab.Pos)
 	}
 	return 0
 }
 
-func (rcv *ReportMetricsRequest) MutateUringTaskAvgLatency(n int16) bool {
-	return rcv._tab.MutateInt16Slot(22, n)
+func (rcv *ReportMetricsRequest) MutateUringTaskAvgLatency(n uint16) bool {
+	return rcv._tab.MutateUint16Slot(22, n)
 }
 
-func (rcv *ReportMetricsRequest) NetworkAppendRate() int16 {
+func (rcv *ReportMetricsRequest) NetworkAppendRate() uint16 {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(24))
 	if o != 0 {
-		return rcv._tab.GetInt16(o + rcv._tab.Pos)
+		return rcv._tab.GetUint16(o + rcv._tab.Pos)
 	}
 	return 0
 }
 
-func (rcv *ReportMetricsRequest) MutateNetworkAppendRate(n int16) bool {
-	return rcv._tab.MutateInt16Slot(24, n)
+func (rcv *ReportMetricsRequest) MutateNetworkAppendRate(n uint16) bool {
+	return rcv._tab.MutateUint16Slot(24, n)
 }
 
-func (rcv *ReportMetricsRequest) NetworkFetchRate() int16 {
+func (rcv *ReportMetricsRequest) NetworkFetchRate() uint16 {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(26))
 	if o != 0 {
-		return rcv._tab.GetInt16(o + rcv._tab.Pos)
+		return rcv._tab.GetUint16(o + rcv._tab.Pos)
 	}
 	return 0
 }
 
-func (rcv *ReportMetricsRequest) MutateNetworkFetchRate(n int16) bool {
-	return rcv._tab.MutateInt16Slot(26, n)
+func (rcv *ReportMetricsRequest) MutateNetworkFetchRate(n uint16) bool {
+	return rcv._tab.MutateUint16Slot(26, n)
 }
 
-func (rcv *ReportMetricsRequest) NetworkFailedAppendRate() int16 {
+func (rcv *ReportMetricsRequest) NetworkFailedAppendRate() uint16 {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(28))
 	if o != 0 {
-		return rcv._tab.GetInt16(o + rcv._tab.Pos)
+		return rcv._tab.GetUint16(o + rcv._tab.Pos)
 	}
 	return 0
 }
 
-func (rcv *ReportMetricsRequest) MutateNetworkFailedAppendRate(n int16) bool {
-	return rcv._tab.MutateInt16Slot(28, n)
+func (rcv *ReportMetricsRequest) MutateNetworkFailedAppendRate(n uint16) bool {
+	return rcv._tab.MutateUint16Slot(28, n)
 }
 
-func (rcv *ReportMetricsRequest) NetworkFailedFetchRate() int16 {
+func (rcv *ReportMetricsRequest) NetworkFailedFetchRate() uint16 {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(30))
 	if o != 0 {
-		return rcv._tab.GetInt16(o + rcv._tab.Pos)
+		return rcv._tab.GetUint16(o + rcv._tab.Pos)
 	}
 	return 0
 }
 
-func (rcv *ReportMetricsRequest) MutateNetworkFailedFetchRate(n int16) bool {
-	return rcv._tab.MutateInt16Slot(30, n)
+func (rcv *ReportMetricsRequest) MutateNetworkFailedFetchRate(n uint16) bool {
+	return rcv._tab.MutateUint16Slot(30, n)
 }
 
-func (rcv *ReportMetricsRequest) NetworkAppendAvgLatency() int16 {
+func (rcv *ReportMetricsRequest) NetworkAppendAvgLatency() uint16 {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(32))
 	if o != 0 {
-		return rcv._tab.GetInt16(o + rcv._tab.Pos)
+		return rcv._tab.GetUint16(o + rcv._tab.Pos)
 	}
 	return 0
 }
 
-func (rcv *ReportMetricsRequest) MutateNetworkAppendAvgLatency(n int16) bool {
-	return rcv._tab.MutateInt16Slot(32, n)
+func (rcv *ReportMetricsRequest) MutateNetworkAppendAvgLatency(n uint16) bool {
+	return rcv._tab.MutateUint16Slot(32, n)
 }
 
-func (rcv *ReportMetricsRequest) NetworkFetchAvgLatency() int16 {
+func (rcv *ReportMetricsRequest) NetworkFetchAvgLatency() uint16 {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(34))
 	if o != 0 {
-		return rcv._tab.GetInt16(o + rcv._tab.Pos)
+		return rcv._tab.GetUint16(o + rcv._tab.Pos)
 	}
 	return 0
 }
 
-func (rcv *ReportMetricsRequest) MutateNetworkFetchAvgLatency(n int16) bool {
-	return rcv._tab.MutateInt16Slot(34, n)
+func (rcv *ReportMetricsRequest) MutateNetworkFetchAvgLatency(n uint16) bool {
+	return rcv._tab.MutateUint16Slot(34, n)
 }
 
-func (rcv *ReportMetricsRequest) RangeMissingReplicaCnt() int16 {
+func (rcv *ReportMetricsRequest) RangeMissingReplicaCnt() uint16 {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(36))
 	if o != 0 {
-		return rcv._tab.GetInt16(o + rcv._tab.Pos)
+		return rcv._tab.GetUint16(o + rcv._tab.Pos)
 	}
 	return 0
 }
 
-func (rcv *ReportMetricsRequest) MutateRangeMissingReplicaCnt(n int16) bool {
-	return rcv._tab.MutateInt16Slot(36, n)
+func (rcv *ReportMetricsRequest) MutateRangeMissingReplicaCnt(n uint16) bool {
+	return rcv._tab.MutateUint16Slot(36, n)
 }
 
-func (rcv *ReportMetricsRequest) RangeActiveCnt() int16 {
+func (rcv *ReportMetricsRequest) RangeActiveCnt() uint16 {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(38))
 	if o != 0 {
-		return rcv._tab.GetInt16(o + rcv._tab.Pos)
+		return rcv._tab.GetUint16(o + rcv._tab.Pos)
 	}
 	return 0
 }
 
-func (rcv *ReportMetricsRequest) MutateRangeActiveCnt(n int16) bool {
-	return rcv._tab.MutateInt16Slot(38, n)
+func (rcv *ReportMetricsRequest) MutateRangeActiveCnt(n uint16) bool {
+	return rcv._tab.MutateUint16Slot(38, n)
 }
 
 func ReportMetricsRequestStart(builder *flatbuffers.Builder) {
@@ -256,56 +256,56 @@ func ReportMetricsRequestStart(builder *flatbuffers.Builder) {
 func ReportMetricsRequestAddDataNode(builder *flatbuffers.Builder, dataNode flatbuffers.UOffsetT) {
 	builder.PrependUOffsetTSlot(0, flatbuffers.UOffsetT(dataNode), 0)
 }
-func ReportMetricsRequestAddDiskInRate(builder *flatbuffers.Builder, diskInRate int64) {
-	builder.PrependInt64Slot(1, diskInRate, 0)
+func ReportMetricsRequestAddDiskInRate(builder *flatbuffers.Builder, diskInRate uint64) {
+	builder.PrependUint64Slot(1, diskInRate, 0)
 }
-func ReportMetricsRequestAddDiskOutRate(builder *flatbuffers.Builder, diskOutRate int64) {
-	builder.PrependInt64Slot(2, diskOutRate, 0)
+func ReportMetricsRequestAddDiskOutRate(builder *flatbuffers.Builder, diskOutRate uint64) {
+	builder.PrependUint64Slot(2, diskOutRate, 0)
 }
-func ReportMetricsRequestAddDiskFreeSpace(builder *flatbuffers.Builder, diskFreeSpace int64) {
-	builder.PrependInt64Slot(3, diskFreeSpace, 0)
+func ReportMetricsRequestAddDiskFreeSpace(builder *flatbuffers.Builder, diskFreeSpace uint64) {
+	builder.PrependUint64Slot(3, diskFreeSpace, 0)
 }
-func ReportMetricsRequestAddDiskUnindexedDataSize(builder *flatbuffers.Builder, diskUnindexedDataSize int64) {
-	builder.PrependInt64Slot(4, diskUnindexedDataSize, 0)
+func ReportMetricsRequestAddDiskUnindexedDataSize(builder *flatbuffers.Builder, diskUnindexedDataSize uint64) {
+	builder.PrependUint64Slot(4, diskUnindexedDataSize, 0)
 }
-func ReportMetricsRequestAddMemoryUsed(builder *flatbuffers.Builder, memoryUsed int64) {
-	builder.PrependInt64Slot(5, memoryUsed, 0)
+func ReportMetricsRequestAddMemoryUsed(builder *flatbuffers.Builder, memoryUsed uint64) {
+	builder.PrependUint64Slot(5, memoryUsed, 0)
 }
-func ReportMetricsRequestAddUringTaskRate(builder *flatbuffers.Builder, uringTaskRate int16) {
-	builder.PrependInt16Slot(6, uringTaskRate, 0)
+func ReportMetricsRequestAddUringTaskRate(builder *flatbuffers.Builder, uringTaskRate uint16) {
+	builder.PrependUint16Slot(6, uringTaskRate, 0)
 }
-func ReportMetricsRequestAddUringInflightTaskCnt(builder *flatbuffers.Builder, uringInflightTaskCnt int16) {
-	builder.PrependInt16Slot(7, uringInflightTaskCnt, 0)
+func ReportMetricsRequestAddUringInflightTaskCnt(builder *flatbuffers.Builder, uringInflightTaskCnt uint16) {
+	builder.PrependUint16Slot(7, uringInflightTaskCnt, 0)
 }
-func ReportMetricsRequestAddUringPendingTaskCnt(builder *flatbuffers.Builder, uringPendingTaskCnt int32) {
-	builder.PrependInt32Slot(8, uringPendingTaskCnt, 0)
+func ReportMetricsRequestAddUringPendingTaskCnt(builder *flatbuffers.Builder, uringPendingTaskCnt uint32) {
+	builder.PrependUint32Slot(8, uringPendingTaskCnt, 0)
 }
-func ReportMetricsRequestAddUringTaskAvgLatency(builder *flatbuffers.Builder, uringTaskAvgLatency int16) {
-	builder.PrependInt16Slot(9, uringTaskAvgLatency, 0)
+func ReportMetricsRequestAddUringTaskAvgLatency(builder *flatbuffers.Builder, uringTaskAvgLatency uint16) {
+	builder.PrependUint16Slot(9, uringTaskAvgLatency, 0)
 }
-func ReportMetricsRequestAddNetworkAppendRate(builder *flatbuffers.Builder, networkAppendRate int16) {
-	builder.PrependInt16Slot(10, networkAppendRate, 0)
+func ReportMetricsRequestAddNetworkAppendRate(builder *flatbuffers.Builder, networkAppendRate uint16) {
+	builder.PrependUint16Slot(10, networkAppendRate, 0)
 }
-func ReportMetricsRequestAddNetworkFetchRate(builder *flatbuffers.Builder, networkFetchRate int16) {
-	builder.PrependInt16Slot(11, networkFetchRate, 0)
+func ReportMetricsRequestAddNetworkFetchRate(builder *flatbuffers.Builder, networkFetchRate uint16) {
+	builder.PrependUint16Slot(11, networkFetchRate, 0)
 }
-func ReportMetricsRequestAddNetworkFailedAppendRate(builder *flatbuffers.Builder, networkFailedAppendRate int16) {
-	builder.PrependInt16Slot(12, networkFailedAppendRate, 0)
+func ReportMetricsRequestAddNetworkFailedAppendRate(builder *flatbuffers.Builder, networkFailedAppendRate uint16) {
+	builder.PrependUint16Slot(12, networkFailedAppendRate, 0)
 }
-func ReportMetricsRequestAddNetworkFailedFetchRate(builder *flatbuffers.Builder, networkFailedFetchRate int16) {
-	builder.PrependInt16Slot(13, networkFailedFetchRate, 0)
+func ReportMetricsRequestAddNetworkFailedFetchRate(builder *flatbuffers.Builder, networkFailedFetchRate uint16) {
+	builder.PrependUint16Slot(13, networkFailedFetchRate, 0)
 }
-func ReportMetricsRequestAddNetworkAppendAvgLatency(builder *flatbuffers.Builder, networkAppendAvgLatency int16) {
-	builder.PrependInt16Slot(14, networkAppendAvgLatency, 0)
+func ReportMetricsRequestAddNetworkAppendAvgLatency(builder *flatbuffers.Builder, networkAppendAvgLatency uint16) {
+	builder.PrependUint16Slot(14, networkAppendAvgLatency, 0)
 }
-func ReportMetricsRequestAddNetworkFetchAvgLatency(builder *flatbuffers.Builder, networkFetchAvgLatency int16) {
-	builder.PrependInt16Slot(15, networkFetchAvgLatency, 0)
+func ReportMetricsRequestAddNetworkFetchAvgLatency(builder *flatbuffers.Builder, networkFetchAvgLatency uint16) {
+	builder.PrependUint16Slot(15, networkFetchAvgLatency, 0)
 }
-func ReportMetricsRequestAddRangeMissingReplicaCnt(builder *flatbuffers.Builder, rangeMissingReplicaCnt int16) {
-	builder.PrependInt16Slot(16, rangeMissingReplicaCnt, 0)
+func ReportMetricsRequestAddRangeMissingReplicaCnt(builder *flatbuffers.Builder, rangeMissingReplicaCnt uint16) {
+	builder.PrependUint16Slot(16, rangeMissingReplicaCnt, 0)
 }
-func ReportMetricsRequestAddRangeActiveCnt(builder *flatbuffers.Builder, rangeActiveCnt int16) {
-	builder.PrependInt16Slot(17, rangeActiveCnt, 0)
+func ReportMetricsRequestAddRangeActiveCnt(builder *flatbuffers.Builder, rangeActiveCnt uint16) {
+	builder.PrependUint16Slot(17, rangeActiveCnt, 0)
 }
 func ReportMetricsRequestEnd(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
 	return builder.EndObject()

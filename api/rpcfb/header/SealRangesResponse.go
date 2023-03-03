@@ -33,16 +33,16 @@ func (rcv *SealRangesResponse) Table() flatbuffers.Table {
 	return rcv._tab
 }
 
-func (rcv *SealRangesResponse) ThrottleTimeMs() int32 {
+func (rcv *SealRangesResponse) ThrottleTimeMs() uint32 {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(4))
 	if o != 0 {
-		return rcv._tab.GetInt32(o + rcv._tab.Pos)
+		return rcv._tab.GetUint32(o + rcv._tab.Pos)
 	}
 	return 0
 }
 
-func (rcv *SealRangesResponse) MutateThrottleTimeMs(n int32) bool {
-	return rcv._tab.MutateInt32Slot(4, n)
+func (rcv *SealRangesResponse) MutateThrottleTimeMs(n uint32) bool {
+	return rcv._tab.MutateUint32Slot(4, n)
 }
 
 func (rcv *SealRangesResponse) SealResponses(obj *SealRangesResult, j int) bool {
@@ -68,8 +68,8 @@ func (rcv *SealRangesResponse) SealResponsesLength() int {
 func SealRangesResponseStart(builder *flatbuffers.Builder) {
 	builder.StartObject(2)
 }
-func SealRangesResponseAddThrottleTimeMs(builder *flatbuffers.Builder, throttleTimeMs int32) {
-	builder.PrependInt32Slot(0, throttleTimeMs, 0)
+func SealRangesResponseAddThrottleTimeMs(builder *flatbuffers.Builder, throttleTimeMs uint32) {
+	builder.PrependUint32Slot(0, throttleTimeMs, 0)
 }
 func SealRangesResponseAddSealResponses(builder *flatbuffers.Builder, sealResponses flatbuffers.UOffsetT) {
 	builder.PrependUOffsetTSlot(1, flatbuffers.UOffsetT(sealResponses), 0)

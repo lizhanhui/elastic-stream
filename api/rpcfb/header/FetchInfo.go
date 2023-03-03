@@ -33,68 +33,68 @@ func (rcv *FetchInfo) Table() flatbuffers.Table {
 	return rcv._tab
 }
 
-func (rcv *FetchInfo) StreamId() int64 {
+func (rcv *FetchInfo) StreamId() uint64 {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(4))
 	if o != 0 {
-		return rcv._tab.GetInt64(o + rcv._tab.Pos)
+		return rcv._tab.GetUint64(o + rcv._tab.Pos)
 	}
 	return 0
 }
 
-func (rcv *FetchInfo) MutateStreamId(n int64) bool {
-	return rcv._tab.MutateInt64Slot(4, n)
+func (rcv *FetchInfo) MutateStreamId(n uint64) bool {
+	return rcv._tab.MutateUint64Slot(4, n)
 }
 
-func (rcv *FetchInfo) RequestIndex() int32 {
+func (rcv *FetchInfo) RequestIndex() uint32 {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(6))
 	if o != 0 {
-		return rcv._tab.GetInt32(o + rcv._tab.Pos)
+		return rcv._tab.GetUint32(o + rcv._tab.Pos)
 	}
 	return 0
 }
 
-func (rcv *FetchInfo) MutateRequestIndex(n int32) bool {
-	return rcv._tab.MutateInt32Slot(6, n)
+func (rcv *FetchInfo) MutateRequestIndex(n uint32) bool {
+	return rcv._tab.MutateUint32Slot(6, n)
 }
 
-func (rcv *FetchInfo) FetchOffset() int64 {
+func (rcv *FetchInfo) FetchOffset() uint64 {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(8))
 	if o != 0 {
-		return rcv._tab.GetInt64(o + rcv._tab.Pos)
+		return rcv._tab.GetUint64(o + rcv._tab.Pos)
 	}
 	return 0
 }
 
-func (rcv *FetchInfo) MutateFetchOffset(n int64) bool {
-	return rcv._tab.MutateInt64Slot(8, n)
+func (rcv *FetchInfo) MutateFetchOffset(n uint64) bool {
+	return rcv._tab.MutateUint64Slot(8, n)
 }
 
-func (rcv *FetchInfo) BatchMaxBytes() int32 {
+func (rcv *FetchInfo) BatchMaxBytes() uint32 {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(10))
 	if o != 0 {
-		return rcv._tab.GetInt32(o + rcv._tab.Pos)
+		return rcv._tab.GetUint32(o + rcv._tab.Pos)
 	}
 	return 0
 }
 
-func (rcv *FetchInfo) MutateBatchMaxBytes(n int32) bool {
-	return rcv._tab.MutateInt32Slot(10, n)
+func (rcv *FetchInfo) MutateBatchMaxBytes(n uint32) bool {
+	return rcv._tab.MutateUint32Slot(10, n)
 }
 
 func FetchInfoStart(builder *flatbuffers.Builder) {
 	builder.StartObject(4)
 }
-func FetchInfoAddStreamId(builder *flatbuffers.Builder, streamId int64) {
-	builder.PrependInt64Slot(0, streamId, 0)
+func FetchInfoAddStreamId(builder *flatbuffers.Builder, streamId uint64) {
+	builder.PrependUint64Slot(0, streamId, 0)
 }
-func FetchInfoAddRequestIndex(builder *flatbuffers.Builder, requestIndex int32) {
-	builder.PrependInt32Slot(1, requestIndex, 0)
+func FetchInfoAddRequestIndex(builder *flatbuffers.Builder, requestIndex uint32) {
+	builder.PrependUint32Slot(1, requestIndex, 0)
 }
-func FetchInfoAddFetchOffset(builder *flatbuffers.Builder, fetchOffset int64) {
-	builder.PrependInt64Slot(2, fetchOffset, 0)
+func FetchInfoAddFetchOffset(builder *flatbuffers.Builder, fetchOffset uint64) {
+	builder.PrependUint64Slot(2, fetchOffset, 0)
 }
-func FetchInfoAddBatchMaxBytes(builder *flatbuffers.Builder, batchMaxBytes int32) {
-	builder.PrependInt32Slot(3, batchMaxBytes, 0)
+func FetchInfoAddBatchMaxBytes(builder *flatbuffers.Builder, batchMaxBytes uint32) {
+	builder.PrependUint32Slot(3, batchMaxBytes, 0)
 }
 func FetchInfoEnd(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
 	return builder.EndObject()

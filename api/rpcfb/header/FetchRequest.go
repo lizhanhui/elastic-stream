@@ -33,28 +33,28 @@ func (rcv *FetchRequest) Table() flatbuffers.Table {
 	return rcv._tab
 }
 
-func (rcv *FetchRequest) MaxWaitMs() int32 {
+func (rcv *FetchRequest) MaxWaitMs() uint32 {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(4))
 	if o != 0 {
-		return rcv._tab.GetInt32(o + rcv._tab.Pos)
+		return rcv._tab.GetUint32(o + rcv._tab.Pos)
 	}
 	return 0
 }
 
-func (rcv *FetchRequest) MutateMaxWaitMs(n int32) bool {
-	return rcv._tab.MutateInt32Slot(4, n)
+func (rcv *FetchRequest) MutateMaxWaitMs(n uint32) bool {
+	return rcv._tab.MutateUint32Slot(4, n)
 }
 
-func (rcv *FetchRequest) MinBytes() int32 {
+func (rcv *FetchRequest) MinBytes() uint32 {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(6))
 	if o != 0 {
-		return rcv._tab.GetInt32(o + rcv._tab.Pos)
+		return rcv._tab.GetUint32(o + rcv._tab.Pos)
 	}
 	return 0
 }
 
-func (rcv *FetchRequest) MutateMinBytes(n int32) bool {
-	return rcv._tab.MutateInt32Slot(6, n)
+func (rcv *FetchRequest) MutateMinBytes(n uint32) bool {
+	return rcv._tab.MutateUint32Slot(6, n)
 }
 
 func (rcv *FetchRequest) FetchRequests(obj *FetchInfo, j int) bool {
@@ -80,11 +80,11 @@ func (rcv *FetchRequest) FetchRequestsLength() int {
 func FetchRequestStart(builder *flatbuffers.Builder) {
 	builder.StartObject(3)
 }
-func FetchRequestAddMaxWaitMs(builder *flatbuffers.Builder, maxWaitMs int32) {
-	builder.PrependInt32Slot(0, maxWaitMs, 0)
+func FetchRequestAddMaxWaitMs(builder *flatbuffers.Builder, maxWaitMs uint32) {
+	builder.PrependUint32Slot(0, maxWaitMs, 0)
 }
-func FetchRequestAddMinBytes(builder *flatbuffers.Builder, minBytes int32) {
-	builder.PrependInt32Slot(1, minBytes, 0)
+func FetchRequestAddMinBytes(builder *flatbuffers.Builder, minBytes uint32) {
+	builder.PrependUint32Slot(1, minBytes, 0)
 }
 func FetchRequestAddFetchRequests(builder *flatbuffers.Builder, fetchRequests flatbuffers.UOffsetT) {
 	builder.PrependUOffsetTSlot(2, flatbuffers.UOffsetT(fetchRequests), 0)

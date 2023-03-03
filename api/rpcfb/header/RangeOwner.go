@@ -46,16 +46,16 @@ func (rcv *RangeOwner) DataNode(obj *DataNode) *DataNode {
 	return nil
 }
 
-func (rcv *RangeOwner) StreamId() int64 {
+func (rcv *RangeOwner) StreamId() uint64 {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(6))
 	if o != 0 {
-		return rcv._tab.GetInt64(o + rcv._tab.Pos)
+		return rcv._tab.GetUint64(o + rcv._tab.Pos)
 	}
 	return 0
 }
 
-func (rcv *RangeOwner) MutateStreamId(n int64) bool {
-	return rcv._tab.MutateInt64Slot(6, n)
+func (rcv *RangeOwner) MutateStreamId(n uint64) bool {
+	return rcv._tab.MutateUint64Slot(6, n)
 }
 
 func RangeOwnerStart(builder *flatbuffers.Builder) {
@@ -64,8 +64,8 @@ func RangeOwnerStart(builder *flatbuffers.Builder) {
 func RangeOwnerAddDataNode(builder *flatbuffers.Builder, dataNode flatbuffers.UOffsetT) {
 	builder.PrependUOffsetTSlot(0, flatbuffers.UOffsetT(dataNode), 0)
 }
-func RangeOwnerAddStreamId(builder *flatbuffers.Builder, streamId int64) {
-	builder.PrependInt64Slot(1, streamId, 0)
+func RangeOwnerAddStreamId(builder *flatbuffers.Builder, streamId uint64) {
+	builder.PrependUint64Slot(1, streamId, 0)
 }
 func RangeOwnerEnd(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
 	return builder.EndObject()

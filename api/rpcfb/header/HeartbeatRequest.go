@@ -44,13 +44,13 @@ func (rcv *HeartbeatRequest) ClientId() []byte {
 func (rcv *HeartbeatRequest) ClientRole() ClientRole {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(6))
 	if o != 0 {
-		return ClientRole(rcv._tab.GetInt8(o + rcv._tab.Pos))
+		return ClientRole(rcv._tab.GetByte(o + rcv._tab.Pos))
 	}
 	return 0
 }
 
 func (rcv *HeartbeatRequest) MutateClientRole(n ClientRole) bool {
-	return rcv._tab.MutateInt8Slot(6, int8(n))
+	return rcv._tab.MutateByteSlot(6, byte(n))
 }
 
 func (rcv *HeartbeatRequest) DataNode(obj *DataNode) *DataNode {
@@ -73,7 +73,7 @@ func HeartbeatRequestAddClientId(builder *flatbuffers.Builder, clientId flatbuff
 	builder.PrependUOffsetTSlot(0, flatbuffers.UOffsetT(clientId), 0)
 }
 func HeartbeatRequestAddClientRole(builder *flatbuffers.Builder, clientRole ClientRole) {
-	builder.PrependInt8Slot(1, int8(clientRole), 0)
+	builder.PrependByteSlot(1, byte(clientRole), 0)
 }
 func HeartbeatRequestAddDataNode(builder *flatbuffers.Builder, dataNode flatbuffers.UOffsetT) {
 	builder.PrependUOffsetTSlot(2, flatbuffers.UOffsetT(dataNode), 0)

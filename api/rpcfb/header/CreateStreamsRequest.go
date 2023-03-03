@@ -33,16 +33,16 @@ func (rcv *CreateStreamsRequest) Table() flatbuffers.Table {
 	return rcv._tab
 }
 
-func (rcv *CreateStreamsRequest) TimeoutMs() int32 {
+func (rcv *CreateStreamsRequest) TimeoutMs() uint32 {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(4))
 	if o != 0 {
-		return rcv._tab.GetInt32(o + rcv._tab.Pos)
+		return rcv._tab.GetUint32(o + rcv._tab.Pos)
 	}
 	return 0
 }
 
-func (rcv *CreateStreamsRequest) MutateTimeoutMs(n int32) bool {
-	return rcv._tab.MutateInt32Slot(4, n)
+func (rcv *CreateStreamsRequest) MutateTimeoutMs(n uint32) bool {
+	return rcv._tab.MutateUint32Slot(4, n)
 }
 
 func (rcv *CreateStreamsRequest) Stremas(obj *Stream, j int) bool {
@@ -68,8 +68,8 @@ func (rcv *CreateStreamsRequest) StremasLength() int {
 func CreateStreamsRequestStart(builder *flatbuffers.Builder) {
 	builder.StartObject(2)
 }
-func CreateStreamsRequestAddTimeoutMs(builder *flatbuffers.Builder, timeoutMs int32) {
-	builder.PrependInt32Slot(0, timeoutMs, 0)
+func CreateStreamsRequestAddTimeoutMs(builder *flatbuffers.Builder, timeoutMs uint32) {
+	builder.PrependUint32Slot(0, timeoutMs, 0)
 }
 func CreateStreamsRequestAddStremas(builder *flatbuffers.Builder, stremas flatbuffers.UOffsetT) {
 	builder.PrependUOffsetTSlot(1, flatbuffers.UOffsetT(stremas), 0)

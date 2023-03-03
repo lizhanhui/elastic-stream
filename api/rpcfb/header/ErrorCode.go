@@ -4,7 +4,7 @@ package header
 
 import "strconv"
 
-type ErrorCode int16
+type ErrorCode uint16
 
 const (
 	ErrorCodeNone            ErrorCode = 0

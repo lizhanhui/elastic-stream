@@ -49,13 +49,13 @@ func (rcv *DescribeStreamResult) Stream(obj *Stream) *Stream {
 func (rcv *DescribeStreamResult) ErrorCode() ErrorCode {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(6))
 	if o != 0 {
-		return ErrorCode(rcv._tab.GetInt16(o + rcv._tab.Pos))
+		return ErrorCode(rcv._tab.GetUint16(o + rcv._tab.Pos))
 	}
 	return 0
 }
 
 func (rcv *DescribeStreamResult) MutateErrorCode(n ErrorCode) bool {
-	return rcv._tab.MutateInt16Slot(6, int16(n))
+	return rcv._tab.MutateUint16Slot(6, uint16(n))
 }
 
 func (rcv *DescribeStreamResult) ErrorMessage() []byte {
@@ -73,7 +73,7 @@ func DescribeStreamResultAddStream(builder *flatbuffers.Builder, stream flatbuff
 	builder.PrependUOffsetTSlot(0, flatbuffers.UOffsetT(stream), 0)
 }
 func DescribeStreamResultAddErrorCode(builder *flatbuffers.Builder, errorCode ErrorCode) {
-	builder.PrependInt16Slot(1, int16(errorCode), 0)
+	builder.PrependUint16Slot(1, uint16(errorCode), 0)
 }
 func DescribeStreamResultAddErrorMessage(builder *flatbuffers.Builder, errorMessage flatbuffers.UOffsetT) {
 	builder.PrependUOffsetTSlot(2, flatbuffers.UOffsetT(errorMessage), 0)

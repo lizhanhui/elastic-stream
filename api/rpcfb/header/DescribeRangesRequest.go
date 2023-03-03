@@ -33,16 +33,16 @@ func (rcv *DescribeRangesRequest) Table() flatbuffers.Table {
 	return rcv._tab
 }
 
-func (rcv *DescribeRangesRequest) TimeoutMs() int32 {
+func (rcv *DescribeRangesRequest) TimeoutMs() uint32 {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(4))
 	if o != 0 {
-		return rcv._tab.GetInt32(o + rcv._tab.Pos)
+		return rcv._tab.GetUint32(o + rcv._tab.Pos)
 	}
 	return 0
 }
 
-func (rcv *DescribeRangesRequest) MutateTimeoutMs(n int32) bool {
-	return rcv._tab.MutateInt32Slot(4, n)
+func (rcv *DescribeRangesRequest) MutateTimeoutMs(n uint32) bool {
+	return rcv._tab.MutateUint32Slot(4, n)
 }
 
 func (rcv *DescribeRangesRequest) Ranges(obj *RangeId, j int) bool {
@@ -68,8 +68,8 @@ func (rcv *DescribeRangesRequest) RangesLength() int {
 func DescribeRangesRequestStart(builder *flatbuffers.Builder) {
 	builder.StartObject(2)
 }
-func DescribeRangesRequestAddTimeoutMs(builder *flatbuffers.Builder, timeoutMs int32) {
-	builder.PrependInt32Slot(0, timeoutMs, 0)
+func DescribeRangesRequestAddTimeoutMs(builder *flatbuffers.Builder, timeoutMs uint32) {
+	builder.PrependUint32Slot(0, timeoutMs, 0)
 }
 func DescribeRangesRequestAddRanges(builder *flatbuffers.Builder, ranges flatbuffers.UOffsetT) {
 	builder.PrependUOffsetTSlot(1, flatbuffers.UOffsetT(ranges), 0)

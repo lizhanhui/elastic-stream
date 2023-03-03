@@ -33,38 +33,38 @@ func (rcv *TrimmedStream) Table() flatbuffers.Table {
 	return rcv._tab
 }
 
-func (rcv *TrimmedStream) StreamId() int64 {
+func (rcv *TrimmedStream) StreamId() uint64 {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(4))
 	if o != 0 {
-		return rcv._tab.GetInt64(o + rcv._tab.Pos)
+		return rcv._tab.GetUint64(o + rcv._tab.Pos)
 	}
 	return 0
 }
 
-func (rcv *TrimmedStream) MutateStreamId(n int64) bool {
-	return rcv._tab.MutateInt64Slot(4, n)
+func (rcv *TrimmedStream) MutateStreamId(n uint64) bool {
+	return rcv._tab.MutateUint64Slot(4, n)
 }
 
-func (rcv *TrimmedStream) TrimOffset() int64 {
+func (rcv *TrimmedStream) TrimOffset() uint64 {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(6))
 	if o != 0 {
-		return rcv._tab.GetInt64(o + rcv._tab.Pos)
+		return rcv._tab.GetUint64(o + rcv._tab.Pos)
 	}
 	return 0
 }
 
-func (rcv *TrimmedStream) MutateTrimOffset(n int64) bool {
-	return rcv._tab.MutateInt64Slot(6, n)
+func (rcv *TrimmedStream) MutateTrimOffset(n uint64) bool {
+	return rcv._tab.MutateUint64Slot(6, n)
 }
 
 func TrimmedStreamStart(builder *flatbuffers.Builder) {
 	builder.StartObject(2)
 }
-func TrimmedStreamAddStreamId(builder *flatbuffers.Builder, streamId int64) {
-	builder.PrependInt64Slot(0, streamId, 0)
+func TrimmedStreamAddStreamId(builder *flatbuffers.Builder, streamId uint64) {
+	builder.PrependUint64Slot(0, streamId, 0)
 }
-func TrimmedStreamAddTrimOffset(builder *flatbuffers.Builder, trimOffset int64) {
-	builder.PrependInt64Slot(1, trimOffset, 0)
+func TrimmedStreamAddTrimOffset(builder *flatbuffers.Builder, trimOffset uint64) {
+	builder.PrependUint64Slot(1, trimOffset, 0)
 }
 func TrimmedStreamEnd(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
 	return builder.EndObject()
