@@ -19,9 +19,9 @@ pub mod header {
   use self::flatbuffers::{EndianScalar, Follow};
 
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
-pub const ENUM_MIN_ERROR_CODE: u16 = 0;
+pub const ENUM_MIN_ERROR_CODE: i16 = 0;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
-pub const ENUM_MAX_ERROR_CODE: u16 = 2;
+pub const ENUM_MAX_ERROR_CODE: i16 = 2;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 #[allow(non_camel_case_types)]
 pub const ENUM_VALUES_ERROR_CODE: [ErrorCode; 3] = [
@@ -32,15 +32,15 @@ pub const ENUM_VALUES_ERROR_CODE: [ErrorCode; 3] = [
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 #[repr(transparent)]
-pub struct ErrorCode(pub u16);
+pub struct ErrorCode(pub i16);
 #[allow(non_upper_case_globals)]
 impl ErrorCode {
   pub const None: Self = Self(0);
   pub const Unknown: Self = Self(1);
   pub const Invalid_Request: Self = Self(2);
 
-  pub const ENUM_MIN: u16 = 0;
-  pub const ENUM_MAX: u16 = 2;
+  pub const ENUM_MIN: i16 = 0;
+  pub const ENUM_MAX: i16 = 2;
   pub const ENUM_VALUES: &'static [Self] = &[
     Self::None,
     Self::Unknown,
@@ -69,7 +69,7 @@ impl<'a> flatbuffers::Follow<'a> for ErrorCode {
   type Inner = Self;
   #[inline]
   unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
-    let b = flatbuffers::read_scalar_at::<u16>(buf, loc);
+    let b = flatbuffers::read_scalar_at::<i16>(buf, loc);
     Self(b)
   }
 }
@@ -78,20 +78,20 @@ impl flatbuffers::Push for ErrorCode {
     type Output = ErrorCode;
     #[inline]
     unsafe fn push(&self, dst: &mut [u8], _written_len: usize) {
-        flatbuffers::emplace_scalar::<u16>(dst, self.0);
+        flatbuffers::emplace_scalar::<i16>(dst, self.0);
     }
 }
 
 impl flatbuffers::EndianScalar for ErrorCode {
-  type Scalar = u16;
+  type Scalar = i16;
   #[inline]
-  fn to_little_endian(self) -> u16 {
+  fn to_little_endian(self) -> i16 {
     self.0.to_le()
   }
   #[inline]
   #[allow(clippy::wrong_self_convention)]
-  fn from_little_endian(v: u16) -> Self {
-    let b = u16::from_le(v);
+  fn from_little_endian(v: i16) -> Self {
+    let b = i16::from_le(v);
     Self(b)
   }
 }
@@ -102,15 +102,15 @@ impl<'a> flatbuffers::Verifiable for ErrorCode {
     v: &mut flatbuffers::Verifier, pos: usize
   ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
     use self::flatbuffers::Verifiable;
-    u16::run_verifier(v, pos)
+    i16::run_verifier(v, pos)
   }
 }
 
 impl flatbuffers::SimpleToVerifyInSlice for ErrorCode {}
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
-pub const ENUM_MIN_CLIENT_ROLE: u8 = 0;
+pub const ENUM_MIN_CLIENT_ROLE: i8 = 0;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
-pub const ENUM_MAX_CLIENT_ROLE: u8 = 2;
+pub const ENUM_MAX_CLIENT_ROLE: i8 = 2;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 #[allow(non_camel_case_types)]
 pub const ENUM_VALUES_CLIENT_ROLE: [ClientRole; 3] = [
@@ -121,15 +121,15 @@ pub const ENUM_VALUES_CLIENT_ROLE: [ClientRole; 3] = [
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 #[repr(transparent)]
-pub struct ClientRole(pub u8);
+pub struct ClientRole(pub i8);
 #[allow(non_upper_case_globals)]
 impl ClientRole {
   pub const CLIENT_ROLE_UNKNOWN: Self = Self(0);
   pub const CLIENT_ROLE_PM: Self = Self(1);
   pub const CLIENT_ROLE_DATA_NODE: Self = Self(2);
 
-  pub const ENUM_MIN: u8 = 0;
-  pub const ENUM_MAX: u8 = 2;
+  pub const ENUM_MIN: i8 = 0;
+  pub const ENUM_MAX: i8 = 2;
   pub const ENUM_VALUES: &'static [Self] = &[
     Self::CLIENT_ROLE_UNKNOWN,
     Self::CLIENT_ROLE_PM,
@@ -158,7 +158,7 @@ impl<'a> flatbuffers::Follow<'a> for ClientRole {
   type Inner = Self;
   #[inline]
   unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
-    let b = flatbuffers::read_scalar_at::<u8>(buf, loc);
+    let b = flatbuffers::read_scalar_at::<i8>(buf, loc);
     Self(b)
   }
 }
@@ -167,20 +167,20 @@ impl flatbuffers::Push for ClientRole {
     type Output = ClientRole;
     #[inline]
     unsafe fn push(&self, dst: &mut [u8], _written_len: usize) {
-        flatbuffers::emplace_scalar::<u8>(dst, self.0);
+        flatbuffers::emplace_scalar::<i8>(dst, self.0);
     }
 }
 
 impl flatbuffers::EndianScalar for ClientRole {
-  type Scalar = u8;
+  type Scalar = i8;
   #[inline]
-  fn to_little_endian(self) -> u8 {
+  fn to_little_endian(self) -> i8 {
     self.0.to_le()
   }
   #[inline]
   #[allow(clippy::wrong_self_convention)]
-  fn from_little_endian(v: u8) -> Self {
-    let b = u8::from_le(v);
+  fn from_little_endian(v: i8) -> Self {
+    let b = i8::from_le(v);
     Self(b)
   }
 }
@@ -191,7 +191,7 @@ impl<'a> flatbuffers::Verifiable for ClientRole {
     v: &mut flatbuffers::Verifier, pos: usize
   ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
     use self::flatbuffers::Verifiable;
-    u8::run_verifier(v, pos)
+    i8::run_verifier(v, pos)
   }
 }
 
@@ -494,11 +494,11 @@ impl<'a> AppendRequest<'a> {
 
 
   #[inline]
-  pub fn timeout_ms(&self) -> u32 {
+  pub fn timeout_ms(&self) -> i32 {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<u32>(AppendRequest::VT_TIMEOUT_MS, Some(0)).unwrap()}
+    unsafe { self._tab.get::<i32>(AppendRequest::VT_TIMEOUT_MS, Some(0)).unwrap()}
   }
   #[inline]
   pub fn append_requests(&self) -> Option<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<AppendInfo<'a>>>> {
@@ -516,14 +516,14 @@ impl flatbuffers::Verifiable for AppendRequest<'_> {
   ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
     use self::flatbuffers::Verifiable;
     v.visit_table(pos)?
-     .visit_field::<u32>("timeout_ms", Self::VT_TIMEOUT_MS, false)?
+     .visit_field::<i32>("timeout_ms", Self::VT_TIMEOUT_MS, false)?
      .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<AppendInfo>>>>("append_requests", Self::VT_APPEND_REQUESTS, false)?
      .finish();
     Ok(())
   }
 }
 pub struct AppendRequestArgs<'a> {
-    pub timeout_ms: u32,
+    pub timeout_ms: i32,
     pub append_requests: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<AppendInfo<'a>>>>>,
 }
 impl<'a> Default for AppendRequestArgs<'a> {
@@ -542,8 +542,8 @@ pub struct AppendRequestBuilder<'a: 'b, 'b> {
 }
 impl<'a: 'b, 'b> AppendRequestBuilder<'a, 'b> {
   #[inline]
-  pub fn add_timeout_ms(&mut self, timeout_ms: u32) {
-    self.fbb_.push_slot::<u32>(AppendRequest::VT_TIMEOUT_MS, timeout_ms, 0);
+  pub fn add_timeout_ms(&mut self, timeout_ms: i32) {
+    self.fbb_.push_slot::<i32>(AppendRequest::VT_TIMEOUT_MS, timeout_ms, 0);
   }
   #[inline]
   pub fn add_append_requests(&mut self, append_requests: flatbuffers::WIPOffset<flatbuffers::Vector<'b , flatbuffers::ForwardsUOffset<AppendInfo<'b >>>>) {
@@ -610,25 +610,25 @@ impl<'a> AppendInfo<'a> {
 
 
   #[inline]
-  pub fn stream_id(&self) -> u64 {
+  pub fn stream_id(&self) -> i64 {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<u64>(AppendInfo::VT_STREAM_ID, Some(0)).unwrap()}
+    unsafe { self._tab.get::<i64>(AppendInfo::VT_STREAM_ID, Some(0)).unwrap()}
   }
   #[inline]
-  pub fn request_index(&self) -> u32 {
+  pub fn request_index(&self) -> i32 {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<u32>(AppendInfo::VT_REQUEST_INDEX, Some(0)).unwrap()}
+    unsafe { self._tab.get::<i32>(AppendInfo::VT_REQUEST_INDEX, Some(0)).unwrap()}
   }
   #[inline]
-  pub fn batch_length(&self) -> u32 {
+  pub fn batch_length(&self) -> i32 {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<u32>(AppendInfo::VT_BATCH_LENGTH, Some(0)).unwrap()}
+    unsafe { self._tab.get::<i32>(AppendInfo::VT_BATCH_LENGTH, Some(0)).unwrap()}
   }
 }
 
@@ -639,17 +639,17 @@ impl flatbuffers::Verifiable for AppendInfo<'_> {
   ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
     use self::flatbuffers::Verifiable;
     v.visit_table(pos)?
-     .visit_field::<u64>("stream_id", Self::VT_STREAM_ID, false)?
-     .visit_field::<u32>("request_index", Self::VT_REQUEST_INDEX, false)?
-     .visit_field::<u32>("batch_length", Self::VT_BATCH_LENGTH, false)?
+     .visit_field::<i64>("stream_id", Self::VT_STREAM_ID, false)?
+     .visit_field::<i32>("request_index", Self::VT_REQUEST_INDEX, false)?
+     .visit_field::<i32>("batch_length", Self::VT_BATCH_LENGTH, false)?
      .finish();
     Ok(())
   }
 }
 pub struct AppendInfoArgs {
-    pub stream_id: u64,
-    pub request_index: u32,
-    pub batch_length: u32,
+    pub stream_id: i64,
+    pub request_index: i32,
+    pub batch_length: i32,
 }
 impl<'a> Default for AppendInfoArgs {
   #[inline]
@@ -668,16 +668,16 @@ pub struct AppendInfoBuilder<'a: 'b, 'b> {
 }
 impl<'a: 'b, 'b> AppendInfoBuilder<'a, 'b> {
   #[inline]
-  pub fn add_stream_id(&mut self, stream_id: u64) {
-    self.fbb_.push_slot::<u64>(AppendInfo::VT_STREAM_ID, stream_id, 0);
+  pub fn add_stream_id(&mut self, stream_id: i64) {
+    self.fbb_.push_slot::<i64>(AppendInfo::VT_STREAM_ID, stream_id, 0);
   }
   #[inline]
-  pub fn add_request_index(&mut self, request_index: u32) {
-    self.fbb_.push_slot::<u32>(AppendInfo::VT_REQUEST_INDEX, request_index, 0);
+  pub fn add_request_index(&mut self, request_index: i32) {
+    self.fbb_.push_slot::<i32>(AppendInfo::VT_REQUEST_INDEX, request_index, 0);
   }
   #[inline]
-  pub fn add_batch_length(&mut self, batch_length: u32) {
-    self.fbb_.push_slot::<u32>(AppendInfo::VT_BATCH_LENGTH, batch_length, 0);
+  pub fn add_batch_length(&mut self, batch_length: i32) {
+    self.fbb_.push_slot::<i32>(AppendInfo::VT_BATCH_LENGTH, batch_length, 0);
   }
   #[inline]
   pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a>) -> AppendInfoBuilder<'a, 'b> {
@@ -739,11 +739,11 @@ impl<'a> AppendResponse<'a> {
 
 
   #[inline]
-  pub fn throttle_time_ms(&self) -> u32 {
+  pub fn throttle_time_ms(&self) -> i32 {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<u32>(AppendResponse::VT_THROTTLE_TIME_MS, Some(0)).unwrap()}
+    unsafe { self._tab.get::<i32>(AppendResponse::VT_THROTTLE_TIME_MS, Some(0)).unwrap()}
   }
   #[inline]
   pub fn append_responses(&self) -> Option<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<AppendResult<'a>>>> {
@@ -761,14 +761,14 @@ impl flatbuffers::Verifiable for AppendResponse<'_> {
   ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
     use self::flatbuffers::Verifiable;
     v.visit_table(pos)?
-     .visit_field::<u32>("throttle_time_ms", Self::VT_THROTTLE_TIME_MS, false)?
+     .visit_field::<i32>("throttle_time_ms", Self::VT_THROTTLE_TIME_MS, false)?
      .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<AppendResult>>>>("append_responses", Self::VT_APPEND_RESPONSES, false)?
      .finish();
     Ok(())
   }
 }
 pub struct AppendResponseArgs<'a> {
-    pub throttle_time_ms: u32,
+    pub throttle_time_ms: i32,
     pub append_responses: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<AppendResult<'a>>>>>,
 }
 impl<'a> Default for AppendResponseArgs<'a> {
@@ -787,8 +787,8 @@ pub struct AppendResponseBuilder<'a: 'b, 'b> {
 }
 impl<'a: 'b, 'b> AppendResponseBuilder<'a, 'b> {
   #[inline]
-  pub fn add_throttle_time_ms(&mut self, throttle_time_ms: u32) {
-    self.fbb_.push_slot::<u32>(AppendResponse::VT_THROTTLE_TIME_MS, throttle_time_ms, 0);
+  pub fn add_throttle_time_ms(&mut self, throttle_time_ms: i32) {
+    self.fbb_.push_slot::<i32>(AppendResponse::VT_THROTTLE_TIME_MS, throttle_time_ms, 0);
   }
   #[inline]
   pub fn add_append_responses(&mut self, append_responses: flatbuffers::WIPOffset<flatbuffers::Vector<'b , flatbuffers::ForwardsUOffset<AppendResult<'b >>>>) {
@@ -861,32 +861,32 @@ impl<'a> AppendResult<'a> {
 
 
   #[inline]
-  pub fn stream_id(&self) -> u64 {
+  pub fn stream_id(&self) -> i64 {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<u64>(AppendResult::VT_STREAM_ID, Some(0)).unwrap()}
+    unsafe { self._tab.get::<i64>(AppendResult::VT_STREAM_ID, Some(0)).unwrap()}
   }
   #[inline]
-  pub fn request_index(&self) -> u32 {
+  pub fn request_index(&self) -> i32 {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<u32>(AppendResult::VT_REQUEST_INDEX, Some(0)).unwrap()}
+    unsafe { self._tab.get::<i32>(AppendResult::VT_REQUEST_INDEX, Some(0)).unwrap()}
   }
   #[inline]
-  pub fn base_offset(&self) -> u64 {
+  pub fn base_offset(&self) -> i64 {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<u64>(AppendResult::VT_BASE_OFFSET, Some(0)).unwrap()}
+    unsafe { self._tab.get::<i64>(AppendResult::VT_BASE_OFFSET, Some(0)).unwrap()}
   }
   #[inline]
-  pub fn stream_append_time_ms(&self) -> u64 {
+  pub fn stream_append_time_ms(&self) -> i64 {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<u64>(AppendResult::VT_STREAM_APPEND_TIME_MS, Some(0)).unwrap()}
+    unsafe { self._tab.get::<i64>(AppendResult::VT_STREAM_APPEND_TIME_MS, Some(0)).unwrap()}
   }
   #[inline]
   pub fn error_code(&self) -> ErrorCode {
@@ -911,10 +911,10 @@ impl flatbuffers::Verifiable for AppendResult<'_> {
   ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
     use self::flatbuffers::Verifiable;
     v.visit_table(pos)?
-     .visit_field::<u64>("stream_id", Self::VT_STREAM_ID, false)?
-     .visit_field::<u32>("request_index", Self::VT_REQUEST_INDEX, false)?
-     .visit_field::<u64>("base_offset", Self::VT_BASE_OFFSET, false)?
-     .visit_field::<u64>("stream_append_time_ms", Self::VT_STREAM_APPEND_TIME_MS, false)?
+     .visit_field::<i64>("stream_id", Self::VT_STREAM_ID, false)?
+     .visit_field::<i32>("request_index", Self::VT_REQUEST_INDEX, false)?
+     .visit_field::<i64>("base_offset", Self::VT_BASE_OFFSET, false)?
+     .visit_field::<i64>("stream_append_time_ms", Self::VT_STREAM_APPEND_TIME_MS, false)?
      .visit_field::<ErrorCode>("error_code", Self::VT_ERROR_CODE, false)?
      .visit_field::<flatbuffers::ForwardsUOffset<&str>>("error_message", Self::VT_ERROR_MESSAGE, false)?
      .finish();
@@ -922,10 +922,10 @@ impl flatbuffers::Verifiable for AppendResult<'_> {
   }
 }
 pub struct AppendResultArgs<'a> {
-    pub stream_id: u64,
-    pub request_index: u32,
-    pub base_offset: u64,
-    pub stream_append_time_ms: u64,
+    pub stream_id: i64,
+    pub request_index: i32,
+    pub base_offset: i64,
+    pub stream_append_time_ms: i64,
     pub error_code: ErrorCode,
     pub error_message: Option<flatbuffers::WIPOffset<&'a str>>,
 }
@@ -949,20 +949,20 @@ pub struct AppendResultBuilder<'a: 'b, 'b> {
 }
 impl<'a: 'b, 'b> AppendResultBuilder<'a, 'b> {
   #[inline]
-  pub fn add_stream_id(&mut self, stream_id: u64) {
-    self.fbb_.push_slot::<u64>(AppendResult::VT_STREAM_ID, stream_id, 0);
+  pub fn add_stream_id(&mut self, stream_id: i64) {
+    self.fbb_.push_slot::<i64>(AppendResult::VT_STREAM_ID, stream_id, 0);
   }
   #[inline]
-  pub fn add_request_index(&mut self, request_index: u32) {
-    self.fbb_.push_slot::<u32>(AppendResult::VT_REQUEST_INDEX, request_index, 0);
+  pub fn add_request_index(&mut self, request_index: i32) {
+    self.fbb_.push_slot::<i32>(AppendResult::VT_REQUEST_INDEX, request_index, 0);
   }
   #[inline]
-  pub fn add_base_offset(&mut self, base_offset: u64) {
-    self.fbb_.push_slot::<u64>(AppendResult::VT_BASE_OFFSET, base_offset, 0);
+  pub fn add_base_offset(&mut self, base_offset: i64) {
+    self.fbb_.push_slot::<i64>(AppendResult::VT_BASE_OFFSET, base_offset, 0);
   }
   #[inline]
-  pub fn add_stream_append_time_ms(&mut self, stream_append_time_ms: u64) {
-    self.fbb_.push_slot::<u64>(AppendResult::VT_STREAM_APPEND_TIME_MS, stream_append_time_ms, 0);
+  pub fn add_stream_append_time_ms(&mut self, stream_append_time_ms: i64) {
+    self.fbb_.push_slot::<i64>(AppendResult::VT_STREAM_APPEND_TIME_MS, stream_append_time_ms, 0);
   }
   #[inline]
   pub fn add_error_code(&mut self, error_code: ErrorCode) {
@@ -1037,18 +1037,18 @@ impl<'a> FetchRequest<'a> {
 
 
   #[inline]
-  pub fn max_wait_ms(&self) -> u32 {
+  pub fn max_wait_ms(&self) -> i32 {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<u32>(FetchRequest::VT_MAX_WAIT_MS, Some(0)).unwrap()}
+    unsafe { self._tab.get::<i32>(FetchRequest::VT_MAX_WAIT_MS, Some(0)).unwrap()}
   }
   #[inline]
-  pub fn min_bytes(&self) -> u32 {
+  pub fn min_bytes(&self) -> i32 {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<u32>(FetchRequest::VT_MIN_BYTES, Some(0)).unwrap()}
+    unsafe { self._tab.get::<i32>(FetchRequest::VT_MIN_BYTES, Some(0)).unwrap()}
   }
   #[inline]
   pub fn fetch_requests(&self) -> Option<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<FetchInfo<'a>>>> {
@@ -1066,16 +1066,16 @@ impl flatbuffers::Verifiable for FetchRequest<'_> {
   ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
     use self::flatbuffers::Verifiable;
     v.visit_table(pos)?
-     .visit_field::<u32>("max_wait_ms", Self::VT_MAX_WAIT_MS, false)?
-     .visit_field::<u32>("min_bytes", Self::VT_MIN_BYTES, false)?
+     .visit_field::<i32>("max_wait_ms", Self::VT_MAX_WAIT_MS, false)?
+     .visit_field::<i32>("min_bytes", Self::VT_MIN_BYTES, false)?
      .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<FetchInfo>>>>("fetch_requests", Self::VT_FETCH_REQUESTS, false)?
      .finish();
     Ok(())
   }
 }
 pub struct FetchRequestArgs<'a> {
-    pub max_wait_ms: u32,
-    pub min_bytes: u32,
+    pub max_wait_ms: i32,
+    pub min_bytes: i32,
     pub fetch_requests: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<FetchInfo<'a>>>>>,
 }
 impl<'a> Default for FetchRequestArgs<'a> {
@@ -1095,12 +1095,12 @@ pub struct FetchRequestBuilder<'a: 'b, 'b> {
 }
 impl<'a: 'b, 'b> FetchRequestBuilder<'a, 'b> {
   #[inline]
-  pub fn add_max_wait_ms(&mut self, max_wait_ms: u32) {
-    self.fbb_.push_slot::<u32>(FetchRequest::VT_MAX_WAIT_MS, max_wait_ms, 0);
+  pub fn add_max_wait_ms(&mut self, max_wait_ms: i32) {
+    self.fbb_.push_slot::<i32>(FetchRequest::VT_MAX_WAIT_MS, max_wait_ms, 0);
   }
   #[inline]
-  pub fn add_min_bytes(&mut self, min_bytes: u32) {
-    self.fbb_.push_slot::<u32>(FetchRequest::VT_MIN_BYTES, min_bytes, 0);
+  pub fn add_min_bytes(&mut self, min_bytes: i32) {
+    self.fbb_.push_slot::<i32>(FetchRequest::VT_MIN_BYTES, min_bytes, 0);
   }
   #[inline]
   pub fn add_fetch_requests(&mut self, fetch_requests: flatbuffers::WIPOffset<flatbuffers::Vector<'b , flatbuffers::ForwardsUOffset<FetchInfo<'b >>>>) {
@@ -1170,32 +1170,32 @@ impl<'a> FetchInfo<'a> {
 
 
   #[inline]
-  pub fn stream_id(&self) -> u64 {
+  pub fn stream_id(&self) -> i64 {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<u64>(FetchInfo::VT_STREAM_ID, Some(0)).unwrap()}
+    unsafe { self._tab.get::<i64>(FetchInfo::VT_STREAM_ID, Some(0)).unwrap()}
   }
   #[inline]
-  pub fn request_index(&self) -> u32 {
+  pub fn request_index(&self) -> i32 {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<u32>(FetchInfo::VT_REQUEST_INDEX, Some(0)).unwrap()}
+    unsafe { self._tab.get::<i32>(FetchInfo::VT_REQUEST_INDEX, Some(0)).unwrap()}
   }
   #[inline]
-  pub fn fetch_offset(&self) -> u64 {
+  pub fn fetch_offset(&self) -> i64 {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<u64>(FetchInfo::VT_FETCH_OFFSET, Some(0)).unwrap()}
+    unsafe { self._tab.get::<i64>(FetchInfo::VT_FETCH_OFFSET, Some(0)).unwrap()}
   }
   #[inline]
-  pub fn batch_max_bytes(&self) -> u32 {
+  pub fn batch_max_bytes(&self) -> i32 {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<u32>(FetchInfo::VT_BATCH_MAX_BYTES, Some(0)).unwrap()}
+    unsafe { self._tab.get::<i32>(FetchInfo::VT_BATCH_MAX_BYTES, Some(0)).unwrap()}
   }
 }
 
@@ -1206,19 +1206,19 @@ impl flatbuffers::Verifiable for FetchInfo<'_> {
   ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
     use self::flatbuffers::Verifiable;
     v.visit_table(pos)?
-     .visit_field::<u64>("stream_id", Self::VT_STREAM_ID, false)?
-     .visit_field::<u32>("request_index", Self::VT_REQUEST_INDEX, false)?
-     .visit_field::<u64>("fetch_offset", Self::VT_FETCH_OFFSET, false)?
-     .visit_field::<u32>("batch_max_bytes", Self::VT_BATCH_MAX_BYTES, false)?
+     .visit_field::<i64>("stream_id", Self::VT_STREAM_ID, false)?
+     .visit_field::<i32>("request_index", Self::VT_REQUEST_INDEX, false)?
+     .visit_field::<i64>("fetch_offset", Self::VT_FETCH_OFFSET, false)?
+     .visit_field::<i32>("batch_max_bytes", Self::VT_BATCH_MAX_BYTES, false)?
      .finish();
     Ok(())
   }
 }
 pub struct FetchInfoArgs {
-    pub stream_id: u64,
-    pub request_index: u32,
-    pub fetch_offset: u64,
-    pub batch_max_bytes: u32,
+    pub stream_id: i64,
+    pub request_index: i32,
+    pub fetch_offset: i64,
+    pub batch_max_bytes: i32,
 }
 impl<'a> Default for FetchInfoArgs {
   #[inline]
@@ -1238,20 +1238,20 @@ pub struct FetchInfoBuilder<'a: 'b, 'b> {
 }
 impl<'a: 'b, 'b> FetchInfoBuilder<'a, 'b> {
   #[inline]
-  pub fn add_stream_id(&mut self, stream_id: u64) {
-    self.fbb_.push_slot::<u64>(FetchInfo::VT_STREAM_ID, stream_id, 0);
+  pub fn add_stream_id(&mut self, stream_id: i64) {
+    self.fbb_.push_slot::<i64>(FetchInfo::VT_STREAM_ID, stream_id, 0);
   }
   #[inline]
-  pub fn add_request_index(&mut self, request_index: u32) {
-    self.fbb_.push_slot::<u32>(FetchInfo::VT_REQUEST_INDEX, request_index, 0);
+  pub fn add_request_index(&mut self, request_index: i32) {
+    self.fbb_.push_slot::<i32>(FetchInfo::VT_REQUEST_INDEX, request_index, 0);
   }
   #[inline]
-  pub fn add_fetch_offset(&mut self, fetch_offset: u64) {
-    self.fbb_.push_slot::<u64>(FetchInfo::VT_FETCH_OFFSET, fetch_offset, 0);
+  pub fn add_fetch_offset(&mut self, fetch_offset: i64) {
+    self.fbb_.push_slot::<i64>(FetchInfo::VT_FETCH_OFFSET, fetch_offset, 0);
   }
   #[inline]
-  pub fn add_batch_max_bytes(&mut self, batch_max_bytes: u32) {
-    self.fbb_.push_slot::<u32>(FetchInfo::VT_BATCH_MAX_BYTES, batch_max_bytes, 0);
+  pub fn add_batch_max_bytes(&mut self, batch_max_bytes: i32) {
+    self.fbb_.push_slot::<i32>(FetchInfo::VT_BATCH_MAX_BYTES, batch_max_bytes, 0);
   }
   #[inline]
   pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a>) -> FetchInfoBuilder<'a, 'b> {
@@ -1314,11 +1314,11 @@ impl<'a> FetchResponse<'a> {
 
 
   #[inline]
-  pub fn throttle_time_ms(&self) -> u32 {
+  pub fn throttle_time_ms(&self) -> i32 {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<u32>(FetchResponse::VT_THROTTLE_TIME_MS, Some(0)).unwrap()}
+    unsafe { self._tab.get::<i32>(FetchResponse::VT_THROTTLE_TIME_MS, Some(0)).unwrap()}
   }
   #[inline]
   pub fn fetch_responses(&self) -> Option<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<FetchResult<'a>>>> {
@@ -1336,14 +1336,14 @@ impl flatbuffers::Verifiable for FetchResponse<'_> {
   ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
     use self::flatbuffers::Verifiable;
     v.visit_table(pos)?
-     .visit_field::<u32>("throttle_time_ms", Self::VT_THROTTLE_TIME_MS, false)?
+     .visit_field::<i32>("throttle_time_ms", Self::VT_THROTTLE_TIME_MS, false)?
      .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<FetchResult>>>>("fetch_responses", Self::VT_FETCH_RESPONSES, false)?
      .finish();
     Ok(())
   }
 }
 pub struct FetchResponseArgs<'a> {
-    pub throttle_time_ms: u32,
+    pub throttle_time_ms: i32,
     pub fetch_responses: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<FetchResult<'a>>>>>,
 }
 impl<'a> Default for FetchResponseArgs<'a> {
@@ -1362,8 +1362,8 @@ pub struct FetchResponseBuilder<'a: 'b, 'b> {
 }
 impl<'a: 'b, 'b> FetchResponseBuilder<'a, 'b> {
   #[inline]
-  pub fn add_throttle_time_ms(&mut self, throttle_time_ms: u32) {
-    self.fbb_.push_slot::<u32>(FetchResponse::VT_THROTTLE_TIME_MS, throttle_time_ms, 0);
+  pub fn add_throttle_time_ms(&mut self, throttle_time_ms: i32) {
+    self.fbb_.push_slot::<i32>(FetchResponse::VT_THROTTLE_TIME_MS, throttle_time_ms, 0);
   }
   #[inline]
   pub fn add_fetch_responses(&mut self, fetch_responses: flatbuffers::WIPOffset<flatbuffers::Vector<'b , flatbuffers::ForwardsUOffset<FetchResult<'b >>>>) {
@@ -1434,18 +1434,18 @@ impl<'a> FetchResult<'a> {
 
 
   #[inline]
-  pub fn stream_id(&self) -> u64 {
+  pub fn stream_id(&self) -> i64 {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<u64>(FetchResult::VT_STREAM_ID, Some(0)).unwrap()}
+    unsafe { self._tab.get::<i64>(FetchResult::VT_STREAM_ID, Some(0)).unwrap()}
   }
   #[inline]
-  pub fn request_index(&self) -> u32 {
+  pub fn request_index(&self) -> i32 {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<u32>(FetchResult::VT_REQUEST_INDEX, Some(0)).unwrap()}
+    unsafe { self._tab.get::<i32>(FetchResult::VT_REQUEST_INDEX, Some(0)).unwrap()}
   }
   #[inline]
   pub fn error_code(&self) -> ErrorCode {
@@ -1462,11 +1462,11 @@ impl<'a> FetchResult<'a> {
     unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(FetchResult::VT_ERROR_MESSAGE, None)}
   }
   #[inline]
-  pub fn batch_length(&self) -> u32 {
+  pub fn batch_length(&self) -> i32 {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<u32>(FetchResult::VT_BATCH_LENGTH, Some(0)).unwrap()}
+    unsafe { self._tab.get::<i32>(FetchResult::VT_BATCH_LENGTH, Some(0)).unwrap()}
   }
 }
 
@@ -1477,21 +1477,21 @@ impl flatbuffers::Verifiable for FetchResult<'_> {
   ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
     use self::flatbuffers::Verifiable;
     v.visit_table(pos)?
-     .visit_field::<u64>("stream_id", Self::VT_STREAM_ID, false)?
-     .visit_field::<u32>("request_index", Self::VT_REQUEST_INDEX, false)?
+     .visit_field::<i64>("stream_id", Self::VT_STREAM_ID, false)?
+     .visit_field::<i32>("request_index", Self::VT_REQUEST_INDEX, false)?
      .visit_field::<ErrorCode>("error_code", Self::VT_ERROR_CODE, false)?
      .visit_field::<flatbuffers::ForwardsUOffset<&str>>("error_message", Self::VT_ERROR_MESSAGE, false)?
-     .visit_field::<u32>("batch_length", Self::VT_BATCH_LENGTH, false)?
+     .visit_field::<i32>("batch_length", Self::VT_BATCH_LENGTH, false)?
      .finish();
     Ok(())
   }
 }
 pub struct FetchResultArgs<'a> {
-    pub stream_id: u64,
-    pub request_index: u32,
+    pub stream_id: i64,
+    pub request_index: i32,
     pub error_code: ErrorCode,
     pub error_message: Option<flatbuffers::WIPOffset<&'a str>>,
-    pub batch_length: u32,
+    pub batch_length: i32,
 }
 impl<'a> Default for FetchResultArgs<'a> {
   #[inline]
@@ -1512,12 +1512,12 @@ pub struct FetchResultBuilder<'a: 'b, 'b> {
 }
 impl<'a: 'b, 'b> FetchResultBuilder<'a, 'b> {
   #[inline]
-  pub fn add_stream_id(&mut self, stream_id: u64) {
-    self.fbb_.push_slot::<u64>(FetchResult::VT_STREAM_ID, stream_id, 0);
+  pub fn add_stream_id(&mut self, stream_id: i64) {
+    self.fbb_.push_slot::<i64>(FetchResult::VT_STREAM_ID, stream_id, 0);
   }
   #[inline]
-  pub fn add_request_index(&mut self, request_index: u32) {
-    self.fbb_.push_slot::<u32>(FetchResult::VT_REQUEST_INDEX, request_index, 0);
+  pub fn add_request_index(&mut self, request_index: i32) {
+    self.fbb_.push_slot::<i32>(FetchResult::VT_REQUEST_INDEX, request_index, 0);
   }
   #[inline]
   pub fn add_error_code(&mut self, error_code: ErrorCode) {
@@ -1528,8 +1528,8 @@ impl<'a: 'b, 'b> FetchResultBuilder<'a, 'b> {
     self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(FetchResult::VT_ERROR_MESSAGE, error_message);
   }
   #[inline]
-  pub fn add_batch_length(&mut self, batch_length: u32) {
-    self.fbb_.push_slot::<u32>(FetchResult::VT_BATCH_LENGTH, batch_length, 0);
+  pub fn add_batch_length(&mut self, batch_length: i32) {
+    self.fbb_.push_slot::<i32>(FetchResult::VT_BATCH_LENGTH, batch_length, 0);
   }
   #[inline]
   pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a>) -> FetchResultBuilder<'a, 'b> {
@@ -1600,11 +1600,11 @@ impl<'a> RangeOwner<'a> {
     unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<DataNode>>(RangeOwner::VT_DATA_NODE, None)}
   }
   #[inline]
-  pub fn stream_id(&self) -> u64 {
+  pub fn stream_id(&self) -> i64 {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<u64>(RangeOwner::VT_STREAM_ID, Some(0)).unwrap()}
+    unsafe { self._tab.get::<i64>(RangeOwner::VT_STREAM_ID, Some(0)).unwrap()}
   }
 }
 
@@ -1616,14 +1616,14 @@ impl flatbuffers::Verifiable for RangeOwner<'_> {
     use self::flatbuffers::Verifiable;
     v.visit_table(pos)?
      .visit_field::<flatbuffers::ForwardsUOffset<DataNode>>("data_node", Self::VT_DATA_NODE, false)?
-     .visit_field::<u64>("stream_id", Self::VT_STREAM_ID, false)?
+     .visit_field::<i64>("stream_id", Self::VT_STREAM_ID, false)?
      .finish();
     Ok(())
   }
 }
 pub struct RangeOwnerArgs<'a> {
     pub data_node: Option<flatbuffers::WIPOffset<DataNode<'a>>>,
-    pub stream_id: u64,
+    pub stream_id: i64,
 }
 impl<'a> Default for RangeOwnerArgs<'a> {
   #[inline]
@@ -1645,8 +1645,8 @@ impl<'a: 'b, 'b> RangeOwnerBuilder<'a, 'b> {
     self.fbb_.push_slot_always::<flatbuffers::WIPOffset<DataNode>>(RangeOwner::VT_DATA_NODE, data_node);
   }
   #[inline]
-  pub fn add_stream_id(&mut self, stream_id: u64) {
-    self.fbb_.push_slot::<u64>(RangeOwner::VT_STREAM_ID, stream_id, 0);
+  pub fn add_stream_id(&mut self, stream_id: i64) {
+    self.fbb_.push_slot::<i64>(RangeOwner::VT_STREAM_ID, stream_id, 0);
   }
   #[inline]
   pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a>) -> RangeOwnerBuilder<'a, 'b> {
@@ -1707,11 +1707,11 @@ impl<'a> DataNode<'a> {
 
 
   #[inline]
-  pub fn node_id(&self) -> u32 {
+  pub fn node_id(&self) -> i32 {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<u32>(DataNode::VT_NODE_ID, Some(0)).unwrap()}
+    unsafe { self._tab.get::<i32>(DataNode::VT_NODE_ID, Some(0)).unwrap()}
   }
   #[inline]
   pub fn advertise_addr(&self) -> Option<&'a str> {
@@ -1729,14 +1729,14 @@ impl flatbuffers::Verifiable for DataNode<'_> {
   ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
     use self::flatbuffers::Verifiable;
     v.visit_table(pos)?
-     .visit_field::<u32>("node_id", Self::VT_NODE_ID, false)?
+     .visit_field::<i32>("node_id", Self::VT_NODE_ID, false)?
      .visit_field::<flatbuffers::ForwardsUOffset<&str>>("advertise_addr", Self::VT_ADVERTISE_ADDR, false)?
      .finish();
     Ok(())
   }
 }
 pub struct DataNodeArgs<'a> {
-    pub node_id: u32,
+    pub node_id: i32,
     pub advertise_addr: Option<flatbuffers::WIPOffset<&'a str>>,
 }
 impl<'a> Default for DataNodeArgs<'a> {
@@ -1755,8 +1755,8 @@ pub struct DataNodeBuilder<'a: 'b, 'b> {
 }
 impl<'a: 'b, 'b> DataNodeBuilder<'a, 'b> {
   #[inline]
-  pub fn add_node_id(&mut self, node_id: u32) {
-    self.fbb_.push_slot::<u32>(DataNode::VT_NODE_ID, node_id, 0);
+  pub fn add_node_id(&mut self, node_id: i32) {
+    self.fbb_.push_slot::<i32>(DataNode::VT_NODE_ID, node_id, 0);
   }
   #[inline]
   pub fn add_advertise_addr(&mut self, advertise_addr: flatbuffers::WIPOffset<&'b  str>) {
@@ -1821,11 +1821,11 @@ impl<'a> ListRangesRequest<'a> {
 
 
   #[inline]
-  pub fn timeout_ms(&self) -> u32 {
+  pub fn timeout_ms(&self) -> i32 {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<u32>(ListRangesRequest::VT_TIMEOUT_MS, Some(0)).unwrap()}
+    unsafe { self._tab.get::<i32>(ListRangesRequest::VT_TIMEOUT_MS, Some(0)).unwrap()}
   }
   #[inline]
   pub fn range_owners(&self) -> Option<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<RangeOwner<'a>>>> {
@@ -1843,14 +1843,14 @@ impl flatbuffers::Verifiable for ListRangesRequest<'_> {
   ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
     use self::flatbuffers::Verifiable;
     v.visit_table(pos)?
-     .visit_field::<u32>("timeout_ms", Self::VT_TIMEOUT_MS, false)?
+     .visit_field::<i32>("timeout_ms", Self::VT_TIMEOUT_MS, false)?
      .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<RangeOwner>>>>("range_owners", Self::VT_RANGE_OWNERS, false)?
      .finish();
     Ok(())
   }
 }
 pub struct ListRangesRequestArgs<'a> {
-    pub timeout_ms: u32,
+    pub timeout_ms: i32,
     pub range_owners: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<RangeOwner<'a>>>>>,
 }
 impl<'a> Default for ListRangesRequestArgs<'a> {
@@ -1869,8 +1869,8 @@ pub struct ListRangesRequestBuilder<'a: 'b, 'b> {
 }
 impl<'a: 'b, 'b> ListRangesRequestBuilder<'a, 'b> {
   #[inline]
-  pub fn add_timeout_ms(&mut self, timeout_ms: u32) {
-    self.fbb_.push_slot::<u32>(ListRangesRequest::VT_TIMEOUT_MS, timeout_ms, 0);
+  pub fn add_timeout_ms(&mut self, timeout_ms: i32) {
+    self.fbb_.push_slot::<i32>(ListRangesRequest::VT_TIMEOUT_MS, timeout_ms, 0);
   }
   #[inline]
   pub fn add_range_owners(&mut self, range_owners: flatbuffers::WIPOffset<flatbuffers::Vector<'b , flatbuffers::ForwardsUOffset<RangeOwner<'b >>>>) {
@@ -1935,11 +1935,11 @@ impl<'a> ListRangesResponse<'a> {
 
 
   #[inline]
-  pub fn throttle_time_ms(&self) -> u32 {
+  pub fn throttle_time_ms(&self) -> i32 {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<u32>(ListRangesResponse::VT_THROTTLE_TIME_MS, Some(0)).unwrap()}
+    unsafe { self._tab.get::<i32>(ListRangesResponse::VT_THROTTLE_TIME_MS, Some(0)).unwrap()}
   }
   #[inline]
   pub fn list_responses(&self) -> Option<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<ListRangesResult<'a>>>> {
@@ -1957,14 +1957,14 @@ impl flatbuffers::Verifiable for ListRangesResponse<'_> {
   ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
     use self::flatbuffers::Verifiable;
     v.visit_table(pos)?
-     .visit_field::<u32>("throttle_time_ms", Self::VT_THROTTLE_TIME_MS, false)?
+     .visit_field::<i32>("throttle_time_ms", Self::VT_THROTTLE_TIME_MS, false)?
      .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<ListRangesResult>>>>("list_responses", Self::VT_LIST_RESPONSES, false)?
      .finish();
     Ok(())
   }
 }
 pub struct ListRangesResponseArgs<'a> {
-    pub throttle_time_ms: u32,
+    pub throttle_time_ms: i32,
     pub list_responses: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<ListRangesResult<'a>>>>>,
 }
 impl<'a> Default for ListRangesResponseArgs<'a> {
@@ -1983,8 +1983,8 @@ pub struct ListRangesResponseBuilder<'a: 'b, 'b> {
 }
 impl<'a: 'b, 'b> ListRangesResponseBuilder<'a, 'b> {
   #[inline]
-  pub fn add_throttle_time_ms(&mut self, throttle_time_ms: u32) {
-    self.fbb_.push_slot::<u32>(ListRangesResponse::VT_THROTTLE_TIME_MS, throttle_time_ms, 0);
+  pub fn add_throttle_time_ms(&mut self, throttle_time_ms: i32) {
+    self.fbb_.push_slot::<i32>(ListRangesResponse::VT_THROTTLE_TIME_MS, throttle_time_ms, 0);
   }
   #[inline]
   pub fn add_list_responses(&mut self, list_responses: flatbuffers::WIPOffset<flatbuffers::Vector<'b , flatbuffers::ForwardsUOffset<ListRangesResult<'b >>>>) {
@@ -2205,39 +2205,39 @@ impl<'a> Range<'a> {
 
 
   #[inline]
-  pub fn stream_id(&self) -> u64 {
+  pub fn stream_id(&self) -> i64 {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<u64>(Range::VT_STREAM_ID, Some(0)).unwrap()}
+    unsafe { self._tab.get::<i64>(Range::VT_STREAM_ID, Some(0)).unwrap()}
   }
   #[inline]
-  pub fn range_index(&self) -> u32 {
+  pub fn range_index(&self) -> i32 {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<u32>(Range::VT_RANGE_INDEX, Some(0)).unwrap()}
+    unsafe { self._tab.get::<i32>(Range::VT_RANGE_INDEX, Some(0)).unwrap()}
   }
   #[inline]
-  pub fn start_offset(&self) -> u64 {
+  pub fn start_offset(&self) -> i64 {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<u64>(Range::VT_START_OFFSET, Some(0)).unwrap()}
+    unsafe { self._tab.get::<i64>(Range::VT_START_OFFSET, Some(0)).unwrap()}
   }
   #[inline]
-  pub fn end_offset(&self) -> u64 {
+  pub fn end_offset(&self) -> i64 {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<u64>(Range::VT_END_OFFSET, Some(0)).unwrap()}
+    unsafe { self._tab.get::<i64>(Range::VT_END_OFFSET, Some(0)).unwrap()}
   }
   #[inline]
-  pub fn next_offset(&self) -> u64 {
+  pub fn next_offset(&self) -> i64 {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<u64>(Range::VT_NEXT_OFFSET, Some(0)).unwrap()}
+    unsafe { self._tab.get::<i64>(Range::VT_NEXT_OFFSET, Some(0)).unwrap()}
   }
   #[inline]
   pub fn replica_nodes(&self) -> Option<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<ReplicaNode<'a>>>> {
@@ -2255,22 +2255,22 @@ impl flatbuffers::Verifiable for Range<'_> {
   ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
     use self::flatbuffers::Verifiable;
     v.visit_table(pos)?
-     .visit_field::<u64>("stream_id", Self::VT_STREAM_ID, false)?
-     .visit_field::<u32>("range_index", Self::VT_RANGE_INDEX, false)?
-     .visit_field::<u64>("start_offset", Self::VT_START_OFFSET, false)?
-     .visit_field::<u64>("end_offset", Self::VT_END_OFFSET, false)?
-     .visit_field::<u64>("next_offset", Self::VT_NEXT_OFFSET, false)?
+     .visit_field::<i64>("stream_id", Self::VT_STREAM_ID, false)?
+     .visit_field::<i32>("range_index", Self::VT_RANGE_INDEX, false)?
+     .visit_field::<i64>("start_offset", Self::VT_START_OFFSET, false)?
+     .visit_field::<i64>("end_offset", Self::VT_END_OFFSET, false)?
+     .visit_field::<i64>("next_offset", Self::VT_NEXT_OFFSET, false)?
      .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<ReplicaNode>>>>("replica_nodes", Self::VT_REPLICA_NODES, false)?
      .finish();
     Ok(())
   }
 }
 pub struct RangeArgs<'a> {
-    pub stream_id: u64,
-    pub range_index: u32,
-    pub start_offset: u64,
-    pub end_offset: u64,
-    pub next_offset: u64,
+    pub stream_id: i64,
+    pub range_index: i32,
+    pub start_offset: i64,
+    pub end_offset: i64,
+    pub next_offset: i64,
     pub replica_nodes: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<ReplicaNode<'a>>>>>,
 }
 impl<'a> Default for RangeArgs<'a> {
@@ -2293,24 +2293,24 @@ pub struct RangeBuilder<'a: 'b, 'b> {
 }
 impl<'a: 'b, 'b> RangeBuilder<'a, 'b> {
   #[inline]
-  pub fn add_stream_id(&mut self, stream_id: u64) {
-    self.fbb_.push_slot::<u64>(Range::VT_STREAM_ID, stream_id, 0);
+  pub fn add_stream_id(&mut self, stream_id: i64) {
+    self.fbb_.push_slot::<i64>(Range::VT_STREAM_ID, stream_id, 0);
   }
   #[inline]
-  pub fn add_range_index(&mut self, range_index: u32) {
-    self.fbb_.push_slot::<u32>(Range::VT_RANGE_INDEX, range_index, 0);
+  pub fn add_range_index(&mut self, range_index: i32) {
+    self.fbb_.push_slot::<i32>(Range::VT_RANGE_INDEX, range_index, 0);
   }
   #[inline]
-  pub fn add_start_offset(&mut self, start_offset: u64) {
-    self.fbb_.push_slot::<u64>(Range::VT_START_OFFSET, start_offset, 0);
+  pub fn add_start_offset(&mut self, start_offset: i64) {
+    self.fbb_.push_slot::<i64>(Range::VT_START_OFFSET, start_offset, 0);
   }
   #[inline]
-  pub fn add_end_offset(&mut self, end_offset: u64) {
-    self.fbb_.push_slot::<u64>(Range::VT_END_OFFSET, end_offset, 0);
+  pub fn add_end_offset(&mut self, end_offset: i64) {
+    self.fbb_.push_slot::<i64>(Range::VT_END_OFFSET, end_offset, 0);
   }
   #[inline]
-  pub fn add_next_offset(&mut self, next_offset: u64) {
-    self.fbb_.push_slot::<u64>(Range::VT_NEXT_OFFSET, next_offset, 0);
+  pub fn add_next_offset(&mut self, next_offset: i64) {
+    self.fbb_.push_slot::<i64>(Range::VT_NEXT_OFFSET, next_offset, 0);
   }
   #[inline]
   pub fn add_replica_nodes(&mut self, replica_nodes: flatbuffers::WIPOffset<flatbuffers::Vector<'b , flatbuffers::ForwardsUOffset<ReplicaNode<'b >>>>) {
@@ -2493,11 +2493,11 @@ impl<'a> SealRangesRequest<'a> {
 
 
   #[inline]
-  pub fn timeout_ms(&self) -> u32 {
+  pub fn timeout_ms(&self) -> i32 {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<u32>(SealRangesRequest::VT_TIMEOUT_MS, Some(0)).unwrap()}
+    unsafe { self._tab.get::<i32>(SealRangesRequest::VT_TIMEOUT_MS, Some(0)).unwrap()}
   }
   #[inline]
   pub fn ranges(&self) -> Option<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<RangeId<'a>>>> {
@@ -2515,14 +2515,14 @@ impl flatbuffers::Verifiable for SealRangesRequest<'_> {
   ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
     use self::flatbuffers::Verifiable;
     v.visit_table(pos)?
-     .visit_field::<u32>("timeout_ms", Self::VT_TIMEOUT_MS, false)?
+     .visit_field::<i32>("timeout_ms", Self::VT_TIMEOUT_MS, false)?
      .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<RangeId>>>>("ranges", Self::VT_RANGES, false)?
      .finish();
     Ok(())
   }
 }
 pub struct SealRangesRequestArgs<'a> {
-    pub timeout_ms: u32,
+    pub timeout_ms: i32,
     pub ranges: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<RangeId<'a>>>>>,
 }
 impl<'a> Default for SealRangesRequestArgs<'a> {
@@ -2541,8 +2541,8 @@ pub struct SealRangesRequestBuilder<'a: 'b, 'b> {
 }
 impl<'a: 'b, 'b> SealRangesRequestBuilder<'a, 'b> {
   #[inline]
-  pub fn add_timeout_ms(&mut self, timeout_ms: u32) {
-    self.fbb_.push_slot::<u32>(SealRangesRequest::VT_TIMEOUT_MS, timeout_ms, 0);
+  pub fn add_timeout_ms(&mut self, timeout_ms: i32) {
+    self.fbb_.push_slot::<i32>(SealRangesRequest::VT_TIMEOUT_MS, timeout_ms, 0);
   }
   #[inline]
   pub fn add_ranges(&mut self, ranges: flatbuffers::WIPOffset<flatbuffers::Vector<'b , flatbuffers::ForwardsUOffset<RangeId<'b >>>>) {
@@ -2607,18 +2607,18 @@ impl<'a> RangeId<'a> {
 
 
   #[inline]
-  pub fn stream_id(&self) -> u64 {
+  pub fn stream_id(&self) -> i64 {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<u64>(RangeId::VT_STREAM_ID, Some(0)).unwrap()}
+    unsafe { self._tab.get::<i64>(RangeId::VT_STREAM_ID, Some(0)).unwrap()}
   }
   #[inline]
-  pub fn range_index(&self) -> u32 {
+  pub fn range_index(&self) -> i32 {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<u32>(RangeId::VT_RANGE_INDEX, Some(0)).unwrap()}
+    unsafe { self._tab.get::<i32>(RangeId::VT_RANGE_INDEX, Some(0)).unwrap()}
   }
 }
 
@@ -2629,15 +2629,15 @@ impl flatbuffers::Verifiable for RangeId<'_> {
   ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
     use self::flatbuffers::Verifiable;
     v.visit_table(pos)?
-     .visit_field::<u64>("stream_id", Self::VT_STREAM_ID, false)?
-     .visit_field::<u32>("range_index", Self::VT_RANGE_INDEX, false)?
+     .visit_field::<i64>("stream_id", Self::VT_STREAM_ID, false)?
+     .visit_field::<i32>("range_index", Self::VT_RANGE_INDEX, false)?
      .finish();
     Ok(())
   }
 }
 pub struct RangeIdArgs {
-    pub stream_id: u64,
-    pub range_index: u32,
+    pub stream_id: i64,
+    pub range_index: i32,
 }
 impl<'a> Default for RangeIdArgs {
   #[inline]
@@ -2655,12 +2655,12 @@ pub struct RangeIdBuilder<'a: 'b, 'b> {
 }
 impl<'a: 'b, 'b> RangeIdBuilder<'a, 'b> {
   #[inline]
-  pub fn add_stream_id(&mut self, stream_id: u64) {
-    self.fbb_.push_slot::<u64>(RangeId::VT_STREAM_ID, stream_id, 0);
+  pub fn add_stream_id(&mut self, stream_id: i64) {
+    self.fbb_.push_slot::<i64>(RangeId::VT_STREAM_ID, stream_id, 0);
   }
   #[inline]
-  pub fn add_range_index(&mut self, range_index: u32) {
-    self.fbb_.push_slot::<u32>(RangeId::VT_RANGE_INDEX, range_index, 0);
+  pub fn add_range_index(&mut self, range_index: i32) {
+    self.fbb_.push_slot::<i32>(RangeId::VT_RANGE_INDEX, range_index, 0);
   }
   #[inline]
   pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a>) -> RangeIdBuilder<'a, 'b> {
@@ -2721,11 +2721,11 @@ impl<'a> SealRangesResponse<'a> {
 
 
   #[inline]
-  pub fn throttle_time_ms(&self) -> u32 {
+  pub fn throttle_time_ms(&self) -> i32 {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<u32>(SealRangesResponse::VT_THROTTLE_TIME_MS, Some(0)).unwrap()}
+    unsafe { self._tab.get::<i32>(SealRangesResponse::VT_THROTTLE_TIME_MS, Some(0)).unwrap()}
   }
   #[inline]
   pub fn seal_responses(&self) -> Option<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<SealRangesResult<'a>>>> {
@@ -2743,14 +2743,14 @@ impl flatbuffers::Verifiable for SealRangesResponse<'_> {
   ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
     use self::flatbuffers::Verifiable;
     v.visit_table(pos)?
-     .visit_field::<u32>("throttle_time_ms", Self::VT_THROTTLE_TIME_MS, false)?
+     .visit_field::<i32>("throttle_time_ms", Self::VT_THROTTLE_TIME_MS, false)?
      .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<SealRangesResult>>>>("seal_responses", Self::VT_SEAL_RESPONSES, false)?
      .finish();
     Ok(())
   }
 }
 pub struct SealRangesResponseArgs<'a> {
-    pub throttle_time_ms: u32,
+    pub throttle_time_ms: i32,
     pub seal_responses: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<SealRangesResult<'a>>>>>,
 }
 impl<'a> Default for SealRangesResponseArgs<'a> {
@@ -2769,8 +2769,8 @@ pub struct SealRangesResponseBuilder<'a: 'b, 'b> {
 }
 impl<'a: 'b, 'b> SealRangesResponseBuilder<'a, 'b> {
   #[inline]
-  pub fn add_throttle_time_ms(&mut self, throttle_time_ms: u32) {
-    self.fbb_.push_slot::<u32>(SealRangesResponse::VT_THROTTLE_TIME_MS, throttle_time_ms, 0);
+  pub fn add_throttle_time_ms(&mut self, throttle_time_ms: i32) {
+    self.fbb_.push_slot::<i32>(SealRangesResponse::VT_THROTTLE_TIME_MS, throttle_time_ms, 0);
   }
   #[inline]
   pub fn add_seal_responses(&mut self, seal_responses: flatbuffers::WIPOffset<flatbuffers::Vector<'b , flatbuffers::ForwardsUOffset<SealRangesResult<'b >>>>) {
@@ -2839,11 +2839,11 @@ impl<'a> SealRangesResult<'a> {
 
 
   #[inline]
-  pub fn stream_id(&self) -> u64 {
+  pub fn stream_id(&self) -> i64 {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<u64>(SealRangesResult::VT_STREAM_ID, Some(0)).unwrap()}
+    unsafe { self._tab.get::<i64>(SealRangesResult::VT_STREAM_ID, Some(0)).unwrap()}
   }
   #[inline]
   pub fn error_code(&self) -> ErrorCode {
@@ -2875,7 +2875,7 @@ impl flatbuffers::Verifiable for SealRangesResult<'_> {
   ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
     use self::flatbuffers::Verifiable;
     v.visit_table(pos)?
-     .visit_field::<u64>("stream_id", Self::VT_STREAM_ID, false)?
+     .visit_field::<i64>("stream_id", Self::VT_STREAM_ID, false)?
      .visit_field::<ErrorCode>("error_code", Self::VT_ERROR_CODE, false)?
      .visit_field::<flatbuffers::ForwardsUOffset<&str>>("error_message", Self::VT_ERROR_MESSAGE, false)?
      .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<Range>>>>("ranges", Self::VT_RANGES, false)?
@@ -2884,7 +2884,7 @@ impl flatbuffers::Verifiable for SealRangesResult<'_> {
   }
 }
 pub struct SealRangesResultArgs<'a> {
-    pub stream_id: u64,
+    pub stream_id: i64,
     pub error_code: ErrorCode,
     pub error_message: Option<flatbuffers::WIPOffset<&'a str>>,
     pub ranges: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<Range<'a>>>>>,
@@ -2907,8 +2907,8 @@ pub struct SealRangesResultBuilder<'a: 'b, 'b> {
 }
 impl<'a: 'b, 'b> SealRangesResultBuilder<'a, 'b> {
   #[inline]
-  pub fn add_stream_id(&mut self, stream_id: u64) {
-    self.fbb_.push_slot::<u64>(SealRangesResult::VT_STREAM_ID, stream_id, 0);
+  pub fn add_stream_id(&mut self, stream_id: i64) {
+    self.fbb_.push_slot::<i64>(SealRangesResult::VT_STREAM_ID, stream_id, 0);
   }
   #[inline]
   pub fn add_error_code(&mut self, error_code: ErrorCode) {
@@ -2983,11 +2983,11 @@ impl<'a> SyncRangesRequest<'a> {
 
 
   #[inline]
-  pub fn timeout_ms(&self) -> u32 {
+  pub fn timeout_ms(&self) -> i32 {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<u32>(SyncRangesRequest::VT_TIMEOUT_MS, Some(0)).unwrap()}
+    unsafe { self._tab.get::<i32>(SyncRangesRequest::VT_TIMEOUT_MS, Some(0)).unwrap()}
   }
   #[inline]
   pub fn stream_ranges(&self) -> Option<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<StreamRanges<'a>>>> {
@@ -3005,14 +3005,14 @@ impl flatbuffers::Verifiable for SyncRangesRequest<'_> {
   ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
     use self::flatbuffers::Verifiable;
     v.visit_table(pos)?
-     .visit_field::<u32>("timeout_ms", Self::VT_TIMEOUT_MS, false)?
+     .visit_field::<i32>("timeout_ms", Self::VT_TIMEOUT_MS, false)?
      .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<StreamRanges>>>>("stream_ranges", Self::VT_STREAM_RANGES, false)?
      .finish();
     Ok(())
   }
 }
 pub struct SyncRangesRequestArgs<'a> {
-    pub timeout_ms: u32,
+    pub timeout_ms: i32,
     pub stream_ranges: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<StreamRanges<'a>>>>>,
 }
 impl<'a> Default for SyncRangesRequestArgs<'a> {
@@ -3031,8 +3031,8 @@ pub struct SyncRangesRequestBuilder<'a: 'b, 'b> {
 }
 impl<'a: 'b, 'b> SyncRangesRequestBuilder<'a, 'b> {
   #[inline]
-  pub fn add_timeout_ms(&mut self, timeout_ms: u32) {
-    self.fbb_.push_slot::<u32>(SyncRangesRequest::VT_TIMEOUT_MS, timeout_ms, 0);
+  pub fn add_timeout_ms(&mut self, timeout_ms: i32) {
+    self.fbb_.push_slot::<i32>(SyncRangesRequest::VT_TIMEOUT_MS, timeout_ms, 0);
   }
   #[inline]
   pub fn add_stream_ranges(&mut self, stream_ranges: flatbuffers::WIPOffset<flatbuffers::Vector<'b , flatbuffers::ForwardsUOffset<StreamRanges<'b >>>>) {
@@ -3097,11 +3097,11 @@ impl<'a> StreamRanges<'a> {
 
 
   #[inline]
-  pub fn stream_id(&self) -> u64 {
+  pub fn stream_id(&self) -> i64 {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<u64>(StreamRanges::VT_STREAM_ID, Some(0)).unwrap()}
+    unsafe { self._tab.get::<i64>(StreamRanges::VT_STREAM_ID, Some(0)).unwrap()}
   }
   #[inline]
   pub fn ranges(&self) -> Option<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<Range<'a>>>> {
@@ -3119,14 +3119,14 @@ impl flatbuffers::Verifiable for StreamRanges<'_> {
   ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
     use self::flatbuffers::Verifiable;
     v.visit_table(pos)?
-     .visit_field::<u64>("stream_id", Self::VT_STREAM_ID, false)?
+     .visit_field::<i64>("stream_id", Self::VT_STREAM_ID, false)?
      .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<Range>>>>("ranges", Self::VT_RANGES, false)?
      .finish();
     Ok(())
   }
 }
 pub struct StreamRangesArgs<'a> {
-    pub stream_id: u64,
+    pub stream_id: i64,
     pub ranges: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<Range<'a>>>>>,
 }
 impl<'a> Default for StreamRangesArgs<'a> {
@@ -3145,8 +3145,8 @@ pub struct StreamRangesBuilder<'a: 'b, 'b> {
 }
 impl<'a: 'b, 'b> StreamRangesBuilder<'a, 'b> {
   #[inline]
-  pub fn add_stream_id(&mut self, stream_id: u64) {
-    self.fbb_.push_slot::<u64>(StreamRanges::VT_STREAM_ID, stream_id, 0);
+  pub fn add_stream_id(&mut self, stream_id: i64) {
+    self.fbb_.push_slot::<i64>(StreamRanges::VT_STREAM_ID, stream_id, 0);
   }
   #[inline]
   pub fn add_ranges(&mut self, ranges: flatbuffers::WIPOffset<flatbuffers::Vector<'b , flatbuffers::ForwardsUOffset<Range<'b >>>>) {
@@ -3211,11 +3211,11 @@ impl<'a> SyncRangesResponse<'a> {
 
 
   #[inline]
-  pub fn throttle_time_ms(&self) -> u32 {
+  pub fn throttle_time_ms(&self) -> i32 {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<u32>(SyncRangesResponse::VT_THROTTLE_TIME_MS, Some(0)).unwrap()}
+    unsafe { self._tab.get::<i32>(SyncRangesResponse::VT_THROTTLE_TIME_MS, Some(0)).unwrap()}
   }
   #[inline]
   pub fn sync_responses(&self) -> Option<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<SyncRangesResult<'a>>>> {
@@ -3233,14 +3233,14 @@ impl flatbuffers::Verifiable for SyncRangesResponse<'_> {
   ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
     use self::flatbuffers::Verifiable;
     v.visit_table(pos)?
-     .visit_field::<u32>("throttle_time_ms", Self::VT_THROTTLE_TIME_MS, false)?
+     .visit_field::<i32>("throttle_time_ms", Self::VT_THROTTLE_TIME_MS, false)?
      .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<SyncRangesResult>>>>("sync_responses", Self::VT_SYNC_RESPONSES, false)?
      .finish();
     Ok(())
   }
 }
 pub struct SyncRangesResponseArgs<'a> {
-    pub throttle_time_ms: u32,
+    pub throttle_time_ms: i32,
     pub sync_responses: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<SyncRangesResult<'a>>>>>,
 }
 impl<'a> Default for SyncRangesResponseArgs<'a> {
@@ -3259,8 +3259,8 @@ pub struct SyncRangesResponseBuilder<'a: 'b, 'b> {
 }
 impl<'a: 'b, 'b> SyncRangesResponseBuilder<'a, 'b> {
   #[inline]
-  pub fn add_throttle_time_ms(&mut self, throttle_time_ms: u32) {
-    self.fbb_.push_slot::<u32>(SyncRangesResponse::VT_THROTTLE_TIME_MS, throttle_time_ms, 0);
+  pub fn add_throttle_time_ms(&mut self, throttle_time_ms: i32) {
+    self.fbb_.push_slot::<i32>(SyncRangesResponse::VT_THROTTLE_TIME_MS, throttle_time_ms, 0);
   }
   #[inline]
   pub fn add_sync_responses(&mut self, sync_responses: flatbuffers::WIPOffset<flatbuffers::Vector<'b , flatbuffers::ForwardsUOffset<SyncRangesResult<'b >>>>) {
@@ -3329,11 +3329,11 @@ impl<'a> SyncRangesResult<'a> {
 
 
   #[inline]
-  pub fn stream_id(&self) -> u64 {
+  pub fn stream_id(&self) -> i64 {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<u64>(SyncRangesResult::VT_STREAM_ID, Some(0)).unwrap()}
+    unsafe { self._tab.get::<i64>(SyncRangesResult::VT_STREAM_ID, Some(0)).unwrap()}
   }
   #[inline]
   pub fn error_code(&self) -> ErrorCode {
@@ -3365,7 +3365,7 @@ impl flatbuffers::Verifiable for SyncRangesResult<'_> {
   ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
     use self::flatbuffers::Verifiable;
     v.visit_table(pos)?
-     .visit_field::<u64>("stream_id", Self::VT_STREAM_ID, false)?
+     .visit_field::<i64>("stream_id", Self::VT_STREAM_ID, false)?
      .visit_field::<ErrorCode>("error_code", Self::VT_ERROR_CODE, false)?
      .visit_field::<flatbuffers::ForwardsUOffset<&str>>("error_message", Self::VT_ERROR_MESSAGE, false)?
      .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<Range>>>>("ranges", Self::VT_RANGES, false)?
@@ -3374,7 +3374,7 @@ impl flatbuffers::Verifiable for SyncRangesResult<'_> {
   }
 }
 pub struct SyncRangesResultArgs<'a> {
-    pub stream_id: u64,
+    pub stream_id: i64,
     pub error_code: ErrorCode,
     pub error_message: Option<flatbuffers::WIPOffset<&'a str>>,
     pub ranges: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<Range<'a>>>>>,
@@ -3397,8 +3397,8 @@ pub struct SyncRangesResultBuilder<'a: 'b, 'b> {
 }
 impl<'a: 'b, 'b> SyncRangesResultBuilder<'a, 'b> {
   #[inline]
-  pub fn add_stream_id(&mut self, stream_id: u64) {
-    self.fbb_.push_slot::<u64>(SyncRangesResult::VT_STREAM_ID, stream_id, 0);
+  pub fn add_stream_id(&mut self, stream_id: i64) {
+    self.fbb_.push_slot::<i64>(SyncRangesResult::VT_STREAM_ID, stream_id, 0);
   }
   #[inline]
   pub fn add_error_code(&mut self, error_code: ErrorCode) {
@@ -3473,11 +3473,11 @@ impl<'a> DescribeRangesRequest<'a> {
 
 
   #[inline]
-  pub fn timeout_ms(&self) -> u32 {
+  pub fn timeout_ms(&self) -> i32 {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<u32>(DescribeRangesRequest::VT_TIMEOUT_MS, Some(0)).unwrap()}
+    unsafe { self._tab.get::<i32>(DescribeRangesRequest::VT_TIMEOUT_MS, Some(0)).unwrap()}
   }
   #[inline]
   pub fn ranges(&self) -> Option<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<RangeId<'a>>>> {
@@ -3495,14 +3495,14 @@ impl flatbuffers::Verifiable for DescribeRangesRequest<'_> {
   ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
     use self::flatbuffers::Verifiable;
     v.visit_table(pos)?
-     .visit_field::<u32>("timeout_ms", Self::VT_TIMEOUT_MS, false)?
+     .visit_field::<i32>("timeout_ms", Self::VT_TIMEOUT_MS, false)?
      .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<RangeId>>>>("ranges", Self::VT_RANGES, false)?
      .finish();
     Ok(())
   }
 }
 pub struct DescribeRangesRequestArgs<'a> {
-    pub timeout_ms: u32,
+    pub timeout_ms: i32,
     pub ranges: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<RangeId<'a>>>>>,
 }
 impl<'a> Default for DescribeRangesRequestArgs<'a> {
@@ -3521,8 +3521,8 @@ pub struct DescribeRangesRequestBuilder<'a: 'b, 'b> {
 }
 impl<'a: 'b, 'b> DescribeRangesRequestBuilder<'a, 'b> {
   #[inline]
-  pub fn add_timeout_ms(&mut self, timeout_ms: u32) {
-    self.fbb_.push_slot::<u32>(DescribeRangesRequest::VT_TIMEOUT_MS, timeout_ms, 0);
+  pub fn add_timeout_ms(&mut self, timeout_ms: i32) {
+    self.fbb_.push_slot::<i32>(DescribeRangesRequest::VT_TIMEOUT_MS, timeout_ms, 0);
   }
   #[inline]
   pub fn add_ranges(&mut self, ranges: flatbuffers::WIPOffset<flatbuffers::Vector<'b , flatbuffers::ForwardsUOffset<RangeId<'b >>>>) {
@@ -3587,11 +3587,11 @@ impl<'a> DescribeRangesResponse<'a> {
 
 
   #[inline]
-  pub fn throttle_time_ms(&self) -> u32 {
+  pub fn throttle_time_ms(&self) -> i32 {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<u32>(DescribeRangesResponse::VT_THROTTLE_TIME_MS, Some(0)).unwrap()}
+    unsafe { self._tab.get::<i32>(DescribeRangesResponse::VT_THROTTLE_TIME_MS, Some(0)).unwrap()}
   }
   #[inline]
   pub fn describe_responses(&self) -> Option<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<DescribeRangeResult<'a>>>> {
@@ -3609,14 +3609,14 @@ impl flatbuffers::Verifiable for DescribeRangesResponse<'_> {
   ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
     use self::flatbuffers::Verifiable;
     v.visit_table(pos)?
-     .visit_field::<u32>("throttle_time_ms", Self::VT_THROTTLE_TIME_MS, false)?
+     .visit_field::<i32>("throttle_time_ms", Self::VT_THROTTLE_TIME_MS, false)?
      .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<DescribeRangeResult>>>>("describe_responses", Self::VT_DESCRIBE_RESPONSES, false)?
      .finish();
     Ok(())
   }
 }
 pub struct DescribeRangesResponseArgs<'a> {
-    pub throttle_time_ms: u32,
+    pub throttle_time_ms: i32,
     pub describe_responses: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<DescribeRangeResult<'a>>>>>,
 }
 impl<'a> Default for DescribeRangesResponseArgs<'a> {
@@ -3635,8 +3635,8 @@ pub struct DescribeRangesResponseBuilder<'a: 'b, 'b> {
 }
 impl<'a: 'b, 'b> DescribeRangesResponseBuilder<'a, 'b> {
   #[inline]
-  pub fn add_throttle_time_ms(&mut self, throttle_time_ms: u32) {
-    self.fbb_.push_slot::<u32>(DescribeRangesResponse::VT_THROTTLE_TIME_MS, throttle_time_ms, 0);
+  pub fn add_throttle_time_ms(&mut self, throttle_time_ms: i32) {
+    self.fbb_.push_slot::<i32>(DescribeRangesResponse::VT_THROTTLE_TIME_MS, throttle_time_ms, 0);
   }
   #[inline]
   pub fn add_describe_responses(&mut self, describe_responses: flatbuffers::WIPOffset<flatbuffers::Vector<'b , flatbuffers::ForwardsUOffset<DescribeRangeResult<'b >>>>) {
@@ -3705,11 +3705,11 @@ impl<'a> DescribeRangeResult<'a> {
 
 
   #[inline]
-  pub fn stream_id(&self) -> u64 {
+  pub fn stream_id(&self) -> i64 {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<u64>(DescribeRangeResult::VT_STREAM_ID, Some(0)).unwrap()}
+    unsafe { self._tab.get::<i64>(DescribeRangeResult::VT_STREAM_ID, Some(0)).unwrap()}
   }
   #[inline]
   pub fn error_code(&self) -> ErrorCode {
@@ -3741,7 +3741,7 @@ impl flatbuffers::Verifiable for DescribeRangeResult<'_> {
   ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
     use self::flatbuffers::Verifiable;
     v.visit_table(pos)?
-     .visit_field::<u64>("stream_id", Self::VT_STREAM_ID, false)?
+     .visit_field::<i64>("stream_id", Self::VT_STREAM_ID, false)?
      .visit_field::<ErrorCode>("error_code", Self::VT_ERROR_CODE, false)?
      .visit_field::<flatbuffers::ForwardsUOffset<&str>>("error_message", Self::VT_ERROR_MESSAGE, false)?
      .visit_field::<flatbuffers::ForwardsUOffset<Range>>("ranges", Self::VT_RANGES, false)?
@@ -3750,7 +3750,7 @@ impl flatbuffers::Verifiable for DescribeRangeResult<'_> {
   }
 }
 pub struct DescribeRangeResultArgs<'a> {
-    pub stream_id: u64,
+    pub stream_id: i64,
     pub error_code: ErrorCode,
     pub error_message: Option<flatbuffers::WIPOffset<&'a str>>,
     pub ranges: Option<flatbuffers::WIPOffset<Range<'a>>>,
@@ -3773,8 +3773,8 @@ pub struct DescribeRangeResultBuilder<'a: 'b, 'b> {
 }
 impl<'a: 'b, 'b> DescribeRangeResultBuilder<'a, 'b> {
   #[inline]
-  pub fn add_stream_id(&mut self, stream_id: u64) {
-    self.fbb_.push_slot::<u64>(DescribeRangeResult::VT_STREAM_ID, stream_id, 0);
+  pub fn add_stream_id(&mut self, stream_id: i64) {
+    self.fbb_.push_slot::<i64>(DescribeRangeResult::VT_STREAM_ID, stream_id, 0);
   }
   #[inline]
   pub fn add_error_code(&mut self, error_code: ErrorCode) {
@@ -3851,25 +3851,25 @@ impl<'a> Stream<'a> {
 
 
   #[inline]
-  pub fn stream_id(&self) -> u64 {
+  pub fn stream_id(&self) -> i64 {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<u64>(Stream::VT_STREAM_ID, Some(0)).unwrap()}
+    unsafe { self._tab.get::<i64>(Stream::VT_STREAM_ID, Some(0)).unwrap()}
   }
   #[inline]
-  pub fn replica_nums(&self) -> u8 {
+  pub fn replica_nums(&self) -> i8 {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<u8>(Stream::VT_REPLICA_NUMS, Some(0)).unwrap()}
+    unsafe { self._tab.get::<i8>(Stream::VT_REPLICA_NUMS, Some(0)).unwrap()}
   }
   #[inline]
-  pub fn retention_period_ms(&self) -> u32 {
+  pub fn retention_period_ms(&self) -> i32 {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<u32>(Stream::VT_RETENTION_PERIOD_MS, Some(0)).unwrap()}
+    unsafe { self._tab.get::<i32>(Stream::VT_RETENTION_PERIOD_MS, Some(0)).unwrap()}
   }
 }
 
@@ -3880,17 +3880,17 @@ impl flatbuffers::Verifiable for Stream<'_> {
   ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
     use self::flatbuffers::Verifiable;
     v.visit_table(pos)?
-     .visit_field::<u64>("stream_id", Self::VT_STREAM_ID, false)?
-     .visit_field::<u8>("replica_nums", Self::VT_REPLICA_NUMS, false)?
-     .visit_field::<u32>("retention_period_ms", Self::VT_RETENTION_PERIOD_MS, false)?
+     .visit_field::<i64>("stream_id", Self::VT_STREAM_ID, false)?
+     .visit_field::<i8>("replica_nums", Self::VT_REPLICA_NUMS, false)?
+     .visit_field::<i32>("retention_period_ms", Self::VT_RETENTION_PERIOD_MS, false)?
      .finish();
     Ok(())
   }
 }
 pub struct StreamArgs {
-    pub stream_id: u64,
-    pub replica_nums: u8,
-    pub retention_period_ms: u32,
+    pub stream_id: i64,
+    pub replica_nums: i8,
+    pub retention_period_ms: i32,
 }
 impl<'a> Default for StreamArgs {
   #[inline]
@@ -3909,16 +3909,16 @@ pub struct StreamBuilder<'a: 'b, 'b> {
 }
 impl<'a: 'b, 'b> StreamBuilder<'a, 'b> {
   #[inline]
-  pub fn add_stream_id(&mut self, stream_id: u64) {
-    self.fbb_.push_slot::<u64>(Stream::VT_STREAM_ID, stream_id, 0);
+  pub fn add_stream_id(&mut self, stream_id: i64) {
+    self.fbb_.push_slot::<i64>(Stream::VT_STREAM_ID, stream_id, 0);
   }
   #[inline]
-  pub fn add_replica_nums(&mut self, replica_nums: u8) {
-    self.fbb_.push_slot::<u8>(Stream::VT_REPLICA_NUMS, replica_nums, 0);
+  pub fn add_replica_nums(&mut self, replica_nums: i8) {
+    self.fbb_.push_slot::<i8>(Stream::VT_REPLICA_NUMS, replica_nums, 0);
   }
   #[inline]
-  pub fn add_retention_period_ms(&mut self, retention_period_ms: u32) {
-    self.fbb_.push_slot::<u32>(Stream::VT_RETENTION_PERIOD_MS, retention_period_ms, 0);
+  pub fn add_retention_period_ms(&mut self, retention_period_ms: i32) {
+    self.fbb_.push_slot::<i32>(Stream::VT_RETENTION_PERIOD_MS, retention_period_ms, 0);
   }
   #[inline]
   pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a>) -> StreamBuilder<'a, 'b> {
@@ -3980,11 +3980,11 @@ impl<'a> CreateStreamsRequest<'a> {
 
 
   #[inline]
-  pub fn timeout_ms(&self) -> u32 {
+  pub fn timeout_ms(&self) -> i32 {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<u32>(CreateStreamsRequest::VT_TIMEOUT_MS, Some(0)).unwrap()}
+    unsafe { self._tab.get::<i32>(CreateStreamsRequest::VT_TIMEOUT_MS, Some(0)).unwrap()}
   }
   #[inline]
   pub fn stremas(&self) -> Option<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<Stream<'a>>>> {
@@ -4002,14 +4002,14 @@ impl flatbuffers::Verifiable for CreateStreamsRequest<'_> {
   ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
     use self::flatbuffers::Verifiable;
     v.visit_table(pos)?
-     .visit_field::<u32>("timeout_ms", Self::VT_TIMEOUT_MS, false)?
+     .visit_field::<i32>("timeout_ms", Self::VT_TIMEOUT_MS, false)?
      .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<Stream>>>>("stremas", Self::VT_STREMAS, false)?
      .finish();
     Ok(())
   }
 }
 pub struct CreateStreamsRequestArgs<'a> {
-    pub timeout_ms: u32,
+    pub timeout_ms: i32,
     pub stremas: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<Stream<'a>>>>>,
 }
 impl<'a> Default for CreateStreamsRequestArgs<'a> {
@@ -4028,8 +4028,8 @@ pub struct CreateStreamsRequestBuilder<'a: 'b, 'b> {
 }
 impl<'a: 'b, 'b> CreateStreamsRequestBuilder<'a, 'b> {
   #[inline]
-  pub fn add_timeout_ms(&mut self, timeout_ms: u32) {
-    self.fbb_.push_slot::<u32>(CreateStreamsRequest::VT_TIMEOUT_MS, timeout_ms, 0);
+  pub fn add_timeout_ms(&mut self, timeout_ms: i32) {
+    self.fbb_.push_slot::<i32>(CreateStreamsRequest::VT_TIMEOUT_MS, timeout_ms, 0);
   }
   #[inline]
   pub fn add_stremas(&mut self, stremas: flatbuffers::WIPOffset<flatbuffers::Vector<'b , flatbuffers::ForwardsUOffset<Stream<'b >>>>) {
@@ -4094,11 +4094,11 @@ impl<'a> CreateStreamsResponse<'a> {
 
 
   #[inline]
-  pub fn throttle_time_ms(&self) -> u32 {
+  pub fn throttle_time_ms(&self) -> i32 {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<u32>(CreateStreamsResponse::VT_THROTTLE_TIME_MS, Some(0)).unwrap()}
+    unsafe { self._tab.get::<i32>(CreateStreamsResponse::VT_THROTTLE_TIME_MS, Some(0)).unwrap()}
   }
   #[inline]
   pub fn create_responses(&self) -> Option<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<CreateStreamResult<'a>>>> {
@@ -4116,14 +4116,14 @@ impl flatbuffers::Verifiable for CreateStreamsResponse<'_> {
   ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
     use self::flatbuffers::Verifiable;
     v.visit_table(pos)?
-     .visit_field::<u32>("throttle_time_ms", Self::VT_THROTTLE_TIME_MS, false)?
+     .visit_field::<i32>("throttle_time_ms", Self::VT_THROTTLE_TIME_MS, false)?
      .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<CreateStreamResult>>>>("create_responses", Self::VT_CREATE_RESPONSES, false)?
      .finish();
     Ok(())
   }
 }
 pub struct CreateStreamsResponseArgs<'a> {
-    pub throttle_time_ms: u32,
+    pub throttle_time_ms: i32,
     pub create_responses: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<CreateStreamResult<'a>>>>>,
 }
 impl<'a> Default for CreateStreamsResponseArgs<'a> {
@@ -4142,8 +4142,8 @@ pub struct CreateStreamsResponseBuilder<'a: 'b, 'b> {
 }
 impl<'a: 'b, 'b> CreateStreamsResponseBuilder<'a, 'b> {
   #[inline]
-  pub fn add_throttle_time_ms(&mut self, throttle_time_ms: u32) {
-    self.fbb_.push_slot::<u32>(CreateStreamsResponse::VT_THROTTLE_TIME_MS, throttle_time_ms, 0);
+  pub fn add_throttle_time_ms(&mut self, throttle_time_ms: i32) {
+    self.fbb_.push_slot::<i32>(CreateStreamsResponse::VT_THROTTLE_TIME_MS, throttle_time_ms, 0);
   }
   #[inline]
   pub fn add_create_responses(&mut self, create_responses: flatbuffers::WIPOffset<flatbuffers::Vector<'b , flatbuffers::ForwardsUOffset<CreateStreamResult<'b >>>>) {
@@ -4339,11 +4339,11 @@ impl<'a> DeleteStreamsRequest<'a> {
 
 
   #[inline]
-  pub fn timeout_ms(&self) -> u32 {
+  pub fn timeout_ms(&self) -> i32 {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<u32>(DeleteStreamsRequest::VT_TIMEOUT_MS, Some(0)).unwrap()}
+    unsafe { self._tab.get::<i32>(DeleteStreamsRequest::VT_TIMEOUT_MS, Some(0)).unwrap()}
   }
   #[inline]
   pub fn streams(&self) -> Option<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<Stream<'a>>>> {
@@ -4361,14 +4361,14 @@ impl flatbuffers::Verifiable for DeleteStreamsRequest<'_> {
   ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
     use self::flatbuffers::Verifiable;
     v.visit_table(pos)?
-     .visit_field::<u32>("timeout_ms", Self::VT_TIMEOUT_MS, false)?
+     .visit_field::<i32>("timeout_ms", Self::VT_TIMEOUT_MS, false)?
      .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<Stream>>>>("streams", Self::VT_STREAMS, false)?
      .finish();
     Ok(())
   }
 }
 pub struct DeleteStreamsRequestArgs<'a> {
-    pub timeout_ms: u32,
+    pub timeout_ms: i32,
     pub streams: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<Stream<'a>>>>>,
 }
 impl<'a> Default for DeleteStreamsRequestArgs<'a> {
@@ -4387,8 +4387,8 @@ pub struct DeleteStreamsRequestBuilder<'a: 'b, 'b> {
 }
 impl<'a: 'b, 'b> DeleteStreamsRequestBuilder<'a, 'b> {
   #[inline]
-  pub fn add_timeout_ms(&mut self, timeout_ms: u32) {
-    self.fbb_.push_slot::<u32>(DeleteStreamsRequest::VT_TIMEOUT_MS, timeout_ms, 0);
+  pub fn add_timeout_ms(&mut self, timeout_ms: i32) {
+    self.fbb_.push_slot::<i32>(DeleteStreamsRequest::VT_TIMEOUT_MS, timeout_ms, 0);
   }
   #[inline]
   pub fn add_streams(&mut self, streams: flatbuffers::WIPOffset<flatbuffers::Vector<'b , flatbuffers::ForwardsUOffset<Stream<'b >>>>) {
@@ -4453,11 +4453,11 @@ impl<'a> DeleteStreamsResponse<'a> {
 
 
   #[inline]
-  pub fn throttle_time_ms(&self) -> u32 {
+  pub fn throttle_time_ms(&self) -> i32 {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<u32>(DeleteStreamsResponse::VT_THROTTLE_TIME_MS, Some(0)).unwrap()}
+    unsafe { self._tab.get::<i32>(DeleteStreamsResponse::VT_THROTTLE_TIME_MS, Some(0)).unwrap()}
   }
   #[inline]
   pub fn delete_responses(&self) -> Option<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<DeleteStreamResult<'a>>>> {
@@ -4475,14 +4475,14 @@ impl flatbuffers::Verifiable for DeleteStreamsResponse<'_> {
   ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
     use self::flatbuffers::Verifiable;
     v.visit_table(pos)?
-     .visit_field::<u32>("throttle_time_ms", Self::VT_THROTTLE_TIME_MS, false)?
+     .visit_field::<i32>("throttle_time_ms", Self::VT_THROTTLE_TIME_MS, false)?
      .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<DeleteStreamResult>>>>("delete_responses", Self::VT_DELETE_RESPONSES, false)?
      .finish();
     Ok(())
   }
 }
 pub struct DeleteStreamsResponseArgs<'a> {
-    pub throttle_time_ms: u32,
+    pub throttle_time_ms: i32,
     pub delete_responses: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<DeleteStreamResult<'a>>>>>,
 }
 impl<'a> Default for DeleteStreamsResponseArgs<'a> {
@@ -4501,8 +4501,8 @@ pub struct DeleteStreamsResponseBuilder<'a: 'b, 'b> {
 }
 impl<'a: 'b, 'b> DeleteStreamsResponseBuilder<'a, 'b> {
   #[inline]
-  pub fn add_throttle_time_ms(&mut self, throttle_time_ms: u32) {
-    self.fbb_.push_slot::<u32>(DeleteStreamsResponse::VT_THROTTLE_TIME_MS, throttle_time_ms, 0);
+  pub fn add_throttle_time_ms(&mut self, throttle_time_ms: i32) {
+    self.fbb_.push_slot::<i32>(DeleteStreamsResponse::VT_THROTTLE_TIME_MS, throttle_time_ms, 0);
   }
   #[inline]
   pub fn add_delete_responses(&mut self, delete_responses: flatbuffers::WIPOffset<flatbuffers::Vector<'b , flatbuffers::ForwardsUOffset<DeleteStreamResult<'b >>>>) {
@@ -4698,11 +4698,11 @@ impl<'a> UpdateStreamsRequest<'a> {
 
 
   #[inline]
-  pub fn timeout_ms(&self) -> u32 {
+  pub fn timeout_ms(&self) -> i32 {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<u32>(UpdateStreamsRequest::VT_TIMEOUT_MS, Some(0)).unwrap()}
+    unsafe { self._tab.get::<i32>(UpdateStreamsRequest::VT_TIMEOUT_MS, Some(0)).unwrap()}
   }
   #[inline]
   pub fn streams(&self) -> Option<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<Stream<'a>>>> {
@@ -4720,14 +4720,14 @@ impl flatbuffers::Verifiable for UpdateStreamsRequest<'_> {
   ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
     use self::flatbuffers::Verifiable;
     v.visit_table(pos)?
-     .visit_field::<u32>("timeout_ms", Self::VT_TIMEOUT_MS, false)?
+     .visit_field::<i32>("timeout_ms", Self::VT_TIMEOUT_MS, false)?
      .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<Stream>>>>("streams", Self::VT_STREAMS, false)?
      .finish();
     Ok(())
   }
 }
 pub struct UpdateStreamsRequestArgs<'a> {
-    pub timeout_ms: u32,
+    pub timeout_ms: i32,
     pub streams: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<Stream<'a>>>>>,
 }
 impl<'a> Default for UpdateStreamsRequestArgs<'a> {
@@ -4746,8 +4746,8 @@ pub struct UpdateStreamsRequestBuilder<'a: 'b, 'b> {
 }
 impl<'a: 'b, 'b> UpdateStreamsRequestBuilder<'a, 'b> {
   #[inline]
-  pub fn add_timeout_ms(&mut self, timeout_ms: u32) {
-    self.fbb_.push_slot::<u32>(UpdateStreamsRequest::VT_TIMEOUT_MS, timeout_ms, 0);
+  pub fn add_timeout_ms(&mut self, timeout_ms: i32) {
+    self.fbb_.push_slot::<i32>(UpdateStreamsRequest::VT_TIMEOUT_MS, timeout_ms, 0);
   }
   #[inline]
   pub fn add_streams(&mut self, streams: flatbuffers::WIPOffset<flatbuffers::Vector<'b , flatbuffers::ForwardsUOffset<Stream<'b >>>>) {
@@ -4812,11 +4812,11 @@ impl<'a> UpdateStreamsResponse<'a> {
 
 
   #[inline]
-  pub fn throttle_time_ms(&self) -> u32 {
+  pub fn throttle_time_ms(&self) -> i32 {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<u32>(UpdateStreamsResponse::VT_THROTTLE_TIME_MS, Some(0)).unwrap()}
+    unsafe { self._tab.get::<i32>(UpdateStreamsResponse::VT_THROTTLE_TIME_MS, Some(0)).unwrap()}
   }
   #[inline]
   pub fn update_responses(&self) -> Option<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<UpdateStreamResult<'a>>>> {
@@ -4834,14 +4834,14 @@ impl flatbuffers::Verifiable for UpdateStreamsResponse<'_> {
   ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
     use self::flatbuffers::Verifiable;
     v.visit_table(pos)?
-     .visit_field::<u32>("throttle_time_ms", Self::VT_THROTTLE_TIME_MS, false)?
+     .visit_field::<i32>("throttle_time_ms", Self::VT_THROTTLE_TIME_MS, false)?
      .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<UpdateStreamResult>>>>("update_responses", Self::VT_UPDATE_RESPONSES, false)?
      .finish();
     Ok(())
   }
 }
 pub struct UpdateStreamsResponseArgs<'a> {
-    pub throttle_time_ms: u32,
+    pub throttle_time_ms: i32,
     pub update_responses: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<UpdateStreamResult<'a>>>>>,
 }
 impl<'a> Default for UpdateStreamsResponseArgs<'a> {
@@ -4860,8 +4860,8 @@ pub struct UpdateStreamsResponseBuilder<'a: 'b, 'b> {
 }
 impl<'a: 'b, 'b> UpdateStreamsResponseBuilder<'a, 'b> {
   #[inline]
-  pub fn add_throttle_time_ms(&mut self, throttle_time_ms: u32) {
-    self.fbb_.push_slot::<u32>(UpdateStreamsResponse::VT_THROTTLE_TIME_MS, throttle_time_ms, 0);
+  pub fn add_throttle_time_ms(&mut self, throttle_time_ms: i32) {
+    self.fbb_.push_slot::<i32>(UpdateStreamsResponse::VT_THROTTLE_TIME_MS, throttle_time_ms, 0);
   }
   #[inline]
   pub fn add_update_responses(&mut self, update_responses: flatbuffers::WIPOffset<flatbuffers::Vector<'b , flatbuffers::ForwardsUOffset<UpdateStreamResult<'b >>>>) {
@@ -5057,18 +5057,18 @@ impl<'a> DescribeStreamsRequest<'a> {
 
 
   #[inline]
-  pub fn timeout_ms(&self) -> u32 {
+  pub fn timeout_ms(&self) -> i32 {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<u32>(DescribeStreamsRequest::VT_TIMEOUT_MS, Some(0)).unwrap()}
+    unsafe { self._tab.get::<i32>(DescribeStreamsRequest::VT_TIMEOUT_MS, Some(0)).unwrap()}
   }
   #[inline]
-  pub fn stream_ids(&self) -> Option<flatbuffers::Vector<'a, u64>> {
+  pub fn stream_ids(&self) -> Option<flatbuffers::Vector<'a, i64>> {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, u64>>>(DescribeStreamsRequest::VT_STREAM_IDS, None)}
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, i64>>>(DescribeStreamsRequest::VT_STREAM_IDS, None)}
   }
 }
 
@@ -5079,15 +5079,15 @@ impl flatbuffers::Verifiable for DescribeStreamsRequest<'_> {
   ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
     use self::flatbuffers::Verifiable;
     v.visit_table(pos)?
-     .visit_field::<u32>("timeout_ms", Self::VT_TIMEOUT_MS, false)?
-     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, u64>>>("stream_ids", Self::VT_STREAM_IDS, false)?
+     .visit_field::<i32>("timeout_ms", Self::VT_TIMEOUT_MS, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, i64>>>("stream_ids", Self::VT_STREAM_IDS, false)?
      .finish();
     Ok(())
   }
 }
 pub struct DescribeStreamsRequestArgs<'a> {
-    pub timeout_ms: u32,
-    pub stream_ids: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, u64>>>,
+    pub timeout_ms: i32,
+    pub stream_ids: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, i64>>>,
 }
 impl<'a> Default for DescribeStreamsRequestArgs<'a> {
   #[inline]
@@ -5105,11 +5105,11 @@ pub struct DescribeStreamsRequestBuilder<'a: 'b, 'b> {
 }
 impl<'a: 'b, 'b> DescribeStreamsRequestBuilder<'a, 'b> {
   #[inline]
-  pub fn add_timeout_ms(&mut self, timeout_ms: u32) {
-    self.fbb_.push_slot::<u32>(DescribeStreamsRequest::VT_TIMEOUT_MS, timeout_ms, 0);
+  pub fn add_timeout_ms(&mut self, timeout_ms: i32) {
+    self.fbb_.push_slot::<i32>(DescribeStreamsRequest::VT_TIMEOUT_MS, timeout_ms, 0);
   }
   #[inline]
-  pub fn add_stream_ids(&mut self, stream_ids: flatbuffers::WIPOffset<flatbuffers::Vector<'b , u64>>) {
+  pub fn add_stream_ids(&mut self, stream_ids: flatbuffers::WIPOffset<flatbuffers::Vector<'b , i64>>) {
     self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(DescribeStreamsRequest::VT_STREAM_IDS, stream_ids);
   }
   #[inline]
@@ -5171,11 +5171,11 @@ impl<'a> DescribeStreamsResponse<'a> {
 
 
   #[inline]
-  pub fn throttle_time_ms(&self) -> u32 {
+  pub fn throttle_time_ms(&self) -> i32 {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<u32>(DescribeStreamsResponse::VT_THROTTLE_TIME_MS, Some(0)).unwrap()}
+    unsafe { self._tab.get::<i32>(DescribeStreamsResponse::VT_THROTTLE_TIME_MS, Some(0)).unwrap()}
   }
   #[inline]
   pub fn describe_responses(&self) -> Option<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<DescribeStreamResult<'a>>>> {
@@ -5193,14 +5193,14 @@ impl flatbuffers::Verifiable for DescribeStreamsResponse<'_> {
   ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
     use self::flatbuffers::Verifiable;
     v.visit_table(pos)?
-     .visit_field::<u32>("throttle_time_ms", Self::VT_THROTTLE_TIME_MS, false)?
+     .visit_field::<i32>("throttle_time_ms", Self::VT_THROTTLE_TIME_MS, false)?
      .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<DescribeStreamResult>>>>("describe_responses", Self::VT_DESCRIBE_RESPONSES, false)?
      .finish();
     Ok(())
   }
 }
 pub struct DescribeStreamsResponseArgs<'a> {
-    pub throttle_time_ms: u32,
+    pub throttle_time_ms: i32,
     pub describe_responses: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<DescribeStreamResult<'a>>>>>,
 }
 impl<'a> Default for DescribeStreamsResponseArgs<'a> {
@@ -5219,8 +5219,8 @@ pub struct DescribeStreamsResponseBuilder<'a: 'b, 'b> {
 }
 impl<'a: 'b, 'b> DescribeStreamsResponseBuilder<'a, 'b> {
   #[inline]
-  pub fn add_throttle_time_ms(&mut self, throttle_time_ms: u32) {
-    self.fbb_.push_slot::<u32>(DescribeStreamsResponse::VT_THROTTLE_TIME_MS, throttle_time_ms, 0);
+  pub fn add_throttle_time_ms(&mut self, throttle_time_ms: i32) {
+    self.fbb_.push_slot::<i32>(DescribeStreamsResponse::VT_THROTTLE_TIME_MS, throttle_time_ms, 0);
   }
   #[inline]
   pub fn add_describe_responses(&mut self, describe_responses: flatbuffers::WIPOffset<flatbuffers::Vector<'b , flatbuffers::ForwardsUOffset<DescribeStreamResult<'b >>>>) {
@@ -5416,11 +5416,11 @@ impl<'a> TrimeStreamsRequest<'a> {
 
 
   #[inline]
-  pub fn timeout_ms(&self) -> u32 {
+  pub fn timeout_ms(&self) -> i32 {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<u32>(TrimeStreamsRequest::VT_TIMEOUT_MS, Some(0)).unwrap()}
+    unsafe { self._tab.get::<i32>(TrimeStreamsRequest::VT_TIMEOUT_MS, Some(0)).unwrap()}
   }
   #[inline]
   pub fn trimmed_streams(&self) -> Option<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<TrimmedStream<'a>>>> {
@@ -5438,14 +5438,14 @@ impl flatbuffers::Verifiable for TrimeStreamsRequest<'_> {
   ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
     use self::flatbuffers::Verifiable;
     v.visit_table(pos)?
-     .visit_field::<u32>("timeout_ms", Self::VT_TIMEOUT_MS, false)?
+     .visit_field::<i32>("timeout_ms", Self::VT_TIMEOUT_MS, false)?
      .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<TrimmedStream>>>>("trimmed_streams", Self::VT_TRIMMED_STREAMS, false)?
      .finish();
     Ok(())
   }
 }
 pub struct TrimeStreamsRequestArgs<'a> {
-    pub timeout_ms: u32,
+    pub timeout_ms: i32,
     pub trimmed_streams: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<TrimmedStream<'a>>>>>,
 }
 impl<'a> Default for TrimeStreamsRequestArgs<'a> {
@@ -5464,8 +5464,8 @@ pub struct TrimeStreamsRequestBuilder<'a: 'b, 'b> {
 }
 impl<'a: 'b, 'b> TrimeStreamsRequestBuilder<'a, 'b> {
   #[inline]
-  pub fn add_timeout_ms(&mut self, timeout_ms: u32) {
-    self.fbb_.push_slot::<u32>(TrimeStreamsRequest::VT_TIMEOUT_MS, timeout_ms, 0);
+  pub fn add_timeout_ms(&mut self, timeout_ms: i32) {
+    self.fbb_.push_slot::<i32>(TrimeStreamsRequest::VT_TIMEOUT_MS, timeout_ms, 0);
   }
   #[inline]
   pub fn add_trimmed_streams(&mut self, trimmed_streams: flatbuffers::WIPOffset<flatbuffers::Vector<'b , flatbuffers::ForwardsUOffset<TrimmedStream<'b >>>>) {
@@ -5530,18 +5530,18 @@ impl<'a> TrimmedStream<'a> {
 
 
   #[inline]
-  pub fn stream_id(&self) -> u64 {
+  pub fn stream_id(&self) -> i64 {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<u64>(TrimmedStream::VT_STREAM_ID, Some(0)).unwrap()}
+    unsafe { self._tab.get::<i64>(TrimmedStream::VT_STREAM_ID, Some(0)).unwrap()}
   }
   #[inline]
-  pub fn trim_offset(&self) -> u64 {
+  pub fn trim_offset(&self) -> i64 {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<u64>(TrimmedStream::VT_TRIM_OFFSET, Some(0)).unwrap()}
+    unsafe { self._tab.get::<i64>(TrimmedStream::VT_TRIM_OFFSET, Some(0)).unwrap()}
   }
 }
 
@@ -5552,15 +5552,15 @@ impl flatbuffers::Verifiable for TrimmedStream<'_> {
   ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
     use self::flatbuffers::Verifiable;
     v.visit_table(pos)?
-     .visit_field::<u64>("stream_id", Self::VT_STREAM_ID, false)?
-     .visit_field::<u64>("trim_offset", Self::VT_TRIM_OFFSET, false)?
+     .visit_field::<i64>("stream_id", Self::VT_STREAM_ID, false)?
+     .visit_field::<i64>("trim_offset", Self::VT_TRIM_OFFSET, false)?
      .finish();
     Ok(())
   }
 }
 pub struct TrimmedStreamArgs {
-    pub stream_id: u64,
-    pub trim_offset: u64,
+    pub stream_id: i64,
+    pub trim_offset: i64,
 }
 impl<'a> Default for TrimmedStreamArgs {
   #[inline]
@@ -5578,12 +5578,12 @@ pub struct TrimmedStreamBuilder<'a: 'b, 'b> {
 }
 impl<'a: 'b, 'b> TrimmedStreamBuilder<'a, 'b> {
   #[inline]
-  pub fn add_stream_id(&mut self, stream_id: u64) {
-    self.fbb_.push_slot::<u64>(TrimmedStream::VT_STREAM_ID, stream_id, 0);
+  pub fn add_stream_id(&mut self, stream_id: i64) {
+    self.fbb_.push_slot::<i64>(TrimmedStream::VT_STREAM_ID, stream_id, 0);
   }
   #[inline]
-  pub fn add_trim_offset(&mut self, trim_offset: u64) {
-    self.fbb_.push_slot::<u64>(TrimmedStream::VT_TRIM_OFFSET, trim_offset, 0);
+  pub fn add_trim_offset(&mut self, trim_offset: i64) {
+    self.fbb_.push_slot::<i64>(TrimmedStream::VT_TRIM_OFFSET, trim_offset, 0);
   }
   #[inline]
   pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a>) -> TrimmedStreamBuilder<'a, 'b> {
@@ -5644,11 +5644,11 @@ impl<'a> TrimStreamsResponse<'a> {
 
 
   #[inline]
-  pub fn throttle_time_ms(&self) -> u32 {
+  pub fn throttle_time_ms(&self) -> i32 {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<u32>(TrimStreamsResponse::VT_THROTTLE_TIME_MS, Some(0)).unwrap()}
+    unsafe { self._tab.get::<i32>(TrimStreamsResponse::VT_THROTTLE_TIME_MS, Some(0)).unwrap()}
   }
   #[inline]
   pub fn trim_responses(&self) -> Option<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<TrimStreamResult<'a>>>> {
@@ -5666,14 +5666,14 @@ impl flatbuffers::Verifiable for TrimStreamsResponse<'_> {
   ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
     use self::flatbuffers::Verifiable;
     v.visit_table(pos)?
-     .visit_field::<u32>("throttle_time_ms", Self::VT_THROTTLE_TIME_MS, false)?
+     .visit_field::<i32>("throttle_time_ms", Self::VT_THROTTLE_TIME_MS, false)?
      .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, flatbuffers::ForwardsUOffset<TrimStreamResult>>>>("trim_responses", Self::VT_TRIM_RESPONSES, false)?
      .finish();
     Ok(())
   }
 }
 pub struct TrimStreamsResponseArgs<'a> {
-    pub throttle_time_ms: u32,
+    pub throttle_time_ms: i32,
     pub trim_responses: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<TrimStreamResult<'a>>>>>,
 }
 impl<'a> Default for TrimStreamsResponseArgs<'a> {
@@ -5692,8 +5692,8 @@ pub struct TrimStreamsResponseBuilder<'a: 'b, 'b> {
 }
 impl<'a: 'b, 'b> TrimStreamsResponseBuilder<'a, 'b> {
   #[inline]
-  pub fn add_throttle_time_ms(&mut self, throttle_time_ms: u32) {
-    self.fbb_.push_slot::<u32>(TrimStreamsResponse::VT_THROTTLE_TIME_MS, throttle_time_ms, 0);
+  pub fn add_throttle_time_ms(&mut self, throttle_time_ms: i32) {
+    self.fbb_.push_slot::<i32>(TrimStreamsResponse::VT_THROTTLE_TIME_MS, throttle_time_ms, 0);
   }
   #[inline]
   pub fn add_trim_responses(&mut self, trim_responses: flatbuffers::WIPOffset<flatbuffers::Vector<'b , flatbuffers::ForwardsUOffset<TrimStreamResult<'b >>>>) {
@@ -5945,123 +5945,123 @@ impl<'a> ReportMetricsRequest<'a> {
     unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<DataNode>>(ReportMetricsRequest::VT_DATA_NODE, None)}
   }
   #[inline]
-  pub fn disk_in_rate(&self) -> u64 {
+  pub fn disk_in_rate(&self) -> i64 {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<u64>(ReportMetricsRequest::VT_DISK_IN_RATE, Some(0)).unwrap()}
+    unsafe { self._tab.get::<i64>(ReportMetricsRequest::VT_DISK_IN_RATE, Some(0)).unwrap()}
   }
   #[inline]
-  pub fn disk_out_rate(&self) -> u64 {
+  pub fn disk_out_rate(&self) -> i64 {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<u64>(ReportMetricsRequest::VT_DISK_OUT_RATE, Some(0)).unwrap()}
+    unsafe { self._tab.get::<i64>(ReportMetricsRequest::VT_DISK_OUT_RATE, Some(0)).unwrap()}
   }
   #[inline]
-  pub fn disk_free_space(&self) -> u64 {
+  pub fn disk_free_space(&self) -> i64 {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<u64>(ReportMetricsRequest::VT_DISK_FREE_SPACE, Some(0)).unwrap()}
+    unsafe { self._tab.get::<i64>(ReportMetricsRequest::VT_DISK_FREE_SPACE, Some(0)).unwrap()}
   }
   #[inline]
-  pub fn disk_unindexed_data_size(&self) -> u64 {
+  pub fn disk_unindexed_data_size(&self) -> i64 {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<u64>(ReportMetricsRequest::VT_DISK_UNINDEXED_DATA_SIZE, Some(0)).unwrap()}
+    unsafe { self._tab.get::<i64>(ReportMetricsRequest::VT_DISK_UNINDEXED_DATA_SIZE, Some(0)).unwrap()}
   }
   #[inline]
-  pub fn memory_used(&self) -> u64 {
+  pub fn memory_used(&self) -> i64 {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<u64>(ReportMetricsRequest::VT_MEMORY_USED, Some(0)).unwrap()}
+    unsafe { self._tab.get::<i64>(ReportMetricsRequest::VT_MEMORY_USED, Some(0)).unwrap()}
   }
   #[inline]
-  pub fn uring_task_rate(&self) -> u16 {
+  pub fn uring_task_rate(&self) -> i16 {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<u16>(ReportMetricsRequest::VT_URING_TASK_RATE, Some(0)).unwrap()}
+    unsafe { self._tab.get::<i16>(ReportMetricsRequest::VT_URING_TASK_RATE, Some(0)).unwrap()}
   }
   #[inline]
-  pub fn uring_inflight_task_cnt(&self) -> u16 {
+  pub fn uring_inflight_task_cnt(&self) -> i16 {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<u16>(ReportMetricsRequest::VT_URING_INFLIGHT_TASK_CNT, Some(0)).unwrap()}
+    unsafe { self._tab.get::<i16>(ReportMetricsRequest::VT_URING_INFLIGHT_TASK_CNT, Some(0)).unwrap()}
   }
   #[inline]
-  pub fn uring_pending_task_cnt(&self) -> u32 {
+  pub fn uring_pending_task_cnt(&self) -> i32 {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<u32>(ReportMetricsRequest::VT_URING_PENDING_TASK_CNT, Some(0)).unwrap()}
+    unsafe { self._tab.get::<i32>(ReportMetricsRequest::VT_URING_PENDING_TASK_CNT, Some(0)).unwrap()}
   }
   #[inline]
-  pub fn uring_task_avg_latency(&self) -> u16 {
+  pub fn uring_task_avg_latency(&self) -> i16 {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<u16>(ReportMetricsRequest::VT_URING_TASK_AVG_LATENCY, Some(0)).unwrap()}
+    unsafe { self._tab.get::<i16>(ReportMetricsRequest::VT_URING_TASK_AVG_LATENCY, Some(0)).unwrap()}
   }
   #[inline]
-  pub fn network_append_rate(&self) -> u16 {
+  pub fn network_append_rate(&self) -> i16 {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<u16>(ReportMetricsRequest::VT_NETWORK_APPEND_RATE, Some(0)).unwrap()}
+    unsafe { self._tab.get::<i16>(ReportMetricsRequest::VT_NETWORK_APPEND_RATE, Some(0)).unwrap()}
   }
   #[inline]
-  pub fn network_fetch_rate(&self) -> u16 {
+  pub fn network_fetch_rate(&self) -> i16 {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<u16>(ReportMetricsRequest::VT_NETWORK_FETCH_RATE, Some(0)).unwrap()}
+    unsafe { self._tab.get::<i16>(ReportMetricsRequest::VT_NETWORK_FETCH_RATE, Some(0)).unwrap()}
   }
   #[inline]
-  pub fn network_failed_append_rate(&self) -> u16 {
+  pub fn network_failed_append_rate(&self) -> i16 {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<u16>(ReportMetricsRequest::VT_NETWORK_FAILED_APPEND_RATE, Some(0)).unwrap()}
+    unsafe { self._tab.get::<i16>(ReportMetricsRequest::VT_NETWORK_FAILED_APPEND_RATE, Some(0)).unwrap()}
   }
   #[inline]
-  pub fn network_failed_fetch_rate(&self) -> u16 {
+  pub fn network_failed_fetch_rate(&self) -> i16 {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<u16>(ReportMetricsRequest::VT_NETWORK_FAILED_FETCH_RATE, Some(0)).unwrap()}
+    unsafe { self._tab.get::<i16>(ReportMetricsRequest::VT_NETWORK_FAILED_FETCH_RATE, Some(0)).unwrap()}
   }
   #[inline]
-  pub fn network_append_avg_latency(&self) -> u16 {
+  pub fn network_append_avg_latency(&self) -> i16 {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<u16>(ReportMetricsRequest::VT_NETWORK_APPEND_AVG_LATENCY, Some(0)).unwrap()}
+    unsafe { self._tab.get::<i16>(ReportMetricsRequest::VT_NETWORK_APPEND_AVG_LATENCY, Some(0)).unwrap()}
   }
   #[inline]
-  pub fn network_fetch_avg_latency(&self) -> u16 {
+  pub fn network_fetch_avg_latency(&self) -> i16 {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<u16>(ReportMetricsRequest::VT_NETWORK_FETCH_AVG_LATENCY, Some(0)).unwrap()}
+    unsafe { self._tab.get::<i16>(ReportMetricsRequest::VT_NETWORK_FETCH_AVG_LATENCY, Some(0)).unwrap()}
   }
   #[inline]
-  pub fn range_missing_replica_cnt(&self) -> u16 {
+  pub fn range_missing_replica_cnt(&self) -> i16 {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<u16>(ReportMetricsRequest::VT_RANGE_MISSING_REPLICA_CNT, Some(0)).unwrap()}
+    unsafe { self._tab.get::<i16>(ReportMetricsRequest::VT_RANGE_MISSING_REPLICA_CNT, Some(0)).unwrap()}
   }
   #[inline]
-  pub fn range_active_cnt(&self) -> u16 {
+  pub fn range_active_cnt(&self) -> i16 {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<u16>(ReportMetricsRequest::VT_RANGE_ACTIVE_CNT, Some(0)).unwrap()}
+    unsafe { self._tab.get::<i16>(ReportMetricsRequest::VT_RANGE_ACTIVE_CNT, Some(0)).unwrap()}
   }
 }
 
@@ -6073,46 +6073,46 @@ impl flatbuffers::Verifiable for ReportMetricsRequest<'_> {
     use self::flatbuffers::Verifiable;
     v.visit_table(pos)?
      .visit_field::<flatbuffers::ForwardsUOffset<DataNode>>("data_node", Self::VT_DATA_NODE, false)?
-     .visit_field::<u64>("disk_in_rate", Self::VT_DISK_IN_RATE, false)?
-     .visit_field::<u64>("disk_out_rate", Self::VT_DISK_OUT_RATE, false)?
-     .visit_field::<u64>("disk_free_space", Self::VT_DISK_FREE_SPACE, false)?
-     .visit_field::<u64>("disk_unindexed_data_size", Self::VT_DISK_UNINDEXED_DATA_SIZE, false)?
-     .visit_field::<u64>("memory_used", Self::VT_MEMORY_USED, false)?
-     .visit_field::<u16>("uring_task_rate", Self::VT_URING_TASK_RATE, false)?
-     .visit_field::<u16>("uring_inflight_task_cnt", Self::VT_URING_INFLIGHT_TASK_CNT, false)?
-     .visit_field::<u32>("uring_pending_task_cnt", Self::VT_URING_PENDING_TASK_CNT, false)?
-     .visit_field::<u16>("uring_task_avg_latency", Self::VT_URING_TASK_AVG_LATENCY, false)?
-     .visit_field::<u16>("network_append_rate", Self::VT_NETWORK_APPEND_RATE, false)?
-     .visit_field::<u16>("network_fetch_rate", Self::VT_NETWORK_FETCH_RATE, false)?
-     .visit_field::<u16>("network_failed_append_rate", Self::VT_NETWORK_FAILED_APPEND_RATE, false)?
-     .visit_field::<u16>("network_failed_fetch_rate", Self::VT_NETWORK_FAILED_FETCH_RATE, false)?
-     .visit_field::<u16>("network_append_avg_latency", Self::VT_NETWORK_APPEND_AVG_LATENCY, false)?
-     .visit_field::<u16>("network_fetch_avg_latency", Self::VT_NETWORK_FETCH_AVG_LATENCY, false)?
-     .visit_field::<u16>("range_missing_replica_cnt", Self::VT_RANGE_MISSING_REPLICA_CNT, false)?
-     .visit_field::<u16>("range_active_cnt", Self::VT_RANGE_ACTIVE_CNT, false)?
+     .visit_field::<i64>("disk_in_rate", Self::VT_DISK_IN_RATE, false)?
+     .visit_field::<i64>("disk_out_rate", Self::VT_DISK_OUT_RATE, false)?
+     .visit_field::<i64>("disk_free_space", Self::VT_DISK_FREE_SPACE, false)?
+     .visit_field::<i64>("disk_unindexed_data_size", Self::VT_DISK_UNINDEXED_DATA_SIZE, false)?
+     .visit_field::<i64>("memory_used", Self::VT_MEMORY_USED, false)?
+     .visit_field::<i16>("uring_task_rate", Self::VT_URING_TASK_RATE, false)?
+     .visit_field::<i16>("uring_inflight_task_cnt", Self::VT_URING_INFLIGHT_TASK_CNT, false)?
+     .visit_field::<i32>("uring_pending_task_cnt", Self::VT_URING_PENDING_TASK_CNT, false)?
+     .visit_field::<i16>("uring_task_avg_latency", Self::VT_URING_TASK_AVG_LATENCY, false)?
+     .visit_field::<i16>("network_append_rate", Self::VT_NETWORK_APPEND_RATE, false)?
+     .visit_field::<i16>("network_fetch_rate", Self::VT_NETWORK_FETCH_RATE, false)?
+     .visit_field::<i16>("network_failed_append_rate", Self::VT_NETWORK_FAILED_APPEND_RATE, false)?
+     .visit_field::<i16>("network_failed_fetch_rate", Self::VT_NETWORK_FAILED_FETCH_RATE, false)?
+     .visit_field::<i16>("network_append_avg_latency", Self::VT_NETWORK_APPEND_AVG_LATENCY, false)?
+     .visit_field::<i16>("network_fetch_avg_latency", Self::VT_NETWORK_FETCH_AVG_LATENCY, false)?
+     .visit_field::<i16>("range_missing_replica_cnt", Self::VT_RANGE_MISSING_REPLICA_CNT, false)?
+     .visit_field::<i16>("range_active_cnt", Self::VT_RANGE_ACTIVE_CNT, false)?
      .finish();
     Ok(())
   }
 }
 pub struct ReportMetricsRequestArgs<'a> {
     pub data_node: Option<flatbuffers::WIPOffset<DataNode<'a>>>,
-    pub disk_in_rate: u64,
-    pub disk_out_rate: u64,
-    pub disk_free_space: u64,
-    pub disk_unindexed_data_size: u64,
-    pub memory_used: u64,
-    pub uring_task_rate: u16,
-    pub uring_inflight_task_cnt: u16,
-    pub uring_pending_task_cnt: u32,
-    pub uring_task_avg_latency: u16,
-    pub network_append_rate: u16,
-    pub network_fetch_rate: u16,
-    pub network_failed_append_rate: u16,
-    pub network_failed_fetch_rate: u16,
-    pub network_append_avg_latency: u16,
-    pub network_fetch_avg_latency: u16,
-    pub range_missing_replica_cnt: u16,
-    pub range_active_cnt: u16,
+    pub disk_in_rate: i64,
+    pub disk_out_rate: i64,
+    pub disk_free_space: i64,
+    pub disk_unindexed_data_size: i64,
+    pub memory_used: i64,
+    pub uring_task_rate: i16,
+    pub uring_inflight_task_cnt: i16,
+    pub uring_pending_task_cnt: i32,
+    pub uring_task_avg_latency: i16,
+    pub network_append_rate: i16,
+    pub network_fetch_rate: i16,
+    pub network_failed_append_rate: i16,
+    pub network_failed_fetch_rate: i16,
+    pub network_append_avg_latency: i16,
+    pub network_fetch_avg_latency: i16,
+    pub range_missing_replica_cnt: i16,
+    pub range_active_cnt: i16,
 }
 impl<'a> Default for ReportMetricsRequestArgs<'a> {
   #[inline]
@@ -6150,72 +6150,72 @@ impl<'a: 'b, 'b> ReportMetricsRequestBuilder<'a, 'b> {
     self.fbb_.push_slot_always::<flatbuffers::WIPOffset<DataNode>>(ReportMetricsRequest::VT_DATA_NODE, data_node);
   }
   #[inline]
-  pub fn add_disk_in_rate(&mut self, disk_in_rate: u64) {
-    self.fbb_.push_slot::<u64>(ReportMetricsRequest::VT_DISK_IN_RATE, disk_in_rate, 0);
+  pub fn add_disk_in_rate(&mut self, disk_in_rate: i64) {
+    self.fbb_.push_slot::<i64>(ReportMetricsRequest::VT_DISK_IN_RATE, disk_in_rate, 0);
   }
   #[inline]
-  pub fn add_disk_out_rate(&mut self, disk_out_rate: u64) {
-    self.fbb_.push_slot::<u64>(ReportMetricsRequest::VT_DISK_OUT_RATE, disk_out_rate, 0);
+  pub fn add_disk_out_rate(&mut self, disk_out_rate: i64) {
+    self.fbb_.push_slot::<i64>(ReportMetricsRequest::VT_DISK_OUT_RATE, disk_out_rate, 0);
   }
   #[inline]
-  pub fn add_disk_free_space(&mut self, disk_free_space: u64) {
-    self.fbb_.push_slot::<u64>(ReportMetricsRequest::VT_DISK_FREE_SPACE, disk_free_space, 0);
+  pub fn add_disk_free_space(&mut self, disk_free_space: i64) {
+    self.fbb_.push_slot::<i64>(ReportMetricsRequest::VT_DISK_FREE_SPACE, disk_free_space, 0);
   }
   #[inline]
-  pub fn add_disk_unindexed_data_size(&mut self, disk_unindexed_data_size: u64) {
-    self.fbb_.push_slot::<u64>(ReportMetricsRequest::VT_DISK_UNINDEXED_DATA_SIZE, disk_unindexed_data_size, 0);
+  pub fn add_disk_unindexed_data_size(&mut self, disk_unindexed_data_size: i64) {
+    self.fbb_.push_slot::<i64>(ReportMetricsRequest::VT_DISK_UNINDEXED_DATA_SIZE, disk_unindexed_data_size, 0);
   }
   #[inline]
-  pub fn add_memory_used(&mut self, memory_used: u64) {
-    self.fbb_.push_slot::<u64>(ReportMetricsRequest::VT_MEMORY_USED, memory_used, 0);
+  pub fn add_memory_used(&mut self, memory_used: i64) {
+    self.fbb_.push_slot::<i64>(ReportMetricsRequest::VT_MEMORY_USED, memory_used, 0);
   }
   #[inline]
-  pub fn add_uring_task_rate(&mut self, uring_task_rate: u16) {
-    self.fbb_.push_slot::<u16>(ReportMetricsRequest::VT_URING_TASK_RATE, uring_task_rate, 0);
+  pub fn add_uring_task_rate(&mut self, uring_task_rate: i16) {
+    self.fbb_.push_slot::<i16>(ReportMetricsRequest::VT_URING_TASK_RATE, uring_task_rate, 0);
   }
   #[inline]
-  pub fn add_uring_inflight_task_cnt(&mut self, uring_inflight_task_cnt: u16) {
-    self.fbb_.push_slot::<u16>(ReportMetricsRequest::VT_URING_INFLIGHT_TASK_CNT, uring_inflight_task_cnt, 0);
+  pub fn add_uring_inflight_task_cnt(&mut self, uring_inflight_task_cnt: i16) {
+    self.fbb_.push_slot::<i16>(ReportMetricsRequest::VT_URING_INFLIGHT_TASK_CNT, uring_inflight_task_cnt, 0);
   }
   #[inline]
-  pub fn add_uring_pending_task_cnt(&mut self, uring_pending_task_cnt: u32) {
-    self.fbb_.push_slot::<u32>(ReportMetricsRequest::VT_URING_PENDING_TASK_CNT, uring_pending_task_cnt, 0);
+  pub fn add_uring_pending_task_cnt(&mut self, uring_pending_task_cnt: i32) {
+    self.fbb_.push_slot::<i32>(ReportMetricsRequest::VT_URING_PENDING_TASK_CNT, uring_pending_task_cnt, 0);
   }
   #[inline]
-  pub fn add_uring_task_avg_latency(&mut self, uring_task_avg_latency: u16) {
-    self.fbb_.push_slot::<u16>(ReportMetricsRequest::VT_URING_TASK_AVG_LATENCY, uring_task_avg_latency, 0);
+  pub fn add_uring_task_avg_latency(&mut self, uring_task_avg_latency: i16) {
+    self.fbb_.push_slot::<i16>(ReportMetricsRequest::VT_URING_TASK_AVG_LATENCY, uring_task_avg_latency, 0);
   }
   #[inline]
-  pub fn add_network_append_rate(&mut self, network_append_rate: u16) {
-    self.fbb_.push_slot::<u16>(ReportMetricsRequest::VT_NETWORK_APPEND_RATE, network_append_rate, 0);
+  pub fn add_network_append_rate(&mut self, network_append_rate: i16) {
+    self.fbb_.push_slot::<i16>(ReportMetricsRequest::VT_NETWORK_APPEND_RATE, network_append_rate, 0);
   }
   #[inline]
-  pub fn add_network_fetch_rate(&mut self, network_fetch_rate: u16) {
-    self.fbb_.push_slot::<u16>(ReportMetricsRequest::VT_NETWORK_FETCH_RATE, network_fetch_rate, 0);
+  pub fn add_network_fetch_rate(&mut self, network_fetch_rate: i16) {
+    self.fbb_.push_slot::<i16>(ReportMetricsRequest::VT_NETWORK_FETCH_RATE, network_fetch_rate, 0);
   }
   #[inline]
-  pub fn add_network_failed_append_rate(&mut self, network_failed_append_rate: u16) {
-    self.fbb_.push_slot::<u16>(ReportMetricsRequest::VT_NETWORK_FAILED_APPEND_RATE, network_failed_append_rate, 0);
+  pub fn add_network_failed_append_rate(&mut self, network_failed_append_rate: i16) {
+    self.fbb_.push_slot::<i16>(ReportMetricsRequest::VT_NETWORK_FAILED_APPEND_RATE, network_failed_append_rate, 0);
   }
   #[inline]
-  pub fn add_network_failed_fetch_rate(&mut self, network_failed_fetch_rate: u16) {
-    self.fbb_.push_slot::<u16>(ReportMetricsRequest::VT_NETWORK_FAILED_FETCH_RATE, network_failed_fetch_rate, 0);
+  pub fn add_network_failed_fetch_rate(&mut self, network_failed_fetch_rate: i16) {
+    self.fbb_.push_slot::<i16>(ReportMetricsRequest::VT_NETWORK_FAILED_FETCH_RATE, network_failed_fetch_rate, 0);
   }
   #[inline]
-  pub fn add_network_append_avg_latency(&mut self, network_append_avg_latency: u16) {
-    self.fbb_.push_slot::<u16>(ReportMetricsRequest::VT_NETWORK_APPEND_AVG_LATENCY, network_append_avg_latency, 0);
+  pub fn add_network_append_avg_latency(&mut self, network_append_avg_latency: i16) {
+    self.fbb_.push_slot::<i16>(ReportMetricsRequest::VT_NETWORK_APPEND_AVG_LATENCY, network_append_avg_latency, 0);
   }
   #[inline]
-  pub fn add_network_fetch_avg_latency(&mut self, network_fetch_avg_latency: u16) {
-    self.fbb_.push_slot::<u16>(ReportMetricsRequest::VT_NETWORK_FETCH_AVG_LATENCY, network_fetch_avg_latency, 0);
+  pub fn add_network_fetch_avg_latency(&mut self, network_fetch_avg_latency: i16) {
+    self.fbb_.push_slot::<i16>(ReportMetricsRequest::VT_NETWORK_FETCH_AVG_LATENCY, network_fetch_avg_latency, 0);
   }
   #[inline]
-  pub fn add_range_missing_replica_cnt(&mut self, range_missing_replica_cnt: u16) {
-    self.fbb_.push_slot::<u16>(ReportMetricsRequest::VT_RANGE_MISSING_REPLICA_CNT, range_missing_replica_cnt, 0);
+  pub fn add_range_missing_replica_cnt(&mut self, range_missing_replica_cnt: i16) {
+    self.fbb_.push_slot::<i16>(ReportMetricsRequest::VT_RANGE_MISSING_REPLICA_CNT, range_missing_replica_cnt, 0);
   }
   #[inline]
-  pub fn add_range_active_cnt(&mut self, range_active_cnt: u16) {
-    self.fbb_.push_slot::<u16>(ReportMetricsRequest::VT_RANGE_ACTIVE_CNT, range_active_cnt, 0);
+  pub fn add_range_active_cnt(&mut self, range_active_cnt: i16) {
+    self.fbb_.push_slot::<i16>(ReportMetricsRequest::VT_RANGE_ACTIVE_CNT, range_active_cnt, 0);
   }
   #[inline]
   pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a>) -> ReportMetricsRequestBuilder<'a, 'b> {
