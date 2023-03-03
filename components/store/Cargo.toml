@@ -24,6 +24,7 @@ tokio = { workspace = true }
 util = { path = "../util" }
 num_enum = { workspace = true }
 crc = { workspace = true }
+derivative = { workspace = true }
 
 [dev-dependencies]
 slog-async =  { workspace = true }

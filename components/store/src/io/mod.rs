@@ -636,19 +636,19 @@ impl IO {
                     if let Some(fd) = segment.fd {
                         debug_assert!(buf.offset >= segment.offset);
                         debug_assert!(
-                            buf.offset + buf.written as u64 <= segment.offset + segment.size
+                            buf.offset + buf.write_pos() as u64 <= segment.offset + segment.size
                         );
                         let file_offset = buf.offset - segment.offset;
-                        let sqe = opcode::Write::new(types::Fd(fd), ptr, buf.written as u32)
+                        let sqe = opcode::Write::new(types::Fd(fd), ptr, buf.write_pos() as u32)
                             .offset64(file_offset as libc::off_t)
                             .build()
                             .user_data(self.tag);
                         // Track write requests
-                        self.write_window.add(buf.offset, buf.written as u32)?;
+                        self.write_window.add(buf.offset, buf.write_pos() as u32)?;
                         entries.push(sqe);
                         let state = OpState {
                             opcode: opcode::Write::CODE,
-                            buf: Arc::new(buf),
+                            buf,
                             offset: None,
                             len: None,
                         };
@@ -1240,12 +1240,14 @@ fn on_complete(
             if result < 0 {
                 error!(
                     log,
-                    "Write to WAL range `[{}, {})` failed", state.buf.offset, state.buf.written
+                    "Write to WAL range `[{}, {})` failed",
+                    state.buf.offset,
+                    state.buf.write_pos()
                 );
                 return Err(StoreError::System(-result));
             } else {
                 write_window
-                    .commit(state.buf.offset, state.buf.written as u32)
+                    .commit(state.buf.offset, state.buf.write_pos() as u32)
                     .map_err(|_e| StoreError::WriteWindow)?;
             }
             Ok(())

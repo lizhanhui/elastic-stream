@@ -2,7 +2,7 @@ use std::{collections::HashMap, rc::Rc, sync::Arc, time::Instant};
 
 use super::buf::AlignedBuf;
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug)]
 pub(crate) struct Entry {
     buf: Arc<AlignedBuf>,
     hit: usize,
@@ -19,7 +19,7 @@ impl Entry {
     }
 }
 
-#[derive(Debug, Eq)]
+#[derive(Debug)]
 pub(crate) struct BlockCache {
     offset: u64,
     block_size: u32,
@@ -43,7 +43,7 @@ impl BlockCache {
         loop {
             self.entries.insert(from + delta, Rc::clone(&entry));
             delta += self.block_size;
-            if delta > entry.buf.written as u32 {
+            if delta > entry.buf.write_pos() as u32 {
                 break;
             }
         }
@@ -52,7 +52,7 @@ impl BlockCache {
     pub(crate) fn get_entry(&self, offset: u64, len: u32) -> Option<Arc<AlignedBuf>> {
         let key = (offset / self.block_size as u64 * self.block_size as u64 - self.offset) as u32;
         if let Some(entry) = self.entries.get(&key) {
-            if entry.buf.offset + entry.buf.written as u64 >= offset + len as u64 {
+            if entry.buf.offset + entry.buf.write_pos() as u64 >= offset + len as u64 {
                 return Some(Arc::clone(&entry.buf));
             }
         }

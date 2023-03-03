@@ -21,6 +21,7 @@ byteorder = "1"
 bytes = "1"
 core_affinity = "0.8"
 crc = "3.0"
+derivative = "2.2"
 futures = { version = "0.3" }
 pin-project = { version = "1" }
 io-uring = "0.5"

@@ -1,4 +1,10 @@
-use std::alloc::{self, Layout};
+use std::{
+    alloc::{self, Layout},
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    },
+};
 
 use slog::{trace, Logger};
 
@@ -7,7 +13,7 @@ use crate::error::StoreError;
 /// Memory buffer complying given memory alignment, which is supposed to be used for DirectIO.
 ///
 /// This struct is designed to be NOT `Copy` nor `Clone`; otherwise, we will have double-free issue.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug)]
 pub(crate) struct AlignedBuf {
     /// WAL offset
     pub(crate) offset: u64,
@@ -19,7 +25,7 @@ pub(crate) struct AlignedBuf {
     pub(crate) capacity: usize,
 
     /// Write index
-    pub(crate) written: usize,
+    pub(crate) written: AtomicUsize,
 
     /// Read index
     read: usize,
@@ -36,13 +42,17 @@ impl AlignedBuf {
             ptr,
             layout,
             capacity,
-            written: 0,
+            written: AtomicUsize::new(0),
             read: 0,
         })
     }
 
+    pub(crate) fn write_pos(&self) -> usize {
+        self.written.load(Ordering::Relaxed)
+    }
+
     pub(crate) fn write_u32(&mut self, value: u32) -> bool {
-        if self.written + 4 > self.capacity {
+        if self.written.load(Ordering::Relaxed) + 4 > self.capacity {
             return false;
         }
 
@@ -52,8 +62,8 @@ impl AlignedBuf {
 
     /// Get u32 in big-endian byte order.
     pub(crate) fn read_u32(&mut self) -> Result<u32, StoreError> {
-        debug_assert!(self.written >= self.read);
-        if self.written - self.read < std::mem::size_of::<u32>() {
+        debug_assert!(self.written.load(Ordering::Relaxed) >= self.read);
+        if self.written.load(Ordering::Relaxed) - self.read < std::mem::size_of::<u32>() {
             return Err(StoreError::InsufficientData);
         }
         let value = unsafe { *(self.ptr.offset(self.read as isize) as *const u32) };
@@ -62,7 +72,7 @@ impl AlignedBuf {
     }
 
     pub(crate) fn write_u64(&mut self, value: u64) -> bool {
-        if self.written + 8 > self.capacity {
+        if self.written.load(Ordering::Relaxed) + 8 > self.capacity {
             return false;
         }
 
@@ -71,8 +81,8 @@ impl AlignedBuf {
     }
 
     pub(crate) fn read_u64(&mut self) -> Result<u64, StoreError> {
-        debug_assert!(self.written > self.read);
-        if self.read + 8 > self.written {
+        debug_assert!(self.written.load(Ordering::Relaxed) > self.read);
+        if self.read + 8 > self.written.load(Ordering::Relaxed) {
             return Err(StoreError::InsufficientData);
         }
 
@@ -86,25 +96,23 @@ impl AlignedBuf {
         unsafe { self.ptr.offset(self.read as isize) }
     }
 
-    pub(crate) fn write_buf(&mut self, buf: &[u8]) -> bool {
-        if self.written + buf.len() > self.capacity {
+    pub(crate) fn write_buf(&self, buf: &[u8]) -> bool {
+        let pos = self.written.load(Ordering::Relaxed);
+        if pos + buf.len() > self.capacity {
             return false;
         }
         unsafe {
-            std::ptr::copy_nonoverlapping(
-                buf.as_ptr(),
-                self.ptr.offset(self.written as isize),
-                buf.len(),
-            )
+            std::ptr::copy_nonoverlapping(buf.as_ptr(), self.ptr.offset(pos as isize), buf.len())
         };
-        self.written += buf.len();
+        self.written.fetch_add(buf.len(), Ordering::Relaxed);
         true
     }
 
     /// Remaining space to write.
     pub(crate) fn remaining(&self) -> usize {
-        debug_assert!(self.written <= self.capacity);
-        self.capacity - self.written
+        let pos = self.written.load(Ordering::Relaxed);
+        debug_assert!(pos <= self.capacity);
+        self.capacity - pos
     }
 }
 
@@ -119,7 +127,7 @@ pub(crate) struct AlignedBufWriter {
     log: Logger,
     offset: u64,
     alignment: usize,
-    buffers: Vec<AlignedBuf>,
+    buffers: Vec<Arc<AlignedBuf>>,
 }
 
 impl AlignedBufWriter {
@@ -158,7 +166,7 @@ impl AlignedBufWriter {
                 self.offset + buf.capacity as u64
             );
             self.offset += buf.capacity as u64;
-            self.buffers.push(buf);
+            self.buffers.push(Arc::new(buf));
         }
 
         // Reserve memory block, for which we only partial data to fill.
@@ -176,7 +184,7 @@ impl AlignedBufWriter {
                 self.offset + buf.capacity as u64
             );
             self.offset += buf.capacity as u64;
-            self.buffers.push(buf);
+            self.buffers.push(Arc::new(buf));
         }
 
         Ok(())
@@ -222,7 +230,7 @@ impl AlignedBufWriter {
     }
 
     /// Drain buffers that are full and generate submission queue entry for each of buf.
-    pub(crate) fn drain_full(&mut self) -> Vec<AlignedBuf> {
+    pub(crate) fn drain_full(&mut self) -> Vec<Arc<AlignedBuf>> {
         self.buffers
             .drain_filter(|buf| 0 == buf.remaining())
             .collect()

@@ -11,6 +11,7 @@ use std::{
 };
 
 use bytes::{BufMut, BytesMut};
+use derivative::Derivative;
 use nix::fcntl;
 
 use crate::{
@@ -97,7 +98,8 @@ impl TimeRange {
 /// The writer writes and reader reads in chunks of blocks. `BlockSize` are normally multiple of the
 /// underlying storage block size, which is medium and cloud-vendor specific. By default, `BlockSize` is
 /// `256KiB`.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Derivative)]
+#[derivative(PartialEq, Eq, Debug)]
 pub(crate) struct LogSegmentFile {
     pub(crate) offset: u64,
     pub(crate) path: String,
@@ -116,6 +118,7 @@ pub(crate) struct LogSegmentFile {
 
     pub(crate) time_range: Option<TimeRange>,
 
+    #[derivative(PartialEq = "ignore")]
     pub(crate) block_cache: BlockCache,
 }
 
