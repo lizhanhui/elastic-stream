@@ -1,6 +1,9 @@
 name: Run lint
 
-on: [ push, pull_request ]
+on:
+  push:
+    branches-ignore:
+      - main
 
 jobs:
   lint:
