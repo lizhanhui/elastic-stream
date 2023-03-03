@@ -579,14 +579,6 @@ impl IO {
             .count()
     }
 
-    fn writable_segment(&self) -> Option<&LogSegmentFile> {
-        unsafe { &mut *self.segments.get() }
-            .iter()
-            .rev()
-            .filter(|segment| segment.status == Status::ReadWrite)
-            .last()
-    }
-
     fn calculate_write_buffers(&self) -> Vec<usize> {
         let mut write_buf_list = vec![];
         let mut requirement: VecDeque<_> = self
@@ -633,40 +625,49 @@ impl IO {
     }
 
     fn build_write_sqe(&mut self, entries: &mut Vec<squeue::Entry>) {
-        let mut writer = self.buf_writer.get_mut();
-        writer.drain_full().into_iter().for_each(|buf| {
-            let ptr = buf.as_ptr();
-            if let Some(segment) = self.segment_file_of(buf.offset) {
-                debug_assert_eq!(Status::ReadWrite, segment.status);
-                if let Some(fd) = segment.fd {
-                    debug_assert!(buf.offset >= segment.offset);
-                    debug_assert!(buf.offset + buf.written as u64 <= segment.offset + segment.size);
-                    let file_offset = buf.offset - segment.offset;
-                    let sqe = opcode::Write::new(types::Fd(fd), ptr, buf.written as u32)
-                        .offset64(file_offset as libc::off_t)
-                        .build()
-                        .user_data(self.tag);
-                    // Track write requests
-                    self.write_window.add(buf.offset, buf.written as u32);
-                    entries.push(sqe);
-                    let state = OpState {
-                        opcode: opcode::Write::CODE,
-                        buf: Arc::new(buf),
-                        offset: None,
-                        len: None,
-                    };
-                    self.inflight_data_tasks.insert(self.tag, state);
-                    self.tag += 1;
+        let writer = self.buf_writer.get_mut();
+        writer
+            .drain_full()
+            .into_iter()
+            .map(|buf| {
+                let ptr = buf.as_ptr();
+                if let Some(segment) = self.segment_file_of(buf.offset) {
+                    debug_assert_eq!(Status::ReadWrite, segment.status);
+                    if let Some(fd) = segment.fd {
+                        debug_assert!(buf.offset >= segment.offset);
+                        debug_assert!(
+                            buf.offset + buf.written as u64 <= segment.offset + segment.size
+                        );
+                        let file_offset = buf.offset - segment.offset;
+                        let sqe = opcode::Write::new(types::Fd(fd), ptr, buf.written as u32)
+                            .offset64(file_offset as libc::off_t)
+                            .build()
+                            .user_data(self.tag);
+                        // Track write requests
+                        self.write_window.add(buf.offset, buf.written as u32)?;
+                        entries.push(sqe);
+                        let state = OpState {
+                            opcode: opcode::Write::CODE,
+                            buf: Arc::new(buf),
+                            offset: None,
+                            len: None,
+                        };
+                        self.inflight_data_tasks.insert(self.tag, state);
+                        self.tag += 1;
+                    } else {
+                        // fatal errors
+                        let msg =
+                            format!("Segment {} should be open and with valid FD", segment.path);
+                        error!(self.log, "{}", msg);
+                        panic!("{}", msg);
+                    }
                 } else {
-                    // fatal errors
-                    let msg = format!("Segment {} should be open and with valid FD", segment.path);
-                    error!(self.log, "{}", msg);
-                    panic!("{}", msg);
+                    error!(self.log, "");
                 }
-            } else {
-                error!(self.log, "");
-            }
-        });
+                Ok::<(), write_window::WriteWindowError>(())
+            })
+            .flatten()
+            .count();
     }
 
     fn build_sqe(&mut self, entries: &mut Vec<squeue::Entry>) {
