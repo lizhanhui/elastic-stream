@@ -336,24 +336,28 @@ func (c *conn) processPing(f *codec.PingFrame) error {
 
 func (c *conn) processGoAway(f *codec.GoAwayFrame) error {
 	c.serveG.Check()
+	_ = f
 	// TODO
 	return nil
 }
 
 func (c *conn) processHeartbeat(f *codec.HeartbeatFrame) error {
 	c.serveG.Check()
+	_ = f
 	// TODO
 	return nil
 }
 
 func (c *conn) processDataFrame(f *codec.DataFrame) error {
 	c.serveG.Check()
+	_ = f
 	// TODO
 	return nil
 }
 
 func (c *conn) newStream(id uint32) *stream {
 	c.serveG.Check()
+	_ = id
 	// TODO
 	return nil
 }
