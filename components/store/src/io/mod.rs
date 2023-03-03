@@ -1030,6 +1030,7 @@ impl IO {
             return;
         }
         let committed = self.write_window.committed;
+        let mut cache_entries = vec![];
         {
             let mut completion = self.data_ring.completion();
             let mut count = 0;
@@ -1054,6 +1055,9 @@ impl IO {
                                 }
                                 _ => {}
                             }
+                        } else {
+                            // Add block cache
+                            cache_entries.push(Arc::clone(&state.buf));
                         }
                     }
                 }
@@ -1068,6 +1072,13 @@ impl IO {
             debug_assert!(self.inflight >= count);
             self.inflight -= count;
             trace!(self.log, "Reaped {} data CQE(s)", count);
+        }
+
+        // Add to block cache
+        for buf in cache_entries {
+            if let Some(segment) = self.segment_file_of(buf.offset) {
+                segment.block_cache.add_entry(buf);
+            }
         }
 
         if self.write_window.committed > committed {
