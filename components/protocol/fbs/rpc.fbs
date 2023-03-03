@@ -26,6 +26,8 @@ table HeartbeatResponse {
     client_id: string (id: 0);
     client_role: ClientRole (id: 1);
     data_node: DataNode (id: 2);
+    error_code: ErrorCode (id: 3);
+    error_message: string (id: 4);
 }
 
 // The append request is used to append records to the data node.
@@ -50,6 +52,9 @@ table AppendResponse {
     throttle_time_ms: int32 (id: 0);
     // A batch of append responses.
     append_responses: [AppendResult] (id: 1);
+    // The top level error code, or 0 if there was no error.
+    error_code: ErrorCode (id: 2);
+    error_message: string (id: 3);
 }
 
 table AppendResult {
@@ -95,6 +100,9 @@ table FetchResponse {
     throttle_time_ms: int32 (id: 0);
     // A batch of fetch responses.
     fetch_responses: [FetchResult] (id: 1);
+    // The top level error code, or 0 if there was no error.
+    error_code: ErrorCode (id: 2);
+    error_message: string (id: 3);
 }
 
 table FetchResult {
@@ -142,6 +150,9 @@ table ListRangesResponse {
     throttle_time_ms: int32 (id: 0);
     // The responses of list ranges request
     list_responses: [ListRangesResult] (id: 1);
+    // The top level error code, or 0 if there was no error.
+    error_code: ErrorCode (id: 2);
+    error_message: string (id: 3);
 }
 
 table ListRangesResult {
@@ -194,6 +205,9 @@ table SealRangesResponse {
     throttle_time_ms: int32 (id: 0);
     // The responses of seal ranges request
     seal_responses: [SealRangesResult] (id: 1);
+    // The top level error code, or 0 if there was no error.
+    error_code: ErrorCode (id: 2);
+    error_message: string (id: 3);
 }
 
 table SealRangesResult {
@@ -228,6 +242,9 @@ table SyncRangesResponse {
     throttle_time_ms: int32 (id: 0);
     // The responses of sync ranges request
     sync_responses: [SyncRangesResult] (id: 1);
+    // The top level error code, or 0 if there was no error.
+    error_code: ErrorCode (id: 2);
+    error_message: string (id: 3);
 }
 
 table SyncRangesResult {
@@ -254,6 +271,9 @@ table DescribeRangesResponse {
     throttle_time_ms: int32 (id: 0);
     // The responses of describe ranges request
     describe_responses: [DescribeRangeResult] (id: 1);
+    // The top level error code, or 0 if there was no error.
+    error_code: ErrorCode (id: 2);
+    error_message: string (id: 3);
 }
 
 table DescribeRangeResult {
@@ -291,6 +311,9 @@ table CreateStreamsResponse {
     throttle_time_ms: int32 (id: 0);
     // The responses of create streams request
     create_responses: [CreateStreamResult] (id: 1);
+    // The top level error code, or 0 if there was no error.
+    error_code: ErrorCode (id: 2);
+    error_message: string (id: 3);
 }
 
 table CreateStreamResult {
@@ -316,6 +339,9 @@ table DeleteStreamsResponse {
     throttle_time_ms: int32 (id: 0);
     // The responses of delete streams request
     delete_responses: [DeleteStreamResult] (id: 1);
+    // The top level error code, or 0 if there was no error.
+    error_code: ErrorCode (id: 2);
+    error_message: string (id: 3);
 }
 
 table DeleteStreamResult {
@@ -339,6 +365,9 @@ table UpdateStreamsResponse {
     throttle_time_ms: int32 (id: 0);
     // The responses of update streams request
     update_responses: [UpdateStreamResult] (id: 1);
+    // The top level error code, or 0 if there was no error.
+    error_code: ErrorCode (id: 2);
+    error_message: string (id: 3);
 }
 
 table UpdateStreamResult {
@@ -362,6 +391,9 @@ table DescribeStreamsResponse {
     throttle_time_ms: int32 (id: 0);
     // The responses of describe streams request
     describe_responses: [DescribeStreamResult] (id: 1);
+    // The top level error code, or 0 if there was no error.
+    error_code: ErrorCode (id: 2);
+    error_message: string (id: 3);
 }
 
 table DescribeStreamResult {
@@ -403,6 +435,9 @@ table TrimStreamsResponse {
     throttle_time_ms: int32 (id: 0);
     // The responses of trim streams request
     trim_responses: [TrimStreamResult] (id: 1);
+    // The top level error code, or 0 if there was no error.
+    error_code: ErrorCode (id: 2);
+    error_message: string (id: 3);
 }
 
 table TrimStreamResult {
@@ -439,4 +474,6 @@ table ReportMetricsRequest {
 
 table ReportMetricsResponse {
     data_node: DataNode (id: 0);
+    error_code: ErrorCode (id: 1);
+    error_message: string (id: 2);
 }

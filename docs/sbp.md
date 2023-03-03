@@ -98,6 +98,8 @@ Response Header => client_id client_role data_node
   data_node => node_id advertise_addr
     node_id => int32
     advertise_addr => string
+  error_code => int16
+  error_msg => string
 
 Response Payload => Empty
 ```
@@ -111,6 +113,8 @@ The request and response frames of HEARTBEAT have the same format. The table bel
 | data_node | struct | Optional, the node information of the data node. Empty if the client is a SDK client. |
 | node_id | int32 | The unique id of the node. |
 | advertise_addr | string | The advertise address of the node, for client traffic from outside. The scheme is `host:port`, while host supports both domain name and IPv4/IPv6 address. |
+| error_code | int16 | The error code of the response. |
+| error_msg | string | The error message of the response. |
 
 ### APPEND
 The APPEND frame(opcode=0x1001) appends record batches to the data node.
@@ -143,6 +147,8 @@ Request Payload => [stream_data]
 ```
 Response Header => throttle_time_ms [append_responses] 
   throttle_time_ms => int32
+  error_code => int16
+  error_msg => string
   append_responses => stream_id request_index base_offset stream_append_time_ms error_code error_message
     stream_id => int64
     request_index => int32
@@ -157,6 +163,8 @@ Response Payload => Empty
 | Field | Type | Description |
 |-------|------|-------------|
 | throttle_time_ms | int32 | The time in milliseconds to throttle the client, due to a quota violation or the server is too busy. |
+| error_code | int16 | The top level error code of the response. |
+| error_msg | string | The top level error message of the response. |
 | append_responses | array | A batch of append responses. |
 | stream_id | int64 | The target stream_id of the append record batch. |
 | request_index | int32 | The request_index that the append_response relates to. |
@@ -196,6 +204,8 @@ Request Payload => Empty
 ```
 Response Header => throttle_time_ms [fetch_responses]
   throttle_time_ms => int32
+  error_code => int16
+  error_msg => string
   fetch_responses => stream_id request_index batch_length error_code error_message
     stream_id => int64
     request_index => int32
@@ -211,6 +221,8 @@ Response Payload => [stream_data]
 | Field | Type | Description |
 |-------|------|-------------|
 | throttle_time_ms | int32 | The time in milliseconds to throttle the client, due to a quota violation or the server is too busy. |
+| error_code | int16 | The top level error code of the response. |
+| error_msg | string | The top level error message of the response. |
 | fetch_responses | array | A batch of fetch responses. |
 | stream_id | int64 | The id of the stream that the data is fetched from. |
 | request_index | int8 | The request_index that the fetch_response relates to. |
@@ -255,6 +267,8 @@ Request Payload => Empty
 ```
 Response Header => throttle_time_ms [list_responses]
   throttle_time_ms => int32
+  error_code => int16
+  error_msg => string
   list_responses => stream_id error_code error_message [ranges]
     stream_id => int64
     error_code => int16
@@ -277,6 +291,8 @@ Response Payload => Empty
 | Field | Type | Description |
 |-------|------|-------------|
 | throttle_time_ms | int32 | The time in milliseconds to throttle the client, due to a quota violation or the server is too busy. |
+| error_code | int16 | The top level error code of the response. |
+| error_msg | string | The top level error message of the response. |
 | list_responses | array | A batch of list range responses. |
 | stream_id | int64 | The target stream_id of the list ranges response. |
 | error_code | int16 | The error code, or 0 if there was no error. |
@@ -317,6 +333,8 @@ Request Payload => Empty
 ```
 Response Header => throttle_time_ms [seal_responses]
   throttle_time_ms => int32
+  error_code => int16
+  error_msg => string
   seal_responses => stream_id error_code error_message [ranges]
     stream_id => int64
     error_code => int16
@@ -329,6 +347,8 @@ Response Payload => Empty
 | Field | Type | Description |
 |-------|------|-------------|
 | throttle_time_ms | int32 | The time in milliseconds to throttle the client, due to a quota violation or the server is too busy. |
+| error_code | int16 | The top level error code of the response. |
+| error_msg | string | The top level error message of the response. |
 | seal_responses | array | A batch of stream responses. |
 | stream_id | int64 | The target stream_id of the seal ranges response. |
 | error_code | int16 | The error code, or 0 if there was no error. |
@@ -361,7 +381,9 @@ Request Payload => Empty
 **Response Frame:**
 ```
 Response Header => throttle_time_ms [sync_responses]
-  throttle_time_ms
+  throttle_time_ms => int32
+  error_code => int16
+  error_msg => string
   sync_responses => stream_id error_code error_message range
     stream_id => int64
     error_code => int16
@@ -396,6 +418,8 @@ Request Header => timeout_ms [ranges]
 ```
 Response Header => throttle_time_ms [describe_responses]
   throttle_time_ms => int32
+  error_code => int16
+  error_msg => string
   describe_responses => stream_id error_code error_message range
     stream_id => int64
     error_code => int16
@@ -406,6 +430,8 @@ Response Header => throttle_time_ms [describe_responses]
 | Field | Type | Description |
 |-------|------|-------------|
 | throttle_time_ms | int32 | The time in milliseconds to throttle the client, due to a quota violation or the server is too busy. |
+| error_code | int16 | The top level error code of the response. |
+| error_msg | string | The top level error message of the response. |
 | describe_responses | array | A batch of describe responses. |
 | stream_id | int64 | The target stream_id of the describe ranges response. |
 | error_code | int16 | The error code, or 0 if there was no error. |
@@ -436,7 +462,9 @@ Request Payload => Empty
 **Response Frame:**
 ```
 Response Header => throttle_time_ms [create_responses]
-  throttle_time_ms
+  throttle_time_ms => int32
+  error_code => int16
+  error_msg => string
   create_responses => stream replica_nums retention_period_ms error_code error_message
     stream => stream_id replica_nums retention_period_ms
         stream_id => int64
@@ -451,6 +479,8 @@ Response Payload => Empty
 | Field | Type | Description |
 |-------|------|-------------|
 | throttle_time_ms | int32 | The time in milliseconds to throttle the client, due to a quota violation or the server is too busy. |
+| error_code | int16 | The top level error code of the response. |
+| error_msg | string | The top level error message of the response. |
 | create_responses | array | A batch of create stream responses. |
 | stream | struct | The struct of createed stream, returned by the create streams request. |
 | stream_id | int64 | The stream_id of the create streams response. |
@@ -481,7 +511,9 @@ The frame is simple, so the detailed description is omitted.
 **Response Frame:**
 ```
 Response Header => throttle_time_ms [delete_responses]
-  throttle_time_ms
+  throttle_time_ms => int32
+  error_code => int16
+  error_msg => string
   responses => deleted_stream error_code error_message
     deleted_stream => stream_id replica_nums retention_period_ms
       stream_id => int64
@@ -515,7 +547,9 @@ Request Payload => Empty
 **Response Frame:**
 ```
 Response Header => throttle_time_ms [update_responses]
-  throttle_time_ms
+  throttle_time_ms => int32
+  error_code => int16
+  error_msg => string
   update_responses => updated_stream error_code error_message
     updated_stream => stream_id replica_nums retention_period_ms
       stream_id => int64
@@ -544,7 +578,9 @@ Request Payload => Empty
 **Response Frame:**
 ```
 Response Header => throttle_time_ms [describe_responses]
-  throttle_time_ms
+  throttle_time_ms => int32
+  error_code => int16
+  error_msg => string
   describe_responses => stream error_code error_message
     stream => stream_id replica_nums retention_period_ms
       stream_id => int64
@@ -582,7 +618,9 @@ Request Header => timeout_ms [trimmed_streams]
 **Response Frame:**
 ```
 Response Header => throttle_time_ms [streams]
-  throttle_time_ms
+  throttle_time_ms => int32
+  error_code => int16
+  error_msg => string
   streams => trimmed_stream error_code error_message range
     trimmed_stream => stream_id replica_nums retention_period_ms
       stream_id => int64
@@ -596,6 +634,8 @@ Response Header => throttle_time_ms [streams]
 | Field | Type | Description |
 |-------|------|-------------|
 | throttle_time_ms | int32 | The time in milliseconds to throttle the client, due to a quota violation or the server is too busy. |
+| error_code | int16 | The top level error code, or 0 if there was no error. |
+| error_msg | string | The top level error message, or null if there was no error. |
 | streams | array | A batch of stream responses. |
 | stream_id | int64 | The stream_id of the trim streams response. |
 | error_code | int16 | The error code, or 0 if there was no error. |
@@ -659,6 +699,8 @@ Response Header => data_node
   data_node => node_id advertise_addr
     node_id => int32
     advertise_addr => string
+  error_code => int16
+  error_msg => string
 
 Response Payload => Empty
 ```
