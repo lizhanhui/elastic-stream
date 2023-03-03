@@ -6,23 +6,20 @@ mod state;
 pub(crate) mod task;
 mod write_window;
 
-use crate::error::AppendError;
+use crate::error::{AppendError, StoreError};
 use crate::index::Indexer;
 use crate::option::WalPath;
-use crate::{error::StoreError, ops::append::AppendResult};
 use crossbeam::channel::{Receiver, Sender, TryRecvError};
 use io_uring::register;
-use io_uring::{
-    opcode::{self, Read, Write},
-    squeue, types,
-};
+use io_uring::{opcode, squeue, types};
 use segment::LogSegmentFile;
 use slog::{debug, error, info, trace, warn, Logger};
+use std::collections::BTreeMap;
 use std::fs::OpenOptions;
 use std::os::unix::prelude::{FileExt, OpenOptionsExt};
 use std::sync::Arc;
 use std::{
-    cell::RefCell,
+    cell::{RefCell, UnsafeCell},
     collections::{HashMap, VecDeque},
     os::fd::AsRawFd,
     path::Path,
@@ -33,6 +30,7 @@ use self::buf::{AlignedBufReader, AlignedBufWriter};
 use self::record::{RecordType, RECORD_PREFIX_LENGTH};
 use self::segment::Status;
 use self::state::OpState;
+use self::task::WriteTask;
 use self::write_window::WriteWindow;
 use crc::{Crc, CRC_32_ISCSI};
 
@@ -148,7 +146,7 @@ pub(crate) struct IO {
     /// List of log segment files, which forms abstract WAL as a whole.
     ///
     /// Note new segment files are appended to the back; while oldest segments are popped from the front.
-    segments: VecDeque<LogSegmentFile>,
+    segments: UnsafeCell<VecDeque<LogSegmentFile>>,
 
     // Following fields are runtime data structure
     /// Flag indicating if the IO channel is disconnected, aka, all senders are dropped.
@@ -182,11 +180,20 @@ pub(crate) struct IO {
     ///
     /// During start, the recovering procedure will scan continuous records from offset where primary index are built
     /// up to.
+    ///
+    /// Once a new write task is generated, it will be increased accordingly.
     pos: u64,
 
-    buf_writer: AlignedBufWriter,
+    buf_writer: UnsafeCell<AlignedBufWriter>,
 
+    /// Tracks write requests that are dispatched to underlying storage device and
+    /// the completed ones;
+    ///
+    /// Advances continuous boundary if possible.
     write_window: WriteWindow,
+
+    /// Inflight write tasks that are not yet acknowledged
+    inflight_write_tasks: BTreeMap<u64, WriteTask>,
 }
 
 /// Check if required opcodes are supported by the host operation system.
@@ -261,8 +268,9 @@ impl IO {
             control_ring,
             sender: Some(sender),
             receiver,
+            write_window: WriteWindow::new(0, log.clone()),
             log,
-            segments: VecDeque::new(),
+            segments: UnsafeCell::new(VecDeque::new()),
             channel_disconnected: false,
             inflight_control_tasks: HashMap::new(),
             tag: 0,
@@ -271,7 +279,8 @@ impl IO {
             write_inflight: 0,
             pending_data_tasks: VecDeque::new(),
             pos: 0,
-            buf_writer: AlignedBufWriter::new(0, options.alignment),
+            buf_writer: UnsafeCell::new(AlignedBufWriter::new(0, options.alignment)),
+            inflight_write_tasks: BTreeMap::new(),
         })
     }
 
@@ -320,7 +329,7 @@ impl IO {
 
         for mut segment_file in segment_files.into_iter() {
             segment_file.open()?;
-            self.segments.push_back(segment_file);
+            unsafe { &mut *self.segments.get() }.push_back(segment_file);
         }
 
         Ok(())
@@ -423,7 +432,7 @@ impl IO {
         let log = self.log.clone();
         info!(log, "Start to recover WAL segment files");
         let mut need_scan = true;
-        for segment in &mut self.segments {
+        for segment in self.segments.get_mut() {
             if segment.offset + segment.size <= offset {
                 segment.status = Status::Read;
                 segment.written = segment.size;
@@ -447,15 +456,18 @@ impl IO {
         self.pos = pos;
 
         // Reset offset of write buffer
-        self.buf_writer.offset(pos);
+        self.buf_writer.get_mut().offset(pos);
+
+        // Reset committed WAL offset
+        self.write_window.reset_committed(pos);
 
         Ok(())
     }
 
     fn alloc_segment(&mut self) -> Result<&mut LogSegmentFile, StoreError> {
-        let offset = if self.segments.is_empty() {
+        let offset = if self.segments.get_mut().is_empty() {
             0
-        } else if let Some(last) = self.segments.back() {
+        } else if let Some(last) = self.segments.get_mut().back() {
             last.offset + self.options.file_size
         } else {
             unreachable!("Should-not-reach-here")
@@ -473,12 +485,15 @@ impl IO {
             self.options.file_size,
             segment::Medium::Ssd,
         );
-        self.segments.push_back(segment);
-        self.segments.back_mut().ok_or(StoreError::AllocLogSegment)
+        self.segments.get_mut().push_back(segment);
+        self.segments
+            .get_mut()
+            .back_mut()
+            .ok_or(StoreError::AllocLogSegment)
     }
 
-    fn segment_file_of(&mut self, offset: u64) -> Option<&mut LogSegmentFile> {
-        self.segments
+    fn segment_file_of(&self, offset: u64) -> Option<&mut LogSegmentFile> {
+        unsafe { &mut *self.segments.get() }
             .iter_mut()
             .rev()
             .find(|segment| segment.offset <= offset && (segment.offset + segment.size > offset))
@@ -556,7 +571,7 @@ impl IO {
     }
 
     fn writable_segment_count(&self) -> usize {
-        self.segments
+        unsafe { &mut *self.segments.get() }
             .iter()
             .rev() // from back to front
             .take_while(|segment| segment.status != Status::Read)
@@ -564,7 +579,7 @@ impl IO {
     }
 
     fn writable_segment(&self) -> Option<&LogSegmentFile> {
-        self.segments
+        unsafe { &mut *self.segments.get() }
             .iter()
             .rev()
             .filter(|segment| segment.status == Status::ReadWrite)
@@ -586,7 +601,7 @@ impl IO {
             .collect();
 
         let mut size = 0;
-        self.segments
+        unsafe { &mut *self.segments.get() }
             .iter()
             .rev()
             .filter(|segment| !segment.is_full())
@@ -617,7 +632,8 @@ impl IO {
     }
 
     fn build_write_sqe(&mut self, entries: &mut Vec<squeue::Entry>) {
-        self.buf_writer.drain_full().into_iter().for_each(|buf| {
+        let mut writer = self.buf_writer.get_mut();
+        writer.drain_full().into_iter().for_each(|buf| {
             let ptr = buf.as_ptr();
             if let Some(segment) = self.segment_file_of(buf.offset) {
                 debug_assert_eq!(Status::ReadWrite, segment.status);
@@ -625,13 +641,15 @@ impl IO {
                     debug_assert!(buf.offset >= segment.offset);
                     debug_assert!(buf.offset + buf.written as u64 <= segment.offset + segment.size);
                     let file_offset = buf.offset - segment.offset;
-                    let sqe = Write::new(types::Fd(fd), ptr, buf.written as u32)
+                    let sqe = opcode::Write::new(types::Fd(fd), ptr, buf.written as u32)
                         .offset64(file_offset as libc::off_t)
                         .build()
                         .user_data(self.tag);
+                    // Track write requests
+                    self.write_window.add(buf.offset, buf.written as u32);
                     entries.push(sqe);
                     let state = OpState {
-                        opcode: Write::CODE,
+                        opcode: opcode::Write::CODE,
                         buf: Arc::new(buf),
                         offset: None,
                         len: None,
@@ -654,13 +672,13 @@ impl IO {
         let log = self.log.clone();
         let alignment = self.options.alignment;
 
-        let mut buf_list = self.calculate_write_buffers();
-        let mut left = self.buf_writer.remaining();
+        let buf_list = self.calculate_write_buffers();
+        let left = self.buf_writer.get_mut().remaining();
         buf_list.iter().enumerate().for_each(|(idx, n)| {
             if 0 == idx {
-                self.buf_writer.reserve(*n - left);
+                self.buf_writer.get_mut().reserve(*n - left);
             } else {
-                self.buf_writer.reserve(*n);
+                self.buf_writer.get_mut().reserve(*n);
             }
         });
 
@@ -704,6 +722,7 @@ impl IO {
                 }
                 IoTask::Write(task) => {
                     let mut written = self.pos;
+                    let buf_writer = unsafe { &mut *self.buf_writer.get() };
                     loop {
                         if let Some(segment) = self.segment_file_of(written) {
                             if segment.status != Status::ReadWrite {
@@ -711,17 +730,16 @@ impl IO {
                                 break 'task_loop;
                             }
 
-                            if let Some(fd) = segment.fd {
+                            if let Some(_fd) = segment.fd {
                                 let payload_length = task.buffer.len();
-                                let file_offset = written - segment.offset;
                                 if !segment.can_hold(payload_length as u64 + RECORD_PREFIX_LENGTH) {
-                                    segment.append_footer(&mut self.buf_writer, &mut written);
+                                    segment.append_footer(buf_writer, &mut written);
                                     // Switch to a new log segment
                                     continue;
                                 }
 
                                 segment.append_full_record(
-                                    &mut self.buf_writer,
+                                    buf_writer,
                                     &task.buffer[..],
                                     &mut written,
                                 );
@@ -777,7 +795,7 @@ impl IO {
             return;
         }
 
-        self.segments.retain(|segment| {
+        self.segments.get_mut().retain(|segment| {
             !(segment.status == Status::UnlinkAt && offsets.contains(&segment.offset))
         });
     }
@@ -905,6 +923,7 @@ impl IO {
     fn try_close(&mut self) -> Result<(), StoreError> {
         let to_close: HashMap<_, _> = self
             .segments
+            .get_mut()
             .iter()
             .take_while(|segment| segment.status == Status::Close)
             .filter(|segment| !self.inflight_control_tasks.contains_key(&segment.offset))
@@ -1007,7 +1026,7 @@ impl IO {
                 count += 1;
                 let tag = cqe.user_data();
                 if let Some(state) = self.inflight_data_tasks.remove(&tag) {
-                    on_complete(tag, state, cqe.result(), &self.log);
+                    on_complete(&mut self.write_window, state, cqe.result(), &self.log);
                 }
             }
             // This will flush any entries consumed in this iterator and will make available new entries in the queue
@@ -1140,41 +1159,18 @@ impl IO {
 ///
 /// # Arguments
 ///
-/// * `tag` - Used to generate additional IO read if not all data are read yet.
 /// * `state` - Operation state, including original IO request, buffer and response observer.
 /// * `result` - Result code, exactly same to system call return value.
 /// * `log` - Logger instance.
 ///
-fn on_complete(_tag: u64, state: OpState, result: i32, log: &Logger) {
-    match state.task {
-        IoTask::Write(write) => {
-            if -1 != result {
-                trace!(log, "{} bytes written", result);
-                let append_result = AppendResult {
-                    stream_id: write.stream_id,
-                    offset: write.offset,
-                };
-                if let Err(_e) = write.observer.send(Ok(append_result)) {
-                    error!(log, "Failed to write append result to oneshot channel");
-                }
-            } else {
-                error!(log, "Internal IO error: errno: {}", result);
-                if write
-                    .observer
-                    .send(Err(AppendError::System(result)))
-                    .is_err()
-                {
-                    error!(log, "Failed to propagate system error {} to caller", result);
-                }
-            }
+fn on_complete(write_window: &mut WriteWindow, state: OpState, result: i32, log: &Logger) {
+    match state.opcode {
+        opcode::Write::CODE => {
+            // write_win
         }
-        IoTask::Read(_read) => {
-            // Note reads performed in chunks of `BlockSize`, as a result, we have to
-            // parse `RecordType` of each records to ensure the whole requested IO has been fulfilled.
-            // If the target data spans two or more blocks, we need to generate an additional read request.
-            todo!()
-        }
-    }
+        opcode::Read::CODE => {}
+        _ => {}
+    };
 }
 
 impl AsRawFd for IO {

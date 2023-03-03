@@ -74,6 +74,10 @@ impl WriteWindow {
         }
     }
 
+    pub(crate) fn reset_committed(&mut self, committed: u64) {
+        self.committed = committed;
+    }
+
     pub(crate) fn add(&mut self, offset: u64, length: u32) -> Result<(), WriteWindowError> {
         match self.submitted.entry(offset) {
             Entry::Vacant(e) => {

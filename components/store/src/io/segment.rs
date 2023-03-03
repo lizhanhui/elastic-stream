@@ -7,7 +7,6 @@ use std::{
         unix::prelude::OpenOptionsExt,
     },
     path::Path,
-    rc::Rc,
     time::SystemTime,
 };
 
@@ -203,7 +202,7 @@ impl LogSegmentFile {
         self.status != Status::Read && self.written + FOOTER_LENGTH + record_length <= self.size
     }
 
-    pub(crate) fn append_footer(&mut self, writer: &mut AlignedBufWriter, pos: &mut u64) {
+    pub(crate) fn append_footer(&mut self, buf_writer: &mut AlignedBufWriter, pos: &mut u64) {
         let padding_length = self.size - self.written - RECORD_PREFIX_LENGTH - 8 - 8;
         let length_type: u32 = RecordType::Zero.with_length(padding_length as u32 + 8 + 8);
         let earliest: u64 = 0;
@@ -211,7 +210,7 @@ impl LogSegmentFile {
 
         // Fill padding with 0
 
-        let buf = BytesMut::with_capacity(padding_length as usize + 16);
+        let mut buf = BytesMut::with_capacity(padding_length as usize + 16);
         if padding_length > 0 {
             buf.resize(padding_length as usize, 0);
         }
@@ -219,11 +218,9 @@ impl LogSegmentFile {
         buf.put_u64(latest);
         let buf = buf.freeze();
         let crc: u32 = CRC32C.checksum(&buf[..]);
-
-        writer.write_u32(crc);
-        writer.write_u32(length_type);
-
-        writer.write(&buf[..=padding_length as usize]);
+        buf_writer.write_u32(crc);
+        buf_writer.write_u32(length_type);
+        buf_writer.write(&buf[..=padding_length as usize]);
 
         *pos += self.size - self.written;
     }

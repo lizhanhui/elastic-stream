@@ -3,7 +3,7 @@ use std::{collections::HashMap, rc::Rc, sync::Arc, time::Instant};
 use super::buf::AlignedBuf;
 
 #[derive(Debug, PartialEq, Eq)]
-struct Entry {
+pub(crate) struct Entry {
     buf: Arc<AlignedBuf>,
     hit: usize,
     last_hit_instant: Instant,

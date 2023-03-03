@@ -37,6 +37,7 @@ pub struct ElasticStore {
 
 impl ElasticStore {
     pub fn new(log: Logger) -> Result<Self, StoreError> {
+        let logger = log.clone();
         let mut opt = io::Options::default();
 
         // Customize IO options from store options.
@@ -75,7 +76,7 @@ impl ElasticStore {
         let store = Self {
             tx,
             sharing_uring,
-            log,
+            log: logger,
         };
         trace!(store.log, "ElasticStore launched");
         Ok(store)
