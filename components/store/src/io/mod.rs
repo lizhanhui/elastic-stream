@@ -15,7 +15,7 @@ use io_uring::register;
 use io_uring::{opcode, squeue, types};
 use segment::LogSegmentFile;
 use slog::{debug, error, info, trace, warn, Logger};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::fs::OpenOptions;
 use std::os::unix::prelude::{FileExt, OpenOptionsExt};
 use std::sync::Arc;
@@ -195,6 +195,9 @@ pub(crate) struct IO {
 
     /// Inflight write tasks that are not yet acknowledged
     inflight_write_tasks: BTreeMap<u64, WriteTask>,
+
+    /// Offsets of blocks that are partially filled with data and are still inflight.
+    stall: HashSet<u64>,
 }
 
 /// Check if required opcodes are supported by the host operation system.
@@ -282,6 +285,7 @@ impl IO {
             pending_data_tasks: VecDeque::new(),
             pos: 0,
             inflight_write_tasks: BTreeMap::new(),
+            stall: HashSet::new(),
         })
     }
 
