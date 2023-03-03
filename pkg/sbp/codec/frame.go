@@ -171,24 +171,24 @@ func (fr *Framer) ReadFrame() (Frame, error) {
 	_, err := io.ReadFull(fr.r, buf)
 	if err != nil {
 		logger.Error("failed to read fixed header", zap.Error(err))
-		return baseFrame{}, errors.Wrap(err, "read fixed header")
+		return &baseFrame{}, errors.Wrap(err, "read fixed header")
 	}
 	headerBuf := bytes.NewBuffer(buf)
 
 	frameLen := binary.BigEndian.Uint32(headerBuf.Next(4))
 	if frameLen < _minFrameLen {
 		logger.Error("illegal frame length, fewer than minimum", zap.Uint32("frame-length", frameLen), zap.Uint32("min-length", _minFrameLen))
-		return baseFrame{}, errors.New("frame too small")
+		return &baseFrame{}, errors.New("frame too small")
 	}
 	if frameLen > _maxFrameLen {
 		logger.Error("illegal frame length, greater than maximum", zap.Uint32("frame-length", frameLen), zap.Uint32("max-length", _maxFrameLen))
-		return baseFrame{}, errors.New("frame too large")
+		return &baseFrame{}, errors.New("frame too large")
 	}
 
 	magicCode := headerBuf.Next(1)[0]
 	if magicCode != _magicCode {
 		logger.Error("illegal magic code", zap.Uint8("expected", _magicCode), zap.Uint8("got", magicCode))
-		return baseFrame{}, errors.New("magic code mismatch")
+		return &baseFrame{}, errors.New("magic code mismatch")
 	}
 
 	opCode := binary.BigEndian.Uint16(headerBuf.Next(2))
@@ -203,7 +203,7 @@ func (fr *Framer) ReadFrame() (Frame, error) {
 	_, err = io.ReadFull(fr.r, tBuf)
 	if err != nil {
 		logger.Error("failed to read extended header and payload", zap.Error(err))
-		return baseFrame{}, errors.Wrap(err, "read extended header and payload")
+		return &baseFrame{}, errors.Wrap(err, "read extended header and payload")
 	}
 
 	header := func() []byte {
@@ -223,12 +223,12 @@ func (fr *Framer) ReadFrame() (Frame, error) {
 	err = binary.Read(fr.r, binary.BigEndian, &checksum)
 	if err != nil {
 		logger.Error("failed to read payload checksum", zap.Error(err))
-		return baseFrame{}, errors.Wrap(err, "read payload checksum")
+		return &baseFrame{}, errors.Wrap(err, "read payload checksum")
 	}
 	if payloadLen > 0 {
 		if ckm := crc32.ChecksumIEEE(payload); ckm != checksum {
 			logger.Error("payload checksum mismatch", zap.Uint32("expected", ckm), zap.Uint32("got", checksum))
-			return baseFrame{}, errors.New("payload checksum mismatch")
+			return &baseFrame{}, errors.New("payload checksum mismatch")
 		}
 	}
 
@@ -244,15 +244,15 @@ func (fr *Framer) ReadFrame() (Frame, error) {
 	var frame Frame
 	switch bFrame.OpCode {
 	case operation.Ping():
-		frame = PingFrame{baseFrame: bFrame}
+		frame = &PingFrame{baseFrame: bFrame}
 	case operation.GoAway():
-		frame = GoAwayFrame{baseFrame: bFrame}
+		frame = &GoAwayFrame{baseFrame: bFrame}
 	case operation.Heartbeat():
-		frame = HeartbeatFrame{baseFrame: bFrame}
+		frame = &HeartbeatFrame{baseFrame: bFrame}
 	case operation.Publish(), operation.ListRange():
-		frame = DataFrame{baseFrame: bFrame}
+		frame = &DataFrame{baseFrame: bFrame}
 	default:
-		frame = bFrame
+		frame = &bFrame
 	}
 	return frame, nil
 }
@@ -334,8 +334,8 @@ type PingFrame struct {
 }
 
 // NewPingFrameResp creates a pong with the provided ping
-func NewPingFrameResp(ping PingFrame) PingFrame {
-	pong := PingFrame{baseFrame{
+func NewPingFrameResp(ping *PingFrame) *PingFrame {
+	pong := &PingFrame{baseFrame{
 		OpCode:    operation.Ping(),
 		Flag:      FlagResponse | FlagResponseEnd,
 		StreamID:  ping.StreamID,
@@ -354,8 +354,8 @@ type GoAwayFrame struct {
 }
 
 // NewGoAwayFrameReq creates a new GoAway frame
-func NewGoAwayFrameReq(streamID uint32) GoAwayFrame {
-	return GoAwayFrame{baseFrame{
+func NewGoAwayFrameReq(streamID uint32) *GoAwayFrame {
+	return &GoAwayFrame{baseFrame{
 		OpCode:    operation.GoAway(),
 		StreamID:  streamID,
 		HeaderFmt: format.Default(),
@@ -368,8 +368,8 @@ type HeartbeatFrame struct {
 }
 
 // NewHeartBeatFrameResp creates an out heartbeat with the in heartbeat
-func NewHeartBeatFrameResp(in HeartbeatFrame) HeartbeatFrame {
-	out := HeartbeatFrame{baseFrame{
+func NewHeartBeatFrameResp(in *HeartbeatFrame) *HeartbeatFrame {
+	out := &HeartbeatFrame{baseFrame{
 		OpCode:    operation.Heartbeat(),
 		Flag:      FlagResponse | FlagResponseEnd,
 		StreamID:  in.StreamID,
@@ -394,8 +394,8 @@ type DataFrameReqParam struct {
 }
 
 // NewDataFrameReq returns a new DataFrame request
-func NewDataFrameReq(req DataFrameReqParam, flag Flags, streamID uint32) DataFrame {
-	return DataFrame{baseFrame{
+func NewDataFrameReq(req DataFrameReqParam, flag Flags, streamID uint32) *DataFrame {
+	return &DataFrame{baseFrame{
 		OpCode:    req.OpCode,
 		Flag:      flag,
 		StreamID:  streamID,
@@ -406,8 +406,8 @@ func NewDataFrameReq(req DataFrameReqParam, flag Flags, streamID uint32) DataFra
 }
 
 // NewDataFrameResp returns a new DataFrame response with the given header and payload
-func NewDataFrameResp(req DataFrame, header []byte, payload []byte, isEnd bool) DataFrame {
-	resp := DataFrame{baseFrame{
+func NewDataFrameResp(req *DataFrame, header []byte, payload []byte, isEnd bool) *DataFrame {
+	resp := &DataFrame{baseFrame{
 		OpCode:    req.OpCode,
 		Flag:      FlagResponse,
 		StreamID:  req.StreamID,

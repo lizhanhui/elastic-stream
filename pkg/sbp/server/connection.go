@@ -15,7 +15,6 @@ import (
 	"go.uber.org/zap/zapcore"
 
 	"github.com/AutoMQ/placement-manager/pkg/sbp/codec"
-	"github.com/AutoMQ/placement-manager/pkg/sbp/codec/operation"
 	tphttp2 "github.com/AutoMQ/placement-manager/third_party/forked/golang/net/http2"
 )
 
@@ -170,6 +169,7 @@ func (c *conn) writeFrame(wr frameWriteRequest) {
 	// ignore the frame. The handler will notice that the stream is closed when
 	// it waits for the frame to be written.
 	if wr.stream.state == stateClosed {
+		// TODO still need this now?
 		return
 	}
 	c.wScheduler.Push(wr)
@@ -307,20 +307,55 @@ func (c *conn) processFrame(f codec.Frame) error {
 		return nil
 	}
 
-	switch f.Base().OpCode {
-	case operation.Ping():
-		// TODO
-		return nil
-	case operation.GoAway():
-		// TODO
-		return nil
-	case operation.Heartbeat():
-		// TODO
-		return nil
-	default:
-		logger.Warn("server ignoring frame", zap.String("frame", f.Info()))
+	// ignore response frames
+	if f.IsResponse() {
+		logger.Warn("server ignoring response frame", zap.String("frame", f.Info()))
 		return nil
 	}
+
+	switch f := f.(type) {
+	case *codec.PingFrame:
+		return c.processPing(f)
+	case *codec.GoAwayFrame:
+		return c.processGoAway(f)
+	case *codec.HeartbeatFrame:
+		return c.processHeartbeat(f)
+	case *codec.DataFrame:
+		return c.processDataFrame(f)
+	default:
+		logger.Warn("server ignoring unknown type frame", zap.String("frame", f.Info()))
+		return nil
+	}
+}
+
+func (c *conn) processPing(f *codec.PingFrame) error {
+	c.serveG.Check()
+	c.writeFrame(frameWriteRequest{f: codec.NewPingFrameResp(f)}) // TODO
+	return nil
+}
+
+func (c *conn) processGoAway(f *codec.GoAwayFrame) error {
+	c.serveG.Check()
+	// TODO
+	return nil
+}
+
+func (c *conn) processHeartbeat(f *codec.HeartbeatFrame) error {
+	c.serveG.Check()
+	// TODO
+	return nil
+}
+
+func (c *conn) processDataFrame(f *codec.DataFrame) error {
+	c.serveG.Check()
+	// TODO
+	return nil
+}
+
+func (c *conn) newStream(id uint32) *stream {
+	c.serveG.Check()
+	// TODO
+	return nil
 }
 
 func (c *conn) closeStream(st *stream) {
