@@ -5,6 +5,7 @@ go 1.19
 require (
 	github.com/BurntSushi/toml v0.3.1
 	github.com/cakturk/go-netstat v0.0.0-20200220111822-e5b49efee7a5
+	github.com/google/flatbuffers v23.1.21+incompatible
 	github.com/pkg/errors v0.9.1
 	github.com/spf13/pflag v1.0.5
 	github.com/spf13/viper v1.15.0
