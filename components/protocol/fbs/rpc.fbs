@@ -1,9 +1,9 @@
 namespace header;
 
 enum ErrorCode : int16 {
-    None = 0,
-    Unknown = 1,
-    Invalid_Request = 2
+    NONE = 0,
+    UNKNOWN = 1,
+    INVALID_REQUEST = 2
 }
 
 enum ClientRole : byte {
