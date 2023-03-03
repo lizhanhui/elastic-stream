@@ -522,6 +522,27 @@ impl IO {
         let mut received = 0;
         let io_depth = self.data_ring.params().sq_entries() as usize;
         loop {
+            // TODO: Find a better estimation.
+            //
+            // it might be some kind of pessimistic here as read/write may be merged after grouping.
+            // As we might configure a larger IO depth value, finding a more precise metric is left to
+            // the next development iteration.
+            //
+            // A better metric is combining actual SQEs number with received tasks together, so we may
+            // receive tasks according merging result of the previous iteration.
+            //
+            // Note cloud providers count IOPS in a complex way:
+            // https://aws.amazon.com/premiumsupport/knowledge-center/ebs-calculate-optimal-io-size/
+            //
+            // For example, if the application is performing small I/O operations of 32 KiB:
+            // 1. Amazon EBS merges sequential (physically contiguous) operations to the maximum I/O size of 256 KiB.
+            //    In this scenario, Amazon EBS counts only 1 IOPS to perform 8 I/O operations submitted by the operating system.
+            // 2. Amazon EBS counts random I/O operations separately. A single, random I/O operation of 32 KiB counts as 1 IOPS. 
+            //    In this scenario, Amazon EBS counts 8 random, 32 KiB I/O operations as 8 IOPS submitted by the OS.
+            //
+            // Amazon EBS splits I/O operations larger than the maximum 256 KiB into smaller operations.
+            // For example, if the I/O size is 500 KiB, Amazon EBS splits the operation into 2 IOPS.
+            // The first one is 256 KiB and the second one is 244 KiB.
             if self.inflight + received >= io_depth {
                 break received;
             }
@@ -631,7 +652,7 @@ impl IO {
 
         let writer = self.buf_writer.get_mut();
         writer
-            .drain_full()
+            .take()
             .into_iter()
             .map(|buf| {
                 let ptr = buf.as_ptr();
@@ -649,10 +670,16 @@ impl IO {
                             .user_data(self.tag);
                         // Track write requests
                         self.write_window.add(buf.offset, buf.write_pos() as u32)?;
+
+                        // Check barrier
                         if self.barrier.contains(&buf.offset) {
                             // Submit SQE to io_uring when the blocking IO task completed.
                             self.blocked.insert(buf.offset, sqe);
                         } else {
+                            // Insert barrier, blocking future write to this aligned block issued to `io_uring` until `sqe` is reaped.
+                            if buf.partial() {
+                                self.barrier.insert(buf.offset);
+                            }
                             entries.push(sqe);
                         }
                         let state = OpState {
@@ -1042,6 +1069,9 @@ impl IO {
                     count += 1;
                     let tag = cqe.user_data();
                     if let Some(state) = self.inflight_data_tasks.remove(&tag) {
+                        // Remove barrier
+                        self.barrier.remove(&state.buf.offset);
+
                         if let Err(e) =
                             on_complete(&mut self.write_window, &state, cqe.result(), &self.log)
                         {

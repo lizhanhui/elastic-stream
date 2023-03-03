@@ -122,6 +122,10 @@ impl AlignedBuf {
         debug_assert!(pos <= self.capacity);
         self.capacity - pos
     }
+
+    pub(crate) fn partial(&self) -> bool {
+        self.write_pos() > 0 && self.write_pos() < self.capacity
+    }
 }
 
 /// Return the memory back to allocator.
@@ -249,19 +253,24 @@ impl AlignedBufWriter {
         self.write(slice)
     }
 
-    /// Drain buffers that are full and generate submission queue entry for each of buf.
-    pub(crate) fn drain_full(&mut self) -> Vec<Arc<AlignedBuf>> {
-        self.buffers
+    /// Take backing buffers and generate submission queue entry for each of buf.
+    ///
+    /// If the backing buffer is full, it will be drained;
+    /// If it is partially filled, its `Arc` reference will be cloned.
+    pub(crate) fn take(&mut self) -> Vec<Arc<AlignedBuf>> {
+        let mut items: Vec<_> = self
+            .buffers
             .drain_filter(|buf| 0 == buf.remaining())
-            .collect()
-    }
+            .collect();
 
-    pub(crate) fn peek_partial(&self) -> Vec<Arc<AlignedBuf>> {
         self.buffers
             .iter()
-            .filter(|buf| buf.write_pos() > 0 && buf.write_pos() < buf.capacity)
+            .filter(|buf| buf.partial())
             .map(|buf| Arc::clone(buf))
-            .collect()
+            .for_each(|buf| {
+                items.push(buf);
+            });
+        items
     }
 
     pub(crate) fn remaining(&self) -> usize {
