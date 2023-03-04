@@ -196,6 +196,120 @@ impl<'a> flatbuffers::Verifiable for ClientRole {
 }
 
 impl flatbuffers::SimpleToVerifyInSlice for ClientRole {}
+pub enum SystemErrorResponseOffset {}
+#[derive(Copy, Clone, PartialEq)]
+
+pub struct SystemErrorResponse<'a> {
+  pub _tab: flatbuffers::Table<'a>,
+}
+
+impl<'a> flatbuffers::Follow<'a> for SystemErrorResponse<'a> {
+  type Inner = SystemErrorResponse<'a>;
+  #[inline]
+  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+    Self { _tab: flatbuffers::Table::new(buf, loc) }
+  }
+}
+
+impl<'a> SystemErrorResponse<'a> {
+  pub const VT_ERROR_CODE: flatbuffers::VOffsetT = 4;
+  pub const VT_ERROR_MESSAGE: flatbuffers::VOffsetT = 6;
+
+  #[inline]
+  pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
+    SystemErrorResponse { _tab: table }
+  }
+  #[allow(unused_mut)]
+  pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr>(
+    _fbb: &'mut_bldr mut flatbuffers::FlatBufferBuilder<'bldr>,
+    args: &'args SystemErrorResponseArgs<'args>
+  ) -> flatbuffers::WIPOffset<SystemErrorResponse<'bldr>> {
+    let mut builder = SystemErrorResponseBuilder::new(_fbb);
+    if let Some(x) = args.error_message { builder.add_error_message(x); }
+    builder.add_error_code(args.error_code);
+    builder.finish()
+  }
+
+
+  #[inline]
+  pub fn error_code(&self) -> ErrorCode {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<ErrorCode>(SystemErrorResponse::VT_ERROR_CODE, Some(ErrorCode::NONE)).unwrap()}
+  }
+  #[inline]
+  pub fn error_message(&self) -> Option<&'a str> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(SystemErrorResponse::VT_ERROR_MESSAGE, None)}
+  }
+}
+
+impl flatbuffers::Verifiable for SystemErrorResponse<'_> {
+  #[inline]
+  fn run_verifier(
+    v: &mut flatbuffers::Verifier, pos: usize
+  ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
+    use self::flatbuffers::Verifiable;
+    v.visit_table(pos)?
+     .visit_field::<ErrorCode>("error_code", Self::VT_ERROR_CODE, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<&str>>("error_message", Self::VT_ERROR_MESSAGE, false)?
+     .finish();
+    Ok(())
+  }
+}
+pub struct SystemErrorResponseArgs<'a> {
+    pub error_code: ErrorCode,
+    pub error_message: Option<flatbuffers::WIPOffset<&'a str>>,
+}
+impl<'a> Default for SystemErrorResponseArgs<'a> {
+  #[inline]
+  fn default() -> Self {
+    SystemErrorResponseArgs {
+      error_code: ErrorCode::NONE,
+      error_message: None,
+    }
+  }
+}
+
+pub struct SystemErrorResponseBuilder<'a: 'b, 'b> {
+  fbb_: &'b mut flatbuffers::FlatBufferBuilder<'a>,
+  start_: flatbuffers::WIPOffset<flatbuffers::TableUnfinishedWIPOffset>,
+}
+impl<'a: 'b, 'b> SystemErrorResponseBuilder<'a, 'b> {
+  #[inline]
+  pub fn add_error_code(&mut self, error_code: ErrorCode) {
+    self.fbb_.push_slot::<ErrorCode>(SystemErrorResponse::VT_ERROR_CODE, error_code, ErrorCode::NONE);
+  }
+  #[inline]
+  pub fn add_error_message(&mut self, error_message: flatbuffers::WIPOffset<&'b  str>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(SystemErrorResponse::VT_ERROR_MESSAGE, error_message);
+  }
+  #[inline]
+  pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a>) -> SystemErrorResponseBuilder<'a, 'b> {
+    let start = _fbb.start_table();
+    SystemErrorResponseBuilder {
+      fbb_: _fbb,
+      start_: start,
+    }
+  }
+  #[inline]
+  pub fn finish(self) -> flatbuffers::WIPOffset<SystemErrorResponse<'a>> {
+    let o = self.fbb_.end_table(self.start_);
+    flatbuffers::WIPOffset::new(o.value())
+  }
+}
+
+impl core::fmt::Debug for SystemErrorResponse<'_> {
+  fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+    let mut ds = f.debug_struct("SystemErrorResponse");
+      ds.field("error_code", &self.error_code());
+      ds.field("error_message", &self.error_message());
+      ds.finish()
+  }
+}
 pub enum HeartbeatRequestOffset {}
 #[derive(Copy, Clone, PartialEq)]
 

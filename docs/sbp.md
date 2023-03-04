@@ -26,7 +26,8 @@ The 16-bit opcode of the frame. The frame opcode determines the format and seman
 ### Flags
 Flags apply to this frame. The flags have the following meaning (described by the mask that allows selecting them):
 - 0x01: Response flag. If set, the frame contains the response payload to a specific request frame identified by a stream identifier. If not set, the frame represents a request frame.
-- 0x02: Response end flag. If set, the frame is the last frame in a response sequence. If not set, the response sequence continues with more frames. The response sequence may contain zero or more frames.
+- 0x02: Response end flag. If set, the frame is the last frame in a response sequence. If not set, the response sequence continues with more frames. The response sequence may contain one or more frames.
+- 0x04: System error flag. If a response frame has the this flag set, its extended header will be an error code ([int16]) followed by a [string] error message. Then, depending on the exception, more content may follow.
 
 The rest of the flags are currently unused and ignored.
 ### Stream Identifier
@@ -707,7 +708,21 @@ Response Payload => Empty
 
 ## Error Codes
 
-The SBP protocol defines a set of numeric error codes that are used to indicate the type of occurred error. These error codes are used in the error_code field of the response header, and can be translated by the client to a human-readable error message. The error codes are defined in the following table.
+The SBP protocol defines a set of numeric error codes that are used to indicate the type of occurred error. These error codes are used in the error_code field of the response header, and can be translated by the client to a human-readable error message.
+
+### System Error Frame
+There is a special error frame that is used to indicate that the server encountered an unexpected error or a request-agnostic error. The error frame is sent with the following format:
+
+```
+Error Response Header => error_code error_msg
+  error_code => int16
+  error_msg => string
+```
+
+When the system error flag is set, the above error frame is sent instead of the normal response frame.
+### Error Codes Table
+
+The error codes are defined in the following table.
 
 | ERROR | CODE | RETRIABLE | DESCRIPTION |
 |-------|------|-----------|-------------|

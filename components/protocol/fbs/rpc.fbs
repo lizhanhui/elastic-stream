@@ -6,6 +6,12 @@ enum ErrorCode : int16 {
     INVALID_REQUEST = 2
 }
 
+// The system error response is used to return the error code and error message if the system error flag of sbp is set.
+table SystemErrorResponse {
+    error_code: ErrorCode (id: 0);
+    error_message: string (id: 1);
+}
+
 enum ClientRole : byte {
     CLIENT_ROLE_UNKNOWN = 0,
     CLIENT_ROLE_PM = 1,
