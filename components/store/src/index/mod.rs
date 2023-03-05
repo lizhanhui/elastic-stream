@@ -15,6 +15,16 @@ impl Indexer {
     }
 
     /// Flush record index in cache into RocksDB using atomic-flush.
+    ///
+    /// Normally, we do not have invoke this function as frequently as insertion of entry, mapping stream offset to WAL
+    /// offset. Reason behind this that DB is having `AtomicFlush` enabled. As long as we put mapping entries first and
+    /// then update checkpoint `offset` of WAL.
+    ///
+    /// Once a memtable is full and flushed to SST files, we can guarantee that all mapping entries prior to checkpoint
+    /// `offset` of WAL are already persisted.
+    ///
+    /// To minimize the amount of WAL data to recover, for example, in case of planned reboot, we shall update checkpoint
+    /// offset and invoke this method before stopping.
     pub(crate) fn flush(&self) {}
 }
 
@@ -131,14 +141,11 @@ mod tests {
         (0..N)
             .into_iter()
             .map(|n| {
-                let data = &n as *const u64 as *const u8;
-                let key = unsafe { std::slice::from_raw_parts(data, 8) };
-
                 let mut value = BytesMut::with_capacity(20);
                 value.put_u64(n);
                 value.put_u32(0);
                 value.put_i64(0);
-                db.put_cf_opt(cf, key, &value, &write_opts)?;
+                db.put_cf_opt(cf, &n.to_be_bytes(), &value, &write_opts)?;
                 Ok::<(), rocksdb::Error>(())
             })
             .flatten()

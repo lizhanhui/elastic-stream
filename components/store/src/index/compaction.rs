@@ -11,7 +11,7 @@ use rocksdb::{
     CompactionDecision,
 };
 
-use slog::{info, Logger};
+use slog::{info, trace, Logger};
 
 use super::MinOffset;
 
@@ -43,6 +43,13 @@ impl CompactionFilter for IndexCompactionFilter {
         let mut rdr = Cursor::new(&value[..]);
         let offset = rdr.get_u64();
         if offset < self.min_offset {
+            trace!(
+                self.log,
+                "Removed {} -> {}, min-offset: {}",
+                Cursor::new(&key[..]).get_u64(),
+                offset,
+                self.min_offset
+            );
             CompactionDecision::Remove
         } else {
             CompactionDecision::Keep
