@@ -24,12 +24,12 @@ impl IndexCompactionFilter {
 
 impl CompactionFilter for IndexCompactionFilter {
     fn filter(&mut self, level: u32, key: &[u8], value: &[u8]) -> CompactionDecision {
-        println!(
-            "Level: {} Checking {} --> {}",
-            level,
-            String::from_utf8_lossy(key),
-            String::from_utf8_lossy(value)
-        );
+        // println!(
+        //     "Level: {} Checking {} --> {}",
+        //     level,
+        //     String::from_utf8_lossy(key),
+        //     String::from_utf8_lossy(value)
+        // );
         CompactionDecision::Keep
     }
 
