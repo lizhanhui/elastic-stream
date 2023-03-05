@@ -122,11 +122,11 @@ impl ServerCall {
     ///
     /// `response` - Mutable response frame reference, into which required business data are filled.
     ///
-    async fn on_publish(&self, response: &mut Frame) {
+    async fn on_publish(&self, _response: &mut Frame) {
         let options = WriteOptions::default();
         let record = self.build_proof_of_concept_record();
         match self.store.append(options, record).await {
-            Ok(result) => {
+            Ok(_result) => {
                 // response.header = self.build_publish_response_header(&result);
             }
             Err(_e) => {}

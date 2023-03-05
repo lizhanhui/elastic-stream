@@ -7,7 +7,7 @@ impl Indexer {
         Self {}
     }
 
-    pub(crate) fn index(&self, offset: u64, wal_offset: u64, hash: u64) {}
+    pub(crate) fn index(&self, _offset: u64, _wal_offset: u64, _hash: u64) {}
 
     /// Returns offset in WAL. All record index are atomic-flushed to RocksDB.
     pub(crate) fn flushed_wal_offset(&self) -> u64 {
@@ -18,20 +18,54 @@ impl Indexer {
     pub(crate) fn flush(&self) {}
 }
 
+pub trait MinOffset {
+    fn min_offset(&self) -> u64;
+}
+
 #[cfg(test)]
 mod tests {
-    use std::{error::Error, path::Path, time::Instant};
+    use std::{
+        error::Error,
+        ffi::CString,
+        path::Path,
+        rc::Rc,
+        sync::atomic::{AtomicU64, Ordering},
+        time::Instant,
+    };
 
     use bytes::{BufMut, BytesMut};
     use rocksdb::{
-        BlockBasedOptions, ColumnFamilyDescriptor, DBCompressionType, FlushOptions, Options,
-        WriteOptions, DB,
+        BlockBasedOptions, ColumnFamilyDescriptor, DBCompressionType, IteratorMode, Options,
+        ReadOptions, WriteOptions, DB,
     };
 
-    use super::compaction;
+    use super::{compaction, MinOffset};
+
+    struct TestStore {
+        _min_offset: AtomicU64,
+    }
+
+    impl TestStore {
+        fn new() -> Self {
+            Self {
+                _min_offset: AtomicU64::new(u64::MAX),
+            }
+        }
+
+        fn set_min_offset(&self, min_offset: u64) {
+            self._min_offset.store(min_offset, Ordering::Relaxed);
+        }
+    }
+
+    impl MinOffset for TestStore {
+        fn min_offset(&self) -> u64 {
+            self._min_offset.load(Ordering::Relaxed)
+        }
+    }
 
     #[test]
     fn test_rocksdb_setup() -> Result<(), Box<dyn Error>> {
+        let log = util::terminal_logger();
         let path = "/tmp/rocksdb";
         let path = Path::new(path);
         std::fs::create_dir_all(path)?;
@@ -51,8 +85,15 @@ mod tests {
             cf_opts.set_block_based_table_factory(&table_opts);
         }
 
-        let index_compaction_filter_factory =
-            compaction::IndexCompactionFilterFactory::new("index-compaction-filter")?;
+        let compaction_filter_name = CString::new("index-compaction-filter")?;
+
+        let store = Rc::new(TestStore::new());
+
+        let index_compaction_filter_factory = compaction::IndexCompactionFilterFactory::new(
+            log.clone(),
+            compaction_filter_name,
+            Rc::clone(&store) as Rc<dyn MinOffset>,
+        );
 
         cf_opts.set_compaction_filter_factory(index_compaction_filter_factory);
 
@@ -67,6 +108,7 @@ mod tests {
         db_opts.set_stats_persist_period_sec(10);
         // Threshold of all memtable across column families added in size
         db_opts.set_db_write_buffer_size(1024 * 1024 * 1024);
+        db_opts.set_max_background_jobs(2);
 
         let mut write_opts = WriteOptions::default();
         write_opts.disable_wal(true);
@@ -82,7 +124,7 @@ mod tests {
                 println!("value = {}", value);
             }
             Ok(None) => {}
-            Err(e) => {}
+            Err(_e) => {}
         }
         const N: u64 = 100_000;
         let now = Instant::now();
@@ -109,7 +151,18 @@ mod tests {
             elapsed.as_millis(),
             elapsed.as_micros() / N as u128,
         );
+
+        let cnt = db
+            .iterator_cf_opt(cf, ReadOptions::default(), IteratorMode::Start)
+            .count();
+
+        store.set_min_offset(5000);
         db.compact_range_cf(cf, None::<&[u8]>, None::<&[u8]>);
+
+        let diff = cnt
+            - db.iterator_cf_opt(cf, ReadOptions::default(), IteratorMode::Start)
+                .count();
+        assert_eq!(5000, diff);
         Ok(())
     }
 }

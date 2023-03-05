@@ -1,36 +1,52 @@
 use std::{
-    error::Error,
     ffi::{CStr, CString},
-    sync::atomic::{AtomicUsize, Ordering},
+    io::Cursor,
+    rc::Rc,
 };
 
+use bytes::Buf;
 use rocksdb::{
     compaction_filter::CompactionFilter,
     compaction_filter_factory::{CompactionFilterContext, CompactionFilterFactory},
     CompactionDecision,
 };
 
+use slog::{info, Logger};
+
+use super::MinOffset;
+
 pub(crate) struct IndexCompactionFilter {
+    log: Logger,
     name: CString,
+    min_offset: u64,
 }
 
 impl IndexCompactionFilter {
-    pub(crate) fn new(n: usize) -> Result<Self, Box<dyn Error>> {
-        let name = format!("round-{}", n);
-        let name = CString::new(name)?;
-        Ok(Self { name })
+    pub(crate) fn new(log: Logger, name: CString, min_offset: u64) -> Self {
+        Self {
+            log,
+            name,
+            min_offset,
+        }
     }
 }
 
 impl CompactionFilter for IndexCompactionFilter {
-    fn filter(&mut self, level: u32, key: &[u8], value: &[u8]) -> CompactionDecision {
-        // println!(
-        //     "Level: {} Checking {} --> {}",
-        //     level,
-        //     String::from_utf8_lossy(key),
-        //     String::from_utf8_lossy(value)
-        // );
-        CompactionDecision::Keep
+    fn filter(&mut self, _level: u32, key: &[u8], value: &[u8]) -> CompactionDecision {
+        if key.len() != 8 {
+            return CompactionDecision::Keep;
+        }
+
+        if value.len() < 8 {
+            return CompactionDecision::Remove;
+        }
+        let mut rdr = Cursor::new(&value[..]);
+        let offset = rdr.get_u64();
+        if offset < self.min_offset {
+            CompactionDecision::Remove
+        } else {
+            CompactionDecision::Keep
+        }
     }
 
     fn name(&self) -> &CStr {
@@ -39,17 +55,18 @@ impl CompactionFilter for IndexCompactionFilter {
 }
 
 pub(crate) struct IndexCompactionFilterFactory {
+    log: Logger,
     name: CString,
-    round: AtomicUsize,
+    min_offset: Rc<dyn MinOffset>,
 }
 
 impl IndexCompactionFilterFactory {
-    pub(crate) fn new(name: &str) -> Result<Self, Box<dyn Error>> {
-        let name = CString::new(name)?;
-        Ok(Self {
+    pub(crate) fn new(log: Logger, name: CString, min_offset: Rc<dyn MinOffset>) -> Self {
+        Self {
+            log,
             name,
-            round: AtomicUsize::new(0),
-        })
+            min_offset,
+        }
     }
 }
 
@@ -57,15 +74,18 @@ impl CompactionFilterFactory for IndexCompactionFilterFactory {
     type Filter = IndexCompactionFilter;
 
     fn create(&mut self, context: CompactionFilterContext) -> Self::Filter {
-        if context.is_full_compaction {
-            println!("Full Compaction");
-        }
+        info!(
+            self.log,
+            "Created a `IndexCompactionFilter`: full_compaction: {}, manual_compaction: {}",
+            context.is_full_compaction,
+            context.is_manual_compaction
+        );
 
-        if context.is_manual_compaction {
-            println!("Manual Compaction");
-        }
-
-        IndexCompactionFilter::new(self.round.fetch_add(1, Ordering::Relaxed)).unwrap()
+        IndexCompactionFilter::new(
+            self.log.clone(),
+            self.name.clone(),
+            self.min_offset.min_offset(),
+        )
     }
 
     fn name(&self) -> &CStr {
