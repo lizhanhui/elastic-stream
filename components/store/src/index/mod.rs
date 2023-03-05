@@ -1,13 +1,121 @@
+use std::{ffi::CString, fs, path::Path, rc::Rc};
+
+use bytes::{BufMut, BytesMut};
+use rocksdb::{
+    BlockBasedOptions, ColumnFamilyDescriptor, DBCompressionType, Options, WriteOptions, DB,
+};
+use slog::{info, Logger};
+
+use crate::error::StoreError;
+
 mod compaction;
 
-pub(crate) struct Indexer {}
+const INDEX_COLUMN_FAMILY: &str = "index";
+const METADATA_COLUMN_FAMILY: &str = "metadata";
+
+pub(crate) struct Indexer {
+    log: Logger,
+    db: DB,
+    write_opts: WriteOptions,
+}
 
 impl Indexer {
-    pub(crate) fn new() -> Self {
-        Self {}
+    fn build_index_column_family_options(
+        log: Logger,
+        min_offset: Rc<dyn MinOffset>,
+    ) -> Result<Options, StoreError> {
+        let mut index_cf_opts = Options::default();
+        index_cf_opts.enable_statistics();
+        index_cf_opts.set_write_buffer_size(128 * 1024 * 1024);
+        index_cf_opts.set_max_write_buffer_number(4);
+        index_cf_opts.set_compression_type(DBCompressionType::None);
+        {
+            // 128MiB block cache
+            let cache = rocksdb::Cache::new_lru_cache(128 << 20)
+                .map_err(|e| StoreError::RocksDB(e.into_string()))?;
+            let mut table_opts = BlockBasedOptions::default();
+            table_opts.set_block_cache(&cache);
+            table_opts.set_block_size(128 << 10);
+            index_cf_opts.set_block_based_table_factory(&table_opts);
+        }
+
+        let compaction_filter_name = CString::new("index-compaction-filter")
+            .map_err(|e| StoreError::Internal("Failed to create CString".to_owned()))?;
+
+        let index_compaction_filter_factory = compaction::IndexCompactionFilterFactory::new(
+            log.clone(),
+            compaction_filter_name,
+            min_offset,
+        );
+
+        index_cf_opts.set_compaction_filter_factory(index_compaction_filter_factory);
+        Ok(index_cf_opts)
     }
 
-    pub(crate) fn index(&self, _offset: u64, _wal_offset: u64, _hash: u64) {}
+    pub(crate) fn new(
+        log: Logger,
+        path: &str,
+        min_offset: Rc<dyn MinOffset>,
+    ) -> Result<Self, StoreError> {
+        let path = Path::new(path);
+        if !path.exists() {
+            info!(log, "Create directory: {:?}", path);
+            fs::create_dir_all(path).map_err(|e| StoreError::IO(e))?;
+        }
+
+        let index_cf_opts = Self::build_index_column_family_options(log.clone(), min_offset)?;
+        let index_cf = ColumnFamilyDescriptor::new(INDEX_COLUMN_FAMILY, index_cf_opts);
+
+        let mut metadata_cf_opts = Options::default();
+        metadata_cf_opts.enable_statistics();
+        metadata_cf_opts.create_if_missing(true);
+        metadata_cf_opts.optimize_for_point_lookup(16 << 20);
+        let metadata_cf = ColumnFamilyDescriptor::new(METADATA_COLUMN_FAMILY, metadata_cf_opts);
+
+        let mut db_opts = Options::default();
+        db_opts.set_atomic_flush(true);
+        db_opts.create_if_missing(true);
+        db_opts.create_missing_column_families(true);
+        db_opts.enable_statistics();
+        db_opts.set_stats_dump_period_sec(10);
+        db_opts.set_stats_persist_period_sec(10);
+        // Threshold of all memtable across column families added in size
+        db_opts.set_db_write_buffer_size(1024 * 1024 * 1024);
+        db_opts.set_max_background_jobs(2);
+
+        let mut write_opts = WriteOptions::default();
+        write_opts.disable_wal(true);
+        write_opts.set_sync(false);
+
+        let db = DB::open_cf_descriptors(&db_opts, path, vec![index_cf, metadata_cf])
+            .map_err(|e| StoreError::RocksDB(e.into_string()))?;
+        Ok(Self {
+            log,
+            db,
+            write_opts,
+        })
+    }
+
+    pub(crate) fn index(
+        &self,
+        offset: u64,
+        wal_offset: u64,
+        len: u32,
+        hash: u64,
+    ) -> Result<(), StoreError> {
+        match self.db.cf_handle(INDEX_COLUMN_FAMILY) {
+            Some(cf) => {
+                let mut buf = BytesMut::with_capacity(20);
+                buf.put_u64(wal_offset);
+                buf.put_u32(len);
+                buf.put_u64(hash);
+                self.db
+                    .put_cf_opt(cf, &offset.to_be_bytes(), &buf[..], &self.write_opts)
+                    .map_err(|e| StoreError::RocksDB(e.into_string()))
+            }
+            None => Err(StoreError::RocksDB("No column family".to_owned())),
+        }
+    }
 
     /// Returns offset in WAL. All record index are atomic-flushed to RocksDB.
     pub(crate) fn flushed_wal_offset(&self) -> u64 {
@@ -25,7 +133,11 @@ impl Indexer {
     ///
     /// To minimize the amount of WAL data to recover, for example, in case of planned reboot, we shall update checkpoint
     /// offset and invoke this method before stopping.
-    pub(crate) fn flush(&self) {}
+    pub(crate) fn flush(&self) -> Result<(), StoreError> {
+        self.db
+            .flush()
+            .map_err(|e| StoreError::RocksDB(e.into_string()))
+    }
 }
 
 pub trait MinOffset {

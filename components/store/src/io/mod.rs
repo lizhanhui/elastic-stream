@@ -7,7 +7,7 @@ pub(crate) mod task;
 mod write_window;
 
 use crate::error::{AppendError, StoreError};
-use crate::index::Indexer;
+use crate::index::{Indexer, MinOffset};
 use crate::ops::append::AppendResult;
 use crate::option::WalPath;
 use crossbeam::channel::{Receiver, Sender, TryRecvError};
@@ -18,6 +18,8 @@ use slog::{debug, error, info, trace, warn, Logger};
 use std::collections::{BTreeMap, HashSet};
 use std::fs::OpenOptions;
 use std::os::unix::prelude::{FileExt, OpenOptionsExt};
+use std::rc::Rc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::{
     cell::{RefCell, UnsafeCell},
@@ -101,6 +103,28 @@ impl Options {
     pub fn add_wal_path(&mut self, wal_path: WalPath) {
         self.alignment = wal_path.block_size;
         self.wal_paths.push(wal_path);
+    }
+}
+
+struct WalOffsetManager {
+    min: AtomicU64,
+}
+
+impl WalOffsetManager {
+    fn new() -> Self {
+        Self {
+            min: AtomicU64::new(u64::MAX),
+        }
+    }
+
+    fn set_min_offset(&self, min: u64) {
+        self.min.store(min, Ordering::Relaxed);
+    }
+}
+
+impl MinOffset for WalOffsetManager {
+    fn min_offset(&self) -> u64 {
+        self.min.load(Ordering::Relaxed)
     }
 }
 
@@ -192,6 +216,8 @@ pub(crate) struct IO {
     barrier: HashSet<u64>,
 
     blocked: HashMap<u64, squeue::Entry>,
+
+    wal_offset_manager: Rc<WalOffsetManager>,
 }
 
 /// Check if required opcodes are supported by the host operation system.
@@ -280,6 +306,7 @@ impl IO {
             inflight_write_tasks: BTreeMap::new(),
             barrier: HashSet::new(),
             blocked: HashMap::new(),
+            wal_offset_manager: Rc::new(WalOffsetManager::new()),
         })
     }
 
@@ -537,7 +564,7 @@ impl IO {
             // For example, if the application is performing small I/O operations of 32 KiB:
             // 1. Amazon EBS merges sequential (physically contiguous) operations to the maximum I/O size of 256 KiB.
             //    In this scenario, Amazon EBS counts only 1 IOPS to perform 8 I/O operations submitted by the operating system.
-            // 2. Amazon EBS counts random I/O operations separately. A single, random I/O operation of 32 KiB counts as 1 IOPS. 
+            // 2. Amazon EBS counts random I/O operations separately. A single, random I/O operation of 32 KiB counts as 1 IOPS.
             //    In this scenario, Amazon EBS counts 8 random, 32 KiB I/O operations as 8 IOPS submitted by the OS.
             //
             // Amazon EBS splits I/O operations larger than the maximum 256 KiB into smaller operations.
@@ -1179,21 +1206,13 @@ impl IO {
 
     pub(crate) fn run(io: RefCell<IO>) -> Result<(), StoreError> {
         let log = io.borrow().log.clone();
-
-        let indexer = Indexer::new();
+        let offset_manager = Rc::clone(&io.borrow().wal_offset_manager);
+        let indexer = Indexer::new(log.clone(), "/tmp/rocksdb", offset_manager)?;
         io.borrow_mut().load()?;
         let pos = indexer.flushed_wal_offset();
         io.borrow_mut().recover(pos)?;
 
         let min_preallocated_segment_files = io.borrow().options.min_preallocated_segment_files;
-
-        // Preallocate a log segment file according to pos
-        // {
-        //     // TODO: if pre-allocated file num is less than configured
-        //     let mut io_mut = io.borrow_mut();
-        //     let segment = io_mut.alloc_segment()?;
-        //     segment.open()?;
-        // }
 
         let cqe_wanted = 1;
 

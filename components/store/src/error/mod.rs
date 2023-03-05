@@ -2,7 +2,7 @@
 //!
 //! Though some developers prefer to have their errors in each module, this crate takes the strategy of
 //! defining errors centrally. Namely, all errors live in this module with the hope of having a consistent
-//! and coherent heirarchy of errors.
+//! and coherent hierarchy of errors.
 //!
 
 use thiserror::Error;
@@ -59,6 +59,9 @@ pub enum StoreError {
 
     #[error("Insufficient data")]
     InsufficientData,
+
+    #[error("RocksDB error: {0}")]
+    RocksDB(String),
 }
 
 #[derive(Debug, Error)]
