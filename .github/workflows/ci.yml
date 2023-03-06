@@ -15,6 +15,9 @@ jobs:
       matrix:
         os: [self-hosted]
     runs-on: ${{ matrix.os }}
+    env: 
+      CARGO_HOME: /data/.cargo
+      RUSTUP_HOME: /data/.rustup
     steps:
     - uses: actions/checkout@v3
     - name: Cache Cargo Crates
