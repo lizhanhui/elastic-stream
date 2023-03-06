@@ -13,7 +13,7 @@ type Response interface {
 // ListRangeResponse is a response to operation.ListRange
 type ListRangeResponse struct {
 	// The time in milliseconds to throttle the client, due to a quota violation or the server is too busy.
-	ThrottleTimeMs uint32
+	ThrottleTimeMs ThrottleTimeMs
 
 	// The responses of list ranges request
 	ListResponses []ListRangesResult

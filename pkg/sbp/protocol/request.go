@@ -12,7 +12,7 @@ type Request interface {
 
 // ListRangeRequest is a request to operation.ListRange
 type ListRangeRequest struct {
-	TimeoutMs uint32
+	TimeoutMs TimeoutMs
 
 	// The range owner could be a data node or a list of streams.
 	RangeOwners []RangeOwner

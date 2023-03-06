@@ -1,7 +1,7 @@
 package protocol
 
 // ErrorCode is the error code of a response
-type ErrorCode uint16
+type ErrorCode = int16
 
 const (
 	// None means no error
@@ -14,17 +14,23 @@ const (
 	InvalidRequest ErrorCode = 2
 )
 
+// TimeoutMs is the timeout in request in milliseconds
+type TimeoutMs = int32
+
+// ThrottleTimeMs is the time in milliseconds to throttle the client, due to a quota violation or the server is too busy.
+type ThrottleTimeMs = int32
+
 // NodeID is the ID of a data node
-type NodeID uint64
+type NodeID = int64
 
 // StreamID is the ID of a stream
-type StreamID uint64
+type StreamID = int64
 
 // RangeIndex is the index of a range in a stream
-type RangeIndex uint32
+type RangeIndex = int32
 
 // RangeOffset is an offset in a range
-type RangeOffset uint64
+type RangeOffset = int64
 
 // ListRangesResult is part of the ListRangeRequest
 type ListRangesResult struct {
