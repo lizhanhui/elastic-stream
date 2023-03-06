@@ -46,11 +46,37 @@ func (rcv *ReportMetricsResponse) DataNode(obj *DataNode) *DataNode {
 	return nil
 }
 
+func (rcv *ReportMetricsResponse) ErrorCode() ErrorCode {
+	o := flatbuffers.UOffsetT(rcv._tab.Offset(6))
+	if o != 0 {
+		return ErrorCode(rcv._tab.GetInt16(o + rcv._tab.Pos))
+	}
+	return 0
+}
+
+func (rcv *ReportMetricsResponse) MutateErrorCode(n ErrorCode) bool {
+	return rcv._tab.MutateInt16Slot(6, int16(n))
+}
+
+func (rcv *ReportMetricsResponse) ErrorMessage() []byte {
+	o := flatbuffers.UOffsetT(rcv._tab.Offset(8))
+	if o != 0 {
+		return rcv._tab.ByteVector(o + rcv._tab.Pos)
+	}
+	return nil
+}
+
 func ReportMetricsResponseStart(builder *flatbuffers.Builder) {
-	builder.StartObject(1)
+	builder.StartObject(3)
 }
 func ReportMetricsResponseAddDataNode(builder *flatbuffers.Builder, dataNode flatbuffers.UOffsetT) {
 	builder.PrependUOffsetTSlot(0, flatbuffers.UOffsetT(dataNode), 0)
+}
+func ReportMetricsResponseAddErrorCode(builder *flatbuffers.Builder, errorCode ErrorCode) {
+	builder.PrependInt16Slot(1, int16(errorCode), 0)
+}
+func ReportMetricsResponseAddErrorMessage(builder *flatbuffers.Builder, errorMessage flatbuffers.UOffsetT) {
+	builder.PrependUOffsetTSlot(2, flatbuffers.UOffsetT(errorMessage), 0)
 }
 func ReportMetricsResponseEnd(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
 	return builder.EndObject()
