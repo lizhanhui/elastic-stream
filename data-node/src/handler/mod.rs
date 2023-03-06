@@ -4,13 +4,21 @@
 
 use bytes::{BufMut, Bytes, BytesMut};
 use codec::frame::{Frame, OperationCode};
-use flatbuffers::FlatBufferBuilder;
+use flatbuffers::{FlatBufferBuilder, Verifiable, WIPOffset};
 
+use protocol::rpc::header::{
+    DescribeRangeResult, DescribeRangeResultArgs, DescribeRangesRequest, DescribeRangesResponse,
+    DescribeRangesResponseArgs, ErrorCode,
+};
 use slog::{debug, trace, warn, Logger};
 use std::rc::Rc;
 use store::{
     ops::append::AppendResult, option::WriteOptions, AppendRecordRequest, ElasticStore, Store,
 };
+
+const MIN_BUFFER_SIZE: usize = 64;
+const MEDIUM_BUFFER_SIZE: usize = 4 * MIN_BUFFER_SIZE;
+const LARGE_BUFFER_SIZE: usize = 16 * MEDIUM_BUFFER_SIZE;
 
 /// Representation of the incoming request.
 ///
@@ -42,7 +50,9 @@ impl ServerCall {
         let mut response = Frame::new(OperationCode::Unknown);
         response.stream_id = self.request.stream_id;
 
-        response.flag_response();
+        // Flag it's a response frame, as well as the end of the response.
+        // If the response sequence is not ended, please note reset the flag in the subsequent logic.
+        response.flag_end_response();
 
         match self.request.operation_code {
             OperationCode::Unknown => {}
@@ -66,7 +76,10 @@ impl ServerCall {
             OperationCode::Fetch => todo!(),
             OperationCode::SealRanges => todo!(),
             OperationCode::SyncRanges => todo!(),
-            OperationCode::DescribeRanges => todo!(),
+            OperationCode::DescribeRanges => {
+                response.operation_code = OperationCode::DescribeRanges;
+                self.on_describe_ranges(&mut response).await;
+            }
             OperationCode::CreateStreams => todo!(),
             OperationCode::DeleteStreams => todo!(),
             OperationCode::UpdateStreams => todo!(),
@@ -97,18 +110,71 @@ impl ServerCall {
         };
     }
 
+    async fn on_describe_streams(&self, response: &mut Frame) {
+        todo!()
+    }
+
+    async fn on_describe_ranges(&self, response: &mut Frame) {
+        let response_builder = &mut FlatBufferBuilder::with_capacity(64);
+        let mut args = DescribeRangesResponseArgs {
+            throttle_time_ms: 0,
+            describe_responses: None,
+            error_code: ErrorCode::NONE,
+            error_message: None,
+        };
+
+        let request_buf = match self.request.header {
+            Some(ref buf) => buf,
+            None => {
+                args.error_code = ErrorCode::INVALID_REQUEST;
+                args.error_message = Some(response_builder.create_string("No request header"));
+                warn!(
+                    self.logger,
+                    "DescribeRangesRequest[stream-id={}] received without payload",
+                    self.request.stream_id
+                );
+
+                // Serialize response to the FlatBuffer
+                // The returned value is an offset used to track the location of this serializaed response.
+                let response_offset = DescribeRangesResponse::create(response_builder, &args);
+                response.header = finish_response_builder(response_builder, response_offset);
+                return;
+            }
+        };
+
+        let describe_requst = match root_as_rpc_request::<DescribeRangesRequest>(request_buf) {
+            Ok(request) => request,
+            Err(e) => {
+                args.error_code = ErrorCode::INVALID_REQUEST;
+                args.error_message = Some(response_builder.create_string("Invalid request header"));
+                warn!(
+                    self.logger,
+                    "DescribeRangesRequest[stream-id={}] received with invalid payload. Cause: {:?}",
+                    self.request.stream_id,
+                    e
+                );
+                let response_offset = DescribeRangesResponse::create(response_builder, &args);
+                response.payload = finish_response_builder(response_builder, response_offset);
+                return;
+            }
+        };
+
+        // TODO: Get the range from store
+        let response_offset = DescribeRangesResponse::create(response_builder, &args);
+        response.header = finish_response_builder(response_builder, response_offset);
+    }
+
     /// Process Ping request
     ///
     /// Ping-pong mechanism is designed to be a light weight API to probe liveness of data-node.
+    /// The Pong response return the same header and payload as the Ping request.
     async fn on_ping(&self, response: &mut Frame) {
         debug!(
             self.logger,
             "PingRequest[stream-id={}] received", self.request.stream_id
         );
-        let mut header = BytesMut::new();
-        let text = format!("stream-id={}, response=true", self.request.stream_id);
-        header.put(text.as_bytes());
-        response.header = Some(header.freeze());
+        response.header = self.request.header.clone();
+        response.payload = self.request.payload.clone();
     }
 
     /// Process message publishment request
@@ -200,4 +266,23 @@ impl ServerCall {
             buffer: buffer.freeze(),
         }
     }
+}
+
+/// Verifies that a buffer of bytes contains a rpc request and returns it.
+fn root_as_rpc_request<'a, R>(buf: &'a [u8]) -> Result<R, flatbuffers::InvalidFlatbuffer>
+where
+    R: flatbuffers::Follow<'a, Inner = R> + 'a + Verifiable,
+{
+    flatbuffers::root::<R>(buf)
+}
+
+/// Finish the response builder and returns the finished response frame header.
+/// Use a generic type to support different response types,
+/// and ensure the finished_data is called after the builder.finish().
+fn finish_response_builder<R>(
+    builder: &mut FlatBufferBuilder,
+    response_offset: WIPOffset<R>,
+) -> Option<Bytes> {
+    builder.finish(response_offset, None);
+    Some(Bytes::copy_from_slice(builder.finished_data()))
 }
