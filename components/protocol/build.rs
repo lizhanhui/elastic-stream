@@ -9,4 +9,13 @@ fn main() {
         ..Default::default()
     })
     .expect("flatc");
+
+    println!("cargo:rerun-if-changed=fbs/");
+    flatc_rust::run(flatc_rust::Args {
+        lang: "java",
+        inputs: &[Path::new("fbs/rpc.fbs"), Path::new("fbs/model.fbs")],
+        out_dir: Path::new("../../sdks/java/lib/src/generated/java"),
+        ..Default::default()
+    })
+    .expect("flatc");
 }
