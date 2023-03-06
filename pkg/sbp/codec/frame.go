@@ -353,13 +353,17 @@ type GoAwayFrame struct {
 	baseFrame
 }
 
-// NewGoAwayFrameReq creates a new GoAway frame
-func NewGoAwayFrameReq(streamID uint32) *GoAwayFrame {
-	return &GoAwayFrame{baseFrame{
+// NewGoAwayFrame creates a new GoAway frame
+func NewGoAwayFrame(maxStreamID uint32, isResponse bool) *GoAwayFrame {
+	f := &GoAwayFrame{baseFrame{
 		OpCode:    operation.GoAway(),
-		StreamID:  streamID,
+		StreamID:  maxStreamID,
 		HeaderFmt: format.Default(),
 	}}
+	if isResponse {
+		f.Flag = FlagResponse | FlagResponseEnd
+	}
+	return f
 }
 
 // HeartbeatFrame is used to keep clients alive

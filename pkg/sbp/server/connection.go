@@ -1,4 +1,3 @@
-//nolint:unused
 package server
 
 import (
@@ -44,6 +43,7 @@ type conn struct {
 	needsFrameFlush     bool            // last frame write wasn't a flush
 	inGoAway            bool            // we've started to or sent GOAWAY
 	needToSendGoAway    bool            // we need to schedule a GOAWAY frame write
+	isGoAwayResponse    bool            // we started a GOAWAY response rather than a request
 	shutdownTimer       *time.Timer     // nil until used
 	idleTimer           *time.Timer     // nil if unused
 
@@ -90,12 +90,12 @@ func (c *conn) serve() {
 			switch msg {
 			case idleTimerMsg:
 				logger.Info("connection is idle")
-				c.goAway()
+				c.goAway(false)
 			case shutdownTimerMsg:
 				logger.Info("GOAWAY close timer fired, closing connection")
 			case gracefulShutdownMsg:
 				logger.Info("start to shut down gracefully")
-				c.goAway()
+				c.goAway(false)
 			default:
 				panic("unknown timer")
 			}
@@ -135,6 +135,9 @@ func (c *conn) readFrames() {
 // deadlock writing to conn.wantWriteFrameCh (which is only mildly
 // buffered and is read by serve itself). If you're on the serve
 // goroutine, call writeFrame instead.
+// TODO
+//
+//nolint:unused
 func (c *conn) writeFrameFromHandler(wr frameWriteRequest) error {
 	c.serveG.CheckNotOn()
 	select {
@@ -214,8 +217,16 @@ func (c *conn) scheduleFrameWrite() {
 	for !c.writingFrameAsync {
 		if c.needToSendGoAway {
 			c.needToSendGoAway = false
+			var goAwayStream *stream
+			if c.isGoAwayResponse {
+				goAwayStream = c.streams[c.maxClientStreamID]
+			} else {
+				goAwayStream = c.newStream(c.maxClientStreamID + 1)
+			}
 			c.startFrameWrite(frameWriteRequest{
-				// TODO goAway frame
+				f:         codec.NewGoAwayFrame(goAwayStream.id, c.isGoAwayResponse),
+				stream:    goAwayStream,
+				endStream: true,
 			})
 			continue
 		}
@@ -296,70 +307,96 @@ func (c *conn) processFrameFromReader(res frameReadResult) bool {
 	} else {
 		logger.Error("failed to process frame", zap.Error(err))
 	}
-	c.goAway()
+	c.goAway(false)
 	return true
 }
 
 func (c *conn) processFrame(f codec.Frame) error {
 	logger := c.lg
+	c.serveG.Check()
+
+	streamID := f.Base().StreamID
+
 	// Discard frames for streams initiated after the identified last stream sent in a GOAWAY
-	if c.inGoAway && f.Base().StreamID > c.maxClientStreamID {
+	if c.inGoAway && streamID > c.maxClientStreamID {
+		logger.Warn("server ignoring frame for stream initiated after GOAWAY", zap.String("frame", f.Info()))
 		return nil
 	}
 
 	// ignore response frames
 	if f.IsResponse() {
-		logger.Warn("server ignoring response frame", zap.String("frame", f.Info()))
+		if _, ok := f.(*codec.GoAwayFrame); !ok {
+			logger.Warn("server ignoring response frame", zap.String("frame", f.Info()))
+		}
 		return nil
 	}
 
+	if streamID <= c.maxClientStreamID {
+		logger.Error("server received a frame with an ID that has decreased", zap.String("frame", f.Info()))
+		return errors.New("decreased stream ID")
+	}
+
+	st := c.newStream(streamID)
+
 	switch f := f.(type) {
 	case *codec.PingFrame:
-		return c.processPing(f)
+		return c.processPing(f, st)
 	case *codec.GoAwayFrame:
-		return c.processGoAway(f)
+		return c.processGoAway(f, st)
 	case *codec.HeartbeatFrame:
-		return c.processHeartbeat(f)
+		return c.processHeartbeat(f, st)
 	case *codec.DataFrame:
-		return c.processDataFrame(f)
+		return c.processDataFrame(f, st)
 	default:
 		logger.Warn("server ignoring unknown type frame", zap.String("frame", f.Info()))
 		return nil
 	}
 }
 
-func (c *conn) processPing(f *codec.PingFrame) error {
+func (c *conn) processPing(f *codec.PingFrame, stream *stream) error {
 	c.serveG.Check()
-	c.writeFrame(frameWriteRequest{f: codec.NewPingFrameResp(f)}) // TODO
+	c.writeFrame(frameWriteRequest{
+		f:         codec.NewPingFrameResp(f),
+		stream:    stream,
+		endStream: true,
+	})
 	return nil
 }
 
-func (c *conn) processGoAway(f *codec.GoAwayFrame) error {
+func (c *conn) processGoAway(f *codec.GoAwayFrame, _ *stream) error {
+	logger := c.lg
+	c.serveG.Check()
+	logger.Info("received GOAWAY frame, starting graceful shutdown", zap.Uint32("max-stream-id", f.StreamID))
+	c.goAway(true)
+	return nil
+}
+
+func (c *conn) processHeartbeat(f *codec.HeartbeatFrame, stream *stream) error {
 	c.serveG.Check()
 	_ = f
+	_ = stream
 	// TODO
 	return nil
 }
 
-func (c *conn) processHeartbeat(f *codec.HeartbeatFrame) error {
+func (c *conn) processDataFrame(f *codec.DataFrame, stream *stream) error {
 	c.serveG.Check()
 	_ = f
-	// TODO
-	return nil
-}
-
-func (c *conn) processDataFrame(f *codec.DataFrame) error {
-	c.serveG.Check()
-	_ = f
+	_ = stream
 	// TODO
 	return nil
 }
 
 func (c *conn) newStream(id uint32) *stream {
 	c.serveG.Check()
-	_ = id
-	// TODO
-	return nil
+	st := &stream{
+		cc:    c,
+		id:    id,
+		state: stateOpen,
+	}
+	c.streams[id] = st
+	c.maxClientStreamID = id
+	return st
 }
 
 func (c *conn) closeStream(st *stream) {
@@ -394,13 +431,14 @@ func (c *conn) close() {
 // loopback interface making the expected RTT very small.
 var goAwayTimeout = 1 * time.Second
 
-func (c *conn) goAway() {
+func (c *conn) goAway(isResponse bool) {
 	c.serveG.Check()
 	if c.inGoAway {
 		return
 	}
 	c.inGoAway = true
 	c.needToSendGoAway = true
+	c.isGoAwayResponse = isResponse
 	c.scheduleFrameWrite()
 }
 

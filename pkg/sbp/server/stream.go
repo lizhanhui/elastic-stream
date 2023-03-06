@@ -1,15 +1,10 @@
 //nolint:unused
 package server
 
-import (
-	"io"
-)
-
 type streamState int
 
 const (
-	stateIdle streamState = iota
-	stateOpen
+	stateOpen streamState = iota
 	stateClosed
 )
 
@@ -18,8 +13,8 @@ type stream struct {
 	cc *conn
 
 	id uint32
-	rp io.PipeReader
-	wp io.PipeReader
+	// rp io.PipeReader
+	// wp io.PipeWriter
 
 	state streamState
 }
