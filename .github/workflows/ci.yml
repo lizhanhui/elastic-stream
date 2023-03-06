@@ -13,19 +13,19 @@ jobs:
   build:
     strategy:
       matrix:
-        os: [self-hosted]
+        os: [ ubuntu-latest ]
     runs-on: ${{ matrix.os }}
     env: 
-      CARGO_HOME: /data/.cargo
-      RUSTUP_HOME: /data/.rustup
+      CARGO_HOME: ~/.cargo
+      RUSTUP_HOME: ~/.rustup
     steps:
     - uses: actions/checkout@v3
     - name: Cache Cargo Crates
       uses: actions/cache@v3
       with: 
         path: |
-          /data/.cargo
-          /data/.rustup
+          ~/.cargo
+          ~/.rustup
           /usr/local/bin/flatc
         key: ${{ runner.os }}-cargo
     - name: Install Deps
