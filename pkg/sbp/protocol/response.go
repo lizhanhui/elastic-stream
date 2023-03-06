@@ -17,6 +17,12 @@ type ListRangeResponse struct {
 
 	// The responses of list ranges request
 	ListResponses []ListRangesResult
+
+	// The top level error code, or 0 if there was no error.
+	ErrorCode ErrorCode
+
+	// The error message, or omitted if there was no error.
+	ErrorMessage string
 }
 
 //nolint:revive // EXC0012 comment already exists in interface
