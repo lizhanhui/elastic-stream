@@ -1,7 +1,7 @@
 package protocol
 
 // ErrorCode is the error code of a response
-type ErrorCode = int16
+type ErrorCode int16
 
 const (
 	// None means no error
@@ -21,7 +21,7 @@ type TimeoutMs = int32
 type ThrottleTimeMs = int32
 
 // NodeID is the ID of a data node
-type NodeID = int64
+type NodeID = int32
 
 // StreamID is the ID of a stream
 type StreamID = int64
@@ -32,7 +32,7 @@ type RangeIndex = int32
 // RangeOffset is an offset in a range
 type RangeOffset = int64
 
-// ListRangesResult is part of the ListRangeRequest
+// ListRangesResult is part of the ListRangesRequest
 type ListRangesResult struct {
 	// The owner that the returned ranges belong to.
 	// Maybe a data node or a stream id.

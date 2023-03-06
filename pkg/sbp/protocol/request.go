@@ -10,8 +10,8 @@ type Request interface {
 	Unmarshal(fmt format.Format, data []byte) error
 }
 
-// ListRangeRequest is a request to operation.ListRange
-type ListRangeRequest struct {
+// ListRangesRequest is a request to operation.ListRange
+type ListRangesRequest struct {
 	TimeoutMs TimeoutMs
 
 	// The range owner could be a data node or a list of streams.
@@ -19,6 +19,6 @@ type ListRangeRequest struct {
 }
 
 //nolint:revive // EXC0012 comment already exists in interface
-func (l *ListRangeRequest) Unmarshal(fmt format.Format, data []byte) error {
-	return getFormatter(fmt).unmarshalListRangeRequest(data, l)
+func (l *ListRangesRequest) Unmarshal(fmt format.Format, data []byte) error {
+	return getFormatter(fmt).unmarshalListRangesRequest(data, l)
 }

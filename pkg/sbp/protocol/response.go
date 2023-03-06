@@ -10,8 +10,8 @@ type Response interface {
 	Marshal(fmt format.Format) ([]byte, error)
 }
 
-// ListRangeResponse is a response to operation.ListRange
-type ListRangeResponse struct {
+// ListRangesResponse is a response to operation.ListRange
+type ListRangesResponse struct {
 	// The time in milliseconds to throttle the client, due to a quota violation or the server is too busy.
 	ThrottleTimeMs ThrottleTimeMs
 
@@ -26,6 +26,6 @@ type ListRangeResponse struct {
 }
 
 //nolint:revive // EXC0012 comment already exists in interface
-func (l *ListRangeResponse) Marshal(fmt format.Format) ([]byte, error) {
-	return getFormatter(fmt).marshalListRangeResponse(l)
+func (l *ListRangesResponse) Marshal(fmt format.Format) ([]byte, error) {
+	return getFormatter(fmt).marshalListRangesResponse(l)
 }

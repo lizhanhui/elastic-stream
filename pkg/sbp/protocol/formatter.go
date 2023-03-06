@@ -10,8 +10,8 @@ var (
 )
 
 type formatter interface {
-	unmarshalListRangeRequest([]byte, *ListRangeRequest) error
-	marshalListRangeResponse(*ListRangeResponse) ([]byte, error)
+	unmarshalListRangesRequest([]byte, *ListRangesRequest) error
+	marshalListRangesResponse(*ListRangesResponse) ([]byte, error)
 }
 
 func getFormatter(fmt format.Format) formatter {
