@@ -13,7 +13,7 @@ members = [
     "components/store",
     "components/util",
     "data-node",
-    "front-end-sdk"
+    "sdks/rust"
 ]
 
 [workspace.dependencies]
