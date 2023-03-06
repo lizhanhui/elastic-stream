@@ -1,8 +1,10 @@
 use std::{ffi::CString, fs, io::Cursor, path::Path, rc::Rc};
 
 use bytes::{Buf, BufMut, BytesMut};
+use model::range::{Range, StreamRange};
 use rocksdb::{
-    BlockBasedOptions, ColumnFamilyDescriptor, DBCompressionType, Options, WriteOptions, DB,
+    BlockBasedOptions, ColumnFamilyDescriptor, DBCompressionType, Options, ReadOptions,
+    WriteOptions, DB,
 };
 use slog::{error, info, Logger};
 
@@ -20,6 +22,24 @@ const WAL_CHECKPOINT: &str = "wal_checkpoint";
 ///
 /// If a range is sealed, its status is changed from `0` to `1` and logical `end` will be appended.
 const RANGE_PREFIX: u8 = b'r';
+
+/// Expose minimum WAL offset.
+///
+/// WAL file sequence would periodically check and purge deprecated segment files. Once a segment file is removed, min offset of the
+/// WAL is be updated. Their index entries, that map to the removed file should be compacted away.
+pub trait MinOffset {
+    fn min_offset(&self) -> u64;
+}
+
+pub trait LocalRangeManager {
+    fn list_by_stream(&self, stream_id: i64) -> Result<Option<Vec<StreamRange>>, StoreError>;
+
+    fn list(&self) -> Result<Option<Vec<StreamRange>>, StoreError>;
+
+    fn seal(&self, stream_id: i64, range: &StreamRange) -> Result<(), StoreError>;
+
+    fn add(&self, stream_id: i64, range: &StreamRange) -> Result<(), StoreError>;
+}
 
 pub(crate) struct Indexer {
     log: Logger,
@@ -191,10 +211,159 @@ impl Indexer {
             .flush()
             .map_err(|e| StoreError::RocksDB(e.into_string()))
     }
+
+    /// Compaction is synchronous and should execute in its own thread.
+    pub(crate) fn compact(&self) {
+        if let Some(cf) = self.db.cf_handle(INDEX_COLUMN_FAMILY) {
+            self.db.compact_range_cf(cf, None::<&[u8]>, None::<&[u8]>);
+        }
+    }
 }
 
-pub trait MinOffset {
-    fn min_offset(&self) -> u64;
+impl LocalRangeManager for Indexer {
+    fn list_by_stream(&self, stream_id: i64) -> Result<Option<Vec<StreamRange>>, StoreError> {
+        let mut prefix = BytesMut::with_capacity(9);
+        prefix.put_u8(RANGE_PREFIX);
+        prefix.put_i64(stream_id);
+
+        if let Some(cf) = self.db.cf_handle(METADATA_COLUMN_FAMILY) {
+            let mut read_opts = ReadOptions::default();
+            read_opts.set_iterate_lower_bound(&prefix[..]);
+            read_opts.set_prefix_same_as_start(true);
+            let list = self
+                .db
+                .iterator_cf_opt(cf, read_opts, rocksdb::IteratorMode::Start)
+                .flatten()
+                .map_while(|(k, v)| {
+                    if !k.starts_with(&prefix[..]) {
+                        return None;
+                    } else {
+                        debug_assert_eq!(k.len(), 8 + 8 + 1);
+
+                        let mut key_reader = Cursor::new(&k[..]);
+                        let _prefix = key_reader.get_u8();
+                        debug_assert_eq!(_prefix, RANGE_PREFIX);
+
+                        let _stream_id = key_reader.get_i64();
+                        debug_assert_eq!(stream_id, _stream_id);
+
+                        let start = key_reader.get_u64();
+
+                        if v.len() == 1 {
+                            Some(StreamRange::new(start, 0, None))
+                        } else {
+                            debug_assert_eq!(v.len(), 8 + 1);
+                            let mut value_reader = Cursor::new(&v[..]);
+                            let _status = value_reader.get_u8();
+                            let end = value_reader.get_u64();
+                            Some(StreamRange::new(start, 0, Some(end)))
+                        }
+                    }
+                })
+                .collect();
+            Ok(Some(list))
+        } else {
+            Ok(None)
+        }
+    }
+
+    fn list(&self) -> Result<Option<Vec<StreamRange>>, StoreError> {
+        let mut prefix = BytesMut::with_capacity(1);
+        prefix.put_u8(RANGE_PREFIX);
+
+        if let Some(cf) = self.db.cf_handle(METADATA_COLUMN_FAMILY) {
+            let mut read_opts = ReadOptions::default();
+            read_opts.set_iterate_lower_bound(&prefix[..]);
+            read_opts.set_prefix_same_as_start(true);
+            let list = self
+                .db
+                .iterator_cf_opt(cf, read_opts, rocksdb::IteratorMode::Start)
+                .flatten()
+                .map_while(|(k, v)| {
+                    if !k.starts_with(&prefix[..]) {
+                        return None;
+                    } else {
+                        debug_assert_eq!(k.len(), 8 + 8 + 1);
+
+                        let mut key_reader = Cursor::new(&k[..]);
+                        let _prefix = key_reader.get_u8();
+                        debug_assert_eq!(_prefix, RANGE_PREFIX);
+
+                        let _stream_id = key_reader.get_i64();
+
+                        let start = key_reader.get_u64();
+
+                        if v.len() == 1 {
+                            debug_assert_eq!(0, v[0]);
+                            Some(StreamRange::new(start, 0, None))
+                        } else {
+                            debug_assert_eq!(v.len(), 8 + 1);
+                            let mut value_reader = Cursor::new(&v[..]);
+                            let _status = value_reader.get_u8();
+                            debug_assert_eq!(1u8, _status);
+                            let end = value_reader.get_u64();
+                            Some(StreamRange::new(start, 0, Some(end)))
+                        }
+                    }
+                })
+                .collect();
+            Ok(Some(list))
+        } else {
+            Ok(None)
+        }
+    }
+
+    fn seal(&self, stream_id: i64, range: &StreamRange) -> Result<(), StoreError> {
+        debug_assert!(range.sealed(), "Range is not sealed yet");
+        let end = range.end().ok_or(StoreError::Internal("".to_owned()))?;
+        debug_assert!(end >= range.start(), "End of range cannot less than start");
+
+        let mut key_buf = BytesMut::with_capacity(1 + 8 + 8);
+        key_buf.put_u8(RANGE_PREFIX);
+        key_buf.put_i64(stream_id);
+        key_buf.put_u64(range.start());
+
+        let mut value_buf = BytesMut::with_capacity(1 + 8);
+        value_buf.put_u8(1);
+        value_buf.put_u64(end);
+
+        if let Some(cf) = self.db.cf_handle(METADATA_COLUMN_FAMILY) {
+            self.db
+                .put_cf_opt(cf, &key_buf[..], &value_buf[..], &self.write_opts)
+                .map_err(|e| StoreError::RocksDB(e.into_string()))
+        } else {
+            Err(StoreError::RocksDB(format!(
+                "No column family: {}",
+                METADATA_COLUMN_FAMILY
+            )))
+        }
+    }
+
+    fn add(&self, stream_id: i64, range: &StreamRange) -> Result<(), StoreError> {
+        let mut key_buf = BytesMut::with_capacity(1 + 8 + 8);
+        key_buf.put_u8(RANGE_PREFIX);
+        key_buf.put_i64(stream_id);
+        key_buf.put_u64(range.start());
+
+        let mut value_buf = BytesMut::with_capacity(1 + 8);
+        if let Some(end) = range.end() {
+            value_buf.put_u8(1);
+            value_buf.put_u64(end);
+        } else {
+            value_buf.put_u8(0);
+        }
+
+        if let Some(cf) = self.db.cf_handle(METADATA_COLUMN_FAMILY) {
+            self.db
+                .put_cf_opt(cf, &key_buf[..], &value_buf[..], &self.write_opts)
+                .map_err(|e| StoreError::RocksDB(e.into_string()))
+        } else {
+            Err(StoreError::RocksDB(format!(
+                "No column family: {}",
+                METADATA_COLUMN_FAMILY
+            )))
+        }
+    }
 }
 
 #[cfg(test)]

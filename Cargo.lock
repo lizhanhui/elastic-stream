@@ -2130,6 +2130,7 @@ dependencies = [
  "futures",
  "io-uring",
  "libc",
+ "model",
  "nix 0.26.2",
  "num_enum",
  "pin-project",

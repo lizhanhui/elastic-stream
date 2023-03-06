@@ -648,7 +648,6 @@ impl IO {
                 if requirement.is_empty() {
                     return;
                 }
-
                 let remaining = segment.remaining() as usize;
                 while let Some(n) = requirement.front() {
                     if size + n + segment::FOOTER_LENGTH as usize > remaining {
