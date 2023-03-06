@@ -1,10 +1,10 @@
-use std::{ffi::CString, fs, path::Path, rc::Rc};
+use std::{ffi::CString, fs, io::Cursor, path::Path, rc::Rc};
 
-use bytes::{BufMut, BytesMut};
+use bytes::{Buf, BufMut, BytesMut};
 use rocksdb::{
     BlockBasedOptions, ColumnFamilyDescriptor, DBCompressionType, Options, WriteOptions, DB,
 };
-use slog::{info, Logger};
+use slog::{error, info, Logger};
 
 use crate::error::StoreError;
 
@@ -12,6 +12,14 @@ mod compaction;
 
 const INDEX_COLUMN_FAMILY: &str = "index";
 const METADATA_COLUMN_FAMILY: &str = "metadata";
+
+/// Key-value in metadata column family, flagging WAL offset, prior to which primary index are already built.
+const WAL_CHECKPOINT: &str = "wal_checkpoint";
+
+/// Representation of a range in metadata column family: {range-prefix: 1B}{stream_id:8B}{begin:8B} --> {status: 1B}[{end: 8B}].
+///
+/// If a range is sealed, its status is changed from `0` to `1` and logical `end` will be appended.
+const RANGE_PREFIX: u8 = b'r';
 
 pub(crate) struct Indexer {
     log: Logger,
@@ -89,6 +97,7 @@ impl Indexer {
 
         let db = DB::open_cf_descriptors(&db_opts, path, vec![index_cf, metadata_cf])
             .map_err(|e| StoreError::RocksDB(e.into_string()))?;
+
         Ok(Self {
             log,
             db,
@@ -117,9 +126,53 @@ impl Indexer {
         }
     }
 
-    /// Returns offset in WAL. All record index are atomic-flushed to RocksDB.
-    pub(crate) fn flushed_wal_offset(&self) -> u64 {
-        0
+    /// Returns WAL checkpoint offset.
+    ///
+    /// Note we can call this method as frequently as we need as all operation is memory
+    pub(crate) fn get_wal_checkpoint(&self) -> Result<u64, StoreError> {
+        if let Some(metadata_cf) = self.db.cf_handle(METADATA_COLUMN_FAMILY) {
+            match self
+                .db
+                .get_cf(metadata_cf, WAL_CHECKPOINT)
+                .map_err(|e| StoreError::RocksDB(e.into_string()))?
+            {
+                Some(value) => {
+                    if value.len() < 8 {
+                        error!(self.log, "Value of wal_checkpoint is corrupted. Expecting 8 bytes in big endian, actual: {:?}", value);
+                        return Err(StoreError::DataCorrupted);
+                    }
+                    let mut cursor = Cursor::new(&value[..]);
+                    Ok(cursor.get_u64())
+                }
+                None => {
+                    info!(
+                        self.log,
+                        "No KV entry for wal_checkpoint yet. Default wal_checkpoint to 0"
+                    );
+                    Ok(0)
+                }
+            }
+        } else {
+            info!(
+                self.log,
+                "No column family metadata yet. Default wal_checkpoint to 0"
+            );
+            Ok(0)
+        }
+    }
+
+    pub(crate) fn advance_wal_checkpoint(&mut self, offset: u64) -> Result<(), StoreError> {
+        let cf = self
+            .db
+            .cf_handle(METADATA_COLUMN_FAMILY)
+            .ok_or(StoreError::RocksDB(
+                "Metadata should have been created as we have create_if_missing enabled".to_owned(),
+            ))?;
+        let mut buf = BytesMut::with_capacity(8);
+        buf.put_u64(offset);
+        self.db
+            .put_cf_opt(cf, WAL_CHECKPOINT, &buf[..], &self.write_opts)
+            .map_err(|e| StoreError::RocksDB(e.into_string()))
     }
 
     /// Flush record index in cache into RocksDB using atomic-flush.

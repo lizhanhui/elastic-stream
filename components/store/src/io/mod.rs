@@ -1209,7 +1209,7 @@ impl IO {
         let offset_manager = Rc::clone(&io.borrow().wal_offset_manager);
         let indexer = Indexer::new(log.clone(), "/tmp/rocksdb", offset_manager)?;
         io.borrow_mut().load()?;
-        let pos = indexer.flushed_wal_offset();
+        let pos = indexer.get_wal_checkpoint()?;
         io.borrow_mut().recover(pos)?;
 
         let min_preallocated_segment_files = io.borrow().options.min_preallocated_segment_files;
