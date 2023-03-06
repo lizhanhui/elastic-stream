@@ -28,7 +28,6 @@ type Handler interface {
 
 // Server is an SBP server
 type Server struct {
-
 	// IdleTimeout specifies how long until idle clients should be
 	// closed with a GOAWAY frame. PING frames are not considered
 	// activity for the purposes of IdleTimeout.

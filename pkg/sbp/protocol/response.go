@@ -1,7 +1,7 @@
 package protocol
 
 import (
-	"github.com/AutoMQ/placement-manager/pkg/sbp/format"
+	"github.com/AutoMQ/placement-manager/pkg/sbp/codec/format"
 )
 
 // Response is an SBP response

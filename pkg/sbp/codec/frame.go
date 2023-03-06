@@ -12,8 +12,8 @@ import (
 	"github.com/pkg/errors"
 	"go.uber.org/zap"
 
-	"github.com/AutoMQ/placement-manager/pkg/sbp/format"
-	"github.com/AutoMQ/placement-manager/pkg/sbp/operation"
+	"github.com/AutoMQ/placement-manager/pkg/sbp/codec/format"
+	"github.com/AutoMQ/placement-manager/pkg/sbp/codec/operation"
 )
 
 const (

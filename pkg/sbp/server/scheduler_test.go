@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/AutoMQ/placement-manager/pkg/sbp/codec"
-	"github.com/AutoMQ/placement-manager/pkg/sbp/operation"
+	"github.com/AutoMQ/placement-manager/pkg/sbp/codec/operation"
 )
 
 func TestWriteScheduler(t *testing.T) {
