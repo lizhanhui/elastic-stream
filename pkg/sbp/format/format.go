@@ -8,16 +8,15 @@ const (
 )
 
 var (
-	_flatBuffer  = Format{flatBuffer, newFlatBufferFormatter()}
-	_protoBuffer = Format{protoBuffer, &unknownFormatter{}}
-	_json        = Format{json, &unknownFormatter{}}
-	_unknown     = Format{unknown, &unknownFormatter{}}
+	_flatBuffer  = Format{flatBuffer}
+	_protoBuffer = Format{protoBuffer}
+	_json        = Format{json}
+	_unknown     = Format{unknown}
 )
 
 // Format is enumeration of Frame.HeaderFmt
 type Format struct {
-	code      uint8
-	formatter Formatter
+	code uint8
 }
 
 // NewFormat new a format with code
@@ -32,11 +31,6 @@ func NewFormat(code uint8) Format {
 	default:
 		return _unknown
 	}
-}
-
-// Formatter returns the formatter of this format
-func (f Format) Formatter() Formatter {
-	return f.formatter
 }
 
 // String implements fmt.Stringer
@@ -76,11 +70,4 @@ func ProtoBuffer() Format {
 // JSON serializes and deserializes the header using "encoding/json"
 func JSON() Format {
 	return _json
-}
-
-type Formatter interface {
-	MarshalListRangeRequest(*ListRangeRequest) ([]byte, error)
-	UnmarshalListRangeRequest([]byte, *ListRangeRequest) error
-	MarshalListRangeResponse(*ListRangeResponse) ([]byte, error)
-	UnmarshalListRangeResponse([]byte, *ListRangeResponse) error
 }

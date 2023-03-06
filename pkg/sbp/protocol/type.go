@@ -1,10 +1,16 @@
-package format
+package protocol
 
+// ErrorCode is the error code of a response
 type ErrorCode uint16
 
 const (
-	None           ErrorCode = 0
-	Unknown        ErrorCode = 1
+	// None means no error
+	None ErrorCode = 0
+
+	// Unknown means unexpected server error
+	Unknown ErrorCode = 1
+
+	// InvalidRequest means the request is invalid
 	InvalidRequest ErrorCode = 2
 )
 
@@ -20,6 +26,7 @@ type RangeIndex uint32
 // RangeOffset is an offset in a range
 type RangeOffset uint64
 
+// ListRangesResult is part of the ListRangeRequest
 type ListRangesResult struct {
 	// The owner that the returned ranges belong to.
 	// Maybe a data node or a stream id.
@@ -48,11 +55,12 @@ type DataNode struct {
 	// The node id of the data node.
 	NodeID NodeID
 
-	// The advertise address of the data node, for client traffic from outside.
+	// The advertisement address of the data node, for client traffic from outside.
 	// The schema of the address is `host:port`, while host supports both domain name and IPv4/IPv6 address.
 	AdvertiseAddr string
 }
 
+// Range is a range in a stream
 type Range struct {
 	// The id of the stream
 	StreamID StreamID
@@ -75,6 +83,7 @@ type Range struct {
 	ReplicaNodes []ReplicaNode
 }
 
+// ReplicaNode is a replica node of a range
 type ReplicaNode struct {
 	DataNode  DataNode
 	IsPrimary bool
