@@ -632,12 +632,17 @@ impl IO {
             .map(|task| match task {
                 IoTask::Write(task) => {
                     debug_assert!(task.buffer.len() > 0);
-                    task.buffer.len() + 4 /* CRC */ + 3 /* Record Size */ + 1 /* Record Type */
+                    task.total_len() as usize
                 }
                 _ => 0,
             })
             .filter(|n| *n > 0)
             .collect();
+
+        if requirement.is_empty() {
+            return write_buf_list;
+        }
+
         let mut size = 0;
         unsafe { &mut *self.segments.get() }
             .iter()
@@ -645,10 +650,6 @@ impl IO {
             .filter(|segment| !segment.is_full())
             .rev()
             .for_each(|segment| {
-                if requirement.is_empty() {
-                    return;
-                }
-
                 let remaining = segment.remaining() as usize;
                 while let Some(n) = requirement.front() {
                     if size + n + segment::FOOTER_LENGTH as usize > remaining {
