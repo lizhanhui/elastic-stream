@@ -10,6 +10,17 @@ type Response interface {
 	Marshal(fmt format.Format) ([]byte, error)
 }
 
+// SystemErrorResponse is used to return the error code and error message if the system error flag of sbp is set.
+type SystemErrorResponse struct {
+	ErrorCode    ErrorCode
+	ErrorMessage string
+}
+
+//nolint:revive // EXC0012 comment already exists in interface
+func (se *SystemErrorResponse) Marshal(fmt format.Format) ([]byte, error) {
+	return getFormatter(fmt).marshalSystemErrorResponse(se)
+}
+
 // ListRangesResponse is a response to operation.ListRange
 type ListRangesResponse struct {
 	// The time in milliseconds to throttle the client, due to a quota violation or the server is too busy.
@@ -26,6 +37,6 @@ type ListRangesResponse struct {
 }
 
 //nolint:revive // EXC0012 comment already exists in interface
-func (l *ListRangesResponse) Marshal(fmt format.Format) ([]byte, error) {
-	return getFormatter(fmt).marshalListRangesResponse(l)
+func (lr *ListRangesResponse) Marshal(fmt format.Format) ([]byte, error) {
+	return getFormatter(fmt).marshalListRangesResponse(lr)
 }

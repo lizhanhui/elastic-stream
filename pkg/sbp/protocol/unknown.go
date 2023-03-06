@@ -8,6 +8,10 @@ type unknownFormatter struct{}
 
 var errUnsupported = errors.New("unsupported format")
 
+func (u unknownFormatter) marshalSystemErrorResponse(_ *SystemErrorResponse) ([]byte, error) {
+	return nil, errUnsupported
+}
+
 func (u unknownFormatter) unmarshalListRangesRequest(_ []byte, _ *ListRangesRequest) error {
 	return errUnsupported
 }

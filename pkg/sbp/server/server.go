@@ -19,13 +19,6 @@ var (
 	ErrServerClosed = errors.New("Server closed")
 )
 
-// Handler responds to a request
-type Handler interface {
-
-	// Heartbeat is used to keep clients alive
-	Heartbeat(clientID string)
-}
-
 // Server is an SBP server
 type Server struct {
 	// IdleTimeout specifies how long until idle clients should be

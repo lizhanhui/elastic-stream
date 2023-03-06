@@ -51,6 +51,23 @@ func (f *flatBufferFormatter) unmarshalRangeOwner(fbRangeOwner *rpcfb.RangeOwner
 	}
 }
 
+func (f *flatBufferFormatter) marshalSystemErrorResponse(response *SystemErrorResponse) ([]byte, error) {
+	builder := f.builderPool.Get().(*flatbuffers.Builder)
+	defer func() {
+		builder.Reset()
+		f.builderPool.Put(builder)
+	}()
+
+	errorMessage := builder.CreateString(response.ErrorMessage)
+
+	rpcfb.SystemErrorResponseStart(builder)
+	rpcfb.SystemErrorResponseAddErrorCode(builder, rpcfb.ErrorCode(response.ErrorCode))
+	rpcfb.SystemErrorResponseAddErrorMessage(builder, errorMessage)
+
+	builder.Finish(rpcfb.SystemErrorResponseEnd(builder))
+	return builder.FinishedBytes(), nil
+}
+
 func (f *flatBufferFormatter) marshalListRangesResponse(response *ListRangesResponse) ([]byte, error) {
 	builder := f.builderPool.Get().(*flatbuffers.Builder)
 	defer func() {
