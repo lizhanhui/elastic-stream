@@ -21,8 +21,8 @@ jobs:
       uses: actions/cache@v3
       with: 
         path: |
-          ~/.cargo
-          ~/.rustup
+          /data/.cargo
+          /data/.rustup
           /usr/local/bin/flatc
         key: ${{ runner.os }}-cargo
     - name: Install Deps
