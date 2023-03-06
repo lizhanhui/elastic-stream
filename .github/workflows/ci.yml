@@ -24,7 +24,10 @@ jobs:
       uses: actions/cache@v3
       with: 
         path: |
-          ~/.cargo
+          ~/.cargo/bin/
+          ~/.cargo/registry/index/
+          ~/.cargo/registry/cache/
+          ~/.cargo/git/db/
           ~/.rustup
           /usr/local/bin/flatc
         key: ${{ runner.os }}-cargo
