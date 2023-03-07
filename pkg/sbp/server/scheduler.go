@@ -1,4 +1,3 @@
-//nolint:unused
 package server
 
 import (
@@ -10,7 +9,7 @@ import (
 
 type frameQueue = queue.Queue[frameWriteRequest]
 
-// writeScheduler manages frames to be written in each streams
+// writeScheduler manages frames to be written in each stream
 // Methods are never called concurrently.
 type writeScheduler struct {
 	// Frames in ctrlQueue queue are control frames, and should be popped first.

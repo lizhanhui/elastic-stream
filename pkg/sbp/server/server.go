@@ -174,7 +174,7 @@ func (s *Server) newConn(rwc net.Conn) *conn {
 //
 // We store a pointer to interface in the map set, in case the
 // net.Listener is not comparable. This is safe because we only call
-// trackListener via Serve and can track+defer untrack the same
+// trackListener via Serve and can track+defer untracked the same
 // pointer to local variable there. We never need to compare a
 // Listener from another caller.
 //
@@ -251,8 +251,8 @@ func (s *Server) closeDoneChanLocked() {
 func (s *Server) closeListenersLocked() error {
 	var err error
 	for ln := range s.listeners {
-		if cerr := (*ln).Close(); cerr != nil && err == nil {
-			err = cerr
+		if cErr := (*ln).Close(); cErr != nil && err == nil {
+			err = cErr
 		}
 	}
 	return err

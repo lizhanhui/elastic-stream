@@ -36,7 +36,7 @@ type conn struct {
 	serveMsgCh       chan *serverMessage    // misc messages & code to send to / run on the serve loop
 
 	// Everything following is owned by the serve loop; use serveG.Check():
-	serveG              tphttp2.GoroutineLock // used to verify funcs are on serve()
+	serveG              tphttp2.GoroutineLock // used to verify func is on serve()
 	maxClientStreamID   uint32                // max ever seen from client, or 0 if there have been no client requests
 	streams             map[uint32]*stream
 	wScheduler          *writeScheduler // wScheduler manages frames to be written
@@ -191,7 +191,7 @@ func (c *conn) wroteFrame(res frameWriteResult) {
 // If a frame is already being written, nothing happens. This will be called again
 // when the frame is done being written.
 //
-// If a frame isn't being written and we need to send one, the best frame
+// If a frame isn't being written, and we need to send one, the best frame
 // to send is selected by conn.wScheduler.
 //
 // If a frame isn't being written and there's nothing else to send, we
@@ -404,12 +404,6 @@ var errChanPool = sync.Pool{
 func (c *conn) runHandlerAndWrite(frameCtx *codec.DataFrameContext, st *stream, act func() protocol.Response) {
 	logger := c.lg
 	c.serveG.CheckNotOn()
-	defer func() {
-		if r := recover(); r != nil {
-			logger.Error("panic serving", zap.Any("panic", r), zap.Stack("stack"))
-			// TODO handle panic in handler
-		}
-	}()
 
 	resp := c.runHandler(act)
 	header, err := resp.Marshal(frameCtx.HeaderFmt)
