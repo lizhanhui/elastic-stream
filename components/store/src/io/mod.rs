@@ -1347,48 +1347,63 @@ impl Drop for IO {
 mod tests {
     use bytes::BytesMut;
     use std::cell::RefCell;
-    use std::env;
     use std::error::Error;
     use std::fs::File;
     use std::path::{Path, PathBuf};
+    use std::{env, fs};
     use tokio::sync::oneshot;
     use uuid::Uuid;
 
     use super::task::{IoTask, WriteTask};
     use crate::io::segment::LogSegmentFile;
     use crate::io::DEFAULT_LOG_SEGMENT_FILE_SIZE;
-    use crate::option::WalPath;
     use crate::{error::StoreError, io::segment::Status};
 
-    fn create_io(wal_dir: WalPath) -> Result<super::IO, StoreError> {
+    fn create_io(store_dir: &Path) -> Result<super::IO, StoreError> {
         let mut options = super::Options::default();
         let logger = util::terminal_logger();
-        let path = Path::new(&wal_dir.path);
-        let parent = path.parent().unwrap();
-        let buf = parent.join("rocksdb");
-        options.metadata_path = buf
+        let store_path = store_dir.join("rocksdb");
+        if !store_path.exists() {
+            fs::create_dir_all(store_path.as_path()).map_err(|e| StoreError::IO(e))?;
+        }
+
+        options.metadata_path = store_path
             .into_os_string()
             .into_string()
             .map_err(|_e| StoreError::Configuration("Bad path".to_owned()))?;
 
-        options.add_wal_path(wal_dir);
+        let wal_dir = store_dir.join("wal");
+        if !wal_dir.exists() {
+            fs::create_dir_all(wal_dir.as_path()).map_err(|e| StoreError::IO(e))?;
+        }
+        let wal_path = super::WalPath::new(wal_dir.to_str().unwrap(), 1234)?;
+        options.add_wal_path(wal_path);
         super::IO::new(&mut options, logger.clone())
     }
 
-    fn random_wal_dir() -> Result<PathBuf, StoreError> {
+    fn random_store_dir() -> Result<PathBuf, StoreError> {
         let uuid = Uuid::new_v4();
         let mut wal_dir = env::temp_dir();
         wal_dir.push(uuid.simple().to_string());
-        wal_dir.push("wal");
         let wal_path = wal_dir.as_path();
-        std::fs::create_dir_all(wal_path)?;
+        fs::create_dir_all(wal_path)?;
         Ok(wal_dir)
     }
 
     #[test]
     fn test_load_wals() -> Result<(), StoreError> {
-        let wal_dir = random_wal_dir()?;
+        let log = util::terminal_logger();
+        let store_dir = random_store_dir()?;
+        let store_dir = store_dir.as_path();
+        let _store_dir_guard = util::DirectoryRemovalGuard::new(log, store_dir);
+
         // Prepare log segment files
+        let wal_dir = store_dir.join("wal");
+        let wal_dir = wal_dir.as_path();
+        if !wal_dir.exists() {
+            fs::create_dir_all(wal_dir)?;
+        }
+
         let files: Vec<_> = (0..10)
             .into_iter()
             .map(|i| {
@@ -1398,11 +1413,8 @@ mod tests {
             .flatten()
             .collect();
         assert_eq!(10, files.len());
-        let log = util::terminal_logger();
-        let _wal_dir_guard = util::DirectoryRemovalGuard::new(log, wal_dir.as_path());
-        let wal_dir = super::WalPath::new(wal_dir.to_str().unwrap(), 1234)?;
 
-        let mut io = create_io(wal_dir)?;
+        let mut io = create_io(store_dir)?;
         io.load_wal_segment_files()?;
         assert_eq!(files.len(), io.segments.get_mut().len());
         Ok(())
@@ -1410,10 +1422,11 @@ mod tests {
 
     #[test]
     fn test_alloc_segment() -> Result<(), StoreError> {
-        let wal_dir = random_wal_dir()?;
         let log = util::terminal_logger();
-        let _wal_dir_guard = util::DirectoryRemovalGuard::new(log, wal_dir.as_path());
-        let mut io = create_io(super::WalPath::new(wal_dir.to_str().unwrap(), 1234)?)?;
+        let store_dir = random_store_dir()?;
+        let store_dir = store_dir.as_path();
+        let _store_dir_guard = util::DirectoryRemovalGuard::new(log, store_dir);
+        let mut io = create_io(store_dir)?;
         io.alloc_segment()?;
         assert_eq!(1, io.segments.get_mut().len());
 
@@ -1427,10 +1440,11 @@ mod tests {
 
     #[test]
     fn test_writable_segment_count() -> Result<(), StoreError> {
-        let wal_dir = random_wal_dir()?;
         let log = util::terminal_logger();
-        let _wal_dir_guard = util::DirectoryRemovalGuard::new(log, wal_dir.as_path());
-        let mut io = create_io(super::WalPath::new(wal_dir.to_str().unwrap(), 1234)?)?;
+        let store_dir = random_store_dir()?;
+        let store_dir = store_dir.as_path();
+        let _store_dir_guard = util::DirectoryRemovalGuard::new(log, store_dir);
+        let mut io = create_io(store_dir)?;
         io.alloc_segment()?;
         assert_eq!(1, io.writable_segment_count());
         io.alloc_segment()?;
@@ -1444,10 +1458,11 @@ mod tests {
 
     #[test]
     fn test_segment_file_of() -> Result<(), StoreError> {
-        let wal_dir = random_wal_dir()?;
         let log = util::terminal_logger();
-        let _wal_dir_guard = util::DirectoryRemovalGuard::new(log, wal_dir.as_path());
-        let mut io = create_io(super::WalPath::new(wal_dir.to_str().unwrap(), 1234)?)?;
+        let store_dir = random_store_dir()?;
+        let store_dir = store_dir.as_path();
+        let _store_dir_guard = util::DirectoryRemovalGuard::new(log, store_dir);
+        let mut io = create_io(store_dir)?;
         io.alloc_segment()?;
         io.alloc_segment()?;
         assert_eq!(2, io.segments.get_mut().len());
@@ -1471,10 +1486,11 @@ mod tests {
 
     #[test]
     fn test_receive_io_tasks() -> Result<(), StoreError> {
-        let wal_dir = random_wal_dir()?;
         let log = util::terminal_logger();
-        let _wal_dir_guard = util::DirectoryRemovalGuard::new(log, wal_dir.as_path());
-        let mut io = create_io(super::WalPath::new(wal_dir.to_str().unwrap(), 1234)?)?;
+        let store_dir = random_store_dir()?;
+        let store_dir = store_dir.as_path();
+        let _store_dir_guard = util::DirectoryRemovalGuard::new(log, store_dir);
+        let mut io = create_io(store_dir)?;
         let sender = io.sender.take().unwrap();
         let mut buffer = BytesMut::with_capacity(128);
         buffer.resize(128, 65);
@@ -1514,10 +1530,11 @@ mod tests {
 
     #[test]
     fn test_build_sqe() -> Result<(), StoreError> {
-        let wal_dir = random_wal_dir()?;
         let log = util::terminal_logger();
-        let _wal_dir_guard = util::DirectoryRemovalGuard::new(log, wal_dir.as_path());
-        let mut io = create_io(super::WalPath::new(wal_dir.to_str().unwrap(), 1234)?)?;
+        let store_dir = random_store_dir()?;
+        let store_dir = store_dir.as_path();
+        let _store_dir_guard = util::DirectoryRemovalGuard::new(log, store_dir);
+        let mut io = create_io(store_dir)?;
 
         let segment = io.alloc_segment()?;
         segment.open()?;
@@ -1552,10 +1569,11 @@ mod tests {
 
     #[test]
     fn test_delete_segments() -> Result<(), Box<dyn Error>> {
-        let wal_dir = random_wal_dir()?;
         let log = util::terminal_logger();
-        let _wal_dir_guard = util::DirectoryRemovalGuard::new(log, wal_dir.as_path());
-        let mut io = create_io(super::WalPath::new(wal_dir.to_str().unwrap(), 1234)?)?;
+        let store_dir = random_store_dir()?;
+        let store_dir = store_dir.as_path();
+        let _store_dir_guard = util::DirectoryRemovalGuard::new(log, store_dir);
+        let mut io = create_io(store_dir)?;
         io.alloc_segment()?;
         assert_eq!(1, io.segments.get_mut().len());
         let offsets = io
@@ -1575,10 +1593,11 @@ mod tests {
 
     #[test]
     fn test_calculate_write_buffers() -> Result<(), StoreError> {
-        let wal_dir = random_wal_dir()?;
         let log = util::terminal_logger();
-        let _wal_dir_guard = util::DirectoryRemovalGuard::new(log, wal_dir.as_path());
-        let mut io = create_io(super::WalPath::new(wal_dir.to_str().unwrap(), 1234)?)?;
+        let store_dir = random_store_dir()?;
+        let store_dir = store_dir.as_path();
+        let _store_dir_guard = util::DirectoryRemovalGuard::new(log, store_dir);
+        let mut io = create_io(store_dir)?;
 
         (0..3)
             .into_iter()
@@ -1644,18 +1663,20 @@ mod tests {
     #[test]
     fn test_run() -> Result<(), StoreError> {
         let log = util::terminal_logger();
+
         let (tx, rx) = oneshot::channel();
         let handle = std::thread::spawn(move || {
-            let wal_dir = random_wal_dir().unwrap();
-            let _wal_dir_guard = util::DirectoryRemovalGuard::new(log, wal_dir.as_path());
-            let mut io =
-                create_io(super::WalPath::new(wal_dir.to_str().unwrap(), 1234).unwrap()).unwrap();
+            let store_dir = random_store_dir().unwrap();
+            let store_dir = store_dir.as_path();
+            let _store_dir_guard = util::DirectoryRemovalGuard::new(log, store_dir);
+            let mut io = create_io(store_dir).unwrap();
+
             let sender = io
                 .sender
                 .take()
                 .ok_or(StoreError::Configuration("IO channel".to_owned()))
                 .unwrap();
-            tx.send(sender);
+            let _ = tx.send(sender);
             let io = RefCell::new(io);
 
             let _ = super::IO::run(io);
