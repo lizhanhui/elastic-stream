@@ -45,7 +45,7 @@ slog-async = "2.7"
 slog-term = "2.9"
 
 # RocksDB
-rocksdb = { version = "0.20", default-features = false, features = ["lz4"] }
+rocksdb = { version = "0.20", default-features = false, features = ["jemalloc"] }
 
 pprof = { version = "0.11", features = ["flamegraph"] }
 

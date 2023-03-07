@@ -369,6 +369,7 @@ impl LocalRangeManager for Indexer {
 #[cfg(test)]
 mod tests {
     use std::{
+        env,
         error::Error,
         ffi::CString,
         path::Path,
@@ -382,6 +383,7 @@ mod tests {
         BlockBasedOptions, ColumnFamilyDescriptor, DBCompressionType, IteratorMode, Options,
         ReadOptions, WriteOptions, DB,
     };
+    use uuid::Uuid;
 
     use super::{compaction, MinOffset};
 
@@ -410,10 +412,12 @@ mod tests {
     #[test]
     fn test_rocksdb_setup() -> Result<(), Box<dyn Error>> {
         let log = util::terminal_logger();
-        let path = "/tmp/rocksdb";
-        let path = Path::new(path);
-        std::fs::create_dir_all(path)?;
-        let _dir_guard = util::DirectoryRemovalGuard::new(&path);
+        let uuid = Uuid::new_v4();
+        let mut wal_dir = env::temp_dir();
+        wal_dir.push(uuid.simple().to_string());
+        let db_path = wal_dir.as_path();
+        std::fs::create_dir_all(db_path)?;
+        let _dir_guard = util::DirectoryRemovalGuard::new(&db_path);
 
         let mut cf_opts = Options::default();
         cf_opts.enable_statistics();
@@ -458,7 +462,7 @@ mod tests {
         write_opts.disable_wal(true);
         write_opts.set_sync(false);
 
-        let db = DB::open_cf_descriptors(&db_opts, path, vec![cf])?;
+        let db = DB::open_cf_descriptors(&db_opts, db_path, vec![cf])?;
         let cf = db.cf_handle("index").unwrap();
 
         db.put_cf_opt(cf, "abc", "def", &write_opts)?;
