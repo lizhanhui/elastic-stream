@@ -16,6 +16,7 @@ package server
 
 import (
 	"context"
+	"net"
 	"net/http"
 	"path"
 	"strconv"
@@ -31,6 +32,7 @@ import (
 	"go.etcd.io/etcd/server/v3/etcdserver"
 	"go.uber.org/zap"
 
+	sbpServer "github.com/AutoMQ/placement-manager/pkg/sbp/server"
 	"github.com/AutoMQ/placement-manager/pkg/server/config"
 	"github.com/AutoMQ/placement-manager/pkg/server/member"
 	"github.com/AutoMQ/placement-manager/pkg/util/etcdutil"
@@ -40,9 +42,10 @@ import (
 )
 
 const (
-	_etcdTimeout        = time.Second * 3       // etcd DialTimeout
-	_etcdStartTimeout   = time.Minute * 5       // timeout when start etcd
-	_leaderTickInterval = 50 * time.Millisecond // check leader loop interval
+	_etcdTimeout              = time.Second * 3       // etcd DialTimeout
+	_etcdStartTimeout         = time.Minute * 5       // timeout when start etcd
+	_leaderTickInterval       = 50 * time.Millisecond // check leader loop interval
+	_shutdownSbpServerTimeout = time.Second * 5       // timeout when shutdown sbp server
 
 	_rootPathPrefix = "/placement-manager"            // prefix of Server.rootPath
 	_clusterIDPath  = "/placement-manager/cluster_id" // path of Server.clusterID
@@ -54,15 +57,17 @@ type Server struct {
 
 	cfg *config.Config // Server configuration
 
-	ctx        context.Context // main context
-	loopCtx    context.Context // loop context
-	loopCancel func()          // loop cancel
-	loopWg     sync.WaitGroup  // loop wait group
+	ctx        context.Context    // main context
+	loopCtx    context.Context    // loop context
+	loopCancel context.CancelFunc // loop cancel
+	loopWg     sync.WaitGroup     // loop wait group
 
 	member    *member.Member   // for leader election
 	client    *clientv3.Client // etcd client
 	clusterID uint64           // pm cluster id
 	rootPath  string           // root path in etcd
+
+	sbpServer *sbpServer.Server // sbp server
 
 	lg *zap.Logger // logger
 }
@@ -162,10 +167,34 @@ func (s *Server) startServer() error {
 	s.rootPath = path.Join(_rootPathPrefix, strconv.FormatUint(s.clusterID, 10))
 	s.member.Init(s.cfg, s.Name(), s.rootPath)
 
+	// TODO set address in config
+	sbpAddr := "127.0.0.1:2378"
+	listener, err := net.Listen("tcp", sbpAddr)
+	if err != nil {
+		return errors.Wrapf(err, "listen on %s", sbpAddr)
+	}
+	go s.serveSbp(listener)
+
 	if s.started.Swap(true) {
 		logger.Warn("server already started")
 	}
 	return nil
+}
+
+func (s *Server) serveSbp(listener net.Listener) {
+	logger := s.lg.With(zap.String("listener-addr", listener.Addr().String()))
+
+	ctx, cancel := context.WithCancel(s.ctx)
+	defer cancel()
+
+	// TODO implement handler
+	sbpSvr := sbpServer.NewServer(ctx, nil, logger)
+	s.sbpServer = sbpSvr
+
+	logger.Info("sbp server started")
+	if err := sbpSvr.Serve(listener); err != nil && err != sbpServer.ErrServerClosed {
+		logger.Error("sbp server failed", zap.Error(err))
+	}
 }
 
 func (s *Server) initClusterID() error {
@@ -360,6 +389,7 @@ func (s *Server) Close() {
 	logger.Info("closing server")
 
 	s.stopServerLoop()
+	s.stopSbpServer()
 
 	if s.client != nil {
 		if err := s.client.Close(); err != nil {
@@ -377,6 +407,12 @@ func (s *Server) Close() {
 func (s *Server) stopServerLoop() {
 	s.loopCancel()
 	s.loopWg.Wait()
+}
+
+func (s *Server) stopSbpServer() {
+	ctx, cancel := context.WithTimeout(context.Background(), _shutdownSbpServerTimeout)
+	defer cancel()
+	_ = s.sbpServer.Shutdown(ctx)
 }
 
 // checkClusterID checks etcd cluster ID, returns an error if mismatched.
