@@ -12,6 +12,10 @@ const (
 
 	// InvalidRequest means the request is invalid
 	InvalidRequest ErrorCode = 2
+
+	// InternalError means the server has an internal error
+	// TODO add to fbs
+	InternalError ErrorCode = 3
 )
 
 // TimeoutMs is the timeout in request in milliseconds

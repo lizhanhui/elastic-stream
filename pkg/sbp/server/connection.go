@@ -379,7 +379,7 @@ func (c *conn) processDataFrame(f *codec.DataFrame, st *stream) error {
 		return errors.Wrap(err, "unmarshal frame header")
 	}
 	// TODO if there are too many handlers running, put the request into a priority queue (or put important requests into a priority queue)
-	go c.runHandler(f.Context(), st, c.server.handler, req, action.act)
+	go c.runHandlerAndWrite(f.Context(), st, func() protocol.Response { return action.act(c.server.handler, req) })
 	return nil
 }
 
@@ -387,7 +387,7 @@ var errChanPool = sync.Pool{
 	New: func() interface{} { return make(chan error, 1) },
 }
 
-func (c *conn) runHandler(frameCtx *codec.DataFrameContext, st *stream, handler Handler, req protocol.Request, act func(Handler, protocol.Request) protocol.Response) {
+func (c *conn) runHandlerAndWrite(frameCtx *codec.DataFrameContext, st *stream, act func() protocol.Response) {
 	logger := c.lg
 	c.serveG.CheckNotOn()
 	defer func() {
@@ -397,7 +397,7 @@ func (c *conn) runHandler(frameCtx *codec.DataFrameContext, st *stream, handler 
 		}
 	}()
 
-	resp := act(handler, req)
+	resp := c.runHandler(act)
 	header, err := resp.Marshal(frameCtx.HeaderFmt)
 	if err != nil {
 		// TODO error is always nil now, handle it later
@@ -429,6 +429,26 @@ func (c *conn) runHandler(frameCtx *codec.DataFrameContext, st *stream, handler 
 		// TODO error is "frame too large" or "connection write failed", handle it later
 		logger.Error("failed to write response frame", zap.Error(err))
 	}
+}
+
+func (c *conn) runHandler(act func() protocol.Response) (resp protocol.Response) {
+	logger := c.lg
+	didPanic := true
+	defer func() {
+		if didPanic {
+			e := recover()
+			resp = &protocol.SystemErrorResponse{
+				ErrorCode:    protocol.InternalError,
+				ErrorMessage: "handler panic",
+			}
+			if e != nil {
+				logger.Error("panic serving", zap.Reflect("panic", e), zap.Stack("stack"))
+			}
+		}
+	}()
+	resp = act()
+	didPanic = false
+	return
 }
 
 // writeFrameFromHandler sends wr to conn.wantWriteFrameCh, but aborts
