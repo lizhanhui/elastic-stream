@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/bytedance/gopkg/lang/mcache"
 	"github.com/pkg/errors"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -171,6 +172,10 @@ func (c *conn) wroteFrame(res frameWriteResult) {
 	c.writingFrame = false
 	c.writingFrameAsync = false
 
+	if res.wr.free != nil {
+		res.wr.free()
+	}
+
 	wr := res.wr
 	if wr.endStream {
 		st := wr.stream
@@ -268,7 +273,9 @@ func (c *conn) writeFrameAsync(wr frameWriteRequest) {
 func (c *conn) processFrameFromReader(res frameReadResult) bool {
 	logger := c.lg
 	c.serveG.Check()
-	defer res.free()
+	if res.free != nil {
+		defer res.free()
+	}
 
 	err := res.err
 	if err != nil {
@@ -341,8 +348,10 @@ func (c *conn) processFrame(f codec.Frame) error {
 
 func (c *conn) processPing(f *codec.PingFrame, st *stream) error {
 	c.serveG.Check()
+	outFrame, free := codec.NewPingFrameResp(f)
 	c.writeFrame(frameWriteRequest{
-		f:         codec.NewPingFrameResp(f),
+		f:         outFrame,
+		free:      free,
 		stream:    st,
 		endStream: true,
 	})
@@ -359,8 +368,10 @@ func (c *conn) processGoAway(f *codec.GoAwayFrame, _ *stream) error {
 
 func (c *conn) processHeartbeat(f *codec.HeartbeatFrame, st *stream) error {
 	c.serveG.Check()
+	outFrame, free := codec.NewHeartBeatFrameResp(f)
 	c.writeFrame(frameWriteRequest{
-		f:         codec.NewHeartBeatFrameResp(f),
+		f:         outFrame,
+		free:      free,
 		stream:    st,
 		endStream: true,
 	})
@@ -409,9 +420,14 @@ func (c *conn) runHandlerAndWrite(frameCtx *codec.DataFrameContext, st *stream, 
 	}
 
 	errCh := errChanPool.Get().(chan error)
+	var free func()
+	if header != nil {
+		free = func() { mcache.Free(header) }
+	}
 
 	err = c.writeFrameFromHandler(frameWriteRequest{
 		f:         codec.NewDataFrameResp(frameCtx, header, nil, resp.IsEnd()),
+		free:      free,
 		stream:    st,
 		done:      errCh,
 		endStream: resp.IsEnd(),

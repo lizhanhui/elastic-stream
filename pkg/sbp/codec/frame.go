@@ -172,24 +172,24 @@ func (fr *Framer) ReadFrame() (Frame, func(), error) {
 	_, err := io.ReadFull(fr.r, buf)
 	if err != nil {
 		logger.Error("failed to read fixed header", zap.Error(err))
-		return &baseFrame{}, func() {}, errors.Wrap(err, "read fixed header")
+		return &baseFrame{}, nil, errors.Wrap(err, "read fixed header")
 	}
 	headerBuf := bytes.NewBuffer(buf)
 
 	frameLen := binary.BigEndian.Uint32(headerBuf.Next(4))
 	if frameLen < _minFrameLen {
 		logger.Error("illegal frame length, fewer than minimum", zap.Uint32("frame-length", frameLen), zap.Uint32("min-length", _minFrameLen))
-		return &baseFrame{}, func() {}, errors.New("frame too small")
+		return &baseFrame{}, nil, errors.New("frame too small")
 	}
 	if frameLen > _maxFrameLen {
 		logger.Error("illegal frame length, greater than maximum", zap.Uint32("frame-length", frameLen), zap.Uint32("max-length", _maxFrameLen))
-		return &baseFrame{}, func() {}, errors.New("frame too large")
+		return &baseFrame{}, nil, errors.New("frame too large")
 	}
 
 	magicCode := headerBuf.Next(1)[0]
 	if magicCode != _magicCode {
 		logger.Error("illegal magic code", zap.Uint8("expected", _magicCode), zap.Uint8("got", magicCode))
-		return &baseFrame{}, func() {}, errors.New("magic code mismatch")
+		return &baseFrame{}, nil, errors.New("magic code mismatch")
 	}
 
 	opCode := binary.BigEndian.Uint16(headerBuf.Next(2))
@@ -205,7 +205,7 @@ func (fr *Framer) ReadFrame() (Frame, func(), error) {
 	if err != nil {
 		logger.Error("failed to read extended header and payload", zap.Error(err))
 		free()
-		return &baseFrame{}, func() {}, errors.Wrap(err, "read extended header and payload")
+		return &baseFrame{}, nil, errors.Wrap(err, "read extended header and payload")
 	}
 
 	header := func() []byte {
@@ -226,13 +226,13 @@ func (fr *Framer) ReadFrame() (Frame, func(), error) {
 	if err != nil {
 		logger.Error("failed to read payload checksum", zap.Error(err))
 		free()
-		return &baseFrame{}, func() {}, errors.Wrap(err, "read payload checksum")
+		return &baseFrame{}, nil, errors.Wrap(err, "read payload checksum")
 	}
 	if payloadLen > 0 {
 		if ckm := crc32.ChecksumIEEE(payload); ckm != checksum {
 			logger.Error("payload checksum mismatch", zap.Uint32("expected", ckm), zap.Uint32("got", checksum))
 			free()
-			return &baseFrame{}, func() {}, errors.New("payload checksum mismatch")
+			return &baseFrame{}, nil, errors.New("payload checksum mismatch")
 		}
 	}
 
@@ -338,18 +338,22 @@ type PingFrame struct {
 }
 
 // NewPingFrameResp creates a pong with the provided ping
-func NewPingFrameResp(ping *PingFrame) *PingFrame {
+func NewPingFrameResp(ping *PingFrame) (*PingFrame, func()) {
+	buf := mcache.Malloc(len(ping.Header) + len(ping.Payload))
+	free := func() {
+		mcache.Free(buf)
+	}
 	pong := &PingFrame{baseFrame{
 		OpCode:    operation.Ping(),
 		Flag:      FlagResponse | FlagResponseEnd,
 		StreamID:  ping.StreamID,
 		HeaderFmt: ping.HeaderFmt,
-		Header:    make([]byte, len(ping.Header)),
-		Payload:   make([]byte, len(ping.Payload)),
+		Header:    buf[:len(ping.Header)],
+		Payload:   buf[len(ping.Header):],
 	}}
 	copy(pong.Header, ping.Header)
 	copy(pong.Payload, ping.Payload)
-	return pong
+	return pong, free
 }
 
 // GoAwayFrame is used to initiate the shutdown of a connection or to signal serious error conditions
@@ -376,16 +380,20 @@ type HeartbeatFrame struct {
 }
 
 // NewHeartBeatFrameResp creates an out heartbeat with the in heartbeat
-func NewHeartBeatFrameResp(in *HeartbeatFrame) *HeartbeatFrame {
+func NewHeartBeatFrameResp(in *HeartbeatFrame) (*HeartbeatFrame, func()) {
+	buf := mcache.Malloc(len(in.Header))
+	free := func() {
+		mcache.Free(buf)
+	}
 	out := &HeartbeatFrame{baseFrame{
 		OpCode:    operation.Heartbeat(),
 		Flag:      FlagResponse | FlagResponseEnd,
 		StreamID:  in.StreamID,
 		HeaderFmt: in.HeaderFmt,
-		Header:    make([]byte, len(in.Header)),
+		Header:    buf,
 	}}
 	copy(in.Header, out.Header)
-	return out
+	return out, free
 }
 
 // DataFrame is used to handle other user-defined requests and responses

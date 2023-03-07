@@ -91,6 +91,9 @@ func (ws *writeScheduler) deleteQueue(q *frameQueue, streamID uint32) {
 type frameWriteRequest struct {
 	f codec.Frame
 
+	// free should be called once the frame is no longer needed
+	free func()
+
 	// stream is the stream on which this frame will be written.
 	stream *stream
 
