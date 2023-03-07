@@ -136,7 +136,7 @@ table RangeOwner {
 table DataNode {
     // The node id of the data node.
     node_id: int32 (id: 0);
-    
+
     // The advertise address of the data node, for client traffic from outside.
     // The schema of the address is `host:port`, while host supports both domain name and IPv4/IPv6 address.
     advertise_addr: string (id: 1);
@@ -183,7 +183,7 @@ table Range {
     // The end offset of the range.
     // Omited if the range is open.
     end_offset: int64 (id: 3);
-    // The next writable offset for incoming records of the range. 
+    // The next writable offset for incoming records of the range.
     // It's a snapshot of the next offset of the range, and it may be changed after the response is sent.
     next_offset: int64 (id: 4);
     // The set of all nodes that host this range.
@@ -415,9 +415,9 @@ table DescribeStreamResult {
 // The data node stores the records in the stream in a log structure,
 // and the records are appended to the end of the log.
 // Consider the length of disk is limited, the data node will delete the records to recycling the disk space.
-// Once the deletion occurs, some ranges should be trimmed to avoid the clients to read the deleted records. 
+// Once the deletion occurs, some ranges should be trimmed to avoid the clients to read the deleted records.
 
-// The data node will send the TRIM_STREAMS frame to the PM to trim the stream with a trim offset. 
+// The data node will send the TRIM_STREAMS frame to the PM to trim the stream with a trim offset.
 // The PM will delete the ranges whose end offset is less than the trim offset
 // and shrink the ranges whose start offset is less than the trim offset.
 
