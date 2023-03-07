@@ -15,6 +15,7 @@ import (
 
 	"github.com/AutoMQ/placement-manager/pkg/sbp/codec"
 	"github.com/AutoMQ/placement-manager/pkg/sbp/protocol"
+	"github.com/AutoMQ/placement-manager/pkg/util/logutil"
 	tphttp2 "github.com/AutoMQ/placement-manager/third_party/forked/golang/net/http2"
 )
 
@@ -58,6 +59,7 @@ type conn struct {
 func (c *conn) serve() {
 	c.serveG.Check()
 	logger := c.lg
+	defer logutil.LogPanic(logger)
 	defer c.close()
 
 	logger.Info("start to serve connection")
@@ -462,21 +464,27 @@ func (c *conn) newStream(id uint32) *stream {
 
 func (c *conn) closeStream(st *stream) {
 	_ = st
-	// TODO
+	st.state = stateClosed
+	delete(c.streams, st.id)
 	if len(c.streams) == 0 && c.idleTimeout != 0 {
 		c.idleTimer.Reset(c.idleTimeout)
 	}
+	c.wScheduler.CloseStream(st.id)
 }
 
 func (c *conn) close() {
+	logger := c.lg
+	logger.Info("closing connection")
 	close(c.doneServing)
 	if t := c.shutdownTimer; t != nil {
 		t.Stop()
 	}
-	// TODO close streams
+	for _, st := range c.streams {
+		c.closeStream(st)
+	}
 	_ = c.rwc.Close()
 	c.cancelCtx()
-	// TODO deal with panics
+	logger.Info("connection closed")
 }
 
 // After sending GOAWAY with an error code (non-graceful shutdown), the

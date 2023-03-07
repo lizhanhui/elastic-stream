@@ -206,7 +206,7 @@ func (s *Server) startLoop(ctx context.Context) {
 
 func (s *Server) leaderLoop() {
 	logger := s.lg
-	defer logutil.LogPanic(logger)
+	defer logutil.LogPanicAndExit(logger)
 	defer s.loopWg.Done()
 
 	for {
@@ -320,7 +320,7 @@ func (s *Server) reloadConfigFromKV() error {
 
 func (s *Server) etcdLeaderLoop() {
 	logger := s.lg
-	defer logutil.LogPanic(logger)
+	defer logutil.LogPanicAndExit(logger)
 	defer s.loopWg.Done()
 
 	ctx, cancel := context.WithCancel(s.loopCtx)
