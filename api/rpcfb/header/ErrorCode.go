@@ -7,21 +7,21 @@ import "strconv"
 type ErrorCode int16
 
 const (
-	ErrorCodeNone            ErrorCode = 0
-	ErrorCodeUnknown         ErrorCode = 1
-	ErrorCodeInvalid_Request ErrorCode = 2
+	ErrorCodeNONE            ErrorCode = 0
+	ErrorCodeUNKNOWN         ErrorCode = 1
+	ErrorCodeINVALID_REQUEST ErrorCode = 2
 )
 
 var EnumNamesErrorCode = map[ErrorCode]string{
-	ErrorCodeNone:            "None",
-	ErrorCodeUnknown:         "Unknown",
-	ErrorCodeInvalid_Request: "Invalid_Request",
+	ErrorCodeNONE:            "NONE",
+	ErrorCodeUNKNOWN:         "UNKNOWN",
+	ErrorCodeINVALID_REQUEST: "INVALID_REQUEST",
 }
 
 var EnumValuesErrorCode = map[string]ErrorCode{
-	"None":            ErrorCodeNone,
-	"Unknown":         ErrorCodeUnknown,
-	"Invalid_Request": ErrorCodeInvalid_Request,
+	"NONE":            ErrorCodeNONE,
+	"UNKNOWN":         ErrorCodeUNKNOWN,
+	"INVALID_REQUEST": ErrorCodeINVALID_REQUEST,
 }
 
 func (v ErrorCode) String() string {

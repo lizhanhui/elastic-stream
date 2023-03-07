@@ -65,8 +65,28 @@ func (rcv *UpdateStreamsResponse) UpdateResponsesLength() int {
 	return 0
 }
 
+func (rcv *UpdateStreamsResponse) ErrorCode() ErrorCode {
+	o := flatbuffers.UOffsetT(rcv._tab.Offset(8))
+	if o != 0 {
+		return ErrorCode(rcv._tab.GetInt16(o + rcv._tab.Pos))
+	}
+	return 0
+}
+
+func (rcv *UpdateStreamsResponse) MutateErrorCode(n ErrorCode) bool {
+	return rcv._tab.MutateInt16Slot(8, int16(n))
+}
+
+func (rcv *UpdateStreamsResponse) ErrorMessage() []byte {
+	o := flatbuffers.UOffsetT(rcv._tab.Offset(10))
+	if o != 0 {
+		return rcv._tab.ByteVector(o + rcv._tab.Pos)
+	}
+	return nil
+}
+
 func UpdateStreamsResponseStart(builder *flatbuffers.Builder) {
-	builder.StartObject(2)
+	builder.StartObject(4)
 }
 func UpdateStreamsResponseAddThrottleTimeMs(builder *flatbuffers.Builder, throttleTimeMs int32) {
 	builder.PrependInt32Slot(0, throttleTimeMs, 0)
@@ -76,6 +96,12 @@ func UpdateStreamsResponseAddUpdateResponses(builder *flatbuffers.Builder, updat
 }
 func UpdateStreamsResponseStartUpdateResponsesVector(builder *flatbuffers.Builder, numElems int) flatbuffers.UOffsetT {
 	return builder.StartVector(4, numElems, 4)
+}
+func UpdateStreamsResponseAddErrorCode(builder *flatbuffers.Builder, errorCode ErrorCode) {
+	builder.PrependInt16Slot(2, int16(errorCode), 0)
+}
+func UpdateStreamsResponseAddErrorMessage(builder *flatbuffers.Builder, errorMessage flatbuffers.UOffsetT) {
+	builder.PrependUOffsetTSlot(3, flatbuffers.UOffsetT(errorMessage), 0)
 }
 func UpdateStreamsResponseEnd(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
 	return builder.EndObject()

@@ -66,8 +66,28 @@ func (rcv *HeartbeatResponse) DataNode(obj *DataNode) *DataNode {
 	return nil
 }
 
+func (rcv *HeartbeatResponse) ErrorCode() ErrorCode {
+	o := flatbuffers.UOffsetT(rcv._tab.Offset(10))
+	if o != 0 {
+		return ErrorCode(rcv._tab.GetInt16(o + rcv._tab.Pos))
+	}
+	return 0
+}
+
+func (rcv *HeartbeatResponse) MutateErrorCode(n ErrorCode) bool {
+	return rcv._tab.MutateInt16Slot(10, int16(n))
+}
+
+func (rcv *HeartbeatResponse) ErrorMessage() []byte {
+	o := flatbuffers.UOffsetT(rcv._tab.Offset(12))
+	if o != 0 {
+		return rcv._tab.ByteVector(o + rcv._tab.Pos)
+	}
+	return nil
+}
+
 func HeartbeatResponseStart(builder *flatbuffers.Builder) {
-	builder.StartObject(3)
+	builder.StartObject(5)
 }
 func HeartbeatResponseAddClientId(builder *flatbuffers.Builder, clientId flatbuffers.UOffsetT) {
 	builder.PrependUOffsetTSlot(0, flatbuffers.UOffsetT(clientId), 0)
@@ -77,6 +97,12 @@ func HeartbeatResponseAddClientRole(builder *flatbuffers.Builder, clientRole Cli
 }
 func HeartbeatResponseAddDataNode(builder *flatbuffers.Builder, dataNode flatbuffers.UOffsetT) {
 	builder.PrependUOffsetTSlot(2, flatbuffers.UOffsetT(dataNode), 0)
+}
+func HeartbeatResponseAddErrorCode(builder *flatbuffers.Builder, errorCode ErrorCode) {
+	builder.PrependInt16Slot(3, int16(errorCode), 0)
+}
+func HeartbeatResponseAddErrorMessage(builder *flatbuffers.Builder, errorMessage flatbuffers.UOffsetT) {
+	builder.PrependUOffsetTSlot(4, flatbuffers.UOffsetT(errorMessage), 0)
 }
 func HeartbeatResponseEnd(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
 	return builder.EndObject()

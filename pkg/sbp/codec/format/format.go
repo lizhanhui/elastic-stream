@@ -7,7 +7,14 @@ const (
 	json
 )
 
-// Format is enumeration of Frame.headerFmt
+var (
+	_flatBuffer  = Format{flatBuffer}
+	_protoBuffer = Format{protoBuffer}
+	_json        = Format{json}
+	_unknown     = Format{unknown}
+)
+
+// Format is enumeration of Frame.HeaderFmt
 type Format struct {
 	code uint8
 }
@@ -16,13 +23,13 @@ type Format struct {
 func NewFormat(code uint8) Format {
 	switch code {
 	case flatBuffer:
-		return Format{flatBuffer}
+		return _flatBuffer
 	case protoBuffer:
-		return Format{protoBuffer}
+		return _protoBuffer
 	case json:
-		return Format{json}
+		return _json
 	default:
-		return Format{unknown}
+		return _unknown
 	}
 }
 
@@ -45,17 +52,22 @@ func (f Format) Code() uint8 {
 	return f.code
 }
 
+// Default returns a default format, used when header is empty
+func Default() Format {
+	return _flatBuffer
+}
+
 // FlatBuffer serializes and deserializes the header using "github.com/google/flatbuffers/go"
 func FlatBuffer() Format {
-	return Format{flatBuffer}
+	return _flatBuffer
 }
 
 // ProtoBuffer serializes and deserializes the header using "github.com/golang/protobuf/proto"
 func ProtoBuffer() Format {
-	return Format{protoBuffer}
+	return _protoBuffer
 }
 
 // JSON serializes and deserializes the header using "encoding/json"
 func JSON() Format {
-	return Format{json}
+	return _json
 }
