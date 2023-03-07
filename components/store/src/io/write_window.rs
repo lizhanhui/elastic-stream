@@ -74,6 +74,7 @@ impl WriteWindow {
         }
     }
 
+    /// Reset committed WAL offset, expected to be called once on initialization.
     pub(crate) fn reset_committed(&mut self, committed: u64) {
         self.committed = committed;
     }

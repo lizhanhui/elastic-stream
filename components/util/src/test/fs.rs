@@ -1,12 +1,15 @@
 use std::path::Path;
 
+use slog::{error, trace, Logger};
+
 pub struct DirectoryRemovalGuard<'a> {
+    log: Logger,
     path: &'a Path,
 }
 
 impl<'a> DirectoryRemovalGuard<'a> {
-    pub fn new(path: &'a Path) -> Self {
-        Self { path }
+    pub fn new(log: Logger, path: &'a Path) -> Self {
+        Self { log, path }
     }
 }
 
@@ -17,12 +20,15 @@ impl<'a> Drop for DirectoryRemovalGuard<'a> {
             read_dir
                 .flatten()
                 .map(|entry| {
-                    println!("Deleting {:?}", entry.path());
+                    trace!(self.log, "Deleting {:?}", entry.path());
                 })
                 .count();
         });
         if let Err(e) = std::fs::remove_dir_all(path) {
-            eprintln!("Failed to remove directory: {:?}. Error: {:?}", path, e);
+            error!(
+                self.log,
+                "Failed to remove directory: {:?}. Error: {:?}", path, e
+            );
         }
     }
 }
@@ -39,7 +45,8 @@ mod tests {
         let path = tmp_dir.as_path().join(uuid);
         let path = path.as_path();
         {
-            let _guard = super::DirectoryRemovalGuard::new(path);
+            let log = crate::terminal_logger();
+            let _guard = super::DirectoryRemovalGuard::new(log, path);
             if !path.exists() {
                 std::fs::create_dir(path)?;
             }

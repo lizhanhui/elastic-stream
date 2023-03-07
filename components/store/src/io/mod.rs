@@ -7,7 +7,8 @@ pub(crate) mod task;
 mod write_window;
 
 use crate::error::{AppendError, StoreError};
-use crate::index::{Indexer, MinOffset};
+use crate::index::driver::IndexDriver;
+use crate::index::MinOffset;
 use crate::ops::append::AppendResult;
 use crate::option::WalPath;
 use crossbeam::channel::{Receiver, Sender, TryRecvError};
@@ -62,6 +63,8 @@ pub(crate) struct Options {
     /// Configuration for it should be `[{"/ssd", 100GiB}, {"/s3", 1TiB}]`.
     wal_paths: Vec<WalPath>,
 
+    metadata_path: String,
+
     io_depth: u32,
 
     sqpoll_idle_ms: u32,
@@ -84,6 +87,7 @@ impl Default for Options {
     fn default() -> Self {
         Self {
             wal_paths: Vec::new(),
+            metadata_path: String::new(),
             io_depth: DEFAULT_MAX_IO_DEPTH,
             sqpoll_idle_ms: DEFAULT_SQPOLL_IDLE_MS,
             sqpoll_cpu: DEFAULT_SQPOLL_CPU,
@@ -117,6 +121,7 @@ impl WalOffsetManager {
         }
     }
 
+    /// Advance WAL min-offset once a segment file is deleted.
     fn set_min_offset(&self, min: u64) {
         self.min.store(min, Ordering::Relaxed);
     }
@@ -218,6 +223,9 @@ pub(crate) struct IO {
     blocked: HashMap<u64, squeue::Entry>,
 
     wal_offset_manager: Rc<WalOffsetManager>,
+
+    indexer: IndexDriver,
+    shutdown_indexer: Sender<()>,
 }
 
 /// Check if required opcodes are supported by the host operation system.
@@ -249,6 +257,12 @@ impl IO {
     pub(crate) fn new(options: &mut Options, log: Logger) -> Result<Self, StoreError> {
         if options.wal_paths.is_empty() {
             return Err(StoreError::Configuration("WAL path required".to_owned()));
+        }
+
+        if options.metadata_path.is_empty() {
+            return Err(StoreError::Configuration(
+                "Metadata path required".to_owned(),
+            ));
         }
 
         // Ensure WAL directories exists.
@@ -286,6 +300,17 @@ impl IO {
 
         let (sender, receiver) = crossbeam::channel::unbounded();
 
+        let wal_offset_manager = Rc::new(WalOffsetManager::new());
+
+        let (shutdown_indexer, shutdown_rx) = crossbeam::channel::bounded(1);
+
+        let indexer = IndexDriver::new(
+            log.clone(),
+            &options.metadata_path,
+            Rc::clone(&wal_offset_manager) as Rc<dyn MinOffset>,
+            shutdown_rx,
+        )?;
+
         Ok(Self {
             options: options.clone(),
             data_ring,
@@ -306,7 +331,9 @@ impl IO {
             inflight_write_tasks: BTreeMap::new(),
             barrier: HashSet::new(),
             blocked: HashMap::new(),
-            wal_offset_manager: Rc::new(WalOffsetManager::new()),
+            wal_offset_manager,
+            indexer,
+            shutdown_indexer,
         })
     }
 
@@ -366,12 +393,8 @@ impl IO {
         Ok(())
     }
 
-    /// Return whether has reached end of the WAL
-    fn scan_record(
-        segment: &mut LogSegmentFile,
-        pos: &mut u64,
-        log: &Logger,
-    ) -> Result<bool, StoreError> {
+    /// Return whether we have reached end of the WAL
+    fn scan_record(&self, segment: &mut LogSegmentFile, pos: &mut u64) -> Result<bool, StoreError> {
         let mut file_pos = *pos - segment.offset;
         let file = OpenOptions::new()
             .read(true)
@@ -396,7 +419,7 @@ impl IO {
             // Verify the parsed `len` makes sense.
             if file_pos + len as u64 > segment.size {
                 info!(
-                    log,
+                    self.log,
                     "Got an invalid record length: `{}`. Stop scanning WAL", len
                 );
                 last_found = true;
@@ -415,7 +438,7 @@ impl IO {
 
                         segment.written = segment.size;
                         segment.status = Status::Read;
-                        info!(log, "Reached EOF of {}", segment.path);
+                        info!(self.log, "Reached EOF of {}", segment.path);
                     }
                     RecordType::Full => {
                         // Full record
@@ -426,10 +449,11 @@ impl IO {
                         if ckm != crc {
                             segment.written = file_pos - 4 - 4;
                             segment.status = Status::ReadWrite;
-                            info!(log, "Found a record failing CRC32c. Expecting: `{:#08x}`, Actual: `{:#08x}`", crc, ckm);
+                            info!(self.log, "Found a record failing CRC32c. Expecting: `{:#08x}`, Actual: `{:#08x}`", crc, ckm);
                             last_found = true;
                             break;
                         }
+
                         file_pos += len as u64;
                     }
                     RecordType::First => {
@@ -458,7 +482,7 @@ impl IO {
         let log = self.log.clone();
         info!(log, "Start to recover WAL segment files");
         let mut need_scan = true;
-        for segment in self.segments.get_mut() {
+        for segment in unsafe { &mut *self.segments.get() } {
             if segment.offset + segment.size <= offset {
                 segment.status = Status::Read;
                 segment.written = segment.size;
@@ -473,7 +497,7 @@ impl IO {
                 continue;
             }
 
-            if Self::scan_record(segment, &mut pos, &log)? {
+            if self.scan_record(segment, &mut pos)? {
                 need_scan = false;
                 info!(log, "Recovery completed at `{}`", pos);
             }
@@ -1206,10 +1230,8 @@ impl IO {
 
     pub(crate) fn run(io: RefCell<IO>) -> Result<(), StoreError> {
         let log = io.borrow().log.clone();
-        let offset_manager = Rc::clone(&io.borrow().wal_offset_manager);
-        let indexer = Indexer::new(log.clone(), "/tmp/rocksdb", offset_manager)?;
         io.borrow_mut().load()?;
-        let pos = indexer.get_wal_checkpoint()?;
+        let pos = io.borrow().indexer.get_wal_checkpoint()?;
         io.borrow_mut().recover(pos)?;
 
         let min_preallocated_segment_files = io.borrow().options.min_preallocated_segment_files;
@@ -1292,9 +1314,7 @@ fn on_complete(
             if result < 0 {
                 error!(
                     log,
-                    "Write to WAL range `[{}, {})` failed",
-                    state.buf.offset,
-                    state.buf.capacity
+                    "Write to WAL range `[{}, {})` failed", state.buf.offset, state.buf.capacity
                 );
                 return Err(StoreError::System(-result));
             } else {
@@ -1315,6 +1335,14 @@ impl AsRawFd for IO {
     }
 }
 
+impl Drop for IO {
+    fn drop(&mut self) {
+        if let Err(_) = self.shutdown_indexer.send(()) {
+            error!(self.log, "Failed to send shutdown signal to indexer");
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use bytes::BytesMut;
@@ -1322,7 +1350,7 @@ mod tests {
     use std::env;
     use std::error::Error;
     use std::fs::File;
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
     use tokio::sync::oneshot;
     use uuid::Uuid;
 
@@ -1335,6 +1363,14 @@ mod tests {
     fn create_io(wal_dir: WalPath) -> Result<super::IO, StoreError> {
         let mut options = super::Options::default();
         let logger = util::terminal_logger();
+        let path = Path::new(&wal_dir.path);
+        let parent = path.parent().unwrap();
+        let buf = parent.join("rocksdb");
+        options.metadata_path = buf
+            .into_os_string()
+            .into_string()
+            .map_err(|_e| StoreError::Configuration("Bad path".to_owned()))?;
+
         options.add_wal_path(wal_dir);
         super::IO::new(&mut options, logger.clone())
     }
@@ -1343,6 +1379,7 @@ mod tests {
         let uuid = Uuid::new_v4();
         let mut wal_dir = env::temp_dir();
         wal_dir.push(uuid.simple().to_string());
+        wal_dir.push("wal");
         let wal_path = wal_dir.as_path();
         std::fs::create_dir_all(wal_path)?;
         Ok(wal_dir)
@@ -1361,8 +1398,8 @@ mod tests {
             .flatten()
             .collect();
         assert_eq!(10, files.len());
-
-        let _wal_dir_guard = util::DirectoryRemovalGuard::new(wal_dir.as_path());
+        let log = util::terminal_logger();
+        let _wal_dir_guard = util::DirectoryRemovalGuard::new(log, wal_dir.as_path());
         let wal_dir = super::WalPath::new(wal_dir.to_str().unwrap(), 1234)?;
 
         let mut io = create_io(wal_dir)?;
@@ -1374,7 +1411,8 @@ mod tests {
     #[test]
     fn test_alloc_segment() -> Result<(), StoreError> {
         let wal_dir = random_wal_dir()?;
-        let _wal_dir_guard = util::DirectoryRemovalGuard::new(wal_dir.as_path());
+        let log = util::terminal_logger();
+        let _wal_dir_guard = util::DirectoryRemovalGuard::new(log, wal_dir.as_path());
         let mut io = create_io(super::WalPath::new(wal_dir.to_str().unwrap(), 1234)?)?;
         io.alloc_segment()?;
         assert_eq!(1, io.segments.get_mut().len());
@@ -1390,7 +1428,8 @@ mod tests {
     #[test]
     fn test_writable_segment_count() -> Result<(), StoreError> {
         let wal_dir = random_wal_dir()?;
-        let _wal_dir_guard = util::DirectoryRemovalGuard::new(wal_dir.as_path());
+        let log = util::terminal_logger();
+        let _wal_dir_guard = util::DirectoryRemovalGuard::new(log, wal_dir.as_path());
         let mut io = create_io(super::WalPath::new(wal_dir.to_str().unwrap(), 1234)?)?;
         io.alloc_segment()?;
         assert_eq!(1, io.writable_segment_count());
@@ -1406,7 +1445,8 @@ mod tests {
     #[test]
     fn test_segment_file_of() -> Result<(), StoreError> {
         let wal_dir = random_wal_dir()?;
-        let _wal_dir_guard = util::DirectoryRemovalGuard::new(wal_dir.as_path());
+        let log = util::terminal_logger();
+        let _wal_dir_guard = util::DirectoryRemovalGuard::new(log, wal_dir.as_path());
         let mut io = create_io(super::WalPath::new(wal_dir.to_str().unwrap(), 1234)?)?;
         io.alloc_segment()?;
         io.alloc_segment()?;
@@ -1432,7 +1472,8 @@ mod tests {
     #[test]
     fn test_receive_io_tasks() -> Result<(), StoreError> {
         let wal_dir = random_wal_dir()?;
-        let _wal_dir_guard = util::DirectoryRemovalGuard::new(wal_dir.as_path());
+        let log = util::terminal_logger();
+        let _wal_dir_guard = util::DirectoryRemovalGuard::new(log, wal_dir.as_path());
         let mut io = create_io(super::WalPath::new(wal_dir.to_str().unwrap(), 1234)?)?;
         let sender = io.sender.take().unwrap();
         let mut buffer = BytesMut::with_capacity(128);
@@ -1474,7 +1515,8 @@ mod tests {
     #[test]
     fn test_build_sqe() -> Result<(), StoreError> {
         let wal_dir = random_wal_dir()?;
-        let _wal_dir_guard = util::DirectoryRemovalGuard::new(wal_dir.as_path());
+        let log = util::terminal_logger();
+        let _wal_dir_guard = util::DirectoryRemovalGuard::new(log, wal_dir.as_path());
         let mut io = create_io(super::WalPath::new(wal_dir.to_str().unwrap(), 1234)?)?;
 
         let segment = io.alloc_segment()?;
@@ -1511,7 +1553,8 @@ mod tests {
     #[test]
     fn test_delete_segments() -> Result<(), Box<dyn Error>> {
         let wal_dir = random_wal_dir()?;
-        let _wal_dir_guard = util::DirectoryRemovalGuard::new(wal_dir.as_path());
+        let log = util::terminal_logger();
+        let _wal_dir_guard = util::DirectoryRemovalGuard::new(log, wal_dir.as_path());
         let mut io = create_io(super::WalPath::new(wal_dir.to_str().unwrap(), 1234)?)?;
         io.alloc_segment()?;
         assert_eq!(1, io.segments.get_mut().len());
@@ -1526,14 +1569,17 @@ mod tests {
             .collect();
         io.delete_segments(offsets);
         assert_eq!(0, io.segments.get_mut().len());
+
         Ok(())
     }
 
     #[test]
     fn test_calculate_write_buffers() -> Result<(), StoreError> {
         let wal_dir = random_wal_dir()?;
-        let _wal_dir_guard = util::DirectoryRemovalGuard::new(wal_dir.as_path());
+        let log = util::terminal_logger();
+        let _wal_dir_guard = util::DirectoryRemovalGuard::new(log, wal_dir.as_path());
         let mut io = create_io(super::WalPath::new(wal_dir.to_str().unwrap(), 1234)?)?;
+
         (0..3)
             .into_iter()
             .map(|_| io.alloc_segment().err())
@@ -1597,10 +1643,11 @@ mod tests {
 
     #[test]
     fn test_run() -> Result<(), StoreError> {
+        let log = util::terminal_logger();
         let (tx, rx) = oneshot::channel();
         let handle = std::thread::spawn(move || {
             let wal_dir = random_wal_dir().unwrap();
-            let _wal_dir_guard = util::DirectoryRemovalGuard::new(wal_dir.as_path());
+            let _wal_dir_guard = util::DirectoryRemovalGuard::new(log, wal_dir.as_path());
             let mut io =
                 create_io(super::WalPath::new(wal_dir.to_str().unwrap(), 1234).unwrap()).unwrap();
             let sender = io
