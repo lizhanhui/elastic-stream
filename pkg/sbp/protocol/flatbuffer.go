@@ -3,6 +3,7 @@ package protocol
 import (
 	"sync"
 
+	"github.com/bytedance/gopkg/lang/mcache"
 	flatbuffers "github.com/google/flatbuffers/go"
 
 	rpcfb "github.com/AutoMQ/placement-manager/api/rpcfb/header"
@@ -65,7 +66,7 @@ func (f *flatBufferFormatter) marshalSystemErrorResponse(response *SystemErrorRe
 	rpcfb.SystemErrorResponseAddErrorMessage(builder, errorMessage)
 
 	builder.Finish(rpcfb.SystemErrorResponseEnd(builder))
-	return builder.FinishedBytes(), nil
+	return finishedBytes(builder), nil
 }
 
 func (f *flatBufferFormatter) marshalListRangesResponse(response *ListRangesResponse) ([]byte, error) {
@@ -95,7 +96,7 @@ func (f *flatBufferFormatter) marshalListRangesResponse(response *ListRangesResp
 
 	fbListRangesResponse := rpcfb.ListRangesResponseEnd(builder)
 	builder.Finish(fbListRangesResponse)
-	return builder.FinishedBytes(), nil
+	return finishedBytes(builder), nil
 }
 
 func (f *flatBufferFormatter) marshalListResponse(builder *flatbuffers.Builder, listResponse *ListRangesResult) flatbuffers.UOffsetT {
@@ -167,4 +168,11 @@ func (f *flatBufferFormatter) marshalReplicaNode(builder *flatbuffers.Builder, r
 	rpcfb.ReplicaNodeAddDataNode(builder, dataNode)
 	rpcfb.ReplicaNodeAddIsPrimary(builder, replicaNode.IsPrimary)
 	return rpcfb.ReplicaNodeEnd(builder)
+}
+
+func finishedBytes(builder *flatbuffers.Builder) []byte {
+	bytes := builder.FinishedBytes()
+	result := mcache.Malloc(len(bytes))
+	copy(result, bytes)
+	return result
 }

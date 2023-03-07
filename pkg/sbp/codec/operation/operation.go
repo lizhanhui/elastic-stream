@@ -67,7 +67,7 @@ func (o Operation) Code() uint16 {
 // IsControl returns whether o is a control operation
 func (o Operation) IsControl() bool {
 	switch o.code {
-	case ping, goAway, heartbeat:
+	case goAway:
 		return true
 	default:
 		return false

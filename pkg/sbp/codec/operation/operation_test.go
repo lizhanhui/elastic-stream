@@ -99,10 +99,10 @@ func TestIsControl(t *testing.T) {
 	t.Parallel()
 	re := require.New(t)
 
-	for _, operation := range []Operation{Ping(), GoAway(), Heartbeat()} {
+	for _, operation := range []Operation{GoAway()} {
 		re.True(operation.IsControl())
 	}
-	for _, operation := range []Operation{Publish(), ListRange()} {
+	for _, operation := range []Operation{Ping(), Heartbeat(), Publish(), ListRange()} {
 		re.False(operation.IsControl())
 	}
 }

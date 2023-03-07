@@ -389,33 +389,32 @@ type DataFrame struct {
 	baseFrame
 }
 
-// DataFrameReqParam is used to create a new DataFrame request
-type DataFrameReqParam struct {
+// DataFrameContext is the context for DataFrame
+type DataFrameContext struct {
 	OpCode    operation.Operation
 	HeaderFmt format.Format
-	Header    []byte
-	Payload   []byte
+	StreamID  uint32
 }
 
 // NewDataFrameReq returns a new DataFrame request
-func NewDataFrameReq(req DataFrameReqParam, flag Flags, streamID uint32) *DataFrame {
+func NewDataFrameReq(context *DataFrameContext, header []byte, payload []byte, flag Flags) *DataFrame {
 	return &DataFrame{baseFrame{
-		OpCode:    req.OpCode,
+		OpCode:    context.OpCode,
 		Flag:      flag,
-		StreamID:  streamID,
-		HeaderFmt: req.HeaderFmt,
-		Header:    req.Header,
-		Payload:   req.Payload,
+		StreamID:  context.StreamID,
+		HeaderFmt: context.HeaderFmt,
+		Header:    header,
+		Payload:   payload,
 	}}
 }
 
 // NewDataFrameResp returns a new DataFrame response with the given header and payload
-func NewDataFrameResp(req *DataFrame, header []byte, payload []byte, isEnd bool) *DataFrame {
+func NewDataFrameResp(context *DataFrameContext, header []byte, payload []byte, isEnd bool) *DataFrame {
 	resp := &DataFrame{baseFrame{
-		OpCode:    req.OpCode,
+		OpCode:    context.OpCode,
 		Flag:      FlagResponse,
-		StreamID:  req.StreamID,
-		HeaderFmt: req.HeaderFmt,
+		StreamID:  context.StreamID,
+		HeaderFmt: context.HeaderFmt,
 		Header:    header,
 		Payload:   payload,
 	}}
@@ -423,4 +422,13 @@ func NewDataFrameResp(req *DataFrame, header []byte, payload []byte, isEnd bool)
 		resp.Flag |= FlagResponseEnd
 	}
 	return resp
+}
+
+// Context returns the context of the DataFrame
+func (d *DataFrame) Context() *DataFrameContext {
+	return &DataFrameContext{
+		OpCode:    d.OpCode,
+		HeaderFmt: d.HeaderFmt,
+		StreamID:  d.StreamID,
+	}
 }

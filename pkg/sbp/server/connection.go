@@ -14,6 +14,7 @@ import (
 	"go.uber.org/zap/zapcore"
 
 	"github.com/AutoMQ/placement-manager/pkg/sbp/codec"
+	"github.com/AutoMQ/placement-manager/pkg/sbp/protocol"
 	tphttp2 "github.com/AutoMQ/placement-manager/third_party/forked/golang/net/http2"
 )
 
@@ -126,28 +127,6 @@ func (c *conn) readFrames() {
 		if err != nil {
 			return
 		}
-	}
-}
-
-// writeFrameFromHandler sends wr to conn.wantWriteFrameCh, but aborts
-// if the connection has gone away.
-//
-// This must not be run from the serve goroutine itself, else it might
-// deadlock writing to conn.wantWriteFrameCh (which is only mildly
-// buffered and is read by serve itself). If you're on the serve
-// goroutine, call writeFrame instead.
-// TODO
-//
-//nolint:unused
-func (c *conn) writeFrameFromHandler(wr frameWriteRequest) error {
-	c.serveG.CheckNotOn()
-	select {
-	case c.wantWriteFrameCh <- wr:
-		return nil
-	case <-c.doneServing:
-		// Serve loop is gone.
-		// Client has closed their connection to the server.
-		return errors.New("client disconnected")
 	}
 }
 
@@ -308,6 +287,7 @@ func (c *conn) processFrameFromReader(res frameReadResult) bool {
 	} else {
 		logger.Error("failed to process frame", zap.Error(err))
 	}
+	// TODO switch error type
 	c.goAway(false)
 	return true
 }
@@ -374,9 +354,6 @@ func (c *conn) processGoAway(f *codec.GoAwayFrame, _ *stream) error {
 
 func (c *conn) processHeartbeat(f *codec.HeartbeatFrame, st *stream) error {
 	c.serveG.Check()
-	if c.idleTimeout != 0 {
-		c.idleTimer.Reset(c.idleTimeout)
-	}
 	c.writeFrame(frameWriteRequest{
 		f:         codec.NewHeartBeatFrameResp(f),
 		stream:    st,
@@ -389,8 +366,86 @@ func (c *conn) processDataFrame(f *codec.DataFrame, st *stream) error {
 	c.serveG.Check()
 	_ = f
 	_ = st
-	// TODO
+	if c.idleTimer != nil {
+		c.idleTimer.Stop()
+	}
+
+	action := GetAction(f.OpCode)
+	req := action.newReq()
+	err := req.Unmarshal(f.HeaderFmt, f.Header)
+	if err != nil {
+		return errors.Wrap(err, "unmarshal frame header")
+	}
+	// TODO if there are too many handlers running, put the request into a priority queue (or put important requests into a priority queue)
+	go c.runHandler(f.Context(), st, c.server.handler, req, action.act)
 	return nil
+}
+
+var errChanPool = sync.Pool{
+	New: func() interface{} { return make(chan error, 1) },
+}
+
+func (c *conn) runHandler(frameCtx *codec.DataFrameContext, st *stream, handler Handler, req protocol.Request, act func(Handler, protocol.Request) protocol.Response) {
+	logger := c.lg
+	c.serveG.CheckNotOn()
+	defer func() {
+		if r := recover(); r != nil {
+			logger.Error("panic serving", zap.Any("panic", r), zap.Stack("stack"))
+			// TODO handle panic in handler
+		}
+	}()
+
+	resp := act(handler, req)
+	header, err := resp.Marshal(frameCtx.HeaderFmt)
+	if err != nil {
+		// TODO error is always nil now, handle it later
+		logger.Error("failed to marshal response header", zap.Error(err))
+		return
+	}
+
+	errCh := errChanPool.Get().(chan error)
+
+	err = c.writeFrameFromHandler(frameWriteRequest{
+		f:         codec.NewDataFrameResp(frameCtx, header, nil, resp.IsEnd()),
+		stream:    st,
+		done:      errCh,
+		endStream: resp.IsEnd(),
+	})
+	if err != nil {
+		// TODO error is "connection closed", handle it later
+		logger.Error("failed to schedule to write response frame", zap.Error(err))
+		return
+	}
+	select {
+	case err = <-errCh:
+	case <-c.doneServing:
+		logger.Warn("failed to write response frame, connection closed")
+		return
+	}
+	errChanPool.Put(errCh)
+	if err != nil {
+		// TODO error is "frame too large" or "connection write failed", handle it later
+		logger.Error("failed to write response frame", zap.Error(err))
+	}
+}
+
+// writeFrameFromHandler sends wr to conn.wantWriteFrameCh, but aborts
+// if the connection has gone away.
+//
+// This must not be run from the serve goroutine itself, else it might
+// deadlock writing to conn.wantWriteFrameCh (which is only mildly
+// buffered and is read by serve itself). If you're on the serve
+// goroutine, call writeFrame instead.
+func (c *conn) writeFrameFromHandler(wr frameWriteRequest) error {
+	c.serveG.CheckNotOn()
+	select {
+	case c.wantWriteFrameCh <- wr:
+		return nil
+	case <-c.doneServing:
+		// Serve loop is gone.
+		// Client has closed their connection to the server.
+		return errors.New("client disconnected")
+	}
 }
 
 func (c *conn) newStream(id uint32) *stream {
@@ -408,6 +463,9 @@ func (c *conn) newStream(id uint32) *stream {
 func (c *conn) closeStream(st *stream) {
 	_ = st
 	// TODO
+	if len(c.streams) == 0 && c.idleTimeout != 0 {
+		c.idleTimer.Reset(c.idleTimeout)
+	}
 }
 
 func (c *conn) close() {

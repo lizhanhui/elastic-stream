@@ -6,6 +6,7 @@ import (
 )
 
 // Handler responds to a request
+// TODO support streaming
 type Handler interface {
 	// ListRange lists the ranges of a batch of streams. Or it could list the ranges of all the streams in a specific data node.
 	ListRange(req *protocol.ListRangesRequest) *protocol.ListRangesResponse

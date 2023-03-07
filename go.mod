@@ -4,6 +4,7 @@ go 1.19
 
 require (
 	github.com/BurntSushi/toml v0.3.1
+	github.com/bytedance/gopkg v0.0.0-20230224073017-0b6876860a2f
 	github.com/cakturk/go-netstat v0.0.0-20200220111822-e5b49efee7a5
 	github.com/google/flatbuffers v23.1.21+incompatible
 	github.com/pkg/errors v0.9.1
@@ -78,9 +79,9 @@ require (
 	go.uber.org/atomic v1.10.0 // indirect
 	go.uber.org/multierr v1.9.0 // indirect
 	golang.org/x/crypto v0.5.0 // indirect
-	golang.org/x/net v0.5.0 // indirect
-	golang.org/x/sys v0.4.0 // indirect
-	golang.org/x/text v0.6.0 // indirect
+	golang.org/x/net v0.7.0 // indirect
+	golang.org/x/sys v0.5.0 // indirect
+	golang.org/x/text v0.7.0 // indirect
 	golang.org/x/time v0.3.0 // indirect
 	google.golang.org/genproto v0.0.0-20230127162408-596548ed4efa // indirect
 	google.golang.org/grpc v1.52.3 // indirect
