@@ -45,6 +45,7 @@ type conn struct {
 	needToSendGoAway    bool            // we need to schedule a GOAWAY frame write
 	isGoAwayResponse    bool            // we started a GOAWAY response rather than a request
 	shutdownTimer       *time.Timer     // nil until used
+	idleTimeout         time.Duration   // zero if disabled
 	idleTimer           *time.Timer     // nil if unused
 
 	// Used by startGracefulShutdown.
@@ -60,8 +61,8 @@ func (c *conn) serve() {
 
 	logger.Info("start to serve connection")
 
-	if c.server.IdleTimeout != 0 {
-		c.idleTimer = time.AfterFunc(c.server.IdleTimeout, func() { c.sendServeMsg(idleTimerMsg) })
+	if c.idleTimeout != 0 {
+		c.idleTimer = time.AfterFunc(c.idleTimeout, func() { c.sendServeMsg(idleTimerMsg) })
 		defer c.idleTimer.Stop()
 	}
 
@@ -353,11 +354,11 @@ func (c *conn) processFrame(f codec.Frame) error {
 	}
 }
 
-func (c *conn) processPing(f *codec.PingFrame, stream *stream) error {
+func (c *conn) processPing(f *codec.PingFrame, st *stream) error {
 	c.serveG.Check()
 	c.writeFrame(frameWriteRequest{
 		f:         codec.NewPingFrameResp(f),
-		stream:    stream,
+		stream:    st,
 		endStream: true,
 	})
 	return nil
@@ -371,18 +372,23 @@ func (c *conn) processGoAway(f *codec.GoAwayFrame, _ *stream) error {
 	return nil
 }
 
-func (c *conn) processHeartbeat(f *codec.HeartbeatFrame, stream *stream) error {
+func (c *conn) processHeartbeat(f *codec.HeartbeatFrame, st *stream) error {
 	c.serveG.Check()
-	_ = f
-	_ = stream
-	// TODO
+	if c.idleTimeout != 0 {
+		c.idleTimer.Reset(c.idleTimeout)
+	}
+	c.writeFrame(frameWriteRequest{
+		f:         codec.NewHeartBeatFrameResp(f),
+		stream:    st,
+		endStream: true,
+	})
 	return nil
 }
 
-func (c *conn) processDataFrame(f *codec.DataFrame, stream *stream) error {
+func (c *conn) processDataFrame(f *codec.DataFrame, st *stream) error {
 	c.serveG.Check()
 	_ = f
-	_ = stream
+	_ = st
 	// TODO
 	return nil
 }

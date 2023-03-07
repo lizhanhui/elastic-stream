@@ -21,11 +21,12 @@ var (
 
 // Server is an SBP server
 type Server struct {
-	// IdleTimeout specifies how long until idle clients should be
-	// closed with a GOAWAY frame. PING frames are not considered
-	// activity for the purposes of IdleTimeout.
 	// TODO move into a config
-	IdleTimeout time.Duration
+	// HeartBeatInterval defines the interval duration between sending heartbeats from client to server.
+	HeartBeatInterval time.Duration
+	// HeartBeatMissCount is the number of consecutive heartbeats that the server can miss
+	// before considering the client to be unresponsive and terminating the connection.
+	HeartBeatMissCount int
 
 	shuttingDown atomic.Bool
 	handler      Handler
@@ -161,6 +162,7 @@ func (s *Server) newConn(rwc net.Conn) *conn {
 		wroteFrameCh:     make(chan frameWriteResult, 1), // buffered; one send in writeFrameAsync
 		streams:          make(map[uint32]*stream),
 		wScheduler:       newWriteScheduler(),
+		idleTimeout:      s.HeartBeatInterval * time.Duration(s.HeartBeatMissCount),
 		lg:               s.lg.With(zap.String("remote-addr", rwc.RemoteAddr().String())),
 	}
 	c.ctx, c.cancelCtx = context.WithCancel(s.ctx)
