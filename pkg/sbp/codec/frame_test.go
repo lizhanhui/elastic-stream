@@ -242,7 +242,7 @@ func TestReadFrame(t *testing.T) {
 			re := require.New(t)
 
 			framer := NewFramer(nil, bytes.NewReader(tt.input), zap.NewExample())
-			frame, err := framer.ReadFrame()
+			frame, _, err := framer.ReadFrame()
 
 			if tt.wantErr {
 				re.ErrorContains(err, tt.errMsg)

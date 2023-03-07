@@ -7,6 +7,7 @@ import (
 // Request is an SBP request
 type Request interface {
 	// Unmarshal decodes data into the Request using the specified format
+	// data is expired after the call, so the implementation should copy the data if needed
 	Unmarshal(fmt format.Format, data []byte) error
 }
 

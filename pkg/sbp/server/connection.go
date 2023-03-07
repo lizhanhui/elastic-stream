@@ -120,13 +120,14 @@ func (c *conn) serve() {
 func (c *conn) readFrames() {
 	c.serveG.CheckNotOn()
 	for {
-		f, err := c.framer.ReadFrame()
+		f, free, err := c.framer.ReadFrame()
 		select {
-		case c.readFrameCh <- frameReadResult{f, err}:
+		case c.readFrameCh <- frameReadResult{f, free, err}:
 		case <-c.doneServing:
 			return
 		}
 		if err != nil {
+			// TODO check errors, skip stream errors
 			return
 		}
 	}
@@ -265,8 +266,10 @@ func (c *conn) writeFrameAsync(wr frameWriteRequest) {
 // frame-reading goroutine.
 // processFrameFromReader returns whether the connection should be kept open.
 func (c *conn) processFrameFromReader(res frameReadResult) bool {
-	c.serveG.Check()
 	logger := c.lg
+	c.serveG.Check()
+	defer res.free()
+
 	err := res.err
 	if err != nil {
 		clientGone := err == io.EOF || err == io.ErrUnexpectedEOF || strings.Contains(err.Error(), "use of closed network connection")
@@ -564,8 +567,9 @@ func (c *conn) sendServeMsg(msg *serverMessage) {
 }
 
 type frameReadResult struct {
-	f   codec.Frame
-	err error
+	f    codec.Frame
+	free func() // free should be called once the frame is no longer needed
+	err  error
 }
 
 // frameWriteResult is the message passed from writeFrameAsync to the serve goroutine.

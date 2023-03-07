@@ -9,6 +9,7 @@ import (
 	"io"
 	"sync/atomic"
 
+	"github.com/bytedance/gopkg/lang/mcache"
 	"github.com/pkg/errors"
 	"go.uber.org/zap"
 
@@ -164,31 +165,31 @@ func (fr *Framer) NextID() uint32 {
 }
 
 // ReadFrame reads a single frame
-func (fr *Framer) ReadFrame() (Frame, error) {
+func (fr *Framer) ReadFrame() (Frame, func(), error) {
 	logger := fr.lg
 
 	buf := fr.fixedBuf[:_fixedHeaderLen]
 	_, err := io.ReadFull(fr.r, buf)
 	if err != nil {
 		logger.Error("failed to read fixed header", zap.Error(err))
-		return &baseFrame{}, errors.Wrap(err, "read fixed header")
+		return &baseFrame{}, func() {}, errors.Wrap(err, "read fixed header")
 	}
 	headerBuf := bytes.NewBuffer(buf)
 
 	frameLen := binary.BigEndian.Uint32(headerBuf.Next(4))
 	if frameLen < _minFrameLen {
 		logger.Error("illegal frame length, fewer than minimum", zap.Uint32("frame-length", frameLen), zap.Uint32("min-length", _minFrameLen))
-		return &baseFrame{}, errors.New("frame too small")
+		return &baseFrame{}, func() {}, errors.New("frame too small")
 	}
 	if frameLen > _maxFrameLen {
 		logger.Error("illegal frame length, greater than maximum", zap.Uint32("frame-length", frameLen), zap.Uint32("max-length", _maxFrameLen))
-		return &baseFrame{}, errors.New("frame too large")
+		return &baseFrame{}, func() {}, errors.New("frame too large")
 	}
 
 	magicCode := headerBuf.Next(1)[0]
 	if magicCode != _magicCode {
 		logger.Error("illegal magic code", zap.Uint8("expected", _magicCode), zap.Uint8("got", magicCode))
-		return &baseFrame{}, errors.New("magic code mismatch")
+		return &baseFrame{}, func() {}, errors.New("magic code mismatch")
 	}
 
 	opCode := binary.BigEndian.Uint16(headerBuf.Next(2))
@@ -198,12 +199,13 @@ func (fr *Framer) ReadFrame() (Frame, error) {
 	headerLen := uint32(headerBuf.Next(1)[0])<<16 | uint32(binary.BigEndian.Uint16(headerBuf.Next(2)))
 	payloadLen := frameLen + 4 - _fixedHeaderLen - headerLen - 4 // add frameLength width, sub payloadChecksum width
 
-	// TODO malloc and free buffer by github.com/bytedance/gopkg/lang/mcache
-	tBuf := make([]byte, headerLen+payloadLen)
+	tBuf := mcache.Malloc(int(headerLen + payloadLen))
+	free := func() { mcache.Free(tBuf) }
 	_, err = io.ReadFull(fr.r, tBuf)
 	if err != nil {
 		logger.Error("failed to read extended header and payload", zap.Error(err))
-		return &baseFrame{}, errors.Wrap(err, "read extended header and payload")
+		free()
+		return &baseFrame{}, func() {}, errors.Wrap(err, "read extended header and payload")
 	}
 
 	header := func() []byte {
@@ -223,12 +225,14 @@ func (fr *Framer) ReadFrame() (Frame, error) {
 	err = binary.Read(fr.r, binary.BigEndian, &checksum)
 	if err != nil {
 		logger.Error("failed to read payload checksum", zap.Error(err))
-		return &baseFrame{}, errors.Wrap(err, "read payload checksum")
+		free()
+		return &baseFrame{}, func() {}, errors.Wrap(err, "read payload checksum")
 	}
 	if payloadLen > 0 {
 		if ckm := crc32.ChecksumIEEE(payload); ckm != checksum {
 			logger.Error("payload checksum mismatch", zap.Uint32("expected", ckm), zap.Uint32("got", checksum))
-			return &baseFrame{}, errors.New("payload checksum mismatch")
+			free()
+			return &baseFrame{}, func() {}, errors.New("payload checksum mismatch")
 		}
 	}
 
@@ -254,7 +258,7 @@ func (fr *Framer) ReadFrame() (Frame, error) {
 	default:
 		frame = &bFrame
 	}
-	return frame, nil
+	return frame, free, nil
 }
 
 // WriteFrame writes a frame
