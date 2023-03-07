@@ -3,14 +3,14 @@ use std::{ffi::CString, fs, io::Cursor, path::Path, rc::Rc};
 use bytes::{Buf, BufMut, BytesMut};
 use model::range::{Range, StreamRange};
 use rocksdb::{
-    BlockBasedOptions, ColumnFamilyDescriptor, DBCompressionType, Options, ReadOptions,
-    WriteOptions, DB,
+    BlockBasedOptions, ColumnFamilyDescriptor, DBCompressionType, IteratorMode, Options,
+    ReadOptions, WriteOptions, DB,
 };
-use slog::{error, info, Logger};
+use slog::{error, info, warn, Logger};
 
 use crate::error::StoreError;
 
-use super::MinOffset;
+use super::{record_handle::RecordHandle, MinOffset};
 
 const INDEX_COLUMN_FAMILY: &str = "index";
 const METADATA_COLUMN_FAMILY: &str = "metadata";
@@ -130,6 +130,67 @@ impl Indexer {
                     .map_err(|e| StoreError::RocksDB(e.into_string()))
             }
             None => Err(StoreError::RocksDB("No column family".to_owned())),
+        }
+    }
+
+    pub(crate) fn scan_record_handles(
+        &self,
+        stream_id: i64,
+        offset: u64,
+        batch_size: u32,
+    ) -> Result<Option<Vec<RecordHandle>>, StoreError> {
+        match self.db.cf_handle(INDEX_COLUMN_FAMILY) {
+            Some(cf) => {
+                let mut read_opts = ReadOptions::default();
+                let mut lower = BytesMut::with_capacity(8 + 8);
+                lower.put_i64(stream_id);
+                lower.put_u64(offset);
+                read_opts.set_iterate_lower_bound(&lower[..]);
+
+                read_opts.set_iterate_upper_bound((stream_id + 1).to_be_bytes());
+
+                let record_handles: Vec<_> = self
+                    .db
+                    .iterator_cf_opt(cf, read_opts, IteratorMode::Start)
+                    .flatten()
+                    .filter(|(k, v)| {
+                        debug_assert!(
+                            k.starts_with(&stream_id.to_be_bytes()),
+                            "ReadOption boundaries do not work"
+                        );
+                        if v.len() < 8 + 4 {
+                            warn!(
+                                self.log,
+                                "Got an invalid index entry: len(value) = {}",
+                                v.len()
+                            );
+                        }
+                        v.len() > 8 /* WAL offset */ + 4 /* length-type */
+                    })
+                    .map(|(_k, v)| {
+                        let mut rdr = Cursor::new(&v[..]);
+                        let offset = rdr.get_u64();
+                        let length_type = rdr.get_u32();
+                        let mut hash = 0;
+                        if length_type & 0xFF == 0 {
+                            hash = rdr.get_u64();
+                        }
+                        let len = length_type >> 8;
+                        RecordHandle { offset, len, hash }
+                    })
+                    .take(batch_size as usize)
+                    .collect();
+
+                if record_handles.is_empty() {
+                    Ok(None)
+                } else {
+                    Ok(Some(record_handles))
+                }
+            }
+            None => Err(StoreError::RocksDB(format!(
+                "No column family: `{}`",
+                INDEX_COLUMN_FAMILY
+            ))),
         }
     }
 

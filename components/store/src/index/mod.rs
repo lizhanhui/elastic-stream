@@ -4,6 +4,7 @@ use model::range::StreamRange;
 pub(crate) mod compaction;
 pub(crate) mod driver;
 pub(crate) mod indexer;
+pub(crate) mod record_handle;
 mod rocksdb;
 
 /// Expose minimum WAL offset.
