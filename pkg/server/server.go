@@ -34,6 +34,7 @@ import (
 
 	sbpServer "github.com/AutoMQ/placement-manager/pkg/sbp/server"
 	"github.com/AutoMQ/placement-manager/pkg/server/config"
+	"github.com/AutoMQ/placement-manager/pkg/server/handler"
 	"github.com/AutoMQ/placement-manager/pkg/server/member"
 	"github.com/AutoMQ/placement-manager/pkg/util/etcdutil"
 	"github.com/AutoMQ/placement-manager/pkg/util/logutil"
@@ -187,8 +188,7 @@ func (s *Server) serveSbp(listener net.Listener) {
 	ctx, cancel := context.WithCancel(s.ctx)
 	defer cancel()
 
-	// TODO implement handler
-	sbpSvr := sbpServer.NewServer(ctx, nil, logger)
+	sbpSvr := sbpServer.NewServer(ctx, handler.NewSbp(), logger)
 	s.sbpServer = sbpSvr
 
 	logger.Info("sbp server started")
