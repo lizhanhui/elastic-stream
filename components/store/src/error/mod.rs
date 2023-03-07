@@ -62,6 +62,9 @@ pub enum StoreError {
 
     #[error("RocksDB error: {0}")]
     RocksDB(String),
+
+    #[error("Log segemnt is not opened")]
+    NotOpened,
 }
 
 #[derive(Debug, Error)]
