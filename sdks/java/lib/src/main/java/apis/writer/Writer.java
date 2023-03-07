@@ -1,9 +1,10 @@
 package apis.writer;
 
+import models.RecordBatch;
 import models.RecordMetadata;
-import models.WriterRecords;
 
 import java.io.Closeable;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
 /**
@@ -17,8 +18,8 @@ public interface Writer extends Closeable {
      * The returned future will be completed when the record batch is successfully appended to the storage,
      * or an exception is thrown.
      *
-     * @param writerRecords the record batch to append
+     * @param recordBatch the record batch to append
      * @return a future that contains the record metadata
      */
-    CompletableFuture<RecordMetadata> append(WriterRecords writerRecords);
+    CompletableFuture<List<RecordMetadata>> append(RecordBatch recordBatch);
 }

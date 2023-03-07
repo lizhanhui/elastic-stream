@@ -1,7 +1,6 @@
 package models;
-
-public class RecordMetadata {
+public class ReaderRecord extends Record {
     private long offset;
     private long appendTimestamp;
-    private long streamId;
 }
+

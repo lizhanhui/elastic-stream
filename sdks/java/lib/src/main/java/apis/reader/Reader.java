@@ -1,8 +1,9 @@
 package apis.reader;
 
-import models.ConsumerRecords;
+import models.ReaderRecord;
 
 import java.io.Closeable;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
 public interface Reader extends Closeable {
@@ -11,7 +12,7 @@ public interface Reader extends Closeable {
      *
      * @return a future that contains the record batch
      */
-    CompletableFuture<ConsumerRecords> fetch();
+    CompletableFuture<List<ReaderRecord>> fetch();
 
     /**
      * Seek to the given offset. The next call to {@link #fetch()} will follow the new offset.
