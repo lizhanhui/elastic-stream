@@ -17,15 +17,15 @@ service KV {
 
 message StoreGlobalConfigRequest {
   repeated GlobalConfigItem changes = 1;
-  string config_path = 2;
+  bytes config_prefix = 2;
 }
 
 message StoreGlobalConfigResponse {
 }
 
 message LoadGlobalConfigRequest {
-  repeated string names = 1;
-  string config_path = 2;
+  repeated bytes names = 1;
+  bytes config_prefix = 2;
 }
 
 message LoadGlobalConfigResponse {
@@ -34,7 +34,7 @@ message LoadGlobalConfigResponse {
 }
 
 message WatchGlobalConfigRequest {
-  string config_path = 1;
+  bytes config_prefix = 1;
   int64 revision = 2;
 }
 
@@ -45,7 +45,7 @@ message WatchGlobalConfigResponse {
 }
 
 message GlobalConfigItem {
-  string name = 1;
+  bytes name = 1;
   bytes payload = 2;
   Error error = 3;
   EventType kind = 4;
