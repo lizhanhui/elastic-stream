@@ -1,7 +1,12 @@
 use bytes::Bytes;
 use flatbuffers::{FlatBufferBuilder, Verifiable, WIPOffset};
 
+use protocol::rpc::header::{SystemErrorResponseArgs, ErrorCode, SystemErrorResponse};
 use slog::Logger;
+
+pub(crate) const MIN_BUFFER_SIZE: usize = 64;
+pub(crate) const MEDIUM_BUFFER_SIZE: usize = 4 * MIN_BUFFER_SIZE;
+pub(crate) const LARGE_BUFFER_SIZE: usize = 16 * MEDIUM_BUFFER_SIZE;
 
 /// Verifies that a buffer of bytes contains a rpc request and returns it.
 pub(crate) fn root_as_rpc_request<'a, R>(buf: &'a [u8]) -> Result<R, flatbuffers::InvalidFlatbuffer>
@@ -17,7 +22,20 @@ where
 pub(crate) fn finish_response_builder<R>(
     builder: &mut FlatBufferBuilder,
     response_offset: WIPOffset<R>,
-) -> Option<Bytes> {
+) -> Bytes {
     builder.finish(response_offset, None);
-    Some(Bytes::copy_from_slice(builder.finished_data()))
+    Bytes::copy_from_slice(builder.finished_data())
+}
+
+pub(crate) fn system_error_frame_bytes(err_code: ErrorCode, err_msg: &str) -> Bytes {
+    let mut builder = FlatBufferBuilder::with_capacity(MIN_BUFFER_SIZE);
+
+    let error_msg = builder.create_string(err_msg);
+    let res_args = SystemErrorResponseArgs {
+        error_code: err_code,
+        error_message: Some(error_msg),
+    };
+
+    let response_offset = SystemErrorResponse::create(&mut builder, &res_args);
+    finish_response_builder(&mut builder, response_offset)
 }

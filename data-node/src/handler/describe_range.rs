@@ -10,9 +10,10 @@ use super::util::root_as_rpc_request;
 #[derive(Debug)]
 pub(crate) struct DescribeRange<'a> {
     /// Logger
-    pub(crate) logger: Logger,
+    logger: Logger,
 
-    pub(crate) describe_request: DescribeRangesRequest<'a>,
+    /// The describe request already parsed by flatbuffers
+    describe_request: DescribeRangesRequest<'a>,
 }
 
 impl<'a> DescribeRange<'a> {

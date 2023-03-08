@@ -24,10 +24,6 @@ use store::{
 
 use self::cmd::Command;
 
-const MIN_BUFFER_SIZE: usize = 64;
-const MEDIUM_BUFFER_SIZE: usize = 4 * MIN_BUFFER_SIZE;
-const LARGE_BUFFER_SIZE: usize = 16 * MEDIUM_BUFFER_SIZE;
-
 /// Representation of the incoming request.
 ///
 ///
@@ -102,6 +98,7 @@ impl ServerCall {
     ///
     /// Ping-pong mechanism is designed to be a light weight API to probe liveness of data-node.
     /// The Pong response return the same header and payload as the Ping request.
+    /// TODO: move to ping module
     async fn on_ping(&self, response: &mut Frame) {
         debug!(
             self.logger,
@@ -109,95 +106,5 @@ impl ServerCall {
         );
         response.header = self.request.header.clone();
         response.payload = self.request.payload.clone();
-    }
-
-    /// Process message publishment request
-    ///
-    /// On receiving a message publishment request, it wraps the incoming request to a `Record`.
-    /// The record is then moved to `Store::put`, where persistence, replication and other auxillary
-    /// operations are properly performed.
-    ///
-    /// Once the underlying operations are completed, the `Store#put` API shall asynchronously return
-    /// `Result<PutResult, PutError>`. The result will be rendered into the `response`.
-    ///
-    /// `response` - Mutable response frame reference, into which required business data are filled.
-    ///
-    async fn on_publish(&self, _response: &mut Frame) {
-        let options = WriteOptions::default();
-        let record = self.build_proof_of_concept_record();
-        match self.store.append(options, record).await {
-            Ok(_result) => {
-                // response.header = self.build_publish_response_header(&result);
-            }
-            Err(_e) => {}
-        };
-    }
-
-    /// Build frame header according to `PutResult` with FlatBuffers encoding.
-    ///
-    /// `_result` - PutResult from underlying `Store`
-    // fn build_publish_response_header(&self, _result: &AppendResult) -> Option<Bytes> {
-    //     let mut builder = FlatBufferBuilder::with_capacity(256);
-    //     let status = Status::create(
-    //         &mut builder,
-    //         &StatusArgs {
-    //             code: Code::OK,
-    //             message: None,
-    //             nodes: None,
-    //         },
-    //     );
-
-    //     let topic = builder.create_string("topic");
-    //     let metadata = RecordMetadata::create(
-    //         &mut builder,
-    //         &RecordMetadataArgs {
-    //             offset: 0,
-    //             partition: 0,
-    //             serialized_key_size: 0,
-    //             serialized_value_size: 0,
-    //             timestamp: 0,
-    //             topic: Some(topic),
-    //         },
-    //     );
-
-    //     let response_header = PublishRecordResponseHeader::create(
-    //         &mut builder,
-    //         &PublishRecordResponseHeaderArgs {
-    //             status: Some(status),
-    //             metadata: Some(metadata),
-    //         },
-    //     );
-
-    //     builder.finish(response_header, None);
-    //     let header_data = builder.finished_data();
-    //     let mut header = BytesMut::with_capacity(header_data.len());
-    //     // TODO: dig if memory copy here can be avoided...say moving finished data from flatbuffer builder to bytes::Bytes
-    //     header.extend_from_slice(header_data);
-    //     Some(header.into())
-    // }
-
-    /// Build proof of concept record.
-    ///
-    /// TODO:
-    /// 1. Check metadata cache to see if there is a writable range for the targeting partition;
-    /// 2. If step-1 returns None, query placement manager;
-    /// 3. Ensure current data-node is the leader of the writable range;
-    /// 4. If
-    fn build_proof_of_concept_record(&self) -> AppendRecordRequest {
-        let mut buffer = bytes::BytesMut::new();
-
-        if self.request.encode(&mut buffer).is_ok() {
-            trace!(self.logger, "PoC: header section");
-        }
-
-        if let Some(body) = &self.request.payload {
-            buffer.extend_from_slice(body);
-        }
-
-        AppendRecordRequest {
-            stream_id: 0,
-            offset: 0,
-            buffer: buffer.freeze(),
-        }
     }
 }

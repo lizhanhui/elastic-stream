@@ -66,6 +66,10 @@ impl Frame {
         self.flag |= 0x03;
     }
 
+    pub fn flag_system_err(&mut self) {
+        self.flag |= 0x07;
+    }
+
     fn crc32(payload: &[u8]) -> u32 {
         let mut digest = CRC32.digest();
         digest.update(payload);

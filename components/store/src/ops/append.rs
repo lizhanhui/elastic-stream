@@ -10,8 +10,8 @@ use futures::Future;
 
 #[derive(Debug)]
 pub struct AppendResult {
-    pub(crate) stream_id: i64,
-    pub(crate) offset: i64,
+    pub stream_id: i64,
+    pub offset: i64,
 }
 
 impl<Op> Future for Append<Op>
