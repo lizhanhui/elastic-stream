@@ -256,12 +256,6 @@ func (s *Server) leaderLoop() {
 		}
 
 		if leader != nil {
-			err := s.reloadConfigFromKV()
-			if err != nil {
-				logger.Error("failed to reload config", zap.Error(err))
-				continue
-			}
-
 			logger.Info("start to watch PM leader", zap.Object("pm-leader", leader))
 			// WatchLeader will keep looping and never return unless the PM leader has changed.
 			s.member.WatchLeader(s.loopCtx, leader, rev)
@@ -306,12 +300,6 @@ func (s *Server) campaignLeader() {
 	s.member.KeepLeader(ctx)
 	logger.Info("success to campaign leader", zap.String("campaign-pm-leader-name", s.Name()))
 
-	// reload config
-	err = s.reloadConfigFromKV()
-	if err != nil {
-		logger.Error("failed to reload config", zap.Error(err))
-	}
-
 	// TODO start raft cluster
 
 	// EnableLeader to accept the remaining service, such as GetPartition.
@@ -346,11 +334,6 @@ func (s *Server) checkLeaderLoop(ctx context.Context) {
 			return
 		}
 	}
-}
-
-func (s *Server) reloadConfigFromKV() error {
-	// TODO
-	return nil
 }
 
 func (s *Server) etcdLeaderLoop() {
