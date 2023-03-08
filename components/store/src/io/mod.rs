@@ -472,7 +472,7 @@ impl IO {
                         );
                         let file_offset = buf.offset - segment.offset;
                         // Note we have to write the whole page even if the page is partially filled.
-                        let sqe = opcode::Write::new(types::Fd(fd), ptr, buf.capacity as u32)
+                        let sqe = opcode::Write::new(types::Fd(sd.fd), ptr, buf.capacity as u32)
                             .offset64(file_offset as libc::off_t)
                             .build()
                             .user_data(self.tag);
@@ -857,7 +857,7 @@ fn on_complete(
             if result < 0 {
                 error!(
                     log,
-                    "Write to WAL range `[{}, {})` failed", state.buf.offset, state.buf.capacity
+                    "Write to WAL range `[{}, {})` failed", ioc.buf.offset, ioc.buf.capacity
                 );
                 return Err(StoreError::System(-result));
             } else {
