@@ -94,6 +94,8 @@ pub(crate) struct IO {
     write_window: WriteWindow,
 
     /// Inflight write tasks that are not yet acknowledged
+    ///
+    /// Assume the target record of the `WriteTask` is [n, n + len) in WAL, we use `n + len` as key.
     inflight_write_tasks: BTreeMap<u64, WriteTask>,
 
     /// Offsets of blocks that are partially filled with data and are still inflight.
@@ -356,7 +358,7 @@ impl IO {
         writer
             .take()
             .into_iter()
-            .map(|buf| {
+            .flat_map(|buf| {
                 let ptr = buf.as_ptr();
                 if let Some(segment) = self.wal.segment_file_of(buf.offset) {
                     debug_assert_eq!(Status::ReadWrite, segment.status);
@@ -405,7 +407,6 @@ impl IO {
                 }
                 Ok::<(), super::WriteWindowError>(())
             })
-            .flatten()
             .count();
     }
 
@@ -418,7 +419,7 @@ impl IO {
         buf_list
             .iter()
             .enumerate()
-            .map(|(idx, n)| {
+            .flat_map(|(idx, n)| {
                 if 0 == idx {
                     if *n > left {
                         self.buf_writer.get_mut().reserve(*n - left)
@@ -429,7 +430,6 @@ impl IO {
                     self.buf_writer.get_mut().reserve(*n)
                 }
             })
-            .flatten()
             .count();
 
         'task_loop: while let Some(io_task) = self.pending_data_tasks.pop_front() {
@@ -562,18 +562,13 @@ impl IO {
                         if let Err(e) =
                             on_complete(&mut self.write_window, &state, cqe.result(), &self.log)
                         {
-                            match e {
-                                StoreError::System(errno) => {
-                                    error!(
-                                        self.log,
-                                        "io_uring opcode `{}` failed. errno: `{}`",
-                                        state.opcode,
-                                        errno
-                                    );
+                            if let StoreError::System(errno) = e {
+                                error!(
+                                    self.log,
+                                    "io_uring opcode `{}` failed. errno: `{}`", state.opcode, errno
+                                );
 
-                                    // TODO: Check if the errno is recoverable...
-                                }
-                                _ => {}
+                                // TODO: Check if the errno is recoverable...
                             }
                         } else {
                             // Add block cache
@@ -608,12 +603,8 @@ impl IO {
 
     fn acknowledge_write_tasks(&mut self) {
         let committed = self.write_window.committed;
-        loop {
-            if let Some((offset, _)) = self.inflight_write_tasks.first_key_value() {
-                if *offset < committed {
-                    break;
-                }
-            } else {
+        while let Some((offset, _)) = self.inflight_write_tasks.first_key_value() {
+            if *offset > committed {
                 break;
             }
 
@@ -775,7 +766,7 @@ impl AsRawFd for IO {
 
 impl Drop for IO {
     fn drop(&mut self) {
-        if let Err(_) = self.shutdown_indexer.send(()) {
+        if self.shutdown_indexer.send(()).is_err() {
             error!(self.log, "Failed to send shutdown signal to indexer");
         }
     }

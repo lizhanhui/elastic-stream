@@ -90,27 +90,22 @@ impl WriteWindow {
     }
 
     fn advance(&mut self) -> Result<u64, WriteWindowError> {
-        loop {
-            if let Some((completed_offset, completed_length)) = self.completed.first_key_value() {
-                if *completed_offset != self.committed {
+        while let Some((completed_offset, completed_length)) = self.completed.first_key_value() {
+            if *completed_offset != self.committed {
+                break;
+            }
+
+            if let Some((submitted_offset, submitted_length)) = self.submitted.first_key_value() {
+                if completed_offset != submitted_offset {
                     break;
                 }
 
-                if let Some((submitted_offset, submitted_length)) = self.submitted.first_key_value()
-                {
-                    if completed_offset != submitted_offset {
-                        break;
-                    }
-
-                    if completed_length != submitted_length {
-                        return Err(WriteWindowError::Length {
-                            offset: *completed_offset,
-                            expected: *completed_length,
-                            actual: *submitted_length,
-                        });
-                    }
-                } else {
-                    break;
+                if completed_length != submitted_length {
+                    return Err(WriteWindowError::Length {
+                        offset: *completed_offset,
+                        expected: *completed_length,
+                        actual: *submitted_length,
+                    });
                 }
             } else {
                 break;
