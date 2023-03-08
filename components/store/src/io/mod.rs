@@ -8,7 +8,8 @@ mod wal;
 mod write_window;
 
 use crate::error::{AppendError, StoreError};
-use crate::index::{Indexer, MinOffset};
+use crate::index::driver::IndexDriver;
+use crate::index::MinOffset;
 use crate::ops::append::AppendResult;
 use crate::option::WalPath;
 use crossbeam::channel::{Receiver, Sender, TryRecvError};
@@ -59,6 +60,8 @@ pub(crate) struct Options {
     /// Configuration for it should be `[{"/ssd", 100GiB}, {"/s3", 1TiB}]`.
     wal_paths: Vec<WalPath>,
 
+    metadata_path: String,
+
     io_depth: u32,
 
     sqpoll_idle_ms: u32,
@@ -81,6 +84,7 @@ impl Default for Options {
     fn default() -> Self {
         Self {
             wal_paths: Vec::new(),
+            metadata_path: String::new(),
             io_depth: DEFAULT_MAX_IO_DEPTH,
             sqpoll_idle_ms: DEFAULT_SQPOLL_IDLE_MS,
             sqpoll_cpu: DEFAULT_SQPOLL_CPU,
@@ -114,6 +118,7 @@ impl WalOffsetManager {
         }
     }
 
+    /// Advance WAL min-offset once a segment file is deleted.
     fn set_min_offset(&self, min: u64) {
         self.min.store(min, Ordering::Relaxed);
     }
@@ -202,6 +207,9 @@ pub(crate) struct IO {
     blocked: HashMap<u64, squeue::Entry>,
 
     wal_offset_manager: Rc<WalOffsetManager>,
+
+    indexer: IndexDriver,
+    shutdown_indexer: Sender<()>,
 }
 
 /// Check if required opcodes are supported by the host operation system.
@@ -233,6 +241,12 @@ impl IO {
     pub(crate) fn new(options: &mut Options, log: Logger) -> Result<Self, StoreError> {
         if options.wal_paths.is_empty() {
             return Err(StoreError::Configuration("WAL path required".to_owned()));
+        }
+
+        if options.metadata_path.is_empty() {
+            return Err(StoreError::Configuration(
+                "Metadata path required".to_owned(),
+            ));
         }
 
         // Ensure WAL directories exists.
@@ -270,6 +284,17 @@ impl IO {
 
         let (sender, receiver) = crossbeam::channel::unbounded();
 
+        let wal_offset_manager = Rc::new(WalOffsetManager::new());
+
+        let (shutdown_indexer, shutdown_rx) = crossbeam::channel::bounded(1);
+
+        let indexer = IndexDriver::new(
+            log.clone(),
+            &options.metadata_path,
+            Rc::clone(&wal_offset_manager) as Rc<dyn MinOffset>,
+            shutdown_rx,
+        )?;
+
         Ok(Self {
             options: options.clone(),
             data_ring,
@@ -293,7 +318,9 @@ impl IO {
             inflight_write_tasks: BTreeMap::new(),
             barrier: HashSet::new(),
             blocked: HashMap::new(),
-            wal_offset_manager: Rc::new(WalOffsetManager::new()),
+            wal_offset_manager,
+            indexer,
+            shutdown_indexer,
         })
     }
 
@@ -441,10 +468,11 @@ impl IO {
                     if let Some(sd) = segment.sd.as_ref() {
                         debug_assert!(buf.offset >= segment.offset);
                         debug_assert!(
-                            buf.offset + buf.write_pos() as u64 <= segment.offset + segment.size
+                            buf.offset + buf.capacity as u64 <= segment.offset + segment.size
                         );
                         let file_offset = buf.offset - segment.offset;
-                        let sqe = opcode::Write::new(types::Fd(sd.fd), ptr, buf.write_pos() as u32)
+                        // Note we have to write the whole page even if the page is partially filled.
+                        let sqe = opcode::Write::new(types::Fd(fd), ptr, buf.capacity as u32)
                             .offset64(file_offset as libc::off_t)
                             .build()
                             .user_data(self.tag);
@@ -743,10 +771,8 @@ impl IO {
 
     pub(crate) fn run(io: RefCell<IO>) -> Result<(), StoreError> {
         let log = io.borrow().log.clone();
-        let offset_manager = Rc::clone(&io.borrow().wal_offset_manager);
-        let indexer = Indexer::new(log.clone(), "/tmp/rocksdb", offset_manager)?;
         io.borrow_mut().load()?;
-        let pos = indexer.get_wal_checkpoint()?;
+        let pos = io.borrow().indexer.get_wal_checkpoint()?;
         io.borrow_mut().recover(pos)?;
 
         let min_preallocated_segment_files = io.borrow().options.min_preallocated_segment_files;
@@ -831,9 +857,7 @@ fn on_complete(
             if result < 0 {
                 error!(
                     log,
-                    "Write to WAL range `[{}, {})` failed",
-                    ioc.buf.offset,
-                    ioc.buf.write_pos()
+                    "Write to WAL range `[{}, {})` failed", state.buf.offset, state.buf.capacity
                 );
                 return Err(StoreError::System(-result));
             } else {
@@ -854,14 +878,25 @@ impl AsRawFd for IO {
     }
 }
 
+impl Drop for IO {
+    fn drop(&mut self) {
+        if let Err(_) = self.shutdown_indexer.send(()) {
+            error!(self.log, "Failed to send shutdown signal to indexer");
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use super::task::{IoTask, WriteTask};
+    use crate::io::segment::LogSegmentFile;
+    use crate::io::DEFAULT_LOG_SEGMENT_FILE_SIZE;
+    use crate::{error::StoreError, io::segment::Status};
     use bytes::BytesMut;
     use std::cell::RefCell;
     use std::env;
     use std::path::PathBuf;
     use tokio::sync::oneshot;
-    use uuid::Uuid;
 
     use super::task::{IoTask, WriteTask};
 
@@ -871,24 +906,36 @@ mod tests {
     fn create_io(wal_dir: WalPath) -> Result<super::IO, StoreError> {
         let mut options = super::Options::default();
         let logger = util::terminal_logger();
-        options.add_wal_path(wal_dir);
+        let store_path = store_dir.join("rocksdb");
+        if !store_path.exists() {
+            fs::create_dir_all(store_path.as_path()).map_err(|e| StoreError::IO(e))?;
+        }
+
+        options.metadata_path = store_path
+            .into_os_string()
+            .into_string()
+            .map_err(|_e| StoreError::Configuration("Bad path".to_owned()))?;
+
+        let wal_dir = store_dir.join("wal");
+        if !wal_dir.exists() {
+            fs::create_dir_all(wal_dir.as_path()).map_err(|e| StoreError::IO(e))?;
+        }
+        let wal_path = super::WalPath::new(wal_dir.to_str().unwrap(), 1234)?;
+        options.add_wal_path(wal_path);
         super::IO::new(&mut options, logger.clone())
     }
 
-    fn random_wal_dir() -> Result<PathBuf, StoreError> {
-        let uuid = Uuid::new_v4();
-        let mut wal_dir = env::temp_dir();
-        wal_dir.push(uuid.simple().to_string());
-        let wal_path = wal_dir.as_path();
-        std::fs::create_dir_all(wal_path)?;
-        Ok(wal_dir)
+    fn random_store_dir() -> Result<PathBuf, StoreError> {
+        util::create_random_path().map_err(|e| StoreError::IO(e))
     }
 
     #[test]
     fn test_receive_io_tasks() -> Result<(), StoreError> {
-        let wal_dir = random_wal_dir()?;
-        let _wal_dir_guard = util::DirectoryRemovalGuard::new(wal_dir.as_path());
-        let mut io = create_io(super::WalPath::new(wal_dir.to_str().unwrap(), 1234)?)?;
+        let log = util::terminal_logger();
+        let store_dir = random_store_dir()?;
+        let store_dir = store_dir.as_path();
+        let _store_dir_guard = util::DirectoryRemovalGuard::new(log, store_dir);
+        let mut io = create_io(store_dir)?;
         let sender = io.sender.take().unwrap();
         let mut buffer = BytesMut::with_capacity(128);
         buffer.resize(128, 65);
@@ -928,9 +975,11 @@ mod tests {
 
     #[test]
     fn test_build_sqe() -> Result<(), StoreError> {
-        let wal_dir = random_wal_dir()?;
-        let _wal_dir_guard = util::DirectoryRemovalGuard::new(wal_dir.as_path());
-        let mut io = create_io(super::WalPath::new(wal_dir.to_str().unwrap(), 1234)?)?;
+        let log = util::terminal_logger();
+        let store_dir = random_store_dir()?;
+        let store_dir = store_dir.as_path();
+        let _store_dir_guard = util::DirectoryRemovalGuard::new(log, store_dir);
+        let mut io = create_io(store_dir)?;
 
         io.wal.open_segment()?;
 
@@ -964,18 +1013,21 @@ mod tests {
 
     #[test]
     fn test_run() -> Result<(), StoreError> {
+        let log = util::terminal_logger();
+
         let (tx, rx) = oneshot::channel();
         let handle = std::thread::spawn(move || {
-            let wal_dir = random_wal_dir().unwrap();
-            let _wal_dir_guard = util::DirectoryRemovalGuard::new(wal_dir.as_path());
-            let mut io =
-                create_io(super::WalPath::new(wal_dir.to_str().unwrap(), 1234).unwrap()).unwrap();
+            let store_dir = random_store_dir().unwrap();
+            let store_dir = store_dir.as_path();
+            let _store_dir_guard = util::DirectoryRemovalGuard::new(log, store_dir);
+            let mut io = create_io(store_dir).unwrap();
+
             let sender = io
                 .sender
                 .take()
                 .ok_or(StoreError::Configuration("IO channel".to_owned()))
                 .unwrap();
-            tx.send(sender);
+            let _ = tx.send(sender);
             let io = RefCell::new(io);
 
             let _ = super::IO::run(io);

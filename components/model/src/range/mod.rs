@@ -45,6 +45,14 @@ impl StreamRange {
     pub fn len(&self) -> u64 {
         self.next - self.start
     }
+
+    pub fn start(&self) -> u64 {
+        self.start
+    }
+
+    pub fn end(&self) -> Option<u64> {
+        self.end
+    }
 }
 
 impl Range for StreamRange {

@@ -4,8 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-codec = { path = "../components/codec" }
-model = { path = "../components/model" }
+codec = { path = "../../components/codec" }
+model = { path = "../../components/model" }
 clap = { workspace = true }
 slog =  { workspace = true }
 slog-async =  { workspace = true }
