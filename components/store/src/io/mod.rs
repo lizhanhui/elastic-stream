@@ -1,9 +1,10 @@
 mod block_cache;
 pub(crate) mod buf;
+mod context;
 mod record;
 mod segment;
-mod state;
 pub(crate) mod task;
+mod wal;
 mod write_window;
 
 use crate::error::{AppendError, StoreError};
@@ -14,11 +15,8 @@ use crate::option::WalPath;
 use crossbeam::channel::{Receiver, Sender, TryRecvError};
 use io_uring::register;
 use io_uring::{opcode, squeue, types};
-use segment::LogSegmentFile;
-use slog::{debug, error, info, trace, warn, Logger};
+use slog::{error, info, trace, warn, Logger};
 use std::collections::{BTreeMap, HashSet};
-use std::fs::OpenOptions;
-use std::os::unix::prelude::{FileExt, OpenOptionsExt};
 use std::rc::Rc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -26,15 +24,14 @@ use std::{
     cell::{RefCell, UnsafeCell},
     collections::{HashMap, VecDeque},
     os::fd::AsRawFd,
-    path::Path,
 };
 use task::IoTask;
 
 use self::buf::{AlignedBufReader, AlignedBufWriter};
-use self::record::RecordType;
+use self::context::IOContext;
 use self::segment::Status;
-use self::state::OpState;
 use self::task::WriteTask;
+use self::wal::WAL;
 use self::write_window::WriteWindow;
 use crc::{Crc, CRC_32_ISCSI};
 
@@ -154,12 +151,6 @@ pub(crate) struct IO {
     /// `Fallocate64`, for some unknown reason, is not working either.
     data_ring: io_uring::IoUring,
 
-    /// I/O Uring instance for write-ahead-log segment file management.
-    ///
-    /// Unlike `data_uring`, this instance is used to open/fallocate/close/delete log segment files because these opcodes are not
-    /// properly supported by the instance armed with the `IOPOLL` feature.
-    control_ring: io_uring::IoUring,
-
     /// Sender of the IO task channel.
     ///
     /// Assumed to be taken by wrapping structs, which will offer APIs with semantics of choice.
@@ -173,24 +164,17 @@ pub(crate) struct IO {
     /// Logger instance.
     log: Logger,
 
-    /// List of log segment files, which forms abstract WAL as a whole.
+    /// A WAL instance that manages the lifecycle of write-ahead-log segments.
     ///
-    /// Note new segment files are appended to the back; while oldest segments are popped from the front.
-    segments: UnsafeCell<VecDeque<LogSegmentFile>>,
+    /// Note new segment are appended to the back; while oldest segments are popped from the front.
+    wal: WAL,
 
     // Following fields are runtime data structure
     /// Flag indicating if the IO channel is disconnected, aka, all senders are dropped.
     channel_disconnected: bool,
 
-    /// Mapping of on-going file operations between segment offset to file operation `Status`.
-    ///
-    /// File `Status` migration road-map: OpenAt --> Fallocate --> ReadWrite -> Read -> Close -> Unlink.
-    /// Once the status of segment is driven to ReadWrite,
-    /// this mapping should be removed.
-    inflight_control_tasks: HashMap<u64, Status>,
-
     tag: u64,
-    inflight_data_tasks: HashMap<u64, OpState>,
+    inflight_data_tasks: HashMap<u64, IOContext>,
 
     /// Number of inflight data tasks that are submitted to `data_uring` and not yet reaped.
     inflight: usize,
@@ -314,15 +298,18 @@ impl IO {
         Ok(Self {
             options: options.clone(),
             data_ring,
-            control_ring,
             sender: Some(sender),
             receiver,
             write_window: WriteWindow::new(log.clone(), 0),
             buf_writer: UnsafeCell::new(AlignedBufWriter::new(log.clone(), 0, options.alignment)),
+            wal: WAL::new(
+                options.clone().wal_paths,
+                control_ring,
+                options.file_size,
+                log.clone(),
+            ),
             log,
-            segments: UnsafeCell::new(VecDeque::new()),
             channel_disconnected: false,
-            inflight_control_tasks: HashMap::new(),
             tag: 0,
             inflight_data_tasks: HashMap::new(),
             inflight: 0,
@@ -337,172 +324,13 @@ impl IO {
         })
     }
 
-    fn load_wal_segment_files(&mut self) -> Result<(), StoreError> {
-        let mut segment_files: Vec<_> = self
-            .options
-            .wal_paths
-            .iter()
-            .rev()
-            .flat_map(|wal_path| Path::new(&wal_path.path).read_dir())
-            .flatten() // Note Result implements FromIterator trait, so `flatten` applies and potential `Err` will be propagated.
-            .flatten()
-            .flat_map(|entry| {
-                if let Ok(metadata) = entry.metadata() {
-                    if metadata.file_type().is_dir() {
-                        warn!(self.log, "Skip {:?} as it is a directory", entry.path());
-                        None
-                    } else {
-                        let path = entry.path();
-                        let path = path.as_path();
-                        if let Some(offset) = LogSegmentFile::parse_offset(path) {
-                            let log_segment_file = LogSegmentFile::new(
-                                offset,
-                                entry.path().to_str()?,
-                                metadata.len(),
-                                segment::Medium::Ssd,
-                            );
-                            Some(log_segment_file)
-                        } else {
-                            error!(
-                                self.log,
-                                "Failed to parse offset from file name: {:?}",
-                                entry.path()
-                            );
-                            None
-                        }
-                    }
-                } else {
-                    None
-                }
-            })
-            .collect();
-
-        // Sort log segment file by file name.
-        segment_files.sort();
-
-        for mut segment_file in segment_files.into_iter() {
-            segment_file.open()?;
-            unsafe { &mut *self.segments.get() }.push_back(segment_file);
-        }
-
-        Ok(())
-    }
-
     fn load(&mut self) -> Result<(), StoreError> {
-        self.load_wal_segment_files()?;
+        self.wal.load_from_paths()?;
         Ok(())
-    }
-
-    /// Return whether we have reached end of the WAL
-    fn scan_record(&self, segment: &mut LogSegmentFile, pos: &mut u64) -> Result<bool, StoreError> {
-        let mut file_pos = *pos - segment.offset;
-        let file = OpenOptions::new()
-            .read(true)
-            .custom_flags(libc::O_NOATIME)
-            .open(segment.path.to_owned())?;
-
-        let mut meta_buf = [0; 4];
-
-        let mut buf = bytes::BytesMut::new();
-        let mut last_found = false;
-        // Find the last continuous record
-        loop {
-            file.read_exact_at(&mut meta_buf, file_pos)?;
-            file_pos += 4;
-            let crc = u32::from_be_bytes(meta_buf);
-
-            file.read_exact_at(&mut meta_buf, file_pos)?;
-            file_pos += 4;
-            let len_type = u32::from_be_bytes(meta_buf);
-            let len = (len_type >> 8) as usize;
-
-            // Verify the parsed `len` makes sense.
-            if file_pos + len as u64 > segment.size {
-                info!(
-                    self.log,
-                    "Got an invalid record length: `{}`. Stop scanning WAL", len
-                );
-                last_found = true;
-                break;
-            }
-
-            let record_type = (len_type & 0xFF) as u8;
-            if let Ok(t) = RecordType::try_from(record_type) {
-                match t {
-                    RecordType::Zero => {
-                        // TODO: validate CRC for Padding?
-                        // Padding
-                        file_pos += len as u64;
-                        // Should have reached EOF
-                        debug_assert_eq!(segment.size, file_pos);
-
-                        segment.written = segment.size;
-                        segment.status = Status::Read;
-                        info!(self.log, "Reached EOF of {}", segment.path);
-                    }
-                    RecordType::Full => {
-                        // Full record
-                        buf.resize(len, 0);
-                        file.read_exact_at(buf.as_mut(), file_pos)?;
-
-                        let ckm = CRC32C.checksum(buf.as_ref());
-                        if ckm != crc {
-                            segment.written = file_pos - 4 - 4;
-                            segment.status = Status::ReadWrite;
-                            info!(self.log, "Found a record failing CRC32c. Expecting: `{:#08x}`, Actual: `{:#08x}`", crc, ckm);
-                            last_found = true;
-                            break;
-                        }
-
-                        file_pos += len as u64;
-                    }
-                    RecordType::First => {
-                        unimplemented!("Support of RecordType::First not implemented")
-                    }
-                    RecordType::Middle => {
-                        unimplemented!("Support of RecordType::Middle not implemented")
-                    }
-                    RecordType::Last => {
-                        unimplemented!("Support of RecordType::Last not implemented")
-                    }
-                }
-            } else {
-                last_found = true;
-                break;
-            }
-
-            buf.resize(len, 0);
-        }
-        *pos = segment.offset + file_pos;
-        Ok(last_found)
     }
 
     fn recover(&mut self, offset: u64) -> Result<(), StoreError> {
-        let mut pos = offset;
-        let log = self.log.clone();
-        info!(log, "Start to recover WAL segment files");
-        let mut need_scan = true;
-        for segment in unsafe { &mut *self.segments.get() } {
-            if segment.offset + segment.size <= offset {
-                segment.status = Status::Read;
-                segment.written = segment.size;
-                debug!(log, "Mark {} as read-only", segment.path);
-                continue;
-            }
-
-            if !need_scan {
-                segment.written = 0;
-                segment.status = Status::ReadWrite;
-                debug!(log, "Mark {} as read-write", segment.path);
-                continue;
-            }
-
-            if self.scan_record(segment, &mut pos)? {
-                need_scan = false;
-                info!(log, "Recovery completed at `{}`", pos);
-            }
-        }
-        info!(log, "Recovery of WAL segment files completed");
+        let pos = self.wal.recover(offset)?;
 
         // Reset offset of write buffer
         self.buf_writer.get_mut().offset(pos);
@@ -511,41 +339,6 @@ impl IO {
         self.write_window.reset_committed(pos);
 
         Ok(())
-    }
-
-    fn alloc_segment(&mut self) -> Result<&mut LogSegmentFile, StoreError> {
-        let offset = if self.segments.get_mut().is_empty() {
-            0
-        } else if let Some(last) = self.segments.get_mut().back() {
-            last.offset + self.options.file_size
-        } else {
-            unreachable!("Should-not-reach-here")
-        };
-        let dir = self
-            .options
-            .wal_paths
-            .first()
-            .ok_or(StoreError::AllocLogSegment)?;
-        let path = Path::new(&dir.path);
-        let path = path.join(LogSegmentFile::format(offset));
-        let segment = LogSegmentFile::new(
-            offset,
-            path.to_str().ok_or(StoreError::AllocLogSegment)?,
-            self.options.file_size,
-            segment::Medium::Ssd,
-        );
-        self.segments.get_mut().push_back(segment);
-        self.segments
-            .get_mut()
-            .back_mut()
-            .ok_or(StoreError::AllocLogSegment)
-    }
-
-    fn segment_file_of(&self, offset: u64) -> Option<&mut LogSegmentFile> {
-        unsafe { &mut *self.segments.get() }
-            .iter_mut()
-            .rev()
-            .find(|segment| segment.offset <= offset && (segment.offset + segment.size > offset))
     }
 
     fn validate_io_task(io_task: &mut IoTask, log: &Logger) -> bool {
@@ -640,56 +433,20 @@ impl IO {
         }
     }
 
-    fn writable_segment_count(&self) -> usize {
-        unsafe { &mut *self.segments.get() }
-            .iter()
-            .rev() // from back to front
-            .take_while(|segment| segment.status != Status::Read)
-            .count()
-    }
-
     fn calculate_write_buffers(&self) -> Vec<usize> {
-        let mut write_buf_list = vec![];
         let mut requirement: VecDeque<_> = self
             .pending_data_tasks
             .iter()
             .map(|task| match task {
                 IoTask::Write(task) => {
                     debug_assert!(task.buffer.len() > 0);
-                    task.buffer.len() + 4 /* CRC */ + 3 /* Record Size */ + 1 /* Record Type */
+                    task.total_len() as usize
                 }
                 _ => 0,
             })
             .filter(|n| *n > 0)
             .collect();
-        let mut size = 0;
-        unsafe { &mut *self.segments.get() }
-            .iter()
-            .rev()
-            .filter(|segment| !segment.is_full())
-            .rev()
-            .for_each(|segment| {
-                if requirement.is_empty() {
-                    return;
-                }
-                let remaining = segment.remaining() as usize;
-                while let Some(n) = requirement.front() {
-                    if size + n + segment::FOOTER_LENGTH as usize > remaining {
-                        write_buf_list.push(remaining);
-                        size = 0;
-                        return;
-                    } else {
-                        size += n;
-                        requirement.pop_front();
-                    }
-                }
-
-                if size > 0 {
-                    write_buf_list.push(size);
-                    size = 0;
-                }
-            });
-        write_buf_list
+        self.wal.calculate_write_buffers(&mut requirement)
     }
 
     fn build_write_sqe(&mut self, entries: &mut Vec<squeue::Entry>) {
@@ -706,16 +463,16 @@ impl IO {
             .into_iter()
             .map(|buf| {
                 let ptr = buf.as_ptr();
-                if let Some(segment) = self.segment_file_of(buf.offset) {
+                if let Some(segment) = self.wal.segment_file_of(buf.offset) {
                     debug_assert_eq!(Status::ReadWrite, segment.status);
-                    if let Some(fd) = segment.fd {
+                    if let Some(sd) = segment.sd.as_ref() {
                         debug_assert!(buf.offset >= segment.offset);
                         debug_assert!(
                             buf.offset + buf.capacity as u64 <= segment.offset + segment.size
                         );
                         let file_offset = buf.offset - segment.offset;
                         // Note we have to write the whole page even if the page is partially filled.
-                        let sqe = opcode::Write::new(types::Fd(fd), ptr, buf.capacity as u32)
+                        let sqe = opcode::Write::new(types::Fd(sd.fd), ptr, buf.capacity as u32)
                             .offset64(file_offset as libc::off_t)
                             .build()
                             .user_data(self.tag);
@@ -733,13 +490,13 @@ impl IO {
                             }
                             entries.push(sqe);
                         }
-                        let state = OpState {
+                        let ioc = IOContext {
                             opcode: opcode::Write::CODE,
                             buf,
                             offset: None,
                             len: None,
                         };
-                        self.inflight_data_tasks.insert(self.tag, state);
+                        self.inflight_data_tasks.insert(self.tag, ioc);
                         self.tag += 1;
                     } else {
                         // fatal errors
@@ -784,7 +541,7 @@ impl IO {
             match io_task {
                 IoTask::Read(task) => {
                     // TODO: Check if there is an on-going read IO covering this request.
-                    let segment = match self.segment_file_of(task.offset) {
+                    let segment = match self.wal.segment_file_of(task.offset) {
                         Some(segment) => segment,
                         None => {
                             // Consume io_task directly
@@ -792,7 +549,7 @@ impl IO {
                         }
                     };
 
-                    if let Some(fd) = segment.fd {
+                    if let Some(sd) = segment.sd.as_ref() {
                         if let Ok(buf) = AlignedBufReader::alloc_read_buf(
                             self.log.clone(),
                             task.offset,
@@ -800,20 +557,20 @@ impl IO {
                             alignment as u64,
                         ) {
                             let ptr = buf.as_ptr() as *mut u8;
-                            let sqe = opcode::Read::new(types::Fd(fd), ptr, task.len)
+                            let sqe = opcode::Read::new(types::Fd(sd.fd), ptr, task.len)
                                 .offset((task.offset - segment.offset) as i64)
                                 .build()
                                 .user_data(self.tag);
                             self.tag += 1;
                             entries.push(sqe);
 
-                            let state = OpState {
+                            let ioc = IOContext {
                                 opcode: opcode::Read::CODE,
                                 buf: Arc::new(buf),
                                 offset: Some(task.offset),
                                 len: Some(task.len),
                             };
-                            self.inflight_data_tasks.insert(self.tag, state);
+                            self.inflight_data_tasks.insert(self.tag, ioc);
                         }
                     } else {
                         self.pending_data_tasks.push_front(IoTask::Read(task));
@@ -822,13 +579,13 @@ impl IO {
                 IoTask::Write(task) => {
                     let writer = unsafe { &mut *self.buf_writer.get() };
                     loop {
-                        if let Some(segment) = self.segment_file_of(writer.offset) {
+                        if let Some(segment) = self.wal.segment_file_of(writer.offset) {
                             if segment.status != Status::ReadWrite {
                                 self.pending_data_tasks.push_front(IoTask::Write(task));
                                 break 'task_loop;
                             }
 
-                            if let Some(_fd) = segment.fd {
+                            if let Some(_sd) = segment.sd.as_ref() {
                                 let payload_length = task.buffer.len();
                                 if !segment.can_hold(payload_length as u64) {
                                     segment.append_footer(writer);
@@ -848,222 +605,6 @@ impl IO {
                     }
                     self.build_write_sqe(entries);
                 }
-            }
-        }
-    }
-
-    fn try_open(&mut self) -> Result<(), StoreError> {
-        let log = self.log.clone();
-        let segment = self.alloc_segment()?;
-        let offset = segment.offset;
-        debug_assert_eq!(segment.status, Status::OpenAt);
-        info!(
-            log,
-            "About to create/open LogSegmentFile: `{}`", segment.path
-        );
-        let status = segment.status;
-        let ptr = segment.path.as_ptr() as *const i8;
-        self.inflight_control_tasks.insert(offset, status);
-        let sqe = opcode::OpenAt::new(types::Fd(libc::AT_FDCWD), ptr)
-            .flags(libc::O_CREAT | libc::O_RDWR | libc::O_DIRECT)
-            .mode(libc::S_IRWXU | libc::S_IRWXG)
-            .build()
-            .user_data(offset);
-        unsafe {
-            self.control_ring.submission().push(&sqe).map_err(|e| {
-                error!(
-                    self.log,
-                    "Failed to push OpenAt SQE to submission queue: {:?}", e
-                );
-                StoreError::IoUring
-            })?
-        };
-        Ok(())
-    }
-
-    /// Delete segments when their backed file is deleted
-    fn delete_segments(&mut self, offsets: Vec<u64>) {
-        if offsets.is_empty() {
-            return;
-        }
-
-        self.segments.get_mut().retain(|segment| {
-            !(segment.status == Status::UnlinkAt && offsets.contains(&segment.offset))
-        });
-    }
-
-    fn on_file_op_completion(&mut self, offset: u64, result: i32) -> Result<(), StoreError> {
-        let log = self.log.clone();
-        let mut to_remove = vec![];
-        if let Some(segment) = self.segment_file_of(offset) {
-            if -1 == result {
-                error!(log, "Failed to `{}` {}", segment.status, segment.path);
-                return Err(StoreError::System(result));
-            }
-            match segment.status {
-                Status::OpenAt => {
-                    info!(
-                        log,
-                        "LogSegmentFile: `{}` is created and open with FD: {}",
-                        segment.path,
-                        result
-                    );
-                    segment.fd = Some(result);
-                    segment.status = Status::Fallocate64;
-
-                    info!(
-                        log,
-                        "About to fallocate LogSegmentFile: `{}` with FD: {}", segment.path, result
-                    );
-                    let sqe = opcode::Fallocate64::new(types::Fd(result), segment.size as i64)
-                        .offset(0)
-                        .mode(0)
-                        .build()
-                        .user_data(offset);
-                    unsafe {
-                        self.control_ring.submission().push(&sqe).map_err(|e| {
-                            error!(
-                                log,
-                                "Failed to submit Fallocate SQE to io_uring SQ: {:?}", e
-                            );
-                            StoreError::IoUring
-                        })
-                    }?;
-                    self.inflight_control_tasks
-                        .insert(offset, Status::Fallocate64);
-                }
-                Status::Fallocate64 => {
-                    info!(
-                        log,
-                        "Fallocate of LogSegmentFile `{}` completed", segment.path
-                    );
-                    segment.status = Status::ReadWrite;
-                }
-                Status::Close => {
-                    info!(log, "LogSegmentFile: `{}` is closed", segment.path);
-                    segment.fd = None;
-
-                    info!(log, "About to delete LogSegmentFile `{}`", segment.path);
-                    let sqe = opcode::UnlinkAt::new(
-                        types::Fd(libc::AT_FDCWD),
-                        segment.path.as_ptr() as *const i8,
-                    )
-                    .build()
-                    .flags(squeue::Flags::empty())
-                    .user_data(offset);
-                    unsafe {
-                        self.control_ring.submission().push(&sqe).map_err(|e| {
-                            error!(log, "Failed to push Unlink SQE to SQ: {:?}", e);
-                            StoreError::IoUring
-                        })
-                    }?;
-                }
-                Status::UnlinkAt => {
-                    info!(log, "LogSegmentFile: `{}` is deleted", segment.path);
-                    to_remove.push(offset)
-                }
-                _ => {}
-            };
-        }
-
-        // It's OK to submit 0 entry.
-        self.control_ring.submit().map_err(|e| {
-            error!(log, "Failed to submit SQEs to SQ: {:?}", e);
-            StoreError::IoUring
-        })?;
-
-        self.delete_segments(to_remove);
-
-        Ok(())
-    }
-
-    fn reap_control_tasks(&mut self) -> Result<(), StoreError> {
-        // Map of segment offset to syscall result
-        let mut m = HashMap::new();
-        {
-            let mut cq = self.control_ring.completion();
-            loop {
-                for cqe in cq.by_ref() {
-                    m.insert(cqe.user_data(), cqe.result());
-                }
-                cq.sync();
-                if cq.is_empty() {
-                    break;
-                }
-            }
-        }
-
-        m.into_iter()
-            .flat_map(|(offset, result)| {
-                if self.inflight_control_tasks.remove(&offset).is_none() {
-                    error!(
-                        self.log,
-                        "`file_op` map should have a record for log segment with offset: {}",
-                        offset
-                    );
-                    return Err(StoreError::Internal(
-                        "file_op misses expected in-progress offset-status entry".to_owned(),
-                    ));
-                }
-                self.on_file_op_completion(offset, result)
-            })
-            .count();
-
-        Ok(())
-    }
-
-    fn try_close(&mut self) -> Result<(), StoreError> {
-        let to_close: HashMap<_, _> = self
-            .segments
-            .get_mut()
-            .iter()
-            .take_while(|segment| segment.status == Status::Close)
-            .filter(|segment| !self.inflight_control_tasks.contains_key(&segment.offset))
-            .map(|segment| {
-                info!(self.log, "About to close LogSegmentFile: {}", segment.path);
-                (segment.offset, segment.fd)
-            })
-            .collect();
-
-        for (offset, fd) in to_close {
-            if let Some(fd) = fd {
-                let sqe = opcode::Close::new(types::Fd(fd)).build().user_data(offset);
-                unsafe {
-                    self.control_ring.submission().push(&sqe).map_err(|e| {
-                        error!(self.log, "Failed to submit close SQE to SQ: {:?}", e);
-                        StoreError::IoUring
-                    })
-                }?;
-            }
-        }
-
-        self.control_ring.submit().map_err(|e| {
-            error!(self.log, "io_uring_enter failed when submit: {:?}", e);
-            StoreError::IoUring
-        })?;
-
-        Ok(())
-    }
-
-    fn await_control_task_completion(&self) {
-        if self.pending_data_tasks.is_empty() {
-            return;
-        }
-
-        let now = std::time::Instant::now();
-        match self.control_ring.submit_and_wait(1) {
-            Ok(_) => {
-                info!(
-                    self.log,
-                    "Waiting {}us for control plane file system operation",
-                    now.elapsed().as_micros()
-                );
-            }
-            Err(e) => {
-                error!(self.log, "io_uring_enter got an error: {:?}", e);
-
-                // Fatal errors, crash the process and let watchdog to restart.
-                panic!("io_uring_enter returns error {:?}", e);
             }
         }
     }
@@ -1160,7 +701,7 @@ impl IO {
 
         // Add to block cache
         for buf in cache_entries {
-            if let Some(segment) = self.segment_file_of(buf.offset) {
+            if let Some(segment) = self.wal.segment_file_of(buf.offset) {
                 segment.block_cache.add_entry(buf);
             }
         }
@@ -1196,7 +737,7 @@ impl IO {
     fn should_quit(&self) -> bool {
         0 == self.inflight
             && self.pending_data_tasks.is_empty()
-            && self.inflight_control_tasks.is_empty()
+            && self.wal.control_task_num() == 0
             && self.channel_disconnected
     }
 
@@ -1242,15 +783,15 @@ impl IO {
         loop {
             // Check if we need to create a new log segment
             loop {
-                if io.borrow().writable_segment_count() >= min_preallocated_segment_files + 1 {
+                if io.borrow().wal.writable_segment_count() >= min_preallocated_segment_files + 1 {
                     break;
                 }
-                io.borrow_mut().try_open()?;
+                io.borrow_mut().wal.try_open()?;
             }
 
             // check if we have expired segment files to close and delete
             {
-                io.borrow_mut().try_close()?;
+                io.borrow_mut().wal.try_close()?;
             }
 
             let mut entries = vec![];
@@ -1270,7 +811,9 @@ impl IO {
             } else {
                 let io_borrow = io.borrow();
                 if !io_borrow.should_quit() {
-                    io_borrow.await_control_task_completion();
+                    if !io_borrow.pending_data_tasks.is_empty() {
+                        io_borrow.wal.await_control_task_completion();
+                    }
                 } else {
                     info!(
                         log,
@@ -1288,7 +831,7 @@ impl IO {
                 // Reap data CQE(s)
                 io_mut.reap_data_tasks();
                 // Perform file operation
-                io_mut.reap_control_tasks()?;
+                io_mut.wal.reap_control_tasks()?;
             }
         }
         info!(log, "Main loop quit");
@@ -1305,21 +848,21 @@ impl IO {
 /// * `log` - Logger instance.
 fn on_complete(
     write_window: &mut WriteWindow,
-    state: &OpState,
+    ioc: &IOContext,
     result: i32,
     log: &Logger,
 ) -> Result<(), StoreError> {
-    match state.opcode {
+    match ioc.opcode {
         opcode::Write::CODE => {
             if result < 0 {
                 error!(
                     log,
-                    "Write to WAL range `[{}, {})` failed", state.buf.offset, state.buf.capacity
+                    "Write to WAL range `[{}, {})` failed", ioc.buf.offset, ioc.buf.capacity
                 );
                 return Err(StoreError::System(-result));
             } else {
                 write_window
-                    .commit(state.buf.offset, state.buf.write_pos() as u32)
+                    .commit(ioc.buf.offset, ioc.buf.write_pos() as u32)
                     .map_err(|_e| StoreError::WriteWindow)?;
             }
             Ok(())
@@ -1346,15 +889,14 @@ impl Drop for IO {
 #[cfg(test)]
 mod tests {
     use super::task::{IoTask, WriteTask};
-    use crate::io::segment::LogSegmentFile;
-    use crate::io::DEFAULT_LOG_SEGMENT_FILE_SIZE;
-    use crate::{error::StoreError, io::segment::Status};
+    use crate::error::StoreError;
     use bytes::BytesMut;
     use std::cell::RefCell;
-    use std::error::Error;
-    use std::fs::{self, File};
-    use std::path::{Path, PathBuf};
+    use std::fs;
+    use std::path::{PathBuf, Path};
     use tokio::sync::oneshot;
+
+    use crate::option::WalPath;
 
     fn create_io(store_dir: &Path) -> Result<super::IO, StoreError> {
         let mut options = super::Options::default();
@@ -1380,100 +922,6 @@ mod tests {
 
     fn random_store_dir() -> Result<PathBuf, StoreError> {
         util::create_random_path().map_err(|e| StoreError::IO(e))
-    }
-
-    #[test]
-    fn test_load_wals() -> Result<(), StoreError> {
-        let log = util::terminal_logger();
-        let store_dir = random_store_dir()?;
-        let store_dir = store_dir.as_path();
-        let _store_dir_guard = util::DirectoryRemovalGuard::new(log, store_dir);
-
-        // Prepare log segment files
-        let wal_dir = store_dir.join("wal");
-        let wal_dir = wal_dir.as_path();
-        if !wal_dir.exists() {
-            fs::create_dir_all(wal_dir)?;
-        }
-
-        let files: Vec<_> = (0..10)
-            .into_iter()
-            .map(|i| {
-                let f = wal_dir.join(LogSegmentFile::format(i * 100));
-                File::create(f.as_path())
-            })
-            .flatten()
-            .collect();
-        assert_eq!(10, files.len());
-
-        let mut io = create_io(store_dir)?;
-        io.load_wal_segment_files()?;
-        assert_eq!(files.len(), io.segments.get_mut().len());
-        Ok(())
-    }
-
-    #[test]
-    fn test_alloc_segment() -> Result<(), StoreError> {
-        let log = util::terminal_logger();
-        let store_dir = random_store_dir()?;
-        let store_dir = store_dir.as_path();
-        let _store_dir_guard = util::DirectoryRemovalGuard::new(log, store_dir);
-        let mut io = create_io(store_dir)?;
-        io.alloc_segment()?;
-        assert_eq!(1, io.segments.get_mut().len());
-
-        io.alloc_segment()?;
-        assert_eq!(
-            DEFAULT_LOG_SEGMENT_FILE_SIZE,
-            io.segments.get_mut().get(1).unwrap().offset
-        );
-        Ok(())
-    }
-
-    #[test]
-    fn test_writable_segment_count() -> Result<(), StoreError> {
-        let log = util::terminal_logger();
-        let store_dir = random_store_dir()?;
-        let store_dir = store_dir.as_path();
-        let _store_dir_guard = util::DirectoryRemovalGuard::new(log, store_dir);
-        let mut io = create_io(store_dir)?;
-        io.alloc_segment()?;
-        assert_eq!(1, io.writable_segment_count());
-        io.alloc_segment()?;
-        assert_eq!(2, io.writable_segment_count());
-
-        io.segments.get_mut().front_mut().unwrap().status = Status::Read;
-        assert_eq!(1, io.writable_segment_count());
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_segment_file_of() -> Result<(), StoreError> {
-        let log = util::terminal_logger();
-        let store_dir = random_store_dir()?;
-        let store_dir = store_dir.as_path();
-        let _store_dir_guard = util::DirectoryRemovalGuard::new(log, store_dir);
-        let mut io = create_io(store_dir)?;
-        io.alloc_segment()?;
-        io.alloc_segment()?;
-        assert_eq!(2, io.segments.get_mut().len());
-
-        // Ensure we can get the right
-        let segment = io
-            .segment_file_of(io.options.file_size - 1)
-            .ok_or(StoreError::AllocLogSegment)?;
-        assert_eq!(0, segment.offset);
-
-        let segment = io.segment_file_of(0).ok_or(StoreError::AllocLogSegment)?;
-        assert_eq!(0, segment.offset);
-
-        let segment = io
-            .segment_file_of(io.options.file_size)
-            .ok_or(StoreError::AllocLogSegment)?;
-        assert_eq!(io.options.file_size, segment.offset);
-
-        Ok(())
     }
 
     #[test]
@@ -1528,8 +976,7 @@ mod tests {
         let _store_dir_guard = util::DirectoryRemovalGuard::new(log, store_dir);
         let mut io = create_io(store_dir)?;
 
-        let segment = io.alloc_segment()?;
-        segment.open()?;
+        io.wal.open_segment()?;
 
         let len = 4088;
         let mut buffer = BytesMut::with_capacity(len);
@@ -1556,99 +1003,6 @@ mod tests {
 
         io.build_sqe(&mut entries);
         assert!(!entries.is_empty());
-        Ok(())
-    }
-
-    #[test]
-    fn test_delete_segments() -> Result<(), Box<dyn Error>> {
-        let log = util::terminal_logger();
-        let store_dir = random_store_dir()?;
-        let store_dir = store_dir.as_path();
-        let _store_dir_guard = util::DirectoryRemovalGuard::new(log, store_dir);
-        let mut io = create_io(store_dir)?;
-        io.alloc_segment()?;
-        assert_eq!(1, io.segments.get_mut().len());
-        let offsets = io
-            .segments
-            .get_mut()
-            .iter_mut()
-            .map(|segment| {
-                segment.status = Status::UnlinkAt;
-                segment.offset
-            })
-            .collect();
-        io.delete_segments(offsets);
-        assert_eq!(0, io.segments.get_mut().len());
-
-        Ok(())
-    }
-
-    #[test]
-    fn test_calculate_write_buffers() -> Result<(), StoreError> {
-        let log = util::terminal_logger();
-        let store_dir = random_store_dir()?;
-        let store_dir = store_dir.as_path();
-        let _store_dir_guard = util::DirectoryRemovalGuard::new(log, store_dir);
-        let mut io = create_io(store_dir)?;
-
-        (0..3)
-            .into_iter()
-            .map(|_| io.alloc_segment().err())
-            .flatten()
-            .count();
-        io.segments.get_mut().iter_mut().for_each(|segment| {
-            segment.status = Status::ReadWrite;
-        });
-
-        let len = 4096;
-        let mut buf = BytesMut::with_capacity(len);
-        buf.resize(len, 65);
-        let buf = buf.freeze();
-
-        (0..16).into_iter().for_each(|i| {
-            let (tx, _rx) = oneshot::channel();
-            io.pending_data_tasks.push_back(IoTask::Write(WriteTask {
-                stream_id: 0,
-                offset: i,
-                buffer: buf.clone(),
-                observer: tx,
-            }));
-        });
-
-        // Case when there are multiple writable log segment files
-        let buffers = io.calculate_write_buffers();
-        assert_eq!(1, buffers.len());
-        assert_eq!(Some(&65664), buffers.first());
-
-        // Case when the remaining of the first writable segment file can hold a record
-        let segment = io.segments.get_mut().front_mut().unwrap();
-        segment.written = segment.size - 4096 - 8 - crate::io::segment::FOOTER_LENGTH;
-        let buffers = io.calculate_write_buffers();
-        assert_eq!(2, buffers.len());
-        assert_eq!(Some(&4128), buffers.first());
-        assert_eq!(Some(&61560), buffers.iter().nth(1));
-
-        // Case when the last writable log segment file cannot hold a record
-        let segment = io.segments.get_mut().front_mut().unwrap();
-        segment.written = segment.size - 4096 - 4;
-        let buffers = io.calculate_write_buffers();
-        assert_eq!(2, buffers.len());
-        assert_eq!(Some(&4100), buffers.first());
-        assert_eq!(Some(&65664), buffers.iter().nth(1));
-
-        // Case when the is only one writable segment file and it cannot hold all records
-        io.segments.get_mut().iter_mut().for_each(|segment| {
-            segment.status = Status::Read;
-            segment.written = segment.size;
-        });
-        let segment = io.segments.get_mut().back_mut().unwrap();
-        segment.status = Status::ReadWrite;
-        segment.written = segment.size - 4096;
-
-        let buffers = io.calculate_write_buffers();
-        assert_eq!(1, buffers.len());
-        assert_eq!(Some(&4096), buffers.first());
-
         Ok(())
     }
 

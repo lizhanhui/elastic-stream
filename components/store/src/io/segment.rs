@@ -12,11 +12,14 @@ use std::{
 
 use bytes::{BufMut, BytesMut};
 use derivative::Derivative;
+use io_uring::{opcode, squeue, types};
 use nix::fcntl;
+use slog::{debug, error, info, trace, warn, Logger};
 
 use crate::{
     error::StoreError,
     io::{record::RecordType, CRC32C},
+    option::WalPath,
 };
 
 use super::{block_cache::BlockCache, buf::AlignedBufWriter, record::RECORD_PREFIX_LENGTH};
@@ -24,13 +27,76 @@ use super::{block_cache::BlockCache, buf::AlignedBufWriter, record::RECORD_PREFI
 // CRC(4B) + length(3B) + Type(1B) + earliest_record_time(8B) + latest_record_time(8B)
 pub(crate) const FOOTER_LENGTH: u64 = 24;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct TimeRange {
+    pub(crate) begin: SystemTime,
+    pub(crate) end: Option<SystemTime>,
+}
+
+impl TimeRange {
+    pub(crate) fn new(begin: SystemTime) -> Self {
+        Self { begin, end: None }
+    }
+}
+
+/// `LogSegment` consists of fixed length blocks, which are groups of variable-length records.
+///
+/// The writer writes and reader reads in chunks of blocks. `BlockSize` are normally multiple of the
+/// underlying storage block size, which is medium and cloud-vendor specific. By default, `BlockSize` is
+/// `256KiB`.
+#[derive(Derivative)]
+#[derivative(PartialEq, Eq, Debug)]
+pub(crate) struct LogSegment {
+    /// Log segment offset in bytes, it's the absolute offset in the whole WAL.
+    pub(crate) offset: u64,
+
+    /// Fixed log segment file size
+    /// offset + size = next log segment start offset
+    pub(crate) size: u64,
+
+    /// Position where this log segment has been written.
+    /// It's a relative position in this log segment.
+    pub(crate) written: u64,
+
+    /// Consists of the earliest record time and the latest record time.
+    pub(crate) time_range: Option<TimeRange>,
+
+    /// The block cache layer on top of the log segment, is used to
+    /// cache the most recently read or write blocks depending on the cache strategy.
+    #[derivative(PartialEq = "ignore")]
+    pub(crate) block_cache: BlockCache,
+
+    /// The status of the log segment.
+    pub(crate) status: Status,
+
+    /// The path of the log segment, if the fd is a file descriptor.
+    pub(crate) path: String,
+
+    /// The underlying descriptor of the log segment.
+    /// Currently, it's a file descriptor with `O_DIRECT` flag.
+    pub(crate) sd: Option<SegmentDescriptor>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SegmentDescriptor {
+    /// The underlying storage medium of the log segment.
+    pub(crate) medium: Medium,
+
+    /// The raw file descriptor of the log segment.
+    /// It's a file descriptor or a block device descriptor.
+    pub(crate) fd: RawFd,
+
+    /// The base address of the log segment, always zero if the fd is a file descriptor.
+    pub(crate) base_ptr: u64,
+}
+
 /// Write-ahead-log segment file status.
 ///
 /// `Status` indicates the opcode allowed on it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Status {
     // Once a `LogSegmentFile` is constructed, there is no file in fs yet.
-    // Need to `open` with `O_CREAT` flag.
+    // Need to `open` with `O_CREATE` flag.
     OpenAt,
 
     // Given `LogSegmentFile` are fixed in length, it would accelerate IO performance if space is pre-allocated.
@@ -47,6 +113,17 @@ pub(crate) enum Status {
 
     // Delete the file to reclaim disk space.
     UnlinkAt,
+}
+
+// TODO: a better display format is needed.
+impl Display for LogSegment {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "LogSegment {{ offset: {}, size: {}, written: {}, time_range: {:?} }}",
+            self.offset, self.size, self.written, self.time_range
+        )
+    }
 }
 
 impl Display for Status {
@@ -81,59 +158,17 @@ pub(crate) enum Medium {
     S3,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct TimeRange {
-    pub(crate) begin: SystemTime,
-    pub(crate) end: Option<SystemTime>,
-}
-
-impl TimeRange {
-    pub(crate) fn new(begin: SystemTime) -> Self {
-        Self { begin, end: None }
-    }
-}
-
-/// `LogSegmentFile` consists of fixed length blocks, which are groups of variable-length records.
-///
-/// The writer writes and reader reads in chunks of blocks. `BlockSize` are normally multiple of the
-/// underlying storage block size, which is medium and cloud-vendor specific. By default, `BlockSize` is
-/// `256KiB`.
-#[derive(Derivative)]
-#[derivative(PartialEq, Eq, Debug)]
-pub(crate) struct LogSegmentFile {
-    pub(crate) offset: u64,
-    pub(crate) path: String,
-
-    /// Fixed log segment file size
-    pub(crate) size: u64,
-
-    pub(crate) medium: Medium,
-    pub(crate) status: Status,
-
-    // Use File or RawFd?
-    pub(crate) fd: Option<RawFd>,
-
-    /// Position where this log segment file has been written.
-    pub(crate) written: u64,
-
-    pub(crate) time_range: Option<TimeRange>,
-
-    #[derivative(PartialEq = "ignore")]
-    pub(crate) block_cache: BlockCache,
-}
-
-impl LogSegmentFile {
-    pub(crate) fn new(offset: u64, path: &str, size: u64, medium: Medium) -> Self {
+impl LogSegment {
+    pub(crate) fn new(offset: u64, size: u64, path: String) -> Self {
         Self {
             offset,
-            path: path.to_owned(),
             size,
-            medium,
-            status: Status::OpenAt,
-            fd: None,
             written: 0,
             time_range: None,
             block_cache: BlockCache::new(offset, 4096),
+            sd: None,
+            status: Status::OpenAt,
+            path,
         }
     }
 
@@ -147,22 +182,8 @@ impl LogSegmentFile {
         file_name.parse::<u64>().ok()
     }
 
-    pub(crate) fn with_offset(
-        wal_dir: &Path,
-        offset: u64,
-        file_size: u64,
-    ) -> Option<LogSegmentFile> {
-        let file_path = wal_dir.join(Self::format(offset));
-        Some(LogSegmentFile::new(
-            offset,
-            file_path.to_str()?,
-            file_size,
-            Medium::Ssd,
-        ))
-    }
-
     pub(crate) fn open(&mut self) -> Result<(), StoreError> {
-        if self.fd.is_some() {
+        if self.sd.is_some() {
             return Ok(());
         }
 
@@ -176,6 +197,8 @@ impl LogSegmentFile {
             .open(Path::new(&self.path))?;
         let metadata = file.metadata()?;
 
+        let mut status = Status::OpenAt;
+
         if self.size != metadata.len() {
             debug_assert!(0 == metadata.len(), "LogSegmentFile is corrupted");
             fcntl::fallocate(
@@ -185,14 +208,20 @@ impl LogSegmentFile {
                 self.size as libc::off_t,
             )
             .map_err(|errno| StoreError::System(errno as i32))?;
-            self.status = Status::ReadWrite;
+            status = Status::ReadWrite;
         } else {
             // We assume the log segment file is read-only. The recovery/apply procedure would update status accordingly.
-            self.status = Status::Read;
+            status = Status::Read;
         }
-        self.fd = Some(file.into_raw_fd());
 
-        // Read time_range from meta-blocks
+        self.status = status;
+        self.sd = Some(SegmentDescriptor {
+            medium: Medium::Ssd,
+            fd: file.into_raw_fd(),
+            base_ptr: 0,
+        });
+
+        // TODO: read time_range from meta-blocks
 
         Ok(())
     }
@@ -234,10 +263,10 @@ impl LogSegmentFile {
 
     pub(crate) fn remaining(&self) -> u64 {
         if Status::ReadWrite != self.status {
-            0
+            return 0;
         } else {
             debug_assert!(self.size >= self.written);
-            self.size - self.written
+            return self.size - self.written;
         }
     }
 
@@ -255,16 +284,16 @@ impl LogSegmentFile {
     }
 }
 
-impl Drop for LogSegmentFile {
+impl Drop for LogSegment {
     fn drop(&mut self) {
         // Close these open FD
-        if let Some(fd) = self.fd {
-            let _file = unsafe { File::from_raw_fd(fd) };
+        if let Some(sd) = self.sd.as_ref() {
+            let _file = unsafe { File::from_raw_fd(sd.fd) };
         }
     }
 }
 
-impl PartialOrd for LogSegmentFile {
+impl PartialOrd for LogSegment {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         let this = Path::new(&self.path);
         let that = Path::new(&other.path);
@@ -281,7 +310,7 @@ impl PartialOrd for LogSegmentFile {
     }
 }
 
-impl Ord for LogSegmentFile {
+impl Ord for LogSegment {
     fn cmp(&self, other: &Self) -> Ordering {
         match self.partial_cmp(other) {
             Some(res) => res,
@@ -294,13 +323,13 @@ impl Ord for LogSegmentFile {
 
 #[cfg(test)]
 mod tests {
-    use super::LogSegmentFile;
+    use super::LogSegment;
 
     #[test]
     fn test_format_number() {
         assert_eq!(
-            LogSegmentFile::format(0).len(),
-            LogSegmentFile::format(std::u64::MAX).len()
+            LogSegment::format(0).len(),
+            LogSegment::format(std::u64::MAX).len()
         );
     }
 }

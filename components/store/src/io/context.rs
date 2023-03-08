@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use super::buf::AlignedBuf;
 
-pub(crate) struct OpState {
+pub(crate) struct IOContext {
     pub(crate) opcode: u8,
 
     pub(crate) buf: Arc<AlignedBuf>,
