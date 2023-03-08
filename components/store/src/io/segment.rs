@@ -1,11 +1,10 @@
 use std::{
     cmp::Ordering,
-    collections::{HashMap, VecDeque},
     fmt::Display,
     fs::{File, OpenOptions},
     os::{
         fd::{AsRawFd, FromRawFd, IntoRawFd, RawFd},
-        unix::prelude::{FileExt, OpenOptionsExt},
+        unix::prelude::OpenOptionsExt,
     },
     path::Path,
     time::SystemTime,
@@ -198,7 +197,7 @@ impl LogSegment {
             .open(Path::new(&self.path))?;
         let metadata = file.metadata()?;
 
-        let mut sd_status = Status::OpenAt;
+        let mut status = Status::OpenAt;
 
         if self.size != metadata.len() {
             debug_assert!(0 == metadata.len(), "LogSegmentFile is corrupted");
@@ -209,12 +208,13 @@ impl LogSegment {
                 self.size as libc::off_t,
             )
             .map_err(|errno| StoreError::System(errno as i32))?;
-            sd_status = Status::ReadWrite;
+            status = Status::ReadWrite;
         } else {
             // We assume the log segment file is read-only. The recovery/apply procedure would update status accordingly.
-            sd_status = Status::Read;
+            status = Status::Read;
         }
 
+        self.status = status;
         self.sd = Some(SegmentDescriptor {
             medium: Medium::Ssd,
             fd: file.into_raw_fd(),

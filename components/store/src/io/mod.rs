@@ -14,11 +14,8 @@ use crate::option::WalPath;
 use crossbeam::channel::{Receiver, Sender, TryRecvError};
 use io_uring::register;
 use io_uring::{opcode, squeue, types};
-use segment::LogSegment;
-use slog::{debug, error, info, trace, warn, Logger};
+use slog::{error, info, trace, warn, Logger};
 use std::collections::{BTreeMap, HashSet};
-use std::fs::OpenOptions;
-use std::os::unix::prelude::{FileExt, OpenOptionsExt};
 use std::rc::Rc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -26,13 +23,11 @@ use std::{
     cell::{RefCell, UnsafeCell},
     collections::{HashMap, VecDeque},
     os::fd::AsRawFd,
-    path::Path,
 };
 use task::IoTask;
 
 use self::buf::{AlignedBufReader, AlignedBufWriter};
 use self::context::IOContext;
-use self::record::RecordType;
 use self::segment::Status;
 use self::task::WriteTask;
 use self::wal::WAL;
@@ -937,8 +932,7 @@ mod tests {
         let _wal_dir_guard = util::DirectoryRemovalGuard::new(wal_dir.as_path());
         let mut io = create_io(super::WalPath::new(wal_dir.to_str().unwrap(), 1234)?)?;
 
-        let segment = io.wal.alloc_segment()?;
-        segment.open()?;
+        io.wal.open_segment()?;
 
         let len = 4088;
         let mut buffer = BytesMut::with_capacity(len);
