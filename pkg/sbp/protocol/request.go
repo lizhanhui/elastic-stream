@@ -1,8 +1,13 @@
 package protocol
 
 import (
+	"github.com/pkg/errors"
+
+	"github.com/AutoMQ/placement-manager/api/rpcfb/rpcfb"
 	"github.com/AutoMQ/placement-manager/pkg/sbp/codec/format"
 )
+
+var errUnsupported = errors.New("unsupported format")
 
 // Request is an SBP request
 type Request interface {
@@ -13,13 +18,16 @@ type Request interface {
 
 // ListRangesRequest is a request to operation.ListRange
 type ListRangesRequest struct {
-	TimeoutMs TimeoutMs
-
-	// The range owner could be a data node or a list of streams.
-	RangeOwners []RangeOwner
+	*rpcfb.ListRangesRequestT
 }
 
 //nolint:revive // EXC0012 comment already exists in interface
 func (l *ListRangesRequest) Unmarshal(fmt format.Format, data []byte) error {
-	return getFormatter(fmt).unmarshalListRangesRequest(data, l)
+	switch fmt {
+	case format.FlatBuffer():
+		rpcfb.GetRootAsListRangesRequest(data, 0).UnPackTo(l.ListRangesRequestT)
+		return nil
+	default:
+		return errUnsupported
+	}
 }

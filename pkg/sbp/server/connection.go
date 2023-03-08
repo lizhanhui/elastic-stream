@@ -14,6 +14,7 @@ import (
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 
+	"github.com/AutoMQ/placement-manager/api/rpcfb/rpcfb"
 	"github.com/AutoMQ/placement-manager/pkg/sbp/codec"
 	"github.com/AutoMQ/placement-manager/pkg/sbp/protocol"
 	"github.com/AutoMQ/placement-manager/pkg/util/logutil"
@@ -451,8 +452,10 @@ func (c *conn) runHandler(act func() protocol.Response) (resp protocol.Response)
 		if didPanic {
 			e := recover()
 			resp = &protocol.SystemErrorResponse{
-				ErrorCode:    protocol.InternalError,
-				ErrorMessage: "handler panic",
+				SystemErrorResponseT: &rpcfb.SystemErrorResponseT{
+					ErrorCode:    rpcfb.ErrorCodeUNKNOWN,
+					ErrorMessage: "handler panic",
+				},
 			}
 			if e != nil {
 				logger.Error("panic serving", zap.Reflect("panic", e), zap.Stack("stack"))

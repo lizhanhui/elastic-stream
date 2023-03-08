@@ -1,7 +1,9 @@
 package protocol
 
 import (
+	"github.com/AutoMQ/placement-manager/api/rpcfb/rpcfb"
 	"github.com/AutoMQ/placement-manager/pkg/sbp/codec/format"
+	"github.com/AutoMQ/placement-manager/pkg/util/fbutil"
 )
 
 // Response is an SBP response
@@ -26,28 +28,22 @@ func (s *singleResponse) IsEnd() bool {
 // SystemErrorResponse is used to return the error code and error message if the system error flag of sbp is set.
 type SystemErrorResponse struct {
 	singleResponse
-	ErrorCode    ErrorCode
-	ErrorMessage string
+	*rpcfb.SystemErrorResponseT
 }
 
 //nolint:revive // EXC0012 comment already exists in interface
 func (se *SystemErrorResponse) Marshal(fmt format.Format) ([]byte, error) {
-	return getFormatter(fmt).marshalSystemErrorResponse(se)
+	switch fmt {
+	case format.FlatBuffer():
+		return fbutil.Marshal(se.SystemErrorResponseT), nil
+	default:
+		return nil, errUnsupported
+	}
 }
 
 // ListRangesResponse is a response to operation.ListRange
 type ListRangesResponse struct {
-	// The time in milliseconds to throttle the client, due to a quota violation or the server is too busy.
-	ThrottleTimeMs ThrottleTimeMs
-
-	// The responses of list ranges request
-	ListResponses []ListRangesResult
-
-	// The top level error code, or 0 if there was no error.
-	ErrorCode ErrorCode
-
-	// The error message, or omitted if there was no error.
-	ErrorMessage string
+	*rpcfb.ListRangesResponseT
 
 	// HasNext indicates whether there are more responses after this one.
 	HasNext bool
@@ -55,7 +51,12 @@ type ListRangesResponse struct {
 
 //nolint:revive // EXC0012 comment already exists in interface
 func (lr *ListRangesResponse) Marshal(fmt format.Format) ([]byte, error) {
-	return getFormatter(fmt).marshalListRangesResponse(lr)
+	switch fmt {
+	case format.FlatBuffer():
+		return fbutil.Marshal(lr.ListRangesResponseT), nil
+	default:
+		return nil, errUnsupported
+	}
 }
 
 //nolint:revive // EXC0012 comment already exists in interface
