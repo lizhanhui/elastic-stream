@@ -1,6 +1,7 @@
 package server
 
 import (
+	"github.com/AutoMQ/placement-manager/api/rpcfb/rpcfb"
 	"github.com/AutoMQ/placement-manager/pkg/sbp/codec/operation"
 	"github.com/AutoMQ/placement-manager/pkg/sbp/protocol"
 )
@@ -25,8 +26,10 @@ var (
 		newReq: func() protocol.Request { return nil },
 		act: func(_ Handler, _ protocol.Request) (resp protocol.Response) {
 			return &protocol.SystemErrorResponse{
-				ErrorCode:    protocol.InvalidRequest,
-				ErrorMessage: "unknown operation",
+				SystemErrorResponseT: &rpcfb.SystemErrorResponseT{
+					ErrorCode:    rpcfb.ErrorCodeINVALID_REQUEST,
+					ErrorMessage: "unknown operation",
+				},
 			}
 		},
 	}
