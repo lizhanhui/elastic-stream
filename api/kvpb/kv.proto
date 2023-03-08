@@ -1,0 +1,69 @@
+syntax = "proto3";
+
+package kvpb;
+
+import "gogoproto/gogo.proto";
+
+option (gogoproto.marshaler_all) = true;
+option (gogoproto.unmarshaler_all) = true;
+
+service KV {
+  rpc StoreGlobalConfig(StoreGlobalConfigRequest) returns (StoreGlobalConfigResponse) {}
+
+  rpc LoadGlobalConfig(LoadGlobalConfigRequest) returns (LoadGlobalConfigResponse) {}
+
+  rpc WatchGlobalConfig(WatchGlobalConfigRequest) returns (stream WatchGlobalConfigResponse) {}
+}
+
+message StoreGlobalConfigRequest {
+  repeated GlobalConfigItem changes = 1;
+  string config_path = 2;
+}
+
+message StoreGlobalConfigResponse {
+}
+
+message LoadGlobalConfigRequest {
+  repeated string names = 1;
+  string config_path = 2;
+}
+
+message LoadGlobalConfigResponse {
+  repeated GlobalConfigItem items = 1;
+  int64 revision = 2;
+}
+
+message WatchGlobalConfigRequest {
+  string config_path = 1;
+  int64 revision = 2;
+}
+
+message WatchGlobalConfigResponse {
+  repeated GlobalConfigItem changes = 1;
+  int64 revision = 2;
+  Error error = 3;
+}
+
+message GlobalConfigItem {
+  string name = 1;
+  bytes payload = 2;
+  Error error = 3;
+  EventType kind = 4;
+}
+
+message Error {
+  ErrorType type = 1;
+  string message = 2;
+}
+
+enum ErrorType {
+  OK = 0;
+  UNKNOWN = 1;
+  NOT_FOUND = 2;
+  DATA_COMPACTED = 3;
+}
+
+enum EventType {
+  PUT = 0;
+  DELETE = 1;
+}
