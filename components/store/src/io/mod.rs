@@ -1345,19 +1345,16 @@ impl Drop for IO {
 
 #[cfg(test)]
 mod tests {
-    use bytes::BytesMut;
-    use std::cell::RefCell;
-    use std::error::Error;
-    use std::fs::File;
-    use std::path::{Path, PathBuf};
-    use std::{env, fs};
-    use tokio::sync::oneshot;
-    use uuid::Uuid;
-
     use super::task::{IoTask, WriteTask};
     use crate::io::segment::LogSegmentFile;
     use crate::io::DEFAULT_LOG_SEGMENT_FILE_SIZE;
     use crate::{error::StoreError, io::segment::Status};
+    use bytes::BytesMut;
+    use std::cell::RefCell;
+    use std::error::Error;
+    use std::fs::{self, File};
+    use std::path::{Path, PathBuf};
+    use tokio::sync::oneshot;
 
     fn create_io(store_dir: &Path) -> Result<super::IO, StoreError> {
         let mut options = super::Options::default();
@@ -1382,12 +1379,7 @@ mod tests {
     }
 
     fn random_store_dir() -> Result<PathBuf, StoreError> {
-        let uuid = Uuid::new_v4();
-        let mut wal_dir = env::temp_dir();
-        wal_dir.push(uuid.simple().to_string());
-        let wal_path = wal_dir.as_path();
-        fs::create_dir_all(wal_path)?;
-        Ok(wal_dir)
+        util::create_random_path().map_err(|e| StoreError::IO(e))
     }
 
     #[test]

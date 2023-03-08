@@ -1,6 +1,10 @@
-use std::path::Path;
+use std::{
+    env, fs, io,
+    path::{Path, PathBuf},
+};
 
 use slog::{error, trace, Logger};
+use uuid::Uuid;
 
 pub struct DirectoryRemovalGuard<'a> {
     log: Logger,
@@ -24,7 +28,7 @@ impl<'a> Drop for DirectoryRemovalGuard<'a> {
                 })
                 .count();
         });
-        if let Err(e) = std::fs::remove_dir_all(path) {
+        if let Err(e) = fs::remove_dir_all(path) {
             error!(
                 self.log,
                 "Failed to remove directory: {:?}. Error: {:?}", path, e
@@ -33,29 +37,35 @@ impl<'a> Drop for DirectoryRemovalGuard<'a> {
     }
 }
 
+pub fn create_random_path() -> io::Result<PathBuf> {
+    let uuid = Uuid::new_v4();
+    let mut wal_dir = env::temp_dir();
+    wal_dir.push(uuid.simple().to_string());
+    let db_path = wal_dir.as_path();
+    fs::create_dir_all(db_path)?;
+    Ok(wal_dir)
+}
+
 #[cfg(test)]
 mod tests {
-    use std::{env, error::Error};
-    use uuid::Uuid;
+    use std::{error::Error, fs};
 
     #[test]
     fn test_directory_removal() -> Result<(), Box<dyn Error>> {
-        let tmp_dir = env::temp_dir();
-        let uuid = Uuid::new_v4().simple().to_string();
-        let path = tmp_dir.as_path().join(uuid);
+        let path = super::create_random_path()?;
         let path = path.as_path();
         {
             let log = crate::terminal_logger();
             let _guard = super::DirectoryRemovalGuard::new(log, path);
             if !path.exists() {
-                std::fs::create_dir(path)?;
+                fs::create_dir(path)?;
             }
 
             let _files: Vec<_> = (0..3)
                 .into_iter()
                 .map(|i| {
                     let file1 = path.join(&format!("file{}.txt", i));
-                    std::fs::File::create(file1.as_path())
+                    fs::File::create(file1.as_path())
                 })
                 .flatten()
                 .collect();
