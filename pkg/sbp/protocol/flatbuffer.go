@@ -6,7 +6,7 @@ import (
 	"github.com/bytedance/gopkg/lang/mcache"
 	flatbuffers "github.com/google/flatbuffers/go"
 
-	rpcfb "github.com/AutoMQ/placement-manager/api/rpcfb/header"
+	"github.com/AutoMQ/placement-manager/api/rpcfb/rpcfb"
 )
 
 type flatBufferFormatter struct {

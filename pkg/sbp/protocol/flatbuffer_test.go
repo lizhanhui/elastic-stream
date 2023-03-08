@@ -6,7 +6,7 @@ import (
 	flatbuffers "github.com/google/flatbuffers/go"
 	"github.com/stretchr/testify/require"
 
-	rpcfb "github.com/AutoMQ/placement-manager/api/rpcfb/header"
+	"github.com/AutoMQ/placement-manager/api/rpcfb/rpcfb"
 )
 
 func TestMarshalListRangesResponse(t *testing.T) {
