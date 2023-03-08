@@ -31,7 +31,9 @@ import (
 	"go.etcd.io/etcd/server/v3/embed"
 	"go.etcd.io/etcd/server/v3/etcdserver"
 	"go.uber.org/zap"
+	"google.golang.org/grpc"
 
+	"github.com/AutoMQ/placement-manager/api/kvpb"
 	sbpServer "github.com/AutoMQ/placement-manager/pkg/sbp/server"
 	"github.com/AutoMQ/placement-manager/pkg/server/config"
 	"github.com/AutoMQ/placement-manager/pkg/server/handler"
@@ -82,6 +84,10 @@ func NewServer(ctx context.Context, cfg *config.Config, logger *zap.Logger) (*Se
 		lg:     logger,
 	}
 	s.started.Store(false)
+
+	s.cfg.Etcd.ServiceRegister = func(gs *grpc.Server) {
+		kvpb.RegisterKVServer(gs, &GrpcServer{Server: s})
+	}
 
 	return s, nil
 }
