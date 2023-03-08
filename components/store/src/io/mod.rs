@@ -3,8 +3,8 @@ pub(crate) mod buf;
 mod context;
 mod record;
 mod segment;
-mod wal;
 pub(crate) mod task;
+mod wal;
 mod write_window;
 
 use crate::error::{AppendError, StoreError};
@@ -34,8 +34,8 @@ use self::buf::{AlignedBufReader, AlignedBufWriter};
 use self::context::IOContext;
 use self::record::RecordType;
 use self::segment::Status;
-use self::wal::WAL;
 use self::task::WriteTask;
+use self::wal::WAL;
 use self::write_window::WriteWindow;
 use crc::{Crc, CRC_32_ISCSI};
 
@@ -859,333 +859,162 @@ impl AsRawFd for IO {
     }
 }
 
-// #[cfg(test)]
-// mod tests {
-//     use bytes::BytesMut;
-//     use std::cell::RefCell;
-//     use std::env;
-//     use std::error::Error;
-//     use std::fs::File;
-//     use std::path::PathBuf;
-//     use tokio::sync::oneshot;
-//     use uuid::Uuid;
+#[cfg(test)]
+mod tests {
+    use bytes::BytesMut;
+    use std::cell::RefCell;
+    use std::env;
+    use std::path::PathBuf;
+    use tokio::sync::oneshot;
+    use uuid::Uuid;
 
-//     use super::task::{IoTask, WriteTask};
-//     use crate::io::segment::LogSegment;
-//     use crate::io::DEFAULT_LOG_SEGMENT_FILE_SIZE;
-//     use crate::option::WalPath;
-//     use crate::{error::StoreError, io::segment::Status};
+    use super::task::{IoTask, WriteTask};
 
-//     fn create_io(wal_dir: WalPath) -> Result<super::IO, StoreError> {
-//         let mut options = super::Options::default();
-//         let logger = util::terminal_logger();
-//         options.add_wal_path(wal_dir);
-//         super::IO::new(&mut options, logger.clone())
-//     }
+    use crate::error::StoreError;
+    use crate::option::WalPath;
 
-//     fn random_wal_dir() -> Result<PathBuf, StoreError> {
-//         let uuid = Uuid::new_v4();
-//         let mut wal_dir = env::temp_dir();
-//         wal_dir.push(uuid.simple().to_string());
-//         let wal_path = wal_dir.as_path();
-//         std::fs::create_dir_all(wal_path)?;
-//         Ok(wal_dir)
-//     }
+    fn create_io(wal_dir: WalPath) -> Result<super::IO, StoreError> {
+        let mut options = super::Options::default();
+        let logger = util::terminal_logger();
+        options.add_wal_path(wal_dir);
+        super::IO::new(&mut options, logger.clone())
+    }
 
-//     #[test]
-//     fn test_load_wals() -> Result<(), StoreError> {
-//         let wal_dir = random_wal_dir()?;
-//         // Prepare log segment files
-//         let files: Vec<_> = (0..10)
-//             .into_iter()
-//             .map(|i| {
-//                 let f = wal_dir.join(LogSegment::format(i * 100));
-//                 File::create(f.as_path())
-//             })
-//             .flatten()
-//             .collect();
-//         assert_eq!(10, files.len());
+    fn random_wal_dir() -> Result<PathBuf, StoreError> {
+        let uuid = Uuid::new_v4();
+        let mut wal_dir = env::temp_dir();
+        wal_dir.push(uuid.simple().to_string());
+        let wal_path = wal_dir.as_path();
+        std::fs::create_dir_all(wal_path)?;
+        Ok(wal_dir)
+    }
 
-//         let _wal_dir_guard = util::DirectoryRemovalGuard::new(wal_dir.as_path());
-//         let wal_dir = super::WalPath::new(wal_dir.to_str().unwrap(), 1234)?;
+    #[test]
+    fn test_receive_io_tasks() -> Result<(), StoreError> {
+        let wal_dir = random_wal_dir()?;
+        let _wal_dir_guard = util::DirectoryRemovalGuard::new(wal_dir.as_path());
+        let mut io = create_io(super::WalPath::new(wal_dir.to_str().unwrap(), 1234)?)?;
+        let sender = io.sender.take().unwrap();
+        let mut buffer = BytesMut::with_capacity(128);
+        buffer.resize(128, 65);
+        let buffer = buffer.freeze();
 
-//         let mut io = create_io(wal_dir)?;
-//         io.load_wal_segment_files()?;
-//         assert_eq!(files.len(), io.segments.get_mut().len());
-//         Ok(())
-//     }
+        // Send IoTask to channel
+        (0..16)
+            .into_iter()
+            .flat_map(|_| {
+                let (tx, _rx) = oneshot::channel();
+                let io_task = IoTask::Write(WriteTask {
+                    stream_id: 0,
+                    offset: 0,
+                    buffer: buffer.clone(),
+                    observer: tx,
+                });
+                sender.send(io_task)
+            })
+            .count();
 
-//     #[test]
-//     fn test_alloc_segment() -> Result<(), StoreError> {
-//         let wal_dir = random_wal_dir()?;
-//         let _wal_dir_guard = util::DirectoryRemovalGuard::new(wal_dir.as_path());
-//         let mut io = create_io(super::WalPath::new(wal_dir.to_str().unwrap(), 1234)?)?;
-//         io.alloc_segment()?;
-//         assert_eq!(1, io.segments.get_mut().len());
+        io.receive_io_tasks();
+        assert_eq!(16, io.pending_data_tasks.len());
+        io.pending_data_tasks.clear();
 
-//         io.alloc_segment()?;
-//         assert_eq!(
-//             DEFAULT_LOG_SEGMENT_FILE_SIZE,
-//             io.segments.get_mut().get(1).unwrap().offset
-//         );
-//         Ok(())
-//     }
+        drop(sender);
 
-//     #[test]
-//     fn test_writable_segment_count() -> Result<(), StoreError> {
-//         let wal_dir = random_wal_dir()?;
-//         let _wal_dir_guard = util::DirectoryRemovalGuard::new(wal_dir.as_path());
-//         let mut io = create_io(super::WalPath::new(wal_dir.to_str().unwrap(), 1234)?)?;
-//         io.alloc_segment()?;
-//         assert_eq!(1, io.writable_segment_count());
-//         io.alloc_segment()?;
-//         assert_eq!(2, io.writable_segment_count());
+        // Mock that some in-flight IO tasks were reaped
+        io.inflight = 0;
 
-//         io.segments.get_mut().front_mut().unwrap().status = Status::Read;
-//         assert_eq!(1, io.writable_segment_count());
+        io.receive_io_tasks();
 
-//         Ok(())
-//     }
+        assert_eq!(true, io.pending_data_tasks.is_empty());
+        assert_eq!(true, io.channel_disconnected);
 
-//     #[test]
-//     fn test_segment_file_of() -> Result<(), StoreError> {
-//         let wal_dir = random_wal_dir()?;
-//         let _wal_dir_guard = util::DirectoryRemovalGuard::new(wal_dir.as_path());
-//         let mut io = create_io(super::WalPath::new(wal_dir.to_str().unwrap(), 1234)?)?;
-//         io.alloc_segment()?;
-//         io.alloc_segment()?;
-//         assert_eq!(2, io.segments.get_mut().len());
+        Ok(())
+    }
 
-//         // Ensure we can get the right
-//         let segment = io
-//             .segment_file_of(io.options.file_size - 1)
-//             .ok_or(StoreError::AllocLogSegment)?;
-//         assert_eq!(0, segment.offset);
+    #[test]
+    fn test_build_sqe() -> Result<(), StoreError> {
+        let wal_dir = random_wal_dir()?;
+        let _wal_dir_guard = util::DirectoryRemovalGuard::new(wal_dir.as_path());
+        let mut io = create_io(super::WalPath::new(wal_dir.to_str().unwrap(), 1234)?)?;
 
-//         let segment = io.segment_file_of(0).ok_or(StoreError::AllocLogSegment)?;
-//         assert_eq!(0, segment.offset);
+        let segment = io.wal.alloc_segment()?;
+        segment.open()?;
 
-//         let segment = io
-//             .segment_file_of(io.options.file_size)
-//             .ok_or(StoreError::AllocLogSegment)?;
-//         assert_eq!(io.options.file_size, segment.offset);
+        let len = 4088;
+        let mut buffer = BytesMut::with_capacity(len);
+        buffer.resize(len, 65);
+        let buffer = buffer.freeze();
 
-//         Ok(())
-//     }
+        // Send IoTask to channel
+        (0..16)
+            .into_iter()
+            .map(|n| {
+                let (tx, _rx) = oneshot::channel();
+                IoTask::Write(WriteTask {
+                    stream_id: 0,
+                    offset: n,
+                    buffer: buffer.clone(),
+                    observer: tx,
+                })
+            })
+            .for_each(|io_task| {
+                io.pending_data_tasks.push_back(io_task);
+            });
 
-//     #[test]
-//     fn test_receive_io_tasks() -> Result<(), StoreError> {
-//         let wal_dir = random_wal_dir()?;
-//         let _wal_dir_guard = util::DirectoryRemovalGuard::new(wal_dir.as_path());
-//         let mut io = create_io(super::WalPath::new(wal_dir.to_str().unwrap(), 1234)?)?;
-//         let sender = io.sender.take().unwrap();
-//         let mut buffer = BytesMut::with_capacity(128);
-//         buffer.resize(128, 65);
-//         let buffer = buffer.freeze();
+        let mut entries = Vec::new();
 
-//         // Send IoTask to channel
-//         (0..16)
-//             .into_iter()
-//             .flat_map(|_| {
-//                 let (tx, _rx) = oneshot::channel();
-//                 let io_task = IoTask::Write(WriteTask {
-//                     stream_id: 0,
-//                     offset: 0,
-//                     buffer: buffer.clone(),
-//                     observer: tx,
-//                 });
-//                 sender.send(io_task)
-//             })
-//             .count();
+        io.build_sqe(&mut entries);
+        assert!(!entries.is_empty());
+        Ok(())
+    }
 
-//         io.receive_io_tasks();
-//         assert_eq!(16, io.pending_data_tasks.len());
-//         io.pending_data_tasks.clear();
+    #[test]
+    fn test_run() -> Result<(), StoreError> {
+        let (tx, rx) = oneshot::channel();
+        let handle = std::thread::spawn(move || {
+            let wal_dir = random_wal_dir().unwrap();
+            let _wal_dir_guard = util::DirectoryRemovalGuard::new(wal_dir.as_path());
+            let mut io =
+                create_io(super::WalPath::new(wal_dir.to_str().unwrap(), 1234).unwrap()).unwrap();
+            let sender = io
+                .sender
+                .take()
+                .ok_or(StoreError::Configuration("IO channel".to_owned()))
+                .unwrap();
+            tx.send(sender);
+            let io = RefCell::new(io);
 
-//         drop(sender);
+            let _ = super::IO::run(io);
+            println!("Module io stopped");
+        });
 
-//         // Mock that some in-flight IO tasks were reaped
-//         io.inflight = 0;
+        let sender = rx
+            .blocking_recv()
+            .map_err(|_| StoreError::Internal("Internal error".to_owned()))?;
 
-//         io.receive_io_tasks();
+        let mut buffer = BytesMut::with_capacity(4096);
+        buffer.resize(4096, 65);
+        let buffer = buffer.freeze();
 
-//         assert_eq!(true, io.pending_data_tasks.is_empty());
-//         assert_eq!(true, io.channel_disconnected);
+        (0..16)
+            .into_iter()
+            .map(|i| {
+                let (tx, _rx) = oneshot::channel();
+                IoTask::Write(WriteTask {
+                    stream_id: 0,
+                    offset: i as i64,
+                    buffer: buffer.clone(),
+                    observer: tx,
+                })
+            })
+            .for_each(|task| {
+                sender.send(task).unwrap();
+            });
 
-//         Ok(())
-//     }
+        drop(sender);
 
-//     #[test]
-//     fn test_build_sqe() -> Result<(), StoreError> {
-//         let wal_dir = random_wal_dir()?;
-//         let _wal_dir_guard = util::DirectoryRemovalGuard::new(wal_dir.as_path());
-//         let mut io = create_io(super::WalPath::new(wal_dir.to_str().unwrap(), 1234)?)?;
+        handle.join().map_err(|_| StoreError::AllocLogSegment)?;
 
-//         let segment = io.alloc_segment()?;
-//         segment.open()?;
-
-//         let len = 4088;
-//         let mut buffer = BytesMut::with_capacity(len);
-//         buffer.resize(len, 65);
-//         let buffer = buffer.freeze();
-
-//         // Send IoTask to channel
-//         (0..16)
-//             .into_iter()
-//             .map(|n| {
-//                 let (tx, _rx) = oneshot::channel();
-//                 IoTask::Write(WriteTask {
-//                     stream_id: 0,
-//                     offset: n,
-//                     buffer: buffer.clone(),
-//                     observer: tx,
-//                 })
-//             })
-//             .for_each(|io_task| {
-//                 io.pending_data_tasks.push_back(io_task);
-//             });
-
-//         let mut entries = Vec::new();
-
-//         io.build_sqe(&mut entries);
-//         assert!(!entries.is_empty());
-//         Ok(())
-//     }
-
-//     #[test]
-//     fn test_delete_segments() -> Result<(), Box<dyn Error>> {
-//         let wal_dir = random_wal_dir()?;
-//         let _wal_dir_guard = util::DirectoryRemovalGuard::new(wal_dir.as_path());
-//         let mut io = create_io(super::WalPath::new(wal_dir.to_str().unwrap(), 1234)?)?;
-//         io.alloc_segment()?;
-//         assert_eq!(1, io.segments.get_mut().len());
-//         let offsets = io
-//             .segments
-//             .get_mut()
-//             .iter_mut()
-//             .map(|segment| {
-//                 segment.status = Status::UnlinkAt;
-//                 segment.offset
-//             })
-//             .collect();
-//         io.delete_segments(offsets);
-//         assert_eq!(0, io.segments.get_mut().len());
-//         Ok(())
-//     }
-
-//     #[test]
-//     fn test_calculate_write_buffers() -> Result<(), StoreError> {
-//         let wal_dir = random_wal_dir()?;
-//         let _wal_dir_guard = util::DirectoryRemovalGuard::new(wal_dir.as_path());
-//         let mut io = create_io(super::WalPath::new(wal_dir.to_str().unwrap(), 1234)?)?;
-//         (0..3)
-//             .into_iter()
-//             .map(|_| io.alloc_segment().err())
-//             .flatten()
-//             .count();
-//         io.segments.get_mut().iter_mut().for_each(|segment| {
-//             segment.status = Status::ReadWrite;
-//         });
-
-//         let len = 4096;
-//         let mut buf = BytesMut::with_capacity(len);
-//         buf.resize(len, 65);
-//         let buf = buf.freeze();
-
-//         (0..16).into_iter().for_each(|i| {
-//             let (tx, _rx) = oneshot::channel();
-//             io.pending_data_tasks.push_back(IoTask::Write(WriteTask {
-//                 stream_id: 0,
-//                 offset: i,
-//                 buffer: buf.clone(),
-//                 observer: tx,
-//             }));
-//         });
-
-//         // Case when there are multiple writable log segment files
-//         let buffers = io.calculate_write_buffers();
-//         assert_eq!(1, buffers.len());
-//         assert_eq!(Some(&65664), buffers.first());
-
-//         // Case when the remaining of the first writable segment file can hold a record
-//         let segment = io.segments.get_mut().front_mut().unwrap();
-//         segment.written = segment.size - 4096 - 8 - crate::io::segment::FOOTER_LENGTH;
-//         let buffers = io.calculate_write_buffers();
-//         assert_eq!(2, buffers.len());
-//         assert_eq!(Some(&4128), buffers.first());
-//         assert_eq!(Some(&61560), buffers.iter().nth(1));
-
-//         // Case when the last writable log segment file cannot hold a record
-//         let segment = io.segments.get_mut().front_mut().unwrap();
-//         segment.written = segment.size - 4096 - 4;
-//         let buffers = io.calculate_write_buffers();
-//         assert_eq!(2, buffers.len());
-//         assert_eq!(Some(&4100), buffers.first());
-//         assert_eq!(Some(&65664), buffers.iter().nth(1));
-
-//         // Case when the is only one writable segment file and it cannot hold all records
-//         io.segments.get_mut().iter_mut().for_each(|segment| {
-//             segment.status = Status::Read;
-//             segment.written = segment.size;
-//         });
-//         let segment = io.segments.get_mut().back_mut().unwrap();
-//         segment.status = Status::ReadWrite;
-//         segment.written = segment.size - 4096;
-
-//         let buffers = io.calculate_write_buffers();
-//         assert_eq!(1, buffers.len());
-//         assert_eq!(Some(&4096), buffers.first());
-
-//         Ok(())
-//     }
-
-//     #[test]
-//     fn test_run() -> Result<(), StoreError> {
-//         let (tx, rx) = oneshot::channel();
-//         let handle = std::thread::spawn(move || {
-//             let wal_dir = random_wal_dir().unwrap();
-//             let _wal_dir_guard = util::DirectoryRemovalGuard::new(wal_dir.as_path());
-//             let mut io =
-//                 create_io(super::WalPath::new(wal_dir.to_str().unwrap(), 1234).unwrap()).unwrap();
-//             let sender = io
-//                 .sender
-//                 .take()
-//                 .ok_or(StoreError::Configuration("IO channel".to_owned()))
-//                 .unwrap();
-//             tx.send(sender);
-//             let io = RefCell::new(io);
-
-//             let _ = super::IO::run(io);
-//             println!("Module io stopped");
-//         });
-
-//         let sender = rx
-//             .blocking_recv()
-//             .map_err(|_| StoreError::Internal("Internal error".to_owned()))?;
-
-//         let mut buffer = BytesMut::with_capacity(4096);
-//         buffer.resize(4096, 65);
-//         let buffer = buffer.freeze();
-
-//         (0..16)
-//             .into_iter()
-//             .map(|i| {
-//                 let (tx, _rx) = oneshot::channel();
-//                 IoTask::Write(WriteTask {
-//                     stream_id: 0,
-//                     offset: i as i64,
-//                     buffer: buffer.clone(),
-//                     observer: tx,
-//                 })
-//             })
-//             .for_each(|task| {
-//                 sender.send(task).unwrap();
-//             });
-
-//         drop(sender);
-
-//         handle.join().map_err(|_| StoreError::AllocLogSegment)?;
-
-//         Ok(())
-//     }
-// }
+        Ok(())
+    }
+}

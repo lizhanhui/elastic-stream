@@ -302,7 +302,7 @@ impl WAL {
         Ok(())
     }
 
-    fn alloc_segment(&mut self) -> Result<LogSegment, StoreError> {
+    pub(crate) fn alloc_segment(&mut self) -> Result<LogSegment, StoreError> {
         let offset = if self.segments.is_empty() {
             0
         } else if let Some(last) = self.segments.back() {
@@ -519,6 +519,235 @@ impl WAL {
         })?;
 
         self.delete_segments(to_remove);
+
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::VecDeque;
+    use std::error::Error;
+    use std::path::PathBuf;
+    use std::{env, fs::File};
+
+    use bytes::BytesMut;
+    use slog::{error, log};
+    use tokio::sync::oneshot;
+    use uuid::Uuid;
+
+    use crate::io::segment::Status;
+    use crate::io::task::{IoTask, WriteTask};
+    use crate::io::{Options, DEFAULT_LOG_SEGMENT_FILE_SIZE, IO};
+    use crate::{error::StoreError, io::segment::LogSegment, option::WalPath};
+
+    use super::WAL;
+
+    fn create_wal(wal_dir: WalPath) -> Result<WAL, StoreError> {
+        let logger = util::terminal_logger();
+        let control_ring = io_uring::IoUring::builder().dontfork().build(32).map_err(|e| {
+            error!(logger, "Failed to build I/O Uring instance for write-ahead-log segment file management: {:#?}", e);
+            StoreError::IoUring
+        })?;
+
+        let mut options = Options::default();
+        options.add_wal_path(wal_dir);
+
+        Ok(WAL::new(
+            options.wal_paths,
+            control_ring,
+            options.file_size,
+            logger,
+        ))
+    }
+
+    fn random_wal_dir() -> Result<PathBuf, StoreError> {
+        let uuid = Uuid::new_v4();
+        let mut wal_dir = env::temp_dir();
+        wal_dir.push(uuid.simple().to_string());
+        let wal_path = wal_dir.as_path();
+        std::fs::create_dir_all(wal_path)?;
+        Ok(wal_dir)
+    }
+
+    #[test]
+    fn test_load_wals() -> Result<(), StoreError> {
+        let wal_dir = random_wal_dir()?;
+        // Prepare log segment files
+        let files: Vec<_> = (0..10)
+            .into_iter()
+            .map(|i| {
+                let f = wal_dir.join(LogSegment::format(i * 100));
+                File::create(f.as_path())
+            })
+            .flatten()
+            .collect();
+        assert_eq!(10, files.len());
+
+        let _wal_dir_guard = util::DirectoryRemovalGuard::new(wal_dir.as_path());
+        let wal_dir = super::WalPath::new(wal_dir.to_str().unwrap(), 1234)?;
+
+        let mut wal = create_wal(wal_dir)?;
+        wal.load_from_paths()?;
+        assert_eq!(files.len(), wal.segments.len());
+        Ok(())
+    }
+
+    #[test]
+    fn test_alloc_segment() -> Result<(), StoreError> {
+        let wal_dir = random_wal_dir()?;
+        let _wal_dir_guard = util::DirectoryRemovalGuard::new(wal_dir.as_path());
+        let mut wal = create_wal(super::WalPath::new(wal_dir.to_str().unwrap(), 1234)?)?;
+        wal.alloc_segment()?;
+        assert_eq!(1, wal.segments.len());
+
+        wal.alloc_segment()?;
+        assert_eq!(
+            DEFAULT_LOG_SEGMENT_FILE_SIZE,
+            wal.segments.get(1).unwrap().offset
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_writable_segment_count() -> Result<(), StoreError> {
+        let wal_dir = random_wal_dir()?;
+        let _wal_dir_guard = util::DirectoryRemovalGuard::new(wal_dir.as_path());
+        let mut wal = create_wal(super::WalPath::new(wal_dir.to_str().unwrap(), 1234)?)?;
+        wal.alloc_segment()?;
+        assert_eq!(1, wal.writable_segment_count());
+        wal.alloc_segment()?;
+        assert_eq!(2, wal.writable_segment_count());
+
+        wal.segments.front_mut().unwrap().status = Status::Read;
+        assert_eq!(1, wal.writable_segment_count());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_segment_file_of() -> Result<(), StoreError> {
+        let wal_dir = random_wal_dir()?;
+        let _wal_dir_guard = util::DirectoryRemovalGuard::new(wal_dir.as_path());
+        let mut wal = create_wal(super::WalPath::new(wal_dir.to_str().unwrap(), 1234)?)?;
+        let file_size = wal.file_size;
+        wal.alloc_segment()?;
+        wal.alloc_segment()?;
+        assert_eq!(2, wal.segments.len());
+
+        // Ensure we can get the right
+        let segment = wal
+            .segment_file_of(wal.file_size - 1)
+            .ok_or(StoreError::AllocLogSegment)?;
+        assert_eq!(0, segment.offset);
+
+        let segment = wal.segment_file_of(0).ok_or(StoreError::AllocLogSegment)?;
+        assert_eq!(0, segment.offset);
+
+        let segment = wal
+            .segment_file_of(wal.file_size)
+            .ok_or(StoreError::AllocLogSegment)?;
+
+        assert_eq!(file_size, segment.offset);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_delete_segments() -> Result<(), Box<dyn Error>> {
+        let wal_dir = random_wal_dir()?;
+        let _wal_dir_guard = util::DirectoryRemovalGuard::new(wal_dir.as_path());
+        let mut wal = create_wal(super::WalPath::new(wal_dir.to_str().unwrap(), 1234)?)?;
+        wal.alloc_segment()?;
+        assert_eq!(1, wal.segments.len());
+        let offsets = wal
+            .segments
+            .iter_mut()
+            .map(|segment| {
+                segment.status = Status::UnlinkAt;
+                segment.offset
+            })
+            .collect();
+        wal.delete_segments(offsets);
+        assert_eq!(0, wal.segments.len());
+        Ok(())
+    }
+
+    #[test]
+    fn test_calculate_write_buffers() -> Result<(), StoreError> {
+        let wal_dir = random_wal_dir()?;
+        let _wal_dir_guard = util::DirectoryRemovalGuard::new(wal_dir.as_path());
+        let mut wal = create_wal(super::WalPath::new(wal_dir.to_str().unwrap(), 1234)?)?;
+        (0..3)
+            .into_iter()
+            .map(|_| wal.alloc_segment().err())
+            .flatten()
+            .count();
+        wal.segments.iter_mut().for_each(|segment| {
+            segment.status = Status::ReadWrite;
+        });
+
+        let len = 4096;
+        let mut buf = BytesMut::with_capacity(len);
+        buf.resize(len, 65);
+        let buf = buf.freeze();
+
+        let mut pending_data_tasks: VecDeque<IoTask> = VecDeque::new();
+        (0..16).into_iter().for_each(|i| {
+            let (tx, _rx) = oneshot::channel();
+            pending_data_tasks.push_back(IoTask::Write(WriteTask {
+                stream_id: 0,
+                offset: i,
+                buffer: buf.clone(),
+                observer: tx,
+            }));
+        });
+
+        let mut requirement: VecDeque<_> = pending_data_tasks
+            .iter()
+            .map(|task| match task {
+                IoTask::Write(task) => {
+                    debug_assert!(task.buffer.len() > 0);
+                    task.buffer.len() + 4 /* CRC */ + 3 /* Record Size */ + 1 /* Record Type */
+                }
+                _ => 0,
+            })
+            .filter(|n| *n > 0)
+            .collect();
+
+        // Case when there are multiple writable log segment files
+        let buffers = wal.calculate_write_buffers(&mut requirement);
+        assert_eq!(1, buffers.len());
+        assert_eq!(Some(&65664), buffers.first());
+
+        // Case when the remaining of the first writable segment file can hold a record
+        let segment = wal.segments.front_mut().unwrap();
+        segment.written = segment.size - 4096 - 8 - crate::io::segment::FOOTER_LENGTH;
+        let buffers = wal.calculate_write_buffers(&mut requirement);
+        assert_eq!(2, buffers.len());
+        assert_eq!(Some(&4128), buffers.first());
+        assert_eq!(Some(&61560), buffers.iter().nth(1));
+
+        // Case when the last writable log segment file cannot hold a record
+        let segment = wal.segments.front_mut().unwrap();
+        segment.written = segment.size - 4096 - 4;
+        let buffers = wal.calculate_write_buffers(&mut requirement);
+        assert_eq!(2, buffers.len());
+        assert_eq!(Some(&4100), buffers.first());
+        assert_eq!(Some(&65664), buffers.iter().nth(1));
+
+        // Case when the is only one writable segment file and it cannot hold all records
+        wal.segments.iter_mut().for_each(|segment| {
+            segment.status = Status::Read;
+            segment.written = segment.size;
+        });
+        let segment = wal.segments.back_mut().unwrap();
+        segment.status = Status::ReadWrite;
+        segment.written = segment.size - 4096;
+
+        let buffers = wal.calculate_write_buffers(&mut requirement);
+        assert_eq!(1, buffers.len());
+        assert_eq!(Some(&4096), buffers.first());
 
         Ok(())
     }
