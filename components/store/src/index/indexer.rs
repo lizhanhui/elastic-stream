@@ -107,13 +107,18 @@ impl Indexer {
         })
     }
 
+    ///
+    /// # Arguments
+    ///
+    /// * `stream_id` - Stream Identifier
+    /// * `offset` Logical offset within the stream, similar to row-id within a database table.
+    /// * `handle` - Pointer to record in WAL.
+    ///
     pub(crate) fn index(
         &self,
         stream_id: i64,
         offset: u64,
-        wal_offset: u64,
-        len: u32,
-        hash: u64,
+        handle: &RecordHandle,
     ) -> Result<(), StoreError> {
         match self.db.cf_handle(INDEX_COLUMN_FAMILY) {
             Some(cf) => {
@@ -122,9 +127,10 @@ impl Indexer {
                 key_buf.put_u64(offset);
 
                 let mut value_buf = BytesMut::with_capacity(20);
-                value_buf.put_u64(wal_offset);
-                value_buf.put_u32(len);
-                value_buf.put_u64(hash);
+                value_buf.put_u64(handle.offset);
+                let length_type = handle.len << 8;
+                value_buf.put_u32(length_type);
+                value_buf.put_u64(handle.hash);
                 self.db
                     .put_cf_opt(cf, &key_buf[..], &value_buf[..], &self.write_opts)
                     .map_err(|e| StoreError::RocksDB(e.into_string()))
@@ -411,5 +417,71 @@ impl super::LocalRangeManager for Indexer {
                 METADATA_COLUMN_FAMILY
             )))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{error::Error, rc::Rc};
+
+    use crate::index::{record_handle::RecordHandle, MinOffset};
+
+    struct SampleMinOffset;
+
+    impl MinOffset for SampleMinOffset {
+        fn min_offset(&self) -> u64 {
+            0
+        }
+    }
+
+    fn new_indexer() -> Result<super::Indexer, Box<dyn Error>> {
+        let log = util::terminal_logger();
+        let path = util::create_random_path()?;
+        let _guard = util::DirectoryRemovalGuard::new(log.clone(), path.as_path());
+        let path_str = path.as_os_str().to_str().unwrap();
+        let min_offset = Rc::new(SampleMinOffset {});
+        let indexer = super::Indexer::new(log, path_str, min_offset as Rc<dyn MinOffset>)?;
+        Ok(indexer)
+    }
+
+    #[test]
+    fn test_wal_checkpoint() -> Result<(), Box<dyn Error>> {
+        let mut indexer = new_indexer()?;
+        assert_eq!(0, indexer.get_wal_checkpoint()?);
+        let wal_offset = 100;
+        indexer.advance_wal_checkpoint(wal_offset)?;
+        assert_eq!(wal_offset, indexer.get_wal_checkpoint()?);
+        Ok(())
+    }
+
+    #[test]
+    fn test_index_scan() -> Result<(), Box<dyn Error>> {
+        let indexer = new_indexer()?;
+        const CNT: u64 = 1024;
+
+        (0..CNT)
+            .into_iter()
+            .map(|n| {
+                let ptr = RecordHandle {
+                    offset: n,
+                    len: 128,
+                    hash: 10,
+                };
+                indexer.index(0, n, &ptr)
+            })
+            .flatten()
+            .count();
+
+        let handles = indexer.scan_record_handles(0, 0, 10)?;
+        assert_eq!(true, handles.is_some());
+        let handles = handles.unwrap();
+        assert_eq!(10, handles.len());
+        handles.into_iter().enumerate().for_each(|(i, handle)| {
+            assert_eq!(i as u64, handle.offset);
+            assert_eq!(128, handle.len);
+            assert_eq!(10, handle.hash);
+        });
+
+        Ok(())
     }
 }

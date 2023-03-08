@@ -9,7 +9,7 @@ use crate::error::StoreError;
 use crossbeam::channel::{self, Receiver, Select, Sender, TryRecvError};
 use slog::{error, info, Logger};
 
-use super::{indexer::Indexer, MinOffset};
+use super::{indexer::Indexer, record_handle::RecordHandle, MinOffset};
 
 pub(crate) struct IndexDriver {
     log: Logger,
@@ -22,9 +22,7 @@ pub(crate) enum IndexCommand {
     Index {
         stream_id: i64,
         offset: u64,
-        wal_offset: u64,
-        len: u32,
-        hash: u64,
+        handle: RecordHandle,
     },
 }
 
@@ -53,13 +51,11 @@ impl IndexDriver {
         })
     }
 
-    pub(crate) fn index(&self, stream_id: i64, offset: u64, wal_offset: u64, len: u32, hash: u64) {
+    pub(crate) fn index(&self, stream_id: i64, offset: u64, handle: RecordHandle) {
         if let Err(e) = self.tx.send(IndexCommand::Index {
             stream_id,
             offset,
-            wal_offset,
-            len,
-            hash,
+            handle,
         }) {
             error!(self.log, "Failed to send index entry to internal indexer");
         }
@@ -120,15 +116,11 @@ impl IndexDriverRunner {
                         IndexCommand::Index {
                             stream_id,
                             offset,
-                            wal_offset,
-                            len,
-                            hash,
+                            handle,
                         } => {
-                            while let Err(e) =
-                                self.indexer.index(stream_id, offset, wal_offset, len, hash)
-                            {
-                                error!(self.log, "Failed to index: stream_id={}, offset={}, wal_offset={}, len={}, hash={}, cause: {}", 
-                                stream_id, offset, wal_offset, len, hash, e);
+                            while let Err(e) = self.indexer.index(stream_id, offset, &handle) {
+                                error!(self.log, "Failed to index: stream_id={}, offset={}, record_handle={:?}, cause: {}", 
+                                stream_id, offset, handle, e);
                                 sleep(std::time::Duration::from_millis(100));
                             }
                         }
@@ -154,8 +146,7 @@ impl IndexDriverRunner {
 mod tests {
     use crate::index::MinOffset;
     use crossbeam::channel;
-    use std::{env, error::Error, rc::Rc};
-    use uuid::Uuid;
+    use std::{error::Error, rc::Rc};
 
     struct TestMinOffset {}
 

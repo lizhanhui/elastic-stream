@@ -43,11 +43,8 @@ mod tests {
     #[test]
     fn test_rocksdb_setup() -> Result<(), Box<dyn Error>> {
         let log = util::terminal_logger();
-        let uuid = Uuid::new_v4();
-        let mut wal_dir = env::temp_dir();
-        wal_dir.push(uuid.simple().to_string());
-        let db_path = wal_dir.as_path();
-        std::fs::create_dir_all(db_path)?;
+        let data_path = util::create_random_path()?;
+        let db_path = data_path.as_path();
         let _dir_guard = util::DirectoryRemovalGuard::new(log.clone(), &db_path);
 
         let mut cf_opts = Options::default();
@@ -133,13 +130,14 @@ mod tests {
             .iterator_cf_opt(cf, ReadOptions::default(), IteratorMode::Start)
             .count();
 
-        store.set_min_offset(5000);
+        const MIN_OFFSET: u64 = 50;
+        store.set_min_offset(MIN_OFFSET);
         db.compact_range_cf(cf, None::<&[u8]>, None::<&[u8]>);
 
         let diff = cnt
             - db.iterator_cf_opt(cf, ReadOptions::default(), IteratorMode::Start)
                 .count();
-        assert_eq!(5000, diff);
+        assert_eq!(MIN_OFFSET, diff as u64);
         Ok(())
     }
 }
