@@ -3,6 +3,7 @@ pub(crate) mod buf;
 mod context;
 mod record;
 mod segment;
+mod wal;
 pub(crate) mod task;
 mod write_window;
 
@@ -33,7 +34,7 @@ use self::buf::{AlignedBufReader, AlignedBufWriter};
 use self::context::IOContext;
 use self::record::RecordType;
 use self::segment::Status;
-use self::segment::WAL;
+use self::wal::WAL;
 use self::task::WriteTask;
 use self::write_window::WriteWindow;
 use crc::{Crc, CRC_32_ISCSI};
