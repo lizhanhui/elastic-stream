@@ -889,21 +889,16 @@ impl Drop for IO {
 #[cfg(test)]
 mod tests {
     use super::task::{IoTask, WriteTask};
-    use crate::io::segment::LogSegmentFile;
-    use crate::io::DEFAULT_LOG_SEGMENT_FILE_SIZE;
-    use crate::{error::StoreError, io::segment::Status};
+    use crate::error::StoreError;
     use bytes::BytesMut;
     use std::cell::RefCell;
-    use std::env;
-    use std::path::PathBuf;
+    use std::fs;
+    use std::path::{PathBuf, Path};
     use tokio::sync::oneshot;
 
-    use super::task::{IoTask, WriteTask};
-
-    use crate::error::StoreError;
     use crate::option::WalPath;
 
-    fn create_io(wal_dir: WalPath) -> Result<super::IO, StoreError> {
+    fn create_io(store_dir: &Path) -> Result<super::IO, StoreError> {
         let mut options = super::Options::default();
         let logger = util::terminal_logger();
         let store_path = store_dir.join("rocksdb");

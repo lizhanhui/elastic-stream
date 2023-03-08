@@ -594,7 +594,8 @@ mod tests {
             .collect();
         assert_eq!(10, files.len());
 
-        let _wal_dir_guard = util::DirectoryRemovalGuard::new(wal_dir.as_path());
+        let log = util::terminal_logger();
+        let _wal_dir_guard = util::DirectoryRemovalGuard::new(log, wal_dir.as_path());
         let wal_dir = super::WalPath::new(wal_dir.to_str().unwrap(), 1234)?;
 
         let mut wal = create_wal(wal_dir)?;
@@ -606,7 +607,8 @@ mod tests {
     #[test]
     fn test_alloc_segment() -> Result<(), StoreError> {
         let wal_dir = random_wal_dir()?;
-        let _wal_dir_guard = util::DirectoryRemovalGuard::new(wal_dir.as_path());
+        let log = util::terminal_logger();
+        let _wal_dir_guard = util::DirectoryRemovalGuard::new(log, wal_dir.as_path());
         let mut wal = create_wal(super::WalPath::new(wal_dir.to_str().unwrap(), 1234)?)?;
         let segment = wal.alloc_segment()?;
         assert_eq!(0, segment.offset);
@@ -620,7 +622,8 @@ mod tests {
     #[test]
     fn test_writable_segment_count() -> Result<(), StoreError> {
         let wal_dir = random_wal_dir()?;
-        let _wal_dir_guard = util::DirectoryRemovalGuard::new(wal_dir.as_path());
+        let log = util::terminal_logger();
+        let _wal_dir_guard = util::DirectoryRemovalGuard::new(log, wal_dir.as_path());
         let mut wal = create_wal(super::WalPath::new(wal_dir.to_str().unwrap(), 1234)?)?;
         let segment = wal.alloc_segment()?;
         wal.segments.push_back(segment);
@@ -638,7 +641,8 @@ mod tests {
     #[test]
     fn test_segment_file_of() -> Result<(), StoreError> {
         let wal_dir = random_wal_dir()?;
-        let _wal_dir_guard = util::DirectoryRemovalGuard::new(wal_dir.as_path());
+        let log = util::terminal_logger();
+        let _wal_dir_guard = util::DirectoryRemovalGuard::new(log, wal_dir.as_path());
         let mut wal = create_wal(super::WalPath::new(wal_dir.to_str().unwrap(), 1234)?)?;
         let file_size = wal.file_size;
         let segment = wal.alloc_segment()?;
@@ -668,7 +672,8 @@ mod tests {
     #[test]
     fn test_delete_segments() -> Result<(), Box<dyn Error>> {
         let wal_dir = random_wal_dir()?;
-        let _wal_dir_guard = util::DirectoryRemovalGuard::new(wal_dir.as_path());
+        let log = util::terminal_logger();
+        let _wal_dir_guard = util::DirectoryRemovalGuard::new(log, wal_dir.as_path());
         let mut wal = create_wal(super::WalPath::new(wal_dir.to_str().unwrap(), 1234)?)?;
         let segment = wal.alloc_segment()?;
         wal.segments.push_back(segment);
@@ -688,8 +693,9 @@ mod tests {
 
     #[test]
     fn test_calculate_write_buffers() -> Result<(), StoreError> {
+        let log = util::terminal_logger();
         let wal_dir = random_wal_dir()?;
-        let _wal_dir_guard = util::DirectoryRemovalGuard::new(wal_dir.as_path());
+        let _wal_dir_guard = util::DirectoryRemovalGuard::new(log, wal_dir.as_path());
         let mut wal = create_wal(super::WalPath::new(wal_dir.to_str().unwrap(), 1234)?)?;
         (0..3)
             .into_iter()
