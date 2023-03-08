@@ -1,6 +1,6 @@
 use std::collections::{btree_map::Entry, BTreeMap};
 
-use slog::{error, Logger};
+use slog::{error, trace, Logger};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -80,46 +80,50 @@ impl WriteWindow {
     }
 
     pub(crate) fn add(&mut self, offset: u64, length: u32) -> Result<(), WriteWindowError> {
+        trace!(
+            self.log,
+            "Submitted to flush WAL: [{}, {})",
+            offset,
+            offset + length as u64
+        );
         match self.submitted.entry(offset) {
             Entry::Vacant(e) => {
                 e.insert(length);
                 Ok(())
             }
-            Entry::Occupied(e) => Err(WriteWindowError::Existed { offset, length }),
+            Entry::Occupied(_e) => Err(WriteWindowError::Existed { offset, length }),
         }
     }
 
     fn advance(&mut self) -> Result<u64, WriteWindowError> {
-        while let Some((completed_offset, completed_length)) = self.completed.first_key_value() {
+        while let Some((completed_offset, _)) = self.completed.first_key_value() {
             if *completed_offset != self.committed {
                 break;
             }
 
-            if let Some((submitted_offset, submitted_length)) = self.submitted.first_key_value() {
+            if let Some((submitted_offset, _)) = self.submitted.first_key_value() {
                 if completed_offset != submitted_offset {
                     break;
-                }
-
-                if completed_length != submitted_length {
-                    return Err(WriteWindowError::Length {
-                        offset: *completed_offset,
-                        expected: *completed_length,
-                        actual: *submitted_length,
-                    });
                 }
             } else {
                 break;
             }
-
-            self.submitted.pop_first();
-            if let Some((_, length)) = self.completed.pop_first() {
+            self.completed.pop_first();
+            if let Some((_, length)) = self.submitted.pop_first() {
                 self.committed += length as u64;
+                trace!(self.log, "Committed position of WAL: {}", self.committed);
             }
         }
         Ok(self.committed)
     }
 
     pub(crate) fn commit(&mut self, offset: u64, length: u32) -> Result<u64, WriteWindowError> {
+        trace!(
+            self.log,
+            "Try to commit WAL [{}, {})",
+            offset,
+            offset + length as u64
+        );
         match self.completed.entry(offset) {
             Entry::Vacant(e) => {
                 e.insert(length);

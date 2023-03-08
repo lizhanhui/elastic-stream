@@ -432,6 +432,8 @@ impl IO {
             })
             .count();
 
+        let mut need_write = false;
+
         'task_loop: while let Some(io_task) = self.pending_data_tasks.pop_front() {
             match io_task {
                 IoTask::Read(task) => {
@@ -475,7 +477,8 @@ impl IO {
                     let writer = unsafe { &mut *self.buf_writer.get() };
                     loop {
                         if let Some(segment) = self.wal.segment_file_of(writer.offset) {
-                            if segment.status != Status::ReadWrite {
+                            if !segment.writable() {
+                                trace!(log, "WAL Segment {} status: {}. Yield dispatching IO to block layer", segment.path, segment.status);
                                 self.pending_data_tasks.push_front(IoTask::Write(task));
                                 break 'task_loop;
                             }
@@ -483,11 +486,22 @@ impl IO {
                             if let Some(_sd) = segment.sd.as_ref() {
                                 let payload_length = task.buffer.len();
                                 if !segment.can_hold(payload_length as u64) {
-                                    segment.append_footer(writer);
+                                    if let Ok(pos) = segment.append_footer(writer) {
+                                        trace!(self.log, "Write position of WAL after padding segment footer: {}", pos);
+                                        need_write = true;
+                                    }
                                     // Switch to a new log segment
                                     continue;
                                 }
-                                segment.append_full_record(writer, &task.buffer[..]);
+                                if let Ok(pos) = segment.append_record(writer, &task.buffer[..]) {
+                                    trace!(
+                                        self.log,
+                                        "Write position of WAL after appending record: {}",
+                                        pos
+                                    );
+                                    self.inflight_write_tasks.insert(pos, task);
+                                    need_write = true;
+                                }
                                 break;
                             } else {
                                 error!(log, "LogSegmentFile {} with read_write status does not have valid FD", segment.path);
@@ -498,9 +512,12 @@ impl IO {
                             break 'task_loop;
                         }
                     }
-                    self.build_write_sqe(entries);
                 }
             }
+        }
+
+        if need_write {
+            self.build_write_sqe(entries);
         }
     }
 
@@ -613,6 +630,12 @@ impl IO {
                     stream_id: task.stream_id,
                     offset: task.offset,
                 };
+                trace!(
+                    self.log,
+                    "Ack `WriteTask` {{ stream-id: {}, offset: {} }}",
+                    task.stream_id,
+                    task.offset
+                );
                 if let Err(e) = task.observer.send(Ok(append_result)) {
                     error!(self.log, "Failed to propagate AppendResult `{:?}`", e);
                 }
@@ -623,6 +646,7 @@ impl IO {
     fn should_quit(&self) -> bool {
         0 == self.inflight
             && self.pending_data_tasks.is_empty()
+            && self.inflight_write_tasks.is_empty()
             && self.wal.control_task_num() == 0
             && self.channel_disconnected
     }

@@ -376,7 +376,7 @@ impl Wal {
         self.segments
             .iter()
             .rev()
-            .filter(|segment| !segment.is_full())
+            .filter(|segment| segment.writable())
             .rev()
             .for_each(|segment| {
                 if requirement.is_empty() {

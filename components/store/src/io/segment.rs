@@ -1,3 +1,6 @@
+use bytes::{BufMut, BytesMut};
+use derivative::Derivative;
+use nix::fcntl;
 use std::{
     cmp::Ordering,
     fmt::Display,
@@ -10,16 +13,9 @@ use std::{
     time::SystemTime,
 };
 
-use bytes::{BufMut, BytesMut};
-use derivative::Derivative;
-use io_uring::{opcode, squeue, types};
-use nix::fcntl;
-use slog::{debug, error, info, trace, warn, Logger};
-
 use crate::{
     error::StoreError,
     io::{record::RecordType, CRC32C},
-    option::WalPath,
 };
 
 use super::{block_cache::BlockCache, buf::AlignedBufWriter, record::RECORD_PREFIX_LENGTH};
@@ -226,8 +222,8 @@ impl LogSegment {
         Ok(())
     }
 
-    pub fn is_full(&self) -> bool {
-        self.written >= self.size
+    pub fn writable(&self) -> bool {
+        self.written < self.size && self.status == Status::ReadWrite
     }
 
     pub(crate) fn can_hold(&self, payload_length: u64) -> bool {
@@ -238,7 +234,7 @@ impl LogSegment {
     pub(crate) fn append_footer(
         &mut self,
         writer: &mut AlignedBufWriter,
-    ) -> Result<(), StoreError> {
+    ) -> Result<u64, StoreError> {
         let padding_length = self.size - self.written - RECORD_PREFIX_LENGTH - 8 - 8;
         let length_type: u32 = RecordType::Zero.with_length(padding_length as u32 + 8 + 8);
         let earliest: u64 = 0;
@@ -258,7 +254,8 @@ impl LogSegment {
         writer.write_u32(length_type)?;
         writer.write(&buf[..=padding_length as usize])?;
 
-        Ok(())
+        self.written = self.size;
+        Ok(self.offset + self.written)
     }
 
     pub(crate) fn remaining(&self) -> u64 {
@@ -270,17 +267,18 @@ impl LogSegment {
         }
     }
 
-    pub(crate) fn append_full_record(
-        &self,
+    pub(crate) fn append_record(
+        &mut self,
         writer: &mut AlignedBufWriter,
         payload: &[u8],
-    ) -> Result<(), StoreError> {
+    ) -> Result<u64, StoreError> {
         let crc = CRC32C.checksum(payload);
         let length_type = RecordType::Full.with_length(payload.len() as u32);
         writer.write_u32(crc)?;
         writer.write_u32(length_type)?;
         writer.write(payload)?;
-        Ok(())
+        self.written += 4 + 4 + payload.len() as u64;
+        Ok(self.offset + self.written)
     }
 }
 

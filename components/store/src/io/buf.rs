@@ -134,7 +134,7 @@ impl Drop for AlignedBuf {
         unsafe { alloc::dealloc(self.ptr, self.layout) };
         debug!(
             self.log,
-            "Deallocated `AlignedBuf`: (offset={}, writes: {}, capacity: {})",
+            "Deallocated `AlignedBuf`: (offset={}, written: {}, capacity: {})",
             self.offset,
             self.write_pos(),
             self.capacity
@@ -270,6 +270,17 @@ impl AlignedBufWriter {
             .for_each(|buf| {
                 items.push(buf);
             });
+
+        items.iter().for_each(|item| {
+            trace!(
+                self.log,
+                "About to flush aligned buffer{{ offset: {}, written: {}, capacity: {} }} to flush",
+                item.offset,
+                item.write_pos(),
+                item.capacity
+            );
+        });
+
         items
     }
 
