@@ -1,10 +1,7 @@
 use std::{
     collections::{HashMap, VecDeque},
     fs::File,
-    os::{
-        fd::FromRawFd,
-        unix::prelude::{FileExt, OpenOptionsExt},
-    },
+    os::{fd::FromRawFd, unix::prelude::FileExt},
     path::Path,
 };
 
@@ -15,14 +12,11 @@ use crate::{
     option::WalPath,
 };
 
-use bytes::{BufMut, BytesMut};
-use derivative::Derivative;
 use io_uring::{opcode, squeue, types};
-use nix::fcntl;
-use slog::{debug, error, info, trace, warn, Logger};
+use slog::{debug, error, info, warn, Logger};
 
 /// A WAL contains a list of log segments, and supports open, close, alloc, and other operations.
-pub(crate) struct WAL {
+pub(crate) struct Wal {
     /// The WAL path if the log segments are on file system.
     wal_paths: Vec<WalPath>,
 
@@ -52,7 +46,7 @@ pub(crate) struct WAL {
     log: Logger,
 }
 
-impl WAL {
+impl Wal {
     pub(crate) fn new(
         wal_paths: Vec<WalPath>,
         control_ring: io_uring::IoUring,
@@ -542,18 +536,22 @@ mod tests {
     use std::{env, fs::File};
 
     use bytes::BytesMut;
-    use slog::{error, log};
+    use slog::error;
     use tokio::sync::oneshot;
     use uuid::Uuid;
 
-    use crate::io::segment::Status;
-    use crate::io::task::{IoTask, WriteTask};
-    use crate::io::{Options, DEFAULT_LOG_SEGMENT_FILE_SIZE, IO};
-    use crate::{error::StoreError, io::segment::LogSegment, option::WalPath};
+    use crate::error::StoreError;
+    use crate::io::{
+        options::DEFAULT_LOG_SEGMENT_FILE_SIZE,
+        segment::{LogSegment, Status},
+        task::{IoTask, WriteTask},
+        Options,
+    };
+    use crate::option::WalPath;
 
-    use super::WAL;
+    use super::Wal;
 
-    fn create_wal(wal_dir: WalPath) -> Result<WAL, StoreError> {
+    fn create_wal(wal_dir: WalPath) -> Result<Wal, StoreError> {
         let logger = util::terminal_logger();
         let control_ring = io_uring::IoUring::builder().dontfork().build(32).map_err(|e| {
             error!(logger, "Failed to build I/O Uring instance for write-ahead-log segment file management: {:#?}", e);
@@ -563,7 +561,7 @@ mod tests {
         let mut options = Options::default();
         options.add_wal_path(wal_dir);
 
-        Ok(WAL::new(
+        Ok(Wal::new(
             options.wal_paths,
             control_ring,
             options.file_size,
