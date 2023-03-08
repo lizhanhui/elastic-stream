@@ -13,15 +13,21 @@ jobs:
   build:
     strategy:
       matrix:
-        os: [self-hosted]
+        os: [ ubuntu-latest ]
     runs-on: ${{ matrix.os }}
+    env: 
+      CARGO_HOME: ~/.cargo
+      RUSTUP_HOME: ~/.rustup
     steps:
     - uses: actions/checkout@v3
     - name: Cache Cargo Crates
       uses: actions/cache@v3
       with: 
         path: |
-          ~/.cargo
+          ~/.cargo/bin/
+          ~/.cargo/registry/index/
+          ~/.cargo/registry/cache/
+          ~/.cargo/git/db/
           ~/.rustup
           /usr/local/bin/flatc
         key: ${{ runner.os }}-cargo

@@ -27,6 +27,13 @@ pub(crate) struct WriteTask {
     pub(crate) observer: oneshot::Sender<Result<AppendResult, AppendError>>,
 }
 
+impl WriteTask {
+    // Fetch the total length of the record, incuding the header.
+    pub(crate) fn total_len(&self) -> u32 {
+        self.buffer.len() as u32 + 4 /* CRC */ + 3 /* Record Size */ + 1 /* Record Type */
+    }
+}
+
 pub(crate) enum IoTask {
     Read(ReadTask),
     Write(WriteTask),

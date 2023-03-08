@@ -413,7 +413,7 @@ impl IO {
             .map(|task| match task {
                 IoTask::Write(task) => {
                     debug_assert!(task.buffer.len() > 0);
-                    task.buffer.len() + 4 /* CRC */ + 3 /* Record Size */ + 1 /* Record Type */
+                    task.total_len() as usize
                 }
                 _ => 0,
             })
@@ -746,7 +746,7 @@ impl IO {
         let offset_manager = Rc::clone(&io.borrow().wal_offset_manager);
         let indexer = Indexer::new(log.clone(), "/tmp/rocksdb", offset_manager)?;
         io.borrow_mut().load()?;
-        let pos = indexer.flushed_wal_offset();
+        let pos = indexer.get_wal_checkpoint()?;
         io.borrow_mut().recover(pos)?;
 
         let min_preallocated_segment_files = io.borrow().options.min_preallocated_segment_files;
