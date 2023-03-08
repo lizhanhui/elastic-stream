@@ -83,26 +83,26 @@ func (EventType) EnumDescriptor() ([]byte, []int) {
 	return fileDescriptor_fa716125f2dc88f3, []int{1}
 }
 
-type StoreGlobalConfigRequest struct {
-	Changes              []*GlobalConfigItem `protobuf:"bytes,1,rep,name=changes,proto3" json:"changes,omitempty"`
-	ConfigPrefix         []byte              `protobuf:"bytes,2,opt,name=config_prefix,json=configPrefix,proto3" json:"config_prefix,omitempty"`
-	XXX_NoUnkeyedLiteral struct{}            `json:"-"`
-	XXX_unrecognized     []byte              `json:"-"`
-	XXX_sizecache        int32               `json:"-"`
+type StoreRequest struct {
+	Changes              []*Item  `protobuf:"bytes,1,rep,name=changes,proto3" json:"changes,omitempty"`
+	Prefix               []byte   `protobuf:"bytes,2,opt,name=prefix,proto3" json:"prefix,omitempty"`
+	XXX_NoUnkeyedLiteral struct{} `json:"-"`
+	XXX_unrecognized     []byte   `json:"-"`
+	XXX_sizecache        int32    `json:"-"`
 }
 
-func (m *StoreGlobalConfigRequest) Reset()         { *m = StoreGlobalConfigRequest{} }
-func (m *StoreGlobalConfigRequest) String() string { return proto.CompactTextString(m) }
-func (*StoreGlobalConfigRequest) ProtoMessage()    {}
-func (*StoreGlobalConfigRequest) Descriptor() ([]byte, []int) {
+func (m *StoreRequest) Reset()         { *m = StoreRequest{} }
+func (m *StoreRequest) String() string { return proto.CompactTextString(m) }
+func (*StoreRequest) ProtoMessage()    {}
+func (*StoreRequest) Descriptor() ([]byte, []int) {
 	return fileDescriptor_fa716125f2dc88f3, []int{0}
 }
-func (m *StoreGlobalConfigRequest) XXX_Unmarshal(b []byte) error {
+func (m *StoreRequest) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
 }
-func (m *StoreGlobalConfigRequest) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+func (m *StoreRequest) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
 	if deterministic {
-		return xxx_messageInfo_StoreGlobalConfigRequest.Marshal(b, m, deterministic)
+		return xxx_messageInfo_StoreRequest.Marshal(b, m, deterministic)
 	} else {
 		b = b[:cap(b)]
 		n, err := m.MarshalToSizedBuffer(b)
@@ -112,50 +112,50 @@ func (m *StoreGlobalConfigRequest) XXX_Marshal(b []byte, deterministic bool) ([]
 		return b[:n], nil
 	}
 }
-func (m *StoreGlobalConfigRequest) XXX_Merge(src proto.Message) {
-	xxx_messageInfo_StoreGlobalConfigRequest.Merge(m, src)
+func (m *StoreRequest) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_StoreRequest.Merge(m, src)
 }
-func (m *StoreGlobalConfigRequest) XXX_Size() int {
+func (m *StoreRequest) XXX_Size() int {
 	return m.Size()
 }
-func (m *StoreGlobalConfigRequest) XXX_DiscardUnknown() {
-	xxx_messageInfo_StoreGlobalConfigRequest.DiscardUnknown(m)
+func (m *StoreRequest) XXX_DiscardUnknown() {
+	xxx_messageInfo_StoreRequest.DiscardUnknown(m)
 }
 
-var xxx_messageInfo_StoreGlobalConfigRequest proto.InternalMessageInfo
+var xxx_messageInfo_StoreRequest proto.InternalMessageInfo
 
-func (m *StoreGlobalConfigRequest) GetChanges() []*GlobalConfigItem {
+func (m *StoreRequest) GetChanges() []*Item {
 	if m != nil {
 		return m.Changes
 	}
 	return nil
 }
 
-func (m *StoreGlobalConfigRequest) GetConfigPrefix() []byte {
+func (m *StoreRequest) GetPrefix() []byte {
 	if m != nil {
-		return m.ConfigPrefix
+		return m.Prefix
 	}
 	return nil
 }
 
-type StoreGlobalConfigResponse struct {
+type StoreResponse struct {
 	XXX_NoUnkeyedLiteral struct{} `json:"-"`
 	XXX_unrecognized     []byte   `json:"-"`
 	XXX_sizecache        int32    `json:"-"`
 }
 
-func (m *StoreGlobalConfigResponse) Reset()         { *m = StoreGlobalConfigResponse{} }
-func (m *StoreGlobalConfigResponse) String() string { return proto.CompactTextString(m) }
-func (*StoreGlobalConfigResponse) ProtoMessage()    {}
-func (*StoreGlobalConfigResponse) Descriptor() ([]byte, []int) {
+func (m *StoreResponse) Reset()         { *m = StoreResponse{} }
+func (m *StoreResponse) String() string { return proto.CompactTextString(m) }
+func (*StoreResponse) ProtoMessage()    {}
+func (*StoreResponse) Descriptor() ([]byte, []int) {
 	return fileDescriptor_fa716125f2dc88f3, []int{1}
 }
-func (m *StoreGlobalConfigResponse) XXX_Unmarshal(b []byte) error {
+func (m *StoreResponse) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
 }
-func (m *StoreGlobalConfigResponse) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+func (m *StoreResponse) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
 	if deterministic {
-		return xxx_messageInfo_StoreGlobalConfigResponse.Marshal(b, m, deterministic)
+		return xxx_messageInfo_StoreResponse.Marshal(b, m, deterministic)
 	} else {
 		b = b[:cap(b)]
 		n, err := m.MarshalToSizedBuffer(b)
@@ -165,38 +165,38 @@ func (m *StoreGlobalConfigResponse) XXX_Marshal(b []byte, deterministic bool) ([
 		return b[:n], nil
 	}
 }
-func (m *StoreGlobalConfigResponse) XXX_Merge(src proto.Message) {
-	xxx_messageInfo_StoreGlobalConfigResponse.Merge(m, src)
+func (m *StoreResponse) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_StoreResponse.Merge(m, src)
 }
-func (m *StoreGlobalConfigResponse) XXX_Size() int {
+func (m *StoreResponse) XXX_Size() int {
 	return m.Size()
 }
-func (m *StoreGlobalConfigResponse) XXX_DiscardUnknown() {
-	xxx_messageInfo_StoreGlobalConfigResponse.DiscardUnknown(m)
+func (m *StoreResponse) XXX_DiscardUnknown() {
+	xxx_messageInfo_StoreResponse.DiscardUnknown(m)
 }
 
-var xxx_messageInfo_StoreGlobalConfigResponse proto.InternalMessageInfo
+var xxx_messageInfo_StoreResponse proto.InternalMessageInfo
 
-type LoadGlobalConfigRequest struct {
+type LoadRequest struct {
 	Names                [][]byte `protobuf:"bytes,1,rep,name=names,proto3" json:"names,omitempty"`
-	ConfigPrefix         []byte   `protobuf:"bytes,2,opt,name=config_prefix,json=configPrefix,proto3" json:"config_prefix,omitempty"`
+	Prefix               []byte   `protobuf:"bytes,2,opt,name=prefix,proto3" json:"prefix,omitempty"`
 	XXX_NoUnkeyedLiteral struct{} `json:"-"`
 	XXX_unrecognized     []byte   `json:"-"`
 	XXX_sizecache        int32    `json:"-"`
 }
 
-func (m *LoadGlobalConfigRequest) Reset()         { *m = LoadGlobalConfigRequest{} }
-func (m *LoadGlobalConfigRequest) String() string { return proto.CompactTextString(m) }
-func (*LoadGlobalConfigRequest) ProtoMessage()    {}
-func (*LoadGlobalConfigRequest) Descriptor() ([]byte, []int) {
+func (m *LoadRequest) Reset()         { *m = LoadRequest{} }
+func (m *LoadRequest) String() string { return proto.CompactTextString(m) }
+func (*LoadRequest) ProtoMessage()    {}
+func (*LoadRequest) Descriptor() ([]byte, []int) {
 	return fileDescriptor_fa716125f2dc88f3, []int{2}
 }
-func (m *LoadGlobalConfigRequest) XXX_Unmarshal(b []byte) error {
+func (m *LoadRequest) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
 }
-func (m *LoadGlobalConfigRequest) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+func (m *LoadRequest) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
 	if deterministic {
-		return xxx_messageInfo_LoadGlobalConfigRequest.Marshal(b, m, deterministic)
+		return xxx_messageInfo_LoadRequest.Marshal(b, m, deterministic)
 	} else {
 		b = b[:cap(b)]
 		n, err := m.MarshalToSizedBuffer(b)
@@ -206,107 +206,52 @@ func (m *LoadGlobalConfigRequest) XXX_Marshal(b []byte, deterministic bool) ([]b
 		return b[:n], nil
 	}
 }
-func (m *LoadGlobalConfigRequest) XXX_Merge(src proto.Message) {
-	xxx_messageInfo_LoadGlobalConfigRequest.Merge(m, src)
+func (m *LoadRequest) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_LoadRequest.Merge(m, src)
 }
-func (m *LoadGlobalConfigRequest) XXX_Size() int {
+func (m *LoadRequest) XXX_Size() int {
 	return m.Size()
 }
-func (m *LoadGlobalConfigRequest) XXX_DiscardUnknown() {
-	xxx_messageInfo_LoadGlobalConfigRequest.DiscardUnknown(m)
+func (m *LoadRequest) XXX_DiscardUnknown() {
+	xxx_messageInfo_LoadRequest.DiscardUnknown(m)
 }
 
-var xxx_messageInfo_LoadGlobalConfigRequest proto.InternalMessageInfo
+var xxx_messageInfo_LoadRequest proto.InternalMessageInfo
 
-func (m *LoadGlobalConfigRequest) GetNames() [][]byte {
+func (m *LoadRequest) GetNames() [][]byte {
 	if m != nil {
 		return m.Names
 	}
 	return nil
 }
 
-func (m *LoadGlobalConfigRequest) GetConfigPrefix() []byte {
+func (m *LoadRequest) GetPrefix() []byte {
 	if m != nil {
-		return m.ConfigPrefix
+		return m.Prefix
 	}
 	return nil
 }
 
-type LoadGlobalConfigResponse struct {
-	Items                []*GlobalConfigItem `protobuf:"bytes,1,rep,name=items,proto3" json:"items,omitempty"`
-	Revision             int64               `protobuf:"varint,2,opt,name=revision,proto3" json:"revision,omitempty"`
-	XXX_NoUnkeyedLiteral struct{}            `json:"-"`
-	XXX_unrecognized     []byte              `json:"-"`
-	XXX_sizecache        int32               `json:"-"`
-}
-
-func (m *LoadGlobalConfigResponse) Reset()         { *m = LoadGlobalConfigResponse{} }
-func (m *LoadGlobalConfigResponse) String() string { return proto.CompactTextString(m) }
-func (*LoadGlobalConfigResponse) ProtoMessage()    {}
-func (*LoadGlobalConfigResponse) Descriptor() ([]byte, []int) {
-	return fileDescriptor_fa716125f2dc88f3, []int{3}
-}
-func (m *LoadGlobalConfigResponse) XXX_Unmarshal(b []byte) error {
-	return m.Unmarshal(b)
-}
-func (m *LoadGlobalConfigResponse) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
-	if deterministic {
-		return xxx_messageInfo_LoadGlobalConfigResponse.Marshal(b, m, deterministic)
-	} else {
-		b = b[:cap(b)]
-		n, err := m.MarshalToSizedBuffer(b)
-		if err != nil {
-			return nil, err
-		}
-		return b[:n], nil
-	}
-}
-func (m *LoadGlobalConfigResponse) XXX_Merge(src proto.Message) {
-	xxx_messageInfo_LoadGlobalConfigResponse.Merge(m, src)
-}
-func (m *LoadGlobalConfigResponse) XXX_Size() int {
-	return m.Size()
-}
-func (m *LoadGlobalConfigResponse) XXX_DiscardUnknown() {
-	xxx_messageInfo_LoadGlobalConfigResponse.DiscardUnknown(m)
-}
-
-var xxx_messageInfo_LoadGlobalConfigResponse proto.InternalMessageInfo
-
-func (m *LoadGlobalConfigResponse) GetItems() []*GlobalConfigItem {
-	if m != nil {
-		return m.Items
-	}
-	return nil
-}
-
-func (m *LoadGlobalConfigResponse) GetRevision() int64 {
-	if m != nil {
-		return m.Revision
-	}
-	return 0
-}
-
-type WatchGlobalConfigRequest struct {
-	ConfigPrefix         []byte   `protobuf:"bytes,1,opt,name=config_prefix,json=configPrefix,proto3" json:"config_prefix,omitempty"`
+type LoadResponse struct {
+	Items                []*Item  `protobuf:"bytes,1,rep,name=items,proto3" json:"items,omitempty"`
 	Revision             int64    `protobuf:"varint,2,opt,name=revision,proto3" json:"revision,omitempty"`
 	XXX_NoUnkeyedLiteral struct{} `json:"-"`
 	XXX_unrecognized     []byte   `json:"-"`
 	XXX_sizecache        int32    `json:"-"`
 }
 
-func (m *WatchGlobalConfigRequest) Reset()         { *m = WatchGlobalConfigRequest{} }
-func (m *WatchGlobalConfigRequest) String() string { return proto.CompactTextString(m) }
-func (*WatchGlobalConfigRequest) ProtoMessage()    {}
-func (*WatchGlobalConfigRequest) Descriptor() ([]byte, []int) {
-	return fileDescriptor_fa716125f2dc88f3, []int{4}
+func (m *LoadResponse) Reset()         { *m = LoadResponse{} }
+func (m *LoadResponse) String() string { return proto.CompactTextString(m) }
+func (*LoadResponse) ProtoMessage()    {}
+func (*LoadResponse) Descriptor() ([]byte, []int) {
+	return fileDescriptor_fa716125f2dc88f3, []int{3}
 }
-func (m *WatchGlobalConfigRequest) XXX_Unmarshal(b []byte) error {
+func (m *LoadResponse) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
 }
-func (m *WatchGlobalConfigRequest) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+func (m *LoadResponse) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
 	if deterministic {
-		return xxx_messageInfo_WatchGlobalConfigRequest.Marshal(b, m, deterministic)
+		return xxx_messageInfo_LoadResponse.Marshal(b, m, deterministic)
 	} else {
 		b = b[:cap(b)]
 		n, err := m.MarshalToSizedBuffer(b)
@@ -316,53 +261,52 @@ func (m *WatchGlobalConfigRequest) XXX_Marshal(b []byte, deterministic bool) ([]
 		return b[:n], nil
 	}
 }
-func (m *WatchGlobalConfigRequest) XXX_Merge(src proto.Message) {
-	xxx_messageInfo_WatchGlobalConfigRequest.Merge(m, src)
+func (m *LoadResponse) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_LoadResponse.Merge(m, src)
 }
-func (m *WatchGlobalConfigRequest) XXX_Size() int {
+func (m *LoadResponse) XXX_Size() int {
 	return m.Size()
 }
-func (m *WatchGlobalConfigRequest) XXX_DiscardUnknown() {
-	xxx_messageInfo_WatchGlobalConfigRequest.DiscardUnknown(m)
+func (m *LoadResponse) XXX_DiscardUnknown() {
+	xxx_messageInfo_LoadResponse.DiscardUnknown(m)
 }
 
-var xxx_messageInfo_WatchGlobalConfigRequest proto.InternalMessageInfo
+var xxx_messageInfo_LoadResponse proto.InternalMessageInfo
 
-func (m *WatchGlobalConfigRequest) GetConfigPrefix() []byte {
+func (m *LoadResponse) GetItems() []*Item {
 	if m != nil {
-		return m.ConfigPrefix
+		return m.Items
 	}
 	return nil
 }
 
-func (m *WatchGlobalConfigRequest) GetRevision() int64 {
+func (m *LoadResponse) GetRevision() int64 {
 	if m != nil {
 		return m.Revision
 	}
 	return 0
 }
 
-type WatchGlobalConfigResponse struct {
-	Changes              []*GlobalConfigItem `protobuf:"bytes,1,rep,name=changes,proto3" json:"changes,omitempty"`
-	Revision             int64               `protobuf:"varint,2,opt,name=revision,proto3" json:"revision,omitempty"`
-	Error                *Error              `protobuf:"bytes,3,opt,name=error,proto3" json:"error,omitempty"`
-	XXX_NoUnkeyedLiteral struct{}            `json:"-"`
-	XXX_unrecognized     []byte              `json:"-"`
-	XXX_sizecache        int32               `json:"-"`
+type WatchRequest struct {
+	Prefix               []byte   `protobuf:"bytes,1,opt,name=prefix,proto3" json:"prefix,omitempty"`
+	Revision             int64    `protobuf:"varint,2,opt,name=revision,proto3" json:"revision,omitempty"`
+	XXX_NoUnkeyedLiteral struct{} `json:"-"`
+	XXX_unrecognized     []byte   `json:"-"`
+	XXX_sizecache        int32    `json:"-"`
 }
 
-func (m *WatchGlobalConfigResponse) Reset()         { *m = WatchGlobalConfigResponse{} }
-func (m *WatchGlobalConfigResponse) String() string { return proto.CompactTextString(m) }
-func (*WatchGlobalConfigResponse) ProtoMessage()    {}
-func (*WatchGlobalConfigResponse) Descriptor() ([]byte, []int) {
-	return fileDescriptor_fa716125f2dc88f3, []int{5}
+func (m *WatchRequest) Reset()         { *m = WatchRequest{} }
+func (m *WatchRequest) String() string { return proto.CompactTextString(m) }
+func (*WatchRequest) ProtoMessage()    {}
+func (*WatchRequest) Descriptor() ([]byte, []int) {
+	return fileDescriptor_fa716125f2dc88f3, []int{4}
 }
-func (m *WatchGlobalConfigResponse) XXX_Unmarshal(b []byte) error {
+func (m *WatchRequest) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
 }
-func (m *WatchGlobalConfigResponse) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+func (m *WatchRequest) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
 	if deterministic {
-		return xxx_messageInfo_WatchGlobalConfigResponse.Marshal(b, m, deterministic)
+		return xxx_messageInfo_WatchRequest.Marshal(b, m, deterministic)
 	} else {
 		b = b[:cap(b)]
 		n, err := m.MarshalToSizedBuffer(b)
@@ -372,40 +316,96 @@ func (m *WatchGlobalConfigResponse) XXX_Marshal(b []byte, deterministic bool) ([
 		return b[:n], nil
 	}
 }
-func (m *WatchGlobalConfigResponse) XXX_Merge(src proto.Message) {
-	xxx_messageInfo_WatchGlobalConfigResponse.Merge(m, src)
+func (m *WatchRequest) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_WatchRequest.Merge(m, src)
 }
-func (m *WatchGlobalConfigResponse) XXX_Size() int {
+func (m *WatchRequest) XXX_Size() int {
 	return m.Size()
 }
-func (m *WatchGlobalConfigResponse) XXX_DiscardUnknown() {
-	xxx_messageInfo_WatchGlobalConfigResponse.DiscardUnknown(m)
+func (m *WatchRequest) XXX_DiscardUnknown() {
+	xxx_messageInfo_WatchRequest.DiscardUnknown(m)
 }
 
-var xxx_messageInfo_WatchGlobalConfigResponse proto.InternalMessageInfo
+var xxx_messageInfo_WatchRequest proto.InternalMessageInfo
 
-func (m *WatchGlobalConfigResponse) GetChanges() []*GlobalConfigItem {
+func (m *WatchRequest) GetPrefix() []byte {
+	if m != nil {
+		return m.Prefix
+	}
+	return nil
+}
+
+func (m *WatchRequest) GetRevision() int64 {
+	if m != nil {
+		return m.Revision
+	}
+	return 0
+}
+
+type WatchResponse struct {
+	Changes              []*Item  `protobuf:"bytes,1,rep,name=changes,proto3" json:"changes,omitempty"`
+	Revision             int64    `protobuf:"varint,2,opt,name=revision,proto3" json:"revision,omitempty"`
+	Error                *Error   `protobuf:"bytes,3,opt,name=error,proto3" json:"error,omitempty"`
+	XXX_NoUnkeyedLiteral struct{} `json:"-"`
+	XXX_unrecognized     []byte   `json:"-"`
+	XXX_sizecache        int32    `json:"-"`
+}
+
+func (m *WatchResponse) Reset()         { *m = WatchResponse{} }
+func (m *WatchResponse) String() string { return proto.CompactTextString(m) }
+func (*WatchResponse) ProtoMessage()    {}
+func (*WatchResponse) Descriptor() ([]byte, []int) {
+	return fileDescriptor_fa716125f2dc88f3, []int{5}
+}
+func (m *WatchResponse) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *WatchResponse) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_WatchResponse.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *WatchResponse) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_WatchResponse.Merge(m, src)
+}
+func (m *WatchResponse) XXX_Size() int {
+	return m.Size()
+}
+func (m *WatchResponse) XXX_DiscardUnknown() {
+	xxx_messageInfo_WatchResponse.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_WatchResponse proto.InternalMessageInfo
+
+func (m *WatchResponse) GetChanges() []*Item {
 	if m != nil {
 		return m.Changes
 	}
 	return nil
 }
 
-func (m *WatchGlobalConfigResponse) GetRevision() int64 {
+func (m *WatchResponse) GetRevision() int64 {
 	if m != nil {
 		return m.Revision
 	}
 	return 0
 }
 
-func (m *WatchGlobalConfigResponse) GetError() *Error {
+func (m *WatchResponse) GetError() *Error {
 	if m != nil {
 		return m.Error
 	}
 	return nil
 }
 
-type GlobalConfigItem struct {
+type Item struct {
 	Name                 []byte    `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
 	Payload              []byte    `protobuf:"bytes,2,opt,name=payload,proto3" json:"payload,omitempty"`
 	Error                *Error    `protobuf:"bytes,3,opt,name=error,proto3" json:"error,omitempty"`
@@ -415,18 +415,18 @@ type GlobalConfigItem struct {
 	XXX_sizecache        int32     `json:"-"`
 }
 
-func (m *GlobalConfigItem) Reset()         { *m = GlobalConfigItem{} }
-func (m *GlobalConfigItem) String() string { return proto.CompactTextString(m) }
-func (*GlobalConfigItem) ProtoMessage()    {}
-func (*GlobalConfigItem) Descriptor() ([]byte, []int) {
+func (m *Item) Reset()         { *m = Item{} }
+func (m *Item) String() string { return proto.CompactTextString(m) }
+func (*Item) ProtoMessage()    {}
+func (*Item) Descriptor() ([]byte, []int) {
 	return fileDescriptor_fa716125f2dc88f3, []int{6}
 }
-func (m *GlobalConfigItem) XXX_Unmarshal(b []byte) error {
+func (m *Item) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
 }
-func (m *GlobalConfigItem) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+func (m *Item) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
 	if deterministic {
-		return xxx_messageInfo_GlobalConfigItem.Marshal(b, m, deterministic)
+		return xxx_messageInfo_Item.Marshal(b, m, deterministic)
 	} else {
 		b = b[:cap(b)]
 		n, err := m.MarshalToSizedBuffer(b)
@@ -436,40 +436,40 @@ func (m *GlobalConfigItem) XXX_Marshal(b []byte, deterministic bool) ([]byte, er
 		return b[:n], nil
 	}
 }
-func (m *GlobalConfigItem) XXX_Merge(src proto.Message) {
-	xxx_messageInfo_GlobalConfigItem.Merge(m, src)
+func (m *Item) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_Item.Merge(m, src)
 }
-func (m *GlobalConfigItem) XXX_Size() int {
+func (m *Item) XXX_Size() int {
 	return m.Size()
 }
-func (m *GlobalConfigItem) XXX_DiscardUnknown() {
-	xxx_messageInfo_GlobalConfigItem.DiscardUnknown(m)
+func (m *Item) XXX_DiscardUnknown() {
+	xxx_messageInfo_Item.DiscardUnknown(m)
 }
 
-var xxx_messageInfo_GlobalConfigItem proto.InternalMessageInfo
+var xxx_messageInfo_Item proto.InternalMessageInfo
 
-func (m *GlobalConfigItem) GetName() []byte {
+func (m *Item) GetName() []byte {
 	if m != nil {
 		return m.Name
 	}
 	return nil
 }
 
-func (m *GlobalConfigItem) GetPayload() []byte {
+func (m *Item) GetPayload() []byte {
 	if m != nil {
 		return m.Payload
 	}
 	return nil
 }
 
-func (m *GlobalConfigItem) GetError() *Error {
+func (m *Item) GetError() *Error {
 	if m != nil {
 		return m.Error
 	}
 	return nil
 }
 
-func (m *GlobalConfigItem) GetKind() EventType {
+func (m *Item) GetKind() EventType {
 	if m != nil {
 		return m.Kind
 	}
@@ -534,54 +534,52 @@ func (m *Error) GetMessage() string {
 func init() {
 	proto.RegisterEnum("kvpb.ErrorType", ErrorType_name, ErrorType_value)
 	proto.RegisterEnum("kvpb.EventType", EventType_name, EventType_value)
-	proto.RegisterType((*StoreGlobalConfigRequest)(nil), "kvpb.StoreGlobalConfigRequest")
-	proto.RegisterType((*StoreGlobalConfigResponse)(nil), "kvpb.StoreGlobalConfigResponse")
-	proto.RegisterType((*LoadGlobalConfigRequest)(nil), "kvpb.LoadGlobalConfigRequest")
-	proto.RegisterType((*LoadGlobalConfigResponse)(nil), "kvpb.LoadGlobalConfigResponse")
-	proto.RegisterType((*WatchGlobalConfigRequest)(nil), "kvpb.WatchGlobalConfigRequest")
-	proto.RegisterType((*WatchGlobalConfigResponse)(nil), "kvpb.WatchGlobalConfigResponse")
-	proto.RegisterType((*GlobalConfigItem)(nil), "kvpb.GlobalConfigItem")
+	proto.RegisterType((*StoreRequest)(nil), "kvpb.StoreRequest")
+	proto.RegisterType((*StoreResponse)(nil), "kvpb.StoreResponse")
+	proto.RegisterType((*LoadRequest)(nil), "kvpb.LoadRequest")
+	proto.RegisterType((*LoadResponse)(nil), "kvpb.LoadResponse")
+	proto.RegisterType((*WatchRequest)(nil), "kvpb.WatchRequest")
+	proto.RegisterType((*WatchResponse)(nil), "kvpb.WatchResponse")
+	proto.RegisterType((*Item)(nil), "kvpb.Item")
 	proto.RegisterType((*Error)(nil), "kvpb.Error")
 }
 
 func init() { proto.RegisterFile("api/kvpb/kv.proto", fileDescriptor_fa716125f2dc88f3) }
 
 var fileDescriptor_fa716125f2dc88f3 = []byte{
-	// 534 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x94, 0x54, 0xff, 0x6e, 0xd2, 0x50,
-	0x14, 0xe6, 0xf2, 0x53, 0x0e, 0x6c, 0x96, 0x93, 0x45, 0x3b, 0x8c, 0x15, 0xbb, 0x7f, 0xc8, 0x62,
-	0x60, 0xc1, 0x27, 0x40, 0xe8, 0x8c, 0x61, 0x02, 0xe9, 0xca, 0x66, 0xe2, 0x1f, 0xa4, 0xc0, 0x5d,
-	0xd7, 0x00, 0xbd, 0x5d, 0x5b, 0x89, 0xbc, 0x81, 0x89, 0x3e, 0x80, 0x8f, 0xe4, 0x9f, 0x3e, 0x82,
-	0xc1, 0x17, 0x31, 0xed, 0x6d, 0xd1, 0xac, 0x74, 0x6e, 0xff, 0xdd, 0x73, 0xbe, 0xaf, 0xdf, 0xf7,
-	0xdd, 0xdc, 0x73, 0x0a, 0x15, 0xdd, 0x36, 0x9b, 0xf3, 0x95, 0x3d, 0x69, 0xce, 0x57, 0x0d, 0xdb,
-	0x61, 0x1e, 0xc3, 0xac, 0x5f, 0x56, 0x0f, 0x0c, 0x66, 0xb0, 0xa0, 0xd1, 0xf4, 0x4f, 0x1c, 0x93,
-	0x6f, 0x40, 0x3c, 0xf7, 0x98, 0x43, 0xdf, 0x2e, 0xd8, 0x44, 0x5f, 0x74, 0x98, 0x75, 0x65, 0x1a,
-	0x2a, 0xbd, 0xf9, 0x44, 0x5d, 0x0f, 0x4f, 0xa0, 0x30, 0xbd, 0xd6, 0x2d, 0x83, 0xba, 0x22, 0xa9,
-	0x65, 0xea, 0xa5, 0xd6, 0x93, 0x86, 0xaf, 0xd4, 0xf8, 0x97, 0xfb, 0xce, 0xa3, 0x4b, 0x35, 0xa2,
-	0xe1, 0x11, 0xec, 0x4d, 0x83, 0xf6, 0xd8, 0x76, 0xe8, 0x95, 0xf9, 0x59, 0x4c, 0xd7, 0x48, 0xbd,
-	0xac, 0x96, 0x79, 0x73, 0x18, 0xf4, 0xe4, 0x67, 0x70, 0xb8, 0xc3, 0xd2, 0xb5, 0x99, 0xe5, 0x52,
-	0x59, 0x83, 0xa7, 0x67, 0x4c, 0x9f, 0xed, 0x8a, 0x73, 0x00, 0x39, 0x4b, 0x5f, 0x86, 0x61, 0xca,
-	0x2a, 0x2f, 0xee, 0x67, 0x39, 0x03, 0x31, 0xae, 0xca, 0x1d, 0xf1, 0x15, 0xe4, 0x4c, 0x8f, 0x2e,
-	0xff, 0x77, 0x47, 0x4e, 0xc2, 0x2a, 0x3c, 0x72, 0xe8, 0xca, 0x74, 0x4d, 0x66, 0x05, 0x4e, 0x19,
-	0x75, 0x5b, 0xcb, 0x1f, 0x41, 0xbc, 0xd4, 0xbd, 0xe9, 0xf5, 0xae, 0xf0, 0xb1, 0x98, 0x24, 0x1e,
-	0xf3, 0x4e, 0xf1, 0x6f, 0x04, 0x0e, 0x77, 0xa8, 0x87, 0x97, 0x78, 0xf8, 0x53, 0xdd, 0xe1, 0x85,
-	0x2f, 0x21, 0x47, 0x1d, 0x87, 0x39, 0x62, 0xa6, 0x46, 0xea, 0xa5, 0x56, 0x89, 0x6b, 0x29, 0x7e,
-	0x4b, 0xe5, 0x88, 0xfc, 0x85, 0x80, 0x70, 0x5b, 0x1c, 0x11, 0xb2, 0xfe, 0xa3, 0x84, 0x77, 0x0b,
-	0xce, 0x28, 0x42, 0xc1, 0xd6, 0xd7, 0x0b, 0xa6, 0xcf, 0xc2, 0x97, 0x89, 0xca, 0x7b, 0xb8, 0xe0,
-	0x11, 0x64, 0xe7, 0xa6, 0x35, 0x13, 0xb3, 0x35, 0x52, 0xdf, 0x6f, 0x3d, 0x0e, 0x19, 0x2b, 0x6a,
-	0x79, 0xda, 0xda, 0xa6, 0x6a, 0x00, 0xca, 0xa7, 0x90, 0x53, 0x22, 0xb6, 0xb7, 0xb6, 0xb9, 0xfd,
-	0x5f, 0xb6, 0x0f, 0x71, 0xb6, 0x0f, 0xfa, 0x79, 0x96, 0xd4, 0x75, 0x75, 0x83, 0x06, 0x79, 0x8a,
-	0x6a, 0x54, 0x1e, 0x77, 0xa0, 0xb8, 0x25, 0x63, 0x1e, 0xd2, 0x83, 0x9e, 0x90, 0xc2, 0x12, 0x14,
-	0x46, 0xfd, 0x5e, 0x7f, 0x70, 0xd9, 0x17, 0x08, 0xee, 0x41, 0xb1, 0x3f, 0xd0, 0xc6, 0xa7, 0x83,
-	0x51, 0xbf, 0x2b, 0xa4, 0x11, 0x61, 0xbf, 0xdb, 0xd6, 0xda, 0xe3, 0xce, 0xe0, 0xfd, 0xb0, 0xdd,
-	0xd1, 0x94, 0xae, 0x90, 0x39, 0xae, 0x41, 0x71, 0x9b, 0x0f, 0x0b, 0x90, 0x19, 0x8e, 0x34, 0x21,
-	0x85, 0x00, 0xf9, 0xae, 0x72, 0xa6, 0x68, 0x8a, 0x40, 0x5a, 0x5f, 0xd3, 0x90, 0xee, 0x5d, 0xe0,
-	0x05, 0x54, 0x62, 0x5b, 0x80, 0x12, 0xcf, 0x9c, 0xb4, 0x91, 0xd5, 0x17, 0x89, 0x78, 0xb8, 0x3e,
-	0x29, 0x3c, 0x07, 0xe1, 0xf6, 0xa8, 0xe3, 0x73, 0xfe, 0x59, 0xc2, 0x62, 0x55, 0xa5, 0x24, 0x78,
-	0x2b, 0xfa, 0x01, 0x2a, 0xb1, 0xd9, 0x8b, 0xc2, 0x26, 0x8d, 0x7c, 0x14, 0x36, 0x71, 0x68, 0xe5,
-	0xd4, 0x09, 0x79, 0x23, 0xfc, 0xd8, 0x48, 0xe4, 0xe7, 0x46, 0x22, 0xbf, 0x36, 0x12, 0xf9, 0xfe,
-	0x5b, 0x4a, 0x4d, 0xf2, 0xc1, 0x8f, 0xe9, 0xf5, 0x9f, 0x00, 0x00, 0x00, 0xff, 0xff, 0x1c, 0xd1,
-	0xce, 0x08, 0xc9, 0x04, 0x00, 0x00,
+	// 500 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x8c, 0x53, 0xc1, 0x6e, 0xd3, 0x40,
+	0x10, 0xcd, 0x26, 0x76, 0x42, 0xc6, 0x4e, 0xeb, 0x0e, 0x15, 0xb2, 0x72, 0x88, 0x8c, 0xe1, 0x10,
+	0xf5, 0x90, 0x20, 0xc3, 0x8d, 0x53, 0x9a, 0xb8, 0x12, 0x4a, 0xb0, 0x2b, 0xe3, 0xd0, 0x63, 0xe5,
+	0x36, 0x4b, 0x6a, 0x85, 0x78, 0x8d, 0x6d, 0x22, 0x22, 0xf1, 0x21, 0xdc, 0xf8, 0x1d, 0x8e, 0x7c,
+	0x02, 0x0a, 0x3f, 0x82, 0xd6, 0x6b, 0xa7, 0xae, 0x44, 0xab, 0xde, 0xf6, 0xcd, 0x9b, 0x79, 0xf3,
+	0x34, 0x7a, 0x0b, 0x47, 0x41, 0x1c, 0x0e, 0x57, 0x9b, 0xf8, 0x6a, 0xb8, 0xda, 0x0c, 0xe2, 0x84,
+	0x65, 0x0c, 0x25, 0x0e, 0xbb, 0xc7, 0x4b, 0xb6, 0x64, 0x79, 0x61, 0xc8, 0x5f, 0x82, 0x33, 0x67,
+	0xa0, 0x7e, 0xc8, 0x58, 0x42, 0x3d, 0xfa, 0xe5, 0x2b, 0x4d, 0x33, 0x7c, 0x09, 0xad, 0xeb, 0x9b,
+	0x20, 0x5a, 0xd2, 0x54, 0x27, 0x46, 0xa3, 0xaf, 0x58, 0x30, 0xe0, 0xd3, 0x83, 0x77, 0x19, 0x5d,
+	0x7b, 0x25, 0x85, 0xcf, 0xa0, 0x19, 0x27, 0xf4, 0x53, 0xf8, 0x4d, 0xaf, 0x1b, 0xa4, 0xaf, 0x7a,
+	0x05, 0x32, 0x0f, 0xa1, 0x53, 0xa8, 0xa5, 0x31, 0x8b, 0x52, 0x6a, 0xbe, 0x05, 0x65, 0xc6, 0x82,
+	0x45, 0xa9, 0x7e, 0x0c, 0x72, 0x14, 0xac, 0x0b, 0x6d, 0xd5, 0x13, 0xe0, 0x5e, 0xb5, 0x19, 0xa8,
+	0x62, 0x58, 0x88, 0xa1, 0x01, 0x72, 0x98, 0xd1, 0xf5, 0xff, 0x9c, 0x09, 0x02, 0xbb, 0xf0, 0x24,
+	0xa1, 0x9b, 0x30, 0x0d, 0x59, 0x94, 0x6b, 0x35, 0xbc, 0x3d, 0x36, 0x4f, 0x41, 0xbd, 0x08, 0xb2,
+	0xeb, 0x9b, 0xd2, 0xcb, 0xed, 0x56, 0x52, 0xdd, 0xfa, 0xa0, 0x46, 0x06, 0x9d, 0x42, 0xa3, 0xb0,
+	0xf4, 0xb8, 0x73, 0x3d, 0x20, 0x89, 0xcf, 0x41, 0xa6, 0x49, 0xc2, 0x12, 0xbd, 0x61, 0x90, 0xbe,
+	0x62, 0x29, 0x62, 0xde, 0xe6, 0x25, 0x4f, 0x30, 0xe6, 0x77, 0x90, 0xb8, 0x1e, 0x22, 0x48, 0xfc,
+	0x60, 0x85, 0xdf, 0xfc, 0x8d, 0x3a, 0xb4, 0xe2, 0x60, 0xfb, 0x99, 0x05, 0x8b, 0xe2, 0x78, 0x25,
+	0x7c, 0x84, 0x30, 0xbe, 0x00, 0x69, 0x15, 0x46, 0x0b, 0x5d, 0x32, 0x48, 0xff, 0xc0, 0x3a, 0x2c,
+	0x3a, 0x36, 0x34, 0xca, 0xfc, 0x6d, 0x4c, 0xbd, 0x9c, 0x34, 0xcf, 0x40, 0xb6, 0xcb, 0xee, 0x6c,
+	0x1b, 0x8b, 0xf5, 0xb7, 0xdd, 0x9c, 0x12, 0xdd, 0x9c, 0xe4, 0x7e, 0xd6, 0x34, 0x4d, 0x83, 0x25,
+	0xcd, 0xfd, 0xb4, 0xbd, 0x12, 0x9e, 0x8c, 0xa1, 0xbd, 0x6f, 0xc6, 0x26, 0xd4, 0xdd, 0xa9, 0x56,
+	0x43, 0x05, 0x5a, 0x73, 0x67, 0xea, 0xb8, 0x17, 0x8e, 0x46, 0xb0, 0x03, 0x6d, 0xc7, 0xf5, 0x2f,
+	0xcf, 0xdc, 0xb9, 0x33, 0xd1, 0xea, 0x88, 0x70, 0x30, 0x19, 0xf9, 0xa3, 0xcb, 0xb1, 0xfb, 0xfe,
+	0x7c, 0x34, 0xf6, 0xed, 0x89, 0xd6, 0x38, 0x31, 0xa0, 0xbd, 0xf7, 0x87, 0x2d, 0x68, 0x9c, 0xcf,
+	0x7d, 0xad, 0x86, 0x00, 0xcd, 0x89, 0x3d, 0xb3, 0x7d, 0x5b, 0x23, 0xd6, 0x4f, 0x02, 0xf5, 0xe9,
+	0x47, 0xb4, 0x40, 0xce, 0x93, 0x88, 0x28, 0x7c, 0x56, 0x43, 0xde, 0x7d, 0x7a, 0xa7, 0x56, 0x44,
+	0xb5, 0x86, 0x43, 0x90, 0x78, 0xde, 0xf0, 0x48, 0xd0, 0x95, 0xe0, 0x76, 0xb1, 0x5a, 0xda, 0x0f,
+	0xbc, 0x01, 0x39, 0x8f, 0x43, 0xb9, 0xa4, 0x9a, 0xaf, 0x72, 0xc9, 0x9d, 0xbc, 0x98, 0xb5, 0x57,
+	0xe4, 0x54, 0xfb, 0xb5, 0xeb, 0x91, 0xdf, 0xbb, 0x1e, 0xf9, 0xb3, 0xeb, 0x91, 0x1f, 0x7f, 0x7b,
+	0xb5, 0xab, 0x66, 0xfe, 0x17, 0x5f, 0xff, 0x0b, 0x00, 0x00, 0xff, 0xff, 0xd1, 0x08, 0xd6, 0xd5,
+	0xbc, 0x03, 0x00, 0x00,
 }
 
 // Reference imports to suppress errors if they are not otherwise used.
@@ -596,9 +594,9 @@ const _ = grpc.SupportPackageIsVersion4
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://godoc.org/google.golang.org/grpc#ClientConn.NewStream.
 type KVClient interface {
-	StoreGlobalConfig(ctx context.Context, in *StoreGlobalConfigRequest, opts ...grpc.CallOption) (*StoreGlobalConfigResponse, error)
-	LoadGlobalConfig(ctx context.Context, in *LoadGlobalConfigRequest, opts ...grpc.CallOption) (*LoadGlobalConfigResponse, error)
-	WatchGlobalConfig(ctx context.Context, in *WatchGlobalConfigRequest, opts ...grpc.CallOption) (KV_WatchGlobalConfigClient, error)
+	Store(ctx context.Context, in *StoreRequest, opts ...grpc.CallOption) (*StoreResponse, error)
+	Load(ctx context.Context, in *LoadRequest, opts ...grpc.CallOption) (*LoadResponse, error)
+	Watch(ctx context.Context, in *WatchRequest, opts ...grpc.CallOption) (KV_WatchClient, error)
 }
 
 type kVClient struct {
@@ -609,30 +607,30 @@ func NewKVClient(cc *grpc.ClientConn) KVClient {
 	return &kVClient{cc}
 }
 
-func (c *kVClient) StoreGlobalConfig(ctx context.Context, in *StoreGlobalConfigRequest, opts ...grpc.CallOption) (*StoreGlobalConfigResponse, error) {
-	out := new(StoreGlobalConfigResponse)
-	err := c.cc.Invoke(ctx, "/kvpb.KV/StoreGlobalConfig", in, out, opts...)
+func (c *kVClient) Store(ctx context.Context, in *StoreRequest, opts ...grpc.CallOption) (*StoreResponse, error) {
+	out := new(StoreResponse)
+	err := c.cc.Invoke(ctx, "/kvpb.KV/Store", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *kVClient) LoadGlobalConfig(ctx context.Context, in *LoadGlobalConfigRequest, opts ...grpc.CallOption) (*LoadGlobalConfigResponse, error) {
-	out := new(LoadGlobalConfigResponse)
-	err := c.cc.Invoke(ctx, "/kvpb.KV/LoadGlobalConfig", in, out, opts...)
+func (c *kVClient) Load(ctx context.Context, in *LoadRequest, opts ...grpc.CallOption) (*LoadResponse, error) {
+	out := new(LoadResponse)
+	err := c.cc.Invoke(ctx, "/kvpb.KV/Load", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
-func (c *kVClient) WatchGlobalConfig(ctx context.Context, in *WatchGlobalConfigRequest, opts ...grpc.CallOption) (KV_WatchGlobalConfigClient, error) {
-	stream, err := c.cc.NewStream(ctx, &_KV_serviceDesc.Streams[0], "/kvpb.KV/WatchGlobalConfig", opts...)
+func (c *kVClient) Watch(ctx context.Context, in *WatchRequest, opts ...grpc.CallOption) (KV_WatchClient, error) {
+	stream, err := c.cc.NewStream(ctx, &_KV_serviceDesc.Streams[0], "/kvpb.KV/Watch", opts...)
 	if err != nil {
 		return nil, err
 	}
-	x := &kVWatchGlobalConfigClient{stream}
+	x := &kVWatchClient{stream}
 	if err := x.ClientStream.SendMsg(in); err != nil {
 		return nil, err
 	}
@@ -642,17 +640,17 @@ func (c *kVClient) WatchGlobalConfig(ctx context.Context, in *WatchGlobalConfigR
 	return x, nil
 }
 
-type KV_WatchGlobalConfigClient interface {
-	Recv() (*WatchGlobalConfigResponse, error)
+type KV_WatchClient interface {
+	Recv() (*WatchResponse, error)
 	grpc.ClientStream
 }
 
-type kVWatchGlobalConfigClient struct {
+type kVWatchClient struct {
 	grpc.ClientStream
 }
 
-func (x *kVWatchGlobalConfigClient) Recv() (*WatchGlobalConfigResponse, error) {
-	m := new(WatchGlobalConfigResponse)
+func (x *kVWatchClient) Recv() (*WatchResponse, error) {
+	m := new(WatchResponse)
 	if err := x.ClientStream.RecvMsg(m); err != nil {
 		return nil, err
 	}
@@ -661,83 +659,83 @@ func (x *kVWatchGlobalConfigClient) Recv() (*WatchGlobalConfigResponse, error) {
 
 // KVServer is the server API for KV service.
 type KVServer interface {
-	StoreGlobalConfig(context.Context, *StoreGlobalConfigRequest) (*StoreGlobalConfigResponse, error)
-	LoadGlobalConfig(context.Context, *LoadGlobalConfigRequest) (*LoadGlobalConfigResponse, error)
-	WatchGlobalConfig(*WatchGlobalConfigRequest, KV_WatchGlobalConfigServer) error
+	Store(context.Context, *StoreRequest) (*StoreResponse, error)
+	Load(context.Context, *LoadRequest) (*LoadResponse, error)
+	Watch(*WatchRequest, KV_WatchServer) error
 }
 
 // UnimplementedKVServer can be embedded to have forward compatible implementations.
 type UnimplementedKVServer struct {
 }
 
-func (*UnimplementedKVServer) StoreGlobalConfig(ctx context.Context, req *StoreGlobalConfigRequest) (*StoreGlobalConfigResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method StoreGlobalConfig not implemented")
+func (*UnimplementedKVServer) Store(ctx context.Context, req *StoreRequest) (*StoreResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Store not implemented")
 }
-func (*UnimplementedKVServer) LoadGlobalConfig(ctx context.Context, req *LoadGlobalConfigRequest) (*LoadGlobalConfigResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method LoadGlobalConfig not implemented")
+func (*UnimplementedKVServer) Load(ctx context.Context, req *LoadRequest) (*LoadResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Load not implemented")
 }
-func (*UnimplementedKVServer) WatchGlobalConfig(req *WatchGlobalConfigRequest, srv KV_WatchGlobalConfigServer) error {
-	return status.Errorf(codes.Unimplemented, "method WatchGlobalConfig not implemented")
+func (*UnimplementedKVServer) Watch(req *WatchRequest, srv KV_WatchServer) error {
+	return status.Errorf(codes.Unimplemented, "method Watch not implemented")
 }
 
 func RegisterKVServer(s *grpc.Server, srv KVServer) {
 	s.RegisterService(&_KV_serviceDesc, srv)
 }
 
-func _KV_StoreGlobalConfig_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(StoreGlobalConfigRequest)
+func _KV_Store_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(StoreRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(KVServer).StoreGlobalConfig(ctx, in)
+		return srv.(KVServer).Store(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: "/kvpb.KV/StoreGlobalConfig",
+		FullMethod: "/kvpb.KV/Store",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(KVServer).StoreGlobalConfig(ctx, req.(*StoreGlobalConfigRequest))
+		return srv.(KVServer).Store(ctx, req.(*StoreRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _KV_LoadGlobalConfig_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(LoadGlobalConfigRequest)
+func _KV_Load_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(LoadRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(KVServer).LoadGlobalConfig(ctx, in)
+		return srv.(KVServer).Load(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: "/kvpb.KV/LoadGlobalConfig",
+		FullMethod: "/kvpb.KV/Load",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(KVServer).LoadGlobalConfig(ctx, req.(*LoadGlobalConfigRequest))
+		return srv.(KVServer).Load(ctx, req.(*LoadRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
-func _KV_WatchGlobalConfig_Handler(srv interface{}, stream grpc.ServerStream) error {
-	m := new(WatchGlobalConfigRequest)
+func _KV_Watch_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(WatchRequest)
 	if err := stream.RecvMsg(m); err != nil {
 		return err
 	}
-	return srv.(KVServer).WatchGlobalConfig(m, &kVWatchGlobalConfigServer{stream})
+	return srv.(KVServer).Watch(m, &kVWatchServer{stream})
 }
 
-type KV_WatchGlobalConfigServer interface {
-	Send(*WatchGlobalConfigResponse) error
+type KV_WatchServer interface {
+	Send(*WatchResponse) error
 	grpc.ServerStream
 }
 
-type kVWatchGlobalConfigServer struct {
+type kVWatchServer struct {
 	grpc.ServerStream
 }
 
-func (x *kVWatchGlobalConfigServer) Send(m *WatchGlobalConfigResponse) error {
+func (x *kVWatchServer) Send(m *WatchResponse) error {
 	return x.ServerStream.SendMsg(m)
 }
 
@@ -746,25 +744,25 @@ var _KV_serviceDesc = grpc.ServiceDesc{
 	HandlerType: (*KVServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
-			MethodName: "StoreGlobalConfig",
-			Handler:    _KV_StoreGlobalConfig_Handler,
+			MethodName: "Store",
+			Handler:    _KV_Store_Handler,
 		},
 		{
-			MethodName: "LoadGlobalConfig",
-			Handler:    _KV_LoadGlobalConfig_Handler,
+			MethodName: "Load",
+			Handler:    _KV_Load_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{
 		{
-			StreamName:    "WatchGlobalConfig",
-			Handler:       _KV_WatchGlobalConfig_Handler,
+			StreamName:    "Watch",
+			Handler:       _KV_Watch_Handler,
 			ServerStreams: true,
 		},
 	},
 	Metadata: "api/kvpb/kv.proto",
 }
 
-func (m *StoreGlobalConfigRequest) Marshal() (dAtA []byte, err error) {
+func (m *StoreRequest) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
 	dAtA = make([]byte, size)
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
@@ -774,12 +772,12 @@ func (m *StoreGlobalConfigRequest) Marshal() (dAtA []byte, err error) {
 	return dAtA[:n], nil
 }
 
-func (m *StoreGlobalConfigRequest) MarshalTo(dAtA []byte) (int, error) {
+func (m *StoreRequest) MarshalTo(dAtA []byte) (int, error) {
 	size := m.Size()
 	return m.MarshalToSizedBuffer(dAtA[:size])
 }
 
-func (m *StoreGlobalConfigRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+func (m *StoreRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	i := len(dAtA)
 	_ = i
 	var l int
@@ -788,10 +786,10 @@ func (m *StoreGlobalConfigRequest) MarshalToSizedBuffer(dAtA []byte) (int, error
 		i -= len(m.XXX_unrecognized)
 		copy(dAtA[i:], m.XXX_unrecognized)
 	}
-	if len(m.ConfigPrefix) > 0 {
-		i -= len(m.ConfigPrefix)
-		copy(dAtA[i:], m.ConfigPrefix)
-		i = encodeVarintKv(dAtA, i, uint64(len(m.ConfigPrefix)))
+	if len(m.Prefix) > 0 {
+		i -= len(m.Prefix)
+		copy(dAtA[i:], m.Prefix)
+		i = encodeVarintKv(dAtA, i, uint64(len(m.Prefix)))
 		i--
 		dAtA[i] = 0x12
 	}
@@ -812,7 +810,7 @@ func (m *StoreGlobalConfigRequest) MarshalToSizedBuffer(dAtA []byte) (int, error
 	return len(dAtA) - i, nil
 }
 
-func (m *StoreGlobalConfigResponse) Marshal() (dAtA []byte, err error) {
+func (m *StoreResponse) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
 	dAtA = make([]byte, size)
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
@@ -822,12 +820,12 @@ func (m *StoreGlobalConfigResponse) Marshal() (dAtA []byte, err error) {
 	return dAtA[:n], nil
 }
 
-func (m *StoreGlobalConfigResponse) MarshalTo(dAtA []byte) (int, error) {
+func (m *StoreResponse) MarshalTo(dAtA []byte) (int, error) {
 	size := m.Size()
 	return m.MarshalToSizedBuffer(dAtA[:size])
 }
 
-func (m *StoreGlobalConfigResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+func (m *StoreResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	i := len(dAtA)
 	_ = i
 	var l int
@@ -839,7 +837,7 @@ func (m *StoreGlobalConfigResponse) MarshalToSizedBuffer(dAtA []byte) (int, erro
 	return len(dAtA) - i, nil
 }
 
-func (m *LoadGlobalConfigRequest) Marshal() (dAtA []byte, err error) {
+func (m *LoadRequest) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
 	dAtA = make([]byte, size)
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
@@ -849,12 +847,12 @@ func (m *LoadGlobalConfigRequest) Marshal() (dAtA []byte, err error) {
 	return dAtA[:n], nil
 }
 
-func (m *LoadGlobalConfigRequest) MarshalTo(dAtA []byte) (int, error) {
+func (m *LoadRequest) MarshalTo(dAtA []byte) (int, error) {
 	size := m.Size()
 	return m.MarshalToSizedBuffer(dAtA[:size])
 }
 
-func (m *LoadGlobalConfigRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+func (m *LoadRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	i := len(dAtA)
 	_ = i
 	var l int
@@ -863,10 +861,10 @@ func (m *LoadGlobalConfigRequest) MarshalToSizedBuffer(dAtA []byte) (int, error)
 		i -= len(m.XXX_unrecognized)
 		copy(dAtA[i:], m.XXX_unrecognized)
 	}
-	if len(m.ConfigPrefix) > 0 {
-		i -= len(m.ConfigPrefix)
-		copy(dAtA[i:], m.ConfigPrefix)
-		i = encodeVarintKv(dAtA, i, uint64(len(m.ConfigPrefix)))
+	if len(m.Prefix) > 0 {
+		i -= len(m.Prefix)
+		copy(dAtA[i:], m.Prefix)
+		i = encodeVarintKv(dAtA, i, uint64(len(m.Prefix)))
 		i--
 		dAtA[i] = 0x12
 	}
@@ -882,7 +880,7 @@ func (m *LoadGlobalConfigRequest) MarshalToSizedBuffer(dAtA []byte) (int, error)
 	return len(dAtA) - i, nil
 }
 
-func (m *LoadGlobalConfigResponse) Marshal() (dAtA []byte, err error) {
+func (m *LoadResponse) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
 	dAtA = make([]byte, size)
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
@@ -892,12 +890,12 @@ func (m *LoadGlobalConfigResponse) Marshal() (dAtA []byte, err error) {
 	return dAtA[:n], nil
 }
 
-func (m *LoadGlobalConfigResponse) MarshalTo(dAtA []byte) (int, error) {
+func (m *LoadResponse) MarshalTo(dAtA []byte) (int, error) {
 	size := m.Size()
 	return m.MarshalToSizedBuffer(dAtA[:size])
 }
 
-func (m *LoadGlobalConfigResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+func (m *LoadResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	i := len(dAtA)
 	_ = i
 	var l int
@@ -928,7 +926,7 @@ func (m *LoadGlobalConfigResponse) MarshalToSizedBuffer(dAtA []byte) (int, error
 	return len(dAtA) - i, nil
 }
 
-func (m *WatchGlobalConfigRequest) Marshal() (dAtA []byte, err error) {
+func (m *WatchRequest) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
 	dAtA = make([]byte, size)
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
@@ -938,12 +936,12 @@ func (m *WatchGlobalConfigRequest) Marshal() (dAtA []byte, err error) {
 	return dAtA[:n], nil
 }
 
-func (m *WatchGlobalConfigRequest) MarshalTo(dAtA []byte) (int, error) {
+func (m *WatchRequest) MarshalTo(dAtA []byte) (int, error) {
 	size := m.Size()
 	return m.MarshalToSizedBuffer(dAtA[:size])
 }
 
-func (m *WatchGlobalConfigRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+func (m *WatchRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	i := len(dAtA)
 	_ = i
 	var l int
@@ -957,17 +955,17 @@ func (m *WatchGlobalConfigRequest) MarshalToSizedBuffer(dAtA []byte) (int, error
 		i--
 		dAtA[i] = 0x10
 	}
-	if len(m.ConfigPrefix) > 0 {
-		i -= len(m.ConfigPrefix)
-		copy(dAtA[i:], m.ConfigPrefix)
-		i = encodeVarintKv(dAtA, i, uint64(len(m.ConfigPrefix)))
+	if len(m.Prefix) > 0 {
+		i -= len(m.Prefix)
+		copy(dAtA[i:], m.Prefix)
+		i = encodeVarintKv(dAtA, i, uint64(len(m.Prefix)))
 		i--
 		dAtA[i] = 0xa
 	}
 	return len(dAtA) - i, nil
 }
 
-func (m *WatchGlobalConfigResponse) Marshal() (dAtA []byte, err error) {
+func (m *WatchResponse) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
 	dAtA = make([]byte, size)
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
@@ -977,12 +975,12 @@ func (m *WatchGlobalConfigResponse) Marshal() (dAtA []byte, err error) {
 	return dAtA[:n], nil
 }
 
-func (m *WatchGlobalConfigResponse) MarshalTo(dAtA []byte) (int, error) {
+func (m *WatchResponse) MarshalTo(dAtA []byte) (int, error) {
 	size := m.Size()
 	return m.MarshalToSizedBuffer(dAtA[:size])
 }
 
-func (m *WatchGlobalConfigResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+func (m *WatchResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	i := len(dAtA)
 	_ = i
 	var l int
@@ -1025,7 +1023,7 @@ func (m *WatchGlobalConfigResponse) MarshalToSizedBuffer(dAtA []byte) (int, erro
 	return len(dAtA) - i, nil
 }
 
-func (m *GlobalConfigItem) Marshal() (dAtA []byte, err error) {
+func (m *Item) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
 	dAtA = make([]byte, size)
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
@@ -1035,12 +1033,12 @@ func (m *GlobalConfigItem) Marshal() (dAtA []byte, err error) {
 	return dAtA[:n], nil
 }
 
-func (m *GlobalConfigItem) MarshalTo(dAtA []byte) (int, error) {
+func (m *Item) MarshalTo(dAtA []byte) (int, error) {
 	size := m.Size()
 	return m.MarshalToSizedBuffer(dAtA[:size])
 }
 
-func (m *GlobalConfigItem) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+func (m *Item) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	i := len(dAtA)
 	_ = i
 	var l int
@@ -1133,7 +1131,7 @@ func encodeVarintKv(dAtA []byte, offset int, v uint64) int {
 	dAtA[offset] = uint8(v)
 	return base
 }
-func (m *StoreGlobalConfigRequest) Size() (n int) {
+func (m *StoreRequest) Size() (n int) {
 	if m == nil {
 		return 0
 	}
@@ -1145,7 +1143,7 @@ func (m *StoreGlobalConfigRequest) Size() (n int) {
 			n += 1 + l + sovKv(uint64(l))
 		}
 	}
-	l = len(m.ConfigPrefix)
+	l = len(m.Prefix)
 	if l > 0 {
 		n += 1 + l + sovKv(uint64(l))
 	}
@@ -1155,7 +1153,7 @@ func (m *StoreGlobalConfigRequest) Size() (n int) {
 	return n
 }
 
-func (m *StoreGlobalConfigResponse) Size() (n int) {
+func (m *StoreResponse) Size() (n int) {
 	if m == nil {
 		return 0
 	}
@@ -1167,7 +1165,7 @@ func (m *StoreGlobalConfigResponse) Size() (n int) {
 	return n
 }
 
-func (m *LoadGlobalConfigRequest) Size() (n int) {
+func (m *LoadRequest) Size() (n int) {
 	if m == nil {
 		return 0
 	}
@@ -1179,7 +1177,7 @@ func (m *LoadGlobalConfigRequest) Size() (n int) {
 			n += 1 + l + sovKv(uint64(l))
 		}
 	}
-	l = len(m.ConfigPrefix)
+	l = len(m.Prefix)
 	if l > 0 {
 		n += 1 + l + sovKv(uint64(l))
 	}
@@ -1189,7 +1187,7 @@ func (m *LoadGlobalConfigRequest) Size() (n int) {
 	return n
 }
 
-func (m *LoadGlobalConfigResponse) Size() (n int) {
+func (m *LoadResponse) Size() (n int) {
 	if m == nil {
 		return 0
 	}
@@ -1210,13 +1208,13 @@ func (m *LoadGlobalConfigResponse) Size() (n int) {
 	return n
 }
 
-func (m *WatchGlobalConfigRequest) Size() (n int) {
+func (m *WatchRequest) Size() (n int) {
 	if m == nil {
 		return 0
 	}
 	var l int
 	_ = l
-	l = len(m.ConfigPrefix)
+	l = len(m.Prefix)
 	if l > 0 {
 		n += 1 + l + sovKv(uint64(l))
 	}
@@ -1229,7 +1227,7 @@ func (m *WatchGlobalConfigRequest) Size() (n int) {
 	return n
 }
 
-func (m *WatchGlobalConfigResponse) Size() (n int) {
+func (m *WatchResponse) Size() (n int) {
 	if m == nil {
 		return 0
 	}
@@ -1254,7 +1252,7 @@ func (m *WatchGlobalConfigResponse) Size() (n int) {
 	return n
 }
 
-func (m *GlobalConfigItem) Size() (n int) {
+func (m *Item) Size() (n int) {
 	if m == nil {
 		return 0
 	}
@@ -1306,7 +1304,7 @@ func sovKv(x uint64) (n int) {
 func sozKv(x uint64) (n int) {
 	return sovKv(uint64((x << 1) ^ uint64((int64(x) >> 63))))
 }
-func (m *StoreGlobalConfigRequest) Unmarshal(dAtA []byte) error {
+func (m *StoreRequest) Unmarshal(dAtA []byte) error {
 	l := len(dAtA)
 	iNdEx := 0
 	for iNdEx < l {
@@ -1329,10 +1327,10 @@ func (m *StoreGlobalConfigRequest) Unmarshal(dAtA []byte) error {
 		fieldNum := int32(wire >> 3)
 		wireType := int(wire & 0x7)
 		if wireType == 4 {
-			return fmt.Errorf("proto: StoreGlobalConfigRequest: wiretype end group for non-group")
+			return fmt.Errorf("proto: StoreRequest: wiretype end group for non-group")
 		}
 		if fieldNum <= 0 {
-			return fmt.Errorf("proto: StoreGlobalConfigRequest: illegal tag %d (wire type %d)", fieldNum, wire)
+			return fmt.Errorf("proto: StoreRequest: illegal tag %d (wire type %d)", fieldNum, wire)
 		}
 		switch fieldNum {
 		case 1:
@@ -1364,14 +1362,14 @@ func (m *StoreGlobalConfigRequest) Unmarshal(dAtA []byte) error {
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
-			m.Changes = append(m.Changes, &GlobalConfigItem{})
+			m.Changes = append(m.Changes, &Item{})
 			if err := m.Changes[len(m.Changes)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
 				return err
 			}
 			iNdEx = postIndex
 		case 2:
 			if wireType != 2 {
-				return fmt.Errorf("proto: wrong wireType = %d for field ConfigPrefix", wireType)
+				return fmt.Errorf("proto: wrong wireType = %d for field Prefix", wireType)
 			}
 			var byteLen int
 			for shift := uint(0); ; shift += 7 {
@@ -1398,9 +1396,9 @@ func (m *StoreGlobalConfigRequest) Unmarshal(dAtA []byte) error {
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
-			m.ConfigPrefix = append(m.ConfigPrefix[:0], dAtA[iNdEx:postIndex]...)
-			if m.ConfigPrefix == nil {
-				m.ConfigPrefix = []byte{}
+			m.Prefix = append(m.Prefix[:0], dAtA[iNdEx:postIndex]...)
+			if m.Prefix == nil {
+				m.Prefix = []byte{}
 			}
 			iNdEx = postIndex
 		default:
@@ -1425,7 +1423,7 @@ func (m *StoreGlobalConfigRequest) Unmarshal(dAtA []byte) error {
 	}
 	return nil
 }
-func (m *StoreGlobalConfigResponse) Unmarshal(dAtA []byte) error {
+func (m *StoreResponse) Unmarshal(dAtA []byte) error {
 	l := len(dAtA)
 	iNdEx := 0
 	for iNdEx < l {
@@ -1448,10 +1446,10 @@ func (m *StoreGlobalConfigResponse) Unmarshal(dAtA []byte) error {
 		fieldNum := int32(wire >> 3)
 		wireType := int(wire & 0x7)
 		if wireType == 4 {
-			return fmt.Errorf("proto: StoreGlobalConfigResponse: wiretype end group for non-group")
+			return fmt.Errorf("proto: StoreResponse: wiretype end group for non-group")
 		}
 		if fieldNum <= 0 {
-			return fmt.Errorf("proto: StoreGlobalConfigResponse: illegal tag %d (wire type %d)", fieldNum, wire)
+			return fmt.Errorf("proto: StoreResponse: illegal tag %d (wire type %d)", fieldNum, wire)
 		}
 		switch fieldNum {
 		default:
@@ -1476,7 +1474,7 @@ func (m *StoreGlobalConfigResponse) Unmarshal(dAtA []byte) error {
 	}
 	return nil
 }
-func (m *LoadGlobalConfigRequest) Unmarshal(dAtA []byte) error {
+func (m *LoadRequest) Unmarshal(dAtA []byte) error {
 	l := len(dAtA)
 	iNdEx := 0
 	for iNdEx < l {
@@ -1499,10 +1497,10 @@ func (m *LoadGlobalConfigRequest) Unmarshal(dAtA []byte) error {
 		fieldNum := int32(wire >> 3)
 		wireType := int(wire & 0x7)
 		if wireType == 4 {
-			return fmt.Errorf("proto: LoadGlobalConfigRequest: wiretype end group for non-group")
+			return fmt.Errorf("proto: LoadRequest: wiretype end group for non-group")
 		}
 		if fieldNum <= 0 {
-			return fmt.Errorf("proto: LoadGlobalConfigRequest: illegal tag %d (wire type %d)", fieldNum, wire)
+			return fmt.Errorf("proto: LoadRequest: illegal tag %d (wire type %d)", fieldNum, wire)
 		}
 		switch fieldNum {
 		case 1:
@@ -1539,7 +1537,7 @@ func (m *LoadGlobalConfigRequest) Unmarshal(dAtA []byte) error {
 			iNdEx = postIndex
 		case 2:
 			if wireType != 2 {
-				return fmt.Errorf("proto: wrong wireType = %d for field ConfigPrefix", wireType)
+				return fmt.Errorf("proto: wrong wireType = %d for field Prefix", wireType)
 			}
 			var byteLen int
 			for shift := uint(0); ; shift += 7 {
@@ -1566,9 +1564,9 @@ func (m *LoadGlobalConfigRequest) Unmarshal(dAtA []byte) error {
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
-			m.ConfigPrefix = append(m.ConfigPrefix[:0], dAtA[iNdEx:postIndex]...)
-			if m.ConfigPrefix == nil {
-				m.ConfigPrefix = []byte{}
+			m.Prefix = append(m.Prefix[:0], dAtA[iNdEx:postIndex]...)
+			if m.Prefix == nil {
+				m.Prefix = []byte{}
 			}
 			iNdEx = postIndex
 		default:
@@ -1593,7 +1591,7 @@ func (m *LoadGlobalConfigRequest) Unmarshal(dAtA []byte) error {
 	}
 	return nil
 }
-func (m *LoadGlobalConfigResponse) Unmarshal(dAtA []byte) error {
+func (m *LoadResponse) Unmarshal(dAtA []byte) error {
 	l := len(dAtA)
 	iNdEx := 0
 	for iNdEx < l {
@@ -1616,10 +1614,10 @@ func (m *LoadGlobalConfigResponse) Unmarshal(dAtA []byte) error {
 		fieldNum := int32(wire >> 3)
 		wireType := int(wire & 0x7)
 		if wireType == 4 {
-			return fmt.Errorf("proto: LoadGlobalConfigResponse: wiretype end group for non-group")
+			return fmt.Errorf("proto: LoadResponse: wiretype end group for non-group")
 		}
 		if fieldNum <= 0 {
-			return fmt.Errorf("proto: LoadGlobalConfigResponse: illegal tag %d (wire type %d)", fieldNum, wire)
+			return fmt.Errorf("proto: LoadResponse: illegal tag %d (wire type %d)", fieldNum, wire)
 		}
 		switch fieldNum {
 		case 1:
@@ -1651,7 +1649,7 @@ func (m *LoadGlobalConfigResponse) Unmarshal(dAtA []byte) error {
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
-			m.Items = append(m.Items, &GlobalConfigItem{})
+			m.Items = append(m.Items, &Item{})
 			if err := m.Items[len(m.Items)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
 				return err
 			}
@@ -1697,7 +1695,7 @@ func (m *LoadGlobalConfigResponse) Unmarshal(dAtA []byte) error {
 	}
 	return nil
 }
-func (m *WatchGlobalConfigRequest) Unmarshal(dAtA []byte) error {
+func (m *WatchRequest) Unmarshal(dAtA []byte) error {
 	l := len(dAtA)
 	iNdEx := 0
 	for iNdEx < l {
@@ -1720,15 +1718,15 @@ func (m *WatchGlobalConfigRequest) Unmarshal(dAtA []byte) error {
 		fieldNum := int32(wire >> 3)
 		wireType := int(wire & 0x7)
 		if wireType == 4 {
-			return fmt.Errorf("proto: WatchGlobalConfigRequest: wiretype end group for non-group")
+			return fmt.Errorf("proto: WatchRequest: wiretype end group for non-group")
 		}
 		if fieldNum <= 0 {
-			return fmt.Errorf("proto: WatchGlobalConfigRequest: illegal tag %d (wire type %d)", fieldNum, wire)
+			return fmt.Errorf("proto: WatchRequest: illegal tag %d (wire type %d)", fieldNum, wire)
 		}
 		switch fieldNum {
 		case 1:
 			if wireType != 2 {
-				return fmt.Errorf("proto: wrong wireType = %d for field ConfigPrefix", wireType)
+				return fmt.Errorf("proto: wrong wireType = %d for field Prefix", wireType)
 			}
 			var byteLen int
 			for shift := uint(0); ; shift += 7 {
@@ -1755,9 +1753,9 @@ func (m *WatchGlobalConfigRequest) Unmarshal(dAtA []byte) error {
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
-			m.ConfigPrefix = append(m.ConfigPrefix[:0], dAtA[iNdEx:postIndex]...)
-			if m.ConfigPrefix == nil {
-				m.ConfigPrefix = []byte{}
+			m.Prefix = append(m.Prefix[:0], dAtA[iNdEx:postIndex]...)
+			if m.Prefix == nil {
+				m.Prefix = []byte{}
 			}
 			iNdEx = postIndex
 		case 2:
@@ -1801,7 +1799,7 @@ func (m *WatchGlobalConfigRequest) Unmarshal(dAtA []byte) error {
 	}
 	return nil
 }
-func (m *WatchGlobalConfigResponse) Unmarshal(dAtA []byte) error {
+func (m *WatchResponse) Unmarshal(dAtA []byte) error {
 	l := len(dAtA)
 	iNdEx := 0
 	for iNdEx < l {
@@ -1824,10 +1822,10 @@ func (m *WatchGlobalConfigResponse) Unmarshal(dAtA []byte) error {
 		fieldNum := int32(wire >> 3)
 		wireType := int(wire & 0x7)
 		if wireType == 4 {
-			return fmt.Errorf("proto: WatchGlobalConfigResponse: wiretype end group for non-group")
+			return fmt.Errorf("proto: WatchResponse: wiretype end group for non-group")
 		}
 		if fieldNum <= 0 {
-			return fmt.Errorf("proto: WatchGlobalConfigResponse: illegal tag %d (wire type %d)", fieldNum, wire)
+			return fmt.Errorf("proto: WatchResponse: illegal tag %d (wire type %d)", fieldNum, wire)
 		}
 		switch fieldNum {
 		case 1:
@@ -1859,7 +1857,7 @@ func (m *WatchGlobalConfigResponse) Unmarshal(dAtA []byte) error {
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
-			m.Changes = append(m.Changes, &GlobalConfigItem{})
+			m.Changes = append(m.Changes, &Item{})
 			if err := m.Changes[len(m.Changes)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
 				return err
 			}
@@ -1941,7 +1939,7 @@ func (m *WatchGlobalConfigResponse) Unmarshal(dAtA []byte) error {
 	}
 	return nil
 }
-func (m *GlobalConfigItem) Unmarshal(dAtA []byte) error {
+func (m *Item) Unmarshal(dAtA []byte) error {
 	l := len(dAtA)
 	iNdEx := 0
 	for iNdEx < l {
@@ -1964,10 +1962,10 @@ func (m *GlobalConfigItem) Unmarshal(dAtA []byte) error {
 		fieldNum := int32(wire >> 3)
 		wireType := int(wire & 0x7)
 		if wireType == 4 {
-			return fmt.Errorf("proto: GlobalConfigItem: wiretype end group for non-group")
+			return fmt.Errorf("proto: Item: wiretype end group for non-group")
 		}
 		if fieldNum <= 0 {
-			return fmt.Errorf("proto: GlobalConfigItem: illegal tag %d (wire type %d)", fieldNum, wire)
+			return fmt.Errorf("proto: Item: illegal tag %d (wire type %d)", fieldNum, wire)
 		}
 		switch fieldNum {
 		case 1:
