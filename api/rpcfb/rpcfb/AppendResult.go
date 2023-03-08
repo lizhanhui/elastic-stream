@@ -6,6 +6,47 @@ import (
 	flatbuffers "github.com/google/flatbuffers/go"
 )
 
+type AppendResultT struct {
+	StreamId int64 `json:"stream_id"`
+	RequestIndex int32 `json:"request_index"`
+	BaseOffset int64 `json:"base_offset"`
+	StreamAppendTimeMs int64 `json:"stream_append_time_ms"`
+	ErrorCode ErrorCode `json:"error_code"`
+	ErrorMessage string `json:"error_message"`
+}
+
+func (t *AppendResultT) Pack(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
+	if t == nil { return 0 }
+	errorMessageOffset := flatbuffers.UOffsetT(0)
+	if t.ErrorMessage != "" {
+		errorMessageOffset = builder.CreateString(t.ErrorMessage)
+	}
+	AppendResultStart(builder)
+	AppendResultAddStreamId(builder, t.StreamId)
+	AppendResultAddRequestIndex(builder, t.RequestIndex)
+	AppendResultAddBaseOffset(builder, t.BaseOffset)
+	AppendResultAddStreamAppendTimeMs(builder, t.StreamAppendTimeMs)
+	AppendResultAddErrorCode(builder, t.ErrorCode)
+	AppendResultAddErrorMessage(builder, errorMessageOffset)
+	return AppendResultEnd(builder)
+}
+
+func (rcv *AppendResult) UnPackTo(t *AppendResultT) {
+	t.StreamId = rcv.StreamId()
+	t.RequestIndex = rcv.RequestIndex()
+	t.BaseOffset = rcv.BaseOffset()
+	t.StreamAppendTimeMs = rcv.StreamAppendTimeMs()
+	t.ErrorCode = rcv.ErrorCode()
+	t.ErrorMessage = string(rcv.ErrorMessage())
+}
+
+func (rcv *AppendResult) UnPack() *AppendResultT {
+	if rcv == nil { return nil }
+	t := &AppendResultT{}
+	rcv.UnPackTo(t)
+	return t
+}
+
 type AppendResult struct {
 	_tab flatbuffers.Table
 }

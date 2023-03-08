@@ -6,6 +6,60 @@ import (
 	flatbuffers "github.com/google/flatbuffers/go"
 )
 
+type DescribeStreamsResponseT struct {
+	ThrottleTimeMs int32 `json:"throttle_time_ms"`
+	DescribeResponses []*DescribeStreamResultT `json:"describe_responses"`
+	ErrorCode ErrorCode `json:"error_code"`
+	ErrorMessage string `json:"error_message"`
+}
+
+func (t *DescribeStreamsResponseT) Pack(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
+	if t == nil { return 0 }
+	describeResponsesOffset := flatbuffers.UOffsetT(0)
+	if t.DescribeResponses != nil {
+		describeResponsesLength := len(t.DescribeResponses)
+		describeResponsesOffsets := make([]flatbuffers.UOffsetT, describeResponsesLength)
+		for j := 0; j < describeResponsesLength; j++ {
+			describeResponsesOffsets[j] = t.DescribeResponses[j].Pack(builder)
+		}
+		DescribeStreamsResponseStartDescribeResponsesVector(builder, describeResponsesLength)
+		for j := describeResponsesLength - 1; j >= 0; j-- {
+			builder.PrependUOffsetT(describeResponsesOffsets[j])
+		}
+		describeResponsesOffset = builder.EndVector(describeResponsesLength)
+	}
+	errorMessageOffset := flatbuffers.UOffsetT(0)
+	if t.ErrorMessage != "" {
+		errorMessageOffset = builder.CreateString(t.ErrorMessage)
+	}
+	DescribeStreamsResponseStart(builder)
+	DescribeStreamsResponseAddThrottleTimeMs(builder, t.ThrottleTimeMs)
+	DescribeStreamsResponseAddDescribeResponses(builder, describeResponsesOffset)
+	DescribeStreamsResponseAddErrorCode(builder, t.ErrorCode)
+	DescribeStreamsResponseAddErrorMessage(builder, errorMessageOffset)
+	return DescribeStreamsResponseEnd(builder)
+}
+
+func (rcv *DescribeStreamsResponse) UnPackTo(t *DescribeStreamsResponseT) {
+	t.ThrottleTimeMs = rcv.ThrottleTimeMs()
+	describeResponsesLength := rcv.DescribeResponsesLength()
+	t.DescribeResponses = make([]*DescribeStreamResultT, describeResponsesLength)
+	for j := 0; j < describeResponsesLength; j++ {
+		x := DescribeStreamResult{}
+		rcv.DescribeResponses(&x, j)
+		t.DescribeResponses[j] = x.UnPack()
+	}
+	t.ErrorCode = rcv.ErrorCode()
+	t.ErrorMessage = string(rcv.ErrorMessage())
+}
+
+func (rcv *DescribeStreamsResponse) UnPack() *DescribeStreamsResponseT {
+	if rcv == nil { return nil }
+	t := &DescribeStreamsResponseT{}
+	rcv.UnPackTo(t)
+	return t
+}
+
 type DescribeStreamsResponse struct {
 	_tab flatbuffers.Table
 }

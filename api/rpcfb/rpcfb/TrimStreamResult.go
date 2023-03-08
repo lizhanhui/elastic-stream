@@ -6,6 +6,43 @@ import (
 	flatbuffers "github.com/google/flatbuffers/go"
 )
 
+type TrimStreamResultT struct {
+	TrimmedStream *StreamT `json:"trimmed_stream"`
+	ErrorCode ErrorCode `json:"error_code"`
+	ErrorMessage string `json:"error_message"`
+	Range *RangeT `json:"range"`
+}
+
+func (t *TrimStreamResultT) Pack(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
+	if t == nil { return 0 }
+	trimmedStreamOffset := t.TrimmedStream.Pack(builder)
+	errorMessageOffset := flatbuffers.UOffsetT(0)
+	if t.ErrorMessage != "" {
+		errorMessageOffset = builder.CreateString(t.ErrorMessage)
+	}
+	range_Offset := t.Range.Pack(builder)
+	TrimStreamResultStart(builder)
+	TrimStreamResultAddTrimmedStream(builder, trimmedStreamOffset)
+	TrimStreamResultAddErrorCode(builder, t.ErrorCode)
+	TrimStreamResultAddErrorMessage(builder, errorMessageOffset)
+	TrimStreamResultAddRange(builder, range_Offset)
+	return TrimStreamResultEnd(builder)
+}
+
+func (rcv *TrimStreamResult) UnPackTo(t *TrimStreamResultT) {
+	t.TrimmedStream = rcv.TrimmedStream(nil).UnPack()
+	t.ErrorCode = rcv.ErrorCode()
+	t.ErrorMessage = string(rcv.ErrorMessage())
+	t.Range = rcv.Range(nil).UnPack()
+}
+
+func (rcv *TrimStreamResult) UnPack() *TrimStreamResultT {
+	if rcv == nil { return nil }
+	t := &TrimStreamResultT{}
+	rcv.UnPackTo(t)
+	return t
+}
+
 type TrimStreamResult struct {
 	_tab flatbuffers.Table
 }

@@ -6,6 +6,60 @@ import (
 	flatbuffers "github.com/google/flatbuffers/go"
 )
 
+type CreateStreamsResponseT struct {
+	ThrottleTimeMs int32 `json:"throttle_time_ms"`
+	CreateResponses []*CreateStreamResultT `json:"create_responses"`
+	ErrorCode ErrorCode `json:"error_code"`
+	ErrorMessage string `json:"error_message"`
+}
+
+func (t *CreateStreamsResponseT) Pack(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
+	if t == nil { return 0 }
+	createResponsesOffset := flatbuffers.UOffsetT(0)
+	if t.CreateResponses != nil {
+		createResponsesLength := len(t.CreateResponses)
+		createResponsesOffsets := make([]flatbuffers.UOffsetT, createResponsesLength)
+		for j := 0; j < createResponsesLength; j++ {
+			createResponsesOffsets[j] = t.CreateResponses[j].Pack(builder)
+		}
+		CreateStreamsResponseStartCreateResponsesVector(builder, createResponsesLength)
+		for j := createResponsesLength - 1; j >= 0; j-- {
+			builder.PrependUOffsetT(createResponsesOffsets[j])
+		}
+		createResponsesOffset = builder.EndVector(createResponsesLength)
+	}
+	errorMessageOffset := flatbuffers.UOffsetT(0)
+	if t.ErrorMessage != "" {
+		errorMessageOffset = builder.CreateString(t.ErrorMessage)
+	}
+	CreateStreamsResponseStart(builder)
+	CreateStreamsResponseAddThrottleTimeMs(builder, t.ThrottleTimeMs)
+	CreateStreamsResponseAddCreateResponses(builder, createResponsesOffset)
+	CreateStreamsResponseAddErrorCode(builder, t.ErrorCode)
+	CreateStreamsResponseAddErrorMessage(builder, errorMessageOffset)
+	return CreateStreamsResponseEnd(builder)
+}
+
+func (rcv *CreateStreamsResponse) UnPackTo(t *CreateStreamsResponseT) {
+	t.ThrottleTimeMs = rcv.ThrottleTimeMs()
+	createResponsesLength := rcv.CreateResponsesLength()
+	t.CreateResponses = make([]*CreateStreamResultT, createResponsesLength)
+	for j := 0; j < createResponsesLength; j++ {
+		x := CreateStreamResult{}
+		rcv.CreateResponses(&x, j)
+		t.CreateResponses[j] = x.UnPack()
+	}
+	t.ErrorCode = rcv.ErrorCode()
+	t.ErrorMessage = string(rcv.ErrorMessage())
+}
+
+func (rcv *CreateStreamsResponse) UnPack() *CreateStreamsResponseT {
+	if rcv == nil { return nil }
+	t := &CreateStreamsResponseT{}
+	rcv.UnPackTo(t)
+	return t
+}
+
 type CreateStreamsResponse struct {
 	_tab flatbuffers.Table
 }

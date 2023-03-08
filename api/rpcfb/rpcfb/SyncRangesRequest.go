@@ -6,6 +6,50 @@ import (
 	flatbuffers "github.com/google/flatbuffers/go"
 )
 
+type SyncRangesRequestT struct {
+	TimeoutMs int32 `json:"timeout_ms"`
+	StreamRanges []*StreamRangesT `json:"stream_ranges"`
+}
+
+func (t *SyncRangesRequestT) Pack(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
+	if t == nil { return 0 }
+	streamRangesOffset := flatbuffers.UOffsetT(0)
+	if t.StreamRanges != nil {
+		streamRangesLength := len(t.StreamRanges)
+		streamRangesOffsets := make([]flatbuffers.UOffsetT, streamRangesLength)
+		for j := 0; j < streamRangesLength; j++ {
+			streamRangesOffsets[j] = t.StreamRanges[j].Pack(builder)
+		}
+		SyncRangesRequestStartStreamRangesVector(builder, streamRangesLength)
+		for j := streamRangesLength - 1; j >= 0; j-- {
+			builder.PrependUOffsetT(streamRangesOffsets[j])
+		}
+		streamRangesOffset = builder.EndVector(streamRangesLength)
+	}
+	SyncRangesRequestStart(builder)
+	SyncRangesRequestAddTimeoutMs(builder, t.TimeoutMs)
+	SyncRangesRequestAddStreamRanges(builder, streamRangesOffset)
+	return SyncRangesRequestEnd(builder)
+}
+
+func (rcv *SyncRangesRequest) UnPackTo(t *SyncRangesRequestT) {
+	t.TimeoutMs = rcv.TimeoutMs()
+	streamRangesLength := rcv.StreamRangesLength()
+	t.StreamRanges = make([]*StreamRangesT, streamRangesLength)
+	for j := 0; j < streamRangesLength; j++ {
+		x := StreamRanges{}
+		rcv.StreamRanges(&x, j)
+		t.StreamRanges[j] = x.UnPack()
+	}
+}
+
+func (rcv *SyncRangesRequest) UnPack() *SyncRangesRequestT {
+	if rcv == nil { return nil }
+	t := &SyncRangesRequestT{}
+	rcv.UnPackTo(t)
+	return t
+}
+
 type SyncRangesRequest struct {
 	_tab flatbuffers.Table
 }

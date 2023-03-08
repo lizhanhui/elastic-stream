@@ -6,6 +6,60 @@ import (
 	flatbuffers "github.com/google/flatbuffers/go"
 )
 
+type ListRangesResponseT struct {
+	ThrottleTimeMs int32 `json:"throttle_time_ms"`
+	ListResponses []*ListRangesResultT `json:"list_responses"`
+	ErrorCode ErrorCode `json:"error_code"`
+	ErrorMessage string `json:"error_message"`
+}
+
+func (t *ListRangesResponseT) Pack(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
+	if t == nil { return 0 }
+	listResponsesOffset := flatbuffers.UOffsetT(0)
+	if t.ListResponses != nil {
+		listResponsesLength := len(t.ListResponses)
+		listResponsesOffsets := make([]flatbuffers.UOffsetT, listResponsesLength)
+		for j := 0; j < listResponsesLength; j++ {
+			listResponsesOffsets[j] = t.ListResponses[j].Pack(builder)
+		}
+		ListRangesResponseStartListResponsesVector(builder, listResponsesLength)
+		for j := listResponsesLength - 1; j >= 0; j-- {
+			builder.PrependUOffsetT(listResponsesOffsets[j])
+		}
+		listResponsesOffset = builder.EndVector(listResponsesLength)
+	}
+	errorMessageOffset := flatbuffers.UOffsetT(0)
+	if t.ErrorMessage != "" {
+		errorMessageOffset = builder.CreateString(t.ErrorMessage)
+	}
+	ListRangesResponseStart(builder)
+	ListRangesResponseAddThrottleTimeMs(builder, t.ThrottleTimeMs)
+	ListRangesResponseAddListResponses(builder, listResponsesOffset)
+	ListRangesResponseAddErrorCode(builder, t.ErrorCode)
+	ListRangesResponseAddErrorMessage(builder, errorMessageOffset)
+	return ListRangesResponseEnd(builder)
+}
+
+func (rcv *ListRangesResponse) UnPackTo(t *ListRangesResponseT) {
+	t.ThrottleTimeMs = rcv.ThrottleTimeMs()
+	listResponsesLength := rcv.ListResponsesLength()
+	t.ListResponses = make([]*ListRangesResultT, listResponsesLength)
+	for j := 0; j < listResponsesLength; j++ {
+		x := ListRangesResult{}
+		rcv.ListResponses(&x, j)
+		t.ListResponses[j] = x.UnPack()
+	}
+	t.ErrorCode = rcv.ErrorCode()
+	t.ErrorMessage = string(rcv.ErrorMessage())
+}
+
+func (rcv *ListRangesResponse) UnPack() *ListRangesResponseT {
+	if rcv == nil { return nil }
+	t := &ListRangesResponseT{}
+	rcv.UnPackTo(t)
+	return t
+}
+
 type ListRangesResponse struct {
 	_tab flatbuffers.Table
 }

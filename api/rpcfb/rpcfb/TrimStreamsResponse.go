@@ -6,6 +6,60 @@ import (
 	flatbuffers "github.com/google/flatbuffers/go"
 )
 
+type TrimStreamsResponseT struct {
+	ThrottleTimeMs int32 `json:"throttle_time_ms"`
+	TrimResponses []*TrimStreamResultT `json:"trim_responses"`
+	ErrorCode ErrorCode `json:"error_code"`
+	ErrorMessage string `json:"error_message"`
+}
+
+func (t *TrimStreamsResponseT) Pack(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
+	if t == nil { return 0 }
+	trimResponsesOffset := flatbuffers.UOffsetT(0)
+	if t.TrimResponses != nil {
+		trimResponsesLength := len(t.TrimResponses)
+		trimResponsesOffsets := make([]flatbuffers.UOffsetT, trimResponsesLength)
+		for j := 0; j < trimResponsesLength; j++ {
+			trimResponsesOffsets[j] = t.TrimResponses[j].Pack(builder)
+		}
+		TrimStreamsResponseStartTrimResponsesVector(builder, trimResponsesLength)
+		for j := trimResponsesLength - 1; j >= 0; j-- {
+			builder.PrependUOffsetT(trimResponsesOffsets[j])
+		}
+		trimResponsesOffset = builder.EndVector(trimResponsesLength)
+	}
+	errorMessageOffset := flatbuffers.UOffsetT(0)
+	if t.ErrorMessage != "" {
+		errorMessageOffset = builder.CreateString(t.ErrorMessage)
+	}
+	TrimStreamsResponseStart(builder)
+	TrimStreamsResponseAddThrottleTimeMs(builder, t.ThrottleTimeMs)
+	TrimStreamsResponseAddTrimResponses(builder, trimResponsesOffset)
+	TrimStreamsResponseAddErrorCode(builder, t.ErrorCode)
+	TrimStreamsResponseAddErrorMessage(builder, errorMessageOffset)
+	return TrimStreamsResponseEnd(builder)
+}
+
+func (rcv *TrimStreamsResponse) UnPackTo(t *TrimStreamsResponseT) {
+	t.ThrottleTimeMs = rcv.ThrottleTimeMs()
+	trimResponsesLength := rcv.TrimResponsesLength()
+	t.TrimResponses = make([]*TrimStreamResultT, trimResponsesLength)
+	for j := 0; j < trimResponsesLength; j++ {
+		x := TrimStreamResult{}
+		rcv.TrimResponses(&x, j)
+		t.TrimResponses[j] = x.UnPack()
+	}
+	t.ErrorCode = rcv.ErrorCode()
+	t.ErrorMessage = string(rcv.ErrorMessage())
+}
+
+func (rcv *TrimStreamsResponse) UnPack() *TrimStreamsResponseT {
+	if rcv == nil { return nil }
+	t := &TrimStreamsResponseT{}
+	rcv.UnPackTo(t)
+	return t
+}
+
 type TrimStreamsResponse struct {
 	_tab flatbuffers.Table
 }

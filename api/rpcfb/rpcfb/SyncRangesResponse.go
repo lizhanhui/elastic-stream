@@ -6,6 +6,60 @@ import (
 	flatbuffers "github.com/google/flatbuffers/go"
 )
 
+type SyncRangesResponseT struct {
+	ThrottleTimeMs int32 `json:"throttle_time_ms"`
+	SyncResponses []*SyncRangesResultT `json:"sync_responses"`
+	ErrorCode ErrorCode `json:"error_code"`
+	ErrorMessage string `json:"error_message"`
+}
+
+func (t *SyncRangesResponseT) Pack(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
+	if t == nil { return 0 }
+	syncResponsesOffset := flatbuffers.UOffsetT(0)
+	if t.SyncResponses != nil {
+		syncResponsesLength := len(t.SyncResponses)
+		syncResponsesOffsets := make([]flatbuffers.UOffsetT, syncResponsesLength)
+		for j := 0; j < syncResponsesLength; j++ {
+			syncResponsesOffsets[j] = t.SyncResponses[j].Pack(builder)
+		}
+		SyncRangesResponseStartSyncResponsesVector(builder, syncResponsesLength)
+		for j := syncResponsesLength - 1; j >= 0; j-- {
+			builder.PrependUOffsetT(syncResponsesOffsets[j])
+		}
+		syncResponsesOffset = builder.EndVector(syncResponsesLength)
+	}
+	errorMessageOffset := flatbuffers.UOffsetT(0)
+	if t.ErrorMessage != "" {
+		errorMessageOffset = builder.CreateString(t.ErrorMessage)
+	}
+	SyncRangesResponseStart(builder)
+	SyncRangesResponseAddThrottleTimeMs(builder, t.ThrottleTimeMs)
+	SyncRangesResponseAddSyncResponses(builder, syncResponsesOffset)
+	SyncRangesResponseAddErrorCode(builder, t.ErrorCode)
+	SyncRangesResponseAddErrorMessage(builder, errorMessageOffset)
+	return SyncRangesResponseEnd(builder)
+}
+
+func (rcv *SyncRangesResponse) UnPackTo(t *SyncRangesResponseT) {
+	t.ThrottleTimeMs = rcv.ThrottleTimeMs()
+	syncResponsesLength := rcv.SyncResponsesLength()
+	t.SyncResponses = make([]*SyncRangesResultT, syncResponsesLength)
+	for j := 0; j < syncResponsesLength; j++ {
+		x := SyncRangesResult{}
+		rcv.SyncResponses(&x, j)
+		t.SyncResponses[j] = x.UnPack()
+	}
+	t.ErrorCode = rcv.ErrorCode()
+	t.ErrorMessage = string(rcv.ErrorMessage())
+}
+
+func (rcv *SyncRangesResponse) UnPack() *SyncRangesResponseT {
+	if rcv == nil { return nil }
+	t := &SyncRangesResponseT{}
+	rcv.UnPackTo(t)
+	return t
+}
+
 type SyncRangesResponse struct {
 	_tab flatbuffers.Table
 }

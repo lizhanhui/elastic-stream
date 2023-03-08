@@ -6,6 +6,50 @@ import (
 	flatbuffers "github.com/google/flatbuffers/go"
 )
 
+type DeleteStreamsRequestT struct {
+	TimeoutMs int32 `json:"timeout_ms"`
+	Streams []*StreamT `json:"streams"`
+}
+
+func (t *DeleteStreamsRequestT) Pack(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
+	if t == nil { return 0 }
+	streamsOffset := flatbuffers.UOffsetT(0)
+	if t.Streams != nil {
+		streamsLength := len(t.Streams)
+		streamsOffsets := make([]flatbuffers.UOffsetT, streamsLength)
+		for j := 0; j < streamsLength; j++ {
+			streamsOffsets[j] = t.Streams[j].Pack(builder)
+		}
+		DeleteStreamsRequestStartStreamsVector(builder, streamsLength)
+		for j := streamsLength - 1; j >= 0; j-- {
+			builder.PrependUOffsetT(streamsOffsets[j])
+		}
+		streamsOffset = builder.EndVector(streamsLength)
+	}
+	DeleteStreamsRequestStart(builder)
+	DeleteStreamsRequestAddTimeoutMs(builder, t.TimeoutMs)
+	DeleteStreamsRequestAddStreams(builder, streamsOffset)
+	return DeleteStreamsRequestEnd(builder)
+}
+
+func (rcv *DeleteStreamsRequest) UnPackTo(t *DeleteStreamsRequestT) {
+	t.TimeoutMs = rcv.TimeoutMs()
+	streamsLength := rcv.StreamsLength()
+	t.Streams = make([]*StreamT, streamsLength)
+	for j := 0; j < streamsLength; j++ {
+		x := Stream{}
+		rcv.Streams(&x, j)
+		t.Streams[j] = x.UnPack()
+	}
+}
+
+func (rcv *DeleteStreamsRequest) UnPack() *DeleteStreamsRequestT {
+	if rcv == nil { return nil }
+	t := &DeleteStreamsRequestT{}
+	rcv.UnPackTo(t)
+	return t
+}
+
 type DeleteStreamsRequest struct {
 	_tab flatbuffers.Table
 }

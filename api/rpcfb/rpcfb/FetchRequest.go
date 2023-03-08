@@ -6,6 +6,53 @@ import (
 	flatbuffers "github.com/google/flatbuffers/go"
 )
 
+type FetchRequestT struct {
+	MaxWaitMs int32 `json:"max_wait_ms"`
+	MinBytes int32 `json:"min_bytes"`
+	FetchRequests []*FetchInfoT `json:"fetch_requests"`
+}
+
+func (t *FetchRequestT) Pack(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
+	if t == nil { return 0 }
+	fetchRequestsOffset := flatbuffers.UOffsetT(0)
+	if t.FetchRequests != nil {
+		fetchRequestsLength := len(t.FetchRequests)
+		fetchRequestsOffsets := make([]flatbuffers.UOffsetT, fetchRequestsLength)
+		for j := 0; j < fetchRequestsLength; j++ {
+			fetchRequestsOffsets[j] = t.FetchRequests[j].Pack(builder)
+		}
+		FetchRequestStartFetchRequestsVector(builder, fetchRequestsLength)
+		for j := fetchRequestsLength - 1; j >= 0; j-- {
+			builder.PrependUOffsetT(fetchRequestsOffsets[j])
+		}
+		fetchRequestsOffset = builder.EndVector(fetchRequestsLength)
+	}
+	FetchRequestStart(builder)
+	FetchRequestAddMaxWaitMs(builder, t.MaxWaitMs)
+	FetchRequestAddMinBytes(builder, t.MinBytes)
+	FetchRequestAddFetchRequests(builder, fetchRequestsOffset)
+	return FetchRequestEnd(builder)
+}
+
+func (rcv *FetchRequest) UnPackTo(t *FetchRequestT) {
+	t.MaxWaitMs = rcv.MaxWaitMs()
+	t.MinBytes = rcv.MinBytes()
+	fetchRequestsLength := rcv.FetchRequestsLength()
+	t.FetchRequests = make([]*FetchInfoT, fetchRequestsLength)
+	for j := 0; j < fetchRequestsLength; j++ {
+		x := FetchInfo{}
+		rcv.FetchRequests(&x, j)
+		t.FetchRequests[j] = x.UnPack()
+	}
+}
+
+func (rcv *FetchRequest) UnPack() *FetchRequestT {
+	if rcv == nil { return nil }
+	t := &FetchRequestT{}
+	rcv.UnPackTo(t)
+	return t
+}
+
 type FetchRequest struct {
 	_tab flatbuffers.Table
 }

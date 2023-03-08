@@ -6,6 +6,61 @@ import (
 	flatbuffers "github.com/google/flatbuffers/go"
 )
 
+type ListRangesResultT struct {
+	RangeOwner *RangeOwnerT `json:"range_owner"`
+	ErrorCode ErrorCode `json:"error_code"`
+	ErrorMessage string `json:"error_message"`
+	Ranges []*RangeT `json:"ranges"`
+}
+
+func (t *ListRangesResultT) Pack(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
+	if t == nil { return 0 }
+	rangeOwnerOffset := t.RangeOwner.Pack(builder)
+	errorMessageOffset := flatbuffers.UOffsetT(0)
+	if t.ErrorMessage != "" {
+		errorMessageOffset = builder.CreateString(t.ErrorMessage)
+	}
+	rangesOffset := flatbuffers.UOffsetT(0)
+	if t.Ranges != nil {
+		rangesLength := len(t.Ranges)
+		rangesOffsets := make([]flatbuffers.UOffsetT, rangesLength)
+		for j := 0; j < rangesLength; j++ {
+			rangesOffsets[j] = t.Ranges[j].Pack(builder)
+		}
+		ListRangesResultStartRangesVector(builder, rangesLength)
+		for j := rangesLength - 1; j >= 0; j-- {
+			builder.PrependUOffsetT(rangesOffsets[j])
+		}
+		rangesOffset = builder.EndVector(rangesLength)
+	}
+	ListRangesResultStart(builder)
+	ListRangesResultAddRangeOwner(builder, rangeOwnerOffset)
+	ListRangesResultAddErrorCode(builder, t.ErrorCode)
+	ListRangesResultAddErrorMessage(builder, errorMessageOffset)
+	ListRangesResultAddRanges(builder, rangesOffset)
+	return ListRangesResultEnd(builder)
+}
+
+func (rcv *ListRangesResult) UnPackTo(t *ListRangesResultT) {
+	t.RangeOwner = rcv.RangeOwner(nil).UnPack()
+	t.ErrorCode = rcv.ErrorCode()
+	t.ErrorMessage = string(rcv.ErrorMessage())
+	rangesLength := rcv.RangesLength()
+	t.Ranges = make([]*RangeT, rangesLength)
+	for j := 0; j < rangesLength; j++ {
+		x := Range{}
+		rcv.Ranges(&x, j)
+		t.Ranges[j] = x.UnPack()
+	}
+}
+
+func (rcv *ListRangesResult) UnPack() *ListRangesResultT {
+	if rcv == nil { return nil }
+	t := &ListRangesResultT{}
+	rcv.UnPackTo(t)
+	return t
+}
+
 type ListRangesResult struct {
 	_tab flatbuffers.Table
 }

@@ -6,6 +6,60 @@ import (
 	flatbuffers "github.com/google/flatbuffers/go"
 )
 
+type SealRangesResultT struct {
+	StreamId int64 `json:"stream_id"`
+	ErrorCode ErrorCode `json:"error_code"`
+	ErrorMessage string `json:"error_message"`
+	Ranges []*RangeT `json:"ranges"`
+}
+
+func (t *SealRangesResultT) Pack(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
+	if t == nil { return 0 }
+	errorMessageOffset := flatbuffers.UOffsetT(0)
+	if t.ErrorMessage != "" {
+		errorMessageOffset = builder.CreateString(t.ErrorMessage)
+	}
+	rangesOffset := flatbuffers.UOffsetT(0)
+	if t.Ranges != nil {
+		rangesLength := len(t.Ranges)
+		rangesOffsets := make([]flatbuffers.UOffsetT, rangesLength)
+		for j := 0; j < rangesLength; j++ {
+			rangesOffsets[j] = t.Ranges[j].Pack(builder)
+		}
+		SealRangesResultStartRangesVector(builder, rangesLength)
+		for j := rangesLength - 1; j >= 0; j-- {
+			builder.PrependUOffsetT(rangesOffsets[j])
+		}
+		rangesOffset = builder.EndVector(rangesLength)
+	}
+	SealRangesResultStart(builder)
+	SealRangesResultAddStreamId(builder, t.StreamId)
+	SealRangesResultAddErrorCode(builder, t.ErrorCode)
+	SealRangesResultAddErrorMessage(builder, errorMessageOffset)
+	SealRangesResultAddRanges(builder, rangesOffset)
+	return SealRangesResultEnd(builder)
+}
+
+func (rcv *SealRangesResult) UnPackTo(t *SealRangesResultT) {
+	t.StreamId = rcv.StreamId()
+	t.ErrorCode = rcv.ErrorCode()
+	t.ErrorMessage = string(rcv.ErrorMessage())
+	rangesLength := rcv.RangesLength()
+	t.Ranges = make([]*RangeT, rangesLength)
+	for j := 0; j < rangesLength; j++ {
+		x := Range{}
+		rcv.Ranges(&x, j)
+		t.Ranges[j] = x.UnPack()
+	}
+}
+
+func (rcv *SealRangesResult) UnPack() *SealRangesResultT {
+	if rcv == nil { return nil }
+	t := &SealRangesResultT{}
+	rcv.UnPackTo(t)
+	return t
+}
+
 type SealRangesResult struct {
 	_tab flatbuffers.Table
 }

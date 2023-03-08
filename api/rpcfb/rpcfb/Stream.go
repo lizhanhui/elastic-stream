@@ -6,6 +6,34 @@ import (
 	flatbuffers "github.com/google/flatbuffers/go"
 )
 
+type StreamT struct {
+	StreamId int64 `json:"stream_id"`
+	ReplicaNums int8 `json:"replica_nums"`
+	RetentionPeriodMs int32 `json:"retention_period_ms"`
+}
+
+func (t *StreamT) Pack(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
+	if t == nil { return 0 }
+	StreamStart(builder)
+	StreamAddStreamId(builder, t.StreamId)
+	StreamAddReplicaNums(builder, t.ReplicaNums)
+	StreamAddRetentionPeriodMs(builder, t.RetentionPeriodMs)
+	return StreamEnd(builder)
+}
+
+func (rcv *Stream) UnPackTo(t *StreamT) {
+	t.StreamId = rcv.StreamId()
+	t.ReplicaNums = rcv.ReplicaNums()
+	t.RetentionPeriodMs = rcv.RetentionPeriodMs()
+}
+
+func (rcv *Stream) UnPack() *StreamT {
+	if rcv == nil { return nil }
+	t := &StreamT{}
+	rcv.UnPackTo(t)
+	return t
+}
+
 type Stream struct {
 	_tab flatbuffers.Table
 }

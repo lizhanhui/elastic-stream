@@ -6,6 +6,39 @@ import (
 	flatbuffers "github.com/google/flatbuffers/go"
 )
 
+type HeartbeatRequestT struct {
+	ClientId string `json:"client_id"`
+	ClientRole ClientRole `json:"client_role"`
+	DataNode *DataNodeT `json:"data_node"`
+}
+
+func (t *HeartbeatRequestT) Pack(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
+	if t == nil { return 0 }
+	clientIdOffset := flatbuffers.UOffsetT(0)
+	if t.ClientId != "" {
+		clientIdOffset = builder.CreateString(t.ClientId)
+	}
+	dataNodeOffset := t.DataNode.Pack(builder)
+	HeartbeatRequestStart(builder)
+	HeartbeatRequestAddClientId(builder, clientIdOffset)
+	HeartbeatRequestAddClientRole(builder, t.ClientRole)
+	HeartbeatRequestAddDataNode(builder, dataNodeOffset)
+	return HeartbeatRequestEnd(builder)
+}
+
+func (rcv *HeartbeatRequest) UnPackTo(t *HeartbeatRequestT) {
+	t.ClientId = string(rcv.ClientId())
+	t.ClientRole = rcv.ClientRole()
+	t.DataNode = rcv.DataNode(nil).UnPack()
+}
+
+func (rcv *HeartbeatRequest) UnPack() *HeartbeatRequestT {
+	if rcv == nil { return nil }
+	t := &HeartbeatRequestT{}
+	rcv.UnPackTo(t)
+	return t
+}
+
 type HeartbeatRequest struct {
 	_tab flatbuffers.Table
 }

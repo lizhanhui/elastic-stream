@@ -6,6 +6,60 @@ import (
 	flatbuffers "github.com/google/flatbuffers/go"
 )
 
+type SealRangesResponseT struct {
+	ThrottleTimeMs int32 `json:"throttle_time_ms"`
+	SealResponses []*SealRangesResultT `json:"seal_responses"`
+	ErrorCode ErrorCode `json:"error_code"`
+	ErrorMessage string `json:"error_message"`
+}
+
+func (t *SealRangesResponseT) Pack(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
+	if t == nil { return 0 }
+	sealResponsesOffset := flatbuffers.UOffsetT(0)
+	if t.SealResponses != nil {
+		sealResponsesLength := len(t.SealResponses)
+		sealResponsesOffsets := make([]flatbuffers.UOffsetT, sealResponsesLength)
+		for j := 0; j < sealResponsesLength; j++ {
+			sealResponsesOffsets[j] = t.SealResponses[j].Pack(builder)
+		}
+		SealRangesResponseStartSealResponsesVector(builder, sealResponsesLength)
+		for j := sealResponsesLength - 1; j >= 0; j-- {
+			builder.PrependUOffsetT(sealResponsesOffsets[j])
+		}
+		sealResponsesOffset = builder.EndVector(sealResponsesLength)
+	}
+	errorMessageOffset := flatbuffers.UOffsetT(0)
+	if t.ErrorMessage != "" {
+		errorMessageOffset = builder.CreateString(t.ErrorMessage)
+	}
+	SealRangesResponseStart(builder)
+	SealRangesResponseAddThrottleTimeMs(builder, t.ThrottleTimeMs)
+	SealRangesResponseAddSealResponses(builder, sealResponsesOffset)
+	SealRangesResponseAddErrorCode(builder, t.ErrorCode)
+	SealRangesResponseAddErrorMessage(builder, errorMessageOffset)
+	return SealRangesResponseEnd(builder)
+}
+
+func (rcv *SealRangesResponse) UnPackTo(t *SealRangesResponseT) {
+	t.ThrottleTimeMs = rcv.ThrottleTimeMs()
+	sealResponsesLength := rcv.SealResponsesLength()
+	t.SealResponses = make([]*SealRangesResultT, sealResponsesLength)
+	for j := 0; j < sealResponsesLength; j++ {
+		x := SealRangesResult{}
+		rcv.SealResponses(&x, j)
+		t.SealResponses[j] = x.UnPack()
+	}
+	t.ErrorCode = rcv.ErrorCode()
+	t.ErrorMessage = string(rcv.ErrorMessage())
+}
+
+func (rcv *SealRangesResponse) UnPack() *SealRangesResponseT {
+	if rcv == nil { return nil }
+	t := &SealRangesResponseT{}
+	rcv.UnPackTo(t)
+	return t
+}
+
 type SealRangesResponse struct {
 	_tab flatbuffers.Table
 }

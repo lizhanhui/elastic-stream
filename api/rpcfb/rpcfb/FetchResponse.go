@@ -6,6 +6,60 @@ import (
 	flatbuffers "github.com/google/flatbuffers/go"
 )
 
+type FetchResponseT struct {
+	ThrottleTimeMs int32 `json:"throttle_time_ms"`
+	FetchResponses []*FetchResultT `json:"fetch_responses"`
+	ErrorCode ErrorCode `json:"error_code"`
+	ErrorMessage string `json:"error_message"`
+}
+
+func (t *FetchResponseT) Pack(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
+	if t == nil { return 0 }
+	fetchResponsesOffset := flatbuffers.UOffsetT(0)
+	if t.FetchResponses != nil {
+		fetchResponsesLength := len(t.FetchResponses)
+		fetchResponsesOffsets := make([]flatbuffers.UOffsetT, fetchResponsesLength)
+		for j := 0; j < fetchResponsesLength; j++ {
+			fetchResponsesOffsets[j] = t.FetchResponses[j].Pack(builder)
+		}
+		FetchResponseStartFetchResponsesVector(builder, fetchResponsesLength)
+		for j := fetchResponsesLength - 1; j >= 0; j-- {
+			builder.PrependUOffsetT(fetchResponsesOffsets[j])
+		}
+		fetchResponsesOffset = builder.EndVector(fetchResponsesLength)
+	}
+	errorMessageOffset := flatbuffers.UOffsetT(0)
+	if t.ErrorMessage != "" {
+		errorMessageOffset = builder.CreateString(t.ErrorMessage)
+	}
+	FetchResponseStart(builder)
+	FetchResponseAddThrottleTimeMs(builder, t.ThrottleTimeMs)
+	FetchResponseAddFetchResponses(builder, fetchResponsesOffset)
+	FetchResponseAddErrorCode(builder, t.ErrorCode)
+	FetchResponseAddErrorMessage(builder, errorMessageOffset)
+	return FetchResponseEnd(builder)
+}
+
+func (rcv *FetchResponse) UnPackTo(t *FetchResponseT) {
+	t.ThrottleTimeMs = rcv.ThrottleTimeMs()
+	fetchResponsesLength := rcv.FetchResponsesLength()
+	t.FetchResponses = make([]*FetchResultT, fetchResponsesLength)
+	for j := 0; j < fetchResponsesLength; j++ {
+		x := FetchResult{}
+		rcv.FetchResponses(&x, j)
+		t.FetchResponses[j] = x.UnPack()
+	}
+	t.ErrorCode = rcv.ErrorCode()
+	t.ErrorMessage = string(rcv.ErrorMessage())
+}
+
+func (rcv *FetchResponse) UnPack() *FetchResponseT {
+	if rcv == nil { return nil }
+	t := &FetchResponseT{}
+	rcv.UnPackTo(t)
+	return t
+}
+
 type FetchResponse struct {
 	_tab flatbuffers.Table
 }

@@ -6,6 +6,32 @@ import (
 	flatbuffers "github.com/google/flatbuffers/go"
 )
 
+type RangeOwnerT struct {
+	DataNode *DataNodeT `json:"data_node"`
+	StreamId int64 `json:"stream_id"`
+}
+
+func (t *RangeOwnerT) Pack(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
+	if t == nil { return 0 }
+	dataNodeOffset := t.DataNode.Pack(builder)
+	RangeOwnerStart(builder)
+	RangeOwnerAddDataNode(builder, dataNodeOffset)
+	RangeOwnerAddStreamId(builder, t.StreamId)
+	return RangeOwnerEnd(builder)
+}
+
+func (rcv *RangeOwner) UnPackTo(t *RangeOwnerT) {
+	t.DataNode = rcv.DataNode(nil).UnPack()
+	t.StreamId = rcv.StreamId()
+}
+
+func (rcv *RangeOwner) UnPack() *RangeOwnerT {
+	if rcv == nil { return nil }
+	t := &RangeOwnerT{}
+	rcv.UnPackTo(t)
+	return t
+}
+
 type RangeOwner struct {
 	_tab flatbuffers.Table
 }
