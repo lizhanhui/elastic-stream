@@ -205,13 +205,25 @@ impl<'a> Append<'a> {
     fn convert_append_error(&self, err: &AppendError) -> (ErrorCode, Option<String>) {
         match err {
             AppendError::SubmissionQueue => (
+                ErrorCode::STORAGE_NOT_AVAILABLE,
+                Some(AppendError::SubmissionQueue.to_string()),
+            ),
+            AppendError::ChannelRecv => (
+                ErrorCode::STORAGE_NOT_AVAILABLE,
+                Some(AppendError::SubmissionQueue.to_string()),
+            ),
+            AppendError::System(_) => (
+                ErrorCode::UNKNOWN_STORAGE_ERROR,
+                Some(AppendError::SubmissionQueue.to_string()),
+            ),
+            AppendError::BadRequest => (
                 ErrorCode::INVALID_REQUEST,
                 Some(AppendError::SubmissionQueue.to_string()),
             ),
-            AppendError::ChannelRecv => todo!(),
-            AppendError::System(_) => todo!(),
-            AppendError::BadRequest => todo!(),
-            AppendError::Internal => todo!(),
+            AppendError::Internal => (
+                ErrorCode::UNKNOWN_STORAGE_ERROR,
+                Some(AppendError::SubmissionQueue.to_string()),
+            ),
         }
     }
 }
