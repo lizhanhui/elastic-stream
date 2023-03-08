@@ -17,7 +17,7 @@ package server
 import (
 	"context"
 	"fmt"
-	"path"
+	"strings"
 
 	"github.com/pkg/errors"
 	clientv3 "go.etcd.io/etcd/client/v3"
@@ -31,92 +31,98 @@ type GrpcServer struct {
 	*Server
 }
 
-const _globalConfigPath = "/global/config/"
+var _globalPrefix = []byte("/global/kv/")
 
-// StoreGlobalConfig store global config into etcd by transaction
-func (s *GrpcServer) StoreGlobalConfig(_ context.Context, request *kvpb.StoreGlobalConfigRequest) (*kvpb.StoreGlobalConfigResponse, error) {
-	configPath := request.GetConfigPath()
-	if configPath == "" {
-		configPath = _globalConfigPath
+// Store stores kv into etcd by transaction
+func (s *GrpcServer) Store(_ context.Context, request *kvpb.StoreRequest) (*kvpb.StoreResponse, error) {
+	prefix := request.GetPrefix()
+	if prefix == nil {
+		prefix = _globalPrefix
 	}
+	builder := strings.Builder{}
 	ops := make([]clientv3.Op, len(request.Changes))
 	for i, item := range request.Changes {
-		name := path.Join(configPath, item.GetName())
+		builder.Reset()
+		builder.Write(prefix)
+		builder.Write(item.GetName())
 		switch item.GetKind() {
 		case kvpb.EventType_PUT:
 			value := string(item.GetPayload())
-			ops[i] = clientv3.OpPut(name, value)
+			ops[i] = clientv3.OpPut(builder.String(), value)
 		case kvpb.EventType_DELETE:
-			ops[i] = clientv3.OpDelete(name)
+			ops[i] = clientv3.OpDelete(builder.String())
 		}
 	}
 	res, err :=
 		etcdutil.NewTxn(s.client).Then(ops...).Commit()
 	if err != nil {
-		return &kvpb.StoreGlobalConfigResponse{}, err
+		return &kvpb.StoreResponse{}, err
 	}
 	if !res.Succeeded {
-		return &kvpb.StoreGlobalConfigResponse{}, errors.New("failed to execute StoreGlobalConfig transaction")
+		return &kvpb.StoreResponse{}, errors.New("failed to execute Store transaction")
 	}
-	return &kvpb.StoreGlobalConfigResponse{}, nil
+	return &kvpb.StoreResponse{}, nil
 }
 
-// LoadGlobalConfig support 2 ways to load global config from etcd
-// - `Names` iteratively get value from `ConfigPath/Name` but not care about revision
-// - `ConfigPath` if `Names` is nil can get all values and revision of current path
-func (s *GrpcServer) LoadGlobalConfig(ctx context.Context, request *kvpb.LoadGlobalConfigRequest) (*kvpb.LoadGlobalConfigResponse, error) {
-	configPath := request.GetConfigPath()
-	if configPath == "" {
-		configPath = _globalConfigPath
+// Load support 2 ways to load kv from etcd
+// - `names` iteratively get value from "${prefix}${name}" but not care about revision
+// - `prefix` if `names` is nil can get all values and revision of the path
+func (s *GrpcServer) Load(ctx context.Context, request *kvpb.LoadRequest) (*kvpb.LoadResponse, error) {
+	prefix := request.GetPrefix()
+	if prefix == nil {
+		prefix = _globalPrefix
 	}
 	if request.Names != nil {
-		res := make([]*kvpb.GlobalConfigItem, len(request.Names))
+		builder := strings.Builder{}
+		res := make([]*kvpb.Item, len(request.Names))
 		for i, name := range request.Names {
-			r, err := s.client.Get(ctx, path.Join(configPath, name))
+			builder.Reset()
+			builder.Write(prefix)
+			builder.Write(name)
+			r, err := s.client.Get(ctx, builder.String())
 			switch {
 			case err != nil:
-				res[i] = &kvpb.GlobalConfigItem{Name: name, Error: &kvpb.Error{Type: kvpb.ErrorType_UNKNOWN, Message: err.Error()}}
+				res[i] = &kvpb.Item{Name: name, Error: &kvpb.Error{Type: kvpb.ErrorType_UNKNOWN, Message: err.Error()}}
 			case len(r.Kvs) == 0:
-				res[i] = &kvpb.GlobalConfigItem{Name: name, Error: &kvpb.Error{Type: kvpb.ErrorType_NOT_FOUND, Message: fmt.Sprintf("key %s not found", name)}}
+				res[i] = &kvpb.Item{Name: name, Error: &kvpb.Error{Type: kvpb.ErrorType_NOT_FOUND, Message: fmt.Sprintf("key %s not found", name)}}
 			default:
-				res[i] = &kvpb.GlobalConfigItem{Name: name, Payload: r.Kvs[0].Value, Kind: kvpb.EventType_PUT}
+				res[i] = &kvpb.Item{Name: name, Payload: r.Kvs[0].Value, Kind: kvpb.EventType_PUT}
 			}
 		}
-		return &kvpb.LoadGlobalConfigResponse{Items: res}, nil
+		return &kvpb.LoadResponse{Items: res}, nil
 	}
-	r, err := s.client.Get(ctx, configPath, clientv3.WithPrefix())
+	r, err := s.client.Get(ctx, string(prefix), clientv3.WithPrefix())
 	if err != nil {
-		return &kvpb.LoadGlobalConfigResponse{}, err
+		return &kvpb.LoadResponse{}, err
 	}
-	res := make([]*kvpb.GlobalConfigItem, len(r.Kvs))
+	res := make([]*kvpb.Item, len(r.Kvs))
 	for i, value := range r.Kvs {
-		res[i] = &kvpb.GlobalConfigItem{Kind: kvpb.EventType_PUT, Name: string(value.Key), Payload: value.Value}
+		res[i] = &kvpb.Item{Kind: kvpb.EventType_PUT, Name: value.Key, Payload: value.Value}
 	}
-	return &kvpb.LoadGlobalConfigResponse{Items: res, Revision: r.Header.GetRevision()}, nil
+	return &kvpb.LoadResponse{Items: res, Revision: r.Header.GetRevision()}, nil
 }
 
-// WatchGlobalConfig if the connection of WatchGlobalConfig is end
-// or stopped by whatever reason, just reconnect to it.
 // Watch on revision which greater than or equal to the required revision.
-func (s *GrpcServer) WatchGlobalConfig(req *kvpb.WatchGlobalConfigRequest, server kvpb.KV_WatchGlobalConfigServer) error {
+// if the connection of Watch is end or stopped by whatever reason, just reconnect to it.
+func (s *GrpcServer) Watch(req *kvpb.WatchRequest, server kvpb.KV_WatchServer) error {
 	ctx, cancel := context.WithCancel(s.Context())
 	defer cancel()
-	configPath := req.GetConfigPath()
-	if configPath == "" {
-		configPath = _globalConfigPath
+	prefix := req.GetPrefix()
+	if prefix == nil {
+		prefix = _globalPrefix
 	}
 	revision := req.GetRevision()
 	// If the revision is compacted, will meet required revision has been compacted error.
 	// - If required revision < CompactRevision, we need to reload all configs to avoid losing data.
 	// - If required revision >= CompactRevision, just keep watching.
-	watchChan := s.client.Watch(ctx, configPath, clientv3.WithPrefix(), clientv3.WithRev(revision))
+	watchChan := s.client.Watch(ctx, string(prefix), clientv3.WithPrefix(), clientv3.WithRev(revision))
 	for {
 		select {
 		case <-ctx.Done():
 			return nil
 		case res := <-watchChan:
 			if revision < res.CompactRevision {
-				if err := server.Send(&kvpb.WatchGlobalConfigResponse{
+				if err := server.Send(&kvpb.WatchResponse{
 					Revision: res.CompactRevision,
 					Error: &kvpb.Error{
 						Type:    kvpb.ErrorType_DATA_COMPACTED,
@@ -128,12 +134,12 @@ func (s *GrpcServer) WatchGlobalConfig(req *kvpb.WatchGlobalConfigRequest, serve
 			}
 			revision = res.Header.GetRevision()
 
-			cfgs := make([]*kvpb.GlobalConfigItem, 0, len(res.Events))
+			cfgs := make([]*kvpb.Item, 0, len(res.Events))
 			for _, e := range res.Events {
-				cfgs = append(cfgs, &kvpb.GlobalConfigItem{Name: string(e.Kv.Key), Payload: e.Kv.Value, Kind: kvpb.EventType(e.Type)})
+				cfgs = append(cfgs, &kvpb.Item{Name: e.Kv.Key, Payload: e.Kv.Value, Kind: kvpb.EventType(e.Type)})
 			}
 			if len(cfgs) > 0 {
-				if err := server.Send(&kvpb.WatchGlobalConfigResponse{Changes: cfgs, Revision: res.Header.GetRevision()}); err != nil {
+				if err := server.Send(&kvpb.WatchResponse{Changes: cfgs, Revision: res.Header.GetRevision()}); err != nil {
 					return err
 				}
 			}

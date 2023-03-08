@@ -8,44 +8,50 @@ option (gogoproto.marshaler_all) = true;
 option (gogoproto.unmarshaler_all) = true;
 
 service KV {
-  rpc StoreGlobalConfig(StoreGlobalConfigRequest) returns (StoreGlobalConfigResponse) {}
+  // Store stores kv into etcd by transaction.
+  rpc Store(StoreRequest) returns (StoreResponse) {}
 
-  rpc LoadGlobalConfig(LoadGlobalConfigRequest) returns (LoadGlobalConfigResponse) {}
+  // Load support 2 ways to load kv from etcd
+  // - `names` iteratively get value from "${prefix}${name}" but not care about revision
+  // - `prefix` if `names` is nil can get all values and revision of the path
+  rpc Load(LoadRequest) returns (LoadResponse) {}
 
-  rpc WatchGlobalConfig(WatchGlobalConfigRequest) returns (stream WatchGlobalConfigResponse) {}
+  // Watch on revision which greater than or equal to the required revision.
+  // if the connection of Watch is end or stopped by whatever reason, just reconnect to it.
+  rpc Watch(WatchRequest) returns (stream WatchResponse) {}
 }
 
-message StoreGlobalConfigRequest {
-  repeated GlobalConfigItem changes = 1;
-  string config_path = 2;
+message StoreRequest {
+  repeated Item changes = 1;
+  bytes prefix = 2;
 }
 
-message StoreGlobalConfigResponse {
+message StoreResponse {
 }
 
-message LoadGlobalConfigRequest {
-  repeated string names = 1;
-  string config_path = 2;
+message LoadRequest {
+  repeated bytes names = 1;
+  bytes prefix = 2;
 }
 
-message LoadGlobalConfigResponse {
-  repeated GlobalConfigItem items = 1;
+message LoadResponse {
+  repeated Item items = 1;
   int64 revision = 2;
 }
 
-message WatchGlobalConfigRequest {
-  string config_path = 1;
+message WatchRequest {
+  bytes prefix = 1;
   int64 revision = 2;
 }
 
-message WatchGlobalConfigResponse {
-  repeated GlobalConfigItem changes = 1;
+message WatchResponse {
+  repeated Item changes = 1;
   int64 revision = 2;
   Error error = 3;
 }
 
-message GlobalConfigItem {
-  string name = 1;
+message Item {
+  bytes name = 1;
   bytes payload = 2;
   Error error = 3;
   EventType kind = 4;
