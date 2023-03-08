@@ -6,6 +6,32 @@ import (
 	flatbuffers "github.com/google/flatbuffers/go"
 )
 
+type ReplicaNodeT struct {
+	DataNode *DataNodeT `json:"data_node"`
+	IsPrimary bool `json:"is_primary"`
+}
+
+func (t *ReplicaNodeT) Pack(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
+	if t == nil { return 0 }
+	dataNodeOffset := t.DataNode.Pack(builder)
+	ReplicaNodeStart(builder)
+	ReplicaNodeAddDataNode(builder, dataNodeOffset)
+	ReplicaNodeAddIsPrimary(builder, t.IsPrimary)
+	return ReplicaNodeEnd(builder)
+}
+
+func (rcv *ReplicaNode) UnPackTo(t *ReplicaNodeT) {
+	t.DataNode = rcv.DataNode(nil).UnPack()
+	t.IsPrimary = rcv.IsPrimary()
+}
+
+func (rcv *ReplicaNode) UnPack() *ReplicaNodeT {
+	if rcv == nil { return nil }
+	t := &ReplicaNodeT{}
+	rcv.UnPackTo(t)
+	return t
+}
+
 type ReplicaNode struct {
 	_tab flatbuffers.Table
 }

@@ -6,6 +6,35 @@ import (
 	flatbuffers "github.com/google/flatbuffers/go"
 )
 
+type DataNodeT struct {
+	NodeId int32 `json:"node_id"`
+	AdvertiseAddr string `json:"advertise_addr"`
+}
+
+func (t *DataNodeT) Pack(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
+	if t == nil { return 0 }
+	advertiseAddrOffset := flatbuffers.UOffsetT(0)
+	if t.AdvertiseAddr != "" {
+		advertiseAddrOffset = builder.CreateString(t.AdvertiseAddr)
+	}
+	DataNodeStart(builder)
+	DataNodeAddNodeId(builder, t.NodeId)
+	DataNodeAddAdvertiseAddr(builder, advertiseAddrOffset)
+	return DataNodeEnd(builder)
+}
+
+func (rcv *DataNode) UnPackTo(t *DataNodeT) {
+	t.NodeId = rcv.NodeId()
+	t.AdvertiseAddr = string(rcv.AdvertiseAddr())
+}
+
+func (rcv *DataNode) UnPack() *DataNodeT {
+	if rcv == nil { return nil }
+	t := &DataNodeT{}
+	rcv.UnPackTo(t)
+	return t
+}
+
 type DataNode struct {
 	_tab flatbuffers.Table
 }

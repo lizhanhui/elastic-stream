@@ -6,6 +6,31 @@ import (
 	flatbuffers "github.com/google/flatbuffers/go"
 )
 
+type TrimmedStreamT struct {
+	StreamId int64 `json:"stream_id"`
+	TrimOffset int64 `json:"trim_offset"`
+}
+
+func (t *TrimmedStreamT) Pack(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
+	if t == nil { return 0 }
+	TrimmedStreamStart(builder)
+	TrimmedStreamAddStreamId(builder, t.StreamId)
+	TrimmedStreamAddTrimOffset(builder, t.TrimOffset)
+	return TrimmedStreamEnd(builder)
+}
+
+func (rcv *TrimmedStream) UnPackTo(t *TrimmedStreamT) {
+	t.StreamId = rcv.StreamId()
+	t.TrimOffset = rcv.TrimOffset()
+}
+
+func (rcv *TrimmedStream) UnPack() *TrimmedStreamT {
+	if rcv == nil { return nil }
+	t := &TrimmedStreamT{}
+	rcv.UnPackTo(t)
+	return t
+}
+
 type TrimmedStream struct {
 	_tab flatbuffers.Table
 }

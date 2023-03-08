@@ -6,6 +6,34 @@ import (
 	flatbuffers "github.com/google/flatbuffers/go"
 )
 
+type AppendInfoT struct {
+	StreamId int64 `json:"stream_id"`
+	RequestIndex int32 `json:"request_index"`
+	BatchLength int32 `json:"batch_length"`
+}
+
+func (t *AppendInfoT) Pack(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
+	if t == nil { return 0 }
+	AppendInfoStart(builder)
+	AppendInfoAddStreamId(builder, t.StreamId)
+	AppendInfoAddRequestIndex(builder, t.RequestIndex)
+	AppendInfoAddBatchLength(builder, t.BatchLength)
+	return AppendInfoEnd(builder)
+}
+
+func (rcv *AppendInfo) UnPackTo(t *AppendInfoT) {
+	t.StreamId = rcv.StreamId()
+	t.RequestIndex = rcv.RequestIndex()
+	t.BatchLength = rcv.BatchLength()
+}
+
+func (rcv *AppendInfo) UnPack() *AppendInfoT {
+	if rcv == nil { return nil }
+	t := &AppendInfoT{}
+	rcv.UnPackTo(t)
+	return t
+}
+
 type AppendInfo struct {
 	_tab flatbuffers.Table
 }

@@ -6,6 +6,50 @@ import (
 	flatbuffers "github.com/google/flatbuffers/go"
 )
 
+type StreamRangesT struct {
+	StreamId int64 `json:"stream_id"`
+	Ranges []*RangeT `json:"ranges"`
+}
+
+func (t *StreamRangesT) Pack(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
+	if t == nil { return 0 }
+	rangesOffset := flatbuffers.UOffsetT(0)
+	if t.Ranges != nil {
+		rangesLength := len(t.Ranges)
+		rangesOffsets := make([]flatbuffers.UOffsetT, rangesLength)
+		for j := 0; j < rangesLength; j++ {
+			rangesOffsets[j] = t.Ranges[j].Pack(builder)
+		}
+		StreamRangesStartRangesVector(builder, rangesLength)
+		for j := rangesLength - 1; j >= 0; j-- {
+			builder.PrependUOffsetT(rangesOffsets[j])
+		}
+		rangesOffset = builder.EndVector(rangesLength)
+	}
+	StreamRangesStart(builder)
+	StreamRangesAddStreamId(builder, t.StreamId)
+	StreamRangesAddRanges(builder, rangesOffset)
+	return StreamRangesEnd(builder)
+}
+
+func (rcv *StreamRanges) UnPackTo(t *StreamRangesT) {
+	t.StreamId = rcv.StreamId()
+	rangesLength := rcv.RangesLength()
+	t.Ranges = make([]*RangeT, rangesLength)
+	for j := 0; j < rangesLength; j++ {
+		x := Range{}
+		rcv.Ranges(&x, j)
+		t.Ranges[j] = x.UnPack()
+	}
+}
+
+func (rcv *StreamRanges) UnPack() *StreamRangesT {
+	if rcv == nil { return nil }
+	t := &StreamRangesT{}
+	rcv.UnPackTo(t)
+	return t
+}
+
 type StreamRanges struct {
 	_tab flatbuffers.Table
 }

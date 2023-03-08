@@ -6,6 +6,31 @@ import (
 	flatbuffers "github.com/google/flatbuffers/go"
 )
 
+type RangeIdT struct {
+	StreamId int64 `json:"stream_id"`
+	RangeIndex int32 `json:"range_index"`
+}
+
+func (t *RangeIdT) Pack(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
+	if t == nil { return 0 }
+	RangeIdStart(builder)
+	RangeIdAddStreamId(builder, t.StreamId)
+	RangeIdAddRangeIndex(builder, t.RangeIndex)
+	return RangeIdEnd(builder)
+}
+
+func (rcv *RangeId) UnPackTo(t *RangeIdT) {
+	t.StreamId = rcv.StreamId()
+	t.RangeIndex = rcv.RangeIndex()
+}
+
+func (rcv *RangeId) UnPack() *RangeIdT {
+	if rcv == nil { return nil }
+	t := &RangeIdT{}
+	rcv.UnPackTo(t)
+	return t
+}
+
 type RangeId struct {
 	_tab flatbuffers.Table
 }

@@ -6,6 +6,50 @@ import (
 	flatbuffers "github.com/google/flatbuffers/go"
 )
 
+type TrimeStreamsRequestT struct {
+	TimeoutMs int32 `json:"timeout_ms"`
+	TrimmedStreams []*TrimmedStreamT `json:"trimmed_streams"`
+}
+
+func (t *TrimeStreamsRequestT) Pack(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
+	if t == nil { return 0 }
+	trimmedStreamsOffset := flatbuffers.UOffsetT(0)
+	if t.TrimmedStreams != nil {
+		trimmedStreamsLength := len(t.TrimmedStreams)
+		trimmedStreamsOffsets := make([]flatbuffers.UOffsetT, trimmedStreamsLength)
+		for j := 0; j < trimmedStreamsLength; j++ {
+			trimmedStreamsOffsets[j] = t.TrimmedStreams[j].Pack(builder)
+		}
+		TrimeStreamsRequestStartTrimmedStreamsVector(builder, trimmedStreamsLength)
+		for j := trimmedStreamsLength - 1; j >= 0; j-- {
+			builder.PrependUOffsetT(trimmedStreamsOffsets[j])
+		}
+		trimmedStreamsOffset = builder.EndVector(trimmedStreamsLength)
+	}
+	TrimeStreamsRequestStart(builder)
+	TrimeStreamsRequestAddTimeoutMs(builder, t.TimeoutMs)
+	TrimeStreamsRequestAddTrimmedStreams(builder, trimmedStreamsOffset)
+	return TrimeStreamsRequestEnd(builder)
+}
+
+func (rcv *TrimeStreamsRequest) UnPackTo(t *TrimeStreamsRequestT) {
+	t.TimeoutMs = rcv.TimeoutMs()
+	trimmedStreamsLength := rcv.TrimmedStreamsLength()
+	t.TrimmedStreams = make([]*TrimmedStreamT, trimmedStreamsLength)
+	for j := 0; j < trimmedStreamsLength; j++ {
+		x := TrimmedStream{}
+		rcv.TrimmedStreams(&x, j)
+		t.TrimmedStreams[j] = x.UnPack()
+	}
+}
+
+func (rcv *TrimeStreamsRequest) UnPack() *TrimeStreamsRequestT {
+	if rcv == nil { return nil }
+	t := &TrimeStreamsRequestT{}
+	rcv.UnPackTo(t)
+	return t
+}
+
 type TrimeStreamsRequest struct {
 	_tab flatbuffers.Table
 }

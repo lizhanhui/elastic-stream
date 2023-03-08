@@ -6,6 +6,50 @@ import (
 	flatbuffers "github.com/google/flatbuffers/go"
 )
 
+type SealRangesRequestT struct {
+	TimeoutMs int32 `json:"timeout_ms"`
+	Ranges []*RangeIdT `json:"ranges"`
+}
+
+func (t *SealRangesRequestT) Pack(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
+	if t == nil { return 0 }
+	rangesOffset := flatbuffers.UOffsetT(0)
+	if t.Ranges != nil {
+		rangesLength := len(t.Ranges)
+		rangesOffsets := make([]flatbuffers.UOffsetT, rangesLength)
+		for j := 0; j < rangesLength; j++ {
+			rangesOffsets[j] = t.Ranges[j].Pack(builder)
+		}
+		SealRangesRequestStartRangesVector(builder, rangesLength)
+		for j := rangesLength - 1; j >= 0; j-- {
+			builder.PrependUOffsetT(rangesOffsets[j])
+		}
+		rangesOffset = builder.EndVector(rangesLength)
+	}
+	SealRangesRequestStart(builder)
+	SealRangesRequestAddTimeoutMs(builder, t.TimeoutMs)
+	SealRangesRequestAddRanges(builder, rangesOffset)
+	return SealRangesRequestEnd(builder)
+}
+
+func (rcv *SealRangesRequest) UnPackTo(t *SealRangesRequestT) {
+	t.TimeoutMs = rcv.TimeoutMs()
+	rangesLength := rcv.RangesLength()
+	t.Ranges = make([]*RangeIdT, rangesLength)
+	for j := 0; j < rangesLength; j++ {
+		x := RangeId{}
+		rcv.Ranges(&x, j)
+		t.Ranges[j] = x.UnPack()
+	}
+}
+
+func (rcv *SealRangesRequest) UnPack() *SealRangesRequestT {
+	if rcv == nil { return nil }
+	t := &SealRangesRequestT{}
+	rcv.UnPackTo(t)
+	return t
+}
+
 type SealRangesRequest struct {
 	_tab flatbuffers.Table
 }

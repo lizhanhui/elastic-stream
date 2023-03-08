@@ -6,6 +6,35 @@ import (
 	flatbuffers "github.com/google/flatbuffers/go"
 )
 
+type SystemErrorResponseT struct {
+	ErrorCode ErrorCode `json:"error_code"`
+	ErrorMessage string `json:"error_message"`
+}
+
+func (t *SystemErrorResponseT) Pack(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
+	if t == nil { return 0 }
+	errorMessageOffset := flatbuffers.UOffsetT(0)
+	if t.ErrorMessage != "" {
+		errorMessageOffset = builder.CreateString(t.ErrorMessage)
+	}
+	SystemErrorResponseStart(builder)
+	SystemErrorResponseAddErrorCode(builder, t.ErrorCode)
+	SystemErrorResponseAddErrorMessage(builder, errorMessageOffset)
+	return SystemErrorResponseEnd(builder)
+}
+
+func (rcv *SystemErrorResponse) UnPackTo(t *SystemErrorResponseT) {
+	t.ErrorCode = rcv.ErrorCode()
+	t.ErrorMessage = string(rcv.ErrorMessage())
+}
+
+func (rcv *SystemErrorResponse) UnPack() *SystemErrorResponseT {
+	if rcv == nil { return nil }
+	t := &SystemErrorResponseT{}
+	rcv.UnPackTo(t)
+	return t
+}
+
 type SystemErrorResponse struct {
 	_tab flatbuffers.Table
 }

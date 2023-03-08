@@ -6,6 +6,39 @@ import (
 	flatbuffers "github.com/google/flatbuffers/go"
 )
 
+type DeleteStreamResultT struct {
+	DeletedStream *StreamT `json:"deleted_stream"`
+	ErrorCode ErrorCode `json:"error_code"`
+	ErrorMessage string `json:"error_message"`
+}
+
+func (t *DeleteStreamResultT) Pack(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
+	if t == nil { return 0 }
+	deletedStreamOffset := t.DeletedStream.Pack(builder)
+	errorMessageOffset := flatbuffers.UOffsetT(0)
+	if t.ErrorMessage != "" {
+		errorMessageOffset = builder.CreateString(t.ErrorMessage)
+	}
+	DeleteStreamResultStart(builder)
+	DeleteStreamResultAddDeletedStream(builder, deletedStreamOffset)
+	DeleteStreamResultAddErrorCode(builder, t.ErrorCode)
+	DeleteStreamResultAddErrorMessage(builder, errorMessageOffset)
+	return DeleteStreamResultEnd(builder)
+}
+
+func (rcv *DeleteStreamResult) UnPackTo(t *DeleteStreamResultT) {
+	t.DeletedStream = rcv.DeletedStream(nil).UnPack()
+	t.ErrorCode = rcv.ErrorCode()
+	t.ErrorMessage = string(rcv.ErrorMessage())
+}
+
+func (rcv *DeleteStreamResult) UnPack() *DeleteStreamResultT {
+	if rcv == nil { return nil }
+	t := &DeleteStreamResultT{}
+	rcv.UnPackTo(t)
+	return t
+}
+
 type DeleteStreamResult struct {
 	_tab flatbuffers.Table
 }

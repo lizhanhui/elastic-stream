@@ -6,6 +6,50 @@ import (
 	flatbuffers "github.com/google/flatbuffers/go"
 )
 
+type AppendRequestT struct {
+	TimeoutMs int32 `json:"timeout_ms"`
+	AppendRequests []*AppendInfoT `json:"append_requests"`
+}
+
+func (t *AppendRequestT) Pack(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
+	if t == nil { return 0 }
+	appendRequestsOffset := flatbuffers.UOffsetT(0)
+	if t.AppendRequests != nil {
+		appendRequestsLength := len(t.AppendRequests)
+		appendRequestsOffsets := make([]flatbuffers.UOffsetT, appendRequestsLength)
+		for j := 0; j < appendRequestsLength; j++ {
+			appendRequestsOffsets[j] = t.AppendRequests[j].Pack(builder)
+		}
+		AppendRequestStartAppendRequestsVector(builder, appendRequestsLength)
+		for j := appendRequestsLength - 1; j >= 0; j-- {
+			builder.PrependUOffsetT(appendRequestsOffsets[j])
+		}
+		appendRequestsOffset = builder.EndVector(appendRequestsLength)
+	}
+	AppendRequestStart(builder)
+	AppendRequestAddTimeoutMs(builder, t.TimeoutMs)
+	AppendRequestAddAppendRequests(builder, appendRequestsOffset)
+	return AppendRequestEnd(builder)
+}
+
+func (rcv *AppendRequest) UnPackTo(t *AppendRequestT) {
+	t.TimeoutMs = rcv.TimeoutMs()
+	appendRequestsLength := rcv.AppendRequestsLength()
+	t.AppendRequests = make([]*AppendInfoT, appendRequestsLength)
+	for j := 0; j < appendRequestsLength; j++ {
+		x := AppendInfo{}
+		rcv.AppendRequests(&x, j)
+		t.AppendRequests[j] = x.UnPack()
+	}
+}
+
+func (rcv *AppendRequest) UnPack() *AppendRequestT {
+	if rcv == nil { return nil }
+	t := &AppendRequestT{}
+	rcv.UnPackTo(t)
+	return t
+}
+
 type AppendRequest struct {
 	_tab flatbuffers.Table
 }

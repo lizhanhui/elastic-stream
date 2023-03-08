@@ -6,6 +6,37 @@ import (
 	flatbuffers "github.com/google/flatbuffers/go"
 )
 
+type FetchInfoT struct {
+	StreamId int64 `json:"stream_id"`
+	RequestIndex int32 `json:"request_index"`
+	FetchOffset int64 `json:"fetch_offset"`
+	BatchMaxBytes int32 `json:"batch_max_bytes"`
+}
+
+func (t *FetchInfoT) Pack(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
+	if t == nil { return 0 }
+	FetchInfoStart(builder)
+	FetchInfoAddStreamId(builder, t.StreamId)
+	FetchInfoAddRequestIndex(builder, t.RequestIndex)
+	FetchInfoAddFetchOffset(builder, t.FetchOffset)
+	FetchInfoAddBatchMaxBytes(builder, t.BatchMaxBytes)
+	return FetchInfoEnd(builder)
+}
+
+func (rcv *FetchInfo) UnPackTo(t *FetchInfoT) {
+	t.StreamId = rcv.StreamId()
+	t.RequestIndex = rcv.RequestIndex()
+	t.FetchOffset = rcv.FetchOffset()
+	t.BatchMaxBytes = rcv.BatchMaxBytes()
+}
+
+func (rcv *FetchInfo) UnPack() *FetchInfoT {
+	if rcv == nil { return nil }
+	t := &FetchInfoT{}
+	rcv.UnPackTo(t)
+	return t
+}
+
 type FetchInfo struct {
 	_tab flatbuffers.Table
 }

@@ -6,6 +6,62 @@ import (
 	flatbuffers "github.com/google/flatbuffers/go"
 )
 
+type RangeT struct {
+	StreamId int64 `json:"stream_id"`
+	RangeIndex int32 `json:"range_index"`
+	StartOffset int64 `json:"start_offset"`
+	EndOffset int64 `json:"end_offset"`
+	NextOffset int64 `json:"next_offset"`
+	ReplicaNodes []*ReplicaNodeT `json:"replica_nodes"`
+}
+
+func (t *RangeT) Pack(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
+	if t == nil { return 0 }
+	replicaNodesOffset := flatbuffers.UOffsetT(0)
+	if t.ReplicaNodes != nil {
+		replicaNodesLength := len(t.ReplicaNodes)
+		replicaNodesOffsets := make([]flatbuffers.UOffsetT, replicaNodesLength)
+		for j := 0; j < replicaNodesLength; j++ {
+			replicaNodesOffsets[j] = t.ReplicaNodes[j].Pack(builder)
+		}
+		RangeStartReplicaNodesVector(builder, replicaNodesLength)
+		for j := replicaNodesLength - 1; j >= 0; j-- {
+			builder.PrependUOffsetT(replicaNodesOffsets[j])
+		}
+		replicaNodesOffset = builder.EndVector(replicaNodesLength)
+	}
+	RangeStart(builder)
+	RangeAddStreamId(builder, t.StreamId)
+	RangeAddRangeIndex(builder, t.RangeIndex)
+	RangeAddStartOffset(builder, t.StartOffset)
+	RangeAddEndOffset(builder, t.EndOffset)
+	RangeAddNextOffset(builder, t.NextOffset)
+	RangeAddReplicaNodes(builder, replicaNodesOffset)
+	return RangeEnd(builder)
+}
+
+func (rcv *Range) UnPackTo(t *RangeT) {
+	t.StreamId = rcv.StreamId()
+	t.RangeIndex = rcv.RangeIndex()
+	t.StartOffset = rcv.StartOffset()
+	t.EndOffset = rcv.EndOffset()
+	t.NextOffset = rcv.NextOffset()
+	replicaNodesLength := rcv.ReplicaNodesLength()
+	t.ReplicaNodes = make([]*ReplicaNodeT, replicaNodesLength)
+	for j := 0; j < replicaNodesLength; j++ {
+		x := ReplicaNode{}
+		rcv.ReplicaNodes(&x, j)
+		t.ReplicaNodes[j] = x.UnPack()
+	}
+}
+
+func (rcv *Range) UnPack() *RangeT {
+	if rcv == nil { return nil }
+	t := &RangeT{}
+	rcv.UnPackTo(t)
+	return t
+}
+
 type Range struct {
 	_tab flatbuffers.Table
 }

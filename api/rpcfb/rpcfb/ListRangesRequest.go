@@ -6,6 +6,50 @@ import (
 	flatbuffers "github.com/google/flatbuffers/go"
 )
 
+type ListRangesRequestT struct {
+	TimeoutMs int32 `json:"timeout_ms"`
+	RangeOwners []*RangeOwnerT `json:"range_owners"`
+}
+
+func (t *ListRangesRequestT) Pack(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
+	if t == nil { return 0 }
+	rangeOwnersOffset := flatbuffers.UOffsetT(0)
+	if t.RangeOwners != nil {
+		rangeOwnersLength := len(t.RangeOwners)
+		rangeOwnersOffsets := make([]flatbuffers.UOffsetT, rangeOwnersLength)
+		for j := 0; j < rangeOwnersLength; j++ {
+			rangeOwnersOffsets[j] = t.RangeOwners[j].Pack(builder)
+		}
+		ListRangesRequestStartRangeOwnersVector(builder, rangeOwnersLength)
+		for j := rangeOwnersLength - 1; j >= 0; j-- {
+			builder.PrependUOffsetT(rangeOwnersOffsets[j])
+		}
+		rangeOwnersOffset = builder.EndVector(rangeOwnersLength)
+	}
+	ListRangesRequestStart(builder)
+	ListRangesRequestAddTimeoutMs(builder, t.TimeoutMs)
+	ListRangesRequestAddRangeOwners(builder, rangeOwnersOffset)
+	return ListRangesRequestEnd(builder)
+}
+
+func (rcv *ListRangesRequest) UnPackTo(t *ListRangesRequestT) {
+	t.TimeoutMs = rcv.TimeoutMs()
+	rangeOwnersLength := rcv.RangeOwnersLength()
+	t.RangeOwners = make([]*RangeOwnerT, rangeOwnersLength)
+	for j := 0; j < rangeOwnersLength; j++ {
+		x := RangeOwner{}
+		rcv.RangeOwners(&x, j)
+		t.RangeOwners[j] = x.UnPack()
+	}
+}
+
+func (rcv *ListRangesRequest) UnPack() *ListRangesRequestT {
+	if rcv == nil { return nil }
+	t := &ListRangesRequestT{}
+	rcv.UnPackTo(t)
+	return t
+}
+
 type ListRangesRequest struct {
 	_tab flatbuffers.Table
 }

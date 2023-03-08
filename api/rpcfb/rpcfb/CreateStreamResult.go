@@ -6,6 +6,39 @@ import (
 	flatbuffers "github.com/google/flatbuffers/go"
 )
 
+type CreateStreamResultT struct {
+	Stream *StreamT `json:"stream"`
+	ErrorCode ErrorCode `json:"error_code"`
+	ErrorMessage string `json:"error_message"`
+}
+
+func (t *CreateStreamResultT) Pack(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
+	if t == nil { return 0 }
+	streamOffset := t.Stream.Pack(builder)
+	errorMessageOffset := flatbuffers.UOffsetT(0)
+	if t.ErrorMessage != "" {
+		errorMessageOffset = builder.CreateString(t.ErrorMessage)
+	}
+	CreateStreamResultStart(builder)
+	CreateStreamResultAddStream(builder, streamOffset)
+	CreateStreamResultAddErrorCode(builder, t.ErrorCode)
+	CreateStreamResultAddErrorMessage(builder, errorMessageOffset)
+	return CreateStreamResultEnd(builder)
+}
+
+func (rcv *CreateStreamResult) UnPackTo(t *CreateStreamResultT) {
+	t.Stream = rcv.Stream(nil).UnPack()
+	t.ErrorCode = rcv.ErrorCode()
+	t.ErrorMessage = string(rcv.ErrorMessage())
+}
+
+func (rcv *CreateStreamResult) UnPack() *CreateStreamResultT {
+	if rcv == nil { return nil }
+	t := &CreateStreamResultT{}
+	rcv.UnPackTo(t)
+	return t
+}
+
 type CreateStreamResult struct {
 	_tab flatbuffers.Table
 }

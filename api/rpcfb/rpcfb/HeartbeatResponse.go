@@ -6,6 +6,49 @@ import (
 	flatbuffers "github.com/google/flatbuffers/go"
 )
 
+type HeartbeatResponseT struct {
+	ClientId string `json:"client_id"`
+	ClientRole ClientRole `json:"client_role"`
+	DataNode *DataNodeT `json:"data_node"`
+	ErrorCode ErrorCode `json:"error_code"`
+	ErrorMessage string `json:"error_message"`
+}
+
+func (t *HeartbeatResponseT) Pack(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
+	if t == nil { return 0 }
+	clientIdOffset := flatbuffers.UOffsetT(0)
+	if t.ClientId != "" {
+		clientIdOffset = builder.CreateString(t.ClientId)
+	}
+	dataNodeOffset := t.DataNode.Pack(builder)
+	errorMessageOffset := flatbuffers.UOffsetT(0)
+	if t.ErrorMessage != "" {
+		errorMessageOffset = builder.CreateString(t.ErrorMessage)
+	}
+	HeartbeatResponseStart(builder)
+	HeartbeatResponseAddClientId(builder, clientIdOffset)
+	HeartbeatResponseAddClientRole(builder, t.ClientRole)
+	HeartbeatResponseAddDataNode(builder, dataNodeOffset)
+	HeartbeatResponseAddErrorCode(builder, t.ErrorCode)
+	HeartbeatResponseAddErrorMessage(builder, errorMessageOffset)
+	return HeartbeatResponseEnd(builder)
+}
+
+func (rcv *HeartbeatResponse) UnPackTo(t *HeartbeatResponseT) {
+	t.ClientId = string(rcv.ClientId())
+	t.ClientRole = rcv.ClientRole()
+	t.DataNode = rcv.DataNode(nil).UnPack()
+	t.ErrorCode = rcv.ErrorCode()
+	t.ErrorMessage = string(rcv.ErrorMessage())
+}
+
+func (rcv *HeartbeatResponse) UnPack() *HeartbeatResponseT {
+	if rcv == nil { return nil }
+	t := &HeartbeatResponseT{}
+	rcv.UnPackTo(t)
+	return t
+}
+
 type HeartbeatResponse struct {
 	_tab flatbuffers.Table
 }

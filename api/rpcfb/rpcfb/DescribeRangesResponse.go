@@ -6,6 +6,60 @@ import (
 	flatbuffers "github.com/google/flatbuffers/go"
 )
 
+type DescribeRangesResponseT struct {
+	ThrottleTimeMs int32 `json:"throttle_time_ms"`
+	DescribeResponses []*DescribeRangeResultT `json:"describe_responses"`
+	ErrorCode ErrorCode `json:"error_code"`
+	ErrorMessage string `json:"error_message"`
+}
+
+func (t *DescribeRangesResponseT) Pack(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
+	if t == nil { return 0 }
+	describeResponsesOffset := flatbuffers.UOffsetT(0)
+	if t.DescribeResponses != nil {
+		describeResponsesLength := len(t.DescribeResponses)
+		describeResponsesOffsets := make([]flatbuffers.UOffsetT, describeResponsesLength)
+		for j := 0; j < describeResponsesLength; j++ {
+			describeResponsesOffsets[j] = t.DescribeResponses[j].Pack(builder)
+		}
+		DescribeRangesResponseStartDescribeResponsesVector(builder, describeResponsesLength)
+		for j := describeResponsesLength - 1; j >= 0; j-- {
+			builder.PrependUOffsetT(describeResponsesOffsets[j])
+		}
+		describeResponsesOffset = builder.EndVector(describeResponsesLength)
+	}
+	errorMessageOffset := flatbuffers.UOffsetT(0)
+	if t.ErrorMessage != "" {
+		errorMessageOffset = builder.CreateString(t.ErrorMessage)
+	}
+	DescribeRangesResponseStart(builder)
+	DescribeRangesResponseAddThrottleTimeMs(builder, t.ThrottleTimeMs)
+	DescribeRangesResponseAddDescribeResponses(builder, describeResponsesOffset)
+	DescribeRangesResponseAddErrorCode(builder, t.ErrorCode)
+	DescribeRangesResponseAddErrorMessage(builder, errorMessageOffset)
+	return DescribeRangesResponseEnd(builder)
+}
+
+func (rcv *DescribeRangesResponse) UnPackTo(t *DescribeRangesResponseT) {
+	t.ThrottleTimeMs = rcv.ThrottleTimeMs()
+	describeResponsesLength := rcv.DescribeResponsesLength()
+	t.DescribeResponses = make([]*DescribeRangeResultT, describeResponsesLength)
+	for j := 0; j < describeResponsesLength; j++ {
+		x := DescribeRangeResult{}
+		rcv.DescribeResponses(&x, j)
+		t.DescribeResponses[j] = x.UnPack()
+	}
+	t.ErrorCode = rcv.ErrorCode()
+	t.ErrorMessage = string(rcv.ErrorMessage())
+}
+
+func (rcv *DescribeRangesResponse) UnPack() *DescribeRangesResponseT {
+	if rcv == nil { return nil }
+	t := &DescribeRangesResponseT{}
+	rcv.UnPackTo(t)
+	return t
+}
+
 type DescribeRangesResponse struct {
 	_tab flatbuffers.Table
 }

@@ -6,6 +6,44 @@ import (
 	flatbuffers "github.com/google/flatbuffers/go"
 )
 
+type FetchResultT struct {
+	StreamId int64 `json:"stream_id"`
+	RequestIndex int32 `json:"request_index"`
+	ErrorCode ErrorCode `json:"error_code"`
+	ErrorMessage string `json:"error_message"`
+	BatchLength int32 `json:"batch_length"`
+}
+
+func (t *FetchResultT) Pack(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
+	if t == nil { return 0 }
+	errorMessageOffset := flatbuffers.UOffsetT(0)
+	if t.ErrorMessage != "" {
+		errorMessageOffset = builder.CreateString(t.ErrorMessage)
+	}
+	FetchResultStart(builder)
+	FetchResultAddStreamId(builder, t.StreamId)
+	FetchResultAddRequestIndex(builder, t.RequestIndex)
+	FetchResultAddErrorCode(builder, t.ErrorCode)
+	FetchResultAddErrorMessage(builder, errorMessageOffset)
+	FetchResultAddBatchLength(builder, t.BatchLength)
+	return FetchResultEnd(builder)
+}
+
+func (rcv *FetchResult) UnPackTo(t *FetchResultT) {
+	t.StreamId = rcv.StreamId()
+	t.RequestIndex = rcv.RequestIndex()
+	t.ErrorCode = rcv.ErrorCode()
+	t.ErrorMessage = string(rcv.ErrorMessage())
+	t.BatchLength = rcv.BatchLength()
+}
+
+func (rcv *FetchResult) UnPack() *FetchResultT {
+	if rcv == nil { return nil }
+	t := &FetchResultT{}
+	rcv.UnPackTo(t)
+	return t
+}
+
 type FetchResult struct {
 	_tab flatbuffers.Table
 }

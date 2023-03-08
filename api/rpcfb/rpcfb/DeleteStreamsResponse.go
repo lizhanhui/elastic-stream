@@ -6,6 +6,60 @@ import (
 	flatbuffers "github.com/google/flatbuffers/go"
 )
 
+type DeleteStreamsResponseT struct {
+	ThrottleTimeMs int32 `json:"throttle_time_ms"`
+	DeleteResponses []*DeleteStreamResultT `json:"delete_responses"`
+	ErrorCode ErrorCode `json:"error_code"`
+	ErrorMessage string `json:"error_message"`
+}
+
+func (t *DeleteStreamsResponseT) Pack(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
+	if t == nil { return 0 }
+	deleteResponsesOffset := flatbuffers.UOffsetT(0)
+	if t.DeleteResponses != nil {
+		deleteResponsesLength := len(t.DeleteResponses)
+		deleteResponsesOffsets := make([]flatbuffers.UOffsetT, deleteResponsesLength)
+		for j := 0; j < deleteResponsesLength; j++ {
+			deleteResponsesOffsets[j] = t.DeleteResponses[j].Pack(builder)
+		}
+		DeleteStreamsResponseStartDeleteResponsesVector(builder, deleteResponsesLength)
+		for j := deleteResponsesLength - 1; j >= 0; j-- {
+			builder.PrependUOffsetT(deleteResponsesOffsets[j])
+		}
+		deleteResponsesOffset = builder.EndVector(deleteResponsesLength)
+	}
+	errorMessageOffset := flatbuffers.UOffsetT(0)
+	if t.ErrorMessage != "" {
+		errorMessageOffset = builder.CreateString(t.ErrorMessage)
+	}
+	DeleteStreamsResponseStart(builder)
+	DeleteStreamsResponseAddThrottleTimeMs(builder, t.ThrottleTimeMs)
+	DeleteStreamsResponseAddDeleteResponses(builder, deleteResponsesOffset)
+	DeleteStreamsResponseAddErrorCode(builder, t.ErrorCode)
+	DeleteStreamsResponseAddErrorMessage(builder, errorMessageOffset)
+	return DeleteStreamsResponseEnd(builder)
+}
+
+func (rcv *DeleteStreamsResponse) UnPackTo(t *DeleteStreamsResponseT) {
+	t.ThrottleTimeMs = rcv.ThrottleTimeMs()
+	deleteResponsesLength := rcv.DeleteResponsesLength()
+	t.DeleteResponses = make([]*DeleteStreamResultT, deleteResponsesLength)
+	for j := 0; j < deleteResponsesLength; j++ {
+		x := DeleteStreamResult{}
+		rcv.DeleteResponses(&x, j)
+		t.DeleteResponses[j] = x.UnPack()
+	}
+	t.ErrorCode = rcv.ErrorCode()
+	t.ErrorMessage = string(rcv.ErrorMessage())
+}
+
+func (rcv *DeleteStreamsResponse) UnPack() *DeleteStreamsResponseT {
+	if rcv == nil { return nil }
+	t := &DeleteStreamsResponseT{}
+	rcv.UnPackTo(t)
+	return t
+}
+
 type DeleteStreamsResponse struct {
 	_tab flatbuffers.Table
 }

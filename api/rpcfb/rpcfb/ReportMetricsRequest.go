@@ -6,6 +6,80 @@ import (
 	flatbuffers "github.com/google/flatbuffers/go"
 )
 
+type ReportMetricsRequestT struct {
+	DataNode *DataNodeT `json:"data_node"`
+	DiskInRate int64 `json:"disk_in_rate"`
+	DiskOutRate int64 `json:"disk_out_rate"`
+	DiskFreeSpace int64 `json:"disk_free_space"`
+	DiskUnindexedDataSize int64 `json:"disk_unindexed_data_size"`
+	MemoryUsed int64 `json:"memory_used"`
+	UringTaskRate int16 `json:"uring_task_rate"`
+	UringInflightTaskCnt int16 `json:"uring_inflight_task_cnt"`
+	UringPendingTaskCnt int32 `json:"uring_pending_task_cnt"`
+	UringTaskAvgLatency int16 `json:"uring_task_avg_latency"`
+	NetworkAppendRate int16 `json:"network_append_rate"`
+	NetworkFetchRate int16 `json:"network_fetch_rate"`
+	NetworkFailedAppendRate int16 `json:"network_failed_append_rate"`
+	NetworkFailedFetchRate int16 `json:"network_failed_fetch_rate"`
+	NetworkAppendAvgLatency int16 `json:"network_append_avg_latency"`
+	NetworkFetchAvgLatency int16 `json:"network_fetch_avg_latency"`
+	RangeMissingReplicaCnt int16 `json:"range_missing_replica_cnt"`
+	RangeActiveCnt int16 `json:"range_active_cnt"`
+}
+
+func (t *ReportMetricsRequestT) Pack(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
+	if t == nil { return 0 }
+	dataNodeOffset := t.DataNode.Pack(builder)
+	ReportMetricsRequestStart(builder)
+	ReportMetricsRequestAddDataNode(builder, dataNodeOffset)
+	ReportMetricsRequestAddDiskInRate(builder, t.DiskInRate)
+	ReportMetricsRequestAddDiskOutRate(builder, t.DiskOutRate)
+	ReportMetricsRequestAddDiskFreeSpace(builder, t.DiskFreeSpace)
+	ReportMetricsRequestAddDiskUnindexedDataSize(builder, t.DiskUnindexedDataSize)
+	ReportMetricsRequestAddMemoryUsed(builder, t.MemoryUsed)
+	ReportMetricsRequestAddUringTaskRate(builder, t.UringTaskRate)
+	ReportMetricsRequestAddUringInflightTaskCnt(builder, t.UringInflightTaskCnt)
+	ReportMetricsRequestAddUringPendingTaskCnt(builder, t.UringPendingTaskCnt)
+	ReportMetricsRequestAddUringTaskAvgLatency(builder, t.UringTaskAvgLatency)
+	ReportMetricsRequestAddNetworkAppendRate(builder, t.NetworkAppendRate)
+	ReportMetricsRequestAddNetworkFetchRate(builder, t.NetworkFetchRate)
+	ReportMetricsRequestAddNetworkFailedAppendRate(builder, t.NetworkFailedAppendRate)
+	ReportMetricsRequestAddNetworkFailedFetchRate(builder, t.NetworkFailedFetchRate)
+	ReportMetricsRequestAddNetworkAppendAvgLatency(builder, t.NetworkAppendAvgLatency)
+	ReportMetricsRequestAddNetworkFetchAvgLatency(builder, t.NetworkFetchAvgLatency)
+	ReportMetricsRequestAddRangeMissingReplicaCnt(builder, t.RangeMissingReplicaCnt)
+	ReportMetricsRequestAddRangeActiveCnt(builder, t.RangeActiveCnt)
+	return ReportMetricsRequestEnd(builder)
+}
+
+func (rcv *ReportMetricsRequest) UnPackTo(t *ReportMetricsRequestT) {
+	t.DataNode = rcv.DataNode(nil).UnPack()
+	t.DiskInRate = rcv.DiskInRate()
+	t.DiskOutRate = rcv.DiskOutRate()
+	t.DiskFreeSpace = rcv.DiskFreeSpace()
+	t.DiskUnindexedDataSize = rcv.DiskUnindexedDataSize()
+	t.MemoryUsed = rcv.MemoryUsed()
+	t.UringTaskRate = rcv.UringTaskRate()
+	t.UringInflightTaskCnt = rcv.UringInflightTaskCnt()
+	t.UringPendingTaskCnt = rcv.UringPendingTaskCnt()
+	t.UringTaskAvgLatency = rcv.UringTaskAvgLatency()
+	t.NetworkAppendRate = rcv.NetworkAppendRate()
+	t.NetworkFetchRate = rcv.NetworkFetchRate()
+	t.NetworkFailedAppendRate = rcv.NetworkFailedAppendRate()
+	t.NetworkFailedFetchRate = rcv.NetworkFailedFetchRate()
+	t.NetworkAppendAvgLatency = rcv.NetworkAppendAvgLatency()
+	t.NetworkFetchAvgLatency = rcv.NetworkFetchAvgLatency()
+	t.RangeMissingReplicaCnt = rcv.RangeMissingReplicaCnt()
+	t.RangeActiveCnt = rcv.RangeActiveCnt()
+}
+
+func (rcv *ReportMetricsRequest) UnPack() *ReportMetricsRequestT {
+	if rcv == nil { return nil }
+	t := &ReportMetricsRequestT{}
+	rcv.UnPackTo(t)
+	return t
+}
+
 type ReportMetricsRequest struct {
 	_tab flatbuffers.Table
 }

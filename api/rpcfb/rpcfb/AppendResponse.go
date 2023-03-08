@@ -6,6 +6,60 @@ import (
 	flatbuffers "github.com/google/flatbuffers/go"
 )
 
+type AppendResponseT struct {
+	ThrottleTimeMs int32 `json:"throttle_time_ms"`
+	AppendResponses []*AppendResultT `json:"append_responses"`
+	ErrorCode ErrorCode `json:"error_code"`
+	ErrorMessage string `json:"error_message"`
+}
+
+func (t *AppendResponseT) Pack(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
+	if t == nil { return 0 }
+	appendResponsesOffset := flatbuffers.UOffsetT(0)
+	if t.AppendResponses != nil {
+		appendResponsesLength := len(t.AppendResponses)
+		appendResponsesOffsets := make([]flatbuffers.UOffsetT, appendResponsesLength)
+		for j := 0; j < appendResponsesLength; j++ {
+			appendResponsesOffsets[j] = t.AppendResponses[j].Pack(builder)
+		}
+		AppendResponseStartAppendResponsesVector(builder, appendResponsesLength)
+		for j := appendResponsesLength - 1; j >= 0; j-- {
+			builder.PrependUOffsetT(appendResponsesOffsets[j])
+		}
+		appendResponsesOffset = builder.EndVector(appendResponsesLength)
+	}
+	errorMessageOffset := flatbuffers.UOffsetT(0)
+	if t.ErrorMessage != "" {
+		errorMessageOffset = builder.CreateString(t.ErrorMessage)
+	}
+	AppendResponseStart(builder)
+	AppendResponseAddThrottleTimeMs(builder, t.ThrottleTimeMs)
+	AppendResponseAddAppendResponses(builder, appendResponsesOffset)
+	AppendResponseAddErrorCode(builder, t.ErrorCode)
+	AppendResponseAddErrorMessage(builder, errorMessageOffset)
+	return AppendResponseEnd(builder)
+}
+
+func (rcv *AppendResponse) UnPackTo(t *AppendResponseT) {
+	t.ThrottleTimeMs = rcv.ThrottleTimeMs()
+	appendResponsesLength := rcv.AppendResponsesLength()
+	t.AppendResponses = make([]*AppendResultT, appendResponsesLength)
+	for j := 0; j < appendResponsesLength; j++ {
+		x := AppendResult{}
+		rcv.AppendResponses(&x, j)
+		t.AppendResponses[j] = x.UnPack()
+	}
+	t.ErrorCode = rcv.ErrorCode()
+	t.ErrorMessage = string(rcv.ErrorMessage())
+}
+
+func (rcv *AppendResponse) UnPack() *AppendResponseT {
+	if rcv == nil { return nil }
+	t := &AppendResponseT{}
+	rcv.UnPackTo(t)
+	return t
+}
+
 type AppendResponse struct {
 	_tab flatbuffers.Table
 }
