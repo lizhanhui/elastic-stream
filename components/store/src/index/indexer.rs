@@ -152,7 +152,6 @@ impl Indexer {
                 lower.put_i64(stream_id);
                 lower.put_u64(offset);
                 read_opts.set_iterate_lower_bound(&lower[..]);
-
                 read_opts.set_iterate_upper_bound((stream_id + 1).to_be_bytes());
 
                 let record_handles: Vec<_> = self
@@ -422,15 +421,27 @@ impl super::LocalRangeManager for Indexer {
 
 #[cfg(test)]
 mod tests {
-    use std::{error::Error, rc::Rc};
+    use std::{
+        error::Error,
+        rc::Rc,
+        sync::atomic::{AtomicU64, Ordering},
+    };
 
     use crate::index::{record_handle::RecordHandle, MinOffset};
 
-    struct SampleMinOffset;
+    struct SampleMinOffset {
+        min: AtomicU64,
+    }
+
+    impl SampleMinOffset {
+        fn set_min(&self, offset: u64) {
+            self.min.store(offset, Ordering::Relaxed);
+        }
+    }
 
     impl MinOffset for SampleMinOffset {
         fn min_offset(&self) -> u64 {
-            0
+            self.min.load(Ordering::Relaxed)
         }
     }
 
@@ -439,7 +450,9 @@ mod tests {
         let path = util::create_random_path()?;
         let _guard = util::DirectoryRemovalGuard::new(log.clone(), path.as_path());
         let path_str = path.as_os_str().to_str().unwrap();
-        let min_offset = Rc::new(SampleMinOffset {});
+        let min_offset = Rc::new(SampleMinOffset {
+            min: AtomicU64::new(0),
+        });
         let indexer = super::Indexer::new(log, path_str, min_offset as Rc<dyn MinOffset>)?;
         Ok(indexer)
     }
@@ -458,7 +471,6 @@ mod tests {
     fn test_index_scan() -> Result<(), Box<dyn Error>> {
         let indexer = new_indexer()?;
         const CNT: u64 = 1024;
-
         (0..CNT)
             .into_iter()
             .map(|n| {
@@ -482,6 +494,44 @@ mod tests {
             assert_eq!(10, handle.hash);
         });
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_compaction() -> Result<(), Box<dyn Error>> {
+        let log = util::terminal_logger();
+        let path = util::create_random_path()?;
+        let _guard = util::DirectoryRemovalGuard::new(log.clone(), path.as_path());
+        let path_str = path.as_os_str().to_str().unwrap();
+        let min_offset = Rc::new(SampleMinOffset {
+            min: AtomicU64::new(0),
+        });
+        let indexer =
+            super::Indexer::new(log, path_str, Rc::clone(&min_offset) as Rc<dyn MinOffset>)?;
+
+        const CNT: u64 = 1024;
+        (0..CNT)
+            .into_iter()
+            .map(|n| {
+                let ptr = RecordHandle {
+                    offset: n,
+                    len: 128,
+                    hash: 10,
+                };
+                indexer.index(0, n, &ptr)
+            })
+            .flatten()
+            .count();
+
+        indexer.flush()?;
+        indexer.compact();
+
+        let handles = indexer.scan_record_handles(0, 0, 10)?.unwrap();
+        assert_eq!(0, handles[0].offset);
+        min_offset.set_min(10);
+
+        indexer.compact();
+        let handles = indexer.scan_record_handles(0, 0, 10)?.unwrap();
         Ok(())
     }
 }

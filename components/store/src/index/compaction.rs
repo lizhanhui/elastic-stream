@@ -83,9 +83,10 @@ impl CompactionFilterFactory for IndexCompactionFilterFactory {
     fn create(&mut self, context: CompactionFilterContext) -> Self::Filter {
         info!(
             self.log,
-            "Created a `IndexCompactionFilter`: full_compaction: {}, manual_compaction: {}",
+            "Created a `IndexCompactionFilter`: full_compaction: {}, manual_compaction: {}, min_offset: {}",
             context.is_full_compaction,
-            context.is_manual_compaction
+            context.is_manual_compaction,
+            self.min_offset.min_offset(),
         );
 
         IndexCompactionFilter::new(
