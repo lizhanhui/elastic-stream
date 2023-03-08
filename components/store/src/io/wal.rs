@@ -532,13 +532,12 @@ impl Wal {
 mod tests {
     use std::collections::VecDeque;
     use std::error::Error;
+    use std::fs::File;
     use std::path::PathBuf;
-    use std::{env, fs::File};
 
     use bytes::BytesMut;
     use slog::error;
     use tokio::sync::oneshot;
-    use uuid::Uuid;
 
     use crate::error::StoreError;
     use crate::io::{
@@ -570,12 +569,7 @@ mod tests {
     }
 
     fn random_wal_dir() -> Result<PathBuf, StoreError> {
-        let uuid = Uuid::new_v4();
-        let mut wal_dir = env::temp_dir();
-        wal_dir.push(uuid.simple().to_string());
-        let wal_path = wal_dir.as_path();
-        std::fs::create_dir_all(wal_path)?;
-        Ok(wal_dir)
+        util::create_random_path().map_err(|e| StoreError::IO(e))
     }
 
     #[test]
