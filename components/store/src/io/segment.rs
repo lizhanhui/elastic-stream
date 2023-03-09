@@ -4,7 +4,7 @@ use nix::fcntl;
 use std::{
     cmp::Ordering,
     ffi::CString,
-    fmt::Display,
+    fmt::{self, Display},
     fs::{File, OpenOptions},
     os::{
         fd::{AsRawFd, FromRawFd, IntoRawFd, RawFd},
@@ -114,17 +114,18 @@ pub(crate) enum Status {
 
 // TODO: a better display format is needed.
 impl Display for LogSegment {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let path = self.path.to_str().map_err(|_| fmt::Error)?;
         write!(
             f,
-            "LogSegment {{ offset: {}, size: {}, written: {}, time_range: {:?} }}",
-            self.offset, self.size, self.written, self.time_range
+            "LogSegment {{ path: {}, offset: {}, size: {}, written: {}, time_range: {:?} }}",
+            path, self.offset, self.size, self.written, self.time_range
         )
     }
 }
 
 impl Display for Status {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match *self {
             Self::OpenAt => {
                 write!(f, "open")
@@ -336,6 +337,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
     fn test_read_file() -> Result<(), Box<dyn Error>> {
         let path = "/tmp/10f25af20ca44882ab49140595bfd642/wal/000000000000000000001";
         let mut file = File::open(path)?;

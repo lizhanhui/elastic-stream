@@ -930,7 +930,7 @@ mod tests {
         let handle = std::thread::spawn(move || {
             let store_dir = random_store_dir().unwrap();
             let store_dir = store_dir.as_path();
-            // let _store_dir_guard = util::DirectoryRemovalGuard::new(logger, store_dir);
+            let _store_dir_guard = util::DirectoryRemovalGuard::new(logger, store_dir);
             let mut io = create_io(store_dir).unwrap();
 
             let sender = io
