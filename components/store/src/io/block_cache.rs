@@ -1,6 +1,14 @@
-use std::{collections::HashMap, rc::Rc, sync::Arc, time::Instant};
+use std::{cell::UnsafeCell, collections::BTreeMap, rc::Rc, sync::Arc, time::Instant};
+
+use thiserror::Error;
 
 use super::buf::AlignedBuf;
+
+#[derive(Error, Debug)]
+enum CacheError {
+    #[error("Cache miss")]
+    Miss,
+}
 
 #[derive(Debug)]
 pub(crate) struct Entry {
@@ -22,53 +30,97 @@ impl Entry {
 #[derive(Debug)]
 pub(crate) struct BlockCache {
     offset: u64,
-    block_size: u32,
-    entries: HashMap<u32, Rc<Entry>>,
+    entries: BTreeMap<u32, Rc<UnsafeCell<Entry>>>,
 }
 
 impl BlockCache {
-    pub(crate) fn new(offset: u64, block_size: u32) -> Self {
+    pub(crate) fn new(offset: u64) -> Self {
         Self {
             offset,
-            block_size,
-            entries: HashMap::new(),
+            entries: BTreeMap::new(),
         }
     }
 
     pub(crate) fn add_entry(&mut self, buf: Arc<AlignedBuf>) {
         debug_assert!(buf.offset >= self.offset);
-        let entry = Rc::new(Entry::new(buf));
-        let from = (entry.buf.offset - self.offset) as u32;
-        let mut delta = 0;
-        loop {
-            self.entries.insert(from + delta, Rc::clone(&entry));
-            delta += self.block_size;
-            if delta > entry.buf.write_pos() as u32 {
-                break;
-            }
-        }
+        let from = (buf.offset - self.offset) as u32;
+        let entry = Rc::new(UnsafeCell::new(Entry::new(buf)));
+        self.entries.insert(from, entry);
     }
 
     pub(crate) fn get_entry(&self, offset: u64, len: u32) -> Option<Arc<AlignedBuf>> {
-        let key = (offset / self.block_size as u64 * self.block_size as u64 - self.offset) as u32;
-        if let Some(entry) = self.entries.get(&key) {
-            if entry.buf.offset + entry.buf.write_pos() as u64 >= offset + len as u64 {
-                return Some(Arc::clone(&entry.buf));
+        let to = offset.checked_sub(self.offset).expect("out of bound") as u32;
+        let search = self.entries.range(..to).rev().try_find(|(_k, entry)| {
+            let item = unsafe { &mut *entry.get() };
+            if item.buf.covers(offset, len) {
+                item.hit += 1;
+                item.last_hit_instant = Instant::now();
+                Ok(true)
+            } else if item.buf.offset > offset {
+                Err(CacheError::Miss)
+            } else {
+                Ok(false)
             }
+        });
+
+        if let Ok(Some((_, entry))) = search {
+            let item = unsafe { &mut *entry.get() };
+            return Some(Arc::clone(&item.buf));
         }
         None
     }
 
+    /// Remove cache entries if `Predicate` returns `true`.
+    ///
+    /// #Arguments
+    /// * `pred` - Predicate that return true if the entry is supposed to be dropped and false to reserve.
     pub(crate) fn remove<F>(&mut self, pred: F)
     where
-        F: Fn(&Rc<Entry>) -> bool,
+        F: Fn(&Entry) -> bool,
     {
-        self.entries.drain_filter(|k, v| pred(v));
+        self.entries.drain_filter(|_k, v| {
+            let entry = unsafe { &*v.get() };
+            pred(entry)
+        });
     }
 }
 
-impl PartialEq for BlockCache {
-    fn eq(&self, other: &Self) -> bool {
-        true
+#[cfg(test)]
+mod tests {
+    use std::{
+        error::Error,
+        sync::{atomic::Ordering, Arc},
+    };
+
+    use crate::io::buf::AlignedBuf;
+
+    #[test]
+    fn test_hit() -> Result<(), Box<dyn Error>> {
+        let log = util::terminal_logger();
+        let mut block_cache = super::BlockCache::new(0);
+        let block_size = 4096;
+        for n in (0..16).into_iter() {
+            let buf = Arc::new(AlignedBuf::new(
+                log.clone(),
+                n * block_size as u64,
+                block_size,
+                block_size,
+            )?);
+            buf.written.store(block_size, Ordering::Relaxed);
+            block_cache.add_entry(buf);
+        }
+
+        let buf = block_cache.get_entry(1024, 1024);
+        assert_eq!(true, buf.is_some());
+
+        block_cache.remove(|e| e.hit == 0);
+
+        let buf = block_cache.get_entry(1024, 1024);
+        assert_eq!(true, buf.is_some());
+
+        let buf = block_cache.get_entry(8192, 1024);
+        assert_eq!(true, buf.is_none());
+
+        Ok(())
     }
 }

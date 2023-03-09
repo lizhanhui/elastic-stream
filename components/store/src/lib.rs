@@ -20,6 +20,8 @@
 #![feature(type_alias_impl_trait)]
 #![feature(drain_filter)]
 #![feature(hash_drain_filter)]
+#![feature(btree_drain_filter)]
+#![feature(try_find)]
 
 pub mod error;
 pub mod util;

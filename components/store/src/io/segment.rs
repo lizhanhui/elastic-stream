@@ -160,7 +160,7 @@ impl LogSegment {
             size,
             written: 0,
             time_range: None,
-            block_cache: BlockCache::new(offset, 4096),
+            block_cache: BlockCache::new(offset),
             sd: None,
             status: Status::OpenAt,
             path: CString::new(path.as_os_str().as_bytes())

@@ -1,11 +1,10 @@
 use slog::{debug, Logger};
 use std::{
     alloc::{self, Layout},
-    ops::{Bound, Range, RangeBounds},
+    ops::{Bound, RangeBounds},
     ptr, slice,
     sync::atomic::{AtomicUsize, Ordering},
 };
-use tokio_uring::buf::BoundedBuf;
 
 use crate::error::StoreError;
 
@@ -48,6 +47,18 @@ impl AlignedBuf {
             capacity,
             written: AtomicUsize::new(0),
         })
+    }
+
+    /// Judge if this buffer covers specified data region in WAL.
+    ///
+    /// #Arguments
+    /// * `offset` - Offset in WAL
+    /// * `len` - Length of the data.
+    ///
+    /// # Returns
+    /// `true` if the cache hit; `false` otherwise.
+    pub(crate) fn covers(&self, offset: u64, len: u32) -> bool {
+        self.offset <= offset && offset + len as u64 <= self.offset + self.write_pos() as u64
     }
 
     pub(crate) fn write_pos(&self) -> usize {

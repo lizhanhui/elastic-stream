@@ -65,6 +65,9 @@ pub enum StoreError {
 
     #[error("Log segemnt is not opened")]
     NotOpened,
+
+    #[error("Cache missed")]
+    CacheMiss,
 }
 
 #[derive(Debug, Error)]
