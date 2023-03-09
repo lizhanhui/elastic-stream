@@ -177,12 +177,16 @@ impl ChannelWriter {
     }
 
     pub async fn write_frame(&mut self, frame: &Frame) -> Result<(), std::io::Error> {
-        let mut buffer = BytesMut::new();
+        let encode_result = frame.encode();
+        let encode_result = encode_result.map_err(|e| {
+            // TODO: handle the decode error
+            std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("Failed to encode frame. Cause: {:?}", e),
+            )
+        })?;
 
-        if let Err(e) = frame.encode(&mut buffer) {
-            error!(self.logger, "Failed to encode frame. Cause: {:?}", e);
-        }
-        let bytes_to_write = buffer.len();
+        let bytes_to_write = encode_result.iter().map(|b| b.len()).sum::<usize>();
         trace!(
             self.logger,
             "{} bytes to write to: {}",
@@ -190,7 +194,7 @@ impl ChannelWriter {
             self.peer_address
         );
 
-        let (res, _buf) = self.stream.write_all(buffer).await;
+        let (res, _buf) = self.stream.writev(encode_result).await;
         match res {
             Ok(_) => {
                 trace!(

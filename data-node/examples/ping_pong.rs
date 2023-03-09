@@ -71,10 +71,19 @@ async fn launch(args: &Args, logger: Logger) {
 
     fill_header(&mut frame);
 
-    let mut buffer = bytes::BytesMut::with_capacity(4 * 1024);
-    frame.encode(&mut buffer).unwrap_or_else(|e| {
+    let encode_result = frame.encode();
+
+    if let Err(e) = encode_result {
         error!(logger, "Failed to encode frame. Cause: {e:#?}");
-    });
+        return;
+    }
+
+    let mut bytes_mute = BytesMut::new();
+    encode_result
+        .into_iter()
+        .flatten()
+        .for_each(|ele| bytes_mute.put_slice(&ele));
+    let buffer = bytes_mute.freeze();
 
     let stream = Rc::new(stream);
     let mut read_channel = ChannelReader::new(Rc::clone(&stream), &connect, logger.new(o!()));

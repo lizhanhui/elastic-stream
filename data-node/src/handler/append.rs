@@ -2,7 +2,7 @@ use bytes::Bytes;
 use codec::frame::Frame;
 
 use chrono::prelude::*;
-use flatbuffers::{FlatBufferBuilder};
+use flatbuffers::FlatBufferBuilder;
 use futures::future::join_all;
 use protocol::rpc::header::{AppendRequest, AppendResponseArgs, AppendResultArgs, ErrorCode};
 use slog::{warn, Logger};
@@ -26,7 +26,7 @@ pub(crate) struct Append<'a> {
 
     /// The payload may contains multiple record batches,
     /// the length of each batch is stored in append_request
-    payload: &'a Bytes,
+    payload: Bytes,
 }
 
 impl<'a> Append<'a> {
@@ -56,8 +56,9 @@ impl<'a> Append<'a> {
         };
 
         let payload = match request.payload {
-            Some(ref buf) => buf,
-            None => {
+            // For append frame, the payload must be a single buffer
+            Some(ref buf) if buf.len() == 1 => buf.first().ok_or(ErrorCode::INVALID_REQUEST)?,
+            _ => {
                 warn!(
                     logger,
                     "AppendRequest[stream-id={}] received without payload", request.stream_id
@@ -69,7 +70,7 @@ impl<'a> Append<'a> {
         Ok(Append {
             logger,
             append_request,
-            payload,
+            payload: payload.clone(),
         })
     }
 

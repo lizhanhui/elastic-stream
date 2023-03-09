@@ -1,6 +1,7 @@
 use byteorder::ReadBytesExt;
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use crc::Crc;
+use crc32fast::Hasher;
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 use slog::{trace, warn, Logger};
 use std::cell::RefCell;
@@ -71,9 +72,9 @@ impl Frame {
     }
 
     fn crc32(payload: &[u8]) -> u32 {
-        let mut digest = CRC32.digest();
-        digest.update(payload);
-        digest.finalize()
+        let mut hasher = Hasher::new();
+        hasher.update(payload);
+        hasher.finalize()
     }
 
     pub fn check(src: &mut Cursor<&[u8]>, logger: &mut Logger) -> Result<(), FrameError> {
@@ -252,7 +253,7 @@ impl Frame {
         let payload_length = remaining - 4;
         if payload_length > 0 {
             let payload = src.copy_to_bytes(payload_length as usize);
-            frame.payload = Some(payload);
+            frame.payload = Some(vec![payload]);
         }
         remaining -= payload_length;
 
@@ -264,15 +265,20 @@ impl Frame {
         Ok(frame)
     }
 
-    pub fn encode(&self, buffer: &mut BytesMut) -> Result<(), FrameError> {
+    pub fn encode(&self) -> Result<Vec<Bytes>, FrameError> {
+        let mut encode_result = Vec::new();
         let mut frame_length = 16;
         if let Some(header) = &self.header {
             frame_length += header.len();
         }
 
-        if let Some(body) = &self.payload {
-            frame_length += body.len();
-        }
+        let payload_len = self
+            .payload
+            .iter()
+            .flatten()
+            .map(|b| b.len())
+            .sum::<usize>();
+        frame_length += payload_len;
 
         if frame_length > crate::frame::MAX_FRAME_LENGTH as usize {
             return Err(FrameError::TooLongFrame {
@@ -281,38 +287,42 @@ impl Frame {
             });
         }
 
-        // Check to reserve additional memory
-        if buffer.capacity() < 4 + frame_length {
-            let additional = 4 + frame_length - buffer.capacity();
-            buffer.reserve(additional);
-        }
+        // Only store the header part in the buffer
+        let mut basic_part = BytesMut::with_capacity(frame_length - payload_len);
 
-        buffer.put_u32(frame_length as u32);
-        buffer.put_u8(crate::frame::MAGIC_CODE);
-        buffer.put_u16(self.operation_code.into());
-        buffer.put_u8(self.flag);
-        buffer.put_u32(self.stream_id);
-        buffer.put_u8(self.header_format.into());
+        basic_part.put_u32(frame_length as u32);
+        basic_part.put_u8(crate::frame::MAGIC_CODE);
+        basic_part.put_u16(self.operation_code.into());
+        basic_part.put_u8(self.flag);
+        basic_part.put_u32(self.stream_id);
+        basic_part.put_u8(self.header_format.into());
 
         if let Some(header) = &self.header {
             let bytes = (header.len() as u32).to_be_bytes();
             debug_assert!(4 == bytes.len());
-            buffer.extend_from_slice(&bytes[1..]);
-            buffer.extend_from_slice(header.as_ref());
+            basic_part.extend_from_slice(&bytes[1..]);
+            basic_part.extend_from_slice(header.as_ref());
         } else {
-            buffer.put_u8(0);
-            buffer.put_u16(0);
+            basic_part.put_u8(0);
+            basic_part.put_u16(0);
         }
 
-        if let Some(body) = &self.payload {
-            buffer.extend_from_slice(body.as_ref());
-            buffer.put_u32(Frame::crc32(body.as_ref()));
+        encode_result.push(basic_part.freeze());
+
+        if let Some(payload) = &self.payload {
+            let mut hasher = Hasher::new();
+            for p in payload {
+                encode_result.push(p.clone());
+                hasher.update(p);
+            }
+            let checksum = hasher.finalize();
+            encode_result.push(Bytes::copy_from_slice(&checksum.to_be_bytes()[..]));
         } else {
             // Dummy checksum
-            buffer.put_u32(0);
+            encode_result.push(Bytes::from_static(&[0, 0, 0, 0]));
         }
 
-        Ok(())
+        Ok(encode_result)
     }
 }
 
@@ -528,9 +538,12 @@ mod tests {
             payload: None,
         };
 
-        let mut buf = BytesMut::new();
-
-        assert_eq!(Ok(()), frame.encode(&mut buf));
+        let encode_result = frame.encode();
+        let mut bytes_mute = BytesMut::new();
+        for ele in encode_result.unwrap() {
+            bytes_mute.put_slice(&ele);
+        }
+        let mut buf = bytes_mute.freeze();
 
         let frame_length = buf.get_u32();
         assert_eq!(19, frame_length);
@@ -562,11 +575,15 @@ mod tests {
             stream_id: 2,
             header_format: HeaderFormat::FlatBuffer,
             header: None,
-            payload: Some(body.freeze()),
+            payload: Some(vec![body.freeze()]),
         };
 
-        let mut buf = BytesMut::new();
-        assert_eq!(Ok(()), frame.encode(&mut buf));
+        let encode_result = frame.encode();
+        let mut bytes_mute = BytesMut::new();
+        for ele in encode_result.unwrap() {
+            bytes_mute.put_slice(&ele);
+        }
+        let mut buf = bytes_mute.freeze();
 
         assert_eq!(19, buf.get_u32());
 
@@ -674,11 +691,16 @@ mod tests {
             stream_id: 2,
             header_format: HeaderFormat::FlatBuffer,
             header: Some(header.freeze()),
-            payload: Some(body.freeze()),
+            payload: Some(vec![body.freeze()]),
         };
 
-        let mut buf = BytesMut::new();
-        assert_eq!(Ok(()), frame.encode(&mut buf));
+        let encode_result = frame.encode();
+        let mut bytes_mute = BytesMut::new();
+        for ele in encode_result.unwrap() {
+            bytes_mute.put_slice(&ele);
+        }
+        let buf = bytes_mute.freeze();
+
         assert_eq!(29, buf.remaining());
 
         let mut cursor = Cursor::new(&buf[..]);
@@ -698,6 +720,6 @@ mod tests {
         assert_eq!(2, decoded.stream_id);
         assert_eq!(HeaderFormat::FlatBuffer, decoded.header_format);
         assert_eq!(Some(Bytes::from("header")), decoded.header);
-        assert_eq!(Some(Bytes::from("abc")), decoded.payload);
+        assert_eq!(Some(vec![Bytes::from("abc")]), decoded.payload);
     }
 }

@@ -1,25 +1,13 @@
-use bytes::Bytes;
 use codec::frame::Frame;
 
-use chrono::prelude::*;
 use flatbuffers::FlatBufferBuilder;
 use futures::future::join_all;
-use protocol::rpc::header::{
-    AppendRequest, AppendResponseArgs, AppendResultArgs, ErrorCode, FetchRequest,
-    FetchResponseArgs, FetchResultArgs,
-};
+use protocol::rpc::header::{ErrorCode, FetchRequest, FetchResponseArgs, FetchResultArgs};
 use slog::{warn, Logger};
 use std::rc::Rc;
-use store::{
-    error::{AppendError, FetchError, FetchError},
-    ops::{append::AppendResult, fetch::FetchResult},
-    option::{ReadOptions, WriteOptions},
-    AppendRecordRequest, ElasticStore, Store,
-};
+use store::{error::FetchError, ops::fetch::FetchResult, option::ReadOptions, ElasticStore, Store};
 
-use super::util::{
-    finish_response_builder, root_as_rpc_request, system_error_frame_bytes, MIN_BUFFER_SIZE,
-};
+use super::util::{finish_response_builder, root_as_rpc_request, MIN_BUFFER_SIZE};
 
 #[derive(Debug)]
 pub(crate) struct Fetch<'a> {
@@ -75,7 +63,7 @@ impl<'a> Fetch<'a> {
         let mut builder = FlatBufferBuilder::with_capacity(MIN_BUFFER_SIZE);
         let mut payloads = Vec::new();
         let fetch_results: Vec<_> = res_from_store
-            .iter()
+            .into_iter()
             .map(|res| {
                 match res {
                     Ok(fetch_result) => {
@@ -93,7 +81,7 @@ impl<'a> Fetch<'a> {
                     Err(e) => {
                         warn!(self.logger, "Failed to fetch from store. Cause: {:?}", e);
 
-                        let (err_code, err_message) = self.convert_store_error(e);
+                        let (err_code, err_message) = self.convert_store_error(&e);
                         let mut err_message_fb = None;
                         if let Some(err_message) = err_message {
                             err_message_fb = Some(builder.create_string(err_message.as_str()));

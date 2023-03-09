@@ -403,6 +403,7 @@ dependencies = [
  "bytes",
  "cargo-llvm-cov",
  "crc",
+ "crc32fast",
  "num_enum",
  "slog",
  "slog-async",
