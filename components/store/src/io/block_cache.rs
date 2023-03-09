@@ -96,7 +96,7 @@ mod tests {
 
     #[test]
     fn test_hit() -> Result<(), Box<dyn Error>> {
-        let log = util::terminal_logger();
+        let log = test_util::terminal_logger();
         let mut block_cache = super::BlockCache::new(0);
         let block_size = 4096;
         for n in (0..16).into_iter() {
