@@ -26,7 +26,7 @@ table HeartbeatRequest {
     client_id: string (id: 0);
     // The role of the client. The client role is used to determine the type of the client.
     client_role: ClientRole (id: 1);
-    // Optional, the node information of the data node. Empty if the client is a SDK client.
+    // Optional, the node information of the data node. Empty if the client is an SDK client.
     data_node: DataNode (id: 2);
 }
 
@@ -60,7 +60,7 @@ table AppendResponse {
     throttle_time_ms: int32 (id: 0);
     // A batch of append responses.
     append_responses: [AppendResult] (id: 1);
-    // The top level error code, or 0 if there was no error.
+    // The top-level error code, or 0 if there was no error.
     error_code: ErrorCode (id: 2);
     error_message: string (id: 3);
 }
@@ -311,7 +311,7 @@ table CreateStreamsRequest {
     // The timeout in milliseconds to wait for the response.
     timeout_ms: int32 (id: 0);
     // A batch of streams to create.
-    stremas: [Stream] (id: 1);
+    streams: [Stream] (id: 1);
 }
 
 table CreateStreamsResponse {
@@ -423,7 +423,7 @@ table DescribeStreamResult {
 // The PM will delete the ranges whose end offset is less than the trim offset
 // and shrink the ranges whose start offset is less than the trim offset.
 
-table TrimeStreamsRequest {
+table TrimStreamsRequest {
     // The timeout in milliseconds to wait for the response.
     timeout_ms: int32 (id: 0);
     // The ids of the streams to trim.
