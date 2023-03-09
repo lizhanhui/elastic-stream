@@ -52,7 +52,7 @@ spec:
         fsGroup: 65535
       containers:
         - name: placement-manager
-          image: 716469478206.dkr.ecr.us-east-1.amazonaws.com/placement-manager:latest
+          image: 716469478206.dkr.ecr.ap-northeast-1.amazonaws.com/placement-manager:latest
           imagePullPolicy: "Always"
           ports:
             - containerPort: 2379
