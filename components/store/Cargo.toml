@@ -25,7 +25,6 @@ tokio = { workspace = true }
 util = { path = "../util" }
 model = { path = "../model" }
 num_enum = { workspace = true }
-crc = { workspace = true }
 derivative = { workspace = true }
 rocksdb = { workspace = true }
 

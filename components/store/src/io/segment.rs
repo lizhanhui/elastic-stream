@@ -14,10 +14,7 @@ use std::{
     time::SystemTime,
 };
 
-use crate::{
-    error::StoreError,
-    io::{record::RecordType, CRC32C},
-};
+use crate::{error::StoreError, io::record::RecordType};
 
 use super::{block_cache::BlockCache, buf::AlignedBufWriter, record::RECORD_PREFIX_LENGTH};
 
@@ -256,7 +253,7 @@ impl LogSegment {
         buf.put_u64(earliest);
         buf.put_u64(latest);
         let buf = buf.freeze();
-        let crc: u32 = CRC32C.checksum(&buf[..]);
+        let crc: u32 = util::crc32::crc32(&buf[..]);
         writer.write_u32(crc)?;
         writer.write_u32(length_type)?;
         writer.write(&buf[..=padding_length as usize])?;
@@ -279,7 +276,7 @@ impl LogSegment {
         writer: &mut AlignedBufWriter,
         payload: &[u8],
     ) -> Result<u64, StoreError> {
-        let crc = CRC32C.checksum(payload);
+        let crc = util::crc32::crc32(payload);
         let length_type = RecordType::Full.with_length(payload.len() as u32);
         writer.write_u32(crc)?;
         writer.write_u32(length_type)?;
@@ -317,16 +314,9 @@ impl Ord for LogSegment {
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        error::Error,
-        fs::File,
-        io::Read,
-        io::{IoSlice, IoSliceMut},
-    };
-
-    use bytes::BytesMut;
-
     use crate::io::{buf::AlignedBufWriter, record::RecordType};
+    use bytes::BytesMut;
+    use std::error::Error;
 
     use super::{LogSegment, Status};
 
@@ -357,7 +347,7 @@ mod tests {
         let buffers = buf_writer.take();
         let buf = buffers.first().unwrap();
         let crc = buf.read_u32(0)?;
-        assert_eq!(crc, crate::io::CRC32C.checksum(&data));
+        assert_eq!(crc, util::crc32::crc32(&data));
         let length_type = buf.read_u32(4)?;
         let (len, t) = RecordType::parse(length_type)?;
         assert_eq!(t, RecordType::Full);

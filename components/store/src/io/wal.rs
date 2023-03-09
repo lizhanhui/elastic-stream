@@ -1,6 +1,5 @@
 use std::{
     collections::{HashMap, VecDeque},
-    ffi::CString,
     fs::File,
     os::{fd::FromRawFd, unix::prelude::FileExt},
     path::Path,
@@ -8,8 +7,8 @@ use std::{
 
 use crate::{
     error::StoreError,
+    io::record::RecordType,
     io::segment::{LogSegment, Medium, SegmentDescriptor, Status, FOOTER_LENGTH},
-    io::{record::RecordType, CRC32C},
     option::WalPath,
 };
 
@@ -175,7 +174,7 @@ impl Wal {
                         buf.resize(len, 0);
                         file.read_exact_at(buf.as_mut(), file_pos)?;
 
-                        let ckm = CRC32C.checksum(buf.as_ref());
+                        let ckm = util::crc32::crc32(buf.as_ref());
                         if ckm != crc {
                             segment.written = file_pos - 4 - 4;
                             segment.status = Status::ReadWrite;

@@ -16,6 +16,8 @@ transport = { path = "../transport" }
 codec = { path = "../codec" }
 model = { path = "../model" }
 uuid = { workspace = true}
+crc32fast = { workspace = true }
 
 
 [dev-dependencies]
+crc = { workspace = true }

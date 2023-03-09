@@ -5,6 +5,7 @@
         "errno",
         "fallocate",
         "fcntl",
+        "Hasher",
         "IOPOLL",
         "libc",
         "memtable",
