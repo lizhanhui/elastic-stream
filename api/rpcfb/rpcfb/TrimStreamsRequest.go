@@ -6,12 +6,12 @@ import (
 	flatbuffers "github.com/google/flatbuffers/go"
 )
 
-type TrimeStreamsRequestT struct {
+type TrimStreamsRequestT struct {
 	TimeoutMs int32 `json:"timeout_ms"`
 	TrimmedStreams []*TrimmedStreamT `json:"trimmed_streams"`
 }
 
-func (t *TrimeStreamsRequestT) Pack(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
+func (t *TrimStreamsRequestT) Pack(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
 	if t == nil { return 0 }
 	trimmedStreamsOffset := flatbuffers.UOffsetT(0)
 	if t.TrimmedStreams != nil {
@@ -20,19 +20,19 @@ func (t *TrimeStreamsRequestT) Pack(builder *flatbuffers.Builder) flatbuffers.UO
 		for j := 0; j < trimmedStreamsLength; j++ {
 			trimmedStreamsOffsets[j] = t.TrimmedStreams[j].Pack(builder)
 		}
-		TrimeStreamsRequestStartTrimmedStreamsVector(builder, trimmedStreamsLength)
+		TrimStreamsRequestStartTrimmedStreamsVector(builder, trimmedStreamsLength)
 		for j := trimmedStreamsLength - 1; j >= 0; j-- {
 			builder.PrependUOffsetT(trimmedStreamsOffsets[j])
 		}
 		trimmedStreamsOffset = builder.EndVector(trimmedStreamsLength)
 	}
-	TrimeStreamsRequestStart(builder)
-	TrimeStreamsRequestAddTimeoutMs(builder, t.TimeoutMs)
-	TrimeStreamsRequestAddTrimmedStreams(builder, trimmedStreamsOffset)
-	return TrimeStreamsRequestEnd(builder)
+	TrimStreamsRequestStart(builder)
+	TrimStreamsRequestAddTimeoutMs(builder, t.TimeoutMs)
+	TrimStreamsRequestAddTrimmedStreams(builder, trimmedStreamsOffset)
+	return TrimStreamsRequestEnd(builder)
 }
 
-func (rcv *TrimeStreamsRequest) UnPackTo(t *TrimeStreamsRequestT) {
+func (rcv *TrimStreamsRequest) UnPackTo(t *TrimStreamsRequestT) {
 	t.TimeoutMs = rcv.TimeoutMs()
 	trimmedStreamsLength := rcv.TrimmedStreamsLength()
 	t.TrimmedStreams = make([]*TrimmedStreamT, trimmedStreamsLength)
@@ -43,41 +43,41 @@ func (rcv *TrimeStreamsRequest) UnPackTo(t *TrimeStreamsRequestT) {
 	}
 }
 
-func (rcv *TrimeStreamsRequest) UnPack() *TrimeStreamsRequestT {
+func (rcv *TrimStreamsRequest) UnPack() *TrimStreamsRequestT {
 	if rcv == nil { return nil }
-	t := &TrimeStreamsRequestT{}
+	t := &TrimStreamsRequestT{}
 	rcv.UnPackTo(t)
 	return t
 }
 
-type TrimeStreamsRequest struct {
+type TrimStreamsRequest struct {
 	_tab flatbuffers.Table
 }
 
-func GetRootAsTrimeStreamsRequest(buf []byte, offset flatbuffers.UOffsetT) *TrimeStreamsRequest {
+func GetRootAsTrimStreamsRequest(buf []byte, offset flatbuffers.UOffsetT) *TrimStreamsRequest {
 	n := flatbuffers.GetUOffsetT(buf[offset:])
-	x := &TrimeStreamsRequest{}
+	x := &TrimStreamsRequest{}
 	x.Init(buf, n+offset)
 	return x
 }
 
-func GetSizePrefixedRootAsTrimeStreamsRequest(buf []byte, offset flatbuffers.UOffsetT) *TrimeStreamsRequest {
+func GetSizePrefixedRootAsTrimStreamsRequest(buf []byte, offset flatbuffers.UOffsetT) *TrimStreamsRequest {
 	n := flatbuffers.GetUOffsetT(buf[offset+flatbuffers.SizeUint32:])
-	x := &TrimeStreamsRequest{}
+	x := &TrimStreamsRequest{}
 	x.Init(buf, n+offset+flatbuffers.SizeUint32)
 	return x
 }
 
-func (rcv *TrimeStreamsRequest) Init(buf []byte, i flatbuffers.UOffsetT) {
+func (rcv *TrimStreamsRequest) Init(buf []byte, i flatbuffers.UOffsetT) {
 	rcv._tab.Bytes = buf
 	rcv._tab.Pos = i
 }
 
-func (rcv *TrimeStreamsRequest) Table() flatbuffers.Table {
+func (rcv *TrimStreamsRequest) Table() flatbuffers.Table {
 	return rcv._tab
 }
 
-func (rcv *TrimeStreamsRequest) TimeoutMs() int32 {
+func (rcv *TrimStreamsRequest) TimeoutMs() int32 {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(4))
 	if o != 0 {
 		return rcv._tab.GetInt32(o + rcv._tab.Pos)
@@ -85,11 +85,11 @@ func (rcv *TrimeStreamsRequest) TimeoutMs() int32 {
 	return 0
 }
 
-func (rcv *TrimeStreamsRequest) MutateTimeoutMs(n int32) bool {
+func (rcv *TrimStreamsRequest) MutateTimeoutMs(n int32) bool {
 	return rcv._tab.MutateInt32Slot(4, n)
 }
 
-func (rcv *TrimeStreamsRequest) TrimmedStreams(obj *TrimmedStream, j int) bool {
+func (rcv *TrimStreamsRequest) TrimmedStreams(obj *TrimmedStream, j int) bool {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(6))
 	if o != 0 {
 		x := rcv._tab.Vector(o)
@@ -101,7 +101,7 @@ func (rcv *TrimeStreamsRequest) TrimmedStreams(obj *TrimmedStream, j int) bool {
 	return false
 }
 
-func (rcv *TrimeStreamsRequest) TrimmedStreamsLength() int {
+func (rcv *TrimStreamsRequest) TrimmedStreamsLength() int {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(6))
 	if o != 0 {
 		return rcv._tab.VectorLen(o)
@@ -109,18 +109,18 @@ func (rcv *TrimeStreamsRequest) TrimmedStreamsLength() int {
 	return 0
 }
 
-func TrimeStreamsRequestStart(builder *flatbuffers.Builder) {
+func TrimStreamsRequestStart(builder *flatbuffers.Builder) {
 	builder.StartObject(2)
 }
-func TrimeStreamsRequestAddTimeoutMs(builder *flatbuffers.Builder, timeoutMs int32) {
+func TrimStreamsRequestAddTimeoutMs(builder *flatbuffers.Builder, timeoutMs int32) {
 	builder.PrependInt32Slot(0, timeoutMs, 0)
 }
-func TrimeStreamsRequestAddTrimmedStreams(builder *flatbuffers.Builder, trimmedStreams flatbuffers.UOffsetT) {
+func TrimStreamsRequestAddTrimmedStreams(builder *flatbuffers.Builder, trimmedStreams flatbuffers.UOffsetT) {
 	builder.PrependUOffsetTSlot(1, flatbuffers.UOffsetT(trimmedStreams), 0)
 }
-func TrimeStreamsRequestStartTrimmedStreamsVector(builder *flatbuffers.Builder, numElems int) flatbuffers.UOffsetT {
+func TrimStreamsRequestStartTrimmedStreamsVector(builder *flatbuffers.Builder, numElems int) flatbuffers.UOffsetT {
 	return builder.StartVector(4, numElems, 4)
 }
-func TrimeStreamsRequestEnd(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
+func TrimStreamsRequestEnd(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
 	return builder.EndObject()
 }
