@@ -36,7 +36,7 @@ pub struct Frame {
 
     pub header: Option<Bytes>,
 
-    pub payload: Option<Bytes>,
+    pub payload: Option<Vec<Bytes>>,
 }
 
 impl Frame {

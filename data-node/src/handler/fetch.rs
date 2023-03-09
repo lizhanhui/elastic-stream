@@ -6,12 +6,13 @@ use flatbuffers::FlatBufferBuilder;
 use futures::future::join_all;
 use protocol::rpc::header::{
     AppendRequest, AppendResponseArgs, AppendResultArgs, ErrorCode, FetchRequest,
+    FetchResponseArgs, FetchResultArgs,
 };
 use slog::{warn, Logger};
 use std::rc::Rc;
 use store::{
-    error::AppendError,
-    ops::append::AppendResult,
+    error::{AppendError, FetchError, FetchError},
+    ops::{append::AppendResult, fetch::FetchResult},
     option::{ReadOptions, WriteOptions},
     AppendRecordRequest, ElasticStore, Store,
 };
@@ -65,9 +66,64 @@ impl<'a> Fetch<'a> {
     pub(crate) async fn apply(&self, store: Rc<ElasticStore>, response: &mut Frame) {
         let store_requests = self.build_store_requests();
         let futures: Vec<_> = store_requests
-            .iter()
+            .into_iter()
             .map(|fetch_option| store.fetch(fetch_option))
             .collect();
+
+        let res_from_store: Vec<Result<FetchResult, FetchError>> = join_all(futures).await;
+
+        let mut builder = FlatBufferBuilder::with_capacity(MIN_BUFFER_SIZE);
+        let mut payloads = Vec::new();
+        let fetch_results: Vec<_> = res_from_store
+            .iter()
+            .map(|res| {
+                match res {
+                    Ok(fetch_result) => {
+                        let fetch_result_args = FetchResultArgs {
+                            stream_id: fetch_result.stream_id,
+                            batch_length: fetch_result.payload.len() as i32,
+                            // TODO: Fill the request index
+                            request_index: 0,
+                            error_code: ErrorCode::NONE,
+                            error_message: None,
+                        };
+                        payloads.push(fetch_result.payload);
+                        protocol::rpc::header::FetchResult::create(&mut builder, &fetch_result_args)
+                    }
+                    Err(e) => {
+                        warn!(self.logger, "Failed to fetch from store. Cause: {:?}", e);
+
+                        let (err_code, err_message) = self.convert_store_error(e);
+                        let mut err_message_fb = None;
+                        if let Some(err_message) = err_message {
+                            err_message_fb = Some(builder.create_string(err_message.as_str()));
+                        }
+
+                        let fetch_result_args = FetchResultArgs {
+                            stream_id: 0,
+                            batch_length: 0,
+                            request_index: 0,
+                            error_code: err_code,
+                            error_message: err_message_fb,
+                        };
+                        protocol::rpc::header::FetchResult::create(&mut builder, &fetch_result_args)
+                    }
+                }
+            })
+            .collect();
+
+        let fetch_results_fb = builder.create_vector(&fetch_results);
+        let res_args = FetchResponseArgs {
+            throttle_time_ms: 0,
+            fetch_responses: Some(fetch_results_fb),
+            error_code: ErrorCode::NONE,
+            error_message: None,
+        };
+        let res_offset = protocol::rpc::header::FetchResponse::create(&mut builder, &res_args);
+        let res_header = finish_response_builder(&mut builder, res_offset);
+        response.header = Some(res_header);
+        response.payload = Some(payloads);
+        ()
     }
 
     fn build_store_requests(&self) -> Vec<ReadOptions> {
@@ -82,5 +138,11 @@ impl<'a> Fetch<'a> {
                 max_bytes: req.batch_max_bytes(),
             })
             .collect()
+    }
+
+    fn convert_store_error(&self, err: &FetchError) -> (ErrorCode, Option<String>) {
+        match err {
+            _ => (ErrorCode::UNKNOWN, Some(err.to_string())),
+        }
     }
 }

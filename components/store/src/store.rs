@@ -5,7 +5,7 @@ use std::{
 };
 
 use crate::{
-    error::{AppendError, ReadError, StoreError},
+    error::{AppendError, FetchError, StoreError},
     io::{
         self,
         task::{
@@ -146,7 +146,7 @@ impl ElasticStore {
 
 impl Store for ElasticStore {
     type AppendOp = impl Future<Output = Result<AppendResult, AppendError>>;
-    type FetchOp = impl Future<Output = Result<FetchResult, ReadError>>;
+    type FetchOp = impl Future<Output = Result<FetchResult, FetchError>>;
 
     fn append(&self, options: WriteOptions, request: AppendRecordRequest) -> Append<Self::AppendOp>
     where
@@ -168,9 +168,17 @@ impl Store for ElasticStore {
 
     fn fetch(&self, options: ReadOptions) -> Fetch<<Self as Store>::FetchOp>
     where
-        <Self as Store>::FetchOp: Future<Output = Result<FetchResult, ReadError>>,
+        <Self as Store>::FetchOp: Future<Output = Result<FetchResult, FetchError>>,
     {
-        todo!()
+        let inner = async {
+            Ok(FetchResult {
+                stream_id: 0,
+                offset: 0,
+                payload: todo!(),
+            })
+        };
+
+        Fetch { inner }
     }
 
     fn scan(&self, options: ReadOptions) -> Scan {

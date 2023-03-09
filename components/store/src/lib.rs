@@ -28,7 +28,7 @@ use self::{
     ops::{Append, Fetch, Scan},
     option::{ReadOptions, WriteOptions},
 };
-use error::{AppendError, ReadError};
+use error::{AppendError, FetchError};
 use futures::Future;
 use ops::append::AppendResult;
 use ops::fetch::FetchResult;
@@ -64,9 +64,7 @@ pub trait Store {
 
     /// Retrieve a single existing record at the given partition and offset.
     /// * `options` - Read options, specifying target partition and offset.
-    fn fetch(&self, options: ReadOptions) -> Fetch<Self::FetchOp>
-    where
-        <Self as Store>::FetchOp: Future<Output = Result<FetchResult, ReadError>>;
+    fn fetch(&self, options: ReadOptions) -> Fetch<Self::FetchOp>;
 
     /// Scan a range of partition for matched records.
     fn scan(&self, options: ReadOptions) -> Scan;

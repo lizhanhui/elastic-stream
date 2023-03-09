@@ -68,7 +68,7 @@ pub enum StoreError {
 }
 
 #[derive(Debug, Error)]
-pub enum ReadError {}
+pub enum FetchError {}
 
 #[derive(Debug, Error)]
 pub enum AppendError {

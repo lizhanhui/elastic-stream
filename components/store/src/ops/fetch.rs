@@ -6,7 +6,7 @@ use std::{
 use futures::Future;
 
 use super::Fetch;
-use crate::error::ReadError;
+use crate::error::FetchError;
 
 #[derive(Debug)]
 pub struct FetchResult {
@@ -17,9 +17,9 @@ pub struct FetchResult {
 
 impl<Op> Future for Fetch<Op>
 where
-    Op: Future<Output = Result<FetchResult, ReadError>>,
+    Op: Future<Output = Result<FetchResult, FetchError>>,
 {
-    type Output = Result<FetchResult, ReadError>;
+    type Output = Result<FetchResult, FetchError>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let this = self.project();
