@@ -39,7 +39,7 @@ impl AlignedBuf {
         let capacity = (len + alignment - 1) / alignment * alignment;
         let layout = Layout::from_size_align(capacity, alignment)
             .map_err(|_e| StoreError::MemoryAlignment)?;
-        let ptr = unsafe { alloc::alloc(layout) };
+        let ptr = unsafe { alloc::alloc_zeroed(layout) };
         Ok(Self {
             log,
             offset,

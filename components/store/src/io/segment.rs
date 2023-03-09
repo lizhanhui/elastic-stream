@@ -192,7 +192,7 @@ impl LogSegment {
             .create(true)
             .read(true)
             .write(true)
-            .custom_flags(libc::O_DIRECT)
+            .custom_flags(libc::O_RDWR | libc::O_DIRECT | libc::O_DSYNC)
             .open(Path::new(
                 self.path
                     .to_str()
@@ -336,37 +336,6 @@ mod tests {
             LogSegment::format(0).len(),
             LogSegment::format(std::u64::MAX).len()
         );
-    }
-
-    #[test]
-    #[ignore]
-    fn test_read_file() -> Result<(), Box<dyn Error>> {
-        let path = "/tmp/d24bd12a46624747b2f4e8074273c928/wal/00000000000000000000";
-        let mut file = File::open(path)?;
-        let mut crc_buf = [0u8; 4];
-        let mut length_type_buf = [0u8; 4];
-
-        loop {
-            let bufs = &mut [
-                IoSliceMut::new(&mut crc_buf),
-                IoSliceMut::new(&mut length_type_buf),
-            ];
-
-            let bytes_read = file.read_vectored(bufs)?;
-
-            let crc = u32::from_be_bytes(crc_buf);
-            let length_type = u32::from_be_bytes(length_type_buf);
-
-            let len = length_type >> 8;
-            assert!(len > 0);
-            let mut buf = BytesMut::with_capacity(len as usize);
-            buf.resize(len as usize, 0);
-            file.read_exact(&mut buf)?;
-
-            break;
-        }
-
-        Ok(())
     }
 
     #[test]
