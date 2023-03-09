@@ -5,7 +5,7 @@ use std::{
 };
 
 use crate::{
-    error::{AppendError, StoreError},
+    error::{AppendError, ReadError, StoreError},
     io::{
         self,
         task::{
@@ -13,7 +13,7 @@ use crate::{
             WriteTask,
         },
     },
-    ops::{append::AppendResult, Append, Get, Scan},
+    ops::{append::AppendResult, fetch::FetchResult, Append, Get, Scan},
     option::{ReadOptions, WalPath, WriteOptions},
     AppendRecordRequest, Store,
 };
@@ -146,6 +146,7 @@ impl ElasticStore {
 
 impl Store for ElasticStore {
     type AppendOp = impl Future<Output = Result<AppendResult, AppendError>>;
+    type FetchOp = impl Future<Output = Result<FetchResult, ReadError>>;
 
     fn append(&self, opt: WriteOptions, request: AppendRecordRequest) -> Append<Self::AppendOp>
     where
@@ -165,7 +166,10 @@ impl Store for ElasticStore {
         Append { inner }
     }
 
-    fn get(&self, options: ReadOptions) -> Get {
+    fn fetch(&self, options: ReadOptions) -> Get<Self::FetchOp>
+    where
+        <Self as Store>::FetchOp: Future<Output = Result<FetchResult, ReadError>>,
+    {
         todo!()
     }
 

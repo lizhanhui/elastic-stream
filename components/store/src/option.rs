@@ -79,14 +79,17 @@ impl Default for WriteOptions {
 
 #[derive(Debug, Default)]
 pub struct ReadOptions {
-    /// Target partition
-    pub(crate) partition_id: i64,
+    /// Target stream
+    pub stream_id: i64,
 
     /// Logical offset, from which to read records
-    pub(crate) offset: i64,
+    pub offset: i64,
 
-    /// Maximum number of records to read.
-    pub(crate) limit: Option<usize>,
+    /// The maximum time in milliseconds to wait for the read response.
+    pub max_wait_ms: i32,
+
+    /// The maximum bytes of the read response.
+    pub max_bytes: i32,
 }
 
 #[cfg(test)]

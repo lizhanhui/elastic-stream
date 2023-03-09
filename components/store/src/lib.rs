@@ -25,12 +25,13 @@ pub mod error;
 pub mod util;
 
 use self::{
-    ops::{Append, Get, Scan},
+    ops::{Append, Fetch, Scan},
     option::{ReadOptions, WriteOptions},
 };
-use error::AppendError;
+use error::{AppendError, ReadError};
 use futures::Future;
 use ops::append::AppendResult;
+use ops::fetch::FetchResult;
 
 pub mod cursor;
 pub mod ops;
@@ -50,6 +51,8 @@ pub use request::AppendRecordRequest;
 pub trait Store {
     /// Inner operation that actually appends record into store.
     type AppendOp;
+    /// Inner operation that actually fetches record from store.
+    type FetchOp;
 
     /// Append a new record into store.
     ///
@@ -61,7 +64,9 @@ pub trait Store {
 
     /// Retrieve a single existing record at the given partition and offset.
     /// * `options` - Read options, specifying target partition and offset.
-    fn get(&self, options: ReadOptions) -> Get;
+    fn fetch(&self, options: ReadOptions) -> Fetch<Self::FetchOp>
+    where
+        <Self as Store>::FetchOp: Future<Output = Result<FetchResult, ReadError>>;
 
     /// Scan a range of partition for matched records.
     fn scan(&self, options: ReadOptions) -> Scan;
