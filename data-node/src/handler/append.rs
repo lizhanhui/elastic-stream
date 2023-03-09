@@ -2,7 +2,7 @@ use bytes::Bytes;
 use codec::frame::Frame;
 
 use chrono::prelude::*;
-use flatbuffers::{FlatBufferBuilder, WIPOffset};
+use flatbuffers::{FlatBufferBuilder};
 use futures::future::join_all;
 use protocol::rpc::header::{AppendRequest, AppendResponseArgs, AppendResultArgs, ErrorCode};
 use slog::{warn, Logger};
@@ -76,11 +76,11 @@ impl<'a> Append<'a> {
     /// Process message publishment request
     ///
     /// On receiving a message publishment request, it wraps the incoming request to a `Record`.
-    /// The record is then moved to `Store::put`, where persistence, replication and other auxillary
+    /// The record is then moved to `Store::append`, where persistence, replication and other auxillary
     /// operations are properly performed.
     ///
-    /// Once the underlying operations are completed, the `Store#put` API shall asynchronously return
-    /// `Result<PutResult, PutError>`. The result will be rendered into the `response`.
+    /// Once the underlying operations are completed, the `Store#append` API shall asynchronously return
+    /// `Result<AppendResult, AppendError>`. The result will be rendered into the `response`.
     ///
     /// `response` - Mutable response frame reference, into which required business data are filled.
     ///
@@ -124,7 +124,7 @@ impl<'a> Append<'a> {
                     }
                     Err(e) => {
                         warn!(self.logger, "Append failed: {:?}", e);
-                        let (err_code, error_message) = self.convert_append_error(e);
+                        let (err_code, error_message) = self.convert_store_error(e);
 
                         let mut error_message_fb = None;
                         if let Some(error_message) = error_message {
@@ -202,7 +202,7 @@ impl<'a> Append<'a> {
         Ok(to_store_requests)
     }
 
-    fn convert_append_error(&self, err: &AppendError) -> (ErrorCode, Option<String>) {
+    fn convert_store_error(&self, err: &AppendError) -> (ErrorCode, Option<String>) {
         match err {
             AppendError::SubmissionQueue => (
                 ErrorCode::STORAGE_NOT_AVAILABLE,

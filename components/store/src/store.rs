@@ -13,7 +13,7 @@ use crate::{
             WriteTask,
         },
     },
-    ops::{append::AppendResult, fetch::FetchResult, Append, Get, Scan},
+    ops::{append::AppendResult, fetch::FetchResult, Append, Fetch, Scan},
     option::{ReadOptions, WalPath, WriteOptions},
     AppendRecordRequest, Store,
 };
@@ -148,7 +148,7 @@ impl Store for ElasticStore {
     type AppendOp = impl Future<Output = Result<AppendResult, AppendError>>;
     type FetchOp = impl Future<Output = Result<FetchResult, ReadError>>;
 
-    fn append(&self, opt: WriteOptions, request: AppendRecordRequest) -> Append<Self::AppendOp>
+    fn append(&self, options: WriteOptions, request: AppendRecordRequest) -> Append<Self::AppendOp>
     where
         <Self as Store>::AppendOp: Future<Output = Result<AppendResult, AppendError>>,
     {
@@ -166,7 +166,7 @@ impl Store for ElasticStore {
         Append { inner }
     }
 
-    fn fetch(&self, options: ReadOptions) -> Get<Self::FetchOp>
+    fn fetch(&self, options: ReadOptions) -> Fetch<<Self as Store>::FetchOp>
     where
         <Self as Store>::FetchOp: Future<Output = Result<FetchResult, ReadError>>,
     {
