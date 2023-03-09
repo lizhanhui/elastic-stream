@@ -2,7 +2,7 @@ use crate::error::{AppendError, StoreError};
 use crate::index::driver::IndexDriver;
 use crate::index::MinOffset;
 use crate::io::buf::{AlignedBufReader, AlignedBufWriter};
-use crate::io::context::IOContext;
+use crate::io::context::Context;
 use crate::io::offset_manager::WalOffsetManager;
 use crate::io::options::Options;
 use crate::io::segment::Status;
@@ -69,7 +69,7 @@ pub(crate) struct IO {
     channel_disconnected: bool,
 
     tag: u64,
-    inflight_data_tasks: HashMap<u64, IOContext>,
+    inflight_data_tasks: HashMap<u64, Context>,
 
     /// Number of inflight data tasks that are submitted to `data_uring` and not yet reaped.
     inflight: usize,
@@ -387,13 +387,8 @@ impl IO {
                             }
                             entries.push(sqe);
                         }
-                        let ioc = IOContext {
-                            opcode: opcode::Write::CODE,
-                            buf,
-                            offset: None,
-                            len: None,
-                        };
-                        self.inflight_data_tasks.insert(self.tag, ioc);
+                        let context = Context::write_ctx(opcode::Write::CODE, buf);
+                        self.inflight_data_tasks.insert(self.tag, context);
                         self.tag += 1;
                     } else {
                         // fatal errors
@@ -460,13 +455,13 @@ impl IO {
                             self.tag += 1;
                             entries.push(sqe);
 
-                            let ioc = IOContext {
-                                opcode: opcode::Read::CODE,
-                                buf: Arc::new(buf),
-                                offset: Some(task.offset),
-                                len: Some(task.len),
-                            };
-                            self.inflight_data_tasks.insert(self.tag, ioc);
+                            let context = Context::read_ctx(
+                                opcode::Read::CODE,
+                                Arc::new(buf),
+                                task.offset,
+                                task.len,
+                            );
+                            self.inflight_data_tasks.insert(self.tag, context);
                         }
                     } else {
                         self.pending_data_tasks.push_front(IoTask::Read(task));
@@ -761,21 +756,23 @@ impl IO {
 /// * `log` - Logger instance.
 fn on_complete(
     write_window: &mut WriteWindow,
-    ioc: &IOContext,
+    context: &Context,
     result: i32,
     log: &Logger,
 ) -> Result<(), StoreError> {
-    match ioc.opcode {
+    match context.opcode {
         opcode::Write::CODE => {
             if result < 0 {
                 error!(
                     log,
-                    "Write to WAL range `[{}, {})` failed", ioc.buf.offset, ioc.buf.capacity
+                    "Write to WAL range `[{}, {})` failed",
+                    context.buf.offset,
+                    context.buf.capacity
                 );
                 return Err(StoreError::System(-result));
             } else {
                 write_window
-                    .commit(ioc.buf.offset, ioc.buf.write_pos() as u32)
+                    .commit(context.buf.offset, context.buf.write_pos() as u32)
                     .map_err(|_e| StoreError::WriteWindow)?;
             }
             Ok(())
