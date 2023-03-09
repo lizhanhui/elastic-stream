@@ -1,5 +1,6 @@
 use std::{
     collections::{HashMap, VecDeque},
+    ffi::CString,
     fs::File,
     os::{fd::FromRawFd, unix::prelude::FileExt},
     path::Path,
@@ -82,11 +83,7 @@ impl Wal {
                         let path = entry.path();
                         let path = path.as_path();
                         if let Some(offset) = LogSegment::parse_offset(path) {
-                            let log_segment_file = LogSegment::new(
-                                offset,
-                                metadata.len(),
-                                entry.path().to_str()?.to_string(),
-                            );
+                            let log_segment_file = LogSegment::new(offset, metadata.len(), path);
                             Some(log_segment_file)
                         } else {
                             error!(
@@ -101,6 +98,7 @@ impl Wal {
                     None
                 }
             })
+            .flatten()
             .collect();
 
         // Sort log segment file by file name.
@@ -170,7 +168,7 @@ impl Wal {
 
                         segment.written = segment.size;
                         segment.status = Status::Read;
-                        info!(log, "Reached EOF of {}", segment.path);
+                        info!(log, "Reached EOF of {}", segment);
                     }
                     RecordType::Full => {
                         // Full record
@@ -217,14 +215,14 @@ impl Wal {
             if segment.offset + segment.size <= offset {
                 segment.status = Status::Read;
                 segment.written = segment.size;
-                debug!(log, "Mark {} as read-only", segment.path);
+                debug!(log, "Mark {} as read-only", segment);
                 continue;
             }
 
             if !need_scan {
                 segment.written = 0;
                 segment.status = Status::ReadWrite;
-                debug!(log, "Mark {} as read-write", segment.path);
+                debug!(log, "Mark {} as read-write", segment);
                 continue;
             }
 
@@ -245,9 +243,8 @@ impl Wal {
         debug_assert_eq!(segment.status, Status::OpenAt);
         info!(log, "About to create/open LogSegmentFile: `{}`", segment);
         let status = segment.status;
-        let ptr = segment.path.as_ptr() as *const i8;
         self.inflight_control_tasks.insert(offset, status);
-        let sqe = opcode::OpenAt::new(types::Fd(libc::AT_FDCWD), ptr)
+        let sqe = opcode::OpenAt::new(types::Fd(libc::AT_FDCWD), segment.path.as_ptr())
             .flags(libc::O_CREAT | libc::O_RDWR | libc::O_DIRECT)
             .mode(libc::S_IRWXU | libc::S_IRWXG)
             .build()
@@ -278,7 +275,7 @@ impl Wal {
                 let sqe = opcode::Close::new(types::Fd(sd.fd))
                     .build()
                     .user_data(segment.offset);
-                info!(self.log, "About to close LogSegmentFile: {}", segment.path);
+                info!(self.log, "About to close LogSegmentFile: {}", segment);
                 unsafe {
                     self.control_ring.submission().push(&sqe).map_err(|e| {
                         error!(self.log, "Failed to submit close SQE to SQ: {:?}", e);
@@ -317,13 +314,8 @@ impl Wal {
         let dir = self.wal_paths.first().ok_or(StoreError::AllocLogSegment)?;
         let path = Path::new(&dir.path);
         let path = path.join(LogSegment::format(offset));
-        let segment = LogSegment::new(
-            offset,
-            self.file_size,
-            path.to_str()
-                .ok_or(StoreError::AllocLogSegment)?
-                .to_string(),
-        );
+
+        let segment = LogSegment::new(offset, self.file_size, path.as_path())?;
 
         Ok(segment)
     }
@@ -443,16 +435,14 @@ impl Wal {
         let mut to_remove = vec![];
         if let Some(segment) = self.segment_file_of(offset) {
             if -1 == result {
-                error!(log, "Failed to `{}` {}", segment.status, segment.path);
+                error!(log, "LogSegment file operation failed: {}", segment);
                 return Err(StoreError::System(result));
             }
             match segment.status {
                 Status::OpenAt => {
                     info!(
                         log,
-                        "LogSegmentFile: `{}` is created and open with FD: {}",
-                        segment.path,
-                        result
+                        "LogSegmentFile: `{}` is created and open with FD: {}", segment, result
                     );
                     segment.sd = Some(SegmentDescriptor {
                         medium: Medium::Ssd,
@@ -463,7 +453,7 @@ impl Wal {
 
                     info!(
                         log,
-                        "About to fallocate LogSegmentFile: `{}` with FD: {}", segment.path, result
+                        "About to fallocate LogSegmentFile: `{}` with FD: {}", segment, result
                     );
                     let sqe = opcode::Fallocate64::new(types::Fd(result), segment.size as i64)
                         .offset(0)
@@ -483,17 +473,14 @@ impl Wal {
                         .insert(offset, Status::Fallocate64);
                 }
                 Status::Fallocate64 => {
-                    info!(
-                        log,
-                        "Fallocate of LogSegmentFile `{}` completed", segment.path
-                    );
+                    info!(log, "Fallocate of LogSegmentFile `{}` completed", segment);
                     segment.status = Status::ReadWrite;
                 }
                 Status::Close => {
-                    info!(log, "LogSegmentFile: `{}` is closed", segment.path);
+                    info!(log, "LogSegmentFile: `{}` is closed", segment);
                     segment.sd = None;
 
-                    info!(log, "About to delete LogSegmentFile `{}`", segment.path);
+                    info!(log, "About to delete LogSegmentFile `{}`", segment);
                     let sqe = opcode::UnlinkAt::new(
                         types::Fd(libc::AT_FDCWD),
                         segment.path.as_ptr() as *const i8,
@@ -509,7 +496,7 @@ impl Wal {
                     }?;
                 }
                 Status::UnlinkAt => {
-                    info!(log, "LogSegmentFile: `{}` is deleted", segment.path);
+                    info!(log, "LogSegmentFile: `{}` is deleted", segment);
                     to_remove.push(offset)
                 }
                 _ => {}

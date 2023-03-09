@@ -3,11 +3,12 @@ use derivative::Derivative;
 use nix::fcntl;
 use std::{
     cmp::Ordering,
+    ffi::CString,
     fmt::Display,
     fs::{File, OpenOptions},
     os::{
         fd::{AsRawFd, FromRawFd, IntoRawFd, RawFd},
-        unix::prelude::OpenOptionsExt,
+        unix::prelude::{OpenOptionsExt, OsStrExt},
     },
     path::Path,
     time::SystemTime,
@@ -66,7 +67,7 @@ pub(crate) struct LogSegment {
     pub(crate) status: Status,
 
     /// The path of the log segment, if the fd is a file descriptor.
-    pub(crate) path: String,
+    pub(crate) path: CString,
 
     /// The underlying descriptor of the log segment.
     /// Currently, it's a file descriptor with `O_DIRECT` flag.
@@ -155,8 +156,8 @@ pub(crate) enum Medium {
 }
 
 impl LogSegment {
-    pub(crate) fn new(offset: u64, size: u64, path: String) -> Self {
-        Self {
+    pub(crate) fn new(offset: u64, size: u64, path: &Path) -> Result<Self, StoreError> {
+        Ok(Self {
             offset,
             size,
             written: 0,
@@ -164,8 +165,9 @@ impl LogSegment {
             block_cache: BlockCache::new(offset, 4096),
             sd: None,
             status: Status::OpenAt,
-            path,
-        }
+            path: CString::new(path.as_os_str().as_bytes())
+                .map_err(|e| StoreError::InvalidPath(e.to_string()))?,
+        })
     }
 
     pub(crate) fn format(offset: u64) -> String {
@@ -190,7 +192,11 @@ impl LogSegment {
             .read(true)
             .write(true)
             .custom_flags(libc::O_DIRECT)
-            .open(Path::new(&self.path))?;
+            .open(Path::new(
+                self.path
+                    .to_str()
+                    .map_err(|e| StoreError::InvalidPath(e.to_string()))?,
+            ))?;
         let metadata = file.metadata()?;
 
         let mut status = Status::OpenAt;
@@ -293,18 +299,7 @@ impl Drop for LogSegment {
 
 impl PartialOrd for LogSegment {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        let this = Path::new(&self.path);
-        let that = Path::new(&other.path);
-        let lhs = match this.file_name() {
-            Some(name) => name,
-            None => return None,
-        };
-        let rhs = match that.file_name() {
-            Some(name) => name,
-            None => return None,
-        };
-
-        lhs.partial_cmp(rhs)
+        self.offset.partial_cmp(&other.offset)
     }
 }
 
@@ -321,6 +316,15 @@ impl Ord for LogSegment {
 
 #[cfg(test)]
 mod tests {
+    use std::{
+        error::Error,
+        fs::File,
+        io::Read,
+        io::{IoSlice, IoSliceMut},
+    };
+
+    use bytes::BytesMut;
+
     use super::LogSegment;
 
     #[test]
@@ -329,5 +333,33 @@ mod tests {
             LogSegment::format(0).len(),
             LogSegment::format(std::u64::MAX).len()
         );
+    }
+
+    #[test]
+    fn test_read_file() -> Result<(), Box<dyn Error>> {
+        let path = "/tmp/10f25af20ca44882ab49140595bfd642/wal/000000000000000000001";
+        let mut file = File::open(path)?;
+        let mut crc_buf = [0u8; 4];
+        let mut length_type_buf = [0u8; 4];
+
+        loop {
+            let bufs = &mut [
+                IoSliceMut::new(&mut crc_buf),
+                IoSliceMut::new(&mut length_type_buf),
+            ];
+
+            let bytes_read = file.read_vectored(bufs)?;
+
+            let crc = u32::from_be_bytes(crc_buf);
+            let length_type = u32::from_be_bytes(length_type_buf);
+
+            let len = length_type >> 8;
+            assert!(len > 0);
+            let mut buf = BytesMut::with_capacity(len as usize);
+            buf.resize(len as usize, 0);
+            file.read_exact(&mut buf)?;
+        }
+
+        Ok(())
     }
 }

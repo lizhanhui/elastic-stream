@@ -397,8 +397,7 @@ impl IO {
                         self.tag += 1;
                     } else {
                         // fatal errors
-                        let msg =
-                            format!("Segment {} should be open and with valid FD", segment.path);
+                        let msg = format!("Segment {} should be open and with valid FD", segment);
                         error!(self.log, "{}", msg);
                         panic!("{}", msg);
                     }
@@ -478,7 +477,11 @@ impl IO {
                     loop {
                         if let Some(segment) = self.wal.segment_file_of(writer.offset) {
                             if !segment.writable() {
-                                trace!(log, "WAL Segment {} status: {}. Yield dispatching IO to block layer", segment.path, segment.status);
+                                trace!(
+                                    log,
+                                    "WAL Segment {}. Yield dispatching IO to block layer",
+                                    segment
+                                );
                                 self.pending_data_tasks.push_front(IoTask::Write(task));
                                 break 'task_loop;
                             }
@@ -504,8 +507,8 @@ impl IO {
                                 }
                                 break;
                             } else {
-                                error!(log, "LogSegmentFile {} with read_write status does not have valid FD", segment.path);
-                                unreachable!("LogSegmentFile {} should have been with a valid FD if its status is read_write", segment.path);
+                                error!(log, "LogSegmentFile {} with read_write status does not have valid FD", segment);
+                                unreachable!("LogSegmentFile {} should have been with a valid FD if its status is read_write", segment);
                             }
                         } else {
                             self.pending_data_tasks.push_front(IoTask::Write(task));
@@ -801,7 +804,9 @@ mod tests {
     use super::{IoTask, WriteTask};
     use crate::error::StoreError;
     use bytes::BytesMut;
+    use slog::{debug, trace};
     use std::cell::RefCell;
+    use std::error::Error;
     use std::fs;
     use std::path::{Path, PathBuf};
     use tokio::sync::oneshot;
@@ -917,14 +922,15 @@ mod tests {
     }
 
     #[test]
-    fn test_run() -> Result<(), StoreError> {
+    fn test_run() -> Result<(), Box<dyn Error>> {
         let log = util::terminal_logger();
 
         let (tx, rx) = oneshot::channel();
+        let logger = log.clone();
         let handle = std::thread::spawn(move || {
             let store_dir = random_store_dir().unwrap();
             let store_dir = store_dir.as_path();
-            let _store_dir_guard = util::DirectoryRemovalGuard::new(log, store_dir);
+            // let _store_dir_guard = util::DirectoryRemovalGuard::new(logger, store_dir);
             let mut io = create_io(store_dir).unwrap();
 
             let sender = io
@@ -947,10 +953,13 @@ mod tests {
         buffer.resize(4096, 65);
         let buffer = buffer.freeze();
 
+        let mut receivers = vec![];
+
         (0..16)
             .into_iter()
             .map(|i| {
-                let (tx, _rx) = oneshot::channel();
+                let (tx, rx) = oneshot::channel();
+                receivers.push(rx);
                 IoTask::Write(WriteTask {
                     stream_id: 0,
                     offset: i as i64,
@@ -963,6 +972,16 @@ mod tests {
             });
 
         drop(sender);
+
+        for receiver in receivers {
+            let res = receiver.blocking_recv()??;
+            trace!(
+                log,
+                "{{ stream-id: {}, offset: {} }}",
+                res.stream_id,
+                res.offset
+            );
+        }
 
         handle.join().map_err(|_| StoreError::AllocLogSegment)?;
 
