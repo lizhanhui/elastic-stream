@@ -134,7 +134,7 @@ impl Display for Status {
                 write!(f, "fallocate")
             }
             Self::ReadWrite => {
-                write!(f, "read/write")
+                write!(f, "read|write")
             }
             Self::Read => {
                 write!(f, "read")
