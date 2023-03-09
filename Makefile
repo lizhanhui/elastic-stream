@@ -33,7 +33,7 @@ ALL_PLATFORMS ?= linux/amd64 linux/arm linux/arm64 linux/ppc64le linux/s390x
 BASE_IMAGE ?= gcr.io/distroless/static
 
 # Where to push the docker images.
-REGISTRY ?= 716469478206.dkr.ecr.us-east-1.amazonaws.com
+REGISTRY ?= 716469478206.dkr.ecr.ap-northeast-1.amazonaws.com
 
 # This version-strategy uses git tags to set the version string
 VERSION ?= $(shell git describe --tags --always --dirty)
