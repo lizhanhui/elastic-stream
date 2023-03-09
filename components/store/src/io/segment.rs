@@ -326,7 +326,9 @@ mod tests {
 
     use bytes::BytesMut;
 
-    use super::LogSegment;
+    use crate::io::{buf::AlignedBufWriter, record::RecordType};
+
+    use super::{LogSegment, Status};
 
     #[test]
     fn test_format_number() {
@@ -339,7 +341,7 @@ mod tests {
     #[test]
     #[ignore]
     fn test_read_file() -> Result<(), Box<dyn Error>> {
-        let path = "/tmp/10f25af20ca44882ab49140595bfd642/wal/000000000000000000001";
+        let path = "/tmp/d24bd12a46624747b2f4e8074273c928/wal/00000000000000000000";
         let mut file = File::open(path)?;
         let mut crc_buf = [0u8; 4];
         let mut length_type_buf = [0u8; 4];
@@ -360,8 +362,40 @@ mod tests {
             let mut buf = BytesMut::with_capacity(len as usize);
             buf.resize(len as usize, 0);
             file.read_exact(&mut buf)?;
+
+            break;
         }
 
+        Ok(())
+    }
+
+    #[test]
+    fn test_append_record() -> Result<(), Box<dyn Error>> {
+        let tmp = std::env::temp_dir();
+        let mut segment = super::LogSegment::new(0, 1024 * 1024, tmp.as_path())?;
+        segment.status = Status::ReadWrite;
+
+        let log = util::terminal_logger();
+        let mut buf_writer = AlignedBufWriter::new(log, 0, 512);
+        buf_writer.reserve(1024)?;
+
+        let mut data = BytesMut::with_capacity(256);
+        data.resize(256, 65);
+
+        let pos = segment.append_record(&mut buf_writer, &data)?;
+        assert_eq!(pos, 4 + 4 + data.len() as u64);
+
+        let buffers = buf_writer.take();
+        let buf = buffers.first().unwrap();
+        let crc = buf.read_u32(0)?;
+        assert_eq!(crc, crate::io::CRC32C.checksum(&data));
+        let length_type = buf.read_u32(4)?;
+        let (len, t) = RecordType::parse(length_type)?;
+        assert_eq!(t, RecordType::Full);
+        assert_eq!(len as usize, data.len());
+
+        let payload = buf.slice(8..);
+        assert_eq!(&data, payload);
         Ok(())
     }
 }
