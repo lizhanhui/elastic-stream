@@ -1,7 +1,7 @@
 use bytes::Bytes;
 use flatbuffers::{FlatBufferBuilder, Verifiable, WIPOffset};
 
-use protocol::rpc::header::{SystemErrorResponseArgs, ErrorCode, SystemErrorResponse};
+use protocol::rpc::header::{ErrorCode, SystemErrorResponse, SystemErrorResponseArgs};
 use slog::Logger;
 
 pub(crate) const MIN_BUFFER_SIZE: usize = 64;

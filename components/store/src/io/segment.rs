@@ -1,6 +1,7 @@
 use bytes::{BufMut, BytesMut};
 use derivative::Derivative;
 use nix::fcntl;
+use slog::Logger;
 use std::{
     cmp::Ordering,
     ffi::CString,
@@ -154,13 +155,18 @@ pub(crate) enum Medium {
 }
 
 impl LogSegment {
-    pub(crate) fn new(offset: u64, size: u64, path: &Path) -> Result<Self, StoreError> {
+    pub(crate) fn new(
+        log: Logger,
+        offset: u64,
+        size: u64,
+        path: &Path,
+    ) -> Result<Self, StoreError> {
         Ok(Self {
             offset,
             size,
             written: 0,
             time_range: None,
-            block_cache: BlockCache::new(offset),
+            block_cache: BlockCache::new(log, offset),
             sd: None,
             status: Status::OpenAt,
             path: CString::new(path.as_os_str().as_bytes())
@@ -331,7 +337,8 @@ mod tests {
     #[test]
     fn test_append_record() -> Result<(), Box<dyn Error>> {
         let tmp = std::env::temp_dir();
-        let mut segment = super::LogSegment::new(0, 1024 * 1024, tmp.as_path())?;
+        let log = test_util::terminal_logger();
+        let mut segment = super::LogSegment::new(log, 0, 1024 * 1024, tmp.as_path())?;
         segment.status = Status::ReadWrite;
 
         let log = test_util::terminal_logger();

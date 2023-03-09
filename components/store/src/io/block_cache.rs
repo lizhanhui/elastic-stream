@@ -1,5 +1,6 @@
 use std::{cell::UnsafeCell, collections::BTreeMap, rc::Rc, sync::Arc, time::Instant};
 
+use slog::{info, trace, Logger};
 use thiserror::Error;
 
 use super::buf::AlignedBuf;
@@ -29,19 +30,27 @@ impl Entry {
 
 #[derive(Debug)]
 pub(crate) struct BlockCache {
+    log: Logger,
     offset: u64,
     entries: BTreeMap<u32, Rc<UnsafeCell<Entry>>>,
 }
 
 impl BlockCache {
-    pub(crate) fn new(offset: u64) -> Self {
+    pub(crate) fn new(log: Logger, offset: u64) -> Self {
         Self {
+            log,
             offset,
             entries: BTreeMap::new(),
         }
     }
 
     pub(crate) fn add_entry(&mut self, buf: Arc<AlignedBuf>) {
+        trace!(
+            self.log,
+            "Add block cache entry: [{}, {})",
+            buf.offset,
+            buf.offset + buf.write_pos() as u64
+        );
         debug_assert!(buf.offset >= self.offset);
         let from = (buf.offset - self.offset) as u32;
         let entry = Rc::new(UnsafeCell::new(Entry::new(buf)));
@@ -80,7 +89,17 @@ impl BlockCache {
     {
         self.entries.drain_filter(|_k, v| {
             let entry = unsafe { &*v.get() };
-            pred(entry)
+            if pred(entry) {
+                info!(
+                    self.log,
+                    "Remove block cache entry [{}, {})",
+                    entry.buf.offset,
+                    entry.buf.offset + entry.buf.write_pos() as u64
+                );
+                true
+            } else {
+                false
+            }
         });
     }
 }
@@ -97,7 +116,7 @@ mod tests {
     #[test]
     fn test_hit() -> Result<(), Box<dyn Error>> {
         let log = test_util::terminal_logger();
-        let mut block_cache = super::BlockCache::new(0);
+        let mut block_cache = super::BlockCache::new(log.clone(), 0);
         let block_size = 4096;
         for n in (0..16).into_iter() {
             let buf = Arc::new(AlignedBuf::new(

@@ -82,7 +82,8 @@ impl Wal {
                         let path = entry.path();
                         let path = path.as_path();
                         if let Some(offset) = LogSegment::parse_offset(path) {
-                            let log_segment_file = LogSegment::new(offset, metadata.len(), path);
+                            let log_segment_file =
+                                LogSegment::new(self.log.clone(), offset, metadata.len(), path);
                             Some(log_segment_file)
                         } else {
                             error!(
@@ -314,7 +315,7 @@ impl Wal {
         let path = Path::new(&dir.path);
         let path = path.join(LogSegment::format(offset));
 
-        let segment = LogSegment::new(offset, self.file_size, path.as_path())?;
+        let segment = LogSegment::new(self.log.clone(), offset, self.file_size, path.as_path())?;
 
         Ok(segment)
     }
