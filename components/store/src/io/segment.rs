@@ -334,7 +334,7 @@ mod tests {
         let mut segment = super::LogSegment::new(0, 1024 * 1024, tmp.as_path())?;
         segment.status = Status::ReadWrite;
 
-        let log = util::terminal_logger();
+        let log = test_util::terminal_logger();
         let mut buf_writer = AlignedBufWriter::new(log, 0, 512);
         buf_writer.reserve(1024)?;
 

@@ -1,11 +1,9 @@
 use byteorder::ReadBytesExt;
 use bytes::{Buf, BufMut, Bytes, BytesMut};
-use crc::Crc;
-use crc32fast::Hasher;
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 use slog::{trace, warn, Logger};
 use std::cell::RefCell;
-use std::fmt::{self, format, Display};
+use std::fmt::{self, Display};
 use std::io::Cursor;
 
 use crate::error::FrameError;
@@ -16,8 +14,6 @@ pub(crate) const MIN_FRAME_LENGTH: u32 = 16;
 
 // Max frame length 16MB
 pub(crate) const MAX_FRAME_LENGTH: u32 = 16 * 1024 * 1024;
-
-const CRC32: Crc<u32> = Crc::<u32>::new(&crc::CRC_32_ISO_HDLC);
 
 thread_local! {
     static STREAM_ID: RefCell<u32> = RefCell::new(1);
@@ -69,12 +65,6 @@ impl Frame {
 
     pub fn flag_system_err(&mut self) {
         self.flag |= 0x07;
-    }
-
-    fn crc32(payload: &[u8]) -> u32 {
-        let mut hasher = Hasher::new();
-        hasher.update(payload);
-        hasher.finalize()
     }
 
     pub fn check(src: &mut Cursor<&[u8]>, logger: &mut Logger) -> Result<(), FrameError> {
@@ -189,7 +179,7 @@ impl Frame {
 
         if let Some(body) = payload {
             let checksum = src.get_u32();
-            let ckm = Frame::crc32(body.as_ref());
+            let ckm = util::crc32::crc32(body.as_ref());
             if checksum != ckm {
                 warn!(
                     logger,
@@ -310,12 +300,10 @@ impl Frame {
         encode_result.push(basic_part.freeze());
 
         if let Some(payload) = &self.payload {
-            let mut hasher = Hasher::new();
             for p in payload {
                 encode_result.push(p.clone());
-                hasher.update(p);
             }
-            let checksum = hasher.finalize();
+            let checksum = util::crc32::crc32_vectored(payload.iter());
             encode_result.push(Bytes::copy_from_slice(&checksum.to_be_bytes()[..]));
         } else {
             // Dummy checksum
@@ -599,7 +587,7 @@ mod tests {
         let body = buf.copy_to_bytes(3);
         assert_eq!(b"abc", body.as_ref());
         // checksum
-        assert_eq!(Frame::crc32(b"abc"), buf.get_u32());
+        assert_eq!(util::crc32::crc32(b"abc"), buf.get_u32());
         assert_eq!(0, buf.remaining());
         assert_eq!(0, buf.len());
     }

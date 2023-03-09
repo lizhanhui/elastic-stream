@@ -537,7 +537,7 @@ mod tests {
     use super::Wal;
 
     fn create_wal(wal_dir: WalPath) -> Result<Wal, StoreError> {
-        let logger = util::terminal_logger();
+        let logger = test_util::terminal_logger();
         let control_ring = io_uring::IoUring::builder().dontfork().build(32).map_err(|e| {
             error!(logger, "Failed to build I/O Uring instance for write-ahead-log segment file management: {:#?}", e);
             StoreError::IoUring
@@ -555,7 +555,7 @@ mod tests {
     }
 
     fn random_wal_dir() -> Result<PathBuf, StoreError> {
-        util::create_random_path().map_err(|e| StoreError::IO(e))
+        test_util::create_random_path().map_err(|e| StoreError::IO(e))
     }
 
     #[test]
@@ -572,8 +572,8 @@ mod tests {
             .collect();
         assert_eq!(10, files.len());
 
-        let log = util::terminal_logger();
-        let _wal_dir_guard = util::DirectoryRemovalGuard::new(log, wal_dir.as_path());
+        let log = test_util::terminal_logger();
+        let _wal_dir_guard = test_util::DirectoryRemovalGuard::new(log, wal_dir.as_path());
         let wal_dir = super::WalPath::new(wal_dir.to_str().unwrap(), 1234)?;
 
         let mut wal = create_wal(wal_dir)?;
@@ -585,8 +585,8 @@ mod tests {
     #[test]
     fn test_alloc_segment() -> Result<(), StoreError> {
         let wal_dir = random_wal_dir()?;
-        let log = util::terminal_logger();
-        let _wal_dir_guard = util::DirectoryRemovalGuard::new(log, wal_dir.as_path());
+        let log = test_util::terminal_logger();
+        let _wal_dir_guard = test_util::DirectoryRemovalGuard::new(log, wal_dir.as_path());
         let mut wal = create_wal(super::WalPath::new(wal_dir.to_str().unwrap(), 1234)?)?;
         let segment = wal.alloc_segment()?;
         assert_eq!(0, segment.offset);
@@ -600,8 +600,8 @@ mod tests {
     #[test]
     fn test_writable_segment_count() -> Result<(), StoreError> {
         let wal_dir = random_wal_dir()?;
-        let log = util::terminal_logger();
-        let _wal_dir_guard = util::DirectoryRemovalGuard::new(log, wal_dir.as_path());
+        let log = test_util::terminal_logger();
+        let _wal_dir_guard = test_util::DirectoryRemovalGuard::new(log, wal_dir.as_path());
         let mut wal = create_wal(super::WalPath::new(wal_dir.to_str().unwrap(), 1234)?)?;
         let segment = wal.alloc_segment()?;
         wal.segments.push_back(segment);
@@ -619,8 +619,8 @@ mod tests {
     #[test]
     fn test_segment_file_of() -> Result<(), StoreError> {
         let wal_dir = random_wal_dir()?;
-        let log = util::terminal_logger();
-        let _wal_dir_guard = util::DirectoryRemovalGuard::new(log, wal_dir.as_path());
+        let log = test_util::terminal_logger();
+        let _wal_dir_guard = test_util::DirectoryRemovalGuard::new(log, wal_dir.as_path());
         let mut wal = create_wal(super::WalPath::new(wal_dir.to_str().unwrap(), 1234)?)?;
         let file_size = wal.file_size;
         let segment = wal.alloc_segment()?;
@@ -650,8 +650,8 @@ mod tests {
     #[test]
     fn test_delete_segments() -> Result<(), Box<dyn Error>> {
         let wal_dir = random_wal_dir()?;
-        let log = util::terminal_logger();
-        let _wal_dir_guard = util::DirectoryRemovalGuard::new(log, wal_dir.as_path());
+        let log = test_util::terminal_logger();
+        let _wal_dir_guard = test_util::DirectoryRemovalGuard::new(log, wal_dir.as_path());
         let mut wal = create_wal(super::WalPath::new(wal_dir.to_str().unwrap(), 1234)?)?;
         let segment = wal.alloc_segment()?;
         wal.segments.push_back(segment);
@@ -671,9 +671,9 @@ mod tests {
 
     #[test]
     fn test_calculate_write_buffers() -> Result<(), StoreError> {
-        let log = util::terminal_logger();
+        let log = test_util::terminal_logger();
         let wal_dir = random_wal_dir()?;
-        let _wal_dir_guard = util::DirectoryRemovalGuard::new(log, wal_dir.as_path());
+        let _wal_dir_guard = test_util::DirectoryRemovalGuard::new(log, wal_dir.as_path());
         let mut wal = create_wal(super::WalPath::new(wal_dir.to_str().unwrap(), 1234)?)?;
         (0..3)
             .into_iter()

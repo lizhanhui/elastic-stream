@@ -446,9 +446,9 @@ mod tests {
     }
 
     fn new_indexer() -> Result<super::Indexer, Box<dyn Error>> {
-        let log = util::terminal_logger();
-        let path = util::create_random_path()?;
-        let _guard = util::DirectoryRemovalGuard::new(log.clone(), path.as_path());
+        let log = test_util::terminal_logger();
+        let path = test_util::create_random_path()?;
+        let _guard = test_util::DirectoryRemovalGuard::new(log.clone(), path.as_path());
         let path_str = path.as_os_str().to_str().unwrap();
         let min_offset = Rc::new(SampleMinOffset {
             min: AtomicU64::new(0),
@@ -499,9 +499,9 @@ mod tests {
 
     #[test]
     fn test_compaction() -> Result<(), Box<dyn Error>> {
-        let log = util::terminal_logger();
-        let path = util::create_random_path()?;
-        let _guard = util::DirectoryRemovalGuard::new(log.clone(), path.as_path());
+        let log = test_util::terminal_logger();
+        let path = test_util::create_random_path()?;
+        let _guard = test_util::DirectoryRemovalGuard::new(log.clone(), path.as_path());
         let path_str = path.as_os_str().to_str().unwrap();
         let min_offset = Rc::new(SampleMinOffset {
             min: AtomicU64::new(0),

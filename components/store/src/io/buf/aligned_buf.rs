@@ -159,7 +159,7 @@ mod tests {
 
     #[test]
     fn test_aligned_buf() -> Result<(), Box<dyn Error>> {
-        let log = util::terminal_logger();
+        let log = test_util::terminal_logger();
         let alignment = 4096;
         let buf = AlignedBuf::new(log.clone(), 0, 128, alignment)?;
         assert_eq!(alignment, buf.remaining());

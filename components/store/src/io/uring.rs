@@ -815,7 +815,7 @@ mod tests {
 
     fn create_io(store_dir: &Path) -> Result<super::IO, StoreError> {
         let mut options = super::Options::default();
-        let logger = util::terminal_logger();
+        let logger = test_util::terminal_logger();
         let store_path = store_dir.join("rocksdb");
         if !store_path.exists() {
             fs::create_dir_all(store_path.as_path()).map_err(|e| StoreError::IO(e))?;
@@ -836,15 +836,15 @@ mod tests {
     }
 
     fn random_store_dir() -> Result<PathBuf, StoreError> {
-        util::create_random_path().map_err(|e| StoreError::IO(e))
+        test_util::create_random_path().map_err(|e| StoreError::IO(e))
     }
 
     #[test]
     fn test_receive_io_tasks() -> Result<(), StoreError> {
-        let log = util::terminal_logger();
+        let log = test_util::terminal_logger();
         let store_dir = random_store_dir()?;
         let store_dir = store_dir.as_path();
-        let _store_dir_guard = util::DirectoryRemovalGuard::new(log, store_dir);
+        let _store_dir_guard = test_util::DirectoryRemovalGuard::new(log, store_dir);
         let mut io = create_io(store_dir)?;
         let sender = io.sender.take().unwrap();
         let mut buffer = BytesMut::with_capacity(128);
@@ -885,10 +885,10 @@ mod tests {
 
     #[test]
     fn test_build_sqe() -> Result<(), StoreError> {
-        let log = util::terminal_logger();
+        let log = test_util::terminal_logger();
         let store_dir = random_store_dir()?;
         let store_dir = store_dir.as_path();
-        let _store_dir_guard = util::DirectoryRemovalGuard::new(log, store_dir);
+        let _store_dir_guard = test_util::DirectoryRemovalGuard::new(log, store_dir);
         let mut io = create_io(store_dir)?;
 
         io.wal.open_segment()?;
@@ -923,14 +923,14 @@ mod tests {
 
     #[test]
     fn test_run() -> Result<(), Box<dyn Error>> {
-        let log = util::terminal_logger();
+        let log = test_util::terminal_logger();
 
         let (tx, rx) = oneshot::channel();
         let logger = log.clone();
         let handle = std::thread::spawn(move || {
             let store_dir = random_store_dir().unwrap();
             let store_dir = store_dir.as_path();
-            let _store_dir_guard = util::DirectoryRemovalGuard::new(logger, store_dir);
+            let _store_dir_guard = test_util::DirectoryRemovalGuard::new(logger, store_dir);
             let mut io = create_io(store_dir).unwrap();
 
             let sender = io

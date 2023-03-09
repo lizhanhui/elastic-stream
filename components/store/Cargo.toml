@@ -34,6 +34,7 @@ slog-term =  { workspace = true }
 cargo-llvm-cov = { workspace = true }
 uuid = { workspace = true }
 criterion = { workspace = true }
+test-util = { path = "../test-util" }
 
 
 [profile.bench]

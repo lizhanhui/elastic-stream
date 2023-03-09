@@ -42,10 +42,10 @@ mod tests {
 
     #[test]
     fn test_rocksdb_setup() -> Result<(), Box<dyn Error>> {
-        let log = util::terminal_logger();
-        let data_path = util::create_random_path()?;
+        let log = test_util::terminal_logger();
+        let data_path = test_util::create_random_path()?;
         let db_path = data_path.as_path();
-        let _dir_guard = util::DirectoryRemovalGuard::new(log.clone(), &db_path);
+        let _dir_guard = test_util::DirectoryRemovalGuard::new(log.clone(), &db_path);
 
         let mut cf_opts = Options::default();
         cf_opts.enable_statistics();

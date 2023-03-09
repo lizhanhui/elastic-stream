@@ -158,9 +158,9 @@ mod tests {
 
     #[test]
     fn test_index_driver() -> Result<(), Box<dyn Error>> {
-        let log = util::terminal_logger();
-        let db_path = util::create_random_path()?;
-        let _dir_guard = util::DirectoryRemovalGuard::new(log.clone(), db_path.as_path());
+        let log = test_util::terminal_logger();
+        let db_path = test_util::create_random_path()?;
+        let _dir_guard = test_util::DirectoryRemovalGuard::new(log.clone(), db_path.as_path());
         let min_offset = Rc::new(TestMinOffset {});
         let (tx, rx) = channel::bounded(1);
         let index_driver =

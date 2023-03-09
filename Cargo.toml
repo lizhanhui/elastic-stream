@@ -12,6 +12,7 @@ members = [
     "components/service",
     "components/store",
     "components/util",
+    "components/test-util",
     "data-node",
     "sdks/rust"
 ]
