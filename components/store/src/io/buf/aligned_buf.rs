@@ -35,10 +35,26 @@ impl AlignedBuf {
         len: usize,
         alignment: usize,
     ) -> Result<Self, StoreError> {
+        debug_assert!(len > 0, "Memory to allocate should be positive");
+        debug_assert!(alignment > 0, "Alignment should be positive");
+        debug_assert!(
+            alignment.is_power_of_two(),
+            "Alignment should be power of 2"
+        );
+
         let capacity = (len + alignment - 1) / alignment * alignment;
         let layout = Layout::from_size_align(capacity, alignment)
             .map_err(|_e| StoreError::MemoryAlignment)?;
+
+        // Safety
+        // alloc may return null if memory is exhausted or layout does not meet allocator's size or alignment constraint.
         let ptr = unsafe { alloc::alloc_zeroed(layout) };
+
+        if ptr.is_null() {
+            // Crash eagerly to facilitate root-cause-analysis.
+            return Err(StoreError::OutOfMemory);
+        }
+
         Ok(Self {
             log,
             offset,

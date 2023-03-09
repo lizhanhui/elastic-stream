@@ -48,6 +48,9 @@ pub enum StoreError {
     #[error("Memory alignment issue")]
     MemoryAlignment,
 
+    #[error("Memory exhausted")]
+    OutOfMemory,
+
     #[error("Internal error: `{0}`")]
     Internal(String),
 
