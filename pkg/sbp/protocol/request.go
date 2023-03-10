@@ -62,7 +62,6 @@ func (l *ListRangesRequest) unmarshalFlatBuffer(data []byte) error {
 	return nil
 }
 
-//nolint:revive // EXC0012 comment already exists in interface
 func (l *ListRangesRequest) Unmarshal(fmt format.Format, data []byte) error {
 	return unmarshal(l, fmt, data)
 }

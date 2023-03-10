@@ -76,7 +76,6 @@ func (se *SystemErrorResponse) marshalFlatBuffer() ([]byte, error) {
 	return fbutil.Marshal(se.SystemErrorResponseT), nil
 }
 
-//nolint:revive // EXC0012 comment already exists in interface
 func (se *SystemErrorResponse) Marshal(fmt format.Format) ([]byte, error) {
 	return marshal(se, fmt)
 }
@@ -95,12 +94,10 @@ func (lr *ListRangesResponse) marshalFlatBuffer() ([]byte, error) {
 	return fbutil.Marshal(lr.ListRangesResponseT), nil
 }
 
-//nolint:revive // EXC0012 comment already exists in interface
 func (lr *ListRangesResponse) Marshal(fmt format.Format) ([]byte, error) {
 	return marshal(lr, fmt)
 }
 
-//nolint:revive // EXC0012 comment already exists in interface
 func (lr *ListRangesResponse) IsEnd() bool {
 	return !lr.HasNext
 }
