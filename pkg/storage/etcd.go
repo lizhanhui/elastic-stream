@@ -16,6 +16,7 @@ package storage
 
 import (
 	clientv3 "go.etcd.io/etcd/client/v3"
+	"go.uber.org/zap"
 
 	"github.com/AutoMQ/placement-manager/pkg/storage/endpoint"
 	"github.com/AutoMQ/placement-manager/pkg/storage/kv"
@@ -27,8 +28,9 @@ type Etcd struct {
 }
 
 // NewEtcd creates a new etcd storage.
-func NewEtcd(client *clientv3.Client, rootPath string) *Etcd {
+func NewEtcd(client *clientv3.Client, rootPath string, lg *zap.Logger) *Etcd {
+	logger := lg.With(zap.String("etcd-storage-root-path", rootPath))
 	return &Etcd{
-		endpoint.NewEndpoint(kv.NewEtcd(client, rootPath)),
+		endpoint.NewEndpoint(kv.NewEtcd(client, rootPath), logger),
 	}
 }

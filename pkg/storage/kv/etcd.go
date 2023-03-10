@@ -23,10 +23,6 @@ import (
 	"github.com/AutoMQ/placement-manager/pkg/util/etcdutil"
 )
 
-var (
-	_separator = []byte("/")
-)
-
 // Etcd is a kv based on etcd.
 type Etcd struct {
 	client   *clientv3.Client
@@ -117,25 +113,15 @@ func (e *Etcd) Delete(k []byte) ([]byte, error) {
 	return prevValue, nil
 }
 
-func (e *Etcd) GetPrefixRangeEnd(prefix []byte) []byte {
-	end := make([]byte, len(prefix))
-	copy(end, prefix)
-	for i := len(end) - 1; i >= 0; i-- {
-		if end[i] < 0xff {
-			end[i]++
-			end = end[:i+1]
-			return end
-		}
-	}
-	// next prefix does not exist (e.g., 0xffff);
-	// default to clientv3.WithFromKey policy
-	return []byte{0}
+func (e *Etcd) GetPrefixRangeEnd(p []byte) []byte {
+	prefix := e.addPrefix(p)
+	return []byte(clientv3.GetPrefixRangeEnd(string(prefix)))
 }
 
 func (e *Etcd) addPrefix(k []byte) []byte {
-	return bytes.Join([][]byte{e.rootPath, k}, _separator)
+	return bytes.Join([][]byte{e.rootPath, k}, []byte(KeySeparator))
 }
 
 func (e *Etcd) trimPrefix(k []byte) []byte {
-	return k[len(e.rootPath)+len(_separator):]
+	return k[len(e.rootPath)+len(KeySeparator):]
 }

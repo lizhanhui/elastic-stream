@@ -15,6 +15,8 @@
 package endpoint
 
 import (
+	"go.uber.org/zap"
+
 	"github.com/AutoMQ/placement-manager/pkg/storage/kv"
 )
 
@@ -23,10 +25,11 @@ import (
 // which provides the default implementations for all kinds of storages.
 type Endpoint struct {
 	kv.KV
+	lg *zap.Logger
 }
 
 // NewEndpoint creates a new base storage endpoint with the given KV.
 // It should be embedded inside a storage backend.
-func NewEndpoint(kv kv.KV) *Endpoint {
-	return &Endpoint{kv}
+func NewEndpoint(kv kv.KV, logger *zap.Logger) *Endpoint {
+	return &Endpoint{kv, logger}
 }

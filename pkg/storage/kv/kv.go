@@ -14,6 +14,11 @@
 
 package kv
 
+const (
+	// KeySeparator is the separator in keys
+	KeySeparator = "/"
+)
+
 // Range represents a range of keys.
 type Range struct {
 	StartKey []byte
