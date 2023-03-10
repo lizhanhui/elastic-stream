@@ -364,33 +364,38 @@ impl IO {
                         );
                         let file_offset = buf.offset - segment.offset;
 
-                        // Note we have to write the whole page even if the page is partially filled.
-                        let sqe = opcode::Write::new(types::Fd(sd.fd), ptr, buf.capacity as u32)
-                            .offset64(file_offset as libc::off_t)
-                            .build();
-
                         // Track write requests
                         self.write_window.add(buf.offset, buf.write_pos() as u32)?;
 
+                        let mut io_blocked = false;
                         // Check barrier
                         if self.barrier.contains(&buf.offset) {
                             // Submit SQE to io_uring when the blocking IO task completed.
-                            let buf_offset = buf.offset;
-                            let context = Context::write_ctx(opcode::Write::CODE, buf);
-                            let static_ref = Box::into_raw(Box::new(context));
-                            let sqe = sqe.user_data(static_ref as u64);
-                            self.blocked.insert(buf_offset, sqe);
+                            io_blocked = true;
                         } else {
                             // Insert barrier, blocking future write to this aligned block issued to `io_uring` until `sqe` is reaped.
                             if buf.partial() {
                                 self.barrier.insert(buf.offset);
                             }
-                            let context = Context::write_ctx(opcode::Write::CODE, buf);
-                            let static_ref = Box::into_raw(Box::new(context));
-                            // Consumes the `Context`, returning a wrapped raw pointer.
-                            // The pointer will be set into user_data of uring.
-                            // When the uring io completes, the pointer will be used to retrieve the `Context`.
-                            let sqe = sqe.user_data(static_ref as u64);
+                        }
+
+                        let buf_offset = buf.offset;
+                        let buf_len = buf.capacity as u32;
+                        let context = Context::write_ctx(opcode::Write::CODE, buf);
+                        // Consumes the `Context`, returning a wrapped raw pointer.
+                        // The pointer will be set into user_data of uring.
+                        // When the uring io completes, the pointer will be used to retrieve the `Context`.
+                        let static_ref = Box::into_raw(Box::new(context));
+
+                        // Note we have to write the whole page even if the page is partially filled.
+                        let sqe = opcode::Write::new(types::Fd(sd.fd), ptr, buf_len)
+                            .offset64(file_offset as libc::off_t)
+                            .build()
+                            .user_data(static_ref as u64);
+
+                        if io_blocked {
+                            self.blocked.insert(buf_offset, sqe);
+                        } else {
                             entries.push(sqe);
                         }
                     } else {
