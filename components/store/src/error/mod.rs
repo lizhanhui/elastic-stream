@@ -74,7 +74,13 @@ pub enum StoreError {
 }
 
 #[derive(Debug, Error)]
-pub enum FetchError {}
+pub enum FetchError {
+    #[error("Failed to submit AppendRecordRequest")]
+    SubmissionQueue,
+
+    #[error("Recv from oneshot channel failed")]
+    ChannelRecv,
+}
 
 #[derive(Debug, Error)]
 pub enum AppendError {

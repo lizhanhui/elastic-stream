@@ -9,9 +9,10 @@ use crate::{
     io::{
         self,
         task::{
-            IoTask::{self, Write},
+            IoTask::{self, Read, Write},
             WriteTask,
         },
+        ReadTask,
     },
     ops::{append::AppendResult, fetch::FetchResult, Append, Fetch, Scan},
     option::{ReadOptions, WalPath, WriteOptions},
@@ -142,6 +143,32 @@ impl ElasticStore {
             }
         }
     }
+
+    /// Send fetch request to IO module.
+    ///
+    /// * `options` - Fetch options, which includes target stream_id, logical offset and max_bytes to read.
+    /// * `observer` - Oneshot sender, used to return `FetchResult` or propagate error.
+    fn do_fecth(
+        &self,
+        options: ReadOptions,
+        observer: oneshot::Sender<Result<FetchResult, FetchError>>,
+    ) {
+        let task = ReadTask {
+            stream_id: options.stream_id,
+            offset: options.offset as u64,
+            len: options.max_bytes as u32,
+            observer,
+        };
+
+        let io_task = Read(task);
+        if let Err(e) = self.tx.send(io_task) {
+            if let Read(task) = e.0 {
+                if let Err(e) = task.observer.send(Err(FetchError::SubmissionQueue)) {
+                    error!(self.log, "Failed to propagate error: {:?}", e);
+                }
+            }
+        }
+    }
 }
 
 impl Store for ElasticStore {
@@ -170,12 +197,14 @@ impl Store for ElasticStore {
     where
         <Self as Store>::FetchOp: Future<Output = Result<FetchResult, FetchError>>,
     {
+        let (sender, receiver) = oneshot::channel();
+        self.do_fecth(options, sender);
+
         let inner = async {
-            Ok(FetchResult {
-                stream_id: 0,
-                offset: 0,
-                payload: todo!(),
-            })
+            match receiver.await.map_err(|_e| FetchError::ChannelRecv) {
+                Ok(res) => res,
+                Err(e) => Err(e),
+            }
         };
 
         Fetch { inner }
