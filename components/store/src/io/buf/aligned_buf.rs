@@ -2,7 +2,8 @@ use slog::{debug, Logger};
 use std::{
     alloc::{self, Layout},
     ops::{Bound, RangeBounds},
-    ptr, slice,
+    ptr::{self, NonNull},
+    slice,
     sync::atomic::{AtomicUsize, Ordering},
 };
 
@@ -19,9 +20,10 @@ pub(crate) struct AlignedBuf {
     pub(crate) offset: u64,
 
     /// Pointer to the allocated memory
-    /// TODO: use std::mem::NonNull
-    ptr: *mut u8,
+    ptr: NonNull<u8>,
+
     layout: Layout,
+
     pub(crate) capacity: usize,
 
     /// Write index
@@ -50,10 +52,13 @@ impl AlignedBuf {
         // alloc may return null if memory is exhausted or layout does not meet allocator's size or alignment constraint.
         let ptr = unsafe { alloc::alloc_zeroed(layout) };
 
-        if ptr.is_null() {
-            // Crash eagerly to facilitate root-cause-analysis.
-            return Err(StoreError::OutOfMemory);
-        }
+        let ptr = match NonNull::<u8>::new(ptr) {
+            Some(ptr) => ptr,
+            None => {
+                // Crash eagerly to facilitate root-cause-analysis.
+                return Err(StoreError::OutOfMemory);
+            }
+        };
 
         Ok(Self {
             log,
@@ -96,7 +101,7 @@ impl AlignedBuf {
         if self.written.load(Ordering::Relaxed) - pos < std::mem::size_of::<u32>() {
             return Err(StoreError::InsufficientData);
         }
-        let value = unsafe { *(self.ptr.offset(pos as isize) as *const u32) };
+        let value = unsafe { *(self.ptr.as_ptr().offset(pos as isize) as *const u32) };
         Ok(u32::from_be(value))
     }
 
@@ -115,12 +120,12 @@ impl AlignedBuf {
             return Err(StoreError::InsufficientData);
         }
 
-        let value = unsafe { *(self.ptr.offset(pos as isize) as *const u64) };
+        let value = unsafe { *(self.ptr.as_ptr().offset(pos as isize) as *const u64) };
         Ok(u64::from_be(value))
     }
 
     pub(crate) fn as_ptr(&self) -> *const u8 {
-        self.ptr as *const u8
+        self.ptr.as_ptr() as *const u8
     }
 
     pub(crate) fn slice<R>(&self, range: R) -> &[u8]
@@ -138,8 +143,7 @@ impl AlignedBuf {
             Bound::Unbounded => self.written.load(Ordering::Relaxed),
         };
         let len = end - start;
-
-        unsafe { slice::from_raw_parts(self.ptr.offset(start as isize) as *const u8, len) }
+        unsafe { slice::from_raw_parts(self.ptr.as_ptr().offset(start as isize) as *const u8, len) }
     }
 
     pub(crate) fn write_buf(&self, buf: &[u8]) -> bool {
@@ -147,7 +151,13 @@ impl AlignedBuf {
         if pos + buf.len() > self.capacity {
             return false;
         }
-        unsafe { ptr::copy_nonoverlapping(buf.as_ptr(), self.ptr.offset(pos as isize), buf.len()) };
+        unsafe {
+            ptr::copy_nonoverlapping(
+                buf.as_ptr(),
+                self.ptr.as_ptr().offset(pos as isize),
+                buf.len(),
+            )
+        };
         self.written.fetch_add(buf.len(), Ordering::Relaxed);
         true
     }
@@ -167,7 +177,7 @@ impl AlignedBuf {
 /// Return the memory back to allocator.
 impl Drop for AlignedBuf {
     fn drop(&mut self) {
-        unsafe { alloc::dealloc(self.ptr, self.layout) };
+        unsafe { alloc::dealloc(self.ptr.as_ptr(), self.layout) };
         debug!(
             self.log,
             "Deallocated `AlignedBuf`: (offset={}, written: {}, capacity: {})",
@@ -209,5 +219,28 @@ mod tests {
         let payload = std::str::from_utf8(buf.slice(12..))?;
         assert_eq!(payload, msg);
         Ok(())
+    }
+
+    #[derive(Debug, Clone, Copy)]
+    struct Foo {
+        i: usize,
+    }
+
+    impl Foo {
+        fn foo(self) -> usize {
+            self.i
+        }
+    }
+
+    #[test]
+    fn test_copy() {
+        let f = Foo { i: 1 };
+        let x = f.foo();
+        let y = f.foo();
+        let z = f.foo();
+
+        assert_eq!(1, x);
+        assert_eq!(1, y);
+        assert_eq!(1, z);
     }
 }
