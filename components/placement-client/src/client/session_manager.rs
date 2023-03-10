@@ -271,7 +271,7 @@ impl SessionManager {
         trace!(self.log, "run"; "struct" => "SessionManager");
         loop {
             if let Err(ClientError::ChannelClosing(_)) = self.poll_enqueue().await {
-                info!(self.log, "SubmitRequsetChannel is half closed");
+                info!(self.log, "SubmitRequestChannel is half closed");
                 break;
             }
         }
