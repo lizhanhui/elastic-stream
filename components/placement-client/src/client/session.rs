@@ -15,7 +15,8 @@ use tokio::sync::oneshot;
 use tokio_uring::net::TcpStream;
 use transport::channel::{ChannelReader, ChannelWriter};
 
-use crate::{client::response::Status, SessionState};
+use super::session_state::SessionState;
+use crate::client::response::Status;
 
 use super::{
     config,

@@ -1,0 +1,75 @@
+use std::{rc::Rc, time::Duration};
+
+use slog::{error, trace, warn, Logger};
+use tokio::{
+    sync::{mpsc, oneshot},
+    time,
+};
+
+use super::{config::ClientConfig, request, response};
+use crate::error::ListRangeError;
+
+pub struct PlacementClient {
+    pub(crate) tx: mpsc::UnboundedSender<(request::Request, oneshot::Sender<response::Response>)>,
+    pub(crate) log: Logger,
+    pub(crate) config: Rc<ClientConfig>,
+}
+
+impl PlacementClient {
+    pub async fn list_range(
+        &self,
+        partition_id: i64,
+        timeout: Duration,
+    ) -> Result<response::Response, ListRangeError> {
+        trace!(self.log, "list_range"; "partition-id" => partition_id);
+        let (tx, rx) = oneshot::channel();
+        let request = request::Request::ListRange { partition_id };
+        self.tx.send((request, tx)).map_err(|e| {
+            error!(self.log, "Failed to forward request. Cause: {:?}", e; "struct" => "Client");
+            ListRangeError::Internal
+        })?;
+        trace!(self.log, "Request forwarded"; "struct" => "Client");
+
+        time::timeout(timeout, rx).await.map_err(|elapsed| {
+            warn!(self.log, "Timeout when list range. {}", elapsed);
+            ListRangeError::Timeout
+        })?.map_err(|e| {
+            error!(
+                self.log,
+                "Failed to receive response from broken channel. Cause: {:?}", e; "struct" => "Client"
+            );
+            ListRangeError::Internal
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use test_util::{run_listener, terminal_logger};
+
+    use crate::{PlacementClientBuilder, error::ListRangeError};
+
+    #[test]
+    fn test_list_range() -> Result<(), ListRangeError> {
+        tokio_uring::start(async {
+            let log = terminal_logger();
+            let port = run_listener(log.clone()).await;
+            let addr = format!("dns:localhost:{}", port);
+            let client = PlacementClientBuilder::new(&addr)
+                .set_log(log)
+                .build()
+                .await
+                .map_err(|_e| ListRangeError::Internal)?;
+
+            let timeout = Duration::from_millis(100);
+
+            for i in 0..3 {
+                client.list_range(i as i64, timeout).await.unwrap();
+            }
+
+            Ok(())
+        })
+    }
+}

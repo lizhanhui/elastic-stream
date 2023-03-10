@@ -3,7 +3,7 @@ use std::fmt::Display;
 use bytes::Bytes;
 
 #[derive(Debug)]
-pub(crate) enum Request {
+pub enum Request {
     ListRange { partition_id: i64 },
 
     Heartbeat { client_id: String },

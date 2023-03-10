@@ -14,10 +14,10 @@ use crate::{client::response::Status, error::ClientError};
 
 use super::{
     config,
+    lb_policy::LBPolicy,
     naming::{self, Endpoints},
     request, response,
     session::Session,
-    LBPolicy,
 };
 
 pub struct SessionManager {
@@ -25,7 +25,7 @@ pub struct SessionManager {
     config: Rc<config::ClientConfig>,
 
     /// Receiver of SubmitRequestChannel.
-    /// It is used by `Client` to submit requst to `SessionManager`. Requests are expected to be converted into `Command`s and then
+    /// It is used by `Client` to submit request to `SessionManager`. Requests are expected to be converted into `Command`s and then
     /// forwarded to transport layer.
     rx: mpsc::UnboundedReceiver<(request::Request, oneshot::Sender<response::Response>)>,
 

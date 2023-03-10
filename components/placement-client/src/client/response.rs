@@ -1,7 +1,7 @@
 use model::range::StreamRange;
 
 #[derive(Debug, Clone, Copy)]
-pub(crate) enum Status {
+pub enum Status {
     OK,
     Cancelled,
     InvalidArgument,
@@ -21,7 +21,7 @@ pub(crate) enum Status {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) enum Response {
+pub enum Response {
     Heartbeat {
         status: Status,
     },

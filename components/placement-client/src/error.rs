@@ -1,6 +1,6 @@
 use thiserror::Error;
 
-use crate::SessionState;
+use crate::client::session_state::SessionState;
 
 #[derive(Debug, Error, PartialEq)]
 pub enum CommandError {}
