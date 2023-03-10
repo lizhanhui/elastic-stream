@@ -13,4 +13,16 @@ try_install_flatc() {
     fi
 }
 
+try_install_sccache() {
+    if [ ! -f /usr/local/bin/sccache ]; then
+        wget -O sccache.tar.gz https://github.com/mozilla/sccache/releases/download/v0.3.3/sccache-v0.3.3-x86_64-unknown-linux-musl.tar.gz
+        tar -xzvf sccache.tar.gz
+        sudo mv sccache-v0.3.3-x86_64-unknown-linux-musl/sccache /usr/local/bin/
+        rm sccache.tar.gz
+    else
+        echo "sccache exists"
+    fi
+}
+
+try_install_sccache
 try_install_flatc

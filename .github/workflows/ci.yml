@@ -16,20 +16,14 @@ jobs:
         os: [ ubuntu-latest ]
     runs-on: ${{ matrix.os }}
     env: 
-      CARGO_HOME: ~/.cargo
-      RUSTUP_HOME: ~/.rustup
+      RUSTC_WRAPPER: sccache
     steps:
     - uses: actions/checkout@v3
     - name: Cache Cargo Crates
       uses: actions/cache@v3
       with: 
         path: |
-          ~/.cargo/bin/
-          ~/.cargo/registry/index/
-          ~/.cargo/registry/cache/
-          ~/.cargo/git/db/
-          ~/.rustup
-          /usr/local/bin/flatc
+          ~/.cache/sccache
         key: ${{ runner.os }}-cargo
     - name: Install Deps
       run: |
