@@ -381,17 +381,16 @@ impl IO {
 
                         let buf_offset = buf.offset;
                         let buf_len = buf.capacity as u32;
-                        let context = Context::write_ctx(opcode::Write::CODE, buf);
-                        // Consumes the `Context`, returning a wrapped raw pointer.
+
                         // The pointer will be set into user_data of uring.
                         // When the uring io completes, the pointer will be used to retrieve the `Context`.
-                        let static_ref = Box::into_raw(Box::new(context));
+                        let context = Context::write_ctx(opcode::Write::CODE, buf);
 
                         // Note we have to write the whole page even if the page is partially filled.
                         let sqe = opcode::Write::new(types::Fd(sd.fd), ptr, buf_len)
                             .offset64(file_offset as libc::off_t)
                             .build()
-                            .user_data(static_ref as u64);
+                            .user_data(context as u64);
 
                         if io_blocked {
                             self.blocked.insert(buf_offset, sqe);
@@ -457,6 +456,8 @@ impl IO {
                         ) {
                             let ptr = buf.as_ptr() as *mut u8;
 
+                            // The pointer will be set into user_data of uring.
+                            // When the uring io completes, the pointer will be used to retrieve the `Context`.
                             let context = Context::read_ctx(
                                 opcode::Read::CODE,
                                 Arc::new(buf),
@@ -464,15 +465,10 @@ impl IO {
                                 task.len,
                             );
 
-                            // Consumes the `Context`, returning a wrapped raw pointer.
-                            // The pointer will be set into user_data of uring.
-                            // When the uring io completes, the pointer will be used to retrieve the `Context`.
-                            let static_ref = Box::into_raw(Box::new(context));
-
                             let sqe = opcode::Read::new(types::Fd(sd.fd), ptr, task.len)
                                 .offset((task.offset - segment.offset) as i64)
                                 .build()
-                                .user_data(static_ref as u64);
+                                .user_data(context as u64);
 
                             entries.push(sqe);
                         }
@@ -584,8 +580,12 @@ impl IO {
                     count += 1;
                     let tag = cqe.user_data();
 
-                    let static_ref = tag as *mut Context;
-                    let context = unsafe { Box::from_raw(static_ref) };
+                    let ptr = tag as *mut Context;
+
+                    // Safety:
+                    // It's safe to convert tag ptr back to Box<Context> as the memory pointed by ptr
+                    // is allocated by Box itself, hence, there will no alignment issue at all.
+                    let context = unsafe { Box::from_raw(ptr) };
 
                     // Remove barrier
                     self.barrier.remove(&context.buf.offset);
@@ -706,7 +706,7 @@ impl IO {
         loop {
             // Check if we need to create a new log segment
             loop {
-                if io.borrow().wal.writable_segment_count() >= min_preallocated_segment_files + 1 {
+                if io.borrow().wal.writable_segment_count() > min_preallocated_segment_files {
                     break;
                 }
                 io.borrow_mut().wal.try_open()?;

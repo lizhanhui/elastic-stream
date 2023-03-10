@@ -19,22 +19,22 @@ pub(crate) struct Context {
 
 impl Context {
     /// Create write context
-    pub(crate) fn write_ctx(opcode: u8, buf: Arc<AlignedBuf>) -> Self {
-        Self {
+    pub(crate) fn write_ctx(opcode: u8, buf: Arc<AlignedBuf>) -> *mut Self {
+        Box::into_raw(Box::new(Self {
             opcode,
             buf,
             offset: None,
             len: None,
-        }
+        }))
     }
 
     /// Create read context
-    pub(crate) fn read_ctx(opcode: u8, buf: Arc<AlignedBuf>, offset: u64, len: u32) -> Self {
-        Self {
+    pub(crate) fn read_ctx(opcode: u8, buf: Arc<AlignedBuf>, offset: u64, len: u32) -> *mut Self {
+        Box::into_raw(Box::new(Self {
             opcode,
             buf,
             offset: Some(offset),
             len: Some(len),
-        }
+        }))
     }
 }
