@@ -28,18 +28,24 @@ type KeyValue struct {
 
 // KV represents the basic interface for a key-value store.
 type KV interface {
-	// Get retrieves the value associated with the given key. If the key does not exist, it returns an error.
+	// Get retrieves the value associated with the given key.
+	// If the key does not exist, Get returns nil and no error.
+	// If the key is empty, Get returns nil and no error.
 	Get(key []byte) ([]byte, error)
 
-	// GetByRange retrieves a list of key-value pairs whose keys fall within the given range (r) and limits the
-	// number of results returned to "limit". It returns an error if the operation fails.
-	GetByRange(r Range, limit int) (kvs []KeyValue, err error)
+	// GetByRange retrieves a list of key-value pairs whose keys fall within the given range (r)
+	// and limits the number of results returned to "limit".
+	// If the Range.StartKey is empty, GetByRange returns nil and no error.
+	GetByRange(r Range, limit int64) (kvs []KeyValue, err error)
 
-	// Put sets the value for the given key. If the key already exists, it overwrites the existing value.
-	Put(key, value []byte) error
+	// Put sets the value for the given key.
+	// If the key already exists, Put overwrites the existing value and returns the old value.
+	// If the key is empty, Put does nothing, returns nil and no error.
+	Put(key, value []byte) ([]byte, error)
 
-	// Delete removes the key-value pair associated with the given key. It returns the value that was deleted or an error.
+	// Delete removes the key-value pair associated with the given key.
 	// If the key does not exist, Delete returns nil and no error.
+	// If the key is empty, Delete does nothing and returns no error.
 	Delete(key []byte) ([]byte, error)
 
 	// GetPrefixRangeEnd returns the end key for a prefix range query.

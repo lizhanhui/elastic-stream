@@ -15,44 +15,127 @@
 package kv
 
 import (
+	"bytes"
+
+	"github.com/pkg/errors"
 	clientv3 "go.etcd.io/etcd/client/v3"
+
+	"github.com/AutoMQ/placement-manager/pkg/util/etcdutil"
+)
+
+var (
+	_separator = []byte("/")
 )
 
 // Etcd is a kv based on etcd.
 type Etcd struct {
 	client   *clientv3.Client
-	rootPath string
+	rootPath []byte
 }
 
 // NewEtcd creates a new etcd kv.
 func NewEtcd(client *clientv3.Client, rootPath string) *Etcd {
 	return &Etcd{
 		client:   client,
-		rootPath: rootPath,
+		rootPath: []byte(rootPath),
 	}
 }
 
-func (e Etcd) Get(key []byte) ([]byte, error) {
-	//TODO implement me
-	panic("implement me")
+func (e *Etcd) Get(k []byte) ([]byte, error) {
+	if len(k) == 0 {
+		return nil, nil
+	}
+	key := e.addPrefix(k)
+
+	kv, err := etcdutil.GetOne(e.client, key)
+	if err != nil {
+		return nil, errors.Wrap(err, "kv get")
+	}
+
+	return kv.Value, nil
 }
 
-func (e Etcd) GetByRange(r Range, limit int) (kvs []KeyValue, err error) {
-	//TODO implement me
-	panic("implement me")
+func (e *Etcd) GetByRange(r Range, limit int64) ([]KeyValue, error) {
+	if len(r.StartKey) == 0 {
+		return nil, nil
+	}
+
+	startKey := e.addPrefix(r.StartKey)
+	endKey := e.addPrefix(r.EndKey)
+
+	resp, err := etcdutil.Get(e.client, startKey, clientv3.WithRange(string(endKey)), clientv3.WithLimit(limit))
+	if err != nil {
+		return nil, errors.Wrap(err, "kv get by range")
+	}
+
+	kvs := make([]KeyValue, 0, len(resp.Kvs))
+	for _, kv := range resp.Kvs {
+		kvs = append(kvs, KeyValue{
+			Key:   e.trimPrefix(kv.Key),
+			Value: kv.Value,
+		})
+	}
+	return kvs, nil
 }
 
-func (e Etcd) Put(key, value []byte) error {
-	//TODO implement me
-	panic("implement me")
+func (e *Etcd) Put(k, v []byte) ([]byte, error) {
+	if len(k) == 0 {
+		return nil, nil
+	}
+	key := e.addPrefix(k)
+
+	resp, err := etcdutil.Put(e.client, key, v, clientv3.WithPrevKV())
+	if err != nil {
+		return nil, errors.Wrap(err, "kv put")
+	}
+
+	var prevValue []byte
+	if resp.PrevKv != nil {
+		prevValue = resp.PrevKv.Value
+	}
+	return prevValue, nil
 }
 
-func (e Etcd) Delete(key []byte) ([]byte, error) {
-	//TODO implement me
-	panic("implement me")
+func (e *Etcd) Delete(k []byte) ([]byte, error) {
+	if len(k) == 0 {
+		return nil, nil
+	}
+	key := e.addPrefix(k)
+
+	resp, err := etcdutil.Delete(e.client, key, clientv3.WithPrevKV())
+	if err != nil {
+		return nil, errors.Wrap(err, "kv delete")
+	}
+
+	var prevValue []byte
+	for _, kv := range resp.PrevKvs {
+		if bytes.Equal(kv.Key, key) {
+			prevValue = kv.Value
+			break
+		}
+	}
+	return prevValue, nil
 }
 
-func (e Etcd) GetPrefixRangeEnd(prefix []byte) []byte {
-	//TODO implement me
-	panic("implement me")
+func (e *Etcd) GetPrefixRangeEnd(prefix []byte) []byte {
+	end := make([]byte, len(prefix))
+	copy(end, prefix)
+	for i := len(end) - 1; i >= 0; i-- {
+		if end[i] < 0xff {
+			end[i]++
+			end = end[:i+1]
+			return end
+		}
+	}
+	// next prefix does not exist (e.g., 0xffff);
+	// default to clientv3.WithFromKey policy
+	return []byte{0}
+}
+
+func (e *Etcd) addPrefix(k []byte) []byte {
+	return bytes.Join([][]byte{e.rootPath, k}, _separator)
+}
+
+func (e *Etcd) trimPrefix(k []byte) []byte {
+	return k[len(e.rootPath)+len(_separator):]
 }

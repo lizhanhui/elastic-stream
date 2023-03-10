@@ -326,14 +326,13 @@ func TestPut(t *testing.T) {
 			if tt.wantErr {
 				re.Error(err)
 				return
-			} else {
+			}
+			re.NoError(err)
+			for k, v := range tt.want {
+				resp, err := kv.Get(context.Background(), k)
 				re.NoError(err)
-				for k, v := range tt.want {
-					resp, err := kv.Get(context.Background(), k)
-					re.NoError(err)
-					re.Len(resp.Kvs, 1)
-					re.Equal(v, string(resp.Kvs[0].Value))
-				}
+				re.Len(resp.Kvs, 1)
+				re.Equal(v, string(resp.Kvs[0].Value))
 			}
 		})
 	}
@@ -425,16 +424,15 @@ func TestDelete(t *testing.T) {
 			if tt.wantErr {
 				re.Error(err)
 				return
-			} else {
-				re.NoError(err)
-				get, err := kv.Get(context.Background(), string(tt.args.key))
-				re.NoError(err)
-				re.Len(get.Kvs, 0)
+			}
+			re.NoError(err)
+			get, err := kv.Get(context.Background(), string(tt.args.key))
+			re.NoError(err)
+			re.Len(get.Kvs, 0)
 
-				re.Len(resp.PrevKvs, len(tt.wantPrev))
-				for _, kv := range resp.PrevKvs {
-					re.Equal(tt.wantPrev[string(kv.Key)], string(kv.Value))
-				}
+			re.Len(resp.PrevKvs, len(tt.wantPrev))
+			for _, kv := range resp.PrevKvs {
+				re.Equal(tt.wantPrev[string(kv.Key)], string(kv.Value))
 			}
 		})
 	}
