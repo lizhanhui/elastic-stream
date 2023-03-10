@@ -68,9 +68,6 @@ pub(crate) struct IO {
     /// Flag indicating if the IO channel is disconnected, aka, all senders are dropped.
     channel_disconnected: bool,
 
-    tag: u64,
-    inflight_data_tasks: HashMap<u64, Context>,
-
     /// Number of inflight data tasks that are submitted to `data_uring` and not yet reaped.
     inflight: usize,
     write_inflight: usize,
@@ -207,8 +204,6 @@ impl IO {
             ),
             log,
             channel_disconnected: false,
-            tag: 0,
-            inflight_data_tasks: HashMap::new(),
             inflight: 0,
             write_inflight: 0,
             pending_data_tasks: VecDeque::new(),
@@ -368,28 +363,36 @@ impl IO {
                             buf.offset + buf.capacity as u64 <= segment.offset + segment.size
                         );
                         let file_offset = buf.offset - segment.offset;
+
                         // Note we have to write the whole page even if the page is partially filled.
                         let sqe = opcode::Write::new(types::Fd(sd.fd), ptr, buf.capacity as u32)
                             .offset64(file_offset as libc::off_t)
-                            .build()
-                            .user_data(self.tag);
+                            .build();
+
                         // Track write requests
                         self.write_window.add(buf.offset, buf.write_pos() as u32)?;
 
                         // Check barrier
                         if self.barrier.contains(&buf.offset) {
                             // Submit SQE to io_uring when the blocking IO task completed.
-                            self.blocked.insert(buf.offset, sqe);
+                            let buf_offset = buf.offset;
+                            let context = Context::write_ctx(opcode::Write::CODE, buf);
+                            let static_ref = Box::into_raw(Box::new(context));
+                            let sqe = sqe.user_data(static_ref as u64);
+                            self.blocked.insert(buf_offset, sqe);
                         } else {
                             // Insert barrier, blocking future write to this aligned block issued to `io_uring` until `sqe` is reaped.
                             if buf.partial() {
                                 self.barrier.insert(buf.offset);
                             }
+                            let context = Context::write_ctx(opcode::Write::CODE, buf);
+                            let static_ref = Box::into_raw(Box::new(context));
+                            // Consumes the `Context`, returning a wrapped raw pointer.
+                            // The pointer will be set into user_data of uring.
+                            // When the uring io completes, the pointer will be used to retrieve the `Context`.
+                            let sqe = sqe.user_data(static_ref as u64);
                             entries.push(sqe);
                         }
-                        let context = Context::write_ctx(opcode::Write::CODE, buf);
-                        self.inflight_data_tasks.insert(self.tag, context);
-                        self.tag += 1;
                     } else {
                         // fatal errors
                         let msg = format!("Segment {} should be open and with valid FD", segment);
@@ -448,12 +451,6 @@ impl IO {
                             alignment as u64,
                         ) {
                             let ptr = buf.as_ptr() as *mut u8;
-                            let sqe = opcode::Read::new(types::Fd(sd.fd), ptr, task.len)
-                                .offset((task.offset - segment.offset) as i64)
-                                .build()
-                                .user_data(self.tag);
-                            self.tag += 1;
-                            entries.push(sqe);
 
                             let context = Context::read_ctx(
                                 opcode::Read::CODE,
@@ -461,7 +458,18 @@ impl IO {
                                 task.offset,
                                 task.len,
                             );
-                            self.inflight_data_tasks.insert(self.tag, context);
+
+                            // Consumes the `Context`, returning a wrapped raw pointer.
+                            // The pointer will be set into user_data of uring.
+                            // When the uring io completes, the pointer will be used to retrieve the `Context`.
+                            let static_ref = Box::into_raw(Box::new(context));
+
+                            let sqe = opcode::Read::new(types::Fd(sd.fd), ptr, task.len)
+                                .offset((task.offset - segment.offset) as i64)
+                                .build()
+                                .user_data(static_ref as u64);
+
+                            entries.push(sqe);
                         }
                     } else {
                         self.pending_data_tasks.push_front(IoTask::Read(task));
@@ -570,25 +578,27 @@ impl IO {
                 for cqe in completion.by_ref() {
                     count += 1;
                     let tag = cqe.user_data();
-                    if let Some(state) = self.inflight_data_tasks.remove(&tag) {
-                        // Remove barrier
-                        self.barrier.remove(&state.buf.offset);
 
-                        if let Err(e) =
-                            on_complete(&mut self.write_window, &state, cqe.result(), &self.log)
-                        {
-                            if let StoreError::System(errno) = e {
-                                error!(
-                                    self.log,
-                                    "io_uring opcode `{}` failed. errno: `{}`", state.opcode, errno
-                                );
+                    let static_ref = tag as *mut Context;
+                    let context = unsafe { Box::from_raw(static_ref) };
 
-                                // TODO: Check if the errno is recoverable...
-                            }
-                        } else {
-                            // Add block cache
-                            cache_entries.push(Arc::clone(&state.buf));
+                    // Remove barrier
+                    self.barrier.remove(&context.buf.offset);
+
+                    if let Err(e) =
+                        on_complete(&mut self.write_window, &context, cqe.result(), &self.log)
+                    {
+                        if let StoreError::System(errno) = e {
+                            error!(
+                                self.log,
+                                "io_uring opcode `{}` failed. errno: `{}`", context.opcode, errno
+                            );
+
+                            // TODO: Check if the errno is recoverable...
                         }
+                    } else {
+                        // Add block cache
+                        cache_entries.push(Arc::clone(&context.buf));
                     }
                 }
                 // This will flush any entries consumed in this iterator and will make available new entries in the queue
