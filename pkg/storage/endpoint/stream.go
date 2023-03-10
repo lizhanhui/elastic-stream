@@ -31,6 +31,7 @@ type Stream interface {
 func (e *Endpoint) CreateStream(stream *rpcfb.StreamT) (*rpcfb.StreamT, error) {
 	logger := e.lg
 
+	stream.StreamId = e.nextStreamID()
 	streamInfo := fbutil.Marshal(stream)
 	prev, err := e.Put(streamPath(stream.StreamId), streamInfo)
 	mcache.Free(streamInfo)
@@ -114,6 +115,10 @@ func (e *Endpoint) forEachStreamLimited(f func(stream *rpcfb.StreamT), startID i
 		nextID = 0
 	}
 	return
+}
+
+func (e *Endpoint) nextStreamID() int64 {
+	return e.streamID.Add(1)
 }
 
 func (e *Endpoint) endStreamPath() []byte {
