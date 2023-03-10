@@ -44,6 +44,7 @@ mod io;
 mod request;
 mod store;
 
+pub use crate::io::buf::buf_slice::BufSlice;
 pub use crate::store::ElasticStore;
 pub use request::AppendRecordRequest;
 
