@@ -359,11 +359,7 @@ impl Indexer {
                 read_opts.set_iterate_upper_bound(&lower[..]);
 
                 // Reverse scan from the offset, find a lower key
-                let mut reverse_itr = self.db.iterator_cf_opt(
-                    cf,
-                    read_opts,
-                    IteratorMode::From(&lower[..], Direction::Reverse),
-                );
+                let mut reverse_itr = self.db.iterator_cf_opt(cf, read_opts, IteratorMode::End);
                 let lower_entry = reverse_itr.next();
 
                 if let Some(result) = lower_entry {
@@ -627,7 +623,6 @@ mod tests {
         indexer.index(stream_id, left_offset, &ptr);
         indexer.index(stream_id, left_offset + 2, &ptr);
         indexer.index(stream_id, left_offset + 4, &ptr);
-
 
         let mut left_key = indexer
             .retrieve_left_key(stream_id, left_offset + 1)
