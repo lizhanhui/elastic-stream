@@ -1,10 +1,12 @@
 {
     "cSpell.words": [
         "byteorder",
+        "chrono",
         "Deque",
         "errno",
         "fallocate",
         "fcntl",
+        "flatbuffers",
         "Hasher",
         "IOPOLL",
         "libc",

@@ -24,14 +24,14 @@ enum RecordMagic {
 ///  Meta => RecordBatchMeta
 ///  Records => [Record]
 ///
-/// The record scheam is given below:
+/// The record schema is given below:
 /// Record =>
 ///   MetaLength => Int32
 ///   BodyLength => Int32
 ///   Meta => RecordMeta
 ///   Body => Bytes
 ///
-/// The RecordMeta and RecordBatchMeta are under the layout of the flatbuffers schema, other contents are mananged by ourselves.
+/// The RecordMeta and RecordBatchMeta are complying with the layout of the FlatBuffers schema, other contents are managed by ourselves.
 #[derive(Debug, Default)]
 struct FlatRecordBatch {
     magic: Option<i8>,
