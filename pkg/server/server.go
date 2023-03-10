@@ -83,7 +83,6 @@ func NewServer(ctx context.Context, cfg *config.Config, logger *zap.Logger) (*Se
 		member: &member.Member{},
 		lg:     logger,
 	}
-	s.started.Store(false)
 
 	s.cfg.Etcd.ServiceRegister = func(gs *grpc.Server) {
 		kvpb.RegisterKVServer(gs, &GrpcServer{Server: s})
