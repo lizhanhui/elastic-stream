@@ -17,13 +17,16 @@ package cluster
 import (
 	"context"
 	"sync/atomic"
+	"time"
 
 	"github.com/pkg/errors"
 	"go.uber.org/zap"
 
+	"github.com/AutoMQ/placement-manager/pkg/server/cluster/cache"
 	"github.com/AutoMQ/placement-manager/pkg/server/storage"
 )
 
+// RaftCluster is used for metadata management.
 type RaftCluster struct {
 	ctx context.Context
 
@@ -34,19 +37,23 @@ type RaftCluster struct {
 
 	clusterID uint64
 	storage   storage.Storage
+	cache     *cache.Cache
 
 	lg *zap.Logger
 }
 
+// NewRaftCluster creates a new RaftCluster.
 func NewRaftCluster(ctx context.Context, clusterID uint64, storage storage.Storage, logger *zap.Logger) *RaftCluster {
 	return &RaftCluster{
 		ctx:       ctx,
 		clusterID: clusterID,
 		storage:   storage,
+		cache:     cache.NewCache(),
 		lg:        logger.With(zap.Uint64("cluster-id", clusterID)),
 	}
 }
 
+// Start starts the RaftCluster.
 func (c *RaftCluster) Start() error {
 	logger := c.lg
 	if c.IsRunning() {
@@ -63,7 +70,7 @@ func (c *RaftCluster) Start() error {
 
 	c.runningCtx, c.runningCancel = context.WithCancel(c.ctx)
 
-	err := c.LoadInfo()
+	err := c.loadInfo()
 	if err != nil {
 		logger.Error("load cluster info failed", zap.Error(err))
 		return errors.Wrap(err, "load cluster info")
@@ -78,11 +85,24 @@ func (c *RaftCluster) Start() error {
 	return nil
 }
 
-func (c *RaftCluster) LoadInfo() error {
-	// TODO
+// loadInfo loads all info from storage into cache.
+func (c *RaftCluster) loadInfo() error {
+	logger := c.lg
+
+	c.cache.Reset()
+
+	start := time.Now()
+	err := c.storage.ForEachStream(c.cache.SaveStream)
+	if err != nil {
+		return errors.Wrap(err, "load streams")
+	}
+	logger.Info("load streams", zap.Int("count", c.cache.StreamCount()), zap.Duration("cost", time.Since(start)))
+
+	// TODO load other info
 	return nil
 }
 
+// Stop stops the RaftCluster.
 func (c *RaftCluster) Stop() error {
 	logger := c.lg
 	if !c.running.Swap(false) {
@@ -97,6 +117,7 @@ func (c *RaftCluster) Stop() error {
 	return nil
 }
 
+// IsRunning returns true if the RaftCluster is running.
 func (c *RaftCluster) IsRunning() bool {
 	return c.running.Load()
 }
