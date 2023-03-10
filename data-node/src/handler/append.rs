@@ -180,7 +180,7 @@ impl<'a> Append<'a> {
                 // the current data node owns the newly writable range of the stream
 
                 // TODO: Set the offset and modify the payload
-                let offset = 0 as i64;
+                let offset = 0i64;
 
                 // Split the current batch payload from the whole payload
                 if payload.len() < batch_len as usize {
