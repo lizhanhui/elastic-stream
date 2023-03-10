@@ -32,27 +32,27 @@ func NewEtcd(client *clientv3.Client, rootPath string) *Etcd {
 	}
 }
 
-func (e *Etcd) Get(key string) (string, error) {
+func (e Etcd) Get(key []byte) ([]byte, error) {
 	//TODO implement me
 	panic("implement me")
 }
 
-func (e *Etcd) GetByRange(r Range, limit int) (kvs []KeyValue, err error) {
+func (e Etcd) GetByRange(r Range, limit int) (kvs []KeyValue, err error) {
 	//TODO implement me
 	panic("implement me")
 }
 
-func (e *Etcd) Put(key, value string) error {
+func (e Etcd) Put(key, value []byte) error {
 	//TODO implement me
 	panic("implement me")
 }
 
-func (e *Etcd) Delete(key string) error {
+func (e Etcd) Delete(key []byte) ([]byte, error) {
 	//TODO implement me
 	panic("implement me")
 }
 
-func (e *Etcd) GetPrefixRangeEnd(prefix string) string {
+func (e Etcd) GetPrefixRangeEnd(prefix []byte) []byte {
 	//TODO implement me
 	panic("implement me")
 }

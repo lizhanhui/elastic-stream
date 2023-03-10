@@ -14,42 +14,34 @@
 
 package kv
 
-import (
-	"github.com/pkg/errors"
-)
-
-var (
-	// ErrKeyNotExist is the error when the key does not exist.
-	ErrKeyNotExist = errors.New("key not exist")
-)
-
 // Range represents a range of keys.
 type Range struct {
-	StartKey string
-	EndKey   string
+	StartKey []byte
+	EndKey   []byte
 }
 
 // KeyValue represents a key-value pair.
 type KeyValue struct {
-	Key   string
-	Value string
+	Key   []byte
+	Value []byte
 }
 
 // KV represents the basic interface for a key-value store.
 type KV interface {
 	// Get retrieves the value associated with the given key. If the key does not exist, it returns an error.
-	Get(key string) (string, error)
+	Get(key []byte) ([]byte, error)
 
 	// GetByRange retrieves a list of key-value pairs whose keys fall within the given range (r) and limits the
 	// number of results returned to "limit". It returns an error if the operation fails.
 	GetByRange(r Range, limit int) (kvs []KeyValue, err error)
 
 	// Put sets the value for the given key. If the key already exists, it overwrites the existing value.
-	Put(key, value string) error
+	Put(key, value []byte) error
 
-	// Delete removes the value associated with the given key. If the key does not exist, it returns ErrKeyNotExist.
-	Delete(key string) error
+	// Delete removes the key-value pair associated with the given key. It returns the value that was deleted or an error.
+	// If the key does not exist, Delete returns nil and no error.
+	Delete(key []byte) ([]byte, error)
 
 	// GetPrefixRangeEnd returns the end key for a prefix range query.
-	GetPrefixRangeEnd(prefix string) string
+	GetPrefixRangeEnd(prefix []byte) []byte
 }

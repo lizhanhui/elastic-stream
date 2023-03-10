@@ -32,7 +32,7 @@ func TestMain(m *testing.M) {
 
 func TestGet(t *testing.T) {
 	type args struct {
-		key  string
+		key  []byte
 		opts []clientv3.OpOption
 	}
 	tests := []struct {
@@ -46,7 +46,7 @@ func TestGet(t *testing.T) {
 			name:   "get by single key",
 			preset: map[string]string{"test/key1": "val1"},
 			args: args{
-				key:  "test/key1",
+				key:  []byte("test/key1"),
 				opts: []clientv3.OpOption{},
 			},
 			want:    map[string]string{"test/key1": "val1"},
@@ -56,7 +56,7 @@ func TestGet(t *testing.T) {
 			name:   "range query",
 			preset: map[string]string{"test/key1": "val1", "test/key2": "val2", "test/key3": "val3", "test/key4": "val4"},
 			args: args{
-				key:  "test/key2",
+				key:  []byte("test/key2"),
 				opts: []clientv3.OpOption{clientv3.WithRange("test/key4")},
 			},
 			want:    map[string]string{"test/key2": "val2", "test/key3": "val3"},
@@ -66,7 +66,7 @@ func TestGet(t *testing.T) {
 			name:   "range query with limit",
 			preset: map[string]string{"test/key1": "val1", "test/key2": "val2", "test/key3": "val3", "test/key4": "val4"},
 			args: args{
-				key:  "test/key2",
+				key:  []byte("test/key2"),
 				opts: []clientv3.OpOption{clientv3.WithRange("test/key4"), clientv3.WithLimit(1), clientv3.WithSort(clientv3.SortByKey, clientv3.SortDescend)},
 			},
 			want:    map[string]string{"test/key3": "val3"},
@@ -76,7 +76,7 @@ func TestGet(t *testing.T) {
 			name:   "query by prefix",
 			preset: map[string]string{"test/key1": "val1", "test/key2": "val2", "test/key3": "val3", "another/key": "val"},
 			args: args{
-				key:  "test/",
+				key:  []byte("test/"),
 				opts: []clientv3.OpOption{clientv3.WithRange(clientv3.GetPrefixRangeEnd("test/"))},
 			},
 			want:    map[string]string{"test/key1": "val1", "test/key2": "val2", "test/key3": "val3"},
@@ -86,7 +86,7 @@ func TestGet(t *testing.T) {
 			name:   "query by nonexistent key",
 			preset: map[string]string{"test/key1": "val1"},
 			args: args{
-				key:  "test/key0",
+				key:  []byte("test/key0"),
 				opts: []clientv3.OpOption{},
 			},
 			want:    map[string]string{},
@@ -96,7 +96,16 @@ func TestGet(t *testing.T) {
 			name:   "query by empty key",
 			preset: map[string]string{"test/key1": "val1"},
 			args: args{
-				key:  "",
+				key:  []byte(""),
+				opts: []clientv3.OpOption{},
+			},
+			wantErr: true,
+		},
+		{
+			name:   "query by nil key",
+			preset: map[string]string{"test/key1": "val1"},
+			args: args{
+				key:  nil,
 				opts: []clientv3.OpOption{},
 			},
 			wantErr: true,
@@ -139,13 +148,13 @@ func TestGet(t *testing.T) {
 
 func TestGetOne(t *testing.T) {
 	type args struct {
-		key string
+		key []byte
 	}
 	tests := []struct {
 		name    string
 		preset  map[string]string
 		args    args
-		want    string
+		want    []byte
 		wantErr bool
 		wantNil bool
 	}{
@@ -154,15 +163,15 @@ func TestGetOne(t *testing.T) {
 			name:   "get by single key",
 			preset: map[string]string{"test/key1": "val1"},
 			args: args{
-				key: "test/key1",
+				key: []byte("test/key1"),
 			},
-			want: "val1",
+			want: []byte("val1"),
 		},
 		{
 			name:   "query by nonexistent key",
 			preset: map[string]string{"test/key1": "val1"},
 			args: args{
-				key: "test/key0",
+				key: []byte("test/key0"),
 			},
 			wantNil: true,
 		},
@@ -170,7 +179,15 @@ func TestGetOne(t *testing.T) {
 			name:   "query by empty key",
 			preset: map[string]string{"test/key1": "val1"},
 			args: args{
-				key: "",
+				key: []byte(""),
+			},
+			wantErr: true,
+		},
+		{
+			name:   "query by nil key",
+			preset: map[string]string{"test/key1": "val1"},
+			args: args{
+				key: nil,
 			},
 			wantErr: true,
 		},
@@ -203,8 +220,8 @@ func TestGetOne(t *testing.T) {
 				re.Nil(got)
 				return
 			}
-			re.Equal(tt.args.key, string(got.Key))
-			re.Equal(tt.want, string(got.Value))
+			re.Equal(tt.args.key, got.Key)
+			re.Equal(tt.want, got.Value)
 		})
 	}
 }

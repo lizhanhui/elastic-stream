@@ -67,7 +67,7 @@ func TestNormalTxn(t *testing.T) {
 		Then(clientv3.OpPut("test/key", "val1")).
 		Else(clientv3.OpPut("test/key", "val2")).
 		Commit()
-	got, err := GetOne(client, "test/key")
+	got, err := GetOne(client, []byte("test/key"))
 	re.NoError(err)
 	re.Equal("val1", string(got.Value))
 
@@ -76,7 +76,7 @@ func TestNormalTxn(t *testing.T) {
 		Then(clientv3.OpPut("test/key", "val1")).
 		Else(clientv3.OpPut("test/key", "val2")).
 		Commit()
-	got, err = GetOne(client, "test/key")
+	got, err = GetOne(client, []byte("test/key"))
 	re.NoError(err)
 	re.Equal("val2", string(got.Value))
 }

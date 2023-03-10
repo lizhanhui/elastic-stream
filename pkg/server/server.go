@@ -207,7 +207,7 @@ func (s *Server) initClusterID() error {
 	logger := s.lg
 
 	// query any existing ID in etcd
-	kv, err := etcdutil.GetOne(s.client, _clusterIDPath)
+	kv, err := etcdutil.GetOne(s.client, []byte(_clusterIDPath))
 	if err != nil {
 		logger.Error("failed to query cluster id", zap.String("cluster-id-path", _clusterIDPath), zap.Error(err))
 		return errors.Wrap(err, "get value from etcd")

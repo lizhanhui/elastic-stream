@@ -128,7 +128,7 @@ func (m *Member) CheckLeader() (*Info, etcdutil.ModRevision, bool) {
 func (m *Member) GetLeader() (*Info, etcdutil.ModRevision, error) {
 	logger := m.lg
 
-	kv, err := etcdutil.GetOne(m.client, m.getLeaderPath())
+	kv, err := etcdutil.GetOne(m.client, []byte(m.getLeaderPath()))
 	if err != nil {
 		logger.Error("failed to get leader", zap.String("leader-key", m.getLeaderPath()), zap.Error(err))
 		return nil, 0, errors.Wrap(err, "get kv from etcd")
@@ -216,7 +216,7 @@ func (m *Member) EtcdLeaderID() uint64 {
 // GetMemberPriority loads a member's priority to be elected as the etcd leader.
 func (m *Member) GetMemberPriority(id uint64) (int, error) {
 	key := m.getPriorityPath(id)
-	kv, err := etcdutil.GetOne(m.client, key)
+	kv, err := etcdutil.GetOne(m.client, []byte(key))
 	if err != nil {
 		return 0, errors.Wrapf(err, "failed to get member's leader priority by key %s", key)
 	}
