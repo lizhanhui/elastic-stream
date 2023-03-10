@@ -8,7 +8,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/AutoMQ/placement-manager/api/rpcfb/rpcfb"
-	"github.com/AutoMQ/placement-manager/pkg/storage/kv"
+	"github.com/AutoMQ/placement-manager/pkg/server/storage/kv"
 	"github.com/AutoMQ/placement-manager/pkg/util/fbutil"
 )
 

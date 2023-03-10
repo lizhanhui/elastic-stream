@@ -15,22 +15,14 @@
 package storage
 
 import (
-	clientv3 "go.etcd.io/etcd/client/v3"
-	"go.uber.org/zap"
-
-	"github.com/AutoMQ/placement-manager/pkg/storage/endpoint"
-	"github.com/AutoMQ/placement-manager/pkg/storage/kv"
+	"github.com/AutoMQ/placement-manager/pkg/server/storage/endpoint"
+	"github.com/AutoMQ/placement-manager/pkg/server/storage/kv"
 )
 
-// Etcd is a storage based on etcd.
-type Etcd struct {
-	*endpoint.Endpoint
-}
+// Storage is the interface for the backend storage of the PM.
+type Storage interface {
+	// KV is used to provide the basic key-value read/write ability.
+	kv.KV
 
-// NewEtcd creates a new etcd storage.
-func NewEtcd(client *clientv3.Client, rootPath string, lg *zap.Logger) *Etcd {
-	logger := lg.With(zap.String("etcd-storage-root-path", rootPath))
-	return &Etcd{
-		endpoint.NewEndpoint(kv.NewEtcd(client, rootPath), logger),
-	}
+	endpoint.Stream
 }

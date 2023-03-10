@@ -19,7 +19,7 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/AutoMQ/placement-manager/pkg/storage/kv"
+	"github.com/AutoMQ/placement-manager/pkg/server/storage/kv"
 )
 
 // Endpoint is the base underlying storage endpoint for all other upper
