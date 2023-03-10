@@ -16,7 +16,8 @@
         "SQPOLL",
         "squeue",
         "syscall",
-        "Uring"
+        "Uring",
+        "writev"
     ],
     "rust-analyzer.updates.askBeforeDownload": false,
     "[rust]": {
