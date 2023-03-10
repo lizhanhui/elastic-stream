@@ -1,9 +1,9 @@
 use std::{ffi::CString, fs, io::Cursor, path::Path, rc::Rc};
 
-use bytes::{Buf, BufMut, BytesMut};
+use bytes::{Buf, BufMut, Bytes, BytesMut};
 use model::range::{Range, StreamRange};
 use rocksdb::{
-    BlockBasedOptions, ColumnFamilyDescriptor, DBCompressionType, IteratorMode, Options,
+    BlockBasedOptions, ColumnFamilyDescriptor, DBCompressionType, Direction, IteratorMode, Options,
     ReadOptions, WriteOptions, DB,
 };
 use slog::{error, info, warn, Logger};
@@ -107,6 +107,19 @@ impl Indexer {
         })
     }
 
+    pub(crate) fn read_index(&self, stream_id: i64, offset: u64) -> Result<(), StoreError> {
+        match self.db.cf_handle(INDEX_COLUMN_FAMILY) {
+            Some(cf) => {
+                let mut key_buf = BytesMut::with_capacity(16);
+                key_buf.put_i64(stream_id);
+                key_buf.put_u64(offset);
+
+                Ok(())
+            }
+            None => Err(StoreError::RocksDB("No column family".to_owned())),
+        }
+    }
+
     ///
     /// # Arguments
     ///
@@ -139,30 +152,49 @@ impl Indexer {
         }
     }
 
+    /// The specific offset is not guaranteed to exist,
+    /// because it may have been compacted or point to a intermediate position of a record batch.
+    /// So the `scan_record_handles_left_shift` will left shift the offset as a lower bound to scan the records
+    pub(crate) fn scan_record_handles_left_shift(
+        &self,
+        stream_id: i64,
+        offset: u64,
+        batch_size: u32,
+    ) -> Result<Option<Vec<RecordHandle>>, StoreError> {
+        let left_key = self.retrieve_left_key(stream_id, offset)?;
+        let left_key = left_key.unwrap_or(self.build_index_key(stream_id, offset));
+        let mut read_opts = ReadOptions::default();
+        read_opts.set_iterate_lower_bound(&left_key[..]);
+        read_opts.set_iterate_upper_bound((stream_id + 1).to_be_bytes());
+
+        self.scan_record_handles_from(read_opts, batch_size)
+    }
+
     pub(crate) fn scan_record_handles(
         &self,
         stream_id: i64,
         offset: u64,
         batch_size: u32,
     ) -> Result<Option<Vec<RecordHandle>>, StoreError> {
+        let mut read_opts = ReadOptions::default();
+        let lower = self.build_index_key(stream_id, offset);
+        read_opts.set_iterate_lower_bound(&lower[..]);
+        read_opts.set_iterate_upper_bound((stream_id + 1).to_be_bytes());
+        return self.scan_record_handles_from(read_opts, batch_size);
+    }
+
+    fn scan_record_handles_from(
+        &self,
+        read_opts: ReadOptions,
+        batch_size: u32,
+    ) -> Result<Option<Vec<RecordHandle>>, StoreError> {
         match self.db.cf_handle(INDEX_COLUMN_FAMILY) {
             Some(cf) => {
-                let mut read_opts = ReadOptions::default();
-                let mut lower = BytesMut::with_capacity(8 + 8);
-                lower.put_i64(stream_id);
-                lower.put_u64(offset);
-                read_opts.set_iterate_lower_bound(&lower[..]);
-                read_opts.set_iterate_upper_bound((stream_id + 1).to_be_bytes());
-
                 let record_handles: Vec<_> = self
                     .db
                     .iterator_cf_opt(cf, read_opts, IteratorMode::Start)
                     .flatten()
                     .filter(|(k, v)| {
-                        debug_assert!(
-                            k.starts_with(&stream_id.to_be_bytes()),
-                            "ReadOption boundaries do not work"
-                        );
                         if v.len() < 8 + 4 {
                             warn!(
                                 self.log,
@@ -270,6 +302,90 @@ impl Indexer {
         if let Some(cf) = self.db.cf_handle(INDEX_COLUMN_FAMILY) {
             self.db.compact_range_cf(cf, None::<&[u8]>, None::<&[u8]>);
         }
+    }
+
+    fn retrieve_max_key(&self, stream_id: i64) -> Result<Option<Box<Bytes>>, StoreError> {
+        match self.db.cf_handle(INDEX_COLUMN_FAMILY) {
+            Some(cf) => {
+                let mut read_opts = ReadOptions::default();
+                read_opts.set_iterate_lower_bound(stream_id.to_be_bytes());
+                read_opts.set_iterate_upper_bound((stream_id + 1).to_be_bytes());
+                let mut iter = self.db.iterator_cf_opt(cf, read_opts, IteratorMode::End);
+                if let Some(result) = iter.next() {
+                    let (max, _v) = result.map_err(|e| StoreError::RocksDB(e.into_string()))?;
+
+                    Ok(Some(Box::new(Bytes::from(max))))
+                } else {
+                    Ok(None)
+                }
+            }
+            None => Err(StoreError::RocksDB(format!(
+                "No column family: `{}`",
+                INDEX_COLUMN_FAMILY
+            ))),
+        }
+    }
+
+    /// Returns a left key lower than the given offset. The function follows the following rules:
+    /// 1. `None` is returned if the specific offset < min offset or offset > max offset.
+    /// 2. The current offset key is returned if it exists.
+    /// 3. Otherwise, the left key is returned.
+    fn retrieve_left_key(
+        &self,
+        stream_id: i64,
+        offset: u64,
+    ) -> Result<Option<Box<Bytes>>, StoreError> {
+        let max_key = self.retrieve_max_key(stream_id)?;
+        if let Some(max_key) = max_key {
+            let max_offset = max_key.slice(8..).get_u64();
+            if offset > max_offset {
+                return Ok(None);
+            }
+
+            if offset == max_offset {
+                return Ok(Some(max_key));
+            }
+        } else {
+            return Ok(None);
+        }
+
+        match self.db.cf_handle(INDEX_COLUMN_FAMILY) {
+            Some(cf) => {
+                let mut read_opts = ReadOptions::default();
+                // If the current offset has a key, return it.
+                // So we add 1 to the offset to achieve this behavior.
+                let lower = self.build_index_key(stream_id, offset + 1);
+                read_opts.set_iterate_lower_bound(stream_id.to_be_bytes());
+                read_opts.set_iterate_upper_bound(&lower[..]);
+
+                // Reverse scan from the offset, find a lower key
+                let mut reverse_itr = self.db.iterator_cf_opt(
+                    cf,
+                    read_opts,
+                    IteratorMode::From(&lower[..], Direction::Reverse),
+                );
+                let lower_entry = reverse_itr.next();
+
+                if let Some(result) = lower_entry {
+                    let (lower, _v) = result.map_err(|e| StoreError::RocksDB(e.into_string()))?;
+
+                    Ok(Some(Box::new(Bytes::from(lower))))
+                } else {
+                    Ok(None)
+                }
+            }
+            None => Err(StoreError::RocksDB(format!(
+                "No column family: `{}`",
+                INDEX_COLUMN_FAMILY
+            ))),
+        }
+    }
+
+    fn build_index_key(&self, stream_id: i64, offset: u64) -> Box<Bytes> {
+        let mut index_key = BytesMut::with_capacity(8 + 8);
+        index_key.put_i64(stream_id);
+        index_key.put_u64(offset);
+        Box::new(index_key.freeze())
     }
 }
 
@@ -427,6 +543,8 @@ mod tests {
         sync::atomic::{AtomicU64, Ordering},
     };
 
+    use bytes::Buf;
+
     use crate::index::{record_handle::RecordHandle, MinOffset};
 
     struct SampleMinOffset {
@@ -464,6 +582,164 @@ mod tests {
         let wal_offset = 100;
         indexer.advance_wal_checkpoint(wal_offset)?;
         assert_eq!(wal_offset, indexer.get_wal_checkpoint()?);
+        Ok(())
+    }
+
+    #[test]
+    fn test_retrieve_max_key() -> Result<(), Box<dyn Error>> {
+        // Case one: have a left key
+        let mut indexer = new_indexer()?;
+        let start_offset = 10;
+        let stream_id = 1;
+
+        let ptr = RecordHandle {
+            offset: 1024,
+            len: 128,
+            hash: 10,
+        };
+        indexer.index(stream_id, start_offset, &ptr);
+        indexer.index(stream_id, start_offset + 1, &ptr);
+
+        // Case one: have a max key
+        let mut max_key = indexer.retrieve_max_key(stream_id).unwrap().unwrap();
+        assert_eq!(stream_id, max_key.get_i64());
+        assert_eq!(start_offset + 1, max_key.get_u64());
+
+        //Case two: no max key
+        let mut max_key = indexer.retrieve_max_key(stream_id + 1).unwrap();
+        assert!(max_key.is_none());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_retrieve_left_key() -> Result<(), Box<dyn Error>> {
+        // Case one: have a left key
+        let mut indexer = new_indexer()?;
+        let left_offset = 10;
+        let stream_id = 1;
+
+        let ptr = RecordHandle {
+            offset: 1024,
+            len: 128,
+            hash: 10,
+        };
+        indexer.index(stream_id, left_offset, &ptr);
+        indexer.index(stream_id, left_offset + 2, &ptr);
+        indexer.index(stream_id, left_offset + 4, &ptr);
+
+
+        let mut left_key = indexer
+            .retrieve_left_key(stream_id, left_offset + 1)
+            .unwrap()
+            .unwrap();
+        assert_eq!(stream_id, left_key.get_i64());
+        assert_eq!(left_offset, left_key.get_u64());
+
+        // Case two: the specific key is equal to the left key
+        let mut left_key = indexer
+            .retrieve_left_key(stream_id, left_offset + 2)
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(stream_id, left_key.get_i64());
+        assert_eq!(left_offset + 2, left_key.get_u64());
+
+        // Case three: no left key
+        let left_key = indexer
+            .retrieve_left_key(stream_id, left_offset - 1)
+            .unwrap();
+        assert_eq!(None, left_key);
+
+        // Case four: the smallest key
+        let mut left_key = indexer
+            .retrieve_left_key(stream_id, left_offset)
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(stream_id, left_key.get_i64());
+        assert_eq!(left_offset, left_key.get_u64());
+
+        // Case five: the biggest key
+        let mut left_key = indexer
+            .retrieve_left_key(stream_id, left_offset + 4)
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(stream_id, left_key.get_i64());
+        assert_eq!(left_offset + 4, left_key.get_u64());
+
+        // Case six: the biggest key + 1
+
+        let left_key = indexer
+            .retrieve_left_key(stream_id, left_offset + 5)
+            .unwrap();
+        assert_eq!(None, left_key);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_index_scan_from_left_key() -> Result<(), Box<dyn Error>> {
+        let indexer = new_indexer()?;
+        const CNT: u64 = 1024;
+        (1..CNT)
+            .into_iter()
+            .map(|n| {
+                let ptr = RecordHandle {
+                    offset: n * 128,
+                    len: 128,
+                    hash: 10,
+                };
+                indexer.index(0, n * 10, &ptr)
+            })
+            .flatten()
+            .count();
+
+        // The record handle physical offset is 128, 256, 384, ...
+        // While the logical offset is 10, 20, 30, ..., which means each record batch contains 10 records.
+
+        // Case one: scan from a exist key
+        let handles = indexer.scan_record_handles_left_shift(0, 10, 2)?;
+        assert_eq!(true, handles.is_some());
+        let handles = handles.unwrap();
+        assert_eq!(2, handles.len());
+
+        handles.into_iter().enumerate().for_each(|(i, handle)| {
+            assert_eq!(((i + 1) * 128) as u64, handle.offset);
+            assert_eq!(128, handle.len);
+            assert_eq!(10, handle.hash);
+        });
+
+        // Case two: scan from a left key
+        let handles = indexer.scan_record_handles_left_shift(0, 12, 2)?;
+        assert_eq!(true, handles.is_some());
+        let handles = handles.unwrap();
+        assert_eq!(2, handles.len());
+
+        handles.into_iter().enumerate().for_each(|(i, handle)| {
+            assert_eq!(((i + 1) * 128) as u64, handle.offset);
+            assert_eq!(128, handle.len);
+            assert_eq!(10, handle.hash);
+        });
+
+        // Case three: scan from a key smaller than the smallest key
+        let handles = indexer.scan_record_handles_left_shift(0, 1, 2)?;
+        assert_eq!(true, handles.is_some());
+        let handles = handles.unwrap();
+        assert_eq!(2, handles.len());
+
+        handles.into_iter().enumerate().for_each(|(i, handle)| {
+            assert_eq!(((i + 1) * 128) as u64, handle.offset);
+            assert_eq!(128, handle.len);
+            assert_eq!(10, handle.hash);
+        });
+
+        // Case four: scan from a key bigger than the biggest key
+
+        let handles = indexer.scan_record_handles_left_shift(0, CNT * 11, 2)?;
+        assert_eq!(true, handles.is_none());
+
         Ok(())
     }
 

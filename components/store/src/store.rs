@@ -148,7 +148,7 @@ impl ElasticStore {
     ///
     /// * `options` - Fetch options, which includes target stream_id, logical offset and max_bytes to read.
     /// * `observer` - Oneshot sender, used to return `FetchResult` or propagate error.
-    fn do_fecth(
+    fn do_fetch(
         &self,
         options: ReadOptions,
         observer: oneshot::Sender<Result<FetchResult, FetchError>>,
@@ -198,7 +198,7 @@ impl Store for ElasticStore {
         <Self as Store>::FetchOp: Future<Output = Result<FetchResult, FetchError>>,
     {
         let (sender, receiver) = oneshot::channel();
-        self.do_fecth(options, sender);
+        self.do_fetch(options, sender);
 
         let inner = async {
             match receiver.await.map_err(|_e| FetchError::ChannelRecv) {
