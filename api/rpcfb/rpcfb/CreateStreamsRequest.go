@@ -8,38 +8,38 @@ import (
 
 type CreateStreamsRequestT struct {
 	TimeoutMs int32 `json:"timeout_ms"`
-	Stremas []*StreamT `json:"stremas"`
+	Streams []*StreamT `json:"streams"`
 }
 
 func (t *CreateStreamsRequestT) Pack(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
 	if t == nil { return 0 }
-	stremasOffset := flatbuffers.UOffsetT(0)
-	if t.Stremas != nil {
-		stremasLength := len(t.Stremas)
-		stremasOffsets := make([]flatbuffers.UOffsetT, stremasLength)
-		for j := 0; j < stremasLength; j++ {
-			stremasOffsets[j] = t.Stremas[j].Pack(builder)
+	streamsOffset := flatbuffers.UOffsetT(0)
+	if t.Streams != nil {
+		streamsLength := len(t.Streams)
+		streamsOffsets := make([]flatbuffers.UOffsetT, streamsLength)
+		for j := 0; j < streamsLength; j++ {
+			streamsOffsets[j] = t.Streams[j].Pack(builder)
 		}
-		CreateStreamsRequestStartStremasVector(builder, stremasLength)
-		for j := stremasLength - 1; j >= 0; j-- {
-			builder.PrependUOffsetT(stremasOffsets[j])
+		CreateStreamsRequestStartStreamsVector(builder, streamsLength)
+		for j := streamsLength - 1; j >= 0; j-- {
+			builder.PrependUOffsetT(streamsOffsets[j])
 		}
-		stremasOffset = builder.EndVector(stremasLength)
+		streamsOffset = builder.EndVector(streamsLength)
 	}
 	CreateStreamsRequestStart(builder)
 	CreateStreamsRequestAddTimeoutMs(builder, t.TimeoutMs)
-	CreateStreamsRequestAddStremas(builder, stremasOffset)
+	CreateStreamsRequestAddStreams(builder, streamsOffset)
 	return CreateStreamsRequestEnd(builder)
 }
 
 func (rcv *CreateStreamsRequest) UnPackTo(t *CreateStreamsRequestT) {
 	t.TimeoutMs = rcv.TimeoutMs()
-	stremasLength := rcv.StremasLength()
-	t.Stremas = make([]*StreamT, stremasLength)
-	for j := 0; j < stremasLength; j++ {
+	streamsLength := rcv.StreamsLength()
+	t.Streams = make([]*StreamT, streamsLength)
+	for j := 0; j < streamsLength; j++ {
 		x := Stream{}
-		rcv.Stremas(&x, j)
-		t.Stremas[j] = x.UnPack()
+		rcv.Streams(&x, j)
+		t.Streams[j] = x.UnPack()
 	}
 }
 
@@ -89,7 +89,7 @@ func (rcv *CreateStreamsRequest) MutateTimeoutMs(n int32) bool {
 	return rcv._tab.MutateInt32Slot(4, n)
 }
 
-func (rcv *CreateStreamsRequest) Stremas(obj *Stream, j int) bool {
+func (rcv *CreateStreamsRequest) Streams(obj *Stream, j int) bool {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(6))
 	if o != 0 {
 		x := rcv._tab.Vector(o)
@@ -101,7 +101,7 @@ func (rcv *CreateStreamsRequest) Stremas(obj *Stream, j int) bool {
 	return false
 }
 
-func (rcv *CreateStreamsRequest) StremasLength() int {
+func (rcv *CreateStreamsRequest) StreamsLength() int {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(6))
 	if o != 0 {
 		return rcv._tab.VectorLen(o)
@@ -115,10 +115,10 @@ func CreateStreamsRequestStart(builder *flatbuffers.Builder) {
 func CreateStreamsRequestAddTimeoutMs(builder *flatbuffers.Builder, timeoutMs int32) {
 	builder.PrependInt32Slot(0, timeoutMs, 0)
 }
-func CreateStreamsRequestAddStremas(builder *flatbuffers.Builder, stremas flatbuffers.UOffsetT) {
-	builder.PrependUOffsetTSlot(1, flatbuffers.UOffsetT(stremas), 0)
+func CreateStreamsRequestAddStreams(builder *flatbuffers.Builder, streams flatbuffers.UOffsetT) {
+	builder.PrependUOffsetTSlot(1, flatbuffers.UOffsetT(streams), 0)
 }
-func CreateStreamsRequestStartStremasVector(builder *flatbuffers.Builder, numElems int) flatbuffers.UOffsetT {
+func CreateStreamsRequestStartStreamsVector(builder *flatbuffers.Builder, numElems int) flatbuffers.UOffsetT {
 	return builder.StartVector(4, numElems, 4)
 }
 func CreateStreamsRequestEnd(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
