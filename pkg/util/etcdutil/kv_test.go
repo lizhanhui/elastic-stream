@@ -30,6 +30,86 @@ func TestMain(m *testing.M) {
 	goleak.VerifyTestMain(m)
 }
 
+func TestGetOne(t *testing.T) {
+	type args struct {
+		key []byte
+	}
+	tests := []struct {
+		name    string
+		preset  map[string]string
+		args    args
+		want    []byte
+		wantErr bool
+		wantNil bool
+	}{
+
+		{
+			name:   "get by single key",
+			preset: map[string]string{"test/key1": "val1"},
+			args: args{
+				key: []byte("test/key1"),
+			},
+			want: []byte("val1"),
+		},
+		{
+			name:   "query by nonexistent key",
+			preset: map[string]string{"test/key1": "val1"},
+			args: args{
+				key: []byte("test/key0"),
+			},
+			wantNil: true,
+		},
+		{
+			name:   "query by empty key",
+			preset: map[string]string{"test/key1": "val1"},
+			args: args{
+				key: []byte(""),
+			},
+			wantErr: true,
+		},
+		{
+			name:   "query by nil key",
+			preset: map[string]string{"test/key1": "val1"},
+			args: args{
+				key: nil,
+			},
+			wantErr: true,
+		},
+	}
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			re := require.New(t)
+			_, client, closeFunc := startEtcd(re, t)
+			defer closeFunc()
+
+			// prepare
+			kv := client.KV
+			for k, v := range tt.preset {
+				_, err := kv.Put(context.Background(), k, v)
+				re.NoError(err)
+			}
+
+			// run
+			got, err := GetOne(client, tt.args.key)
+
+			// check
+			if tt.wantErr {
+				re.Error(err)
+				return
+			}
+			re.NoError(err)
+			if tt.wantNil {
+				re.Nil(got)
+				return
+			}
+			re.Equal(tt.args.key, got.Key)
+			re.Equal(tt.want, got.Value)
+		})
+	}
+}
+
 func TestGet(t *testing.T) {
 	type args struct {
 		key  []byte
@@ -121,7 +201,7 @@ func TestGet(t *testing.T) {
 			defer closeFunc()
 
 			// prepare
-			kv := clientv3.NewKV(client)
+			kv := client.KV
 			for k, v := range tt.preset {
 				_, err := kv.Put(context.Background(), k, v)
 				re.NoError(err)
@@ -146,48 +226,80 @@ func TestGet(t *testing.T) {
 	}
 }
 
-func TestGetOne(t *testing.T) {
+func TestPut(t *testing.T) {
 	type args struct {
-		key []byte
+		key   []byte
+		value []byte
+		opts  []clientv3.OpOption
 	}
 	tests := []struct {
 		name    string
 		preset  map[string]string
 		args    args
-		want    []byte
+		want    map[string]string
 		wantErr bool
-		wantNil bool
 	}{
-
 		{
-			name:   "get by single key",
-			preset: map[string]string{"test/key1": "val1"},
+			name:   "put a new value",
+			preset: map[string]string{},
 			args: args{
-				key: []byte("test/key1"),
+				key:   []byte("test/key1"),
+				value: []byte("val1"),
 			},
-			want: []byte("val1"),
+			want: map[string]string{"test/key1": "val1"},
 		},
 		{
-			name:   "query by nonexistent key",
-			preset: map[string]string{"test/key1": "val1"},
+			name:   "put a new value with prevKV",
+			preset: map[string]string{},
 			args: args{
-				key: []byte("test/key0"),
+				key:   []byte("test/key1"),
+				value: []byte("val1"),
+				opts:  []clientv3.OpOption{clientv3.WithPrevKV()},
 			},
-			wantNil: true,
+			want: map[string]string{"test/key1": "val1"},
 		},
 		{
-			name:   "query by empty key",
+			name:   "put a value to an existing key",
 			preset: map[string]string{"test/key1": "val1"},
 			args: args{
-				key: []byte(""),
+				key:   []byte("test/key1"),
+				value: []byte("val2"),
+			},
+			want: map[string]string{"test/key1": "val2"},
+		},
+		{
+			name:   "put empty value",
+			preset: map[string]string{},
+			args: args{
+				key:   []byte("test/key1"),
+				value: []byte(""),
+			},
+			want: map[string]string{"test/key1": ""},
+		},
+		{
+			name:   "put nil value",
+			preset: map[string]string{},
+			args: args{
+				key:   []byte("test/key1"),
+				value: nil,
+			},
+			want: map[string]string{"test/key1": ""},
+		},
+		{
+			name:   "put empty key",
+			preset: map[string]string{},
+			args: args{
+				key:   []byte(""),
+				value: []byte("val1"),
 			},
 			wantErr: true,
 		},
 		{
-			name:   "query by nil key",
-			preset: map[string]string{"test/key1": "val1"},
+			name:   "put nil key",
+			preset: map[string]string{},
 			args: args{
-				key: nil,
+				key:   nil,
+				value: []byte("val1"),
 			},
 			wantErr: true,
 		},
@@ -201,27 +313,129 @@ func TestGetOne(t *testing.T) {
 			defer closeFunc()
 
 			// prepare
-			kv := clientv3.NewKV(client)
+			kv := client.KV
 			for k, v := range tt.preset {
 				_, err := kv.Put(context.Background(), k, v)
 				re.NoError(err)
 			}
 
 			// run
-			got, err := GetOne(client, tt.args.key)
+			_, err := Put(client, tt.args.key, tt.args.value, tt.args.opts...)
 
 			// check
 			if tt.wantErr {
 				re.Error(err)
 				return
+			} else {
+				re.NoError(err)
+				for k, v := range tt.want {
+					resp, err := kv.Get(context.Background(), k)
+					re.NoError(err)
+					re.Len(resp.Kvs, 1)
+					re.Equal(v, string(resp.Kvs[0].Value))
+				}
 			}
-			re.NoError(err)
-			if tt.wantNil {
-				re.Nil(got)
+		})
+	}
+}
+
+func TestDelete(t *testing.T) {
+	type args struct {
+		key  []byte
+		opts []clientv3.OpOption
+	}
+	tests := []struct {
+		name     string
+		preset   map[string]string
+		args     args
+		wantPrev map[string]string
+		wantErr  bool
+	}{
+		{
+			name:   "delete a key",
+			preset: map[string]string{"test/key1": "val1"},
+			args: args{
+				key: []byte("test/key1"),
+			},
+			wantPrev: map[string]string{},
+		},
+		{
+			name:   "delete a key with prevKV",
+			preset: map[string]string{"test/key1": "val1"},
+			args: args{
+				key:  []byte("test/key1"),
+				opts: []clientv3.OpOption{clientv3.WithPrevKV()},
+			},
+			wantPrev: map[string]string{"test/key1": "val1"},
+		},
+		{
+			name:   "delete a non-existing key",
+			preset: map[string]string{"test/key1": "val1"},
+			args: args{
+				key: []byte("test/key2"),
+			},
+			wantPrev: map[string]string{},
+		},
+		{
+			name:   "delete a non-existing key with prevKV",
+			preset: map[string]string{"test/key1": "val1"},
+			args: args{
+				key:  []byte("test/key2"),
+				opts: []clientv3.OpOption{clientv3.WithPrevKV()},
+			},
+			wantPrev: map[string]string{},
+		},
+		{
+			name:   "delete an empty key",
+			preset: map[string]string{"test/key1": "val1"},
+			args: args{
+				key: []byte(""),
+			},
+			wantErr: true,
+		},
+		{
+			name:   "delete a nil key",
+			preset: map[string]string{"test/key1": "val1"},
+			args: args{
+				key: nil,
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			re := require.New(t)
+			_, client, closeFunc := startEtcd(re, t)
+			defer closeFunc()
+
+			// prepare
+			kv := client.KV
+			for k, v := range tt.preset {
+				_, err := kv.Put(context.Background(), k, v)
+				re.NoError(err)
+			}
+
+			// run
+			resp, err := Delete(client, tt.args.key, tt.args.opts...)
+
+			// check
+			if tt.wantErr {
+				re.Error(err)
 				return
+			} else {
+				re.NoError(err)
+				get, err := kv.Get(context.Background(), string(tt.args.key))
+				re.NoError(err)
+				re.Len(get.Kvs, 0)
+
+				re.Len(resp.PrevKvs, len(tt.wantPrev))
+				for _, kv := range resp.PrevKvs {
+					re.Equal(tt.wantPrev[string(kv.Key)], string(kv.Value))
+				}
 			}
-			re.Equal(tt.args.key, got.Key)
-			re.Equal(tt.want, got.Value)
 		})
 	}
 }

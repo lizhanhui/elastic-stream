@@ -163,14 +163,14 @@ func (ls *Leadership) Keep(ctx context.Context) {
 func (ls *Leadership) DeleteLeaderKey() error {
 	logger := ls.lg
 
-	resp, err := etcdutil.NewTxn(ls.client).Then(clientv3.OpDelete(ls.leaderKey)).Commit()
+	resp, err := etcdutil.Delete(ls.client, []byte(ls.leaderKey))
 	if err != nil {
 		logger.Error("failed to delete leader key", zap.String("leader-key", ls.leaderKey))
 		return errors.Wrap(err, "delete etcd key")
 	}
-	if !resp.Succeeded {
-		logger.Error("failed to delete etcd key, transaction failed", zap.String("leader-key", ls.leaderKey))
-		return errors.New("failed to delete etcd key: transaction failed")
+	if resp.Deleted == 0 {
+		logger.Error("failed to delete etcd key, key does not exist", zap.String("leader-key", ls.leaderKey))
+		return errors.New("failed to delete etcd key: key does not exist")
 	}
 
 	// Reset the lease as soon as possible.
