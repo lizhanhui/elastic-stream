@@ -140,7 +140,7 @@ impl Indexer {
                 key_buf.put_u64(offset);
 
                 let mut value_buf = BytesMut::with_capacity(20);
-                value_buf.put_u64(handle.offset);
+                value_buf.put_u64(handle.wal_offset);
                 let length_type = handle.len << 8;
                 value_buf.put_u32(length_type);
                 value_buf.put_u64(handle.hash);
@@ -213,7 +213,11 @@ impl Indexer {
                             hash = rdr.get_u64();
                         }
                         let len = length_type >> 8;
-                        RecordHandle { offset, len, hash }
+                        RecordHandle {
+                            wal_offset: offset,
+                            len,
+                            hash,
+                        }
                     })
                     .take(batch_size as usize)
                     .collect();
@@ -585,7 +589,7 @@ mod tests {
         let stream_id = 1;
 
         let ptr = RecordHandle {
-            offset: 1024,
+            wal_offset: 1024,
             len: 128,
             hash: 10,
         };
@@ -612,7 +616,7 @@ mod tests {
         let stream_id = 1;
 
         let ptr = RecordHandle {
-            offset: 1024,
+            wal_offset: 1024,
             len: 128,
             hash: 10,
         };
@@ -678,7 +682,7 @@ mod tests {
             .into_iter()
             .map(|n| {
                 let ptr = RecordHandle {
-                    offset: n * 128,
+                    wal_offset: n * 128,
                     len: 128,
                     hash: 10,
                 };
@@ -697,7 +701,7 @@ mod tests {
         assert_eq!(2, handles.len());
 
         handles.into_iter().enumerate().for_each(|(i, handle)| {
-            assert_eq!(((i + 1) * 128) as u64, handle.offset);
+            assert_eq!(((i + 1) * 128) as u64, handle.wal_offset);
             assert_eq!(128, handle.len);
             assert_eq!(10, handle.hash);
         });
@@ -709,7 +713,7 @@ mod tests {
         assert_eq!(2, handles.len());
 
         handles.into_iter().enumerate().for_each(|(i, handle)| {
-            assert_eq!(((i + 1) * 128) as u64, handle.offset);
+            assert_eq!(((i + 1) * 128) as u64, handle.wal_offset);
             assert_eq!(128, handle.len);
             assert_eq!(10, handle.hash);
         });
@@ -721,7 +725,7 @@ mod tests {
         assert_eq!(2, handles.len());
 
         handles.into_iter().enumerate().for_each(|(i, handle)| {
-            assert_eq!(((i + 1) * 128) as u64, handle.offset);
+            assert_eq!(((i + 1) * 128) as u64, handle.wal_offset);
             assert_eq!(128, handle.len);
             assert_eq!(10, handle.hash);
         });
@@ -742,7 +746,7 @@ mod tests {
             .into_iter()
             .map(|n| {
                 let ptr = RecordHandle {
-                    offset: n,
+                    wal_offset: n,
                     len: 128,
                     hash: 10,
                 };
@@ -756,7 +760,7 @@ mod tests {
         let handles = handles.unwrap();
         assert_eq!(10, handles.len());
         handles.into_iter().enumerate().for_each(|(i, handle)| {
-            assert_eq!(i as u64, handle.offset);
+            assert_eq!(i as u64, handle.wal_offset);
             assert_eq!(128, handle.len);
             assert_eq!(10, handle.hash);
         });
@@ -781,7 +785,7 @@ mod tests {
             .into_iter()
             .map(|n| {
                 let ptr = RecordHandle {
-                    offset: n,
+                    wal_offset: n,
                     len: 128,
                     hash: 10,
                 };
@@ -794,7 +798,7 @@ mod tests {
         indexer.compact();
 
         let handles = indexer.scan_record_handles(0, 0, 10)?.unwrap();
-        assert_eq!(0, handles[0].offset);
+        assert_eq!(0, handles[0].wal_offset);
         min_offset.set_min(10);
 
         indexer.compact();

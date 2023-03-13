@@ -1,5 +1,6 @@
 use crate::error::{AppendError, StoreError};
 use crate::index::driver::IndexDriver;
+use crate::index::record_handle::RecordHandle;
 use crate::index::MinOffset;
 use crate::io::buf::{AlignedBufReader, AlignedBufWriter};
 use crate::io::context::Context;
@@ -627,31 +628,46 @@ impl IO {
         }
 
         if self.write_window.committed > committed {
-            self.acknowledge_write_tasks();
+            self.complete_write_tasks();
         }
     }
 
-    fn acknowledge_write_tasks(&mut self) {
+    fn acknowledge_to_observer(&mut self, task: WriteTask) {
+        let append_result = AppendResult {
+            stream_id: task.stream_id,
+            offset: task.offset,
+        };
+        trace!(
+            self.log,
+            "Ack `WriteTask` {{ stream-id: {}, offset: {} }}",
+            task.stream_id,
+            task.offset
+        );
+        if let Err(e) = task.observer.send(Ok(append_result)) {
+            error!(self.log, "Failed to propagate AppendResult `{:?}`", e);
+        }
+    }
+    fn build_read_index(&mut self, wal_offset: u64, task: &WriteTask) {
+        let handle = RecordHandle {
+            hash: 0, // TODO: set hash for record handle
+            len: task.buffer.len() as u32,
+            wal_offset,
+        };
+        self.indexer
+            .index(task.stream_id, task.offset as u64, handle);
+    }
+
+    fn complete_write_tasks(&mut self) {
         let committed = self.write_window.committed;
         while let Some((offset, _)) = self.inflight_write_tasks.first_key_value() {
             if *offset > committed {
                 break;
             }
 
-            if let Some((_, task)) = self.inflight_write_tasks.pop_first() {
-                let append_result = AppendResult {
-                    stream_id: task.stream_id,
-                    offset: task.offset,
-                };
-                trace!(
-                    self.log,
-                    "Ack `WriteTask` {{ stream-id: {}, offset: {} }}",
-                    task.stream_id,
-                    task.offset
-                );
-                if let Err(e) = task.observer.send(Ok(append_result)) {
-                    error!(self.log, "Failed to propagate AppendResult `{:?}`", e);
-                }
+            if let Some((wal_offset, task)) = self.inflight_write_tasks.pop_first() {
+                // TODO: A better way to build read index is needed.
+                self.build_read_index(wal_offset, &task);
+                self.acknowledge_to_observer(task);
             }
         }
     }
