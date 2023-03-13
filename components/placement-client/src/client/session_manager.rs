@@ -240,7 +240,7 @@ impl SessionManager {
                             Err(e) => {
                                 warn!(
                                     self.log,
-                                    "Failed to propogate error response. Cause: {:?}", e
+                                    "Failed to propagate error response. Cause: {:?}", e
                                 );
                             }
                         }
