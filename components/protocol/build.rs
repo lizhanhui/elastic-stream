@@ -11,6 +11,7 @@ fn main() {
     flatc_rust::run(flatc_rust::Args {
         inputs: &[Path::new("fbs/rpc.fbs"), Path::new("fbs/model.fbs")],
         out_dir,
+        extra: &["--gen-object-api"],
         ..Default::default()
     })
     .expect("flatc");
@@ -24,6 +25,7 @@ fn main() {
         lang: "java",
         inputs: &[Path::new("fbs/rpc.fbs"), Path::new("fbs/model.fbs")],
         out_dir,
+        extra: &["--gen-object-api"],
         ..Default::default()
     })
     .expect("flatc");
