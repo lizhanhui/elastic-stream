@@ -1,6 +1,6 @@
 use protocol::rpc::header::DataNodeT;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct DataNode {
     pub node_id: i32,
     pub advertise_address: String,

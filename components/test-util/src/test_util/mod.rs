@@ -3,7 +3,9 @@
 
 use std::rc::Rc;
 
-use codec::frame::OperationCode;
+use bytes::Bytes;
+use codec::frame::{Frame, OperationCode};
+use protocol::rpc::header::{HeartbeatRequest, HeartbeatResponseT};
 use slog::{debug, error, info, warn, Drain, Logger};
 
 use tokio::sync::oneshot;
@@ -42,25 +44,59 @@ pub async fn run_listener(logger: Logger) -> u16 {
                                 logger,
                                 "TestServer is processing a `{}` request", frame.operation_code
                             );
+
                             match frame.operation_code {
                                 OperationCode::Heartbeat => {
-                                    match writer.write_frame(&frame).await {
-                                        Ok(_) => {
-                                            info!(
-                                                logger,
-                                                "TestServer writes the `{}` request back directly",
-                                                frame.operation_code
-                                            );
-                                        }
-                                        Err(e) => {
-                                            error!(
-                                                logger,
-                                                "TestServer failed to process `{}`. Cause: {:?}",
-                                                frame.operation_code,
-                                                e
-                                            );
-                                        }
-                                    };
+                                    if let Some(buf) = &frame.header {
+                                        let req = flatbuffers::root::<HeartbeatRequest>(buf);
+                                        match req {
+                                            Ok(heartbeat) => {
+                                                debug!(logger, "{:?}", heartbeat);
+                                                let mut response = HeartbeatResponseT::default();
+                                                response.client_id = heartbeat
+                                                    .client_id()
+                                                    .map(|client_id| client_id.to_owned());
+                                                response.client_role = heartbeat.client_role();
+                                                response.data_node = heartbeat
+                                                    .data_node()
+                                                    .map(|dn| Box::new(dn.unpack()));
+                                                let mut builder =
+                                                    flatbuffers::FlatBufferBuilder::with_capacity(
+                                                        1024,
+                                                    );
+                                                let resp = response.pack(&mut builder);
+                                                builder.finish(resp, None);
+
+                                                let hdr = builder.finished_data();
+
+                                                let mut response_frame =
+                                                    Frame::new(OperationCode::Heartbeat);
+                                                response_frame.flag_response();
+                                                response_frame.stream_id = frame.stream_id;
+                                                let buf = Bytes::copy_from_slice(hdr);
+                                                response_frame.header = Some(buf);
+
+                                                match writer.write_frame(&response_frame).await {
+                                                    Ok(_) => {
+                                                        info!(
+                                                            logger,
+                                                            "TestServer writes the `{}` response back directly",
+                                                            frame.operation_code
+                                                        );
+                                                    }
+                                                    Err(e) => {
+                                                        error!(
+                                                            logger,
+                                                            "TestServer failed to process `{}`. Cause: {:?}",
+                                                            frame.operation_code,
+                                                            e
+                                                        );
+                                                    }
+                                                };
+                                            }
+                                            Err(_e) => {}
+                                        };
+                                    }
                                 }
                                 OperationCode::ListRanges => {
                                     match writer.write_frame(&frame).await {
