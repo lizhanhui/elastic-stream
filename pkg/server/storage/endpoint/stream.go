@@ -67,6 +67,10 @@ func (e *Endpoint) DeleteStream(streamID int64) (*rpcfb.StreamT, error) {
 func (e *Endpoint) UpdateStream(stream *rpcfb.StreamT) (*rpcfb.StreamT, error) {
 	logger := e.lg
 
+	if stream.StreamId == 0 {
+		return nil, errors.New("invalid stream id")
+	}
+
 	streamInfo := fbutil.Marshal(stream)
 	prev, err := e.Put(streamPath(stream.StreamId), streamInfo, true)
 	mcache.Free(streamInfo)
