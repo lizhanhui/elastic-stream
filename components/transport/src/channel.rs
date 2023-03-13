@@ -1,8 +1,7 @@
-use std::io::Cursor;
-use std::rc::Rc;
-
 use bytes::{Buf, BytesMut};
 use slog::{error, info, trace, warn, Logger};
+use std::cell::UnsafeCell;
+use std::io::Cursor;
 use tokio_uring::net::TcpStream;
 
 use codec::error::FrameError;
@@ -10,21 +9,33 @@ use codec::frame::Frame;
 
 const BUFFER_SIZE: usize = 4 * 1024;
 
-pub struct ChannelReader {
-    stream: Rc<TcpStream>,
-    buffer: BytesMut,
+pub struct Channel {
+    stream: TcpStream,
+    buffer: UnsafeCell<BytesMut>,
     peer_address: String,
     logger: Logger,
 }
 
-impl ChannelReader {
-    pub fn new(stream: Rc<TcpStream>, peer_address: &str, logger: Logger) -> Self {
+impl Channel {
+    pub fn new(stream: TcpStream, peer_address: &str, logger: Logger) -> Self {
         Self {
             stream,
-            buffer: BytesMut::with_capacity(BUFFER_SIZE),
+            buffer: UnsafeCell::new(BytesMut::with_capacity(BUFFER_SIZE)),
             peer_address: peer_address.to_owned(),
             logger,
         }
+    }
+
+    pub fn peer_address(&self) -> &str {
+        &self.peer_address
+    }
+
+    pub fn buf_mut(&self) -> &mut BytesMut {
+        unsafe { &mut *self.buffer.get() }
+    }
+
+    pub fn buf(&self) -> &BytesMut {
+        unsafe { &*self.buffer.get() }
     }
 
     /// Read a single `Frame` value from the underlying stream.
@@ -38,7 +49,7 @@ impl ChannelReader {
     /// On success, the received frame is returned. If the `TcpStream`
     /// is closed in a way that doesn't break a frame in half, it returns
     /// `None`. Otherwise, an error is returned.
-    pub async fn read_frame(&mut self) -> Result<Option<Frame>, FrameError> {
+    pub async fn read_frame(&self) -> Result<Option<Frame>, FrameError> {
         loop {
             // Attempt to parse a frame from the buffered data. If enough data
             // has been buffered, the frame is returned.
@@ -47,8 +58,9 @@ impl ChannelReader {
             }
 
             // Try to allocate more memory from allocator
-            if self.buffer.spare_capacity_mut().len() < BUFFER_SIZE {
-                self.buffer.reserve(BUFFER_SIZE);
+            let buffer = self.buf_mut();
+            if buffer.spare_capacity_mut().len() < BUFFER_SIZE {
+                buffer.reserve(BUFFER_SIZE);
             }
 
             // There is not enough buffered data to read a frame. Attempt to
@@ -56,9 +68,10 @@ impl ChannelReader {
             //
             // On success, the number of bytes is returned. `0` indicates "end
             // of stream".
-            let buf = self.buffer.split_off(self.buffer.len());
+            let len = buffer.len();
+            let buf = buffer.split_off(len);
             let (res, buf) = self.stream.read(buf).await;
-            self.buffer.unsplit(buf);
+            buffer.unsplit(buf);
 
             let read = match res {
                 Ok(n) => {
@@ -79,10 +92,10 @@ impl ChannelReader {
                 // shutdown, there should be no data in the read buffer. If
                 // there is, this means that the peer closed the socket while
                 // sending a frame.
-                if self.buffer.is_empty() {
+                if buffer.is_empty() {
                     return Ok(None);
                 } else {
-                    warn!(self.logger, "Discarded {} bytes", self.buffer.len());
+                    warn!(self.logger, "Discarded {} bytes", buffer.len());
                     return Err(FrameError::ConnectionReset);
                 }
             }
@@ -93,21 +106,22 @@ impl ChannelReader {
     /// data, the frame is returned and the data removed from the buffer. If not
     /// enough data has been buffered yet, `Ok(None)` is returned. If the
     /// buffered data does not represent a valid frame, `Err` is returned.
-    fn parse_frame(&mut self) -> Result<Option<Frame>, FrameError> {
+    fn parse_frame(&self) -> Result<Option<Frame>, FrameError> {
         use FrameError::Incomplete;
 
         // Cursor is used to track the "current" location in the
         // buffer. Cursor also implements `Buf` from the `bytes` crate
         // which provides a number of helpful utilities for working
         // with bytes.
-        let mut buf = Cursor::new(&self.buffer[..]);
+        let buffer = self.buf();
+        let mut buf = Cursor::new(&buffer[..]);
 
         // The first step is to check if enough data has been buffered to parse
         // a single frame. This step is usually much faster than doing a full
         // parse of the frame, and allows us to skip allocating data structures
         // to hold the frame data unless we know the full frame has been
         // received.
-        match Frame::check(&mut buf, &mut self.logger) {
+        match Frame::check(&mut buf, &self.logger) {
             Ok(_) => {
                 // The `check` function will have advanced the cursor until the
                 // end of the frame. Since the cursor had position set to zero
@@ -134,7 +148,7 @@ impl ChannelReader {
                 // up to `len` is discarded. The details of how this works is
                 // left to `BytesMut`. This is often done by moving an internal
                 // cursor, but it may be done by reallocating and copying data.
-                self.buffer.advance(len);
+                self.buf_mut().advance(len);
 
                 // Return the parsed frame to the caller.
                 Ok(Some(frame))
@@ -155,31 +169,11 @@ impl ChannelReader {
             Err(e) => Err(e),
         }
     }
-}
 
-pub struct ChannelWriter {
-    stream: Rc<TcpStream>,
-    peer_address: String,
-    logger: Logger,
-}
-
-impl ChannelWriter {
-    pub fn new(stream: Rc<TcpStream>, peer_address: &str, logger: Logger) -> Self {
-        Self {
-            stream,
-            peer_address: peer_address.to_owned(),
-            logger,
-        }
-    }
-
-    pub fn peer_address(&self) -> &str {
-        &self.peer_address
-    }
-
-    pub async fn write_frame(&mut self, frame: &Frame) -> Result<(), std::io::Error> {
+    pub async fn write_frame(&self, frame: &Frame) -> Result<(), std::io::Error> {
         let encode_result = frame.encode();
         let encode_result = encode_result.map_err(|e| {
-            // TODO: handle the decode error
+            // TODO: handle the encode error
             std::io::Error::new(
                 std::io::ErrorKind::Other,
                 format!("Failed to encode frame. Cause: {:?}", e),

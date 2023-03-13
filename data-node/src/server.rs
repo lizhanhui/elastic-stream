@@ -12,7 +12,7 @@ use slog_async::Async;
 use slog_term::{CompactFormat, TermDecorator};
 use store::ElasticStore;
 use tokio_uring::net::{TcpListener, TcpStream};
-use transport::channel::{ChannelReader, ChannelWriter};
+use transport::channel::Channel;
 
 struct NodeConfig {
     core_id: CoreId,
@@ -107,18 +107,16 @@ impl Node {
         peer_address: String,
         logger: Logger,
     ) {
-        let stream = Rc::new(stream);
-        let mut channel_reader =
-            ChannelReader::new(Rc::clone(&stream), &peer_address, logger.new(o!()));
-        let mut channel_writer =
-            ChannelWriter::new(Rc::clone(&stream), &peer_address, logger.new(o!()));
+        let mut channel = Rc::new(Channel::new(stream, &peer_address, logger.new(o!())));
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
 
         let request_logger = logger.clone();
+        let _channel = Rc::clone(&channel);
         tokio_uring::spawn(async move {
+            let channel = _channel;
             let logger = request_logger;
             loop {
-                match channel_reader.read_frame().await {
+                match channel.read_frame().await {
                     Ok(Some(frame)) => {
                         let log = logger.clone();
                         let sender = tx.clone();
@@ -149,10 +147,10 @@ impl Node {
         });
 
         tokio_uring::spawn(async move {
-            let peer_address = channel_writer.peer_address().to_owned();
+            let peer_address = channel.peer_address().to_owned();
             loop {
                 match rx.recv().await {
-                    Some(frame) => match channel_writer.write_frame(&frame).await {
+                    Some(frame) => match channel.write_frame(&frame).await {
                         Ok(_) => {
                             trace!(
                                 logger,

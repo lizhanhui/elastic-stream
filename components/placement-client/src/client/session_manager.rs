@@ -1,5 +1,11 @@
 use std::{
-    cell::UnsafeCell, collections::HashMap, io::ErrorKind, net::SocketAddr, rc::Rc, str::FromStr,
+    borrow::Borrow,
+    cell::UnsafeCell,
+    collections::{HashMap, HashSet},
+    io::ErrorKind,
+    net::SocketAddr,
+    rc::Rc,
+    str::FromStr,
     time::Duration,
 };
 
@@ -11,7 +17,7 @@ use tokio::{
 };
 use tokio_uring::net::TcpStream;
 
-use crate::{client::response::Status, error::ClientError};
+use crate::{client::response::Status, error::ClientError, notifier::Notifier};
 
 use super::{
     config,
@@ -35,12 +41,12 @@ pub struct SessionManager {
     /// Parsed endpoints from target url.
     endpoints: naming::Endpoints,
 
-    // Session management
+    /// Session management
     lb_policy: LBPolicy,
     sessions: Rc<UnsafeCell<HashMap<SocketAddr, Session>>>,
     session_mgr_tx: mpsc::UnboundedSender<(SocketAddr, oneshot::Sender<bool>)>,
 
-    // MPMC channel
+    /// MPMC channel
     stop_tx: mpsc::Sender<()>,
 }
 
@@ -49,6 +55,7 @@ impl SessionManager {
         target: &str,
         config: &Rc<config::ClientConfig>,
         rx: mpsc::UnboundedReceiver<(Request, oneshot::Sender<response::Response>)>,
+        notifier: Rc<dyn Notifier>,
         log: &Logger,
     ) -> Result<Self, ClientError> {
         let (session_mgr_tx, mut session_mgr_rx) =
@@ -61,11 +68,21 @@ impl SessionManager {
             let timeout = config.connect_timeout;
             let logger = log.clone();
             let _config = Rc::clone(config);
+            let _notifier = Rc::clone(&notifier);
             tokio_uring::spawn(async move {
                 let config = _config;
+                let notifier = _notifier;
                 while let Some((addr, tx)) = session_mgr_rx.recv().await {
                     let sessions = unsafe { &mut *sessions.get() };
-                    match SessionManager::connect(&addr, timeout, &config, &logger).await {
+                    match SessionManager::connect(
+                        &addr,
+                        timeout,
+                        &config,
+                        Rc::clone(&notifier),
+                        &logger,
+                    )
+                    .await
+                    {
                         Ok(session) => {
                             sessions.insert(addr, session);
                             match tx.send(true) {
@@ -155,10 +172,26 @@ impl SessionManager {
 
     async fn poll_enqueue(&mut self) -> Result<(), ClientError> {
         trace!(self.log, "poll_enqueue"; "struct" => "SessionManager");
+        self.init_sessions().await?;
         match self.rx.recv().await {
             Some((req, response_observer)) => {
                 trace!(self.log, "Received a request `{:?}`", req; "method" => "poll_enqueue");
-                self.dispatch(req, response_observer).await;
+                let sessions = Rc::clone(&self.sessions);
+                let log = self.log.clone();
+                let max_attempt_times = self.config.max_attempt as usize;
+                let session_mgr = self.session_mgr_tx.clone();
+
+                tokio_uring::spawn(async move {
+                    SessionManager::dispatch(
+                        log,
+                        sessions,
+                        session_mgr,
+                        req,
+                        response_observer,
+                        max_attempt_times,
+                    )
+                    .await;
+                });
             }
             None => {
                 return Err(ClientError::ChannelClosing(
@@ -169,13 +202,7 @@ impl SessionManager {
         Ok(())
     }
 
-    async fn dispatch(
-        &mut self,
-        request: Request,
-        mut response_observer: oneshot::Sender<response::Response>,
-    ) {
-        trace!(self.log, "Received a request `{:?}`", request; "method" => "dispatch");
-
+    async fn init_sessions(&mut self) -> Result<(), ClientError> {
         let sessions = unsafe { &mut *self.sessions.get() };
         if sessions.is_empty() {
             // Create a new session
@@ -206,29 +233,39 @@ impl SessionManager {
                                     socket_addr,
                                     e
                                 );
+                                return Err(ClientError::ConnectFailure(e.to_string()));
                             }
                         }
-                    } else {
-                        error!(self.log, "No endpoints available to connect.");
-                        let response = response::Response::ListRange {
-                            status: Status::Unavailable,
-                            ranges: None,
-                        };
-                        response_observer
-                            .send(response)
-                            .unwrap_or_else(|_response| {
-                                warn!(self.log, "Failed to write response to `Client`");
-                            });
-                        return;
                     }
                 }
             }
         }
+        Ok(())
+    }
 
+    async fn dispatch(
+        log: Logger,
+        sessions: Rc<UnsafeCell<HashMap<SocketAddr, Session>>>,
+        session_mgr: mpsc::UnboundedSender<(SocketAddr, oneshot::Sender<bool>)>,
+        request: Request,
+        mut response_observer: oneshot::Sender<response::Response>,
+        max_attempt_times: usize,
+    ) {
+        trace!(log, "Received a request `{:?}`", request; "method" => "dispatch");
+
+        loop {
+            let sessions = unsafe { &mut *sessions.get() };
+            if !sessions.is_empty() {
+                break;
+            }
+        }
+
+        let sessions = unsafe { &mut *sessions.get() };
         let mut attempt = 0;
-        for (addr, session) in sessions.iter_mut() {
+        let mut attempted = HashSet::new();
+        loop {
             attempt += 1;
-            if attempt > self.config.max_attempt {
+            if attempt > max_attempt_times {
                 match request {
                     Request::Heartbeat { .. } => {}
                     Request::ListRanges { .. } => {
@@ -239,10 +276,7 @@ impl SessionManager {
                         match response_observer.send(response) {
                             Ok(_) => {}
                             Err(e) => {
-                                warn!(
-                                    self.log,
-                                    "Failed to propagate error response. Cause: {:?}", e
-                                );
+                                warn!(log, "Failed to propagate error response. Cause: {:?}", e);
                             }
                         }
                     }
@@ -250,19 +284,35 @@ impl SessionManager {
                 break;
             }
             trace!(
-                self.log,
+                log,
                 "Attempt to write {:?} for the {} time",
                 request,
                 ordinal::Ordinal(attempt)
             );
-            response_observer = match session.write(&request, response_observer).await {
-                Ok(_) => {
-                    trace!(self.log, "Request[`{request:?}`] forwarded to {addr:?}");
-                    break;
-                }
-                Err(observer) => {
-                    error!(self.log, "Failed to forward request to {addr:?}");
-                    observer
+
+            let res = sessions
+                .iter_mut()
+                .try_find(|(k, _)| Some(!attempted.contains(k.borrow())))
+                .map(|e| {
+                    if let Some((k, v)) = e {
+                        attempted.insert(k.clone());
+                        Some((k, v))
+                    } else {
+                        None
+                    }
+                })
+                .flatten();
+
+            if let Some((addr, session)) = res {
+                response_observer = match session.write(&request, response_observer).await {
+                    Ok(_) => {
+                        trace!(log, "Request[`{request:?}`] forwarded to {addr:?}");
+                        break;
+                    }
+                    Err(observer) => {
+                        error!(log, "Failed to forward request to {addr:?}");
+                        observer
+                    }
                 }
             }
         }
@@ -282,6 +332,7 @@ impl SessionManager {
         addr: &SocketAddr,
         duration: Duration,
         config: &Rc<config::ClientConfig>,
+        notifier: Rc<dyn Notifier>,
         log: &Logger,
     ) -> Result<Session, ClientError> {
         trace!(log, "Establishing connection to {:?}", addr);
@@ -314,6 +365,6 @@ impl SessionManager {
             }
         };
 
-        Ok(Session::new(stream, &endpoint, config, log))
+        Ok(Session::new(stream, &endpoint, config, notifier, log))
     }
 }

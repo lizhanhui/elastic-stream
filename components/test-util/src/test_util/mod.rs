@@ -5,12 +5,12 @@ use std::rc::Rc;
 
 use bytes::Bytes;
 use codec::frame::{Frame, OperationCode};
-use protocol::rpc::header::{HeartbeatRequest, HeartbeatResponseT};
+use protocol::rpc::header::{HeartbeatRequest, HeartbeatResponseT, ListRangesRequest};
 use slog::{debug, error, info, warn, Drain, Logger};
 
 use tokio::sync::oneshot;
 use tokio_uring::net::TcpListener;
-use transport::channel::{ChannelReader, ChannelWriter};
+use transport::channel::Channel;
 
 /// Run a dummy listening server.
 /// Once it accepts a connection, it quits immediately.
@@ -33,12 +33,10 @@ pub async fn run_listener(logger: Logger) -> u16 {
             tokio_uring::spawn(async move {
                 let logger = log.clone();
                 let addr = sock_addr.to_string();
-                let stream = Rc::new(conn);
-                let mut reader = ChannelReader::new(Rc::clone(&stream), &addr, logger.clone());
-                let mut writer = ChannelWriter::new(Rc::clone(&stream), &addr, logger.clone());
+                let channel = Channel::new(conn, &addr, logger.clone());
 
                 loop {
-                    if let Ok(frame) = reader.read_frame().await {
+                    if let Ok(frame) = channel.read_frame().await {
                         if let Some(frame) = frame {
                             info!(
                                 logger,
@@ -76,7 +74,7 @@ pub async fn run_listener(logger: Logger) -> u16 {
                                                 let buf = Bytes::copy_from_slice(hdr);
                                                 response_frame.header = Some(buf);
 
-                                                match writer.write_frame(&response_frame).await {
+                                                match channel.write_frame(&response_frame).await {
                                                     Ok(_) => {
                                                         info!(
                                                             logger,
@@ -99,13 +97,26 @@ pub async fn run_listener(logger: Logger) -> u16 {
                                     }
                                 }
                                 OperationCode::ListRanges => {
-                                    match writer.write_frame(&frame).await {
+                                    match channel.write_frame(&frame).await {
                                         Ok(_) => {
                                             info!(
                                                 logger,
                                                 "TestServer writes the `{}` request back directly",
                                                 frame.operation_code
                                             );
+                                            if let Some(header) = &frame.header {
+                                                let req =
+                                                    flatbuffers::root::<ListRangesRequest>(header);
+                                                match req {
+                                                    Ok(list_ranges) => {
+                                                        debug!(
+                                                            logger,
+                                                            "ListRanges: {:?}", list_ranges
+                                                        );
+                                                    }
+                                                    Err(_e) => {}
+                                                }
+                                            }
                                         }
                                         Err(e) => {
                                             error!(
