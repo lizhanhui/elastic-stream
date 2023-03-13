@@ -148,8 +148,8 @@ table DataNode {
 // Or it could list the ranges of all the streams in a specific data node.
 table ListRangesRequest {
     timeout_ms: int32 (id: 0);
-    // The range owner could be a data node or a list of streams.
-    // Note: a union type adds two fields, so the id of the field occupies 2 ids.
+    
+    // The range criteria could be a data node or a list of streams.
     range_criteria: [RangeCriteria] (id: 1);
 }
 
@@ -164,8 +164,8 @@ table ListRangesResponse {
 }
 
 table ListRangesResult {
-    // The owner that the returned ranges belong to.
-    // Maybe a data node or a stream id.
+    // The criteria that the returned ranges used.
+    // A criteria may be a data node or a stream id.
     range_owner: RangeCriteria (id: 0);
     // The error code, or 0 if there was no error.
     error_code: ErrorCode (id: 1);
