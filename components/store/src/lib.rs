@@ -43,6 +43,7 @@ mod index;
 mod io;
 mod request;
 mod store;
+mod offset_manager;
 
 pub use crate::io::buf::buf_slice::BufSlice;
 pub use crate::store::ElasticStore;

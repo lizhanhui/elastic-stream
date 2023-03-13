@@ -4,7 +4,6 @@ use crate::index::record_handle::RecordHandle;
 use crate::index::MinOffset;
 use crate::io::buf::{AlignedBufReader, AlignedBufWriter};
 use crate::io::context::Context;
-use crate::io::offset_manager::WalOffsetManager;
 use crate::io::options::Options;
 use crate::io::segment::Status;
 use crate::io::task::IoTask;
@@ -101,10 +100,7 @@ pub(crate) struct IO {
 
     blocked: HashMap<u64, squeue::Entry>,
 
-    wal_offset_manager: Rc<WalOffsetManager>,
-
-    indexer: IndexDriver,
-    shutdown_indexer: Sender<()>,
+    indexer: Arc<IndexDriver>,
 }
 
 /// Check if required opcodes are supported by the host operation system.
@@ -133,7 +129,11 @@ impl IO {
     /// Create new `IO` instance.
     ///
     /// Behavior of the IO instance can be tuned through `Options`.
-    pub(crate) fn new(options: &mut Options, log: Logger) -> Result<Self, StoreError> {
+    pub(crate) fn new(
+        options: &mut Options,
+        indexer: Arc<IndexDriver>,
+        log: Logger,
+    ) -> Result<Self, StoreError> {
         if options.wal_paths.is_empty() {
             return Err(StoreError::Configuration("WAL path required".to_owned()));
         }
@@ -179,17 +179,6 @@ impl IO {
 
         let (sender, receiver) = crossbeam::channel::unbounded();
 
-        let wal_offset_manager = Rc::new(WalOffsetManager::new());
-
-        let (shutdown_indexer, shutdown_rx) = crossbeam::channel::bounded(1);
-
-        let indexer = IndexDriver::new(
-            log.clone(),
-            &options.metadata_path,
-            Rc::clone(&wal_offset_manager) as Rc<dyn MinOffset>,
-            shutdown_rx,
-        )?;
-
         Ok(Self {
             options: options.clone(),
             data_ring,
@@ -211,9 +200,7 @@ impl IO {
             inflight_write_tasks: BTreeMap::new(),
             barrier: HashSet::new(),
             blocked: HashMap::new(),
-            wal_offset_manager,
             indexer,
-            shutdown_indexer,
         })
     }
 
@@ -821,9 +808,7 @@ impl AsRawFd for IO {
 
 impl Drop for IO {
     fn drop(&mut self) {
-        if self.shutdown_indexer.send(()).is_err() {
-            error!(self.log, "Failed to send shutdown signal to indexer");
-        }
+        self.indexer.shutdown_indexer();
     }
 }
 
@@ -831,12 +816,16 @@ impl Drop for IO {
 mod tests {
     use super::{IoTask, WriteTask};
     use crate::error::StoreError;
+    use crate::index::driver::IndexDriver;
+    use crate::index::MinOffset;
+    use crate::offset_manager::WalOffsetManager;
     use bytes::BytesMut;
     use slog::{debug, trace};
     use std::cell::RefCell;
     use std::error::Error;
     use std::fs;
     use std::path::{Path, PathBuf};
+    use std::sync::Arc;
     use tokio::sync::oneshot;
 
     use crate::option::WalPath;
@@ -860,7 +849,18 @@ mod tests {
         }
         let wal_path = WalPath::new(wal_dir.to_str().unwrap(), 1234)?;
         options.add_wal_path(wal_path);
-        super::IO::new(&mut options, logger.clone())
+
+        // Build wal offset manager
+        let wal_offset_manager = Arc::new(WalOffsetManager::new());
+
+        // Build index driver
+        let indexer = Arc::new(IndexDriver::new(
+            logger.clone(),
+            &options.metadata_path,
+            Arc::clone(&wal_offset_manager) as Arc<dyn MinOffset>,
+        )?);
+
+        super::IO::new(&mut options, indexer, logger.clone())
     }
 
     fn random_store_dir() -> Result<PathBuf, StoreError> {

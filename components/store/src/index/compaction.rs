@@ -1,7 +1,7 @@
 use std::{
     ffi::{CStr, CString},
     io::Cursor,
-    rc::Rc,
+    rc::Rc, sync::Arc,
 };
 
 use bytes::Buf;
@@ -64,11 +64,11 @@ impl CompactionFilter for IndexCompactionFilter {
 pub(crate) struct IndexCompactionFilterFactory {
     log: Logger,
     name: CString,
-    min_offset: Rc<dyn MinOffset>,
+    min_offset: Arc<dyn MinOffset>,
 }
 
 impl IndexCompactionFilterFactory {
-    pub(crate) fn new(log: Logger, name: CString, min_offset: Rc<dyn MinOffset>) -> Self {
+    pub(crate) fn new(log: Logger, name: CString, min_offset: Arc<dyn MinOffset>) -> Self {
         Self {
             log,
             name,

@@ -1,7 +1,6 @@
 mod block_cache;
 pub(crate) mod buf;
 mod context;
-mod offset_manager;
 mod options;
 mod record;
 mod segment;
