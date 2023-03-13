@@ -50,18 +50,19 @@ const (
 // Member is used for the election related logic.
 type Member struct {
 	leadership *election.Leadership
-	leader     atomic.Pointer[Info] // current leader's info
+	leader     atomic.Pointer[Info] // current leader's Info
 
 	etcd            *embed.Etcd
 	client          *clientv3.Client
 	id              uint64 // etcd server id.
 	clusterRootPath string // cluster root path in etcd
 
-	// info is current PM's info.
-	// It will be serialized and saved in etcd leader key when the PM node
+	// info is current PM's Info.
+	// It will be serialized (infoValue) and saved in etcd leader key when the PM node
 	// is successfully elected as the PM leader of the cluster.
 	// Every write will use it to check PM leadership.
-	info *Info
+	info      *Info
+	infoValue []byte
 
 	lg *zap.Logger // logger
 }
@@ -77,7 +78,7 @@ func NewMember(etcd *embed.Etcd, client *clientv3.Client, id uint64, logger *zap
 }
 
 // Init initializes the member info.
-func (m *Member) Init(cfg *config.Config, name string, clusterRootPath string) {
+func (m *Member) Init(cfg *config.Config, name string, clusterRootPath string) error {
 	info := &Info{
 		Name:       name,
 		MemberID:   m.id,
@@ -86,8 +87,14 @@ func (m *Member) Init(cfg *config.Config, name string, clusterRootPath string) {
 	}
 
 	m.info = info
+	bytes, err := json.Marshal(info)
+	if err != nil {
+		return errors.Wrap(err, "marshal member info")
+	}
+	m.infoValue = bytes
 	m.clusterRootPath = clusterRootPath
-	m.leadership = election.NewLeadership(m.client, m.getLeaderPath(), _leaderElectionPurpose, m.lg)
+	m.leadership = election.NewLeadership(m.client, m.LeaderPath(), _leaderElectionPurpose, m.lg)
+	return nil
 }
 
 // CheckLeader checks returns true if it is needed to check later.
@@ -128,9 +135,9 @@ func (m *Member) CheckLeader() (*Info, etcdutil.ModRevision, bool) {
 func (m *Member) GetLeader() (*Info, etcdutil.ModRevision, error) {
 	logger := m.lg
 
-	kv, err := etcdutil.GetOne(m.client, []byte(m.getLeaderPath()))
+	kv, err := etcdutil.GetOne(m.client, []byte(m.LeaderPath()))
 	if err != nil {
-		logger.Error("failed to get leader", zap.String("leader-key", m.getLeaderPath()), zap.Error(err))
+		logger.Error("failed to get leader", zap.String("leader-key", m.LeaderPath()), zap.Error(err))
 		return nil, 0, errors.Wrap(err, "get kv from etcd")
 	}
 	if kv == nil {
@@ -157,11 +164,11 @@ func (m *Member) WatchLeader(serverCtx context.Context, leader *Info, revision e
 // CampaignLeader is used to campaign a PM member's leadership and make it become a PM leader.
 // returns true if successfully campaign leader
 func (m *Member) CampaignLeader(leaseTimeout int64) (bool, error) {
-	bytes, err := json.Marshal(m.info)
-	if err != nil {
-		return false, errors.Wrap(err, "marshal member info")
-	}
-	return m.leadership.Campaign(leaseTimeout, string(bytes))
+	return m.leadership.Campaign(leaseTimeout, string(m.Info()))
+}
+
+func (m *Member) Info() []byte {
+	return m.infoValue
 }
 
 // KeepLeader is used to keep the PM leader's leadership.
@@ -281,7 +288,7 @@ func (m *Member) unsetLeader() {
 	m.leader.Store(&Info{})
 }
 
-func (m *Member) getLeaderPath() string {
+func (m *Member) LeaderPath() string {
 	return path.Join(m.clusterRootPath, _leaderPathPrefix)
 }
 

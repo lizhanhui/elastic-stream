@@ -25,16 +25,23 @@ import (
 
 // Etcd is a kv based on etcd.
 type Etcd struct {
-	client   *clientv3.Client
-	rootPath []byte
+	client     *clientv3.Client
+	rootPath   []byte
+	newTxnFunc func() clientv3.Txn
 }
 
 // NewEtcd creates a new etcd kv.
-func NewEtcd(client *clientv3.Client, rootPath string) *Etcd {
-	return &Etcd{
-		client:   client,
-		rootPath: []byte(rootPath),
+// If newTxnFunc is nil, it will use etcdutil.NewTxn.
+func NewEtcd(client *clientv3.Client, rootPath string, newTxnFunc func() clientv3.Txn) *Etcd {
+	e := &Etcd{
+		client:     client,
+		rootPath:   []byte(rootPath),
+		newTxnFunc: newTxnFunc,
 	}
+	if e.newTxnFunc == nil {
+		e.newTxnFunc = func() clientv3.Txn { return etcdutil.NewTxn(e.client) }
+	}
+	return e
 }
 
 func (e *Etcd) Get(k []byte) ([]byte, error) {

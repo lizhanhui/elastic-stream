@@ -175,8 +175,11 @@ func (s *Server) startServer() error {
 	logger.Info("init cluster ID", zap.Uint64("cluster-id", s.clusterID))
 
 	s.rootPath = path.Join(_rootPathPrefix, strconv.FormatUint(s.clusterID, 10))
-	s.member.Init(s.cfg, s.Name(), s.rootPath)
-	s.storage = storage.NewEtcd(s.client, s.rootPath, logger)
+	err := s.member.Init(s.cfg, s.Name(), s.rootPath)
+	if err != nil {
+		return errors.Wrap(err, "init member")
+	}
+	s.storage = storage.NewEtcd(s.client, s.rootPath, func() clientv3.Txn { return s.leaderTxn() }, logger)
 	s.cluster = cluster.NewRaftCluster(s.ctx, s.clusterID, s.storage, s.lg)
 
 	// TODO set address in config
@@ -417,6 +420,13 @@ func (s *Server) stopSbpServer() {
 	ctx, cancel := context.WithTimeout(context.Background(), _shutdownSbpServerTimeout)
 	defer cancel()
 	_ = s.sbpServer.Shutdown(ctx)
+}
+
+// leaderTxn returns a txn with leader comparison to guarantee that
+// the transaction can be executed only if the server is leader.
+func (s *Server) leaderTxn(cs ...clientv3.Cmp) clientv3.Txn {
+	leaderCmp := clientv3.Compare(clientv3.Value(s.member.LeaderPath()), "=", s.member.Info())
+	return etcdutil.NewTxn(s.client).If(append(cs, leaderCmp)...)
 }
 
 // checkClusterID checks etcd cluster ID, returns an error if mismatched.
