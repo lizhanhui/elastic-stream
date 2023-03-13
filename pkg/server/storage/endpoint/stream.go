@@ -33,14 +33,14 @@ func (e *Endpoint) CreateStream(stream *rpcfb.StreamT) (*rpcfb.StreamT, error) {
 
 	stream.StreamId = e.nextStreamID()
 	streamInfo := fbutil.Marshal(stream)
-	prev, err := e.Put(streamPath(stream.StreamId), streamInfo)
+	prev, err := e.Put(streamPath(stream.StreamId), streamInfo, true)
 	mcache.Free(streamInfo)
 	if err != nil {
 		logger.Error("failed to save stream", zap.Int64("stream-id", stream.StreamId), zap.Error(err))
 		return nil, errors.Wrap(err, "save stream")
 	}
 	if prev != nil {
-		logger.Warn("stream already exists", zap.Int64("stream-id", stream.StreamId))
+		logger.Warn("stream already exists, will override it", zap.Int64("stream-id", stream.StreamId))
 	}
 
 	return stream, nil
@@ -50,7 +50,7 @@ func (e *Endpoint) CreateStream(stream *rpcfb.StreamT) (*rpcfb.StreamT, error) {
 func (e *Endpoint) DeleteStream(streamID int64) (*rpcfb.StreamT, error) {
 	logger := e.lg
 
-	prev, err := e.Delete(streamPath(streamID))
+	prev, err := e.Delete(streamPath(streamID), true)
 	if err != nil {
 		logger.Error("failed to delete stream", zap.Int64("stream-id", streamID), zap.Error(err))
 		return nil, errors.Wrap(err, "delete stream")
@@ -68,14 +68,14 @@ func (e *Endpoint) UpdateStream(stream *rpcfb.StreamT) (*rpcfb.StreamT, error) {
 	logger := e.lg
 
 	streamInfo := fbutil.Marshal(stream)
-	prev, err := e.Put(streamPath(stream.StreamId), streamInfo)
+	prev, err := e.Put(streamPath(stream.StreamId), streamInfo, true)
 	mcache.Free(streamInfo)
 	if err != nil {
 		logger.Error("failed to update stream", zap.Int64("stream-id", stream.StreamId), zap.Error(err))
 		return nil, errors.Wrap(err, "update stream")
 	}
 	if prev == nil {
-		logger.Warn("stream not found when update stream", zap.Int64("stream-id", stream.StreamId))
+		logger.Warn("stream not found when update stream, will create it", zap.Int64("stream-id", stream.StreamId))
 	}
 
 	return stream, nil

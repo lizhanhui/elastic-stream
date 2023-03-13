@@ -31,6 +31,6 @@ type Etcd struct {
 func NewEtcd(client *clientv3.Client, rootPath string, newTxnFunc func() clientv3.Txn, lg *zap.Logger) *Etcd {
 	logger := lg.With(zap.String("etcd-storage-root-path", rootPath))
 	return &Etcd{
-		endpoint.NewEndpoint(kv.NewEtcd(client, rootPath, newTxnFunc), logger),
+		endpoint.NewEndpoint(kv.NewEtcd(client, rootPath, newTxnFunc, lg), logger),
 	}
 }

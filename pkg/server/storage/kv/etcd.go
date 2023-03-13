@@ -19,8 +19,14 @@ import (
 
 	"github.com/pkg/errors"
 	clientv3 "go.etcd.io/etcd/client/v3"
+	"go.uber.org/zap"
 
 	"github.com/AutoMQ/placement-manager/pkg/util/etcdutil"
+)
+
+var (
+	// ErrTxnFailed is the error when etcd transaction failed.
+	ErrTxnFailed = errors.New("etcd transaction failed")
 )
 
 // Etcd is a kv based on etcd.
@@ -28,15 +34,18 @@ type Etcd struct {
 	client     *clientv3.Client
 	rootPath   []byte
 	newTxnFunc func() clientv3.Txn
+
+	lg *zap.Logger
 }
 
 // NewEtcd creates a new etcd kv.
 // If newTxnFunc is nil, it will use etcdutil.NewTxn.
-func NewEtcd(client *clientv3.Client, rootPath string, newTxnFunc func() clientv3.Txn) *Etcd {
+func NewEtcd(client *clientv3.Client, rootPath string, newTxnFunc func() clientv3.Txn, lg *zap.Logger) *Etcd {
 	e := &Etcd{
 		client:     client,
 		rootPath:   []byte(rootPath),
 		newTxnFunc: newTxnFunc,
+		lg:         lg.With(zap.String("etcd-kv-root-path", rootPath)),
 	}
 	if e.newTxnFunc == nil {
 		e.newTxnFunc = func() clientv3.Txn { return etcdutil.NewTxn(e.client) }
@@ -81,43 +90,106 @@ func (e *Etcd) GetByRange(r Range, limit int64) ([]KeyValue, error) {
 	return kvs, nil
 }
 
-func (e *Etcd) Put(k, v []byte) ([]byte, error) {
-	if len(k) == 0 {
-		return nil, nil
-	}
-	key := e.addPrefix(k)
-
-	resp, err := etcdutil.Put(e.client, key, v, clientv3.WithPrevKV())
+func (e *Etcd) Put(k, v []byte, prevKV bool) ([]byte, error) {
+	prevKvs, err := e.BatchPut([]KeyValue{{Key: k, Value: v}}, prevKV)
 	if err != nil {
 		return nil, errors.Wrap(err, "kv put")
 	}
 
-	var prevValue []byte
-	if resp.PrevKv != nil {
-		prevValue = resp.PrevKv.Value
-	}
-	return prevValue, nil
-}
-
-func (e *Etcd) Delete(k []byte) ([]byte, error) {
-	if len(k) == 0 {
+	if !prevKV {
 		return nil, nil
 	}
-	key := e.addPrefix(k)
+	return prevKvs[0].Value, nil
+}
 
-	resp, err := etcdutil.Delete(e.client, key, clientv3.WithPrevKV())
+func (e *Etcd) BatchPut(kvs []KeyValue, prevKV bool) ([]KeyValue, error) {
+	if len(kvs) == 0 {
+		return nil, nil
+	}
+
+	ops := make([]clientv3.Op, 0, len(kvs))
+	var opts []clientv3.OpOption
+	if prevKV {
+		opts = append(opts, clientv3.WithPrevKV())
+	}
+	for _, kv := range kvs {
+		key := e.addPrefix(kv.Key)
+		ops = append(ops, clientv3.OpPut(string(key), string(kv.Value), opts...))
+	}
+
+	txn := e.newTxnFunc().Then(ops...)
+	resp, err := txn.Commit()
+	if err != nil {
+		return nil, errors.Wrap(err, "kv batch put")
+	}
+	if !resp.Succeeded {
+		return nil, ErrTxnFailed
+	}
+
+	if !prevKV {
+		return nil, nil
+	}
+	prevKvs := make([]KeyValue, 0, len(resp.Responses))
+	for _, resp := range resp.Responses {
+		putResp := resp.GetResponsePut()
+		prevKvs = append(prevKvs, KeyValue{
+			Key:   e.trimPrefix(putResp.PrevKv.Key),
+			Value: putResp.PrevKv.Value,
+		})
+	}
+	return prevKvs, nil
+}
+
+func (e *Etcd) Delete(k []byte, prevKV bool) ([]byte, error) {
+	prevKvs, err := e.BatchDelete([]KeyValue{{Key: k}}, prevKV)
 	if err != nil {
 		return nil, errors.Wrap(err, "kv delete")
 	}
 
-	var prevValue []byte
-	for _, kv := range resp.PrevKvs {
-		if bytes.Equal(kv.Key, key) {
-			prevValue = kv.Value
-			break
+	if !prevKV {
+		return nil, nil
+	}
+	return prevKvs[0].Value, nil
+}
+
+func (e *Etcd) BatchDelete(kvs []KeyValue, prevKV bool) ([]KeyValue, error) {
+	if len(kvs) == 0 {
+		return nil, nil
+	}
+
+	ops := make([]clientv3.Op, 0, len(kvs))
+	var opts []clientv3.OpOption
+	if prevKV {
+		opts = append(opts, clientv3.WithPrevKV())
+	}
+	for _, kv := range kvs {
+		key := e.addPrefix(kv.Key)
+		ops = append(ops, clientv3.OpDelete(string(key), opts...))
+	}
+
+	txn := e.newTxnFunc().Then(ops...)
+	resp, err := txn.Commit()
+	if err != nil {
+		return nil, errors.Wrap(err, "kv batch delete")
+	}
+	if !resp.Succeeded {
+		return nil, ErrTxnFailed
+	}
+
+	if !prevKV {
+		return nil, nil
+	}
+	prevKvs := make([]KeyValue, 0, len(resp.Responses))
+	for _, resp := range resp.Responses {
+		deleteResp := resp.GetResponseDeleteRange()
+		for _, kv := range deleteResp.PrevKvs {
+			prevKvs = append(prevKvs, KeyValue{
+				Key:   e.trimPrefix(kv.Key),
+				Value: kv.Value,
+			})
 		}
 	}
-	return prevValue, nil
+	return prevKvs, nil
 }
 
 func (e *Etcd) GetPrefixRangeEnd(p []byte) []byte {
