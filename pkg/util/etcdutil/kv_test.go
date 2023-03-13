@@ -22,6 +22,7 @@ import (
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"go.etcd.io/etcd/server/v3/embed"
 	"go.uber.org/goleak"
+	"go.uber.org/zap"
 
 	"github.com/AutoMQ/placement-manager/pkg/util/testutil"
 )
@@ -92,7 +93,7 @@ func TestGetOne(t *testing.T) {
 			}
 
 			// run
-			got, err := GetOne(client, tt.args.key)
+			got, err := GetOne(client, tt.args.key, zap.NewNop())
 
 			// check
 			if tt.wantErr {
@@ -208,7 +209,7 @@ func TestGet(t *testing.T) {
 			}
 
 			// run
-			resp, err := Get(client, tt.args.key, tt.args.opts...)
+			resp, err := Get(client, tt.args.key, zap.NewNop(), tt.args.opts...)
 
 			// check
 			if tt.wantErr {

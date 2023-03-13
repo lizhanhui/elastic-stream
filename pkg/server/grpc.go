@@ -21,20 +21,30 @@ import (
 
 	"github.com/pkg/errors"
 	clientv3 "go.etcd.io/etcd/client/v3"
+	"go.uber.org/zap"
 
 	"github.com/AutoMQ/placement-manager/api/kvpb"
 	"github.com/AutoMQ/placement-manager/pkg/util/etcdutil"
 )
 
+var _globalPrefix = []byte("/global/kv/")
+
 // GrpcServer wraps Server to provide grpc service.
 type GrpcServer struct {
 	*Server
+	lg *zap.Logger
 }
 
-var _globalPrefix = []byte("/global/kv/")
+func NewGrpcServer(s *Server, lg *zap.Logger) *GrpcServer {
+	return &GrpcServer{
+		Server: s,
+		lg:     lg.With(zap.String("grpc-server", "kv")),
+	}
+}
 
 // Store stores kv into etcd by transaction
 func (s *GrpcServer) Store(_ context.Context, request *kvpb.StoreRequest) (*kvpb.StoreResponse, error) {
+	logger := s.lg
 	prefix := request.GetPrefix()
 	if prefix == nil {
 		prefix = _globalPrefix
@@ -54,7 +64,7 @@ func (s *GrpcServer) Store(_ context.Context, request *kvpb.StoreRequest) (*kvpb
 		}
 	}
 	res, err :=
-		etcdutil.NewTxn(s.client).Then(ops...).Commit()
+		etcdutil.NewTxn(s.client, logger).Then(ops...).Commit()
 	if err != nil {
 		return &kvpb.StoreResponse{}, err
 	}

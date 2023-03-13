@@ -48,7 +48,7 @@ func NewEtcd(client *clientv3.Client, rootPath string, newTxnFunc func() clientv
 		lg:         lg.With(zap.String("etcd-kv-root-path", rootPath)),
 	}
 	if e.newTxnFunc == nil {
-		e.newTxnFunc = func() clientv3.Txn { return etcdutil.NewTxn(e.client) }
+		e.newTxnFunc = func() clientv3.Txn { return etcdutil.NewTxn(e.client, lg) }
 	}
 	return e
 }
@@ -57,9 +57,11 @@ func (e *Etcd) Get(k []byte) ([]byte, error) {
 	if len(k) == 0 {
 		return nil, nil
 	}
+	logger := e.lg
+
 	key := e.addPrefix(k)
 
-	kv, err := etcdutil.GetOne(e.client, key)
+	kv, err := etcdutil.GetOne(e.client, key, logger)
 	if err != nil {
 		return nil, errors.Wrap(err, "kv get")
 	}
@@ -71,11 +73,12 @@ func (e *Etcd) GetByRange(r Range, limit int64) ([]KeyValue, error) {
 	if len(r.StartKey) == 0 {
 		return nil, nil
 	}
+	logger := e.lg
 
 	startKey := e.addPrefix(r.StartKey)
 	endKey := e.addPrefix(r.EndKey)
 
-	resp, err := etcdutil.Get(e.client, startKey, clientv3.WithRange(string(endKey)), clientv3.WithLimit(limit))
+	resp, err := etcdutil.Get(e.client, startKey, logger, clientv3.WithRange(string(endKey)), clientv3.WithLimit(limit))
 	if err != nil {
 		return nil, errors.Wrap(err, "kv get by range")
 	}

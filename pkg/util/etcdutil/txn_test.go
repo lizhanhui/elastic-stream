@@ -62,21 +62,21 @@ func TestNormalTxn(t *testing.T) {
 	_, client, closeFunc := startEtcd(re, t)
 	defer closeFunc()
 
-	txn := NewTxn(client)
+	txn := NewTxn(client, zap.NewNop())
 	_, _ = txn.If(clientv3.Compare(clientv3.CreateRevision("test/key"), "=", 0)).
 		Then(clientv3.OpPut("test/key", "val1")).
 		Else(clientv3.OpPut("test/key", "val2")).
 		Commit()
-	got, err := GetOne(client, []byte("test/key"))
+	got, err := GetOne(client, []byte("test/key"), zap.NewNop())
 	re.NoError(err)
 	re.Equal("val1", string(got.Value))
 
-	txn = NewTxn(client)
+	txn = NewTxn(client, zap.NewNop())
 	_, _ = txn.If(clientv3.Compare(clientv3.CreateRevision("test/key"), "=", 0)).
 		Then(clientv3.OpPut("test/key", "val1")).
 		Else(clientv3.OpPut("test/key", "val2")).
 		Commit()
-	got, err = GetOne(client, []byte("test/key"))
+	got, err = GetOne(client, []byte("test/key"), zap.NewNop())
 	re.NoError(err)
 	re.Equal("val2", string(got.Value))
 }

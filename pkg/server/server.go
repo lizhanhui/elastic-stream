@@ -89,7 +89,7 @@ func NewServer(ctx context.Context, cfg *config.Config, logger *zap.Logger) (*Se
 	}
 
 	s.cfg.Etcd.ServiceRegister = func(gs *grpc.Server) {
-		kvpb.RegisterKVServer(gs, &GrpcServer{Server: s})
+		kvpb.RegisterKVServer(gs, NewGrpcServer(s, logger))
 	}
 
 	return s, nil
@@ -215,7 +215,7 @@ func (s *Server) initClusterID() error {
 	logger := s.lg
 
 	// query any existing ID in etcd
-	kv, err := etcdutil.GetOne(s.client, []byte(_clusterIDPath))
+	kv, err := etcdutil.GetOne(s.client, []byte(_clusterIDPath), logger)
 	if err != nil {
 		logger.Error("failed to query cluster id", zap.String("cluster-id-path", _clusterIDPath), zap.Error(err))
 		return errors.Wrap(err, "get value from etcd")
@@ -380,6 +380,10 @@ func (s *Server) Context() context.Context {
 	return s.ctx
 }
 
+func (s *Server) Logger() *zap.Logger {
+	return s.lg
+}
+
 // IsClosed checks whether server is closed or not.
 func (s *Server) IsClosed() bool {
 	return !s.started.Load()
@@ -426,7 +430,7 @@ func (s *Server) stopSbpServer() {
 // the transaction can be executed only if the server is leader.
 func (s *Server) leaderTxn(cs ...clientv3.Cmp) clientv3.Txn {
 	leaderCmp := clientv3.Compare(clientv3.Value(s.member.LeaderPath()), "=", s.member.Info())
-	return etcdutil.NewTxn(s.client).If(append(cs, leaderCmp)...)
+	return etcdutil.NewTxn(s.client, s.Logger()).If(append(cs, leaderCmp)...)
 }
 
 // checkClusterID checks etcd cluster ID, returns an error if mismatched.
