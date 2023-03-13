@@ -150,7 +150,7 @@ table ListRangesRequest {
     timeout_ms: int32 (id: 0);
     // The range owner could be a data node or a list of streams.
     // Note: a union type adds two fields, so the id of the field occupies 2 ids.
-    range_owners: [RangeCriteria] (id: 1);
+    range_criteria: [RangeCriteria] (id: 1);
 }
 
 table ListRangesResponse {
