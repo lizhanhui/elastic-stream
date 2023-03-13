@@ -304,7 +304,7 @@ impl Indexer {
         }
     }
 
-    fn retrieve_max_key(&self, stream_id: i64) -> Result<Option<Box<Bytes>>, StoreError> {
+    fn retrieve_max_key(&self, stream_id: i64) -> Result<Option<Bytes>, StoreError> {
         match self.db.cf_handle(INDEX_COLUMN_FAMILY) {
             Some(cf) => {
                 let mut read_opts = ReadOptions::default();
@@ -314,7 +314,7 @@ impl Indexer {
                 if let Some(result) = iter.next() {
                     let (max, _v) = result.map_err(|e| StoreError::RocksDB(e.into_string()))?;
 
-                    Ok(Some(Box::new(Bytes::from(max))))
+                    Ok(Some(Bytes::from(max)))
                 } else {
                     Ok(None)
                 }
@@ -330,11 +330,7 @@ impl Indexer {
     /// 1. `None` is returned if the specific offset < min offset or offset > max offset.
     /// 2. The current offset key is returned if it exists.
     /// 3. Otherwise, the left key is returned.
-    fn retrieve_left_key(
-        &self,
-        stream_id: i64,
-        offset: u64,
-    ) -> Result<Option<Box<Bytes>>, StoreError> {
+    fn retrieve_left_key(&self, stream_id: i64, offset: u64) -> Result<Option<Bytes>, StoreError> {
         let max_key = self.retrieve_max_key(stream_id)?;
         if let Some(max_key) = max_key {
             let max_offset = max_key.slice(8..).get_u64();
@@ -365,7 +361,7 @@ impl Indexer {
                 if let Some(result) = lower_entry {
                     let (lower, _v) = result.map_err(|e| StoreError::RocksDB(e.into_string()))?;
 
-                    Ok(Some(Box::new(Bytes::from(lower))))
+                    Ok(Some(Bytes::from(lower)))
                 } else {
                     Ok(None)
                 }
@@ -377,11 +373,11 @@ impl Indexer {
         }
     }
 
-    fn build_index_key(&self, stream_id: i64, offset: u64) -> Box<Bytes> {
+    fn build_index_key(&self, stream_id: i64, offset: u64) -> Bytes {
         let mut index_key = BytesMut::with_capacity(8 + 8);
         index_key.put_i64(stream_id);
         index_key.put_u64(offset);
-        Box::new(index_key.freeze())
+        index_key.freeze()
     }
 }
 
