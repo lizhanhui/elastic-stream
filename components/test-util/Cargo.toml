@@ -17,6 +17,8 @@ crc32fast = { workspace = true }
 transport = { path = "../transport" }
 codec = { path = "../codec" }
 model = { path = "../model" }
+protocol = { path = "../protocol" }
+flatbuffers = { workspace = true }
 
 
 [dev-dependencies]

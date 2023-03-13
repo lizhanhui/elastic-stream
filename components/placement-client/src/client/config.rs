@@ -4,6 +4,8 @@ use std::{
     time::Duration,
 };
 
+use model::data_node::DataNode;
+
 /// Default connection timeout in seconds.
 const CONNECT_TIMEOUT_IN_SECS: u64 = 3;
 
@@ -26,7 +28,7 @@ fn client_id() -> String {
 }
 
 /// Placement client configuration
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub(crate) struct ClientConfig {
     /// Maximum amount of time to wait when creating connections to placement manager servers.
     pub(crate) connect_timeout: Duration,
@@ -36,6 +38,8 @@ pub(crate) struct ClientConfig {
     pub(crate) max_attempt: u32,
 
     pub(crate) client_id: String,
+
+    pub(crate) data_node: Option<DataNode>,
 }
 
 impl Default for ClientConfig {
@@ -45,6 +49,7 @@ impl Default for ClientConfig {
             heartbeat_interval: Duration::from_secs(HEARTBEAT_INTERVAL_IN_SECS),
             max_attempt: MAX_ATTEMPT,
             client_id: client_id(),
+            data_node: None,
         }
     }
 }

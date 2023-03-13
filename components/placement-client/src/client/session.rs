@@ -6,7 +6,7 @@ use std::{
 };
 
 use codec::frame::{Frame, OperationCode};
-use model::{request::Request, client_role::ClientRole};
+use model::{client_role::ClientRole, request::Request};
 use slog::{error, trace, warn, Logger};
 use tokio::sync::oneshot;
 use tokio_uring::net::TcpStream;
@@ -164,7 +164,7 @@ impl Session {
         let request = Request::Heartbeat {
             client_id: self.config.client_id.clone(),
             role: ClientRole::DataNode,
-            data_node: None
+            data_node: self.config.data_node.clone(),
         };
         let (response_observer, rx) = oneshot::channel();
         if self.write(&request, response_observer).await.is_ok() {
