@@ -35,9 +35,11 @@ import (
 
 	"github.com/AutoMQ/placement-manager/api/kvpb"
 	sbpServer "github.com/AutoMQ/placement-manager/pkg/sbp/server"
+	"github.com/AutoMQ/placement-manager/pkg/server/cluster"
 	"github.com/AutoMQ/placement-manager/pkg/server/config"
 	"github.com/AutoMQ/placement-manager/pkg/server/handler"
 	"github.com/AutoMQ/placement-manager/pkg/server/member"
+	"github.com/AutoMQ/placement-manager/pkg/server/storage"
 	"github.com/AutoMQ/placement-manager/pkg/util/etcdutil"
 	"github.com/AutoMQ/placement-manager/pkg/util/logutil"
 	"github.com/AutoMQ/placement-manager/pkg/util/randutil"
@@ -70,7 +72,9 @@ type Server struct {
 	clusterID uint64           // pm cluster id
 	rootPath  string           // root path in etcd
 
-	sbpServer *sbpServer.Server // sbp server
+	storage   storage.Storage
+	cluster   *cluster.RaftCluster
+	sbpServer *sbpServer.Server
 
 	lg *zap.Logger // logger
 }
@@ -172,6 +176,8 @@ func (s *Server) startServer() error {
 
 	s.rootPath = path.Join(_rootPathPrefix, strconv.FormatUint(s.clusterID, 10))
 	s.member.Init(s.cfg, s.Name(), s.rootPath)
+	s.storage = storage.NewEtcd(s.client, s.rootPath, logger)
+	s.cluster = cluster.NewRaftCluster(s.ctx, s.clusterID, s.storage, s.lg)
 
 	// TODO set address in config
 	sbpAddr := "127.0.0.1:2378"
@@ -299,9 +305,14 @@ func (s *Server) campaignLeader() {
 	s.member.KeepLeader(ctx)
 	logger.Info("success to campaign leader", zap.String("campaign-pm-leader-name", s.Name()))
 
-	// TODO start raft cluster
+	err = s.cluster.Start()
+	if err != nil {
+		logger.Error("failed to start cluster", zap.Error(err))
+		return
+	}
+	defer func() { _ = s.cluster.Stop() }()
 
-	// EnableLeader to accept the remaining service, such as GetPartition.
+	// EnableLeader to accept requests
 	s.member.EnableLeader()
 	// as soon as cancel the leadership keepalive, then other member have chance to be new leader.
 	defer resetLeaderOnce.Do(resetLeaderFunc)
