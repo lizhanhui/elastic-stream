@@ -3,13 +3,17 @@ use std::rc::Rc;
 use slog::{o, Discard, Logger};
 use tokio::sync::mpsc;
 
-use crate::error::ClientError;
+use crate::{
+    error::ClientError,
+    notifier::{self, Notifier, UnsupportedNotifier},
+};
 
 use super::{config, placement_client::PlacementClient, session_manager::SessionManager};
 
 pub struct PlacementClientBuilder {
     target: String,
     config: config::ClientConfig,
+    notifier: Rc<dyn Notifier>,
     pub(crate) log: Logger,
 }
 
@@ -20,8 +24,14 @@ impl PlacementClientBuilder {
         Self {
             target: target.to_owned(),
             config: config::ClientConfig::default(),
+            notifier: Rc::new(UnsupportedNotifier {}),
             log: root,
         }
+    }
+
+    pub fn set_notifier(mut self, notifier: Rc<dyn Notifier>) -> Self {
+        self.notifier = notifier;
+        self
     }
 
     pub(crate) fn set_log(mut self, log: Logger) -> Self {
@@ -39,7 +49,9 @@ impl PlacementClientBuilder {
 
         let config = Rc::new(self.config);
 
-        let mut session_manager = SessionManager::new(&self.target, &config, rx, &self.log)?;
+        let mut session_manager =
+            SessionManager::new(&self.target, &config, rx, self.notifier, &self.log)?;
+
         tokio_uring::spawn(async move {
             session_manager.run().await;
         });

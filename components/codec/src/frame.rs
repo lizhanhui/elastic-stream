@@ -15,6 +15,9 @@ pub(crate) const MIN_FRAME_LENGTH: u32 = 16;
 // Max frame length 16MB
 pub(crate) const MAX_FRAME_LENGTH: u32 = 16 * 1024 * 1024;
 
+const FLAG_RESPONSE: u8 = 0x01;
+const FLAG_UNSUPPORTED: u8 = 0x04;
+
 thread_local! {
     static STREAM_ID: RefCell<u32> = RefCell::new(1);
 }
@@ -55,8 +58,16 @@ impl Frame {
         }
     }
 
+    pub fn is_response(&self) -> bool {
+        self.flag & FLAG_RESPONSE == FLAG_RESPONSE
+    }
+
     pub fn flag_response(&mut self) {
-        self.flag |= 0x01;
+        self.flag |= FLAG_RESPONSE;
+    }
+
+    pub fn flag_unsupported(&mut self) {
+        self.flag |= FLAG_UNSUPPORTED;
     }
 
     pub fn flag_end_response(&mut self) {
@@ -67,7 +78,7 @@ impl Frame {
         self.flag |= 0x07;
     }
 
-    pub fn check(src: &mut Cursor<&[u8]>, logger: &mut Logger) -> Result<(), FrameError> {
+    pub fn check(src: &mut Cursor<&[u8]>, logger: &Logger) -> Result<(), FrameError> {
         let frame_length = match src.read_u32::<byteorder::NetworkEndian>() {
             Ok(n) => {
                 trace!(logger, "Incoming frame length is: {}", n);

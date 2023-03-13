@@ -1,11 +1,10 @@
-use std::{rc::Rc, time::Duration};
-
 use bytes::{BufMut, BytesMut};
 use clap::Parser;
 use codec::frame::{Frame, HeaderFormat, OperationCode};
 use slog::{debug, error, info, o, warn, Drain, Logger};
+use std::time::Duration;
 use tokio_uring::net::TcpStream;
-use transport::channel::{ChannelReader, ChannelWriter};
+use transport::channel::Channel;
 
 fn main() {
     tokio_uring::start(async {
@@ -85,14 +84,12 @@ async fn launch(args: &Args, logger: Logger) {
         .for_each(|ele| bytes_mute.put_slice(&ele));
     let buffer = bytes_mute.freeze();
 
-    let stream = Rc::new(stream);
-    let mut read_channel = ChannelReader::new(Rc::clone(&stream), &connect, logger.new(o!()));
-    let mut write_channel = ChannelWriter::new(Rc::clone(&stream), &connect, logger.new(o!()));
-    write_channel.write_frame(&frame).await.unwrap();
+    let mut channel = Channel::new(stream, &connect, logger.new(o!()));
+    channel.write_frame(&frame).await.unwrap();
     let mut cnt = 0;
     debug!(logger, "{cnt} Ping");
     loop {
-        match read_channel.read_frame().await {
+        match channel.read_frame().await {
             Ok(Some(mut frame)) => {
                 debug!(logger, "{cnt} Pong received");
                 cnt += 1;
@@ -101,7 +98,7 @@ async fn launch(args: &Args, logger: Logger) {
 
                 tokio::time::sleep(Duration::from_millis(100)).await;
 
-                if let Ok(_) = write_channel.write_frame(&frame).await {
+                if let Ok(_) = channel.write_frame(&frame).await {
                     debug!(logger, "{cnt} Ping sent");
                 } else {
                     warn!(logger, "Failed to ping...");

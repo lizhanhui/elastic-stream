@@ -1,21 +1,18 @@
+use super::session_state::SessionState;
+use super::{config, response};
+use crate::{client::response::Status, notifier::Notifier};
+use codec::frame::{Frame, OperationCode};
+use model::{client_role::ClientRole, request::Request};
+use slog::{error, trace, warn, Logger};
 use std::{
     cell::UnsafeCell,
     collections::HashMap,
     rc::Rc,
     time::{Duration, Instant},
 };
-
-use codec::frame::{Frame, OperationCode};
-use model::{client_role::ClientRole, request::Request};
-use slog::{error, trace, warn, Logger};
 use tokio::sync::oneshot;
 use tokio_uring::net::TcpStream;
-use transport::channel::{ChannelReader, ChannelWriter};
-
-use super::session_state::SessionState;
-use crate::client::response::Status;
-
-use super::{config, response};
+use transport::channel::Channel;
 
 pub(crate) struct Session {
     config: Rc<config::ClientConfig>,
@@ -24,7 +21,7 @@ pub(crate) struct Session {
 
     state: SessionState,
 
-    writer: ChannelWriter,
+    channel: Rc<Channel>,
 
     /// In-flight requests.
     inflight_requests: Rc<UnsafeCell<HashMap<u32, oneshot::Sender<response::Response>>>>,
@@ -37,27 +34,39 @@ impl Session {
         stream: TcpStream,
         endpoint: &str,
         config: &Rc<config::ClientConfig>,
-        logger: &Logger,
+        notifier: Rc<dyn Notifier>,
+        log: &Logger,
     ) -> Self {
-        let stream = Rc::new(stream);
-        let writer = ChannelWriter::new(Rc::clone(&stream), endpoint, logger.clone());
-        let mut reader = ChannelReader::new(Rc::clone(&stream), endpoint, logger.clone());
-        let in_flights = Rc::new(UnsafeCell::new(HashMap::new()));
+        let channel = Rc::new(Channel::new(stream, endpoint, log.clone()));
+        let inflight = Rc::new(UnsafeCell::new(HashMap::new()));
 
         {
-            let in_flights = Rc::clone(&in_flights);
-            let log = logger.clone();
+            let _inflight = Rc::clone(&inflight);
+            let _log = log.clone();
+            let _channel = Rc::clone(&channel);
             tokio_uring::spawn(async move {
-                let inflight_requests = in_flights;
+                let inflight_requests = _inflight;
+                let channel = _channel;
+                let log = _log;
                 loop {
-                    match reader.read_frame().await {
+                    match channel.read_frame().await {
                         Err(e) => {
                             // Handle connection reset
                             todo!()
                         }
-                        Ok(Some(response)) => {
-                            let inflights = unsafe { &mut *inflight_requests.get() };
-                            Session::on_response(inflights, response, &log);
+                        Ok(Some(frame)) => {
+                            let inflight = unsafe { &mut *inflight_requests.get() };
+                            if frame.is_response() {
+                                Session::on_response(inflight, frame, &log);
+                            } else {
+                                let response = notifier.on_notification(frame);
+                                channel.write_frame(&response).await.unwrap_or_else(|e| {
+                                    warn!(
+                                        log,
+                                        "Failed to write response to server. Cause: {:?}", e
+                                    );
+                                });
+                            }
                         }
                         Ok(None) => {
                             // TODO: Handle normal connection close
@@ -70,10 +79,10 @@ impl Session {
 
         Self {
             config: Rc::clone(config),
-            log: logger.clone(),
+            log: log.clone(),
             state: SessionState::Active,
-            writer,
-            inflight_requests: in_flights,
+            channel,
+            inflight_requests: inflight,
             last_rw_instant: Instant::now(),
         }
     }
@@ -93,14 +102,14 @@ impl Session {
                 let mut frame = Frame::new(OperationCode::Heartbeat);
                 let header = request.into();
                 frame.header = Some(header);
-                match self.writer.write_frame(&frame).await {
+                match self.channel.write_frame(&frame).await {
                     Ok(_) => {
                         let inflight_requests = unsafe { &mut *self.inflight_requests.get() };
                         inflight_requests.insert(frame.stream_id, response_observer);
                         trace!(
                             self.log,
                             "Write `Heartbeat` request to {}",
-                            self.writer.peer_address()
+                            self.channel.peer_address()
                         );
                     }
                     Err(e) => {
@@ -117,21 +126,21 @@ impl Session {
                 let header = request.into();
                 list_range_frame.header = Some(header);
 
-                match self.writer.write_frame(&list_range_frame).await {
+                match self.channel.write_frame(&list_range_frame).await {
                     Ok(_) => {
                         let inflight_requests = unsafe { &mut *self.inflight_requests.get() };
                         inflight_requests.insert(list_range_frame.stream_id, response_observer);
                         trace!(
                             self.log,
                             "Write `ListRange` request to {}",
-                            self.writer.peer_address()
+                            self.channel.peer_address()
                         );
                     }
                     Err(e) => {
                         warn!(
                             self.log,
                             "Failed to write `ListRange` request to {}. Cause: {:?}",
-                            self.writer.peer_address(),
+                            self.channel.peer_address(),
                             e
                         );
                         return Err(response_observer);
@@ -168,13 +177,17 @@ impl Session {
         };
         let (response_observer, rx) = oneshot::channel();
         if self.write(&request, response_observer).await.is_ok() {
-            trace!(self.log, "Heartbeat sent to {}", self.writer.peer_address());
+            trace!(
+                self.log,
+                "Heartbeat sent to {}",
+                self.channel.peer_address()
+            );
         }
         Some(rx)
     }
 
     fn on_response(
-        inflights: &mut HashMap<u32, oneshot::Sender<response::Response>>,
+        inflight: &mut HashMap<u32, oneshot::Sender<response::Response>>,
         response: Frame,
         log: &Logger,
     ) {
@@ -186,7 +199,7 @@ impl Session {
             stream_id
         );
 
-        match inflights.remove(&stream_id) {
+        match inflight.remove(&stream_id) {
             Some(sender) => {
                 let res = match response.operation_code {
                     OperationCode::Heartbeat => {
@@ -242,6 +255,8 @@ mod tests {
 
     use test_util::{run_listener, terminal_logger};
 
+    use crate::notifier::UnsupportedNotifier;
+
     use super::*;
 
     /// Verify it's OK to create a new session.
@@ -253,7 +268,8 @@ mod tests {
             let target = format!("127.0.0.1:{}", port);
             let stream = TcpStream::connect(target.parse()?).await?;
             let config = Rc::new(config::ClientConfig::default());
-            let session = Session::new(stream, &target, &config, &logger);
+            let notifier = Rc::new(UnsupportedNotifier {});
+            let session = Session::new(stream, &target, &config, notifier, &logger);
 
             assert_eq!(SessionState::Active, session.state());
 
@@ -271,7 +287,26 @@ mod tests {
             let target = format!("127.0.0.1:{}", port);
             let stream = TcpStream::connect(target.parse()?).await?;
             let config = Rc::new(config::ClientConfig::default());
-            let mut session = Session::new(stream, &target, &config, &logger);
+            let notifier = Rc::new(UnsupportedNotifier {});
+            let mut session = Session::new(stream, &target, &config, notifier, &logger);
+
+            let result = session.heartbeat().await;
+            let response = result.unwrap().await;
+            assert_eq!(true, response.is_ok());
+            Ok(())
+        })
+    }
+
+    #[test]
+    fn test_list_ranges() -> Result<(), Box<dyn Error>> {
+        tokio_uring::start(async {
+            let logger = terminal_logger();
+            let port = run_listener(logger.clone()).await;
+            let target = format!("127.0.0.1:{}", port);
+            let stream = TcpStream::connect(target.parse()?).await?;
+            let config = Rc::new(config::ClientConfig::default());
+            let notifier = Rc::new(UnsupportedNotifier {});
+            let mut session = Session::new(stream, &target, &config, notifier, &logger);
 
             let result = session.heartbeat().await;
             let response = result.unwrap().await;
