@@ -20,6 +20,6 @@ import (
 	"testing"
 )
 
-func environmentCheck(addr string, t *testing.T) bool {
+func environmentCheck(addr string, tb testing.TB) bool {
 	return true
 }

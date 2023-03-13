@@ -438,9 +438,9 @@ func TestDelete(t *testing.T) {
 	}
 }
 
-func startEtcd(re *require.Assertions, t *testing.T) (*embed.Etcd, *clientv3.Client, func()) {
+func startEtcd(re *require.Assertions, tb testing.TB) (*embed.Etcd, *clientv3.Client, func()) {
 	// start etcd
-	cfg := testutil.NewEtcdConfig(t)
+	cfg := testutil.NewEtcdConfig(tb)
 	etcd, err := embed.StartEtcd(cfg)
 	re.NoError(err)
 

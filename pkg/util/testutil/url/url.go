@@ -30,26 +30,26 @@ var (
 )
 
 // Alloc allocates a local URL for testing.
-func Alloc(t *testing.T) string {
+func Alloc(tb testing.TB) string {
 	for i := 0; i < 10; i++ {
-		if u := tryAllocTestURL(t); u != "" {
+		if u := tryAllocTestURL(tb); u != "" {
 			return u
 		}
 		time.Sleep(time.Second)
 	}
-	t.Fatal("failed to alloc test URL")
+	tb.Fatal("failed to alloc test URL")
 	return ""
 }
 
-func tryAllocTestURL(t *testing.T) string {
+func tryAllocTestURL(tb testing.TB) string {
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
-		t.Fatal("listen failed", err)
+		tb.Fatal("listen failed", err)
 	}
 	addr := fmt.Sprintf("http://%s", l.Addr())
 	err = l.Close()
 	if err != nil {
-		t.Fatal("close failed", err)
+		tb.Fatal("close failed", err)
 	}
 
 	testAddrMutex.Lock()
@@ -57,7 +57,7 @@ func tryAllocTestURL(t *testing.T) string {
 	if _, ok := testAddrMap[addr]; ok {
 		return ""
 	}
-	if !environmentCheck(addr, t) {
+	if !environmentCheck(addr, tb) {
 		return ""
 	}
 	testAddrMap[addr] = struct{}{}
