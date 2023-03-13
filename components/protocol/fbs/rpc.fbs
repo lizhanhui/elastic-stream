@@ -129,7 +129,7 @@ table FetchResult {
 // Used to fetch the ranges from a specific data node or a specific stream list.
 // Regard this table as a union type.
 // Alway set one of the fields.
-table RangeOwner {
+table RangeCriteria {
     data_node: DataNode (id: 0);
     // The stream id to list the ranges.
     stream_id: int64 (id: 1);
@@ -150,7 +150,7 @@ table ListRangesRequest {
     timeout_ms: int32 (id: 0);
     // The range owner could be a data node or a list of streams.
     // Note: a union type adds two fields, so the id of the field occupies 2 ids.
-    range_owners: [RangeOwner] (id: 1);
+    range_owners: [RangeCriteria] (id: 1);
 }
 
 table ListRangesResponse {
@@ -166,7 +166,7 @@ table ListRangesResponse {
 table ListRangesResult {
     // The owner that the returned ranges belong to.
     // Maybe a data node or a stream id.
-    range_owner: RangeOwner (id: 0);
+    range_owner: RangeCriteria (id: 0);
     // The error code, or 0 if there was no error.
     error_code: ErrorCode (id: 1);
     // The error message, or omitted if there was no error.
