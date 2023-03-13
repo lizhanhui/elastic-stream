@@ -169,7 +169,7 @@ impl Session {
                     &mut builder,
                     &ListRangesRequestArgs {
                         timeout_ms: 3000,
-                        range_owners: None,
+                        range_criteria: None,
                     },
                 );
                 builder.finish(list_range, None);
