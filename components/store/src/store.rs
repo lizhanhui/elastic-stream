@@ -1,11 +1,14 @@
 use std::{
     cell::RefCell,
     os::fd::{AsRawFd, RawFd},
+    rc::Rc,
+    sync::Arc,
     thread::{Builder, JoinHandle},
 };
 
 use crate::{
     error::{AppendError, FetchError, StoreError},
+    index::{driver::IndexDriver, MinOffset},
     io::{
         self,
         task::{
@@ -14,6 +17,7 @@ use crate::{
         },
         ReadTask,
     },
+    offset_manager::WalOffsetManager,
     ops::{append::AppendResult, fetch::FetchResult, Append, Fetch, Scan},
     option::{ReadOptions, WalPath, WriteOptions},
     AppendRecordRequest, Store,
@@ -26,8 +30,13 @@ use tokio::sync::oneshot;
 
 #[derive(Clone)]
 pub struct ElasticStore {
-    /// The channel for server layer to communicate with storage.
-    tx: Sender<IoTask>,
+    /// The channel for server layer to communicate with io module.
+    io_tx: Sender<IoTask>,
+
+    /// The reference to index driver, which is used to communicate with index module.
+    indexer: Arc<IndexDriver>,
+
+    wal_offset_manager: Arc<WalOffsetManager>,
 
     /// Expose underlying I/O Uring FD so that its worker pool may be shared with
     /// server layer I/O Uring instances.
@@ -45,14 +54,26 @@ impl ElasticStore {
         let size_10g = 10u64 * (1 << 30);
         opt.add_wal_path(WalPath::new("/data/store", size_10g)?);
 
+        // Build wal offset manager
+        let wal_offset_manager = Arc::new(WalOffsetManager::new());
+
+        // Build index driver
+        let indexer = Arc::new(IndexDriver::new(
+            log.clone(),
+            &opt.metadata_path,
+            Arc::clone(&wal_offset_manager) as Arc<dyn MinOffset>,
+        )?);
+
         let (sender, receiver) = oneshot::channel();
 
         // IO thread will be left in detached state.
+        // Copy a indexer
+        let indexer_cp = Arc::clone(&indexer);
         let _io_thread_handle = Self::with_thread(
             "IO",
             move || {
                 let log = log.clone();
-                let mut io = io::IO::new(&mut opt, log.clone())?;
+                let mut io = io::IO::new(&mut opt, indexer_cp, log.clone())?;
                 let sharing_uring = io.as_raw_fd();
                 let tx = io
                     .sender
@@ -75,7 +96,9 @@ impl ElasticStore {
             .map_err(|e| StoreError::Internal("Start".to_owned()))?;
 
         let store = Self {
-            tx,
+            io_tx: tx,
+            indexer,
+            wal_offset_manager,
             sharing_uring,
             log: logger,
         };
@@ -135,7 +158,7 @@ impl ElasticStore {
             observer,
         };
         let io_task = Write(task);
-        if let Err(e) = self.tx.send(io_task) {
+        if let Err(e) = self.io_tx.send(io_task) {
             if let Write(task) = e.0 {
                 if let Err(e) = task.observer.send(Err(AppendError::SubmissionQueue)) {
                     error!(self.log, "Failed to propagate error: {:?}", e);
@@ -161,7 +184,7 @@ impl ElasticStore {
         };
 
         let io_task = Read(task);
-        if let Err(e) = self.tx.send(io_task) {
+        if let Err(e) = self.io_tx.send(io_task) {
             if let Read(task) = e.0 {
                 if let Err(e) = task.observer.send(Err(FetchError::SubmissionQueue)) {
                     error!(self.log, "Failed to propagate error: {:?}", e);

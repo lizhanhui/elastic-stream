@@ -14,6 +14,8 @@ use super::{indexer::Indexer, record_handle::RecordHandle, MinOffset};
 pub(crate) struct IndexDriver {
     log: Logger,
     tx: Sender<IndexCommand>,
+    // Issue a shutdown signal to the driver thread.
+    shutdown_tx: Sender<()>,
     indexer: Arc<Indexer>,
     handles: Vec<JoinHandle<()>>,
 }
@@ -30,12 +32,12 @@ impl IndexDriver {
     pub(crate) fn new(
         log: Logger,
         path: &str,
-        min_offset: Rc<dyn MinOffset>,
-        shutdown: Receiver<()>,
+        min_offset: Arc<dyn MinOffset>,
     ) -> Result<Self, StoreError> {
         let (tx, rx) = channel::unbounded();
+        let (shutdown_tx, shutdown_rx) = channel::bounded(1);
         let indexer = Arc::new(Indexer::new(log.clone(), path, min_offset)?);
-        let runner = IndexDriverRunner::new(log.clone(), rx, shutdown, Arc::clone(&indexer));
+        let runner = IndexDriverRunner::new(log.clone(), rx, shutdown_rx, Arc::clone(&indexer));
         let handle = Builder::new()
             .name("IndexDriver".to_owned())
             .spawn(move || {
@@ -46,6 +48,7 @@ impl IndexDriver {
         Ok(Self {
             log,
             tx,
+            shutdown_tx,
             indexer,
             handles: vec![handle],
         })
@@ -58,6 +61,12 @@ impl IndexDriver {
             handle,
         }) {
             error!(self.log, "Failed to send index entry to internal indexer");
+        }
+    }
+
+    pub(crate) fn shutdown_indexer(&self) {
+        if self.shutdown_tx.send(()).is_err() {
+            error!(self.log, "Failed to send shutdown signal to indexer");
         }
     }
 
@@ -146,7 +155,7 @@ impl IndexDriverRunner {
 mod tests {
     use crate::index::MinOffset;
     use crossbeam::channel;
-    use std::{error::Error, rc::Rc};
+    use std::{error::Error, rc::Rc, sync::Arc};
 
     struct TestMinOffset {}
 
@@ -161,10 +170,10 @@ mod tests {
         let log = test_util::terminal_logger();
         let db_path = test_util::create_random_path()?;
         let _dir_guard = test_util::DirectoryRemovalGuard::new(log.clone(), db_path.as_path());
-        let min_offset = Rc::new(TestMinOffset {});
+        let min_offset = Arc::new(TestMinOffset {});
         let (tx, rx) = channel::bounded(1);
         let index_driver =
-            super::IndexDriver::new(log, db_path.as_os_str().to_str().unwrap(), min_offset, rx)?;
+            super::IndexDriver::new(log, db_path.as_os_str().to_str().unwrap(), min_offset)?;
         assert_eq!(0, index_driver.get_wal_checkpoint()?);
         let _ = tx.send(())?;
         Ok(())

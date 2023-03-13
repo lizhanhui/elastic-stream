@@ -47,3 +47,8 @@ pub(crate) enum IoTask {
     Read(ReadTask),
     Write(WriteTask),
 }
+
+/// Used to notify the index module to perform index query, e.g. `max offset`, `min offset`, `delete`.
+pub(crate) enum IndexTask {
+
+}

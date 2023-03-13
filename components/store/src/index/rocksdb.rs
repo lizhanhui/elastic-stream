@@ -5,7 +5,7 @@ mod tests {
         error::Error,
         ffi::CString,
         rc::Rc,
-        sync::atomic::{AtomicU64, Ordering},
+        sync::{atomic::{AtomicU64, Ordering}, Arc},
         time::Instant,
     };
 
@@ -63,13 +63,13 @@ mod tests {
 
         let compaction_filter_name = CString::new("index-compaction-filter")?;
 
-        let store = Rc::new(TestStore::new());
+        let store = Arc::new(TestStore::new());
 
         let index_compaction_filter_factory =
             crate::index::compaction::IndexCompactionFilterFactory::new(
                 log.clone(),
                 compaction_filter_name,
-                Rc::clone(&store) as Rc<dyn MinOffset>,
+                Arc::clone(&store) as Arc<dyn MinOffset>,
             );
 
         cf_opts.set_compaction_filter_factory(index_compaction_filter_factory);

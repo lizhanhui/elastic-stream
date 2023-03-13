@@ -1,4 +1,4 @@
-use std::{ffi::CString, fs, io::Cursor, path::Path, rc::Rc};
+use std::{ffi::CString, fs, io::Cursor, path::Path, rc::Rc, sync::Arc};
 
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use model::range::{Range, StreamRange};
@@ -32,7 +32,7 @@ pub(crate) struct Indexer {
 impl Indexer {
     fn build_index_column_family_options(
         log: Logger,
-        min_offset: Rc<dyn MinOffset>,
+        min_offset: Arc<dyn MinOffset>,
     ) -> Result<Options, StoreError> {
         let mut index_cf_opts = Options::default();
         index_cf_opts.enable_statistics();
@@ -65,7 +65,7 @@ impl Indexer {
     pub(crate) fn new(
         log: Logger,
         path: &str,
-        min_offset: Rc<dyn MinOffset>,
+        min_offset: Arc<dyn MinOffset>,
     ) -> Result<Self, StoreError> {
         let path = Path::new(path);
         if !path.exists() {
@@ -330,7 +330,7 @@ impl Indexer {
         }
     }
 
-    /// Returns a left key lower than the given offset. The function follows the following rules:
+    /// Returns the largest offset less than or equal to the given offset. The function follows the following rules:
     /// 1. `None` is returned if the specific offset < min offset or offset > max offset.
     /// 2. The current offset key is returned if it exists.
     /// 3. Otherwise, the left key is returned.
@@ -536,7 +536,10 @@ mod tests {
     use std::{
         error::Error,
         rc::Rc,
-        sync::atomic::{AtomicU64, Ordering},
+        sync::{
+            atomic::{AtomicU64, Ordering},
+            Arc,
+        },
     };
 
     use bytes::Buf;
@@ -564,10 +567,10 @@ mod tests {
         let path = test_util::create_random_path()?;
         let _guard = test_util::DirectoryRemovalGuard::new(log.clone(), path.as_path());
         let path_str = path.as_os_str().to_str().unwrap();
-        let min_offset = Rc::new(SampleMinOffset {
+        let min_offset = Arc::new(SampleMinOffset {
             min: AtomicU64::new(0),
         });
-        let indexer = super::Indexer::new(log, path_str, min_offset as Rc<dyn MinOffset>)?;
+        let indexer = super::Indexer::new(log, path_str, min_offset as Arc<dyn MinOffset>)?;
         Ok(indexer)
     }
 
@@ -774,11 +777,11 @@ mod tests {
         let path = test_util::create_random_path()?;
         let _guard = test_util::DirectoryRemovalGuard::new(log.clone(), path.as_path());
         let path_str = path.as_os_str().to_str().unwrap();
-        let min_offset = Rc::new(SampleMinOffset {
+        let min_offset = Arc::new(SampleMinOffset {
             min: AtomicU64::new(0),
         });
         let indexer =
-            super::Indexer::new(log, path_str, Rc::clone(&min_offset) as Rc<dyn MinOffset>)?;
+            super::Indexer::new(log, path_str, Arc::clone(&min_offset) as Arc<dyn MinOffset>)?;
 
         const CNT: u64 = 1024;
         (0..CNT)
