@@ -1,16 +1,17 @@
 use std::{rc::Rc, time::Duration};
 
+use model::{range_criteria::RangeCriteria, request::Request};
 use slog::{error, trace, warn, Logger};
 use tokio::{
     sync::{mpsc, oneshot},
     time,
 };
 
-use super::{config::ClientConfig, request, response};
+use super::{config::ClientConfig, response};
 use crate::error::ListRangeError;
 
 pub struct PlacementClient {
-    pub(crate) tx: mpsc::UnboundedSender<(request::Request, oneshot::Sender<response::Response>)>,
+    pub(crate) tx: mpsc::UnboundedSender<(Request, oneshot::Sender<response::Response>)>,
     pub(crate) log: Logger,
     pub(crate) config: Rc<ClientConfig>,
 }
@@ -18,12 +19,16 @@ pub struct PlacementClient {
 impl PlacementClient {
     pub async fn list_range(
         &self,
-        partition_id: i64,
+        stream_id: i64,
         timeout: Duration,
     ) -> Result<response::Response, ListRangeError> {
-        trace!(self.log, "list_range"; "partition-id" => partition_id);
+        trace!(self.log, "list_range"; "stream-id" => stream_id);
         let (tx, rx) = oneshot::channel();
-        let request = request::Request::ListRange { partition_id };
+        let criteria = RangeCriteria::StreamId(stream_id);
+        let request = Request::ListRanges {
+            timeout: Duration::from_secs(3),
+            criteria: vec![criteria],
+        };
         self.tx.send((request, tx)).map_err(|e| {
             error!(self.log, "Failed to forward request. Cause: {:?}", e; "struct" => "Client");
             ListRangeError::Internal
@@ -49,7 +54,7 @@ mod tests {
 
     use test_util::{run_listener, terminal_logger};
 
-    use crate::{PlacementClientBuilder, error::ListRangeError};
+    use crate::{error::ListRangeError, PlacementClientBuilder};
 
     #[test]
     fn test_list_range() -> Result<(), ListRangeError> {

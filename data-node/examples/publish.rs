@@ -140,9 +140,7 @@ fn fill_header(frame: &mut Frame) {
     frame.header = Some(header);
 }
 
-fn gen_record_batch() {
-   
-}
+fn gen_record_batch() {}
 
 #[cfg(test)]
 mod tests {

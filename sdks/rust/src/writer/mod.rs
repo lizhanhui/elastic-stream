@@ -37,7 +37,7 @@ use model::{Record, RecordBatch, RecordMetadata};
 pub struct Writer {}
 
 impl Writer {
-    /// Create a new `Writer` instance to append records to `Partition`s.
+    /// Create a new `Writer` instance to append records to `Stream`s.
     ///
     ///
     pub fn new<A>(_addr: A) -> Self
@@ -47,7 +47,7 @@ impl Writer {
         Self {}
     }
 
-    /// Append the specified record to partition.
+    /// Append the specified record to stream.
     ///
     /// * `record` - A `Record` that contains headers, properties and body.
     ///
@@ -55,7 +55,7 @@ impl Writer {
         Ok(RecordMetadata::new(record.stream_id(), 0))
     }
 
-    /// Append the specified record batch to partition.
+    /// Append the specified record batch to stream.
     ///
     /// * `record_batch` - A `RecordBatch` that contains a vector of record.
     pub async fn append_batch(

@@ -3,6 +3,8 @@ pub mod error;
 pub mod handler;
 pub mod server;
 
+pub use crate::cfg::server_config::ServerConfig;
+
 #[cfg(test)]
 mod tests {
     #[test]

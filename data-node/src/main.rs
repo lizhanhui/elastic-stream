@@ -1,5 +1,5 @@
 use clap::Parser;
-use data_node::cfg::ServerConfig;
+use data_node::ServerConfig;
 
 fn main() {
     let server_config = ServerConfig::parse();

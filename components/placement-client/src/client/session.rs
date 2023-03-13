@@ -5,11 +5,8 @@ use std::{
     time::{Duration, Instant},
 };
 
-use bytes::BytesMut;
 use codec::frame::{Frame, OperationCode};
-use protocol::rpc::header::{
-    ClientRole, HeartbeatRequest, HeartbeatRequestArgs, ListRangesRequest, ListRangesRequestArgs,
-};
+use model::{request::Request, client_role::ClientRole};
 use slog::{error, trace, warn, Logger};
 use tokio::sync::oneshot;
 use tokio_uring::net::TcpStream;
@@ -18,11 +15,7 @@ use transport::channel::{ChannelReader, ChannelWriter};
 use super::session_state::SessionState;
 use crate::client::response::Status;
 
-use super::{
-    config,
-    request::{self, Request},
-    response,
-};
+use super::{config, response};
 
 pub(crate) struct Session {
     config: Rc<config::ClientConfig>,
@@ -87,7 +80,7 @@ impl Session {
 
     pub(crate) async fn write(
         &mut self,
-        request: &request::Request,
+        request: &Request,
         response_observer: oneshot::Sender<response::Response>,
     ) -> Result<(), oneshot::Sender<response::Response>> {
         trace!(self.log, "Sending request {:?}", request);
@@ -96,9 +89,10 @@ impl Session {
         self.last_rw_instant = Instant::now();
 
         match request {
-            request::Request::Heartbeat { .. } => {
+            Request::Heartbeat { .. } => {
                 let mut frame = Frame::new(OperationCode::Heartbeat);
-                Session::build_frame_header(&mut frame, request);
+                let header = request.into();
+                frame.header = Some(header);
                 match self.writer.write_frame(&frame).await {
                     Ok(_) => {
                         let inflight_requests = unsafe { &mut *self.inflight_requests.get() };
@@ -118,9 +112,10 @@ impl Session {
                 }
             }
 
-            request::Request::ListRange { .. } => {
+            Request::ListRanges { .. } => {
                 let mut list_range_frame = Frame::new(OperationCode::ListRanges);
-                Session::build_frame_header(&mut list_range_frame, request);
+                let header = request.into();
+                list_range_frame.header = Some(header);
 
                 match self.writer.write_frame(&list_range_frame).await {
                     Ok(_) => {
@@ -148,40 +143,6 @@ impl Session {
         Ok(())
     }
 
-    fn build_frame_header(frame: &mut Frame, request: &Request) {
-        let mut builder = flatbuffers::FlatBufferBuilder::new();
-        match request {
-            Request::Heartbeat { client_id } => {
-                let client_id = builder.create_string(client_id);
-                let heartbeat = HeartbeatRequest::create(
-                    &mut builder,
-                    &HeartbeatRequestArgs {
-                        client_id: Some(client_id),
-                        client_role: ClientRole::CLIENT_ROLE_DATA_NODE,
-                        data_node: None,
-                    },
-                );
-                builder.finish(heartbeat, None);
-            }
-
-            Request::ListRange { partition_id } => {
-                let list_range = ListRangesRequest::create(
-                    &mut builder,
-                    &ListRangesRequestArgs {
-                        timeout_ms: 3000,
-                        range_criteria: None,
-                    },
-                );
-                builder.finish(list_range, None);
-            }
-        }
-
-        let buf = builder.finished_data();
-        let mut buffer = BytesMut::with_capacity(buf.len());
-        buffer.extend_from_slice(buf);
-        frame.header = Some(buffer.freeze());
-    }
-
     pub(crate) fn state(&self) -> SessionState {
         self.state
     }
@@ -200,8 +161,10 @@ impl Session {
             return None;
         }
 
-        let request = request::Request::Heartbeat {
+        let request = Request::Heartbeat {
             client_id: self.config.client_id.clone(),
+            role: ClientRole::DataNode,
+            data_node: None
         };
         let (response_observer, rx) = oneshot::channel();
         if self.write(&request, response_observer).await.is_ok() {

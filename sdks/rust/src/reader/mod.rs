@@ -8,7 +8,7 @@ use std::{
 use futures::Stream;
 use model::Record;
 
-/// Reader to access records stored in partitions.
+/// Reader to access records stored in streams.
 ///
 ///
 /// # Examples
@@ -21,10 +21,10 @@ use model::Record;
 /// #[tokio::main]
 /// async fn main() -> Result<(), Box<dyn Error>>  {
 ///    let access_point = "localhost:80";
-///    let partition = 1;
+///    let stream = 1;
 ///    let consumer = Reader::new(access_point);
 ///   
-///    let mut cursor = consumer.open(partition).await?;
+///    let mut cursor = consumer.open(stream).await?;
 ///    cursor.seek(3, Whence::SeekSet);
 ///    while let Some(record) = cursor.next().await {
 ///        println!("Got a record {record:#?}");
@@ -46,13 +46,13 @@ impl Reader {
         Self {}
     }
 
-    /// Opens a `Cursor` to the specified partition.
+    /// Opens a `Cursor` to the specified stream.
     ///
     /// Returns `Ok(Cursor)` on success, an error otherwise.
     ///
-    /// * `_partition_id` - Partition identifier
+    /// * `_stream_id` - Stream identifier
     ///
-    pub async fn open(&self, _partition_id: i32) -> Result<Cursor, Box<dyn Error>> {
+    pub async fn open(&self, _stream_id: i32) -> Result<Cursor, Box<dyn Error>> {
         Ok(Cursor::new())
     }
 }
@@ -64,15 +64,15 @@ pub enum Whence {
     /// The cursor offset is set to its current position plus offset.
     SeekCurrent,
 
-    /// The cursor offset is set to the end of the corresponding partition plus offset.
+    /// The cursor offset is set to the end of the corresponding stream plus offset.
     SeekEnd,
 }
 
-/// A cursor, similar to Linux file descriptor, represents an active and ongoing access to `Partition`.
+/// A cursor, similar to Linux file descriptor, represents an active and ongoing access to `Stream`.
 ///
 /// `Cursor` provides `seek` method to re-position location to read.
 ///
-/// On drop, the cursor, along with assocated resources, shall be properly closed or released.  
+/// On drop, the cursor, along with associated resources, shall be properly closed or released.  
 pub struct Cursor {
     read: usize,
 }

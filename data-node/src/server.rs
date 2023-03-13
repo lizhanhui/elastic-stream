@@ -4,7 +4,7 @@ use std::{
     rc::Rc,
 };
 
-use crate::{cfg::ServerConfig, handler::ServerCall};
+use crate::{handler::ServerCall, ServerConfig};
 
 use core_affinity::CoreId;
 use slog::{debug, error, info, o, trace, warn, Drain, Logger};

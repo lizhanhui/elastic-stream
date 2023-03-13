@@ -65,10 +65,10 @@ pub trait Store {
     where
         <Self as Store>::AppendOp: Future<Output = Result<AppendResult, AppendError>>;
 
-    /// Retrieve a single existing record at the given partition and offset.
-    /// * `options` - Read options, specifying target partition and offset.
+    /// Retrieve a single existing record at the given stream and offset.
+    /// * `options` - Read options, specifying target stream and offset.
     fn fetch(&self, options: ReadOptions) -> Fetch<Self::FetchOp>;
 
-    /// Scan a range of partition for matched records.
+    /// Scan a range of stream for matched records.
     fn scan(&self, options: ReadOptions) -> Scan;
 }

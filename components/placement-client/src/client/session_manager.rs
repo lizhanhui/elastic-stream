@@ -3,6 +3,7 @@ use std::{
     time::Duration,
 };
 
+use model::request::Request;
 use slog::{debug, error, info, trace, warn, Logger};
 use tokio::{
     sync::{mpsc, oneshot},
@@ -16,7 +17,7 @@ use super::{
     config,
     lb_policy::LBPolicy,
     naming::{self, Endpoints},
-    request, response,
+    response,
     session::Session,
 };
 
@@ -27,7 +28,7 @@ pub struct SessionManager {
     /// Receiver of SubmitRequestChannel.
     /// It is used by `Client` to submit request to `SessionManager`. Requests are expected to be converted into `Command`s and then
     /// forwarded to transport layer.
-    rx: mpsc::UnboundedReceiver<(request::Request, oneshot::Sender<response::Response>)>,
+    rx: mpsc::UnboundedReceiver<(Request, oneshot::Sender<response::Response>)>,
 
     log: Logger,
 
@@ -47,7 +48,7 @@ impl SessionManager {
     pub(crate) fn new(
         target: &str,
         config: &Rc<config::ClientConfig>,
-        rx: mpsc::UnboundedReceiver<(request::Request, oneshot::Sender<response::Response>)>,
+        rx: mpsc::UnboundedReceiver<(Request, oneshot::Sender<response::Response>)>,
         log: &Logger,
     ) -> Result<Self, ClientError> {
         let (session_mgr_tx, mut session_mgr_rx) =
@@ -170,7 +171,7 @@ impl SessionManager {
 
     async fn dispatch(
         &mut self,
-        request: request::Request,
+        request: Request,
         mut response_observer: oneshot::Sender<response::Response>,
     ) {
         trace!(self.log, "Received a request `{:?}`", request; "method" => "dispatch");
@@ -229,8 +230,8 @@ impl SessionManager {
             attempt += 1;
             if attempt > self.config.max_attempt {
                 match request {
-                    request::Request::Heartbeat { .. } => {}
-                    request::Request::ListRange { .. } => {
+                    Request::Heartbeat { .. } => {}
+                    Request::ListRanges { .. } => {
                         let response = response::Response::ListRange {
                             status: Status::Unavailable,
                             ranges: None,
@@ -250,7 +251,7 @@ impl SessionManager {
             }
             trace!(
                 self.log,
-                "Attempt to write {} request for the {} time",
+                "Attempt to write {:?} for the {} time",
                 request,
                 ordinal::Ordinal(attempt)
             );
