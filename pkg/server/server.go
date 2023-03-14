@@ -188,7 +188,7 @@ func (s *Server) startServer() error {
 	if err != nil {
 		return errors.Wrapf(err, "listen on %s", sbpAddr)
 	}
-	go s.serveSbp(listener)
+	go s.serveSbp(listener, s.cluster)
 
 	if s.started.Swap(true) {
 		logger.Warn("server already started")
@@ -196,13 +196,13 @@ func (s *Server) startServer() error {
 	return nil
 }
 
-func (s *Server) serveSbp(listener net.Listener) {
+func (s *Server) serveSbp(listener net.Listener, c *cluster.RaftCluster) {
 	logger := s.lg.With(zap.String("listener-addr", listener.Addr().String()))
 
 	ctx, cancel := context.WithCancel(s.ctx)
 	defer cancel()
 
-	sbpSvr := sbpServer.NewServer(ctx, handler.NewSbp(), logger)
+	sbpSvr := sbpServer.NewServer(ctx, handler.NewSbp(c), logger)
 	s.sbpServer = sbpSvr
 
 	logger.Info("sbp server started")

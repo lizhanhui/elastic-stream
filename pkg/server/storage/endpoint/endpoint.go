@@ -28,6 +28,7 @@ import (
 type Endpoint struct {
 	kv.KV
 
+	// FIXME: use an id generator based on KV
 	streamID atomic.Int64
 
 	lg *zap.Logger
