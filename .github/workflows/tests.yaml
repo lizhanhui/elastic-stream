@@ -19,7 +19,10 @@ jobs:
       uses: actions/cache@v3
       with:
         path: .go/cache
-        key: ${{matrix.platform}}-${{matrix.go-version}}-go-test
+        key: ${{matrix.platform}}-${{matrix.go-version}}-go-test-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{matrix.platform}}-${{matrix.go-version}}-go-test-
+          ${{matrix.platform}}-${{matrix.go-version}}-go-
     - name: Test
       run: make test GOFLAGS="-v" GO_VERSION=${{ matrix.go-version }}
     - name: Send coverage
