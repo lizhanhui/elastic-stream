@@ -79,7 +79,6 @@ mod tests {
     use std::{error::Error, sync::Arc};
 
     use slog::{info, trace};
-    use std::net::ToSocketAddrs;
     use tokio::sync::oneshot;
     use tokio_uring::net::{TcpListener, TcpStream};
 

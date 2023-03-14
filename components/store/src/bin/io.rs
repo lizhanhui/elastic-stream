@@ -5,6 +5,7 @@ use std::{
 };
 
 use io_uring::{opcode, register, types, IoUring};
+use tokio_uring::buf::IoBuf;
 
 fn main() -> Result<(), Box<dyn Error>> {
     let mut uring = IoUring::builder()
