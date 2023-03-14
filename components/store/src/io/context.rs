@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use super::buf::AlignedBuf;
+use super::{buf::AlignedBuf, IoTask};
 
 /// IO context for `Read` and `Write`.
 pub(crate) struct Context {
@@ -15,6 +15,10 @@ pub(crate) struct Context {
 
     /// Original read length. This field makes sense iff opcode is `Read`.
     pub(crate) len: Option<u32>,
+
+    /// Associated io task.
+    /// Currently, we only support associate io_task with read context.
+    pub(crate) io_task: Option<IoTask>,
 }
 
 impl Context {
@@ -23,16 +27,24 @@ impl Context {
         Box::into_raw(Box::new(Self {
             opcode,
             buf,
+            io_task: None,
             offset: None,
             len: None,
         }))
     }
 
     /// Create read context
-    pub(crate) fn read_ctx(opcode: u8, buf: Arc<AlignedBuf>, offset: u64, len: u32) -> *mut Self {
+    pub(crate) fn read_ctx(
+        opcode: u8,
+        buf: Arc<AlignedBuf>,
+        offset: u64,
+        len: u32,
+        io_task: IoTask,
+    ) -> *mut Self {
         Box::into_raw(Box::new(Self {
             opcode,
             buf,
+            io_task: Some(io_task),
             offset: Some(offset),
             len: Some(len),
         }))
