@@ -221,11 +221,11 @@ mod tests {
         let db_path = test_util::create_random_path()?;
         let _dir_guard = test_util::DirectoryRemovalGuard::new(log.clone(), db_path.as_path());
         let min_offset = Arc::new(TestMinOffset {});
-        let (tx, rx) = channel::bounded(1);
         let index_driver =
             super::IndexDriver::new(log, db_path.as_os_str().to_str().unwrap(), min_offset)?;
         assert_eq!(0, index_driver.get_wal_checkpoint()?);
-        let _ = tx.send(())?;
+
+        index_driver.shutdown_indexer();
         Ok(())
     }
 }
