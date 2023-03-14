@@ -12,6 +12,7 @@ plugins {
     // Apply the maven-publish plugin to allow publishing to Maven Central.
     id 'maven-publish'
 }
+sourceCompatibility = '11'
 
 java {
     withSourcesJar()
