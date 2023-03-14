@@ -41,9 +41,9 @@ pub mod option;
 
 mod index;
 mod io;
+mod offset_manager;
 mod request;
 mod store;
-mod offset_manager;
 
 pub use crate::io::buf::buf_slice::BufSlice;
 pub use crate::store::ElasticStore;
@@ -68,7 +68,9 @@ pub trait Store {
 
     /// Retrieve a single existing record at the given stream and offset.
     /// * `options` - Read options, specifying target stream and offset.
-    fn fetch(&self, options: ReadOptions) -> Fetch<Self::FetchOp>;
+    fn fetch(&self, options: ReadOptions) -> Fetch<Self::FetchOp>
+    where
+        <Self as Store>::FetchOp: Future<Output = Result<FetchResult, FetchError>>;
 
     /// Scan a range of stream for matched records.
     fn scan(&self, options: ReadOptions) -> Scan;

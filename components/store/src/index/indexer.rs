@@ -107,19 +107,6 @@ impl Indexer {
         })
     }
 
-    pub(crate) fn read_index(&self, stream_id: i64, offset: u64) -> Result<(), StoreError> {
-        match self.db.cf_handle(INDEX_COLUMN_FAMILY) {
-            Some(cf) => {
-                let mut key_buf = BytesMut::with_capacity(16);
-                key_buf.put_i64(stream_id);
-                key_buf.put_u64(offset);
-
-                Ok(())
-            }
-            None => Err(StoreError::RocksDB("No column family".to_owned())),
-        }
-    }
-
     ///
     /// # Arguments
     ///

@@ -1,4 +1,5 @@
 use std::{
+    fmt::Error,
     ops::Deref,
     rc::Rc,
     sync::Arc,
@@ -8,6 +9,7 @@ use std::{
 use crate::error::StoreError;
 use crossbeam::channel::{self, Receiver, Select, Sender, TryRecvError};
 use slog::{error, info, Logger};
+use tokio::sync::oneshot;
 
 use super::{indexer::Indexer, record_handle::RecordHandle, MinOffset};
 
@@ -25,6 +27,13 @@ pub(crate) enum IndexCommand {
         stream_id: i64,
         offset: u64,
         handle: RecordHandle,
+    },
+    /// Used to retrieve a batch of record handles from a given offset.
+    ScanRecord {
+        stream_id: i64,
+        offset: u64,
+        max_bytes: u32,
+        observer: oneshot::Sender<Result<Option<Vec<RecordHandle>>, StoreError>>,
     },
 }
 
@@ -61,6 +70,26 @@ impl IndexDriver {
             handle,
         }) {
             error!(self.log, "Failed to send index entry to internal indexer");
+        }
+    }
+
+    pub(crate) fn scan_record_handles(
+        &self,
+        stream_id: i64,
+        offset: u64,
+        max_bytes: u32,
+        observer: oneshot::Sender<Result<Option<Vec<RecordHandle>>, StoreError>>,
+    ) {
+        if let Err(e) = self.tx.send(IndexCommand::ScanRecord {
+            stream_id,
+            offset,
+            max_bytes,
+            observer,
+        }) {
+            error!(
+                self.log,
+                "Failed to send scan record handles command to internal indexer"
+            );
         }
     }
 
@@ -121,19 +150,40 @@ impl IndexDriverRunner {
             let index = selector.ready();
             if 0 == index {
                 match self.rx.try_recv() {
-                    Ok(index_command) => match index_command {
-                        IndexCommand::Index {
-                            stream_id,
-                            offset,
-                            handle,
-                        } => {
-                            while let Err(e) = self.indexer.index(stream_id, offset, &handle) {
-                                error!(self.log, "Failed to index: stream_id={}, offset={}, record_handle={:?}, cause: {}", 
+                    Ok(index_command) => {
+                        match index_command {
+                            IndexCommand::Index {
+                                stream_id,
+                                offset,
+                                handle,
+                            } => {
+                                while let Err(e) = self.indexer.index(stream_id, offset, &handle) {
+                                    error!(self.log, "Failed to index: stream_id={}, offset={}, record_handle={:?}, cause: {}", 
                                 stream_id, offset, handle, e);
-                                sleep(std::time::Duration::from_millis(100));
+                                    sleep(std::time::Duration::from_millis(100));
+                                }
+                            }
+                            IndexCommand::ScanRecord {
+                                stream_id,
+                                offset,
+                                max_bytes,
+                                observer,
+                            } => {
+                                observer
+                                    .send(self.indexer.scan_record_handles_left_shift(
+                                        stream_id, offset, max_bytes,
+                                    ))
+                                    .unwrap_or_else(|e| {
+                                        error!(
+                                            self.log,
+                                            "Failed to send scan result of {}/{} to observer.",
+                                            stream_id,
+                                            offset
+                                        );
+                                    });
                             }
                         }
-                    },
+                    }
                     Err(TryRecvError::Empty) => {
                         continue;
                     }

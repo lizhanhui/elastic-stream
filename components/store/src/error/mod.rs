@@ -73,13 +73,19 @@ pub enum StoreError {
     CacheMiss,
 }
 
-#[derive(Debug, Error)]
+#[derive(Debug, Error, Clone)]
 pub enum FetchError {
     #[error("Failed to submit AppendRecordRequest")]
     SubmissionQueue,
 
     #[error("Recv from oneshot channel failed")]
     ChannelRecv,
+
+    #[error("Translate wal offset failed")]
+    TranslateIndex,
+
+    #[error("No new records to fetch")]
+    NoRecord,
 }
 
 #[derive(Debug, Error)]
