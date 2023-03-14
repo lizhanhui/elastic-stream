@@ -39,16 +39,24 @@ type Etcd struct {
 }
 
 // NewEtcd creates a new etcd kv.
-// If newTxnFunc is nil, it will use etcdutil.NewTxn.
-func NewEtcd(client *clientv3.Client, rootPath string, newTxnFunc func() clientv3.Txn, lg *zap.Logger) *Etcd {
+// The rootPath is the prefix of all keys in etcd.
+// The cmpFunc is used to create a transaction.
+// If cmpFunc is nil, the transaction will not have any condition.
+func NewEtcd(client *clientv3.Client, rootPath string, lg *zap.Logger, cmpFunc func() clientv3.Cmp) *Etcd {
 	e := &Etcd{
-		client:     client,
-		rootPath:   []byte(rootPath),
-		newTxnFunc: newTxnFunc,
-		lg:         lg.With(zap.String("etcd-kv-root-path", rootPath)),
+		client:   client,
+		rootPath: []byte(rootPath),
+		lg:       lg,
 	}
-	if e.newTxnFunc == nil {
-		e.newTxnFunc = func() clientv3.Txn { return etcdutil.NewTxn(e.client, lg) }
+	if cmpFunc != nil {
+		e.newTxnFunc = func() clientv3.Txn {
+			// cmpFunc should be evaluated lazily.
+			return etcdutil.NewTxn(client, lg).If(cmpFunc())
+		}
+	} else {
+		e.newTxnFunc = func() clientv3.Txn {
+			return etcdutil.NewTxn(client, lg)
+		}
 	}
 	return e
 }

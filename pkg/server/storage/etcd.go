@@ -28,9 +28,10 @@ type Etcd struct {
 }
 
 // NewEtcd creates a new etcd storage.
-func NewEtcd(client *clientv3.Client, rootPath string, newTxnFunc func() clientv3.Txn, lg *zap.Logger) *Etcd {
-	logger := lg.With(zap.String("etcd-storage-root-path", rootPath))
+func NewEtcd(client *clientv3.Client, rootPath string, lg *zap.Logger, cmpFunc func() clientv3.Cmp) *Etcd {
+	storageLg := lg.With(zap.String("etcd-storage-root-path", rootPath))
+	kvLg := lg.With(zap.String("etcd-kv-root-path", rootPath))
 	return &Etcd{
-		endpoint.NewEndpoint(kv.NewEtcd(client, rootPath, newTxnFunc, lg), logger),
+		endpoint.NewEndpoint(kv.NewEtcd(client, rootPath, kvLg, cmpFunc), storageLg),
 	}
 }

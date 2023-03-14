@@ -179,7 +179,7 @@ func (s *Server) startServer() error {
 	if err != nil {
 		return errors.Wrap(err, "init member")
 	}
-	s.storage = storage.NewEtcd(s.client, s.rootPath, func() clientv3.Txn { return s.leaderTxn() }, logger)
+	s.storage = storage.NewEtcd(s.client, s.rootPath, logger, s.leaderCmp)
 	s.cluster = cluster.NewRaftCluster(s.ctx, s.clusterID, s.storage, s.lg)
 
 	// TODO set address in config
@@ -380,10 +380,6 @@ func (s *Server) Context() context.Context {
 	return s.ctx
 }
 
-func (s *Server) Logger() *zap.Logger {
-	return s.lg
-}
-
 // IsClosed checks whether server is closed or not.
 func (s *Server) IsClosed() bool {
 	return !s.started.Load()
@@ -426,11 +422,10 @@ func (s *Server) stopSbpServer() {
 	_ = s.sbpServer.Shutdown(ctx)
 }
 
-// leaderTxn returns a txn with leader comparison to guarantee that
+// leaderCmp returns a cmp with leader comparison to guarantee that
 // the transaction can be executed only if the server is leader.
-func (s *Server) leaderTxn(cs ...clientv3.Cmp) clientv3.Txn {
-	leaderCmp := clientv3.Compare(clientv3.Value(s.member.LeaderPath()), "=", s.member.Info())
-	return etcdutil.NewTxn(s.client, s.Logger()).If(append(cs, leaderCmp)...)
+func (s *Server) leaderCmp() clientv3.Cmp {
+	return clientv3.Compare(clientv3.Value(s.member.LeaderPath()), "=", s.member.Info())
 }
 
 // checkClusterID checks etcd cluster ID, returns an error if mismatched.
