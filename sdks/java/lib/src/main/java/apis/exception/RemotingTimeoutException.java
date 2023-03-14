@@ -16,11 +16,9 @@
  */
 package apis.exception;
 
-import java.io.Serial;
-
 public class RemotingTimeoutException extends RemotingException {
 
-    @Serial private static final long serialVersionUID = 4106899185095245979L;
+    private static final long serialVersionUID = 4106899185095245979L;
 
     public RemotingTimeoutException(String message) {
         super(message);
