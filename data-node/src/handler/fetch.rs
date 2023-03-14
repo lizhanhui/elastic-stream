@@ -130,7 +130,9 @@ impl<'a> Fetch<'a> {
         let payloads: Vec<_> = payloads
             .into_iter()
             .flatten()
-            .map(|payload| Bytes::copy_from_slice(&payload[..]))
+            // Skip the 8 bytes of the storage prefix
+            // TODO: Find a efficient way to avoid copying the payload
+            .map(|payload| Bytes::copy_from_slice(&payload[8..]))
             .collect();
         response.payload = Some(payloads);
         ()

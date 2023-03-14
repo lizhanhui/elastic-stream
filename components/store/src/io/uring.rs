@@ -629,10 +629,11 @@ impl IO {
         }
     }
 
-    fn acknowledge_to_observer(&mut self, task: WriteTask) {
+    fn acknowledge_to_observer(&mut self, wal_offset: u64, task: WriteTask) {
         let append_result = AppendResult {
             stream_id: task.stream_id,
             offset: task.offset,
+            wal_offset,
         };
         trace!(
             self.log,
@@ -661,10 +662,11 @@ impl IO {
                 break;
             }
 
-            if let Some((wal_offset, task)) = self.inflight_write_tasks.pop_first() {
+            if let Some((written_pos, task)) = self.inflight_write_tasks.pop_first() {
                 // TODO: A better way to build read index is needed.
+                let wal_offset = written_pos - task.buffer.len() as u64;
                 self.build_read_index(wal_offset, &task);
-                self.acknowledge_to_observer(task);
+                self.acknowledge_to_observer(wal_offset, task);
             }
         }
     }
@@ -885,8 +887,9 @@ mod tests {
     use crate::error::StoreError;
     use crate::index::driver::IndexDriver;
     use crate::index::MinOffset;
+    use crate::io::ReadTask;
     use crate::offset_manager::WalOffsetManager;
-    use bytes::BytesMut;
+    use bytes::{Bytes, BytesMut};
     use slog::{debug, trace};
     use std::cell::RefCell;
     use std::error::Error;
@@ -1066,20 +1069,20 @@ mod tests {
                 sender.send(task).unwrap();
             });
 
+        let mut results = Vec::new();
         for receiver in receivers {
             let res = receiver.blocking_recv()??;
             trace!(
                 log,
-                "{{ stream-id: {}, offset: {} }}",
+                "{{ stream-id: {}, offset: {} , wal_offset: {}}}",
                 res.stream_id,
-                res.offset
+                res.offset,
+                res.wal_offset
             );
+            results.push(res);
         }
-
         drop(sender);
-
         handle.join().map_err(|_| StoreError::AllocLogSegment)?;
-
         Ok(())
     }
 }

@@ -103,7 +103,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         unsafe { libc::memset(ptr as *mut libc::c_void, 0, buf_size) };
 
         let read_e = opcode::Read::new(types::Fd(fd), ptr, 2048)
-            .offset(20)
+            .offset(0)
             .build()
             .user_data(3);
 
