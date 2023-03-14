@@ -20,7 +20,9 @@ jobs:
             java:
               - 'sdks/java/**'
             rust:
-              - 'data-node/src/**'
+              - 'data-node/**'
+              - 'components/**'
+              - 'sdks/rust/**'
   java-build:
     needs: [paths-filter]
     if: ${{ needs.paths-filter.outputs.java == 'true' }}
