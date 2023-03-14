@@ -246,17 +246,17 @@ func (fr *Framer) ReadFrame() (Frame, func(), error) {
 	}
 
 	var frame Frame
-	switch bFrame.OpCode {
-	case operation.Ping():
+	switch bFrame.OpCode.Code {
+	case operation.OpPing:
 		frame = &PingFrame{baseFrame: bFrame}
-	case operation.GoAway():
+	case operation.OpGoAway:
 		frame = &GoAwayFrame{baseFrame: bFrame}
-	case operation.Heartbeat():
+	case operation.OpHeartbeat:
 		frame = &HeartbeatFrame{baseFrame: bFrame}
-	case operation.Publish(), operation.ListRange():
-		frame = &DataFrame{baseFrame: bFrame}
-	default:
+	case operation.OpUnknown:
 		frame = &bFrame
+	default:
+		frame = &DataFrame{baseFrame: bFrame}
 	}
 	return frame, free, nil
 }
@@ -304,7 +304,7 @@ func (fr *Framer) Available() int {
 func (fr *Framer) startWrite(frame baseFrame) {
 	fr.wbuf = binary.BigEndian.AppendUint32(fr.wbuf, 0) // 4 bytes of frame length, will be filled in endWrite
 	fr.wbuf = append(fr.wbuf, _magicCode)
-	fr.wbuf = binary.BigEndian.AppendUint16(fr.wbuf, frame.OpCode.Code())
+	fr.wbuf = binary.BigEndian.AppendUint16(fr.wbuf, frame.OpCode.Code)
 	fr.wbuf = append(fr.wbuf, uint8(frame.Flag))
 	fr.wbuf = binary.BigEndian.AppendUint32(fr.wbuf, frame.StreamID)
 	fr.wbuf = append(fr.wbuf, frame.HeaderFmt.Code())
@@ -344,7 +344,7 @@ func NewPingFrameResp(ping *PingFrame) (*PingFrame, func()) {
 		mcache.Free(buf)
 	}
 	pong := &PingFrame{baseFrame{
-		OpCode:    operation.Ping(),
+		OpCode:    operation.Operation{Code: operation.OpPing},
 		Flag:      FlagResponse | FlagResponseEnd,
 		StreamID:  ping.StreamID,
 		HeaderFmt: ping.HeaderFmt,
@@ -364,7 +364,7 @@ type GoAwayFrame struct {
 // NewGoAwayFrame creates a new GoAway frame
 func NewGoAwayFrame(maxStreamID uint32, isResponse bool) *GoAwayFrame {
 	f := &GoAwayFrame{baseFrame{
-		OpCode:    operation.GoAway(),
+		OpCode:    operation.Operation{Code: operation.OpGoAway},
 		StreamID:  maxStreamID,
 		HeaderFmt: format.Default(),
 	}}
@@ -386,7 +386,7 @@ func NewHeartBeatFrameResp(in *HeartbeatFrame) (*HeartbeatFrame, func()) {
 		mcache.Free(buf)
 	}
 	out := &HeartbeatFrame{baseFrame{
-		OpCode:    operation.Heartbeat(),
+		OpCode:    operation.Operation{Code: operation.OpHeartbeat},
 		Flag:      FlagResponse | FlagResponseEnd,
 		StreamID:  in.StreamID,
 		HeaderFmt: in.HeaderFmt,

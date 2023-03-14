@@ -51,7 +51,7 @@ func (b *baseRequest) unmarshalJSON(_ []byte) error {
 	return errors.Errorf(_unsupportedReqErrMsg, format.JSON())
 }
 
-// ListRangesRequest is a request to operation.ListRange
+// ListRangesRequest is a request to operation.OpListRanges
 type ListRangesRequest struct {
 	baseRequest
 	*rpcfb.ListRangesRequestT

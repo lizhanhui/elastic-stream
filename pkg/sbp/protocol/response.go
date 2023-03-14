@@ -80,7 +80,7 @@ func (se *SystemErrorResponse) Marshal(fmt format.Format) ([]byte, error) {
 	return marshal(se, fmt)
 }
 
-// ListRangesResponse is a response to operation.ListRange
+// ListRangesResponse is a response to operation.OpListRanges
 type ListRangesResponse struct {
 	baseResponse
 

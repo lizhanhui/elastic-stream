@@ -15,7 +15,7 @@ type Handler interface {
 
 var (
 	_actionMap = map[operation.Operation]Action{
-		operation.ListRange(): {
+		{Code: operation.OpListRanges}: {
 			newReq: func() protocol.Request { return &protocol.ListRangesRequest{} },
 			act: func(handler Handler, req protocol.Request) (resp protocol.Response) {
 				return handler.ListRange(req.(*protocol.ListRangesRequest))
