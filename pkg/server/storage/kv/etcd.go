@@ -102,6 +102,10 @@ func (e *Etcd) GetByRange(r Range, limit int64) ([]KeyValue, error) {
 }
 
 func (e *Etcd) Put(k, v []byte, prevKV bool) ([]byte, error) {
+	if len(k) == 0 {
+		return nil, nil
+	}
+
 	prevKvs, err := e.BatchPut([]KeyValue{{Key: k, Value: v}}, prevKV)
 	if err != nil {
 		return nil, errors.Wrap(err, "kv put")
@@ -110,7 +114,13 @@ func (e *Etcd) Put(k, v []byte, prevKV bool) ([]byte, error) {
 	if !prevKV {
 		return nil, nil
 	}
-	return prevKvs[0].Value, nil
+
+	for _, kv := range prevKvs {
+		if bytes.Equal(kv.Key, k) {
+			return kv.Value, nil
+		}
+	}
+	return nil, nil
 }
 
 func (e *Etcd) BatchPut(kvs []KeyValue, prevKV bool) ([]KeyValue, error) {
@@ -124,6 +134,9 @@ func (e *Etcd) BatchPut(kvs []KeyValue, prevKV bool) ([]KeyValue, error) {
 		opts = append(opts, clientv3.WithPrevKV())
 	}
 	for _, kv := range kvs {
+		if len(kv.Key) == 0 {
+			continue
+		}
 		key := e.addPrefix(kv.Key)
 		ops = append(ops, clientv3.OpPut(string(key), string(kv.Value), opts...))
 	}
@@ -143,6 +156,12 @@ func (e *Etcd) BatchPut(kvs []KeyValue, prevKV bool) ([]KeyValue, error) {
 	prevKvs := make([]KeyValue, 0, len(resp.Responses))
 	for _, resp := range resp.Responses {
 		putResp := resp.GetResponsePut()
+		if putResp.PrevKv == nil {
+			continue
+		}
+		if !e.hasPrefix(putResp.PrevKv.Key) {
+			continue
+		}
 		prevKvs = append(prevKvs, KeyValue{
 			Key:   e.trimPrefix(putResp.PrevKv.Key),
 			Value: putResp.PrevKv.Value,
@@ -183,6 +202,9 @@ func (e *Etcd) BatchDelete(keys [][]byte, prevKV bool) ([]KeyValue, error) {
 		opts = append(opts, clientv3.WithPrevKV())
 	}
 	for _, k := range keys {
+		if len(k) == 0 {
+			continue
+		}
 		key := e.addPrefix(k)
 		ops = append(ops, clientv3.OpDelete(string(key), opts...))
 	}
@@ -223,4 +245,10 @@ func (e *Etcd) addPrefix(k []byte) []byte {
 
 func (e *Etcd) trimPrefix(k []byte) []byte {
 	return k[len(e.rootPath)+len(KeySeparator):]
+}
+
+func (e *Etcd) hasPrefix(k []byte) bool {
+	return len(k) >= len(e.rootPath)+len(KeySeparator) &&
+		bytes.Equal(k[:len(e.rootPath)], e.rootPath) &&
+		string(k[len(e.rootPath):len(e.rootPath)+len(KeySeparator)]) == KeySeparator
 }

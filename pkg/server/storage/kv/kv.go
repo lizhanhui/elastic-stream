@@ -44,23 +44,26 @@ type KV interface {
 	GetByRange(r Range, limit int64) (kvs []KeyValue, err error)
 
 	// Put sets the value for the given key.
+	// IF the key is empty, Put does nothing and returns no error.
 	// If the key already exists, Put overwrites the existing value.
 	// If prevKV is true, the old value (if any) will be returned.
 	Put(key, value []byte, prevKV bool) ([]byte, error)
 
 	// BatchPut sets the value for the given keys.
 	// If the key already exists, BatchPut overwrites the existing value.
+	// Any empty key will be ignored.
 	// If prevKV is true, the old key-value pairs (if any) will be returned.
 	BatchPut(kvs []KeyValue, prevKV bool) ([]KeyValue, error)
 
 	// Delete removes the key-value pair associated with the given key.
-	// If the key is empty, Delete returns no error.
-	// If the key does not exist, Delete returns no error.
+	// If the key is empty, Delete does nothing and returns no error.
+	// If the key does not exist, Delete does nothing and returns no error.
 	// If prevKV is true, the old value (if any) will be returned.
 	Delete(key []byte, prevKV bool) ([]byte, error)
 
 	// BatchDelete removes the key-value pairs associated with the given keys.
 	// If the key does not exist, BatchDelete returns no error.
+	// Any empty key will be ignored.
 	// If prevKV is true, the old key-value pairs (if any) will be returned.
 	BatchDelete(keys [][]byte, prevKV bool) ([]KeyValue, error)
 
