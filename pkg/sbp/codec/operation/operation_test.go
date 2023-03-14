@@ -26,50 +26,130 @@ func TestNewOperation(t *testing.T) {
 	}{
 		{
 			name:   "Ping",
-			fields: fields{code: ping},
+			fields: fields{code: OpPing},
 			wants: wants{
 				s:    "Ping",
-				code: ping,
+				code: OpPing,
 			},
 		},
 		{
 			name:   "GoAway",
-			fields: fields{code: goAway},
+			fields: fields{code: OpGoAway},
 			wants: wants{
 				s:    "GoAway",
-				code: goAway,
-			},
-		},
-		{
-			name:   "Publish",
-			fields: fields{code: publish},
-			wants: wants{
-				s:    "Publish",
-				code: publish,
+				code: OpGoAway,
 			},
 		},
 		{
 			name:   "Heartbeat",
-			fields: fields{code: heartbeat},
+			fields: fields{code: OpHeartbeat},
 			wants: wants{
 				s:    "Heartbeat",
-				code: heartbeat,
+				code: OpHeartbeat,
 			},
 		},
 		{
-			name:   "ListRange",
-			fields: fields{code: listRange},
+			name:   "Append",
+			fields: fields{code: OpAppend},
 			wants: wants{
-				s:    "ListRange",
-				code: listRange,
+				s:    "Append",
+				code: OpAppend,
+			},
+		},
+		{
+			name:   "Fetch",
+			fields: fields{code: OpFetch},
+			wants: wants{
+				s:    "Fetch",
+				code: OpFetch,
+			},
+		},
+		{
+			name:   "ListRanges",
+			fields: fields{code: OpListRanges},
+			wants: wants{
+				s:    "ListRanges",
+				code: OpListRanges,
+			},
+		},
+		{
+			name:   "SealRanges",
+			fields: fields{code: OpSealRanges},
+			wants: wants{
+				s:    "SealRanges",
+				code: OpSealRanges,
+			},
+		},
+		{
+			name:   "SyncRanges",
+			fields: fields{code: OpSyncRanges},
+			wants: wants{
+				s:    "SyncRanges",
+				code: OpSyncRanges,
+			},
+		},
+		{
+			name:   "DescribeRanges",
+			fields: fields{code: OpDescribeRanges},
+			wants: wants{
+				s:    "DescribeRanges",
+				code: OpDescribeRanges,
+			},
+		},
+		{
+			name:   "CreateStreams",
+			fields: fields{code: OpCreateStreams},
+			wants: wants{
+				s:    "CreateStreams",
+				code: OpCreateStreams,
+			},
+		},
+		{
+			name:   "DeleteStreams",
+			fields: fields{code: OpDeleteStreams},
+			wants: wants{
+				s:    "DeleteStreams",
+				code: OpDeleteStreams,
+			},
+		},
+		{
+			name:   "UpdateStreams",
+			fields: fields{code: OpUpdateStreams},
+			wants: wants{
+				s:    "UpdateStreams",
+				code: OpUpdateStreams,
+			},
+		},
+		{
+			name:   "DescribeStreams",
+			fields: fields{code: OpDescribeStreams},
+			wants: wants{
+				s:    "DescribeStreams",
+				code: OpDescribeStreams,
+			},
+		},
+		{
+			name:   "TrimStreams",
+			fields: fields{code: OpTrimStreams},
+			wants: wants{
+				s:    "TrimStreams",
+				code: OpTrimStreams,
+			},
+		},
+		{
+			name:   "ReadStreams",
+			fields: fields{code: OpReportMetrics},
+			wants: wants{
+				s:    "ReportMetrics",
+				code: OpReportMetrics,
 			},
 		},
 		{
 			name:   "Unknown",
-			fields: fields{code: unknown},
+			fields: fields{code: OpUnknown},
 			wants: wants{
 				s:    "Unknown",
-				code: unknown,
+				code: OpUnknown,
 			},
 		},
 		{
@@ -77,7 +157,7 @@ func TestNewOperation(t *testing.T) {
 			fields: fields{code: 42},
 			wants: wants{
 				s:    "Unknown",
-				code: unknown,
+				code: OpUnknown,
 			},
 		},
 	}
@@ -90,7 +170,7 @@ func TestNewOperation(t *testing.T) {
 			o := NewOperation(tt.fields.code)
 
 			re.Equal(tt.wants.s, o.String())
-			re.Equal(tt.wants.code, o.Code())
+			re.Equal(tt.wants.code, o.Code)
 		})
 	}
 }
@@ -99,53 +179,10 @@ func TestIsControl(t *testing.T) {
 	t.Parallel()
 	re := require.New(t)
 
-	for _, operation := range []Operation{GoAway()} {
+	for _, operation := range []Operation{{OpGoAway}} {
 		re.True(operation.IsControl())
 	}
-	for _, operation := range []Operation{Ping(), Heartbeat(), Publish(), ListRange()} {
+	for _, operation := range []Operation{{OpPing}, {OpHeartbeat}, {OpUnknown}} {
 		re.False(operation.IsControl())
-	}
-}
-
-func TestOperation(t *testing.T) {
-	tests := []struct {
-		name   string
-		opFunc func() Operation
-		want   Operation
-	}{
-		{
-			name:   "Ping",
-			opFunc: Ping,
-			want:   NewOperation(ping),
-		},
-		{
-			name:   "GoAway",
-			opFunc: GoAway,
-			want:   NewOperation(goAway),
-		},
-		{
-			name:   "Publish",
-			opFunc: Publish,
-			want:   NewOperation(publish),
-		},
-		{
-			name:   "Heartbeat",
-			opFunc: Heartbeat,
-			want:   NewOperation(heartbeat),
-		},
-		{
-			name:   "ListRange",
-			opFunc: ListRange,
-			want:   NewOperation(listRange),
-		},
-	}
-	for _, tt := range tests {
-		tt := tt
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			re := require.New(t)
-
-			re.Equal(tt.want, tt.opFunc())
-		})
 	}
 }

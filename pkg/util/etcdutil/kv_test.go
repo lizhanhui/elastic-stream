@@ -20,8 +20,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 	clientv3 "go.etcd.io/etcd/client/v3"
-	"go.etcd.io/etcd/server/v3/embed"
 	"go.uber.org/goleak"
+	"go.uber.org/zap"
 
 	"github.com/AutoMQ/placement-manager/pkg/util/testutil"
 )
@@ -30,9 +30,89 @@ func TestMain(m *testing.M) {
 	goleak.VerifyTestMain(m)
 }
 
+func TestGetOne(t *testing.T) {
+	type args struct {
+		key []byte
+	}
+	tests := []struct {
+		name    string
+		preset  map[string]string
+		args    args
+		want    []byte
+		wantErr bool
+		wantNil bool
+	}{
+
+		{
+			name:   "get by single key",
+			preset: map[string]string{"test/key1": "val1"},
+			args: args{
+				key: []byte("test/key1"),
+			},
+			want: []byte("val1"),
+		},
+		{
+			name:   "query by nonexistent key",
+			preset: map[string]string{"test/key1": "val1"},
+			args: args{
+				key: []byte("test/key0"),
+			},
+			wantNil: true,
+		},
+		{
+			name:   "query by empty key",
+			preset: map[string]string{"test/key1": "val1"},
+			args: args{
+				key: []byte(""),
+			},
+			wantErr: true,
+		},
+		{
+			name:   "query by nil key",
+			preset: map[string]string{"test/key1": "val1"},
+			args: args{
+				key: nil,
+			},
+			wantErr: true,
+		},
+	}
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			re := require.New(t)
+			_, client, closeFunc := testutil.StartEtcd(re, t)
+			defer closeFunc()
+
+			// prepare
+			kv := client.KV
+			for k, v := range tt.preset {
+				_, err := kv.Put(context.Background(), k, v)
+				re.NoError(err)
+			}
+
+			// run
+			got, err := GetOne(client, tt.args.key, zap.NewNop())
+
+			// check
+			if tt.wantErr {
+				re.Error(err)
+				return
+			}
+			re.NoError(err)
+			if tt.wantNil {
+				re.Nil(got)
+				return
+			}
+			re.Equal(tt.args.key, got.Key)
+			re.Equal(tt.want, got.Value)
+		})
+	}
+}
+
 func TestGet(t *testing.T) {
 	type args struct {
-		key  string
+		key  []byte
 		opts []clientv3.OpOption
 	}
 	tests := []struct {
@@ -46,7 +126,7 @@ func TestGet(t *testing.T) {
 			name:   "get by single key",
 			preset: map[string]string{"test/key1": "val1"},
 			args: args{
-				key:  "test/key1",
+				key:  []byte("test/key1"),
 				opts: []clientv3.OpOption{},
 			},
 			want:    map[string]string{"test/key1": "val1"},
@@ -56,7 +136,7 @@ func TestGet(t *testing.T) {
 			name:   "range query",
 			preset: map[string]string{"test/key1": "val1", "test/key2": "val2", "test/key3": "val3", "test/key4": "val4"},
 			args: args{
-				key:  "test/key2",
+				key:  []byte("test/key2"),
 				opts: []clientv3.OpOption{clientv3.WithRange("test/key4")},
 			},
 			want:    map[string]string{"test/key2": "val2", "test/key3": "val3"},
@@ -66,7 +146,7 @@ func TestGet(t *testing.T) {
 			name:   "range query with limit",
 			preset: map[string]string{"test/key1": "val1", "test/key2": "val2", "test/key3": "val3", "test/key4": "val4"},
 			args: args{
-				key:  "test/key2",
+				key:  []byte("test/key2"),
 				opts: []clientv3.OpOption{clientv3.WithRange("test/key4"), clientv3.WithLimit(1), clientv3.WithSort(clientv3.SortByKey, clientv3.SortDescend)},
 			},
 			want:    map[string]string{"test/key3": "val3"},
@@ -76,7 +156,7 @@ func TestGet(t *testing.T) {
 			name:   "query by prefix",
 			preset: map[string]string{"test/key1": "val1", "test/key2": "val2", "test/key3": "val3", "another/key": "val"},
 			args: args{
-				key:  "test/",
+				key:  []byte("test/"),
 				opts: []clientv3.OpOption{clientv3.WithRange(clientv3.GetPrefixRangeEnd("test/"))},
 			},
 			want:    map[string]string{"test/key1": "val1", "test/key2": "val2", "test/key3": "val3"},
@@ -86,7 +166,7 @@ func TestGet(t *testing.T) {
 			name:   "query by nonexistent key",
 			preset: map[string]string{"test/key1": "val1"},
 			args: args{
-				key:  "test/key0",
+				key:  []byte("test/key0"),
 				opts: []clientv3.OpOption{},
 			},
 			want:    map[string]string{},
@@ -96,7 +176,16 @@ func TestGet(t *testing.T) {
 			name:   "query by empty key",
 			preset: map[string]string{"test/key1": "val1"},
 			args: args{
-				key:  "",
+				key:  []byte(""),
+				opts: []clientv3.OpOption{},
+			},
+			wantErr: true,
+		},
+		{
+			name:   "query by nil key",
+			preset: map[string]string{"test/key1": "val1"},
+			args: args{
+				key:  nil,
 				opts: []clientv3.OpOption{},
 			},
 			wantErr: true,
@@ -108,18 +197,18 @@ func TestGet(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			re := require.New(t)
-			_, client, closeFunc := startEtcd(re, t)
+			_, client, closeFunc := testutil.StartEtcd(re, t)
 			defer closeFunc()
 
 			// prepare
-			kv := clientv3.NewKV(client)
+			kv := client.KV
 			for k, v := range tt.preset {
 				_, err := kv.Put(context.Background(), k, v)
 				re.NoError(err)
 			}
 
 			// run
-			resp, err := Get(client, tt.args.key, tt.args.opts...)
+			resp, err := Get(client, tt.args.key, zap.NewNop(), tt.args.opts...)
 
 			// check
 			if tt.wantErr {
@@ -135,94 +224,4 @@ func TestGet(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestGetOne(t *testing.T) {
-	type args struct {
-		key string
-	}
-	tests := []struct {
-		name    string
-		preset  map[string]string
-		args    args
-		want    string
-		wantErr bool
-		wantNil bool
-	}{
-
-		{
-			name:   "get by single key",
-			preset: map[string]string{"test/key1": "val1"},
-			args: args{
-				key: "test/key1",
-			},
-			want: "val1",
-		},
-		{
-			name:   "query by nonexistent key",
-			preset: map[string]string{"test/key1": "val1"},
-			args: args{
-				key: "test/key0",
-			},
-			wantNil: true,
-		},
-		{
-			name:   "query by empty key",
-			preset: map[string]string{"test/key1": "val1"},
-			args: args{
-				key: "",
-			},
-			wantErr: true,
-		},
-	}
-	for _, tt := range tests {
-		tt := tt
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			re := require.New(t)
-			_, client, closeFunc := startEtcd(re, t)
-			defer closeFunc()
-
-			// prepare
-			kv := clientv3.NewKV(client)
-			for k, v := range tt.preset {
-				_, err := kv.Put(context.Background(), k, v)
-				re.NoError(err)
-			}
-
-			// run
-			got, err := GetOne(client, tt.args.key)
-
-			// check
-			if tt.wantErr {
-				re.Error(err)
-				return
-			}
-			re.NoError(err)
-			if tt.wantNil {
-				re.Nil(got)
-				return
-			}
-			re.Equal(tt.args.key, string(got.Key))
-			re.Equal(tt.want, string(got.Value))
-		})
-	}
-}
-
-func startEtcd(re *require.Assertions, t *testing.T) (*embed.Etcd, *clientv3.Client, func()) {
-	// start etcd
-	cfg := testutil.NewEtcdConfig(t)
-	etcd, err := embed.StartEtcd(cfg)
-	re.NoError(err)
-
-	// new client
-	ep := cfg.LCUrls[0].String()
-	client, err := clientv3.New(clientv3.Config{
-		Endpoints: []string{ep},
-	})
-	re.NoError(err)
-
-	<-etcd.Server.ReadyNotify()
-
-	return etcd, client, func() { _ = client.Close(); etcd.Close() }
 }

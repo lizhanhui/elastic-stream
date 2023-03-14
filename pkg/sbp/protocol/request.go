@@ -51,7 +51,7 @@ func (b *baseRequest) unmarshalJSON(_ []byte) error {
 	return errors.Errorf(_unsupportedReqErrMsg, format.JSON())
 }
 
-// ListRangesRequest is a request to operation.ListRange
+// ListRangesRequest is a request to operation.OpListRanges
 type ListRangesRequest struct {
 	baseRequest
 	*rpcfb.ListRangesRequestT
@@ -62,7 +62,6 @@ func (l *ListRangesRequest) unmarshalFlatBuffer(data []byte) error {
 	return nil
 }
 
-//nolint:revive // EXC0012 comment already exists in interface
 func (l *ListRangesRequest) Unmarshal(fmt format.Format, data []byte) error {
 	return unmarshal(l, fmt, data)
 }

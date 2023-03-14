@@ -27,23 +27,25 @@ import (
 )
 
 // NewEtcdConfig is used to create an etcd config for the unit test purpose.
-func NewEtcdConfig(t *testing.T) *embed.Config {
+func NewEtcdConfig(tb testing.TB) *embed.Config {
 	cfg := embed.NewConfig()
 	cfg.Name = "test_etcd"
-	cfg.Dir = t.TempDir()
+	cfg.Dir = tb.TempDir()
 	cfg.WalDir = ""
 	cfg.Logger = "zap"
 	cfg.LogOutputs = []string{"stdout"}
 
-	pu, _ := url.Parse(tempurl.Alloc(t))
+	pu, _ := url.Parse(tempurl.Alloc(tb))
 	cfg.LPUrls = []url.URL{*pu}
 	cfg.APUrls = cfg.LPUrls
-	cu, _ := url.Parse(tempurl.Alloc(t))
+	cu, _ := url.Parse(tempurl.Alloc(tb))
 	cfg.LCUrls = []url.URL{*cu}
 	cfg.ACUrls = cfg.LCUrls
 
 	cfg.StrictReconfigCheck = false
 	cfg.InitialCluster = fmt.Sprintf("%s=%s", cfg.Name, &cfg.LPUrls[0])
 	cfg.ClusterState = embed.ClusterStateFlagNew
+
+	cfg.LogLevel = "error"
 	return cfg
 }

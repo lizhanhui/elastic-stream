@@ -1,101 +1,125 @@
 package operation
 
 const (
-	unknown uint16 = iota
-	ping
-	goAway
-	publish
-	heartbeat
-	listRange
+	// OpUnknown is an unknown operation
+	OpUnknown uint16 = 0x0000
+	// OpPing measure a minimal round-trip time from the sender.
+	OpPing uint16 = 0x0001
+	// OpGoAway initiate a shutdown of a connection or signal serious error conditions.
+	OpGoAway uint16 = 0x0002
+	// OpHeartbeat keep clients alive through periodic heartbeat frames.
+	OpHeartbeat uint16 = 0x0003
+
+	// OpAppend append records to the data node.
+	OpAppend uint16 = 0x1001
+	// OpFetch fetch records from the data node.
+	OpFetch uint16 = 0x1002
+
+	// OpListRanges list ranges from the PM of a batch of streams.
+	OpListRanges uint16 = 0x2001
+	// OpSealRanges request seal ranges of a batch of streams.
+	OpSealRanges uint16 = 0x2002
+	// OpSyncRanges sync newly writable ranges to a data node to accelerate the availability of a newly created writable range.
+	OpSyncRanges uint16 = 0x2003
+	// OpDescribeRanges describe the details of a batch of ranges, mainly used to get the max offset of the current writable range.
+	OpDescribeRanges uint16 = 0x2004
+
+	// OpCreateStreams create a batch of streams.
+	OpCreateStreams uint16 = 0x3001
+	// OpDeleteStreams delete a batch of streams.
+	OpDeleteStreams uint16 = 0x3002
+	// OpUpdateStreams update a batch of streams.
+	OpUpdateStreams uint16 = 0x3003
+	// OpDescribeStreams fetch the details of a batch of streams.
+	OpDescribeStreams uint16 = 0x3004
+	// OpTrimStreams trim the min offset of a batch of streams.
+	OpTrimStreams uint16 = 0x3005
+
+	// OpReportMetrics report metrics to the PM.
+	OpReportMetrics uint16 = 0x4001
 )
 
 var (
-	_ping      = Operation{ping}
-	_goAway    = Operation{goAway}
-	_publish   = Operation{publish}
-	_heartbeat = Operation{heartbeat}
-	_listRange = Operation{listRange}
-	_unknown   = Operation{unknown}
+	_opMap = map[uint16]Operation{
+		OpPing:      {OpPing},
+		OpGoAway:    {OpGoAway},
+		OpHeartbeat: {OpHeartbeat},
+
+		OpAppend: {OpAppend},
+		OpFetch:  {OpFetch},
+
+		OpListRanges:     {OpListRanges},
+		OpSealRanges:     {OpSealRanges},
+		OpSyncRanges:     {OpSyncRanges},
+		OpDescribeRanges: {OpDescribeRanges},
+
+		OpCreateStreams:   {OpCreateStreams},
+		OpDeleteStreams:   {OpDeleteStreams},
+		OpUpdateStreams:   {OpUpdateStreams},
+		OpDescribeStreams: {OpDescribeStreams},
+		OpTrimStreams:     {OpTrimStreams},
+
+		OpReportMetrics: {OpReportMetrics},
+	}
 )
 
 // Operation is enumeration of Frame.OpCode
 type Operation struct {
-	code uint16
+	Code uint16
 }
 
 // NewOperation new an operation with code
 func NewOperation(code uint16) Operation {
-	switch code {
-	case ping:
-		return _ping
-	case goAway:
-		return _goAway
-	case publish:
-		return _publish
-	case heartbeat:
-		return _heartbeat
-	case listRange:
-		return _listRange
-	default:
-		return _unknown
+	if op, ok := _opMap[code]; ok {
+		return op
 	}
-}
-
-// String implements fmt.Stringer
-func (o Operation) String() string {
-	switch o.code {
-	case ping:
-		return "Ping"
-	case goAway:
-		return "GoAway"
-	case publish:
-		return "Publish"
-	case heartbeat:
-		return "Heartbeat"
-	case listRange:
-		return "ListRange"
-	default:
-		return "Unknown"
-	}
-}
-
-// Code returns the operation code
-func (o Operation) Code() uint16 {
-	return o.code
+	return Operation{OpUnknown}
 }
 
 // IsControl returns whether o is a control operation
 func (o Operation) IsControl() bool {
-	switch o.code {
-	case goAway:
+	switch o.Code {
+	case OpGoAway:
 		return true
 	default:
 		return false
 	}
 }
 
-// Ping frame is a mechanism for measuring a minimal round-trip time from the sender,
-// as well as determining whether an idle connection is still functional
-func Ping() Operation {
-	return _ping
-}
-
-// GoAway frame is used to initiate shutdown of a connection or to signal serious error conditions
-func GoAway() Operation {
-	return _goAway
-}
-
-// Publish frame is used to publish message(s)
-func Publish() Operation {
-	return _publish
-}
-
-// Heartbeat frame is used to send heartbeat
-func Heartbeat() Operation {
-	return _heartbeat
-}
-
-// ListRange frame is used to list ranges in a stream
-func ListRange() Operation {
-	return _listRange
+// String implements fmt.Stringer
+func (o Operation) String() string {
+	switch o.Code {
+	case OpPing:
+		return "Ping"
+	case OpGoAway:
+		return "GoAway"
+	case OpHeartbeat:
+		return "Heartbeat"
+	case OpAppend:
+		return "Append"
+	case OpFetch:
+		return "Fetch"
+	case OpListRanges:
+		return "ListRanges"
+	case OpSealRanges:
+		return "SealRanges"
+	case OpSyncRanges:
+		return "SyncRanges"
+	case OpDescribeRanges:
+		return "DescribeRanges"
+	case OpCreateStreams:
+		return "CreateStreams"
+	case OpDeleteStreams:
+		return "DeleteStreams"
+	case OpUpdateStreams:
+		return "UpdateStreams"
+	case OpDescribeStreams:
+		return "DescribeStreams"
+	case OpTrimStreams:
+		return "TrimStreams"
+	case OpReportMetrics:
+		return "ReportMetrics"
+	default:
+		return "Unknown"
+	}
 }

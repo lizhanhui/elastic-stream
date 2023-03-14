@@ -31,8 +31,8 @@ type ModRevision = int64
 // GetOne gets KeyValue with key from etcd.
 // GetOne will return nil if the specified key is not found
 // GetOne will return an error if etcd returns multiple KeyValue
-func GetOne(c *clientv3.Client, key string) (*mvccpb.KeyValue, error) {
-	resp, err := Get(c, key)
+func GetOne(c *clientv3.Client, key []byte, logger *zap.Logger) (*mvccpb.KeyValue, error) {
+	resp, err := Get(c, key, logger)
 	if err != nil {
 		return nil, errors.Wrap(err, "get value from etcd")
 	}
@@ -47,16 +47,16 @@ func GetOne(c *clientv3.Client, key string) (*mvccpb.KeyValue, error) {
 }
 
 // Get returns the etcd GetResponse by given key and options
-func Get(c *clientv3.Client, key string, opts ...clientv3.OpOption) (*clientv3.GetResponse, error) {
+func Get(c *clientv3.Client, k []byte, logger *zap.Logger, opts ...clientv3.OpOption) (*clientv3.GetResponse, error) {
 	ctx, cancel := context.WithTimeout(c.Ctx(), DefaultRequestTimeout)
 	defer cancel()
 
-	logger := c.GetLogger()
+	key := string(k)
 
 	start := time.Now()
-	resp, err := clientv3.NewKV(c).Get(ctx, key, opts...)
+	resp, err := c.Get(ctx, key, opts...)
 	if cost := time.Since(start); cost > DefaultSlowRequestTime {
-		logger.Warn("getting value is to slow", zap.String("key", key), zap.Duration("cost", cost), zap.Error(err))
+		logger.Warn("getting value is too slow", zap.String("key", key), zap.Duration("cost", cost), zap.Error(err))
 	}
 
 	if err != nil {

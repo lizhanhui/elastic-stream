@@ -1,6 +1,4 @@
-//go:build testing && !linux
-
-// Copyright 2020 TiKV Project Authors.
+// Copyright 2022 TiKV Project Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -14,12 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package url
+package storage
 
 import (
-	"testing"
+	"github.com/AutoMQ/placement-manager/pkg/server/storage/endpoint"
+	"github.com/AutoMQ/placement-manager/pkg/server/storage/kv"
 )
 
-func environmentCheck(addr string, tb testing.TB) bool {
-	return true
+// Storage is the interface for the backend storage of the PM.
+type Storage interface {
+	// KV is used to provide the basic key-value read/write ability.
+	kv.KV
+
+	endpoint.Stream
 }

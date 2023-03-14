@@ -23,10 +23,10 @@ import (
 	"github.com/pkg/errors"
 )
 
-func environmentCheck(addr string, t *testing.T) bool {
+func environmentCheck(addr string, tb testing.TB) bool {
 	valid, err := checkAddr(addr[len("http://"):])
 	if err != nil {
-		t.Log("check port status failed", err)
+		tb.Log("check port status failed", err)
 		return false
 	}
 	return valid

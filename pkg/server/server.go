@@ -35,9 +35,11 @@ import (
 
 	"github.com/AutoMQ/placement-manager/api/kvpb"
 	sbpServer "github.com/AutoMQ/placement-manager/pkg/sbp/server"
+	"github.com/AutoMQ/placement-manager/pkg/server/cluster"
 	"github.com/AutoMQ/placement-manager/pkg/server/config"
 	"github.com/AutoMQ/placement-manager/pkg/server/handler"
 	"github.com/AutoMQ/placement-manager/pkg/server/member"
+	"github.com/AutoMQ/placement-manager/pkg/server/storage"
 	"github.com/AutoMQ/placement-manager/pkg/util/etcdutil"
 	"github.com/AutoMQ/placement-manager/pkg/util/logutil"
 	"github.com/AutoMQ/placement-manager/pkg/util/randutil"
@@ -70,7 +72,9 @@ type Server struct {
 	clusterID uint64           // pm cluster id
 	rootPath  string           // root path in etcd
 
-	sbpServer *sbpServer.Server // sbp server
+	storage   storage.Storage
+	cluster   *cluster.RaftCluster
+	sbpServer *sbpServer.Server
 
 	lg *zap.Logger // logger
 }
@@ -83,10 +87,9 @@ func NewServer(ctx context.Context, cfg *config.Config, logger *zap.Logger) (*Se
 		member: &member.Member{},
 		lg:     logger,
 	}
-	s.started.Store(false)
 
 	s.cfg.Etcd.ServiceRegister = func(gs *grpc.Server) {
-		kvpb.RegisterKVServer(gs, &GrpcServer{Server: s})
+		kvpb.RegisterKVServer(gs, NewGrpcServer(s, logger))
 	}
 
 	return s, nil
@@ -172,7 +175,12 @@ func (s *Server) startServer() error {
 	logger.Info("init cluster ID", zap.Uint64("cluster-id", s.clusterID))
 
 	s.rootPath = path.Join(_rootPathPrefix, strconv.FormatUint(s.clusterID, 10))
-	s.member.Init(s.cfg, s.Name(), s.rootPath)
+	err := s.member.Init(s.cfg, s.Name(), s.rootPath)
+	if err != nil {
+		return errors.Wrap(err, "init member")
+	}
+	s.storage = storage.NewEtcd(s.client, s.rootPath, logger, s.leaderCmp)
+	s.cluster = cluster.NewRaftCluster(s.ctx, s.clusterID, s.storage, s.lg)
 
 	// TODO set address in config
 	sbpAddr := "127.0.0.1:2378"
@@ -180,7 +188,7 @@ func (s *Server) startServer() error {
 	if err != nil {
 		return errors.Wrapf(err, "listen on %s", sbpAddr)
 	}
-	go s.serveSbp(listener)
+	go s.serveSbp(listener, s.cluster)
 
 	if s.started.Swap(true) {
 		logger.Warn("server already started")
@@ -188,13 +196,13 @@ func (s *Server) startServer() error {
 	return nil
 }
 
-func (s *Server) serveSbp(listener net.Listener) {
+func (s *Server) serveSbp(listener net.Listener, c *cluster.RaftCluster) {
 	logger := s.lg.With(zap.String("listener-addr", listener.Addr().String()))
 
 	ctx, cancel := context.WithCancel(s.ctx)
 	defer cancel()
 
-	sbpSvr := sbpServer.NewServer(ctx, handler.NewSbp(), logger)
+	sbpSvr := sbpServer.NewServer(ctx, handler.NewSbp(c), logger)
 	s.sbpServer = sbpSvr
 
 	logger.Info("sbp server started")
@@ -207,7 +215,7 @@ func (s *Server) initClusterID() error {
 	logger := s.lg
 
 	// query any existing ID in etcd
-	kv, err := etcdutil.GetOne(s.client, _clusterIDPath)
+	kv, err := etcdutil.GetOne(s.client, []byte(_clusterIDPath), logger)
 	if err != nil {
 		logger.Error("failed to query cluster id", zap.String("cluster-id-path", _clusterIDPath), zap.Error(err))
 		return errors.Wrap(err, "get value from etcd")
@@ -256,12 +264,6 @@ func (s *Server) leaderLoop() {
 		}
 
 		if leader != nil {
-			err := s.reloadConfigFromKV()
-			if err != nil {
-				logger.Error("failed to reload config", zap.Error(err))
-				continue
-			}
-
 			logger.Info("start to watch PM leader", zap.Object("pm-leader", leader))
 			// WatchLeader will keep looping and never return unless the PM leader has changed.
 			s.member.WatchLeader(s.loopCtx, leader, rev)
@@ -306,15 +308,14 @@ func (s *Server) campaignLeader() {
 	s.member.KeepLeader(ctx)
 	logger.Info("success to campaign leader", zap.String("campaign-pm-leader-name", s.Name()))
 
-	// reload config
-	err = s.reloadConfigFromKV()
+	err = s.cluster.Start()
 	if err != nil {
-		logger.Error("failed to reload config", zap.Error(err))
+		logger.Error("failed to start cluster", zap.Error(err))
+		return
 	}
+	defer func() { _ = s.cluster.Stop() }()
 
-	// TODO start raft cluster
-
-	// EnableLeader to accept the remaining service, such as GetPartition.
+	// EnableLeader to accept requests
 	s.member.EnableLeader()
 	// as soon as cancel the leadership keepalive, then other member have chance to be new leader.
 	defer resetLeaderOnce.Do(resetLeaderFunc)
@@ -346,11 +347,6 @@ func (s *Server) checkLeaderLoop(ctx context.Context) {
 			return
 		}
 	}
-}
-
-func (s *Server) reloadConfigFromKV() error {
-	// TODO
-	return nil
 }
 
 func (s *Server) etcdLeaderLoop() {
@@ -424,6 +420,12 @@ func (s *Server) stopSbpServer() {
 	ctx, cancel := context.WithTimeout(context.Background(), _shutdownSbpServerTimeout)
 	defer cancel()
 	_ = s.sbpServer.Shutdown(ctx)
+}
+
+// leaderCmp returns a cmp with leader comparison to guarantee that
+// the transaction can be executed only if the server is leader.
+func (s *Server) leaderCmp() clientv3.Cmp {
+	return clientv3.Compare(clientv3.Value(s.member.LeaderPath()), "=", s.member.Info())
 }
 
 // checkClusterID checks etcd cluster ID, returns an error if mismatched.

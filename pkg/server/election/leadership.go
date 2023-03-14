@@ -124,7 +124,7 @@ func (ls *Leadership) Campaign(leaseTimeout int64, leaderData string) (bool, err
 		return false, errors.Wrap(err, "grant lease")
 	}
 
-	resp, err := etcdutil.NewTxn(ls.client).
+	resp, err := etcdutil.NewTxn(ls.client, logger).
 		// The leader key must not exist, so the CreateRevision is 0.
 		If(clientv3.Compare(clientv3.CreateRevision(ls.leaderKey), "=", 0)).
 		Then(clientv3.OpPut(ls.leaderKey, leaderData, clientv3.WithLease(newLease.ID))).
@@ -163,7 +163,7 @@ func (ls *Leadership) Keep(ctx context.Context) {
 func (ls *Leadership) DeleteLeaderKey() error {
 	logger := ls.lg
 
-	resp, err := etcdutil.NewTxn(ls.client).Then(clientv3.OpDelete(ls.leaderKey)).Commit()
+	resp, err := etcdutil.NewTxn(ls.client, logger).Then(clientv3.OpDelete(ls.leaderKey)).Commit()
 	if err != nil {
 		logger.Error("failed to delete leader key", zap.String("leader-key", ls.leaderKey))
 		return errors.Wrap(err, "delete etcd key")
