@@ -9,6 +9,8 @@ import (
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest/observer"
+
+	"github.com/AutoMQ/placement-manager/pkg/util/testutil"
 )
 
 type MockEtcdTxn struct {
@@ -59,7 +61,7 @@ func TestNormalTxn(t *testing.T) {
 	t.Parallel()
 	re := require.New(t)
 
-	_, client, closeFunc := startEtcd(re, t)
+	_, client, closeFunc := testutil.StartEtcd(re, t)
 	defer closeFunc()
 
 	txn := NewTxn(client, zap.NewNop())
