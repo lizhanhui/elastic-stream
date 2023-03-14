@@ -4,6 +4,7 @@ mod naming;
 pub(crate) mod placement_client;
 pub(crate) mod placement_client_builder;
 pub(crate) mod response;
+pub(crate) mod response_observer;
 mod session;
 mod session_manager;
 pub(crate) mod session_state;

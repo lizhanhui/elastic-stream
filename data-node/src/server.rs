@@ -107,7 +107,7 @@ impl Node {
         peer_address: String,
         logger: Logger,
     ) {
-        let mut channel = Rc::new(Channel::new(stream, &peer_address, logger.new(o!())));
+        let channel = Rc::new(Channel::new(stream, &peer_address, logger.new(o!())));
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
 
         let request_logger = logger.clone();

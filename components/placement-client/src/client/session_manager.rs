@@ -20,9 +20,9 @@ use tokio_uring::net::TcpStream;
 use crate::{client::response::Status, error::ClientError, notifier::Notifier};
 
 use super::{
-    config,
+    config::{self, ClientConfig},
     lb_policy::LBPolicy,
-    naming::{self, Endpoints},
+    naming::Endpoints,
     response,
     session::Session,
 };
@@ -38,9 +38,6 @@ pub struct SessionManager {
 
     log: Logger,
 
-    /// Parsed endpoints from target url.
-    endpoints: naming::Endpoints,
-
     /// Session management
     lb_policy: LBPolicy,
     sessions: Rc<UnsafeCell<HashMap<SocketAddr, Session>>>,
@@ -51,6 +48,85 @@ pub struct SessionManager {
 }
 
 impl SessionManager {
+    fn reconnect(
+        mut session_mgr: mpsc::UnboundedReceiver<(SocketAddr, oneshot::Sender<bool>)>,
+        sessions: Rc<UnsafeCell<HashMap<SocketAddr, Session>>>,
+        config: Rc<ClientConfig>,
+        log: Logger,
+        notifier: Rc<dyn Notifier>,
+    ) {
+        let timeout = config.connect_timeout;
+        tokio_uring::spawn(async move {
+            while let Some((addr, tx)) = session_mgr.recv().await {
+                let sessions = unsafe { &mut *sessions.get() };
+                match SessionManager::connect(&addr, timeout, &config, Rc::clone(&notifier), &log)
+                    .await
+                {
+                    Ok(session) => {
+                        sessions.insert(addr, session);
+                        match tx.send(true) {
+                            Ok(_) => {
+                                trace!(log, "Session creation is notified");
+                            }
+                            Err(res) => {
+                                debug!(log, "Failed to notify session creation result: `{}`", res);
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        error!(log, "Failed to connect to `{:?}`. Cause: `{:?}`", addr, e);
+                        match tx.send(false) {
+                            Ok(_) => {}
+                            Err(res) => {
+                                debug!(log, "Failed to notify session creation result: `{}`", res);
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    fn heartbeat(
+        logger: Logger,
+        config: Rc<ClientConfig>,
+        mut stop_rx: mpsc::Receiver<()>,
+        sessions: Rc<UnsafeCell<HashMap<SocketAddr, Session>>>,
+    ) {
+        let idle_interval = config.heartbeat_interval;
+
+        tokio_uring::spawn(async move {
+            tokio::pin! {
+                let stop_fut = stop_rx.recv();
+
+                // Interval to check if a session needs to send a heartbeat request.
+                let sleep = tokio::time::sleep(idle_interval);
+            }
+
+            loop {
+                tokio::select! {
+                    _ = &mut stop_fut => {
+                        info!(logger, "Got notified to stop");
+                        break;
+                    }
+
+                    hb = &mut sleep => {
+                        sleep.as_mut().reset(Instant::now() + idle_interval);
+
+                        let sessions = unsafe {&mut *sessions.get()};
+                        let mut futs = Vec::with_capacity(sessions.len());
+                        for (_addr, session) in sessions.iter_mut() {
+                            if session.need_heartbeat(&idle_interval) {
+                                futs.push(session.heartbeat());
+                            }
+                        }
+                        futures::future::join_all(futs).await;
+                    }
+                }
+            }
+        });
+    }
+
     pub(crate) fn new(
         target: &str,
         config: &Rc<config::ClientConfig>,
@@ -58,111 +134,39 @@ impl SessionManager {
         notifier: Rc<dyn Notifier>,
         log: &Logger,
     ) -> Result<Self, ClientError> {
-        let (session_mgr_tx, mut session_mgr_rx) =
+        let (session_mgr_tx, session_mgr_rx) =
             mpsc::unbounded_channel::<(SocketAddr, oneshot::Sender<bool>)>();
         let sessions = Rc::new(UnsafeCell::new(HashMap::new()));
 
         // Handle session re-connect event.
-        {
-            let sessions = Rc::clone(&sessions);
-            let timeout = config.connect_timeout;
-            let logger = log.clone();
-            let _config = Rc::clone(config);
-            let _notifier = Rc::clone(&notifier);
-            tokio_uring::spawn(async move {
-                let config = _config;
-                let notifier = _notifier;
-                while let Some((addr, tx)) = session_mgr_rx.recv().await {
-                    let sessions = unsafe { &mut *sessions.get() };
-                    match SessionManager::connect(
-                        &addr,
-                        timeout,
-                        &config,
-                        Rc::clone(&notifier),
-                        &logger,
-                    )
-                    .await
-                    {
-                        Ok(session) => {
-                            sessions.insert(addr, session);
-                            match tx.send(true) {
-                                Ok(_) => {
-                                    trace!(logger, "Session creation is notified");
-                                }
-                                Err(res) => {
-                                    debug!(
-                                        logger,
-                                        "Failed to notify session creation result: `{}`", res
-                                    );
-                                }
-                            }
-                        }
-                        Err(e) => {
-                            error!(
-                                logger,
-                                "Failed to connect to `{:?}`. Cause: `{:?}`", addr, e
-                            );
-                            match tx.send(false) {
-                                Ok(_) => {}
-                                Err(res) => {
-                                    debug!(
-                                        logger,
-                                        "Failed to notify session creation result: `{}`", res
-                                    );
-                                }
-                            }
-                        }
-                    }
-                }
-            });
-        }
+        Self::reconnect(
+            session_mgr_rx,
+            Rc::clone(&sessions),
+            Rc::clone(&config),
+            log.clone(),
+            Rc::clone(&notifier),
+        );
 
         // Heartbeat
-        let (stop_tx, mut stop_rx) = mpsc::channel::<()>(1);
-        {
-            let sessions = Rc::clone(&sessions);
-            let logger = log.clone();
-            let idle_interval = config.heartbeat_interval;
-
-            tokio_uring::spawn(async move {
-                tokio::pin! {
-                    let stop_fut = stop_rx.recv();
-
-                    // Interval to check if a session needs to send a heartbeat request.
-                    let sleep = tokio::time::sleep(idle_interval);
-                }
-
-                loop {
-                    tokio::select! {
-                        _ = &mut stop_fut => {
-                            info!(logger, "Got notified to stop");
-                            break;
-                        }
-
-                        hb = &mut sleep => {
-                            sleep.as_mut().reset(Instant::now() + idle_interval);
-
-                            let sessions = unsafe {&mut *sessions.get()};
-                            let mut futs = Vec::with_capacity(sessions.len());
-                            for (_addr, session) in sessions.iter_mut() {
-                                if session.need_heartbeat(&idle_interval) {
-                                    futs.push(session.heartbeat());
-                                }
-                            }
-                            futures::future::join_all(futs).await;
-                        }
-                    }
-                }
-            });
-        }
+        let (stop_tx, stop_rx) = mpsc::channel::<()>(1);
+        Self::heartbeat(
+            log.clone(),
+            Rc::clone(&config),
+            stop_rx,
+            Rc::clone(&sessions),
+        );
 
         let endpoints = Endpoints::from_str(target)?;
+
+        endpoints.addrs.into_iter().for_each(|socket_address| {
+            let (tx, rx) = oneshot::channel();
+            let _ = session_mgr_tx.send((socket_address, tx));
+        });
 
         Ok(Self {
             config: Rc::clone(config),
             rx,
             log: log.clone(),
-            endpoints,
             lb_policy: LBPolicy::PickFirst,
             session_mgr_tx,
             sessions,
@@ -172,7 +176,6 @@ impl SessionManager {
 
     async fn poll_enqueue(&mut self) -> Result<(), ClientError> {
         trace!(self.log, "poll_enqueue"; "struct" => "SessionManager");
-        self.init_sessions().await?;
         match self.rx.recv().await {
             Some((req, response_observer)) => {
                 trace!(self.log, "Received a request `{:?}`", req; "method" => "poll_enqueue");
@@ -202,47 +205,6 @@ impl SessionManager {
         Ok(())
     }
 
-    async fn init_sessions(&mut self) -> Result<(), ClientError> {
-        let sessions = unsafe { &mut *self.sessions.get() };
-        if sessions.is_empty() {
-            // Create a new session
-            match self.lb_policy {
-                LBPolicy::PickFirst => {
-                    if let Some(&socket_addr) = self.endpoints.get() {
-                        let (tx, rx) = oneshot::channel();
-                        self.session_mgr_tx
-                            .send((socket_addr, tx))
-                            .unwrap_or_else(|e| {
-                                error!(self.log, "Failed to create a new session. Cause: {:?}", e);
-                            });
-                        match rx.await {
-                            Ok(result) => {
-                                if result {
-                                    trace!(self.log, "Session to {:?} was created", socket_addr);
-                                } else {
-                                    warn!(
-                                        self.log,
-                                        "Failed to create session to {:?}", socket_addr
-                                    );
-                                }
-                            }
-                            Err(e) => {
-                                warn!(
-                                    self.log,
-                                    "Got an error while creating session to {:?}. Error: {:?}",
-                                    socket_addr,
-                                    e
-                                );
-                                return Err(ClientError::ConnectFailure(e.to_string()));
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        Ok(())
-    }
-
     async fn dispatch(
         log: Logger,
         sessions: Rc<UnsafeCell<HashMap<SocketAddr, Session>>>,
@@ -252,14 +214,6 @@ impl SessionManager {
         max_attempt_times: usize,
     ) {
         trace!(log, "Received a request `{:?}`", request; "method" => "dispatch");
-
-        loop {
-            let sessions = unsafe { &mut *sessions.get() };
-            if !sessions.is_empty() {
-                break;
-            }
-        }
-
         let sessions = unsafe { &mut *sessions.get() };
         let mut attempt = 0;
         let mut attempted = HashSet::new();

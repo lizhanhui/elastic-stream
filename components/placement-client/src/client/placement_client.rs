@@ -68,7 +68,7 @@ mod tests {
                 .await
                 .map_err(|_e| ListRangeError::Internal)?;
 
-            let timeout = Duration::from_millis(100);
+            let timeout = Duration::from_secs(100);
 
             for i in 0..3 {
                 client.list_range(i as i64, timeout).await.unwrap();

@@ -26,7 +26,7 @@ pub(crate) struct Session {
     /// In-flight requests.
     inflight_requests: Rc<UnsafeCell<HashMap<u32, oneshot::Sender<response::Response>>>>,
 
-    last_rw_instant: Instant,
+    idle_since: Instant,
 }
 
 impl Session {
@@ -83,7 +83,7 @@ impl Session {
             state: SessionState::Active,
             channel,
             inflight_requests: inflight,
-            last_rw_instant: Instant::now(),
+            idle_since: Instant::now(),
         }
     }
 
@@ -95,7 +95,7 @@ impl Session {
         trace!(self.log, "Sending request {:?}", request);
 
         // Update last read/write instant.
-        self.last_rw_instant = Instant::now();
+        self.idle_since = Instant::now();
 
         match request {
             Request::Heartbeat { .. } => {
@@ -161,7 +161,7 @@ impl Session {
     }
 
     pub(crate) fn need_heartbeat(&self, duration: &Duration) -> bool {
-        self.active() && (Instant::now() - self.last_rw_instant >= *duration)
+        self.active() && (Instant::now() - self.idle_since >= *duration)
     }
 
     pub(crate) async fn heartbeat(&mut self) -> Option<oneshot::Receiver<response::Response>> {
