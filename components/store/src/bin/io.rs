@@ -93,5 +93,32 @@ fn main() -> Result<(), Box<dyn Error>> {
         cq.sync();
     }
 
+    // Read the written data
+    {
+        let alignment = 4096;
+        let buf_size = 4096;
+
+        let layout = Layout::from_size_align(buf_size as usize, alignment)?;
+        let ptr = unsafe { alloc::alloc(layout) };
+        unsafe { libc::memset(ptr as *mut libc::c_void, 0, buf_size) };
+
+        let read_e = opcode::Read::new(types::Fd(fd), ptr, 2048)
+            .offset(20)
+            .build()
+            .user_data(3);
+
+        unsafe { uring.submission().push_multiple(&[read_e])? };
+        uring.submit_and_wait(1)?;
+        let mut cq = uring.completion();
+        for cqe in cq.by_ref() {
+            println!("{cqe:#?}");
+        }
+        cq.sync();
+
+        // Output the read data
+        let data = unsafe { std::slice::from_raw_parts(ptr as *const u8, buf_size) };
+        println!("{:?}", data);
+    }
+
     Ok(())
 }
