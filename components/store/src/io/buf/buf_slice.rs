@@ -7,6 +7,7 @@ use super::AlignedBuf;
 /// Expose cached `Record` to application layer.
 ///
 /// This struct is designed to be pub and `Send`.
+#[derive(Debug, Clone)]
 pub struct BufSlice {
     /// Shared block cache.
     buf: Arc<AlignedBuf>,
@@ -62,11 +63,22 @@ unsafe impl IoBuf for BufSlice {
     }
 }
 
+/// Safety: Since `BufSlice` holds an atomic reference to append-only `AlignedBuf` and
+/// `BufSlice` itself is read-only. It's safe to send it across threads.
+///
+/// See https://doc.rust-lang.org/nomicon/send-and-sync.html
+unsafe impl Send for BufSlice {}
+
+/// Safety: `BufSlice` is read-only and therefore sync.
+///
+/// See https://doc.rust-lang.org/nomicon/send-and-sync.html
+unsafe impl Sync for BufSlice {}
+
 #[cfg(test)]
 mod tests {
     use std::{error::Error, sync::Arc};
 
-    use slog::trace;
+    use slog::{info, trace};
     use std::net::ToSocketAddrs;
     use tokio::sync::oneshot;
     use tokio_uring::net::{TcpListener, TcpStream};
@@ -76,7 +88,7 @@ mod tests {
     #[test]
     fn test_buf_slice() -> Result<(), Box<dyn Error>> {
         let log = test_util::terminal_logger();
-        let aligned_buf = Arc::new(AlignedBuf::new(log, 0, 4096, 4096)?);
+        let aligned_buf = Arc::new(AlignedBuf::new(log.clone(), 0, 4096, 4096)?);
         let data = "Hello";
         aligned_buf.write_u32(data.len() as u32);
         aligned_buf.write_buf(data.as_bytes());
@@ -88,6 +100,30 @@ mod tests {
         // Verify `From` trait
         let greeting = std::str::from_utf8((&slice_buf).into())?;
         assert_eq!(data, greeting);
+
+        let cloned = slice_buf.clone();
+        let ptr = &cloned;
+
+        let _log = log.clone();
+        std::thread::scope(|scope| {
+            scope.spawn(move || {
+                slice_buf.len();
+                ptr.len();
+                info!(
+                    log,
+                    "Scoped thread {:?} completed",
+                    std::thread::current().id()
+                );
+            });
+        });
+
+        cloned.len();
+        info!(
+            _log,
+            "main thread {:?} completed",
+            std::thread::current().id()
+        );
+
         Ok(())
     }
 
