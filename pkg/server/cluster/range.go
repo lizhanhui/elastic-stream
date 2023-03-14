@@ -5,7 +5,7 @@ import (
 )
 
 // ListRanges lists the ranges of a stream or a data node.
-func (c *RaftCluster) ListRanges(rangeOwner *rpcfb.RangeOwnerT) ([]*rpcfb.RangeT, error) {
+func (c *RaftCluster) ListRanges(rangeOwner *rpcfb.RangeCriteriaT) ([]*rpcfb.RangeT, error) {
 	// TODO
 	_ = rangeOwner
 	return nil, nil

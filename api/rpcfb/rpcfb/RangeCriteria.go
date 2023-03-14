@@ -6,60 +6,60 @@ import (
 	flatbuffers "github.com/google/flatbuffers/go"
 )
 
-type RangeOwnerT struct {
+type RangeCriteriaT struct {
 	DataNode *DataNodeT `json:"data_node"`
 	StreamId int64 `json:"stream_id"`
 }
 
-func (t *RangeOwnerT) Pack(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
+func (t *RangeCriteriaT) Pack(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
 	if t == nil { return 0 }
 	dataNodeOffset := t.DataNode.Pack(builder)
-	RangeOwnerStart(builder)
-	RangeOwnerAddDataNode(builder, dataNodeOffset)
-	RangeOwnerAddStreamId(builder, t.StreamId)
-	return RangeOwnerEnd(builder)
+	RangeCriteriaStart(builder)
+	RangeCriteriaAddDataNode(builder, dataNodeOffset)
+	RangeCriteriaAddStreamId(builder, t.StreamId)
+	return RangeCriteriaEnd(builder)
 }
 
-func (rcv *RangeOwner) UnPackTo(t *RangeOwnerT) {
+func (rcv *RangeCriteria) UnPackTo(t *RangeCriteriaT) {
 	t.DataNode = rcv.DataNode(nil).UnPack()
 	t.StreamId = rcv.StreamId()
 }
 
-func (rcv *RangeOwner) UnPack() *RangeOwnerT {
+func (rcv *RangeCriteria) UnPack() *RangeCriteriaT {
 	if rcv == nil { return nil }
-	t := &RangeOwnerT{}
+	t := &RangeCriteriaT{}
 	rcv.UnPackTo(t)
 	return t
 }
 
-type RangeOwner struct {
+type RangeCriteria struct {
 	_tab flatbuffers.Table
 }
 
-func GetRootAsRangeOwner(buf []byte, offset flatbuffers.UOffsetT) *RangeOwner {
+func GetRootAsRangeCriteria(buf []byte, offset flatbuffers.UOffsetT) *RangeCriteria {
 	n := flatbuffers.GetUOffsetT(buf[offset:])
-	x := &RangeOwner{}
+	x := &RangeCriteria{}
 	x.Init(buf, n+offset)
 	return x
 }
 
-func GetSizePrefixedRootAsRangeOwner(buf []byte, offset flatbuffers.UOffsetT) *RangeOwner {
+func GetSizePrefixedRootAsRangeCriteria(buf []byte, offset flatbuffers.UOffsetT) *RangeCriteria {
 	n := flatbuffers.GetUOffsetT(buf[offset+flatbuffers.SizeUint32:])
-	x := &RangeOwner{}
+	x := &RangeCriteria{}
 	x.Init(buf, n+offset+flatbuffers.SizeUint32)
 	return x
 }
 
-func (rcv *RangeOwner) Init(buf []byte, i flatbuffers.UOffsetT) {
+func (rcv *RangeCriteria) Init(buf []byte, i flatbuffers.UOffsetT) {
 	rcv._tab.Bytes = buf
 	rcv._tab.Pos = i
 }
 
-func (rcv *RangeOwner) Table() flatbuffers.Table {
+func (rcv *RangeCriteria) Table() flatbuffers.Table {
 	return rcv._tab
 }
 
-func (rcv *RangeOwner) DataNode(obj *DataNode) *DataNode {
+func (rcv *RangeCriteria) DataNode(obj *DataNode) *DataNode {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(4))
 	if o != 0 {
 		x := rcv._tab.Indirect(o + rcv._tab.Pos)
@@ -72,7 +72,7 @@ func (rcv *RangeOwner) DataNode(obj *DataNode) *DataNode {
 	return nil
 }
 
-func (rcv *RangeOwner) StreamId() int64 {
+func (rcv *RangeCriteria) StreamId() int64 {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(6))
 	if o != 0 {
 		return rcv._tab.GetInt64(o + rcv._tab.Pos)
@@ -80,19 +80,19 @@ func (rcv *RangeOwner) StreamId() int64 {
 	return 0
 }
 
-func (rcv *RangeOwner) MutateStreamId(n int64) bool {
+func (rcv *RangeCriteria) MutateStreamId(n int64) bool {
 	return rcv._tab.MutateInt64Slot(6, n)
 }
 
-func RangeOwnerStart(builder *flatbuffers.Builder) {
+func RangeCriteriaStart(builder *flatbuffers.Builder) {
 	builder.StartObject(2)
 }
-func RangeOwnerAddDataNode(builder *flatbuffers.Builder, dataNode flatbuffers.UOffsetT) {
+func RangeCriteriaAddDataNode(builder *flatbuffers.Builder, dataNode flatbuffers.UOffsetT) {
 	builder.PrependUOffsetTSlot(0, flatbuffers.UOffsetT(dataNode), 0)
 }
-func RangeOwnerAddStreamId(builder *flatbuffers.Builder, streamId int64) {
+func RangeCriteriaAddStreamId(builder *flatbuffers.Builder, streamId int64) {
 	builder.PrependInt64Slot(1, streamId, 0)
 }
-func RangeOwnerEnd(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
+func RangeCriteriaEnd(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
 	return builder.EndObject()
 }

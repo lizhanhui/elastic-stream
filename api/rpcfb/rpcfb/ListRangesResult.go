@@ -7,7 +7,7 @@ import (
 )
 
 type ListRangesResultT struct {
-	RangeOwner *RangeOwnerT `json:"range_owner"`
+	RangeCriteria *RangeCriteriaT `json:"range_criteria"`
 	ErrorCode ErrorCode `json:"error_code"`
 	ErrorMessage string `json:"error_message"`
 	Ranges []*RangeT `json:"ranges"`
@@ -15,7 +15,7 @@ type ListRangesResultT struct {
 
 func (t *ListRangesResultT) Pack(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
 	if t == nil { return 0 }
-	rangeOwnerOffset := t.RangeOwner.Pack(builder)
+	rangeCriteriaOffset := t.RangeCriteria.Pack(builder)
 	errorMessageOffset := flatbuffers.UOffsetT(0)
 	if t.ErrorMessage != "" {
 		errorMessageOffset = builder.CreateString(t.ErrorMessage)
@@ -34,7 +34,7 @@ func (t *ListRangesResultT) Pack(builder *flatbuffers.Builder) flatbuffers.UOffs
 		rangesOffset = builder.EndVector(rangesLength)
 	}
 	ListRangesResultStart(builder)
-	ListRangesResultAddRangeOwner(builder, rangeOwnerOffset)
+	ListRangesResultAddRangeCriteria(builder, rangeCriteriaOffset)
 	ListRangesResultAddErrorCode(builder, t.ErrorCode)
 	ListRangesResultAddErrorMessage(builder, errorMessageOffset)
 	ListRangesResultAddRanges(builder, rangesOffset)
@@ -42,7 +42,7 @@ func (t *ListRangesResultT) Pack(builder *flatbuffers.Builder) flatbuffers.UOffs
 }
 
 func (rcv *ListRangesResult) UnPackTo(t *ListRangesResultT) {
-	t.RangeOwner = rcv.RangeOwner(nil).UnPack()
+	t.RangeCriteria = rcv.RangeCriteria(nil).UnPack()
 	t.ErrorCode = rcv.ErrorCode()
 	t.ErrorMessage = string(rcv.ErrorMessage())
 	rangesLength := rcv.RangesLength()
@@ -88,12 +88,12 @@ func (rcv *ListRangesResult) Table() flatbuffers.Table {
 	return rcv._tab
 }
 
-func (rcv *ListRangesResult) RangeOwner(obj *RangeOwner) *RangeOwner {
+func (rcv *ListRangesResult) RangeCriteria(obj *RangeCriteria) *RangeCriteria {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(4))
 	if o != 0 {
 		x := rcv._tab.Indirect(o + rcv._tab.Pos)
 		if obj == nil {
-			obj = new(RangeOwner)
+			obj = new(RangeCriteria)
 		}
 		obj.Init(rcv._tab.Bytes, x)
 		return obj
@@ -144,8 +144,8 @@ func (rcv *ListRangesResult) RangesLength() int {
 func ListRangesResultStart(builder *flatbuffers.Builder) {
 	builder.StartObject(4)
 }
-func ListRangesResultAddRangeOwner(builder *flatbuffers.Builder, rangeOwner flatbuffers.UOffsetT) {
-	builder.PrependUOffsetTSlot(0, flatbuffers.UOffsetT(rangeOwner), 0)
+func ListRangesResultAddRangeCriteria(builder *flatbuffers.Builder, rangeCriteria flatbuffers.UOffsetT) {
+	builder.PrependUOffsetTSlot(0, flatbuffers.UOffsetT(rangeCriteria), 0)
 }
 func ListRangesResultAddErrorCode(builder *flatbuffers.Builder, errorCode ErrorCode) {
 	builder.PrependInt16Slot(1, int16(errorCode), 0)

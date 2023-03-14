@@ -6,6 +6,7 @@ enum ErrorCode : int16 {
     INVALID_REQUEST = 2,
     UNKNOWN_STORAGE_ERROR = 3,
     STORAGE_NOT_AVAILABLE = 4,
+    PM_NOT_LEADER = 5,
 }
 
 // The system error response is used to return the error code and error message if the system error flag of sbp is set.
@@ -129,7 +130,7 @@ table FetchResult {
 // Used to fetch the ranges from a specific data node or a specific stream list.
 // Regard this table as a union type.
 // Alway set one of the fields.
-table RangeOwner {
+table RangeCriteria {
     data_node: DataNode (id: 0);
     // The stream id to list the ranges.
     stream_id: int64 (id: 1);
@@ -148,9 +149,9 @@ table DataNode {
 // Or it could list the ranges of all the streams in a specific data node.
 table ListRangesRequest {
     timeout_ms: int32 (id: 0);
-    // The range owner could be a data node or a list of streams.
-    // Note: a union type adds two fields, so the id of the field occupies 2 ids.
-    range_owners: [RangeOwner] (id: 1);
+    
+    // The range criteria could be a data node or a list of streams.
+    range_criteria: [RangeCriteria] (id: 1);
 }
 
 table ListRangesResponse {
@@ -164,9 +165,9 @@ table ListRangesResponse {
 }
 
 table ListRangesResult {
-    // The owner that the returned ranges belong to.
-    // Maybe a data node or a stream id.
-    range_owner: RangeOwner (id: 0);
+    // The criteria that the returned ranges used.
+    // A criteria may be a data node or a stream id.
+    range_criteria: RangeCriteria (id: 0);
     // The error code, or 0 if there was no error.
     error_code: ErrorCode (id: 1);
     // The error message, or omitted if there was no error.
@@ -180,11 +181,19 @@ table Range {
     stream_id: int64 (id: 0);
     // The index of the range in the stream.
     range_index: int32 (id: 1);
-    // The start offset of the range.
+
+    // The start offset of the range. Offset is 0-based index and follows left-boundary-inclusive and right-boundary-exclusive.
     start_offset: int64 (id: 2);
+    
     // The end offset of the range.
-    // Omited if the range is open.
+    // -1 if the range is mutable. If the range is sealed, end_offset would be non-negative and `end_offset` is exclusive.
+    // 
+    // For example, range `[0, -1)` means that it is still mutable and clients may append additional records to it;
+    // range `[0, 100)` means it is already sealed and read-only, records indexed 0 to 99 can be retrieved from this range;
+    // we may have empty, droppable sealed ranges with the form `[N, N)` and placement manager would delete them without hesitation,
+    // as a result, clients should NOT cache these empty ones.
     end_offset: int64 (id: 3);
+
     // The next writable offset for incoming records of the range.
     // It's a snapshot of the next offset of the range, and it may be changed after the response is sent.
     next_offset: int64 (id: 4);

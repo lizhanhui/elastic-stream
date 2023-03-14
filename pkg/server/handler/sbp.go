@@ -20,12 +20,12 @@ func NewSbp(cluster *cluster.RaftCluster) *Sbp {
 }
 
 func (s *Sbp) ListRange(req *protocol.ListRangesRequest) *protocol.ListRangesResponse {
-	listResponses := make([]*rpcfb.ListRangesResultT, 0, len(req.RangeOwners))
-	for _, owner := range req.RangeOwners {
+	listResponses := make([]*rpcfb.ListRangesResultT, 0, len(req.RangeCriteria))
+	for _, owner := range req.RangeCriteria {
 		ranges, err := s.c.ListRanges(owner)
 
 		result := &rpcfb.ListRangesResultT{
-			RangeOwner: owner,
+			RangeCriteria: owner,
 		}
 		if err != nil {
 			result.ErrorCode = rpcfb.ErrorCodeUNKNOWN
