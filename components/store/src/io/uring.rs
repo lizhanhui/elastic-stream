@@ -25,6 +25,8 @@ use std::{
     os::fd::AsRawFd,
 };
 
+use super::ReadTask;
+
 pub(crate) struct IO {
     options: Options,
 
@@ -94,6 +96,11 @@ pub(crate) struct IO {
     ///
     /// Assume the target record of the `WriteTask` is [n, n + len) in WAL, we use `n + len` as key.
     inflight_write_tasks: BTreeMap<u64, WriteTask>,
+
+    /// Inflight read tasks that are not yet returned to the observer.
+    /// 
+    /// Assume the target record of the `ReadTask` is [n, n + len) in WAL, we use `n` as key.
+    inflight_read_tasks: BTreeMap<u64, ReadTask>,
 
     /// Offsets of blocks that are partially filled with data and are still inflight.
     barrier: HashSet<u64>,
@@ -427,7 +434,7 @@ impl IO {
             match io_task {
                 IoTask::Read(task) => {
                     // TODO: Check if there is an on-going read IO covering this request.
-                    let segment = match self.wal.segment_file_of(task.offset) {
+                    let segment = match self.wal.segment_file_of(task.wal_offset) {
                         Some(segment) => segment,
                         None => {
                             // Consume io_task directly
@@ -438,7 +445,7 @@ impl IO {
                     if let Some(sd) = segment.sd.as_ref() {
                         if let Ok(buf) = AlignedBufReader::alloc_read_buf(
                             self.log.clone(),
-                            task.offset,
+                            task.wal_offset,
                             task.len as usize,
                             alignment as u64,
                         ) {
@@ -449,12 +456,12 @@ impl IO {
                             let context = Context::read_ctx(
                                 opcode::Read::CODE,
                                 Arc::new(buf),
-                                task.offset,
+                                task.wal_offset,
                                 task.len,
                             );
 
                             let sqe = opcode::Read::new(types::Fd(sd.fd), ptr, task.len)
-                                .offset((task.offset - segment.offset) as i64)
+                                .offset((task.wal_offset - segment.offset) as i64)
                                 .build()
                                 .user_data(context as u64);
 
@@ -795,7 +802,36 @@ fn on_complete(
             }
             Ok(())
         }
-        opcode::Read::CODE => Ok(()),
+        opcode::Read::CODE => {
+            if result < 0 {
+                error!(
+                    log,
+                    "Read from WAL range `[{}, {})` failed",
+                    context.offset.unwrap_or_default(),
+                    context.len.unwrap_or_default()
+                );
+                return Err(StoreError::System(-result));
+            } else {
+                if let (Some(offset), Some(len)) = (context.offset, context.len) {
+                    if result as u32 != len {
+                        error!(
+                            log,
+                            "Read {} bytes from WAL range `[{}, {})`, but {} bytes expected",
+                            result,
+                            offset,
+                            len,
+                            len
+                        );
+                        return Err(StoreError::InsufficientData);
+                    }
+                    // Completes the read task
+                } else {
+                    // This should never happen, because we have checked the request before.
+                    return Err(StoreError::Internal("Invalid read request".to_string()));
+                }
+            }
+            Ok(())
+        }
         _ => Ok(()),
     }
 }

@@ -6,13 +6,13 @@ use std::{
 use futures::Future;
 
 use super::Fetch;
-use crate::error::FetchError;
+use crate::{error::FetchError, BufSlice};
 
 #[derive(Debug)]
 pub struct FetchResult {
     pub stream_id: i64,
     pub offset: i64,
-    pub payload: bytes::Bytes,
+    pub payload: Vec<BufSlice>,
 }
 
 impl<Op> Future for Fetch<Op>

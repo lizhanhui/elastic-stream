@@ -4,6 +4,7 @@ use tokio::sync::oneshot;
 use crate::{
     error::{AppendError, FetchError},
     ops::{append::AppendResult, fetch::FetchResult},
+    BufSlice,
 };
 
 #[derive(Debug)]
@@ -12,12 +13,22 @@ pub(crate) struct ReadTask {
     pub(crate) stream_id: i64,
 
     /// Offset, in term of WAL, of the record to read.
-    pub(crate) offset: u64,
+    pub(crate) wal_offset: u64,
 
     /// Number of bytes to read.
     pub(crate) len: u32,
 
-    pub(crate) observer: oneshot::Sender<Result<FetchResult, FetchError>>,
+    /// Oneshot sender, used to return `FetchResult` or propagate error.
+    pub(crate) observer: oneshot::Sender<Result<SingleFetchResult, FetchError>>,
+}
+
+// Each fetch operation may split into multiple `ReadTask`s.
+// Each `ReadTask` returns a single fetch result.
+#[derive(Debug)]
+pub(crate) struct SingleFetchResult {
+    pub(crate) stream_id: i64,
+    pub(crate) wal_offset: i64,
+    pub(crate) payload: BufSlice,
 }
 
 #[derive(Debug)]
@@ -46,9 +57,4 @@ impl WriteTask {
 pub(crate) enum IoTask {
     Read(ReadTask),
     Write(WriteTask),
-}
-
-/// Used to notify the index module to perform index query, e.g. `max offset`, `min offset`, `delete`.
-pub(crate) enum IndexTask {
-
 }

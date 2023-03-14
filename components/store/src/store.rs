@@ -8,7 +8,7 @@ use std::{
 
 use crate::{
     error::{AppendError, FetchError, StoreError},
-    index::{driver::IndexDriver, MinOffset},
+    index::{driver::IndexDriver, record_handle::RecordHandle, MinOffset},
     io::{
         self,
         task::{
@@ -24,7 +24,7 @@ use crate::{
 };
 use core_affinity::CoreId;
 use crossbeam::channel::Sender;
-use futures::Future;
+use futures::{future::join_all, Future};
 use slog::{error, trace, Logger};
 use tokio::sync::oneshot;
 
@@ -166,32 +166,6 @@ impl ElasticStore {
             }
         }
     }
-
-    /// Send fetch request to IO module.
-    ///
-    /// * `options` - Fetch options, which includes target stream_id, logical offset and max_bytes to read.
-    /// * `observer` - Oneshot sender, used to return `FetchResult` or propagate error.
-    fn do_fetch(
-        &self,
-        options: ReadOptions,
-        observer: oneshot::Sender<Result<FetchResult, FetchError>>,
-    ) {
-        let task = ReadTask {
-            stream_id: options.stream_id,
-            offset: options.offset as u64,
-            len: options.max_bytes as u32,
-            observer,
-        };
-
-        let io_task = Read(task);
-        if let Err(e) = self.io_tx.send(io_task) {
-            if let Read(task) = e.0 {
-                if let Err(e) = task.observer.send(Err(FetchError::SubmissionQueue)) {
-                    error!(self.log, "Failed to propagate error: {:?}", e);
-                }
-            }
-        }
-    }
 }
 
 impl Store for ElasticStore {
@@ -220,14 +194,80 @@ impl Store for ElasticStore {
     where
         <Self as Store>::FetchOp: Future<Output = Result<FetchResult, FetchError>>,
     {
-        let (sender, receiver) = oneshot::channel();
-        self.do_fetch(options, sender);
+        let (index_tx, index_rx) = oneshot::channel();
+        self.indexer.scan_record_handles(
+            options.stream_id,
+            options.offset as u64,
+            options.max_bytes as u32,
+            index_tx,
+        );
 
-        let inner = async {
-            match receiver.await.map_err(|_e| FetchError::ChannelRecv) {
-                Ok(res) => res,
+        let io_tx_cp = self.io_tx.clone();
+        let logger = self.log.clone();
+        let inner = async move {
+            let scan_res = match index_rx.await.map_err(|_e| FetchError::TranslateIndex) {
+                Ok(res) => res.map_err(|_e| FetchError::TranslateIndex),
                 Err(e) => Err(e),
+            }?;
+
+            if let Some(handles) = scan_res {
+                let mut io_receiver = Vec::with_capacity(handles.len());
+                for handle in handles {
+                    let (sender, receiver) = oneshot::channel();
+                    let io_task = ReadTask {
+                        stream_id: options.stream_id,
+                        wal_offset: handle.wal_offset,
+                        len: handle.len,
+                        observer: sender,
+                    };
+
+                    if let Err(e) = io_tx_cp.send(Read(io_task)) {
+                        if let Read(io_task) = e.0 {
+                            if let Err(e) = io_task.observer.send(Err(FetchError::SubmissionQueue))
+                            {
+                                error!(logger, "Failed to propagate error: {:?}", e);
+                            }
+                        }
+                    }
+
+                    io_receiver.push(receiver);
+                }
+
+                // Join all IO tasks.
+                let io_result = join_all(io_receiver).await;
+
+                let flattened_result: Vec<_> = io_result
+                    .into_iter()
+                    .map(|res| match res {
+                        Ok(Ok(res)) => Ok(res),
+                        Ok(Err(e)) => Err(e),
+                        Err(_) => Err(FetchError::ChannelRecv), // Channel receive error branch
+                    })
+                    .collect();
+
+                // Take the first error from the flattened result, and return it.
+                let first_error = flattened_result.iter().find(|res| res.is_err());
+                if let Some(Err(e)) = first_error {
+                    return Err(e.clone());
+                }
+
+                // Collect all successful IO results, and sort it by the wal offset
+                let mut result: Vec<_> = flattened_result.into_iter().flatten().collect();
+
+                // Sort the result
+                result.sort_by(|a, b| a.wal_offset.cmp(&b.wal_offset));
+
+                // Extract the payload from the result, and assemble the final result.
+                let final_result: Vec<_> = result.into_iter().map(|res| res.payload).collect();
+
+                return Ok(FetchResult {
+                    stream_id: options.stream_id,
+                    offset: options.offset,
+                    payload: final_result,
+                });
             }
+
+            Err(FetchError::NoRecord)
         };
 
         Fetch { inner }
