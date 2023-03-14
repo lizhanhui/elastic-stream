@@ -1,3 +1,4 @@
+use bytes::Bytes;
 use codec::frame::Frame;
 
 use flatbuffers::FlatBufferBuilder;
@@ -124,6 +125,9 @@ impl<'a> Fetch<'a> {
         let res_offset = protocol::rpc::header::FetchResponse::create(&mut builder, &res_args);
         let res_header = finish_response_builder(&mut builder, res_offset);
         response.header = Some(res_header);
+
+        // Flatten the payloads, since we already identified the sequence of the payloads
+        let payloads: Vec<_> = payloads.into_iter().flatten().collect();
         response.payload = Some(payloads);
         ()
     }

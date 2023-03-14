@@ -162,6 +162,11 @@ impl AlignedBuf {
         true
     }
 
+    /// Increase the written position when uring io completion.
+    pub(crate) fn increase_written(&self, len: usize) {
+        self.written.fetch_add(len, Ordering::Relaxed);
+    }
+
     /// Remaining space to write.
     pub(crate) fn remaining(&self) -> usize {
         let pos = self.written.load(Ordering::Relaxed);

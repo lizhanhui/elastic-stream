@@ -11,6 +11,7 @@ use crate::io::task::WriteTask;
 use crate::io::wal::Wal;
 use crate::io::write_window::WriteWindow;
 use crate::ops::append::AppendResult;
+use crate::BufSlice;
 
 use crossbeam::channel::{Receiver, Sender, TryRecvError};
 use io_uring::register;
@@ -25,6 +26,7 @@ use std::{
     os::fd::AsRawFd,
 };
 
+use super::task::SingleFetchResult;
 use super::ReadTask;
 
 pub(crate) struct IO {
@@ -96,11 +98,6 @@ pub(crate) struct IO {
     ///
     /// Assume the target record of the `WriteTask` is [n, n + len) in WAL, we use `n + len` as key.
     inflight_write_tasks: BTreeMap<u64, WriteTask>,
-
-    /// Inflight read tasks that are not yet returned to the observer.
-    /// 
-    /// Assume the target record of the `ReadTask` is [n, n + len) in WAL, we use `n` as key.
-    inflight_read_tasks: BTreeMap<u64, ReadTask>,
 
     /// Offsets of blocks that are partially filled with data and are still inflight.
     barrier: HashSet<u64>,
@@ -451,6 +448,8 @@ impl IO {
                         ) {
                             let ptr = buf.as_ptr() as *mut u8;
 
+                            let read_offset = task.wal_offset - segment.offset;
+                            let read_len = task.len;
                             // The pointer will be set into user_data of uring.
                             // When the uring io completes, the pointer will be used to retrieve the `Context`.
                             let context = Context::read_ctx(
@@ -458,10 +457,11 @@ impl IO {
                                 Arc::new(buf),
                                 task.wal_offset,
                                 task.len,
+                                IoTask::Read(task),
                             );
 
-                            let sqe = opcode::Read::new(types::Fd(sd.fd), ptr, task.len)
-                                .offset((task.wal_offset - segment.offset) as i64)
+                            let sqe = opcode::Read::new(types::Fd(sd.fd), ptr, read_len)
+                                .offset(read_offset as i64)
                                 .build()
                                 .user_data(context as u64);
 
@@ -580,14 +580,17 @@ impl IO {
                     // Safety:
                     // It's safe to convert tag ptr back to Box<Context> as the memory pointed by ptr
                     // is allocated by Box itself, hence, there will no alignment issue at all.
-                    let context = unsafe { Box::from_raw(ptr) };
+                    let mut context = unsafe { Box::from_raw(ptr) };
 
                     // Remove barrier
                     self.barrier.remove(&context.buf.offset);
 
-                    if let Err(e) =
-                        on_complete(&mut self.write_window, &context, cqe.result(), &self.log)
-                    {
+                    if let Err(e) = on_complete(
+                        &mut self.write_window,
+                        &mut context,
+                        cqe.result(),
+                        &self.log,
+                    ) {
                         if let StoreError::System(errno) = e {
                             error!(
                                 self.log,
@@ -781,7 +784,7 @@ impl IO {
 /// * `log` - Logger instance.
 fn on_complete(
     write_window: &mut WriteWindow,
-    context: &Context,
+    context: &mut Context,
     result: i32,
     log: &Logger,
 ) -> Result<(), StoreError> {
@@ -824,13 +827,41 @@ fn on_complete(
                         );
                         return Err(StoreError::InsufficientData);
                     }
-                    // Completes the read task
-                } else {
-                    // This should never happen, because we have checked the request before.
-                    return Err(StoreError::Internal("Invalid read request".to_string()));
+
+                    context.buf.increase_written(result as usize);
+
+                    let io_task = context.io_task.take();
+
+                    if let Some(IoTask::Read(io_task)) = io_task {
+                        // Completes the read task
+                        let fetch_result = SingleFetchResult {
+                            stream_id: io_task.stream_id,
+                            wal_offset: io_task.wal_offset as i64,
+                            payload: BufSlice::new(
+                                Arc::clone(&context.buf),
+                                0,
+                                context.buf.write_pos() as u32,
+                            ),
+                        };
+
+                        trace!(
+                            log,
+                            "Completes read task for stream {} at WAL offset {}, read {} bytes",
+                            fetch_result.stream_id,
+                            fetch_result.wal_offset,
+                            result,
+                        );
+
+                        if let Err(e) = io_task.observer.send(Ok(fetch_result)) {
+                            error!(log, "Failed to send read result to observer: {:?}", e);
+                        }
+
+                        return Ok(());
+                    }
                 }
             }
-            Ok(())
+            // This should never happen, because we have checked the request before.
+            return Err(StoreError::Internal("Invalid read request".to_string()));
         }
         _ => Ok(()),
     }
