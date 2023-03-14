@@ -1,0 +1,97 @@
+package client.netty;
+
+import client.protocol.SbpFrame;
+import client.protocol.SbpFrameBuilder;
+import io.netty.bootstrap.ServerBootstrap;
+import io.netty.channel.ChannelFuture;
+import io.netty.channel.ChannelHandlerContext;
+import io.netty.channel.ChannelInitializer;
+import io.netty.channel.ChannelOption;
+import io.netty.channel.ChannelPipeline;
+import io.netty.channel.EventLoopGroup;
+import io.netty.channel.SimpleChannelInboundHandler;
+import io.netty.channel.nio.NioEventLoopGroup;
+import io.netty.channel.socket.SocketChannel;
+import io.netty.channel.socket.nio.NioServerSocketChannel;
+import io.netty.handler.logging.LogLevel;
+import io.netty.handler.logging.LoggingHandler;
+import java.io.Closeable;
+import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
+import java.util.concurrent.ExecutorService;
+
+public class DefaultMockNettyServer extends NettyRemotingAbstract implements Closeable {
+    private final EventLoopGroup bossGroup;
+    private final EventLoopGroup workerGroup;
+    private final int port;
+    private final String responsePrefix;
+
+    /**
+     * Constructor, specifying capacity of one-way and asynchronous semaphores.
+     *
+     * @param permitsAsync Number of permits for asynchronous requests.
+     */
+    public DefaultMockNettyServer(int permitsAsync, int port, String responsePrefix){
+        super(permitsAsync);
+
+        bossGroup = new NioEventLoopGroup(1);
+        workerGroup = new NioEventLoopGroup();
+        this.port = port;
+        this.responsePrefix = responsePrefix;
+
+    }
+
+    public void start() throws InterruptedException {
+        NettyEncoder sharedEncoder = new NettyEncoder();
+
+        ServerBootstrap b = new ServerBootstrap();
+        b.group(bossGroup, workerGroup)
+            .channel(NioServerSocketChannel.class)
+            .option(ChannelOption.SO_BACKLOG, 100)
+            .handler(new LoggingHandler(LogLevel.INFO))
+            .childHandler(new ChannelInitializer<SocketChannel>() {
+                @Override
+                public void initChannel(SocketChannel ch) throws Exception {
+                    ChannelPipeline p = ch.pipeline();
+                    p.addLast(sharedEncoder, new NettyDecoder(), new NettyServerHandler());
+                }
+            });
+
+        // Start the server.
+        ChannelFuture f = b.bind(port).sync();
+
+        // Wait until the server socket is closed.
+        f.channel().closeFuture().sync();
+    }
+
+    @Override
+    public ExecutorService getCallbackExecutor() {
+        return null;
+    }
+
+    @Override
+    public void close() throws IOException {
+        // Shut down all event loops to terminate all threads.
+        bossGroup.shutdownGracefully();
+        workerGroup.shutdownGracefully();
+    }
+
+    class NettyServerHandler extends SimpleChannelInboundHandler<SbpFrame> {
+
+        @Override
+        protected void channelRead0(ChannelHandlerContext ctx, SbpFrame frame) throws Exception {
+            ByteBuffer[] resultPayload = new ByteBuffer[frame.getPayload().length + 1];
+            resultPayload[0] = ByteBuffer.wrap(responsePrefix.getBytes(StandardCharsets.ISO_8859_1));
+            for (int i = 0; i < frame.getPayload().length; i++) {
+                resultPayload[i + 1] = frame.getPayload()[i];
+            }
+            ctx.writeAndFlush(new SbpFrameBuilder()
+                .setFlag(SbpFrame.GENERAL_RESPONSE_FLAG)
+                .setPayload(resultPayload)
+                .setStreamId(frame.getStreamId())
+                .setOperationCode((short) 1)
+                .build());
+        }
+    }
+}

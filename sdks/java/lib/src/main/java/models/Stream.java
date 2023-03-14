@@ -2,13 +2,13 @@ package models;
 
 public class Stream {
     private long streamId;
-    private int replicaNums;
-    private long retentionPeriodMS;
+    private int replicaNum;
+    private long retentionPeriodMillis;
 
-    public Stream(long streamId, int replicaNums, long retentionPeriodMS) {
+    public Stream(long streamId, int replicaNums, long retentionPeriodMillis) {
         this.streamId = streamId;
-        this.replicaNums = replicaNums;
-        this.retentionPeriodMS = retentionPeriodMS;
+        this.replicaNum = replicaNums;
+        this.retentionPeriodMillis = retentionPeriodMillis;
     }
 
     public long getStreamId() {
@@ -19,19 +19,19 @@ public class Stream {
         this.streamId = streamId;
     }
 
-    public int getReplicaNums() {
-        return replicaNums;
+    public int getReplicaNum() {
+        return replicaNum;
     }
 
-    public void setReplicaNums(int replicaNums) {
-        this.replicaNums = replicaNums;
+    public void setReplicaNum(int replicaNum) {
+        this.replicaNum = replicaNum;
     }
 
-    public long getRetentionPeriodMS() {
-        return retentionPeriodMS;
+    public long getRetentionPeriodMillis() {
+        return retentionPeriodMillis;
     }
 
-    public void setRetentionPeriodMS(long retentionPeriodMS) {
-        this.retentionPeriodMS = retentionPeriodMS;
+    public void setRetentionPeriodMillis(long retentionPeriodMillis) {
+        this.retentionPeriodMillis = retentionPeriodMillis;
     }
 }

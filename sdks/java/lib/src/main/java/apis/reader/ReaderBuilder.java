@@ -1,6 +1,6 @@
 package apis.reader;
 
-import apis.ClientException;
+import apis.exception.ClientException;
 
 public interface ReaderBuilder {
     /**
@@ -23,5 +23,5 @@ public interface ReaderBuilder {
      * @return the reader instance
      * @throws ClientException if the reader cannot be created
      */
-    Reader build();
+    Reader build() throws ClientException;
 }

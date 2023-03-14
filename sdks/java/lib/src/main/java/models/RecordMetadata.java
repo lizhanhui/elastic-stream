@@ -1,5 +1,8 @@
 package models;
 
+/**
+ * metadata of a record, which can be located in data nodes.
+ */
 public class RecordMetadata {
     private long offset;
     private long appendTimestamp;

@@ -5,7 +5,7 @@ import java.util.List;
 /**
  * A minimum storage unit of stream, each stream is divided into multiple ranges, and only the last range can be written.
  */
-public class Range {
+public class StreamRange {
     private long streamId;
     private int rangeIndex;
     private long startOffset;
