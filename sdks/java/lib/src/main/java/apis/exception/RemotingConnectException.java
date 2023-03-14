@@ -17,10 +17,9 @@
 package apis.exception;
 
 import client.route.Address;
-import java.io.Serial;
 
 public class RemotingConnectException extends RemotingException {
-    @Serial private static final long serialVersionUID = -5565366231695911316L;
+    private static final long serialVersionUID = -5565366231695911316L;
 
     public RemotingConnectException(Address addr) {
         this(addr, null);

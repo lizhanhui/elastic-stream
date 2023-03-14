@@ -16,10 +16,8 @@
  */
 package apis.exception;
 
-import java.io.Serial;
-
 public class RemotingSendRequestException extends RemotingException {
-    @Serial private static final long serialVersionUID = 5391285827332471674L;
+    private static final long serialVersionUID = 5391285827332471674L;
 
     public RemotingSendRequestException(String address) {
         this(address, null);
