@@ -730,6 +730,7 @@ The error codes are defined in the following table.
 | UNKNOWN | 1 | No | An unexpected server error |
 | INVALID_REQUEST | 2 | No | The request is invalid |
 | UNSUPPORTED_VERSION | 3 | No | The version of the request is not supported |
+| PM_NOT_LEADER | 5 | No | The requested PM node is not the leader. |
 
 ## References
 

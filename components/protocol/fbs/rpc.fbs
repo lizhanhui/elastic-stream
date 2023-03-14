@@ -6,6 +6,7 @@ enum ErrorCode : int16 {
     INVALID_REQUEST = 2,
     UNKNOWN_STORAGE_ERROR = 3,
     STORAGE_NOT_AVAILABLE = 4,
+    PM_NOT_LEADER = 5,
 }
 
 // The system error response is used to return the error code and error message if the system error flag of sbp is set.
