@@ -127,7 +127,11 @@ impl<'a> Fetch<'a> {
         response.header = Some(res_header);
 
         // Flatten the payloads, since we already identified the sequence of the payloads
-        let payloads: Vec<_> = payloads.into_iter().flatten().collect();
+        let payloads: Vec<_> = payloads
+            .into_iter()
+            .flatten()
+            .map(|payload| Bytes::copy_from_slice(&payload[..]))
+            .collect();
         response.payload = Some(payloads);
         ()
     }
