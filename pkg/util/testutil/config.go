@@ -45,5 +45,7 @@ func NewEtcdConfig(tb testing.TB) *embed.Config {
 	cfg.StrictReconfigCheck = false
 	cfg.InitialCluster = fmt.Sprintf("%s=%s", cfg.Name, &cfg.LPUrls[0])
 	cfg.ClusterState = embed.ClusterStateFlagNew
+
+	cfg.LogLevel = "error"
 	return cfg
 }

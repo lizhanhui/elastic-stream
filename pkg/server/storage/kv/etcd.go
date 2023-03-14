@@ -152,7 +152,11 @@ func (e *Etcd) BatchPut(kvs []KeyValue, prevKV bool) ([]KeyValue, error) {
 }
 
 func (e *Etcd) Delete(k []byte, prevKV bool) ([]byte, error) {
-	prevKvs, err := e.BatchDelete([]KeyValue{{Key: k}}, prevKV)
+	if len(k) == 0 {
+		return nil, nil
+	}
+
+	prevKvs, err := e.BatchDelete([][]byte{k}, prevKV)
 	if err != nil {
 		return nil, errors.Wrap(err, "kv delete")
 	}
@@ -160,21 +164,26 @@ func (e *Etcd) Delete(k []byte, prevKV bool) ([]byte, error) {
 	if !prevKV {
 		return nil, nil
 	}
-	return prevKvs[0].Value, nil
+	for _, kv := range prevKvs {
+		if bytes.Equal(kv.Key, k) {
+			return kv.Value, nil
+		}
+	}
+	return nil, nil
 }
 
-func (e *Etcd) BatchDelete(kvs []KeyValue, prevKV bool) ([]KeyValue, error) {
-	if len(kvs) == 0 {
+func (e *Etcd) BatchDelete(keys [][]byte, prevKV bool) ([]KeyValue, error) {
+	if len(keys) == 0 {
 		return nil, nil
 	}
 
-	ops := make([]clientv3.Op, 0, len(kvs))
+	ops := make([]clientv3.Op, 0, len(keys))
 	var opts []clientv3.OpOption
 	if prevKV {
 		opts = append(opts, clientv3.WithPrevKV())
 	}
-	for _, kv := range kvs {
-		key := e.addPrefix(kv.Key)
+	for _, k := range keys {
+		key := e.addPrefix(k)
 		ops = append(ops, clientv3.OpDelete(string(key), opts...))
 	}
 

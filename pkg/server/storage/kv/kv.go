@@ -54,6 +54,7 @@ type KV interface {
 	BatchPut(kvs []KeyValue, prevKV bool) ([]KeyValue, error)
 
 	// Delete removes the key-value pair associated with the given key.
+	// If the key is empty, Delete returns no error.
 	// If the key does not exist, Delete returns no error.
 	// If prevKV is true, the old value (if any) will be returned.
 	Delete(key []byte, prevKV bool) ([]byte, error)
@@ -61,7 +62,7 @@ type KV interface {
 	// BatchDelete removes the key-value pairs associated with the given keys.
 	// If the key does not exist, BatchDelete returns no error.
 	// If prevKV is true, the old key-value pairs (if any) will be returned.
-	BatchDelete(kvs []KeyValue, prevKV bool) ([]KeyValue, error)
+	BatchDelete(keys [][]byte, prevKV bool) ([]KeyValue, error)
 
 	// GetPrefixRangeEnd returns the end key for a prefix range query.
 	GetPrefixRangeEnd(prefix []byte) []byte
