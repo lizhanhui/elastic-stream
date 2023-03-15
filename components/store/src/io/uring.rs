@@ -1,7 +1,6 @@
 use crate::error::{AppendError, StoreError};
 use crate::index::driver::IndexDriver;
 use crate::index::record_handle::RecordHandle;
-use crate::index::MinOffset;
 use crate::io::buf::{AlignedBufReader, AlignedBufWriter};
 use crate::io::context::Context;
 use crate::io::options::Options;
@@ -18,7 +17,6 @@ use io_uring::register;
 use io_uring::{opcode, squeue, types};
 use slog::{error, info, trace, warn, Logger};
 use std::collections::{BTreeMap, HashSet};
-use std::rc::Rc;
 use std::sync::Arc;
 use std::{
     cell::{RefCell, UnsafeCell},
@@ -27,7 +25,6 @@ use std::{
 };
 
 use super::task::SingleFetchResult;
-use super::ReadTask;
 
 pub(crate) struct IO {
     options: Options,
@@ -74,7 +71,6 @@ pub(crate) struct IO {
 
     /// Number of inflight data tasks that are submitted to `data_uring` and not yet reaped.
     inflight: usize,
-    write_inflight: usize,
 
     /// Pending IO tasks received from IO channel.
     ///
@@ -102,8 +98,12 @@ pub(crate) struct IO {
     /// Offsets of blocks that are partially filled with data and are still inflight.
     barrier: HashSet<u64>,
 
+    /// Block the concurrent write IOs to the same page.
+    /// The uring instance doesn't provide the ordering guarantee for the IOs,
+    /// so we use this mechanism to avoid memory corruption.
     blocked: HashMap<u64, squeue::Entry>,
 
+    /// Provide index service for building read index, shared with the upper store layer.
     indexer: Arc<IndexDriver>,
 }
 
@@ -199,7 +199,6 @@ impl IO {
             log,
             channel_disconnected: false,
             inflight: 0,
-            write_inflight: 0,
             pending_data_tasks: VecDeque::new(),
             inflight_write_tasks: BTreeMap::new(),
             barrier: HashSet::new(),
@@ -905,7 +904,7 @@ mod tests {
     use crate::io::ReadTask;
     use crate::offset_manager::WalOffsetManager;
     use bytes::{Bytes, BytesMut};
-    use slog::{debug, trace};
+    use slog::trace;
     use std::cell::RefCell;
     use std::error::Error;
     use std::fs;
