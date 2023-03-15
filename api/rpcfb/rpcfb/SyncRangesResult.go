@@ -8,17 +8,12 @@ import (
 
 type SyncRangesResultT struct {
 	StreamId int64 `json:"stream_id"`
-	ErrorCode ErrorCode `json:"error_code"`
-	ErrorMessage string `json:"error_message"`
 	Ranges []*RangeT `json:"ranges"`
+	Status *StatusT `json:"status"`
 }
 
 func (t *SyncRangesResultT) Pack(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
 	if t == nil { return 0 }
-	errorMessageOffset := flatbuffers.UOffsetT(0)
-	if t.ErrorMessage != "" {
-		errorMessageOffset = builder.CreateString(t.ErrorMessage)
-	}
 	rangesOffset := flatbuffers.UOffsetT(0)
 	if t.Ranges != nil {
 		rangesLength := len(t.Ranges)
@@ -32,18 +27,16 @@ func (t *SyncRangesResultT) Pack(builder *flatbuffers.Builder) flatbuffers.UOffs
 		}
 		rangesOffset = builder.EndVector(rangesLength)
 	}
+	statusOffset := t.Status.Pack(builder)
 	SyncRangesResultStart(builder)
 	SyncRangesResultAddStreamId(builder, t.StreamId)
-	SyncRangesResultAddErrorCode(builder, t.ErrorCode)
-	SyncRangesResultAddErrorMessage(builder, errorMessageOffset)
 	SyncRangesResultAddRanges(builder, rangesOffset)
+	SyncRangesResultAddStatus(builder, statusOffset)
 	return SyncRangesResultEnd(builder)
 }
 
 func (rcv *SyncRangesResult) UnPackTo(t *SyncRangesResultT) {
 	t.StreamId = rcv.StreamId()
-	t.ErrorCode = rcv.ErrorCode()
-	t.ErrorMessage = string(rcv.ErrorMessage())
 	rangesLength := rcv.RangesLength()
 	t.Ranges = make([]*RangeT, rangesLength)
 	for j := 0; j < rangesLength; j++ {
@@ -51,6 +44,7 @@ func (rcv *SyncRangesResult) UnPackTo(t *SyncRangesResultT) {
 		rcv.Ranges(&x, j)
 		t.Ranges[j] = x.UnPack()
 	}
+	t.Status = rcv.Status(nil).UnPack()
 }
 
 func (rcv *SyncRangesResult) UnPack() *SyncRangesResultT {
@@ -99,28 +93,8 @@ func (rcv *SyncRangesResult) MutateStreamId(n int64) bool {
 	return rcv._tab.MutateInt64Slot(4, n)
 }
 
-func (rcv *SyncRangesResult) ErrorCode() ErrorCode {
-	o := flatbuffers.UOffsetT(rcv._tab.Offset(6))
-	if o != 0 {
-		return ErrorCode(rcv._tab.GetInt16(o + rcv._tab.Pos))
-	}
-	return 0
-}
-
-func (rcv *SyncRangesResult) MutateErrorCode(n ErrorCode) bool {
-	return rcv._tab.MutateInt16Slot(6, int16(n))
-}
-
-func (rcv *SyncRangesResult) ErrorMessage() []byte {
-	o := flatbuffers.UOffsetT(rcv._tab.Offset(8))
-	if o != 0 {
-		return rcv._tab.ByteVector(o + rcv._tab.Pos)
-	}
-	return nil
-}
-
 func (rcv *SyncRangesResult) Ranges(obj *Range, j int) bool {
-	o := flatbuffers.UOffsetT(rcv._tab.Offset(10))
+	o := flatbuffers.UOffsetT(rcv._tab.Offset(6))
 	if o != 0 {
 		x := rcv._tab.Vector(o)
 		x += flatbuffers.UOffsetT(j) * 4
@@ -132,30 +106,40 @@ func (rcv *SyncRangesResult) Ranges(obj *Range, j int) bool {
 }
 
 func (rcv *SyncRangesResult) RangesLength() int {
-	o := flatbuffers.UOffsetT(rcv._tab.Offset(10))
+	o := flatbuffers.UOffsetT(rcv._tab.Offset(6))
 	if o != 0 {
 		return rcv._tab.VectorLen(o)
 	}
 	return 0
 }
 
+func (rcv *SyncRangesResult) Status(obj *Status) *Status {
+	o := flatbuffers.UOffsetT(rcv._tab.Offset(8))
+	if o != 0 {
+		x := rcv._tab.Indirect(o + rcv._tab.Pos)
+		if obj == nil {
+			obj = new(Status)
+		}
+		obj.Init(rcv._tab.Bytes, x)
+		return obj
+	}
+	return nil
+}
+
 func SyncRangesResultStart(builder *flatbuffers.Builder) {
-	builder.StartObject(4)
+	builder.StartObject(3)
 }
 func SyncRangesResultAddStreamId(builder *flatbuffers.Builder, streamId int64) {
 	builder.PrependInt64Slot(0, streamId, 0)
 }
-func SyncRangesResultAddErrorCode(builder *flatbuffers.Builder, errorCode ErrorCode) {
-	builder.PrependInt16Slot(1, int16(errorCode), 0)
-}
-func SyncRangesResultAddErrorMessage(builder *flatbuffers.Builder, errorMessage flatbuffers.UOffsetT) {
-	builder.PrependUOffsetTSlot(2, flatbuffers.UOffsetT(errorMessage), 0)
-}
 func SyncRangesResultAddRanges(builder *flatbuffers.Builder, ranges flatbuffers.UOffsetT) {
-	builder.PrependUOffsetTSlot(3, flatbuffers.UOffsetT(ranges), 0)
+	builder.PrependUOffsetTSlot(1, flatbuffers.UOffsetT(ranges), 0)
 }
 func SyncRangesResultStartRangesVector(builder *flatbuffers.Builder, numElems int) flatbuffers.UOffsetT {
 	return builder.StartVector(4, numElems, 4)
+}
+func SyncRangesResultAddStatus(builder *flatbuffers.Builder, status flatbuffers.UOffsetT) {
+	builder.PrependUOffsetTSlot(2, flatbuffers.UOffsetT(status), 0)
 }
 func SyncRangesResultEnd(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
 	return builder.EndObject()

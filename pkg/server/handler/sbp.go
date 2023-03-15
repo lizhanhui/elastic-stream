@@ -34,8 +34,8 @@ func (s *Sbp) ListRange(req *protocol.ListRangesRequest) (resp *protocol.ListRan
 			RangeCriteria: owner,
 		}
 		if err != nil {
-			result.ErrorCode = rpcfb.ErrorCodeUNKNOWN
-			result.ErrorMessage = err.Error()
+			result.Status.Code = rpcfb.ErrorCodeUNKNOWN
+			result.Status.Message = err.Error()
 		} else {
 			result.Ranges = ranges
 		}

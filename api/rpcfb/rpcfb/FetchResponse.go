@@ -9,8 +9,7 @@ import (
 type FetchResponseT struct {
 	ThrottleTimeMs int32 `json:"throttle_time_ms"`
 	FetchResponses []*FetchResultT `json:"fetch_responses"`
-	ErrorCode ErrorCode `json:"error_code"`
-	ErrorMessage string `json:"error_message"`
+	Status *StatusT `json:"status"`
 }
 
 func (t *FetchResponseT) Pack(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
@@ -28,15 +27,11 @@ func (t *FetchResponseT) Pack(builder *flatbuffers.Builder) flatbuffers.UOffsetT
 		}
 		fetchResponsesOffset = builder.EndVector(fetchResponsesLength)
 	}
-	errorMessageOffset := flatbuffers.UOffsetT(0)
-	if t.ErrorMessage != "" {
-		errorMessageOffset = builder.CreateString(t.ErrorMessage)
-	}
+	statusOffset := t.Status.Pack(builder)
 	FetchResponseStart(builder)
 	FetchResponseAddThrottleTimeMs(builder, t.ThrottleTimeMs)
 	FetchResponseAddFetchResponses(builder, fetchResponsesOffset)
-	FetchResponseAddErrorCode(builder, t.ErrorCode)
-	FetchResponseAddErrorMessage(builder, errorMessageOffset)
+	FetchResponseAddStatus(builder, statusOffset)
 	return FetchResponseEnd(builder)
 }
 
@@ -49,8 +44,7 @@ func (rcv *FetchResponse) UnPackTo(t *FetchResponseT) {
 		rcv.FetchResponses(&x, j)
 		t.FetchResponses[j] = x.UnPack()
 	}
-	t.ErrorCode = rcv.ErrorCode()
-	t.ErrorMessage = string(rcv.ErrorMessage())
+	t.Status = rcv.Status(nil).UnPack()
 }
 
 func (rcv *FetchResponse) UnPack() *FetchResponseT {
@@ -119,28 +113,21 @@ func (rcv *FetchResponse) FetchResponsesLength() int {
 	return 0
 }
 
-func (rcv *FetchResponse) ErrorCode() ErrorCode {
+func (rcv *FetchResponse) Status(obj *Status) *Status {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(8))
 	if o != 0 {
-		return ErrorCode(rcv._tab.GetInt16(o + rcv._tab.Pos))
-	}
-	return 0
-}
-
-func (rcv *FetchResponse) MutateErrorCode(n ErrorCode) bool {
-	return rcv._tab.MutateInt16Slot(8, int16(n))
-}
-
-func (rcv *FetchResponse) ErrorMessage() []byte {
-	o := flatbuffers.UOffsetT(rcv._tab.Offset(10))
-	if o != 0 {
-		return rcv._tab.ByteVector(o + rcv._tab.Pos)
+		x := rcv._tab.Indirect(o + rcv._tab.Pos)
+		if obj == nil {
+			obj = new(Status)
+		}
+		obj.Init(rcv._tab.Bytes, x)
+		return obj
 	}
 	return nil
 }
 
 func FetchResponseStart(builder *flatbuffers.Builder) {
-	builder.StartObject(4)
+	builder.StartObject(3)
 }
 func FetchResponseAddThrottleTimeMs(builder *flatbuffers.Builder, throttleTimeMs int32) {
 	builder.PrependInt32Slot(0, throttleTimeMs, 0)
@@ -151,11 +138,8 @@ func FetchResponseAddFetchResponses(builder *flatbuffers.Builder, fetchResponses
 func FetchResponseStartFetchResponsesVector(builder *flatbuffers.Builder, numElems int) flatbuffers.UOffsetT {
 	return builder.StartVector(4, numElems, 4)
 }
-func FetchResponseAddErrorCode(builder *flatbuffers.Builder, errorCode ErrorCode) {
-	builder.PrependInt16Slot(2, int16(errorCode), 0)
-}
-func FetchResponseAddErrorMessage(builder *flatbuffers.Builder, errorMessage flatbuffers.UOffsetT) {
-	builder.PrependUOffsetTSlot(3, flatbuffers.UOffsetT(errorMessage), 0)
+func FetchResponseAddStatus(builder *flatbuffers.Builder, status flatbuffers.UOffsetT) {
+	builder.PrependUOffsetTSlot(2, flatbuffers.UOffsetT(status), 0)
 }
 func FetchResponseEnd(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
 	return builder.EndObject()

@@ -7,25 +7,19 @@ import (
 )
 
 type SystemErrorResponseT struct {
-	ErrorCode ErrorCode `json:"error_code"`
-	ErrorMessage string `json:"error_message"`
+	Status *StatusT `json:"status"`
 }
 
 func (t *SystemErrorResponseT) Pack(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
 	if t == nil { return 0 }
-	errorMessageOffset := flatbuffers.UOffsetT(0)
-	if t.ErrorMessage != "" {
-		errorMessageOffset = builder.CreateString(t.ErrorMessage)
-	}
+	statusOffset := t.Status.Pack(builder)
 	SystemErrorResponseStart(builder)
-	SystemErrorResponseAddErrorCode(builder, t.ErrorCode)
-	SystemErrorResponseAddErrorMessage(builder, errorMessageOffset)
+	SystemErrorResponseAddStatus(builder, statusOffset)
 	return SystemErrorResponseEnd(builder)
 }
 
 func (rcv *SystemErrorResponse) UnPackTo(t *SystemErrorResponseT) {
-	t.ErrorCode = rcv.ErrorCode()
-	t.ErrorMessage = string(rcv.ErrorMessage())
+	t.Status = rcv.Status(nil).UnPack()
 }
 
 func (rcv *SystemErrorResponse) UnPack() *SystemErrorResponseT {
@@ -62,34 +56,24 @@ func (rcv *SystemErrorResponse) Table() flatbuffers.Table {
 	return rcv._tab
 }
 
-func (rcv *SystemErrorResponse) ErrorCode() ErrorCode {
+func (rcv *SystemErrorResponse) Status(obj *Status) *Status {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(4))
 	if o != 0 {
-		return ErrorCode(rcv._tab.GetInt16(o + rcv._tab.Pos))
-	}
-	return 0
-}
-
-func (rcv *SystemErrorResponse) MutateErrorCode(n ErrorCode) bool {
-	return rcv._tab.MutateInt16Slot(4, int16(n))
-}
-
-func (rcv *SystemErrorResponse) ErrorMessage() []byte {
-	o := flatbuffers.UOffsetT(rcv._tab.Offset(6))
-	if o != 0 {
-		return rcv._tab.ByteVector(o + rcv._tab.Pos)
+		x := rcv._tab.Indirect(o + rcv._tab.Pos)
+		if obj == nil {
+			obj = new(Status)
+		}
+		obj.Init(rcv._tab.Bytes, x)
+		return obj
 	}
 	return nil
 }
 
 func SystemErrorResponseStart(builder *flatbuffers.Builder) {
-	builder.StartObject(2)
+	builder.StartObject(1)
 }
-func SystemErrorResponseAddErrorCode(builder *flatbuffers.Builder, errorCode ErrorCode) {
-	builder.PrependInt16Slot(0, int16(errorCode), 0)
-}
-func SystemErrorResponseAddErrorMessage(builder *flatbuffers.Builder, errorMessage flatbuffers.UOffsetT) {
-	builder.PrependUOffsetTSlot(1, flatbuffers.UOffsetT(errorMessage), 0)
+func SystemErrorResponseAddStatus(builder *flatbuffers.Builder, status flatbuffers.UOffsetT) {
+	builder.PrependUOffsetTSlot(0, flatbuffers.UOffsetT(status), 0)
 }
 func SystemErrorResponseEnd(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
 	return builder.EndObject()

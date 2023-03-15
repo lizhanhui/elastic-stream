@@ -8,18 +8,13 @@ import (
 
 type ListRangesResultT struct {
 	RangeCriteria *RangeCriteriaT `json:"range_criteria"`
-	ErrorCode ErrorCode `json:"error_code"`
-	ErrorMessage string `json:"error_message"`
 	Ranges []*RangeT `json:"ranges"`
+	Status *StatusT `json:"status"`
 }
 
 func (t *ListRangesResultT) Pack(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
 	if t == nil { return 0 }
 	rangeCriteriaOffset := t.RangeCriteria.Pack(builder)
-	errorMessageOffset := flatbuffers.UOffsetT(0)
-	if t.ErrorMessage != "" {
-		errorMessageOffset = builder.CreateString(t.ErrorMessage)
-	}
 	rangesOffset := flatbuffers.UOffsetT(0)
 	if t.Ranges != nil {
 		rangesLength := len(t.Ranges)
@@ -33,18 +28,16 @@ func (t *ListRangesResultT) Pack(builder *flatbuffers.Builder) flatbuffers.UOffs
 		}
 		rangesOffset = builder.EndVector(rangesLength)
 	}
+	statusOffset := t.Status.Pack(builder)
 	ListRangesResultStart(builder)
 	ListRangesResultAddRangeCriteria(builder, rangeCriteriaOffset)
-	ListRangesResultAddErrorCode(builder, t.ErrorCode)
-	ListRangesResultAddErrorMessage(builder, errorMessageOffset)
 	ListRangesResultAddRanges(builder, rangesOffset)
+	ListRangesResultAddStatus(builder, statusOffset)
 	return ListRangesResultEnd(builder)
 }
 
 func (rcv *ListRangesResult) UnPackTo(t *ListRangesResultT) {
 	t.RangeCriteria = rcv.RangeCriteria(nil).UnPack()
-	t.ErrorCode = rcv.ErrorCode()
-	t.ErrorMessage = string(rcv.ErrorMessage())
 	rangesLength := rcv.RangesLength()
 	t.Ranges = make([]*RangeT, rangesLength)
 	for j := 0; j < rangesLength; j++ {
@@ -52,6 +45,7 @@ func (rcv *ListRangesResult) UnPackTo(t *ListRangesResultT) {
 		rcv.Ranges(&x, j)
 		t.Ranges[j] = x.UnPack()
 	}
+	t.Status = rcv.Status(nil).UnPack()
 }
 
 func (rcv *ListRangesResult) UnPack() *ListRangesResultT {
@@ -101,28 +95,8 @@ func (rcv *ListRangesResult) RangeCriteria(obj *RangeCriteria) *RangeCriteria {
 	return nil
 }
 
-func (rcv *ListRangesResult) ErrorCode() ErrorCode {
-	o := flatbuffers.UOffsetT(rcv._tab.Offset(6))
-	if o != 0 {
-		return ErrorCode(rcv._tab.GetInt16(o + rcv._tab.Pos))
-	}
-	return 0
-}
-
-func (rcv *ListRangesResult) MutateErrorCode(n ErrorCode) bool {
-	return rcv._tab.MutateInt16Slot(6, int16(n))
-}
-
-func (rcv *ListRangesResult) ErrorMessage() []byte {
-	o := flatbuffers.UOffsetT(rcv._tab.Offset(8))
-	if o != 0 {
-		return rcv._tab.ByteVector(o + rcv._tab.Pos)
-	}
-	return nil
-}
-
 func (rcv *ListRangesResult) Ranges(obj *Range, j int) bool {
-	o := flatbuffers.UOffsetT(rcv._tab.Offset(10))
+	o := flatbuffers.UOffsetT(rcv._tab.Offset(6))
 	if o != 0 {
 		x := rcv._tab.Vector(o)
 		x += flatbuffers.UOffsetT(j) * 4
@@ -134,30 +108,40 @@ func (rcv *ListRangesResult) Ranges(obj *Range, j int) bool {
 }
 
 func (rcv *ListRangesResult) RangesLength() int {
-	o := flatbuffers.UOffsetT(rcv._tab.Offset(10))
+	o := flatbuffers.UOffsetT(rcv._tab.Offset(6))
 	if o != 0 {
 		return rcv._tab.VectorLen(o)
 	}
 	return 0
 }
 
+func (rcv *ListRangesResult) Status(obj *Status) *Status {
+	o := flatbuffers.UOffsetT(rcv._tab.Offset(8))
+	if o != 0 {
+		x := rcv._tab.Indirect(o + rcv._tab.Pos)
+		if obj == nil {
+			obj = new(Status)
+		}
+		obj.Init(rcv._tab.Bytes, x)
+		return obj
+	}
+	return nil
+}
+
 func ListRangesResultStart(builder *flatbuffers.Builder) {
-	builder.StartObject(4)
+	builder.StartObject(3)
 }
 func ListRangesResultAddRangeCriteria(builder *flatbuffers.Builder, rangeCriteria flatbuffers.UOffsetT) {
 	builder.PrependUOffsetTSlot(0, flatbuffers.UOffsetT(rangeCriteria), 0)
 }
-func ListRangesResultAddErrorCode(builder *flatbuffers.Builder, errorCode ErrorCode) {
-	builder.PrependInt16Slot(1, int16(errorCode), 0)
-}
-func ListRangesResultAddErrorMessage(builder *flatbuffers.Builder, errorMessage flatbuffers.UOffsetT) {
-	builder.PrependUOffsetTSlot(2, flatbuffers.UOffsetT(errorMessage), 0)
-}
 func ListRangesResultAddRanges(builder *flatbuffers.Builder, ranges flatbuffers.UOffsetT) {
-	builder.PrependUOffsetTSlot(3, flatbuffers.UOffsetT(ranges), 0)
+	builder.PrependUOffsetTSlot(1, flatbuffers.UOffsetT(ranges), 0)
 }
 func ListRangesResultStartRangesVector(builder *flatbuffers.Builder, numElems int) flatbuffers.UOffsetT {
 	return builder.StartVector(4, numElems, 4)
+}
+func ListRangesResultAddStatus(builder *flatbuffers.Builder, status flatbuffers.UOffsetT) {
+	builder.PrependUOffsetTSlot(2, flatbuffers.UOffsetT(status), 0)
 }
 func ListRangesResultEnd(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
 	return builder.EndObject()

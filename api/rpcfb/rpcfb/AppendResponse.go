@@ -9,8 +9,7 @@ import (
 type AppendResponseT struct {
 	ThrottleTimeMs int32 `json:"throttle_time_ms"`
 	AppendResponses []*AppendResultT `json:"append_responses"`
-	ErrorCode ErrorCode `json:"error_code"`
-	ErrorMessage string `json:"error_message"`
+	Status *StatusT `json:"status"`
 }
 
 func (t *AppendResponseT) Pack(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
@@ -28,15 +27,11 @@ func (t *AppendResponseT) Pack(builder *flatbuffers.Builder) flatbuffers.UOffset
 		}
 		appendResponsesOffset = builder.EndVector(appendResponsesLength)
 	}
-	errorMessageOffset := flatbuffers.UOffsetT(0)
-	if t.ErrorMessage != "" {
-		errorMessageOffset = builder.CreateString(t.ErrorMessage)
-	}
+	statusOffset := t.Status.Pack(builder)
 	AppendResponseStart(builder)
 	AppendResponseAddThrottleTimeMs(builder, t.ThrottleTimeMs)
 	AppendResponseAddAppendResponses(builder, appendResponsesOffset)
-	AppendResponseAddErrorCode(builder, t.ErrorCode)
-	AppendResponseAddErrorMessage(builder, errorMessageOffset)
+	AppendResponseAddStatus(builder, statusOffset)
 	return AppendResponseEnd(builder)
 }
 
@@ -49,8 +44,7 @@ func (rcv *AppendResponse) UnPackTo(t *AppendResponseT) {
 		rcv.AppendResponses(&x, j)
 		t.AppendResponses[j] = x.UnPack()
 	}
-	t.ErrorCode = rcv.ErrorCode()
-	t.ErrorMessage = string(rcv.ErrorMessage())
+	t.Status = rcv.Status(nil).UnPack()
 }
 
 func (rcv *AppendResponse) UnPack() *AppendResponseT {
@@ -119,28 +113,21 @@ func (rcv *AppendResponse) AppendResponsesLength() int {
 	return 0
 }
 
-func (rcv *AppendResponse) ErrorCode() ErrorCode {
+func (rcv *AppendResponse) Status(obj *Status) *Status {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(8))
 	if o != 0 {
-		return ErrorCode(rcv._tab.GetInt16(o + rcv._tab.Pos))
-	}
-	return 0
-}
-
-func (rcv *AppendResponse) MutateErrorCode(n ErrorCode) bool {
-	return rcv._tab.MutateInt16Slot(8, int16(n))
-}
-
-func (rcv *AppendResponse) ErrorMessage() []byte {
-	o := flatbuffers.UOffsetT(rcv._tab.Offset(10))
-	if o != 0 {
-		return rcv._tab.ByteVector(o + rcv._tab.Pos)
+		x := rcv._tab.Indirect(o + rcv._tab.Pos)
+		if obj == nil {
+			obj = new(Status)
+		}
+		obj.Init(rcv._tab.Bytes, x)
+		return obj
 	}
 	return nil
 }
 
 func AppendResponseStart(builder *flatbuffers.Builder) {
-	builder.StartObject(4)
+	builder.StartObject(3)
 }
 func AppendResponseAddThrottleTimeMs(builder *flatbuffers.Builder, throttleTimeMs int32) {
 	builder.PrependInt32Slot(0, throttleTimeMs, 0)
@@ -151,11 +138,8 @@ func AppendResponseAddAppendResponses(builder *flatbuffers.Builder, appendRespon
 func AppendResponseStartAppendResponsesVector(builder *flatbuffers.Builder, numElems int) flatbuffers.UOffsetT {
 	return builder.StartVector(4, numElems, 4)
 }
-func AppendResponseAddErrorCode(builder *flatbuffers.Builder, errorCode ErrorCode) {
-	builder.PrependInt16Slot(2, int16(errorCode), 0)
-}
-func AppendResponseAddErrorMessage(builder *flatbuffers.Builder, errorMessage flatbuffers.UOffsetT) {
-	builder.PrependUOffsetTSlot(3, flatbuffers.UOffsetT(errorMessage), 0)
+func AppendResponseAddStatus(builder *flatbuffers.Builder, status flatbuffers.UOffsetT) {
+	builder.PrependUOffsetTSlot(2, flatbuffers.UOffsetT(status), 0)
 }
 func AppendResponseEnd(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
 	return builder.EndObject()

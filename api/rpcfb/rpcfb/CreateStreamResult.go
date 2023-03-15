@@ -8,28 +8,22 @@ import (
 
 type CreateStreamResultT struct {
 	Stream *StreamT `json:"stream"`
-	ErrorCode ErrorCode `json:"error_code"`
-	ErrorMessage string `json:"error_message"`
+	Status *StatusT `json:"status"`
 }
 
 func (t *CreateStreamResultT) Pack(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
 	if t == nil { return 0 }
 	streamOffset := t.Stream.Pack(builder)
-	errorMessageOffset := flatbuffers.UOffsetT(0)
-	if t.ErrorMessage != "" {
-		errorMessageOffset = builder.CreateString(t.ErrorMessage)
-	}
+	statusOffset := t.Status.Pack(builder)
 	CreateStreamResultStart(builder)
 	CreateStreamResultAddStream(builder, streamOffset)
-	CreateStreamResultAddErrorCode(builder, t.ErrorCode)
-	CreateStreamResultAddErrorMessage(builder, errorMessageOffset)
+	CreateStreamResultAddStatus(builder, statusOffset)
 	return CreateStreamResultEnd(builder)
 }
 
 func (rcv *CreateStreamResult) UnPackTo(t *CreateStreamResultT) {
 	t.Stream = rcv.Stream(nil).UnPack()
-	t.ErrorCode = rcv.ErrorCode()
-	t.ErrorMessage = string(rcv.ErrorMessage())
+	t.Status = rcv.Status(nil).UnPack()
 }
 
 func (rcv *CreateStreamResult) UnPack() *CreateStreamResultT {
@@ -79,37 +73,27 @@ func (rcv *CreateStreamResult) Stream(obj *Stream) *Stream {
 	return nil
 }
 
-func (rcv *CreateStreamResult) ErrorCode() ErrorCode {
+func (rcv *CreateStreamResult) Status(obj *Status) *Status {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(6))
 	if o != 0 {
-		return ErrorCode(rcv._tab.GetInt16(o + rcv._tab.Pos))
-	}
-	return 0
-}
-
-func (rcv *CreateStreamResult) MutateErrorCode(n ErrorCode) bool {
-	return rcv._tab.MutateInt16Slot(6, int16(n))
-}
-
-func (rcv *CreateStreamResult) ErrorMessage() []byte {
-	o := flatbuffers.UOffsetT(rcv._tab.Offset(8))
-	if o != 0 {
-		return rcv._tab.ByteVector(o + rcv._tab.Pos)
+		x := rcv._tab.Indirect(o + rcv._tab.Pos)
+		if obj == nil {
+			obj = new(Status)
+		}
+		obj.Init(rcv._tab.Bytes, x)
+		return obj
 	}
 	return nil
 }
 
 func CreateStreamResultStart(builder *flatbuffers.Builder) {
-	builder.StartObject(3)
+	builder.StartObject(2)
 }
 func CreateStreamResultAddStream(builder *flatbuffers.Builder, stream flatbuffers.UOffsetT) {
 	builder.PrependUOffsetTSlot(0, flatbuffers.UOffsetT(stream), 0)
 }
-func CreateStreamResultAddErrorCode(builder *flatbuffers.Builder, errorCode ErrorCode) {
-	builder.PrependInt16Slot(1, int16(errorCode), 0)
-}
-func CreateStreamResultAddErrorMessage(builder *flatbuffers.Builder, errorMessage flatbuffers.UOffsetT) {
-	builder.PrependUOffsetTSlot(2, flatbuffers.UOffsetT(errorMessage), 0)
+func CreateStreamResultAddStatus(builder *flatbuffers.Builder, status flatbuffers.UOffsetT) {
+	builder.PrependUOffsetTSlot(1, flatbuffers.UOffsetT(status), 0)
 }
 func CreateStreamResultEnd(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
 	return builder.EndObject()

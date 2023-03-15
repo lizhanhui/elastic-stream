@@ -84,8 +84,8 @@ func (se *SystemErrorResponse) Marshal(fmt format.Format) ([]byte, error) {
 }
 
 func (se *SystemErrorResponse) Error(code rpcfb.ErrorCode, msg string) {
-	se.ErrorCode = code
-	se.ErrorMessage = msg
+	se.Status.Code = code
+	se.Status.Message = msg
 }
 
 // ListRangesResponse is a response to operation.OpListRanges
@@ -107,8 +107,8 @@ func (lr *ListRangesResponse) Marshal(fmt format.Format) ([]byte, error) {
 }
 
 func (lr *ListRangesResponse) Error(code rpcfb.ErrorCode, msg string) {
-	lr.ErrorCode = code
-	lr.ErrorMessage = msg
+	lr.Status.Code = code
+	lr.Status.Message = msg
 }
 
 func (lr *ListRangesResponse) IsEnd() bool {

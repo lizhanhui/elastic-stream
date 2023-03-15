@@ -9,8 +9,7 @@ import (
 type DescribeRangesResponseT struct {
 	ThrottleTimeMs int32 `json:"throttle_time_ms"`
 	DescribeResponses []*DescribeRangeResultT `json:"describe_responses"`
-	ErrorCode ErrorCode `json:"error_code"`
-	ErrorMessage string `json:"error_message"`
+	Status *StatusT `json:"status"`
 }
 
 func (t *DescribeRangesResponseT) Pack(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
@@ -28,15 +27,11 @@ func (t *DescribeRangesResponseT) Pack(builder *flatbuffers.Builder) flatbuffers
 		}
 		describeResponsesOffset = builder.EndVector(describeResponsesLength)
 	}
-	errorMessageOffset := flatbuffers.UOffsetT(0)
-	if t.ErrorMessage != "" {
-		errorMessageOffset = builder.CreateString(t.ErrorMessage)
-	}
+	statusOffset := t.Status.Pack(builder)
 	DescribeRangesResponseStart(builder)
 	DescribeRangesResponseAddThrottleTimeMs(builder, t.ThrottleTimeMs)
 	DescribeRangesResponseAddDescribeResponses(builder, describeResponsesOffset)
-	DescribeRangesResponseAddErrorCode(builder, t.ErrorCode)
-	DescribeRangesResponseAddErrorMessage(builder, errorMessageOffset)
+	DescribeRangesResponseAddStatus(builder, statusOffset)
 	return DescribeRangesResponseEnd(builder)
 }
 
@@ -49,8 +44,7 @@ func (rcv *DescribeRangesResponse) UnPackTo(t *DescribeRangesResponseT) {
 		rcv.DescribeResponses(&x, j)
 		t.DescribeResponses[j] = x.UnPack()
 	}
-	t.ErrorCode = rcv.ErrorCode()
-	t.ErrorMessage = string(rcv.ErrorMessage())
+	t.Status = rcv.Status(nil).UnPack()
 }
 
 func (rcv *DescribeRangesResponse) UnPack() *DescribeRangesResponseT {
@@ -119,28 +113,21 @@ func (rcv *DescribeRangesResponse) DescribeResponsesLength() int {
 	return 0
 }
 
-func (rcv *DescribeRangesResponse) ErrorCode() ErrorCode {
+func (rcv *DescribeRangesResponse) Status(obj *Status) *Status {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(8))
 	if o != 0 {
-		return ErrorCode(rcv._tab.GetInt16(o + rcv._tab.Pos))
-	}
-	return 0
-}
-
-func (rcv *DescribeRangesResponse) MutateErrorCode(n ErrorCode) bool {
-	return rcv._tab.MutateInt16Slot(8, int16(n))
-}
-
-func (rcv *DescribeRangesResponse) ErrorMessage() []byte {
-	o := flatbuffers.UOffsetT(rcv._tab.Offset(10))
-	if o != 0 {
-		return rcv._tab.ByteVector(o + rcv._tab.Pos)
+		x := rcv._tab.Indirect(o + rcv._tab.Pos)
+		if obj == nil {
+			obj = new(Status)
+		}
+		obj.Init(rcv._tab.Bytes, x)
+		return obj
 	}
 	return nil
 }
 
 func DescribeRangesResponseStart(builder *flatbuffers.Builder) {
-	builder.StartObject(4)
+	builder.StartObject(3)
 }
 func DescribeRangesResponseAddThrottleTimeMs(builder *flatbuffers.Builder, throttleTimeMs int32) {
 	builder.PrependInt32Slot(0, throttleTimeMs, 0)
@@ -151,11 +138,8 @@ func DescribeRangesResponseAddDescribeResponses(builder *flatbuffers.Builder, de
 func DescribeRangesResponseStartDescribeResponsesVector(builder *flatbuffers.Builder, numElems int) flatbuffers.UOffsetT {
 	return builder.StartVector(4, numElems, 4)
 }
-func DescribeRangesResponseAddErrorCode(builder *flatbuffers.Builder, errorCode ErrorCode) {
-	builder.PrependInt16Slot(2, int16(errorCode), 0)
-}
-func DescribeRangesResponseAddErrorMessage(builder *flatbuffers.Builder, errorMessage flatbuffers.UOffsetT) {
-	builder.PrependUOffsetTSlot(3, flatbuffers.UOffsetT(errorMessage), 0)
+func DescribeRangesResponseAddStatus(builder *flatbuffers.Builder, status flatbuffers.UOffsetT) {
+	builder.PrependUOffsetTSlot(2, flatbuffers.UOffsetT(status), 0)
 }
 func DescribeRangesResponseEnd(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
 	return builder.EndObject()
