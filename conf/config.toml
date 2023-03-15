@@ -15,6 +15,8 @@ name = "pm-hostname"
 dataDir = "default.pm-hostname"
 # the initial cluster configuration for bootstrapping
 initialCluster = "pm=http://127.0.0.1:2380"
+# the address of sbp server
+sbpAddr = "127.0.0.1:2378"
 # expiration time of the leader, in seconds
 leaderLease = 3
 # time interval for checking the leader's priority

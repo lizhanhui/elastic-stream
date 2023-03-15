@@ -182,8 +182,7 @@ func (s *Server) startServer() error {
 	s.storage = storage.NewEtcd(s.client, s.rootPath, logger, s.leaderCmp)
 	s.cluster = cluster.NewRaftCluster(s.ctx, s.clusterID, s.lg)
 
-	// TODO set address in config
-	sbpAddr := "127.0.0.1:2378"
+	sbpAddr := s.cfg.SbpAddr
 	listener, err := net.Listen("tcp", sbpAddr)
 	if err != nil {
 		return errors.Wrapf(err, "listen on %s", sbpAddr)

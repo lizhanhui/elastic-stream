@@ -84,6 +84,7 @@ func (m *Member) Init(cfg *config.Config, name string, clusterRootPath string) e
 		MemberID:   m.id,
 		ClientUrls: strings.Split(cfg.AdvertiseClientUrls, config.URLSeparator),
 		PeerUrls:   strings.Split(cfg.AdvertisePeerUrls, config.URLSeparator),
+		SbpAddr:    cfg.SbpAddr,
 	}
 
 	m.info = info

@@ -6,6 +6,7 @@ advertiseClientUrls: test-advertise-client-urls
 name: test-name
 dataDir: test-data-dir
 initialCluster: test-initial-cluster
+sbpAddr: test-sbp-addr
 leaderLease: 123
 leaderPriorityCheckInterval: 3661000000000
 
