@@ -10,7 +10,10 @@ use core_affinity::CoreId;
 use slog::{debug, error, info, o, trace, warn, Drain, Logger};
 use slog_async::Async;
 use slog_term::{CompactFormat, TermDecorator};
-use store::ElasticStore;
+use store::{
+    option::{StoreOptions, WalPath},
+    ElasticStore,
+};
 use tokio_uring::net::{TcpListener, TcpStream};
 use transport::channel::Channel;
 
@@ -195,7 +198,12 @@ pub fn launch(cfg: &ServerConfig) -> Result<(), Box<dyn Error>> {
     })?;
     let available_core_len = core_ids.len();
 
-    let store = match ElasticStore::new(log.clone()) {
+    let size_10g = 10u64 * (1 << 30);
+    let wal_path = WalPath::new("/data/store", size_10g)?;
+    let meta_path = "/data/store/meta";
+    let store_options = StoreOptions::new(&wal_path, meta_path.to_string());
+
+    let store = match ElasticStore::new(log.clone(), store_options) {
         Ok(store) => store,
         Err(e) => {
             error!(log, "Failed to launch ElasticStore: {:?}", e);
