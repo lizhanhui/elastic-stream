@@ -237,7 +237,7 @@ impl Session {
             None => {
                 warn!(
                     log,
-                    "Expected in-flight request[stream-id={}] is missing", response.stream_id
+                    "Expected inflight request[stream-id={}] is missing", response.stream_id
                 );
             }
         }
