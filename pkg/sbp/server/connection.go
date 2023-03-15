@@ -452,7 +452,7 @@ func (c *conn) runHandler(act func() protocol.Response) (resp protocol.Response)
 		if didPanic {
 			e := recover()
 			resp = &protocol.SystemErrorResponse{}
-			resp.Error(rpcfb.ErrorCodeUNKNOWN, "handler panic")
+			resp.Error(&rpcfb.StatusT{Code: rpcfb.ErrorCodeUNKNOWN, Message: "handler panic"})
 			logger.Error("panic serving", zap.Reflect("panic", e), zap.Stack("stack"))
 		}
 	}()

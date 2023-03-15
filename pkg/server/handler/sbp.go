@@ -22,7 +22,7 @@ func NewSbp(cluster *cluster.RaftCluster) *Sbp {
 func (s *Sbp) ListRange(req *protocol.ListRangesRequest) (resp *protocol.ListRangesResponse) {
 	resp = &protocol.ListRangesResponse{}
 	if !s.c.IsLeader() {
-		resp.Error(rpcfb.ErrorCodePM_NOT_LEADER, "not leader")
+		resp.Error(&rpcfb.StatusT{Code: rpcfb.ErrorCodePM_NOT_LEADER, Message: "not leader"})
 		return
 	}
 
