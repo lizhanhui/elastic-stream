@@ -397,7 +397,7 @@ func TestConfig_Adjust(t *testing.T) {
 					config := embed.NewConfig()
 					config.Name = fmt.Sprintf("pm-%s", hostname)
 					config.Dir = fmt.Sprintf("default.pm-%s", hostname)
-					config.InitialCluster = "pm=http://127.0.0.1:2380"
+					config.InitialCluster = fmt.Sprintf("pm-%s=http://127.0.0.1:2380", hostname)
 					config.LPUrls, _ = parseUrls("http://127.0.0.1:2380")
 					config.LCUrls, _ = parseUrls("http://127.0.0.1:2379")
 					config.APUrls, _ = parseUrls("http://127.0.0.1:2380")
@@ -420,7 +420,7 @@ func TestConfig_Adjust(t *testing.T) {
 				AdvertiseClientUrls:         "http://127.0.0.1:2379",
 				Name:                        fmt.Sprintf("pm-%s", hostname),
 				DataDir:                     fmt.Sprintf("default.pm-%s", hostname),
-				InitialCluster:              "pm=http://127.0.0.1:2380",
+				InitialCluster:              fmt.Sprintf("pm-%s=http://127.0.0.1:2380", hostname),
 				SbpAddr:                     "127.0.0.1:2378",
 				LeaderLease:                 3,
 				LeaderPriorityCheckInterval: time.Minute,
@@ -440,7 +440,7 @@ func TestConfig_Adjust(t *testing.T) {
 					config := embed.NewConfig()
 					config.Name = "test-name"
 					config.Dir = "default.test-name"
-					config.InitialCluster = "pm=http://example.com:2380,pm=http://10.0.0.1:2380"
+					config.InitialCluster = "test-name=http://example.com:2380,test-name=http://10.0.0.1:2380"
 					config.LPUrls, _ = parseUrls("http://example.com:2380,http://10.0.0.1:2380")
 					config.LCUrls, _ = parseUrls("http://example.com:2379,http://10.0.0.1:2379")
 					config.APUrls, _ = parseUrls("http://example.com:2380,http://10.0.0.1:2380")
@@ -463,7 +463,7 @@ func TestConfig_Adjust(t *testing.T) {
 				AdvertiseClientUrls:         "http://example.com:2379,http://10.0.0.1:2379",
 				Name:                        "test-name",
 				DataDir:                     "default.test-name",
-				InitialCluster:              "pm=http://example.com:2380,pm=http://10.0.0.1:2380",
+				InitialCluster:              "test-name=http://example.com:2380,test-name=http://10.0.0.1:2380",
 				SbpAddr:                     "127.0.0.1:2378",
 				LeaderLease:                 3,
 				LeaderPriorityCheckInterval: time.Minute,
