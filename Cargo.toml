@@ -20,11 +20,13 @@ members = [
 [workspace.dependencies]
 byteorder = "1"
 bytes = "1"
+chrono = "0.4"
 core_affinity = "0.8"
 crc = "3.0"
 crc32fast = "1.3"
 derivative = "2.2"
 futures = { version = "0.3" }
+itertools = {version = "0.10.5" }
 pin-project = { version = "1" }
 io-uring = "0.5"
 tokio-uring = { git = "https://github.com/tokio-rs/tokio-uring.git", branch = "master", features = ["bytes"] }
