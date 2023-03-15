@@ -48,11 +48,11 @@ impl BlockCache {
         trace!(
             self.log,
             "Add block cache entry: [{}, {})",
-            buf.offset,
-            buf.offset + buf.write_pos() as u64
+            buf.aligned_offset,
+            buf.aligned_offset + buf.write_pos() as u64
         );
-        debug_assert!(buf.offset >= self.offset);
-        let from = (buf.offset - self.offset) as u32;
+        debug_assert!(buf.aligned_offset >= self.offset);
+        let from = (buf.aligned_offset - self.offset) as u32;
         let entry = Rc::new(UnsafeCell::new(Entry::new(buf)));
         self.entries.insert(from, entry);
     }
@@ -65,7 +65,7 @@ impl BlockCache {
                 item.hit += 1;
                 item.last_hit_instant = Instant::now();
                 Ok(true)
-            } else if item.buf.offset > offset {
+            } else if item.buf.aligned_offset > offset {
                 Err(CacheError::Miss)
             } else {
                 Ok(false)
@@ -93,8 +93,8 @@ impl BlockCache {
                 info!(
                     self.log,
                     "Remove block cache entry [{}, {})",
-                    entry.buf.offset,
-                    entry.buf.offset + entry.buf.write_pos() as u64
+                    entry.buf.aligned_offset,
+                    entry.buf.aligned_offset + entry.buf.write_pos() as u64
                 );
                 true
             } else {

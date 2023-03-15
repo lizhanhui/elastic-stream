@@ -701,6 +701,7 @@ mod tests {
                 offset: i,
                 buffer: buf.clone(),
                 observer: tx,
+                written_len: None,
             }));
         });
 

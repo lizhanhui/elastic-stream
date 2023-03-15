@@ -17,7 +17,7 @@ pub(crate) struct AlignedBuf {
     log: Logger,
 
     /// WAL offset
-    pub(crate) offset: u64,
+    pub(crate) aligned_offset: u64,
 
     /// Pointer to the allocated memory
     ptr: NonNull<u8>,
@@ -62,7 +62,7 @@ impl AlignedBuf {
 
         Ok(Self {
             log,
-            offset,
+            aligned_offset: offset,
             ptr,
             layout,
             capacity,
@@ -79,7 +79,8 @@ impl AlignedBuf {
     /// # Returns
     /// `true` if the cache hit; `false` otherwise.
     pub(crate) fn covers(&self, offset: u64, len: u32) -> bool {
-        self.offset <= offset && offset + len as u64 <= self.offset + self.write_pos() as u64
+        self.aligned_offset <= offset
+            && offset + len as u64 <= self.aligned_offset + self.write_pos() as u64
     }
 
     pub(crate) fn write_pos(&self) -> usize {
@@ -186,7 +187,7 @@ impl Drop for AlignedBuf {
         debug!(
             self.log,
             "Deallocated `AlignedBuf`: (offset={}, written: {}, capacity: {})",
-            self.offset,
+            self.aligned_offset,
             self.write_pos(),
             self.capacity
         );
