@@ -861,15 +861,6 @@ fn on_complete(
                             ),
                         };
 
-                        let or = BufSlice::new(
-                            Arc::clone(&context.buf),
-                            0,
-                            context.buf.write_pos() as u32,
-                        );
-
-                        let x = &or[..];
-                        let b = &fetch_result.payload[..];
-
                         trace!(
                             log,
                             "Completes read task for stream {} at WAL offset {}, read {} bytes",

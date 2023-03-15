@@ -45,7 +45,7 @@ pub(crate) struct WriteTask {
     pub(crate) buffer: Bytes,
 
     /// Number of bytes written to the WAL.
-    /// The buffer will be armed with a storage header, currently, it's a 8-byte header.
+    /// It's different from `buffer.len()` because the buffer will be armed with a storage header, currently, it's a 8-byte header.
     /// See `components/store/src/io/record.rs`.
     pub(crate) written_len: Option<u32>,
 
