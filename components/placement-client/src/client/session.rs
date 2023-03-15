@@ -30,6 +30,41 @@ pub(crate) struct Session {
 }
 
 impl Session {
+    /// Spawn a loop to continuously read responses and server-side requests.
+    fn spawn_read_loop(
+        channel: Rc<Channel>,
+        inflight_requests: Rc<UnsafeCell<HashMap<u32, oneshot::Sender<response::Response>>>>,
+        notifier: Rc<dyn Notifier>,
+        log: Logger,
+    ) {
+        tokio_uring::spawn(async move {
+            loop {
+                match channel.read_frame().await {
+                    Err(e) => {
+                        // Handle connection reset
+                        todo!()
+                    }
+                    Ok(Some(frame)) => {
+                        trace!(log, "Read a frame from channel");
+                        let inflight = unsafe { &mut *inflight_requests.get() };
+                        if frame.is_response() {
+                            Session::on_response(inflight, frame, &log);
+                        } else {
+                            let response = notifier.on_notification(frame);
+                            channel.write_frame(&response).await.unwrap_or_else(|e| {
+                                warn!(log, "Failed to write response to server. Cause: {:?}", e);
+                            });
+                        }
+                    }
+                    Ok(None) => {
+                        // TODO: Handle normal connection close
+                        break;
+                    }
+                }
+            }
+        });
+    }
+
     pub(crate) fn new(
         stream: TcpStream,
         endpoint: &str,
@@ -40,42 +75,12 @@ impl Session {
         let channel = Rc::new(Channel::new(stream, endpoint, log.clone()));
         let inflight = Rc::new(UnsafeCell::new(HashMap::new()));
 
-        {
-            let _inflight = Rc::clone(&inflight);
-            let _log = log.clone();
-            let _channel = Rc::clone(&channel);
-            tokio_uring::spawn(async move {
-                let inflight_requests = _inflight;
-                let channel = _channel;
-                let log = _log;
-                loop {
-                    match channel.read_frame().await {
-                        Err(e) => {
-                            // Handle connection reset
-                            todo!()
-                        }
-                        Ok(Some(frame)) => {
-                            let inflight = unsafe { &mut *inflight_requests.get() };
-                            if frame.is_response() {
-                                Session::on_response(inflight, frame, &log);
-                            } else {
-                                let response = notifier.on_notification(frame);
-                                channel.write_frame(&response).await.unwrap_or_else(|e| {
-                                    warn!(
-                                        log,
-                                        "Failed to write response to server. Cause: {:?}", e
-                                    );
-                                });
-                            }
-                        }
-                        Ok(None) => {
-                            // TODO: Handle normal connection close
-                            break;
-                        }
-                    }
-                }
-            });
-        }
+        Self::spawn_read_loop(
+            Rc::clone(&channel),
+            Rc::clone(&inflight),
+            notifier,
+            log.clone(),
+        );
 
         Self {
             config: Rc::clone(config),

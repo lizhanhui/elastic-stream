@@ -228,7 +228,9 @@ impl SessionManager {
                             ranges: None,
                         };
                         match response_observer.send(response) {
-                            Ok(_) => {}
+                            Ok(_) => {
+                                trace!(log, "Unavailable error response propagated");
+                            }
                             Err(e) => {
                                 warn!(log, "Failed to propagate error response. Cause: {:?}", e);
                             }
@@ -268,6 +270,8 @@ impl SessionManager {
                         observer
                     }
                 }
+            } else {
+                warn!(log, "No active session is available");
             }
         }
     }
