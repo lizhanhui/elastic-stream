@@ -25,12 +25,9 @@ var (
 	_unknownAction = Action{
 		newReq: func() protocol.Request { return nil },
 		act: func(_ Handler, _ protocol.Request) (resp protocol.Response) {
-			return &protocol.SystemErrorResponse{
-				SystemErrorResponseT: &rpcfb.SystemErrorResponseT{
-					ErrorCode:    rpcfb.ErrorCodeINVALID_REQUEST,
-					ErrorMessage: "unknown operation",
-				},
-			}
+			resp = &protocol.SystemErrorResponse{}
+			resp.Error(rpcfb.ErrorCodeINVALID_REQUEST, "unknown operation")
+			return
 		},
 	}
 )

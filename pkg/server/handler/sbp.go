@@ -19,15 +19,11 @@ func NewSbp(cluster *cluster.RaftCluster) *Sbp {
 	}
 }
 
-func (s *Sbp) ListRange(req *protocol.ListRangesRequest) *protocol.ListRangesResponse {
+func (s *Sbp) ListRange(req *protocol.ListRangesRequest) (resp *protocol.ListRangesResponse) {
+	resp = &protocol.ListRangesResponse{}
 	if !s.c.IsLeader() {
-		return &protocol.ListRangesResponse{
-			ListRangesResponseT: &rpcfb.ListRangesResponseT{
-				ErrorCode:    rpcfb.ErrorCodePM_NOT_LEADER,
-				ErrorMessage: "not leader",
-			},
-			HasNext: false,
-		}
+		resp.Error(rpcfb.ErrorCodePM_NOT_LEADER, "not leader")
+		return
 	}
 
 	listResponses := make([]*rpcfb.ListRangesResultT, 0, len(req.RangeCriteria))
@@ -46,10 +42,6 @@ func (s *Sbp) ListRange(req *protocol.ListRangesRequest) *protocol.ListRangesRes
 
 		listResponses = append(listResponses, result)
 	}
-	return &protocol.ListRangesResponse{
-		ListRangesResponseT: &rpcfb.ListRangesResponseT{
-			ListResponses: listResponses,
-		},
-		HasNext: false,
-	}
+	resp.ListResponses = listResponses
+	return
 }
