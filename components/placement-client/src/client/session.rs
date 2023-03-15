@@ -101,20 +101,22 @@ impl Session {
 
         // Update last read/write instant.
         self.idle_since = Instant::now();
+        let mut frame = Frame::new(OperationCode::Unknown);
+        let inflight_requests = unsafe { &mut *self.inflight_requests.get() };
+        inflight_requests.insert(frame.stream_id, response_observer);
 
         match request {
             Request::Heartbeat { .. } => {
-                let mut frame = Frame::new(OperationCode::Heartbeat);
+                frame.operation_code = OperationCode::Heartbeat;
                 let header = request.into();
                 frame.header = Some(header);
                 match self.channel.write_frame(&frame).await {
                     Ok(_) => {
-                        let inflight_requests = unsafe { &mut *self.inflight_requests.get() };
-                        inflight_requests.insert(frame.stream_id, response_observer);
                         trace!(
                             self.log,
-                            "Write `Heartbeat` request to {}",
-                            self.channel.peer_address()
+                            "Write `Heartbeat` request to {}, stream-id={}",
+                            self.channel.peer_address(),
+                            frame.stream_id,
                         );
                     }
                     Err(e) => {
@@ -122,23 +124,25 @@ impl Session {
                             self.log,
                             "Failed to write request to network. Cause: {:?}", e
                         );
+                        if let Some(observer) = inflight_requests.remove(&frame.stream_id) {
+                            return Err(observer);
+                        }
                     }
                 }
             }
 
             Request::ListRanges { .. } => {
-                let mut list_range_frame = Frame::new(OperationCode::ListRanges);
+                frame.operation_code = OperationCode::ListRanges;
                 let header = request.into();
-                list_range_frame.header = Some(header);
+                frame.header = Some(header);
 
-                match self.channel.write_frame(&list_range_frame).await {
+                match self.channel.write_frame(&frame).await {
                     Ok(_) => {
-                        let inflight_requests = unsafe { &mut *self.inflight_requests.get() };
-                        inflight_requests.insert(list_range_frame.stream_id, response_observer);
                         trace!(
                             self.log,
-                            "Write `ListRange` request to {}",
-                            self.channel.peer_address()
+                            "Write `ListRange` request to {}, stream-id={}",
+                            self.channel.peer_address(),
+                            frame.stream_id,
                         );
                     }
                     Err(e) => {
@@ -148,7 +152,9 @@ impl Session {
                             self.channel.peer_address(),
                             e
                         );
-                        return Err(response_observer);
+                        if let Some(observer) = inflight_requests.remove(&frame.stream_id) {
+                            return Err(observer);
+                        }
                     }
                 }
             }
