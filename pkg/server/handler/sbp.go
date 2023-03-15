@@ -20,6 +20,16 @@ func NewSbp(cluster *cluster.RaftCluster) *Sbp {
 }
 
 func (s *Sbp) ListRange(req *protocol.ListRangesRequest) *protocol.ListRangesResponse {
+	if !s.c.IsLeader() {
+		return &protocol.ListRangesResponse{
+			ListRangesResponseT: &rpcfb.ListRangesResponseT{
+				ErrorCode:    rpcfb.ErrorCodePM_NOT_LEADER,
+				ErrorMessage: "not leader",
+			},
+			HasNext: false,
+		}
+	}
+
 	listResponses := make([]*rpcfb.ListRangesResultT, 0, len(req.RangeCriteria))
 	for _, owner := range req.RangeCriteria {
 		ranges, err := s.c.ListRanges(owner)

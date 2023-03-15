@@ -133,3 +133,7 @@ func (c *RaftCluster) Stop() error {
 func (c *RaftCluster) IsRunning() bool {
 	return c.running.Load()
 }
+
+func (c *RaftCluster) IsLeader() bool {
+	return c.isLeader()
+}
