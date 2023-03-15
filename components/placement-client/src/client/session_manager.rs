@@ -58,6 +58,7 @@ impl SessionManager {
         let timeout = config.connect_timeout;
         tokio_uring::spawn(async move {
             while let Some((addr, tx)) = reconnect_rx.recv().await {
+                trace!(log, "Creating a session to {}", addr);
                 let sessions = unsafe { &mut *sessions.get() };
                 match SessionManager::connect(&addr, timeout, &config, Rc::clone(&notifier), &log)
                     .await
@@ -159,8 +160,15 @@ impl SessionManager {
         let endpoints = Endpoints::from_str(target)?;
 
         endpoints.addrs.into_iter().for_each(|socket_address| {
-            let (tx, rx) = oneshot::channel();
-            let _ = reconnect_tx.send((socket_address, tx));
+            let (tx, _rx) = oneshot::channel();
+            match reconnect_tx.send((socket_address, tx)) {
+                Ok(_) => {
+                    trace!(log, "Notify to create a session to {}", socket_address);
+                }
+                Err(_e) => {
+                    error!(log, "Failed to initiate connection to {}", socket_address);
+                }
+            }
         });
 
         Ok(Self {
@@ -177,8 +185,8 @@ impl SessionManager {
     async fn poll_enqueue(&mut self) -> Result<(), ClientError> {
         trace!(self.log, "poll_enqueue"; "struct" => "SessionManager");
         match self.rx.recv().await {
-            Some((req, response_observer)) => {
-                trace!(self.log, "Received a request `{:?}`", req; "method" => "poll_enqueue");
+            Some((request, response_observer)) => {
+                trace!(self.log, "Received a request `{:?}`", request; "method" => "poll_enqueue");
                 let sessions = Rc::clone(&self.sessions);
                 let log = self.log.clone();
                 let max_attempt_times = self.config.max_attempt as usize;
@@ -189,7 +197,7 @@ impl SessionManager {
                         log,
                         sessions,
                         session_mgr,
-                        req,
+                        request,
                         response_observer,
                         max_attempt_times,
                     )
@@ -271,7 +279,11 @@ impl SessionManager {
                     }
                 }
             } else {
-                warn!(log, "No active session is available");
+                warn!(log, "No active session is available, wait for 10ms");
+                let start = std::time::Instant::now();
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+                let elapsed = std::time::Instant::now() - start;
+                trace!(log, "Waited for {}ms", elapsed.as_millis());
             }
         }
     }
