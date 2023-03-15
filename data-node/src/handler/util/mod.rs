@@ -1,7 +1,7 @@
 use bytes::Bytes;
 use flatbuffers::{FlatBufferBuilder, Verifiable, WIPOffset};
 
-use protocol::rpc::header::{ErrorCode, SystemErrorResponse, SystemErrorResponseArgs};
+use protocol::rpc::header::{ErrorCode, StatusArgs, SystemErrorResponse, SystemErrorResponseArgs};
 use slog::Logger;
 
 pub(crate) const MIN_BUFFER_SIZE: usize = 64;
@@ -31,9 +31,16 @@ pub(crate) fn system_error_frame_bytes(err_code: ErrorCode, err_msg: &str) -> By
     let mut builder = FlatBufferBuilder::with_capacity(MIN_BUFFER_SIZE);
 
     let error_msg = builder.create_string(err_msg);
+    let status = protocol::rpc::header::Status::create(
+        &mut builder,
+        &StatusArgs {
+            code: err_code,
+            message: Some(error_msg),
+            detail: None,
+        },
+    );
     let res_args = SystemErrorResponseArgs {
-        error_code: err_code,
-        error_message: Some(error_msg),
+        status: Some(status),
     };
 
     let response_offset = SystemErrorResponse::create(&mut builder, &res_args);
