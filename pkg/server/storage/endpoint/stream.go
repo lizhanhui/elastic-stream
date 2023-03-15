@@ -24,6 +24,7 @@ type Stream interface {
 	CreateStreams(streams []*rpcfb.StreamT) ([]*rpcfb.StreamT, error)
 	DeleteStreams(streamIDs []int64) ([]*rpcfb.StreamT, error)
 	UpdateStreams(streams []*rpcfb.StreamT) ([]*rpcfb.StreamT, error)
+	GetStream(streamID int64) (*rpcfb.StreamT, error)
 	ForEachStream(f func(stream *rpcfb.StreamT)) error
 }
 
