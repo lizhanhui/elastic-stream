@@ -51,6 +51,7 @@ func TestNewConfig(t *testing.T) {
 				DataDir:                     "",
 				InitialCluster:              "",
 				SbpAddr:                     "127.0.0.1:2378",
+				AdvertiseSbpAddr:            "",
 				LeaderLease:                 3,
 				LeaderPriorityCheckInterval: time.Minute,
 			},
@@ -83,6 +84,7 @@ func TestNewConfig(t *testing.T) {
 				DataDir:                     "default.pm-hostname",
 				InitialCluster:              "pm=http://127.0.0.1:2380",
 				SbpAddr:                     "127.0.0.1:2378",
+				AdvertiseSbpAddr:            "127.0.0.1:2378",
 				LeaderLease:                 3,
 				LeaderPriorityCheckInterval: time.Minute,
 			},
@@ -115,6 +117,7 @@ func TestNewConfig(t *testing.T) {
 				DataDir:                     "default.pm-hostname",
 				InitialCluster:              "pm=http://127.0.0.1:2380",
 				SbpAddr:                     "127.0.0.1:2378",
+				AdvertiseSbpAddr:            "127.0.0.1:2378",
 				LeaderLease:                 3,
 				LeaderPriorityCheckInterval: time.Minute,
 			},
@@ -135,6 +138,7 @@ func TestNewConfig(t *testing.T) {
 				"--leader-priority-check-interval=1h1m1s",
 				"--etcd-initial-cluster-token=test-initial-cluster-token",
 				"--sbp-addr=test-sbp-addr",
+				"--advertise-sbp-addr=test-advertise-sbp-addr",
 				"--etcd-auto-compaction-mode=test-auto-compaction-mode",
 				"--etcd-auto-compaction-retention=test-auto-compaction-retention",
 				"--log-level=FATAL",
@@ -179,6 +183,7 @@ func TestNewConfig(t *testing.T) {
 				DataDir:                     "test-data-dir",
 				InitialCluster:              "test-initial-cluster",
 				SbpAddr:                     "test-sbp-addr",
+				AdvertiseSbpAddr:            "test-advertise-sbp-addr",
 				LeaderLease:                 123,
 				LeaderPriorityCheckInterval: time.Hour + time.Minute + time.Second,
 			},
@@ -224,6 +229,7 @@ func TestNewConfig(t *testing.T) {
 				DataDir:                     "test-data-dir",
 				InitialCluster:              "test-initial-cluster",
 				SbpAddr:                     "test-sbp-addr",
+				AdvertiseSbpAddr:            "test-advertise-sbp-addr",
 				LeaderLease:                 123,
 				LeaderPriorityCheckInterval: time.Hour + time.Minute + time.Second,
 			},
@@ -269,6 +275,7 @@ func TestNewConfig(t *testing.T) {
 				DataDir:                     "test-data-dir",
 				InitialCluster:              "test-initial-cluster",
 				SbpAddr:                     "test-sbp-addr",
+				AdvertiseSbpAddr:            "test-advertise-sbp-addr",
 				LeaderLease:                 123,
 				LeaderPriorityCheckInterval: time.Hour + time.Minute + time.Second,
 			},
@@ -422,6 +429,7 @@ func TestConfig_Adjust(t *testing.T) {
 				DataDir:                     fmt.Sprintf("default.pm-%s", hostname),
 				InitialCluster:              fmt.Sprintf("pm-%s=http://127.0.0.1:2380", hostname),
 				SbpAddr:                     "127.0.0.1:2378",
+				AdvertiseSbpAddr:            "127.0.0.1:2378",
 				LeaderLease:                 3,
 				LeaderPriorityCheckInterval: time.Minute,
 			},
@@ -432,6 +440,7 @@ func TestConfig_Adjust(t *testing.T) {
 				config, _ := NewConfig([]string{})
 				config.PeerUrls = "http://example.com:2380,http://10.0.0.1:2380"
 				config.ClientUrls = "http://example.com:2379,http://10.0.0.1:2379"
+				config.SbpAddr = "example.com:2378"
 				config.Name = "test-name"
 				return config
 			}(),
@@ -464,7 +473,8 @@ func TestConfig_Adjust(t *testing.T) {
 				Name:                        "test-name",
 				DataDir:                     "default.test-name",
 				InitialCluster:              "test-name=http://example.com:2380,test-name=http://10.0.0.1:2380",
-				SbpAddr:                     "127.0.0.1:2378",
+				SbpAddr:                     "example.com:2378",
+				AdvertiseSbpAddr:            "example.com:2378",
 				LeaderLease:                 3,
 				LeaderPriorityCheckInterval: time.Minute,
 			},

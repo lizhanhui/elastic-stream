@@ -59,10 +59,11 @@ type Config struct {
 	AdvertisePeerUrls   string
 	AdvertiseClientUrls string
 
-	Name           string
-	DataDir        string
-	InitialCluster string
-	SbpAddr        string
+	Name             string
+	DataDir          string
+	InitialCluster   string
+	SbpAddr          string
+	AdvertiseSbpAddr string
 
 	// LeaderLease time, if leader doesn't update its TTL
 	// in etcd after lease time, etcd will expire the leader key
@@ -152,6 +153,9 @@ func (c *Config) Adjust() error {
 			nodes = append(nodes, fmt.Sprintf(_defaultInitialClusterFormat, c.Name, u))
 		}
 		c.InitialCluster = strings.Join(nodes, URLSeparator)
+	}
+	if c.AdvertiseSbpAddr == "" {
+		c.AdvertiseSbpAddr = c.SbpAddr
 	}
 
 	// set etcd config
@@ -244,6 +248,7 @@ func configure() (*viper.Viper, *pflag.FlagSet) {
 	fs.Duration("leader-priority-check-interval", _defaultLeaderPriorityCheckInterval, "time interval for checking the leader's priority")
 	fs.String("etcd-initial-cluster-token", _defaultInitialClusterToken, "set different tokens to prevent communication between PMs in different clusters")
 	fs.String("sbp-addr", _defaultSbpAddr, "the address of sbp server")
+	fs.String("advertise-sbp-addr", "", "advertise address of sbp server (default '${sbp-addr}')")
 	_ = v.BindPFlag("name", fs.Lookup("name"))
 	_ = v.BindPFlag("dataDir", fs.Lookup("data-dir"))
 	_ = v.BindPFlag("initialCluster", fs.Lookup("initial-cluster"))
@@ -251,6 +256,7 @@ func configure() (*viper.Viper, *pflag.FlagSet) {
 	_ = v.BindPFlag("leaderPriorityCheckInterval", fs.Lookup("leader-priority-check-interval"))
 	_ = v.BindPFlag("etcd.initialClusterToken", fs.Lookup("etcd-initial-cluster-token"))
 	_ = v.BindPFlag("sbpAddr", fs.Lookup("sbp-addr"))
+	_ = v.BindPFlag("advertiseSbpAddr", fs.Lookup("advertise-sbp-addr"))
 
 	// log settings
 	fs.String("log-level", _defaultLogLevel, "the minimum enabled logging level")

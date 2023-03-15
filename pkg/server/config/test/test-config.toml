@@ -6,7 +6,8 @@ advertiseClientUrls = "test-advertise-client-urls"
 name = "test-name"
 dataDir = "test-data-dir"
 initialCluster = "test-initial-cluster"
-SbpAddr = "test-sbp-addr"
+sbpAddr = "test-sbp-addr"
+advertiseSbpAddr = "test-advertise-sbp-addr"
 leaderLease = 123
 leaderPriorityCheckInterval = 3661000000000
 
