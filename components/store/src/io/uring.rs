@@ -448,8 +448,10 @@ impl IO {
                         ) {
                             let ptr = buf.as_ptr() as *mut u8;
 
-                            let read_offset = task.wal_offset - segment.offset;
-                            let read_len = task.len;
+                            // A read offset that is already aligned, but it's not the same as the requested offset.
+                            let read_offset = buf.offset;
+                            // The length of the aligned buffer, which is always larger than or equal the requested length.
+                            let read_len = buf.capacity as u32;
                             // The pointer will be set into user_data of uring.
                             // When the uring io completes, the pointer will be used to retrieve the `Context`.
                             let context = Context::read_ctx(
@@ -818,7 +820,10 @@ fn on_complete(
                 return Err(StoreError::System(-result));
             } else {
                 if let (Some(offset), Some(len)) = (context.offset, context.len) {
-                    if result as u32 != len {
+                    // Calculates the effective read bytes, without the alignment bytes.
+                    let ef_bytes = result - (offset - context.buf.offset) as i32;
+
+                    if ef_bytes < len as i32 {
                         error!(
                             log,
                             "Read {} bytes from WAL range `[{}, {})`, but {} bytes expected",
@@ -836,13 +841,14 @@ fn on_complete(
 
                     if let Some(IoTask::Read(io_task)) = io_task {
                         // Completes the read task
+                        let start_pos = (io_task.wal_offset - context.buf.offset) as u32;
                         let fetch_result = SingleFetchResult {
                             stream_id: io_task.stream_id,
                             wal_offset: io_task.wal_offset as i64,
                             payload: BufSlice::new(
                                 Arc::clone(&context.buf),
-                                0,
-                                context.buf.write_pos() as u32,
+                                start_pos,
+                                (io_task.len + start_pos) as u32,
                             ),
                         };
 
@@ -1081,6 +1087,41 @@ mod tests {
             );
             results.push(res);
         }
+
+        // Read the data from store
+        let mut receivers = vec![];
+
+        results
+            .iter()
+            .map(|res| {
+                let (tx, rx) = oneshot::channel();
+                receivers.push(rx);
+                IoTask::Read(ReadTask {
+                    stream_id: res.stream_id,
+                    wal_offset: res.wal_offset,
+                    len: 4096 + 8, // 4096 is the write buffer size, 8 is the prefix added by the store
+                    observer: tx,
+                })
+            })
+            .for_each(|task| {
+                sender.send(task).unwrap();
+            });
+
+        for receiver in receivers {
+            let res = receiver.blocking_recv()??;
+            trace!(
+                log,
+                "{{ stream-id: {}, wal_offset: {}}}",
+                res.stream_id,
+                res.wal_offset,
+            );
+            // Assert the payload is equal to the write buffer
+            // trace the length
+            trace!(log, "payload length: {}", res.payload.len());
+            trace!(log, "buffer length: {:?}", buffer.len());
+            assert_eq!(buffer, Bytes::copy_from_slice(&res.payload[8..]));
+        }
+
         drop(sender);
         handle.join().map_err(|_| StoreError::AllocLogSegment)?;
         Ok(())
