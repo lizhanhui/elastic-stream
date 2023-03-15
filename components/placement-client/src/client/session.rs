@@ -2,7 +2,9 @@ use super::session_state::SessionState;
 use super::{config, response};
 use crate::{client::response::Status, notifier::Notifier};
 use codec::frame::{Frame, OperationCode};
+use model::range::StreamRange;
 use model::{client_role::ClientRole, request::Request};
+use protocol::rpc::header::ListRangesResponse;
 use slog::{error, trace, warn, Logger};
 use std::{
     cell::UnsafeCell,
@@ -199,33 +201,67 @@ impl Session {
 
     fn on_response(
         inflight: &mut HashMap<u32, oneshot::Sender<response::Response>>,
-        response: Frame,
+        frame: Frame,
         log: &Logger,
     ) {
-        let stream_id = response.stream_id;
+        let stream_id = frame.stream_id;
         trace!(
             log,
             "Received {} response for stream-id={}",
-            response.operation_code,
+            frame.operation_code,
             stream_id
         );
 
         match inflight.remove(&stream_id) {
             Some(sender) => {
-                let res = match response.operation_code {
+                let res = match frame.operation_code {
                     OperationCode::Heartbeat => {
-                        trace!(log, "Mock parsing {} response", response.operation_code);
+                        trace!(log, "Mock parsing {} response", frame.operation_code);
                         response::Response::Heartbeat { status: Status::OK }
                     }
                     OperationCode::ListRanges => {
-                        trace!(log, "Mock parsing {} response", response.operation_code);
-                        response::Response::ListRange {
+                        let mut response = response::Response::ListRange {
                             status: Status::OK,
                             ranges: None,
+                        };
+                        if let Some(hdr) = frame.header {
+                            if let Ok(list_ranges) = flatbuffers::root::<ListRangesResponse>(&hdr) {
+                                let _ranges = list_ranges
+                                    .unpack()
+                                    .list_responses
+                                    .iter()
+                                    .map(|result| result.iter())
+                                    .flatten()
+                                    .map(|res| res.ranges.as_ref())
+                                    .flatten()
+                                    .map(|e| e.iter())
+                                    .flatten()
+                                    .map(|range| {
+                                        if range.end_offset >= 0 {
+                                            StreamRange::new(
+                                                range.start_offset as u64,
+                                                range.next_offset as u64,
+                                                Some(range.end_offset as u64),
+                                            )
+                                        } else {
+                                            StreamRange::new(
+                                                range.start_offset as u64,
+                                                range.next_offset as u64,
+                                                None,
+                                            )
+                                        }
+                                    })
+                                    .collect::<Vec<_>>();
+                                if let response::Response::ListRange { ranges, .. } = &mut response
+                                {
+                                    *ranges = Some(_ranges);
+                                }
+                            }
                         }
+                        response
                     }
                     _ => {
-                        warn!(log, "Unsupported operation {}", response.operation_code);
+                        warn!(log, "Unsupported operation {}", frame.operation_code);
                         return;
                     }
                 };
@@ -237,7 +273,7 @@ impl Session {
             None => {
                 warn!(
                     log,
-                    "Expected inflight request[stream-id={}] is missing", response.stream_id
+                    "Expected inflight request[stream-id={}] is missing", frame.stream_id
                 );
             }
         }

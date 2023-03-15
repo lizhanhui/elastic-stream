@@ -54,7 +54,7 @@ mod tests {
 
     use test_util::{run_listener, terminal_logger};
 
-    use crate::{error::ListRangeError, PlacementClientBuilder};
+    use crate::{client::response, error::ListRangeError, PlacementClientBuilder};
 
     #[test]
     fn test_list_range() -> Result<(), ListRangeError> {
@@ -71,7 +71,15 @@ mod tests {
             let timeout = Duration::from_secs(10);
 
             for i in 0..3 {
-                client.list_range(i as i64, timeout).await.unwrap();
+                let result = client.list_range(i as i64, timeout).await.unwrap();
+                if let response::Response::ListRange { ref ranges, .. } = result {
+                    assert!(ranges.is_some(), "Should have got some ranges");
+                    if let Some(ranges) = ranges {
+                        assert_eq!(false, ranges.is_empty(), "Test server should have fed some mocking ranges");
+                    }
+                } else {
+                    panic!("Incorrect response enum variant");
+                }
             }
 
             Ok(())
