@@ -1,14 +1,13 @@
 use std::{
     cell::RefCell,
     os::fd::{AsRawFd, RawFd},
-    rc::Rc,
     sync::Arc,
     thread::{Builder, JoinHandle},
 };
 
 use crate::{
     error::{AppendError, FetchError, StoreError},
-    index::{driver::IndexDriver, record_handle::RecordHandle, MinOffset},
+    index::{driver::IndexDriver, MinOffset},
     io::{
         self,
         task::{
@@ -19,7 +18,7 @@ use crate::{
     },
     offset_manager::WalOffsetManager,
     ops::{append::AppendResult, fetch::FetchResult, Append, Fetch, Scan},
-    option::{ReadOptions, StoreOptions, WalPath, WriteOptions},
+    option::{ReadOptions, StoreOptions, WriteOptions},
     AppendRecordRequest, Store,
 };
 use core_affinity::CoreId;
@@ -294,12 +293,11 @@ mod tests {
 
     use bytes::Bytes;
     use futures::future::join_all;
-    use rand::{seq::SliceRandom, thread_rng};
-    use slog::{error, trace, Logger};
-    use tokio::{join, sync::oneshot};
+    use slog::trace;
+    use tokio::sync::oneshot;
 
     use crate::{
-        error::{AppendError, FetchError, StoreError},
+        error::{AppendError, FetchError},
         ops::{append::AppendResult, fetch::FetchResult},
         option::{ReadOptions, StoreOptions, WalPath, WriteOptions},
         AppendRecordRequest, ElasticStore, Store,
