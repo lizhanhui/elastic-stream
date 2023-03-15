@@ -99,8 +99,10 @@ Response Header => client_id client_role data_node
   data_node => node_id advertise_addr
     node_id => int32
     advertise_addr => string
-  error_code => int16
-  error_msg => string
+  status => code message detail
+    code => int16
+    message => string
+    detail => bytes
 
 Response Payload => Empty
 ```
@@ -114,8 +116,10 @@ The request and response frames of HEARTBEAT have the same format. The table bel
 | data_node | struct | Optional, the node information of the data node. Empty if the client is a SDK client. |
 | node_id | int32 | The unique id of the node. |
 | advertise_addr | string | The advertise address of the node, for client traffic from outside. The scheme is `host:port`, while host supports both domain name and IPv4/IPv6 address. |
-| error_code | int16 | The error code of the response. |
-| error_msg | string | The error message of the response. |
+| status | struct | The error status of the response. |
+| code | int16 | The error code of the response. |
+| message | string | The error message of the response. |
+| detail | bytes | Additional information about the error. |
 
 ### APPEND
 The APPEND frame(opcode=0x1001) appends record batches to the data node.
@@ -148,15 +152,19 @@ Request Payload => [stream_data]
 ```
 Response Header => throttle_time_ms [append_responses] 
   throttle_time_ms => int32
-  error_code => int16
-  error_msg => string
-  append_responses => stream_id request_index base_offset stream_append_time_ms error_code error_message
+  status => code message detail
+    code => int16
+    message => string
+    detail => bytes
+  append_responses => stream_id request_index base_offset stream_append_time_ms status
     stream_id => int64
     request_index => int32
     base_offset => int64
     stream_append_time_ms => int64
-    error_code => int16
-    error_message => string
+    status => code message detail
+      code => int16
+      message => string
+      detail => bytes
 
 Response Payload => Empty
 ```
@@ -164,15 +172,19 @@ Response Payload => Empty
 | Field | Type | Description |
 |-------|------|-------------|
 | throttle_time_ms | int32 | The time in milliseconds to throttle the client, due to a quota violation or the server is too busy. |
-| error_code | int16 | The top level error code of the response. |
-| error_msg | string | The top level error message of the response. |
+| status | struct | The error status of the response. |
+| code | int16 | The top level error code of the response. |
+| message | string | The top level error message of the response. |
+| detail | bytes | Additional information about the error. |
 | append_responses | array | A batch of append responses. |
 | stream_id | int64 | The target stream_id of the append record batch. |
 | request_index | int32 | The request_index that the append_response relates to. |
 | base_offset | int64 | The base offset of the record batch. |
 | stream_append_time_ms | int64 | The timestamp returned by the data node server after appending the records. |
-| error_code | int16 | The error code, or 0 if there was no error. |
-| error_message | string | The error message, or null if there was no error. |
+| status | struct | The error status of a fetch response. |
+| code | int16 | The error code, or 0 if there was no error. |
+| message | string | The error message, or null if there was no error. |
+| detail | bytes | Additional information about the error. |
 
 ### FETCH
 The FETCH frame(opcode=0x1002) fetches record batches from the data node. This frame supports fetching data from multiple streams in one frame, and the response could be split into multiple frames then returned in a streaming way. The best benefit of this behavior is that the storage server could return records timely according to the arrival of the records, which is very useful for real-time data processing.
@@ -205,14 +217,18 @@ Request Payload => Empty
 ```
 Response Header => throttle_time_ms [fetch_responses]
   throttle_time_ms => int32
-  error_code => int16
-  error_msg => string
-  fetch_responses => stream_id request_index batch_length error_code error_message
+  status => code message detail
+    code => int16
+    message => string
+    detail => bytes
+  fetch_responses => stream_id request_index batch_length status
     stream_id => int64
     request_index => int32
     batch_length => int32
-    error_code => int16
-    error_message => string
+    status => code message detail
+      code => int16
+      message => string
+      detail => bytes
 
 Response Payload => [stream_data]
   stream_data => record_batch
@@ -222,14 +238,18 @@ Response Payload => [stream_data]
 | Field | Type | Description |
 |-------|------|-------------|
 | throttle_time_ms | int32 | The time in milliseconds to throttle the client, due to a quota violation or the server is too busy. |
-| error_code | int16 | The top level error code of the response. |
-| error_msg | string | The top level error message of the response. |
+| status | struct | The error status of the response. |
+| code | int16 | The top level error code of the response. |
+| message | string | The top level error message of the response. |
+| detail | bytes | Additional information about the error. |
 | fetch_responses | array | A batch of fetch responses. |
 | stream_id | int64 | The id of the stream that the data is fetched from. |
 | request_index | int8 | The request_index that the fetch_response relates to. |
 | batch_length | int32 | The data length of the returned batch is used to decode the data from the payload. |
-| error_code | int16 | The error code, or 0 if there was no error. |
-| error_message | string | The error message, or null if there was no error. |
+| status | struct | The error status of a fetch response. |
+| code | int16 | The error code, or 0 if there was no error. |
+| message | string | The error message, or null if there was no error. |
+| detail | bytes | Additional information about the error. |
 | stream_data | array | The array of record batches, fetched from multiple stream ranges. |
 | record_batch | bytes | The payload of each record batch, already serialized. |
 
@@ -268,12 +288,16 @@ Request Payload => Empty
 ```
 Response Header => throttle_time_ms [list_responses]
   throttle_time_ms => int32
-  error_code => int16
-  error_msg => string
-  list_responses => stream_id error_code error_message [ranges]
+  status => code message detail
+    code => int16
+    message => string
+    detail => bytes
+  list_responses => stream_id status [ranges]
     stream_id => int64
-    error_code => int16
-    error_message => string
+    status => code message detail
+      code => int16
+      message => string
+      detail => bytes
     ranges => stream_id range_index start_offset next_offset end_offset [replica_nodes]
       stream_id => int64
       range_index => int32
@@ -292,12 +316,16 @@ Response Payload => Empty
 | Field | Type | Description |
 |-------|------|-------------|
 | throttle_time_ms | int32 | The time in milliseconds to throttle the client, due to a quota violation or the server is too busy. |
-| error_code | int16 | The top level error code of the response. |
-| error_msg | string | The top level error message of the response. |
+| status | struct | The error status of the response. |
+| code | int16 | The top level error code of the response. |
+| message | string | The top level error message of the response. |
+| detail | bytes | Additional information about the error. |
 | list_responses | array | A batch of list range responses. |
 | stream_id | int64 | The target stream_id of the list ranges response. |
-| error_code | int16 | The error code, or 0 if there was no error. |
-| error_message | string | The error message, or null if there was no error. |
+| status | struct | The error status of a fetch response. |
+| code | int16 | The error code, or 0 if there was no error. |
+| message | string | The error message, or null if there was no error. |
+| detail | bytes | Additional information about the error. |
 | ranges | array | The array of ranges, belonging to a specific stream. |
 | range_index | int32 | The index of the range in the stream. |
 | start_offset | int64 | The start offset of the range. |
@@ -334,12 +362,16 @@ Request Payload => Empty
 ```
 Response Header => throttle_time_ms [seal_responses]
   throttle_time_ms => int32
-  error_code => int16
-  error_msg => string
-  seal_responses => stream_id error_code error_message [ranges]
+  status => code message detail
+    code => int16
+    message => string
+    detail => bytes
+  seal_responses => stream_id status [ranges]
     stream_id => int64
-    error_code => int16
-    error_message => string
+    status => code message detail
+      code => int16
+      message => string
+      detail => bytes
     ranges => ...
   
 Response Payload => Empty
@@ -348,12 +380,16 @@ Response Payload => Empty
 | Field | Type | Description |
 |-------|------|-------------|
 | throttle_time_ms | int32 | The time in milliseconds to throttle the client, due to a quota violation or the server is too busy. |
-| error_code | int16 | The top level error code of the response. |
-| error_msg | string | The top level error message of the response. |
+| status | struct | The error status of the response. |
+| code | int16 | The top level error code of the response. |
+| message | string | The top level error message of the response. |
+| detail | bytes | Additional information about the error. |
 | seal_responses | array | A batch of stream responses. |
 | stream_id | int64 | The target stream_id of the seal ranges response. |
-| error_code | int16 | The error code, or 0 if there was no error. |
-| error_message | string | The error message, or null if there was no error. |
+| status | struct | The error status of a fetch response. |
+| code | int16 | The error code, or 0 if there was no error. |
+| message | string | The error message, or null if there was no error. |
+| detail | bytes | Additional information about the error. |
 | ranges | array | The array of ranges, returned by the seal ranges request. Both the PM and the data node will handle the seal ranges request. Only the sealed ranges will be returned from the data node, while the sealed ranges and the newly writable ranges will be returned from the PM. |
 
 ### SYNC_RANGES
@@ -383,12 +419,16 @@ Request Payload => Empty
 ```
 Response Header => throttle_time_ms [sync_responses]
   throttle_time_ms => int32
-  error_code => int16
-  error_msg => string
-  sync_responses => stream_id error_code error_message range
+  status => code message detail
+    code => int16
+    message => string
+    detail => bytes
+  sync_responses => stream_id status range
     stream_id => int64
-    error_code => int16
-    error_message => string
+    status => code message detail
+      code => int16
+      message => string
+      detail => bytes
     ranges => ...
   
 Response Payload => Empty
@@ -419,24 +459,32 @@ Request Header => timeout_ms [ranges]
 ```
 Response Header => throttle_time_ms [describe_responses]
   throttle_time_ms => int32
-  error_code => int16
-  error_msg => string
-  describe_responses => stream_id error_code error_message range
+  status => code message detail
+    code => int16
+    message => string
+    detail => bytes
+  describe_responses => stream_id status range
     stream_id => int64
-    error_code => int16
-    error_message => string
+    status => code message detail
+      code => int16
+      message => string
+      detail => bytes
     range => ...
 ```
 
 | Field | Type | Description |
 |-------|------|-------------|
 | throttle_time_ms | int32 | The time in milliseconds to throttle the client, due to a quota violation or the server is too busy. |
-| error_code | int16 | The top level error code of the response. |
-| error_msg | string | The top level error message of the response. |
+| status | struct | The error status of the response. |
+| code | int16 | The top level error code of the response. |
+| message | string | The top level error message of the response. |
+| detail | bytes | Additional information about the error. |
 | describe_responses | array | A batch of describe responses. |
 | stream_id | int64 | The target stream_id of the describe ranges response. |
-| error_code | int16 | The error code, or 0 if there was no error. |
-| error_message | string | The error message, or null if there was no error. |
+| status | struct | The error status of a fetch response. |
+| code | int16 | The error code, or 0 if there was no error. |
+| message | string | The error message, or null if there was no error. |
+| detail | bytes | Additional information about the error. |
 | range | struct | The range, returned by the describe ranges request. |
 
 ### CREATE_STREAMS
@@ -464,15 +512,19 @@ Request Payload => Empty
 ```
 Response Header => throttle_time_ms [create_responses]
   throttle_time_ms => int32
-  error_code => int16
-  error_msg => string
-  create_responses => stream replica_nums retention_period_ms error_code error_message
+  status => code message detail
+    code => int16
+    message => string
+    detail => bytes
+  create_responses => stream replica_nums retention_period_ms status
     stream => stream_id replica_nums retention_period_ms
         stream_id => int64
         replica_nums => int8
         retention_period_ms => int64
-    error_code => int16
-    error_message => string
+    status => code message detail
+      code => int16
+      message => string
+      detail => bytes
 
 Response Payload => Empty
 ```
@@ -480,15 +532,19 @@ Response Payload => Empty
 | Field | Type | Description |
 |-------|------|-------------|
 | throttle_time_ms | int32 | The time in milliseconds to throttle the client, due to a quota violation or the server is too busy. |
-| error_code | int16 | The top level error code of the response. |
-| error_msg | string | The top level error message of the response. |
+| status | struct | The error status of the response. |
+| code | int16 | The top level error code of the response. |
+| message | string | The top level error message of the response. |
+| detail | bytes | Additional information about the error. |
 | create_responses | array | A batch of create stream responses. |
 | stream | struct | The struct of createed stream, returned by the create streams request. |
 | stream_id | int64 | The stream_id of the create streams response. |
 | replica_nums | int8 | The number of replicas of the stream. |
 | retention_period_ms | int64 | The retention period of the records in the stream in milliseconds. |
-| error_code | int16 | The error code, or 0 if there was no error. |
-| error_message | string | The error message, or null if there was no error. |
+| status | struct | The error status of a fetch response. |
+| code | int16 | The error code, or 0 if there was no error. |
+| message | string | The error message, or null if there was no error. |
+| detail | bytes | Additional information about the error. |
 
 ### DELETE_STREAMS
 The DELETE_STREAMS frame(opcode=0x3002) deletes a batch of streams to PM or data node. The PM will delete the stream metadata as well as the range info, while the data node only marks the stream as deleted to reject the new write requests timely.
@@ -513,20 +569,24 @@ The frame is simple, so the detailed description is omitted.
 ```
 Response Header => throttle_time_ms [delete_responses]
   throttle_time_ms => int32
-  error_code => int16
-  error_msg => string
-  responses => deleted_stream error_code error_message
+  status => code message detail
+    code => int16
+    message => string
+    detail => bytes
+  responses => deleted_stream status
     deleted_stream => stream_id replica_nums retention_period_ms
       stream_id => int64
       replica_nums => int8
       retention_period_ms => int64
-    error_code => int16
-    error_message => string
+    status => code message detail
+      code => int16
+      message => string
+      detail => bytes
   
 Request Payload => Empty
 ```
 
-The deleted_stream will be returned if the stream is deleted successfully, otherwise the error_code and error_message will be returned.
+The deleted_stream will be returned if the stream is deleted successfully, otherwise the code and message in error status will be returned.
 
 The frame is simple, so the detailed description is omitted.
 
@@ -549,15 +609,19 @@ Request Payload => Empty
 ```
 Response Header => throttle_time_ms [update_responses]
   throttle_time_ms => int32
-  error_code => int16
-  error_msg => string
-  update_responses => updated_stream error_code error_message
+  status => code message detail
+    code => int16
+    message => string
+    detail => bytes
+  update_responses => updated_stream status
     updated_stream => stream_id replica_nums retention_period_ms
       stream_id => int64
       replica_nums => int8
       retention_period_ms => int64
-    error_code => int16
-    error_message => string
+    status => code message detail
+      code => int16
+      message => string
+      detail => bytes
   
 Response Payload => Empty
 ```
@@ -580,15 +644,19 @@ Request Payload => Empty
 ```
 Response Header => throttle_time_ms [describe_responses]
   throttle_time_ms => int32
-  error_code => int16
-  error_msg => string
-  describe_responses => stream error_code error_message
+  status => code message detail
+    code => int16
+    message => string
+    detail => bytes
+  describe_responses => stream status
     stream => stream_id replica_nums retention_period_ms
       stream_id => int64
       replica_nums => int8
       retention_period_ms => int64
-    error_code => int16
-    error_message => string
+    status => code message detail
+      code => int16
+      message => string
+      detail => bytes
   
 Response Payload => Empty
 ```
@@ -620,27 +688,35 @@ Request Header => timeout_ms [trimmed_streams]
 ```
 Response Header => throttle_time_ms [streams]
   throttle_time_ms => int32
-  error_code => int16
-  error_msg => string
-  streams => trimmed_stream error_code error_message range
+  status => code message detail
+    code => int16
+    message => string
+    detail => bytes
+  streams => trimmed_stream status range
     trimmed_stream => stream_id replica_nums retention_period_ms
       stream_id => int64
       replica_nums => int8
       retention_period_ms => int64
-    error_code => int16
-    error_message => string
+    status => code message detail
+      code => int16
+      message => string
+      detail => bytes
     range => ...
 ```
 
 | Field | Type | Description |
 |-------|------|-------------|
 | throttle_time_ms | int32 | The time in milliseconds to throttle the client, due to a quota violation or the server is too busy. |
-| error_code | int16 | The top level error code, or 0 if there was no error. |
-| error_msg | string | The top level error message, or null if there was no error. |
+| status | struct | The error status of the response. |
+| code | int16 | The top level error code of the response. |
+| message | string | The top level error message of the response. |
+| detail | bytes | Additional information about the error. |
 | streams | array | A batch of stream responses. |
 | stream_id | int64 | The stream_id of the trim streams response. |
-| error_code | int16 | The error code, or 0 if there was no error. |
-| error_message | string | The error message, or null if there was no error. |
+| status | struct | The error status of a fetch response. |
+| code | int16 | The error code, or 0 if there was no error. |
+| message | string | The error message, or null if there was no error. |
+| detail | bytes | Additional information about the error. |
 | range | struct | The smallest range of the stream after a trim operation. |
 
 ### REPORT_METRICS
@@ -700,23 +776,27 @@ Response Header => data_node
   data_node => node_id advertise_addr
     node_id => int32
     advertise_addr => string
-  error_code => int16
-  error_msg => string
+  status => code message detail
+    code => int16
+    message => string
+    detail => bytes
 
 Response Payload => Empty
 ```
 
 ## Error Codes
 
-The SBP protocol defines a set of numeric error codes that are used to indicate the type of occurred error. These error codes are used in the error_code field of the response header, and can be translated by the client to a human-readable error message.
+The SBP protocol defines a set of numeric error codes that are used to indicate the type of occurred error. These error codes are used in the status.code field of the response header, and can be translated by the client to a human-readable error message.
 
 ### System Error Frame
 There is a special error frame that is used to indicate that the server encountered an unexpected error or a request-agnostic error. The error frame is sent with the following format:
 
 ```
-Error Response Header => error_code error_msg
-  error_code => int16
-  error_msg => string
+Error Response Header => status
+  status => code message detail
+    code => int16
+    message => string
+    detail => bytes
 ```
 
 When the system error flag is set, the above error frame is sent instead of the normal response frame.
