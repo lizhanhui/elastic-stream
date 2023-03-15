@@ -290,6 +290,7 @@ impl AsRawFd for ElasticStore {
 #[cfg(test)]
 mod tests {
     use std::path::Path;
+    use tokio::time::{sleep, Duration};
 
     use bytes::Bytes;
     use futures::future::join_all;
@@ -403,5 +404,8 @@ mod tests {
                 }
             }
         });
+
+        drop(store);
+        sleep(Duration::from_millis(1000)).await;
     }
 }
