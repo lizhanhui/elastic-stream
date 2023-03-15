@@ -49,7 +49,7 @@ pub struct SessionManager {
 
 impl SessionManager {
     fn reconnect(
-        mut session_mgr: mpsc::UnboundedReceiver<(SocketAddr, oneshot::Sender<bool>)>,
+        mut reconnect_rx: mpsc::UnboundedReceiver<(SocketAddr, oneshot::Sender<bool>)>,
         sessions: Rc<UnsafeCell<HashMap<SocketAddr, Session>>>,
         config: Rc<ClientConfig>,
         log: Logger,
@@ -57,7 +57,7 @@ impl SessionManager {
     ) {
         let timeout = config.connect_timeout;
         tokio_uring::spawn(async move {
-            while let Some((addr, tx)) = session_mgr.recv().await {
+            while let Some((addr, tx)) = reconnect_rx.recv().await {
                 let sessions = unsafe { &mut *sessions.get() };
                 match SessionManager::connect(&addr, timeout, &config, Rc::clone(&notifier), &log)
                     .await
@@ -134,13 +134,13 @@ impl SessionManager {
         notifier: Rc<dyn Notifier>,
         log: &Logger,
     ) -> Result<Self, ClientError> {
-        let (session_mgr_tx, session_mgr_rx) =
+        let (reconnect_tx, reconnect_rx) =
             mpsc::unbounded_channel::<(SocketAddr, oneshot::Sender<bool>)>();
         let sessions = Rc::new(UnsafeCell::new(HashMap::new()));
 
         // Handle session re-connect event.
         Self::reconnect(
-            session_mgr_rx,
+            reconnect_rx,
             Rc::clone(&sessions),
             Rc::clone(&config),
             log.clone(),
@@ -160,7 +160,7 @@ impl SessionManager {
 
         endpoints.addrs.into_iter().for_each(|socket_address| {
             let (tx, rx) = oneshot::channel();
-            let _ = session_mgr_tx.send((socket_address, tx));
+            let _ = reconnect_tx.send((socket_address, tx));
         });
 
         Ok(Self {
@@ -168,7 +168,7 @@ impl SessionManager {
             rx,
             log: log.clone(),
             lb_policy: LBPolicy::PickFirst,
-            session_mgr_tx,
+            session_mgr_tx: reconnect_tx,
             sessions,
             stop_tx,
         })
