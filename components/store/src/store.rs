@@ -156,6 +156,7 @@ impl ElasticStore {
             offset: request.offset,
             buffer: request.buffer,
             observer,
+            written_len: None,
         };
         let io_task = Write(task);
         if let Err(e) = self.io_tx.send(io_task) {

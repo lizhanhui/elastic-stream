@@ -347,31 +347,33 @@ impl IO {
             .into_iter()
             .flat_map(|buf| {
                 let ptr = buf.as_ptr();
-                if let Some(segment) = self.wal.segment_file_of(buf.offset) {
+                if let Some(segment) = self.wal.segment_file_of(buf.aligned_offset) {
                     debug_assert_eq!(Status::ReadWrite, segment.status);
                     if let Some(sd) = segment.sd.as_ref() {
-                        debug_assert!(buf.offset >= segment.offset);
+                        debug_assert!(buf.aligned_offset >= segment.offset);
                         debug_assert!(
-                            buf.offset + buf.capacity as u64 <= segment.offset + segment.size
+                            buf.aligned_offset + buf.capacity as u64
+                                <= segment.offset + segment.size
                         );
-                        let file_offset = buf.offset - segment.offset;
+                        let file_offset = buf.aligned_offset - segment.offset;
 
                         // Track write requests
-                        self.write_window.add(buf.offset, buf.write_pos() as u32)?;
+                        self.write_window
+                            .add(buf.aligned_offset, buf.write_pos() as u32)?;
 
                         let mut io_blocked = false;
                         // Check barrier
-                        if self.barrier.contains(&buf.offset) {
+                        if self.barrier.contains(&buf.aligned_offset) {
                             // Submit SQE to io_uring when the blocking IO task completed.
                             io_blocked = true;
                         } else {
                             // Insert barrier, blocking future write to this aligned block issued to `io_uring` until `sqe` is reaped.
                             if buf.partial() {
-                                self.barrier.insert(buf.offset);
+                                self.barrier.insert(buf.aligned_offset);
                             }
                         }
 
-                        let buf_offset = buf.offset;
+                        let buf_offset = buf.aligned_offset;
                         let buf_len = buf.capacity as u32;
 
                         // The pointer will be set into user_data of uring.
@@ -449,7 +451,7 @@ impl IO {
                             let ptr = buf.as_ptr() as *mut u8;
 
                             // A read offset that is already aligned, but it's not the same as the requested offset.
-                            let read_offset = buf.offset;
+                            let read_offset = buf.aligned_offset;
                             // The length of the aligned buffer, which is always larger than or equal the requested length.
                             let read_len = buf.capacity as u32;
                             // The pointer will be set into user_data of uring.
@@ -473,7 +475,7 @@ impl IO {
                         self.pending_data_tasks.push_front(IoTask::Read(task));
                     }
                 }
-                IoTask::Write(task) => {
+                IoTask::Write(mut task) => {
                     let writer = unsafe { &mut *self.buf_writer.get() };
                     loop {
                         if let Some(segment) = self.wal.segment_file_of(writer.offset) {
@@ -503,6 +505,8 @@ impl IO {
                                         "Write position of WAL after appending record: {}",
                                         pos
                                     );
+                                    // Set the written len of the task
+                                    task.written_len = Some((pos - segment.offset) as u32);
                                     self.inflight_write_tasks.insert(pos, task);
                                     need_write = true;
                                 }
@@ -585,7 +589,7 @@ impl IO {
                     let mut context = unsafe { Box::from_raw(ptr) };
 
                     // Remove barrier
-                    self.barrier.remove(&context.buf.offset);
+                    self.barrier.remove(&context.buf.aligned_offset);
 
                     if let Err(e) = on_complete(
                         &mut self.write_window,
@@ -621,7 +625,7 @@ impl IO {
 
         // Add to block cache
         for buf in cache_entries {
-            if let Some(segment) = self.wal.segment_file_of(buf.offset) {
+            if let Some(segment) = self.wal.segment_file_of(buf.aligned_offset) {
                 segment.block_cache.add_entry(buf);
             }
         }
@@ -647,10 +651,10 @@ impl IO {
             error!(self.log, "Failed to propagate AppendResult `{:?}`", e);
         }
     }
-    fn build_read_index(&mut self, wal_offset: u64, task: &WriteTask) {
+    fn build_read_index(&mut self, wal_offset: u64, written_len: u32, task: &WriteTask) {
         let handle = RecordHandle {
             hash: 0, // TODO: set hash for record handle
-            len: task.buffer.len() as u32,
+            len: written_len,
             wal_offset,
         };
         self.indexer
@@ -666,9 +670,13 @@ impl IO {
 
             if let Some((written_pos, task)) = self.inflight_write_tasks.pop_first() {
                 // TODO: A better way to build read index is needed.
-                let wal_offset = written_pos - task.buffer.len() as u64;
-                self.build_read_index(wal_offset, &task);
-                self.acknowledge_to_observer(wal_offset, task);
+                if let Some(written_len) = task.written_len {
+                    let wal_offset = written_pos - written_len as u64;
+                    self.build_read_index(wal_offset, written_len, &task);
+                    self.acknowledge_to_observer(wal_offset, task);
+                } else {
+                    error!(self.log, "No written length for `WriteTask`");
+                }
             }
         }
     }
@@ -798,13 +806,13 @@ fn on_complete(
                 error!(
                     log,
                     "Write to WAL range `[{}, {})` failed",
-                    context.buf.offset,
+                    context.buf.aligned_offset,
                     context.buf.capacity
                 );
                 return Err(StoreError::System(-result));
             } else {
                 write_window
-                    .commit(context.buf.offset, context.buf.write_pos() as u32)
+                    .commit(context.buf.aligned_offset, context.buf.write_pos() as u32)
                     .map_err(|_e| StoreError::WriteWindow)?;
             }
             Ok(())
@@ -821,7 +829,7 @@ fn on_complete(
             } else {
                 if let (Some(offset), Some(len)) = (context.offset, context.len) {
                     // Calculates the effective read bytes, without the alignment bytes.
-                    let ef_bytes = result - (offset - context.buf.offset) as i32;
+                    let ef_bytes = result - (offset - context.buf.aligned_offset) as i32;
 
                     if ef_bytes < len as i32 {
                         error!(
@@ -841,7 +849,7 @@ fn on_complete(
 
                     if let Some(IoTask::Read(io_task)) = io_task {
                         // Completes the read task
-                        let start_pos = (io_task.wal_offset - context.buf.offset) as u32;
+                        let start_pos = (io_task.wal_offset - context.buf.aligned_offset) as u32;
                         let fetch_result = SingleFetchResult {
                             stream_id: io_task.stream_id,
                             wal_offset: io_task.wal_offset as i64,
@@ -851,6 +859,15 @@ fn on_complete(
                                 (io_task.len + start_pos) as u32,
                             ),
                         };
+
+                        let or = BufSlice::new(
+                            Arc::clone(&context.buf),
+                            0,
+                            context.buf.write_pos() as u32,
+                        );
+
+                        let x = &or[..];
+                        let b = &fetch_result.payload[..];
 
                         trace!(
                             log,
@@ -965,6 +982,7 @@ mod tests {
                     offset: 0,
                     buffer: buffer.clone(),
                     observer: tx,
+                    written_len: None,
                 });
                 sender.send(io_task)
             })
@@ -1012,6 +1030,7 @@ mod tests {
                     offset: n,
                     buffer: buffer.clone(),
                     observer: tx,
+                    written_len: None,
                 })
             })
             .for_each(|io_task| {
@@ -1069,6 +1088,7 @@ mod tests {
                     offset: i as i64,
                     buffer: buffer.clone(),
                     observer: tx,
+                    written_len: None,
                 })
             })
             .for_each(|task| {
@@ -1111,14 +1131,14 @@ mod tests {
             let res = receiver.blocking_recv()??;
             trace!(
                 log,
-                "{{ stream-id: {}, wal_offset: {}}}",
+                "{{Read result is stream-id: {}, wal_offset: {}, payload length: {}}}",
                 res.stream_id,
                 res.wal_offset,
+                res.payload.len()
             );
             // Assert the payload is equal to the write buffer
             // trace the length
-            trace!(log, "payload length: {}", res.payload.len());
-            trace!(log, "buffer length: {:?}", buffer.len());
+
             assert_eq!(buffer, Bytes::copy_from_slice(&res.payload[8..]));
         }
 
