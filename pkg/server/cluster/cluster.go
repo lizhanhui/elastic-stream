@@ -23,38 +23,45 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/AutoMQ/placement-manager/pkg/server/cluster/cache"
+	"github.com/AutoMQ/placement-manager/pkg/server/member"
 	"github.com/AutoMQ/placement-manager/pkg/server/storage"
 )
 
 // RaftCluster is used for metadata management.
 type RaftCluster struct {
-	ctx context.Context
+	ctx       context.Context
+	clusterID uint64
 
 	starting      atomic.Bool
 	running       atomic.Bool
 	runningCtx    context.Context
 	runningCancel context.CancelFunc
 
-	clusterID uint64
-	storage   storage.Storage
-	cache     *cache.Cache
+	storage storage.Storage
+	cache   *cache.Cache
+	member  *member.Member
 
 	lg *zap.Logger
 }
 
+// Server is the interface for starting a RaftCluster.
+type Server interface {
+	Storage() storage.Storage
+	Member() *member.Member
+}
+
 // NewRaftCluster creates a new RaftCluster.
-func NewRaftCluster(ctx context.Context, clusterID uint64, storage storage.Storage, logger *zap.Logger) *RaftCluster {
+func NewRaftCluster(ctx context.Context, clusterID uint64, logger *zap.Logger) *RaftCluster {
 	return &RaftCluster{
 		ctx:       ctx,
 		clusterID: clusterID,
-		storage:   storage,
 		cache:     cache.NewCache(),
 		lg:        logger.With(zap.Uint64("cluster-id", clusterID)),
 	}
 }
 
 // Start starts the RaftCluster.
-func (c *RaftCluster) Start() error {
+func (c *RaftCluster) Start(s Server) error {
 	logger := c.lg
 	if c.IsRunning() {
 		logger.Warn("raft cluster is already running")
@@ -66,8 +73,10 @@ func (c *RaftCluster) Start() error {
 	}
 	defer c.starting.Store(false)
 
-	logger.Info("start raft cluster")
+	logger.Info("starting raft cluster")
 
+	c.storage = s.Storage()
+	c.member = s.Member()
 	c.runningCtx, c.runningCancel = context.WithCancel(c.ctx)
 
 	err := c.loadInfo()
@@ -87,6 +96,10 @@ func (c *RaftCluster) Start() error {
 
 // loadInfo loads all info from storage into cache.
 func (c *RaftCluster) loadInfo() error {
+	// TODO use cache later
+	if c != nil {
+		return nil
+	}
 	logger := c.lg
 
 	c.cache.Reset()
@@ -120,4 +133,12 @@ func (c *RaftCluster) Stop() error {
 // IsRunning returns true if the RaftCluster is running.
 func (c *RaftCluster) IsRunning() bool {
 	return c.running.Load()
+}
+
+func (c *RaftCluster) IsLeader() bool {
+	return c.member.IsLeader()
+}
+
+func (c *RaftCluster) Leader() *member.Info {
+	return c.member.Leader()
 }

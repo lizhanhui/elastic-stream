@@ -8,28 +8,22 @@ import (
 
 type ReportMetricsResponseT struct {
 	DataNode *DataNodeT `json:"data_node"`
-	ErrorCode ErrorCode `json:"error_code"`
-	ErrorMessage string `json:"error_message"`
+	Status *StatusT `json:"status"`
 }
 
 func (t *ReportMetricsResponseT) Pack(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
 	if t == nil { return 0 }
 	dataNodeOffset := t.DataNode.Pack(builder)
-	errorMessageOffset := flatbuffers.UOffsetT(0)
-	if t.ErrorMessage != "" {
-		errorMessageOffset = builder.CreateString(t.ErrorMessage)
-	}
+	statusOffset := t.Status.Pack(builder)
 	ReportMetricsResponseStart(builder)
 	ReportMetricsResponseAddDataNode(builder, dataNodeOffset)
-	ReportMetricsResponseAddErrorCode(builder, t.ErrorCode)
-	ReportMetricsResponseAddErrorMessage(builder, errorMessageOffset)
+	ReportMetricsResponseAddStatus(builder, statusOffset)
 	return ReportMetricsResponseEnd(builder)
 }
 
 func (rcv *ReportMetricsResponse) UnPackTo(t *ReportMetricsResponseT) {
 	t.DataNode = rcv.DataNode(nil).UnPack()
-	t.ErrorCode = rcv.ErrorCode()
-	t.ErrorMessage = string(rcv.ErrorMessage())
+	t.Status = rcv.Status(nil).UnPack()
 }
 
 func (rcv *ReportMetricsResponse) UnPack() *ReportMetricsResponseT {
@@ -79,37 +73,27 @@ func (rcv *ReportMetricsResponse) DataNode(obj *DataNode) *DataNode {
 	return nil
 }
 
-func (rcv *ReportMetricsResponse) ErrorCode() ErrorCode {
+func (rcv *ReportMetricsResponse) Status(obj *Status) *Status {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(6))
 	if o != 0 {
-		return ErrorCode(rcv._tab.GetInt16(o + rcv._tab.Pos))
-	}
-	return 0
-}
-
-func (rcv *ReportMetricsResponse) MutateErrorCode(n ErrorCode) bool {
-	return rcv._tab.MutateInt16Slot(6, int16(n))
-}
-
-func (rcv *ReportMetricsResponse) ErrorMessage() []byte {
-	o := flatbuffers.UOffsetT(rcv._tab.Offset(8))
-	if o != 0 {
-		return rcv._tab.ByteVector(o + rcv._tab.Pos)
+		x := rcv._tab.Indirect(o + rcv._tab.Pos)
+		if obj == nil {
+			obj = new(Status)
+		}
+		obj.Init(rcv._tab.Bytes, x)
+		return obj
 	}
 	return nil
 }
 
 func ReportMetricsResponseStart(builder *flatbuffers.Builder) {
-	builder.StartObject(3)
+	builder.StartObject(2)
 }
 func ReportMetricsResponseAddDataNode(builder *flatbuffers.Builder, dataNode flatbuffers.UOffsetT) {
 	builder.PrependUOffsetTSlot(0, flatbuffers.UOffsetT(dataNode), 0)
 }
-func ReportMetricsResponseAddErrorCode(builder *flatbuffers.Builder, errorCode ErrorCode) {
-	builder.PrependInt16Slot(1, int16(errorCode), 0)
-}
-func ReportMetricsResponseAddErrorMessage(builder *flatbuffers.Builder, errorMessage flatbuffers.UOffsetT) {
-	builder.PrependUOffsetTSlot(2, flatbuffers.UOffsetT(errorMessage), 0)
+func ReportMetricsResponseAddStatus(builder *flatbuffers.Builder, status flatbuffers.UOffsetT) {
+	builder.PrependUOffsetTSlot(1, flatbuffers.UOffsetT(status), 0)
 }
 func ReportMetricsResponseEnd(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
 	return builder.EndObject()

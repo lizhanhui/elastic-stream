@@ -19,6 +19,9 @@ jobs:
       uses: actions/cache@v3
       with:
         path: .go/cache
-        key: ${{matrix.platform}}-${{matrix.go-version}}-go-build
+        key: ${{matrix.platform}}-${{matrix.go-version}}-go-build-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{matrix.platform}}-${{matrix.go-version}}-go-build-
+          ${{matrix.platform}}-${{matrix.go-version}}-go-
     - name: Build containers
       run: make all-container GO_VERSION=${{ matrix.go-version }}

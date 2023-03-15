@@ -9,8 +9,7 @@ import (
 type CreateStreamsResponseT struct {
 	ThrottleTimeMs int32 `json:"throttle_time_ms"`
 	CreateResponses []*CreateStreamResultT `json:"create_responses"`
-	ErrorCode ErrorCode `json:"error_code"`
-	ErrorMessage string `json:"error_message"`
+	Status *StatusT `json:"status"`
 }
 
 func (t *CreateStreamsResponseT) Pack(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
@@ -28,15 +27,11 @@ func (t *CreateStreamsResponseT) Pack(builder *flatbuffers.Builder) flatbuffers.
 		}
 		createResponsesOffset = builder.EndVector(createResponsesLength)
 	}
-	errorMessageOffset := flatbuffers.UOffsetT(0)
-	if t.ErrorMessage != "" {
-		errorMessageOffset = builder.CreateString(t.ErrorMessage)
-	}
+	statusOffset := t.Status.Pack(builder)
 	CreateStreamsResponseStart(builder)
 	CreateStreamsResponseAddThrottleTimeMs(builder, t.ThrottleTimeMs)
 	CreateStreamsResponseAddCreateResponses(builder, createResponsesOffset)
-	CreateStreamsResponseAddErrorCode(builder, t.ErrorCode)
-	CreateStreamsResponseAddErrorMessage(builder, errorMessageOffset)
+	CreateStreamsResponseAddStatus(builder, statusOffset)
 	return CreateStreamsResponseEnd(builder)
 }
 
@@ -49,8 +44,7 @@ func (rcv *CreateStreamsResponse) UnPackTo(t *CreateStreamsResponseT) {
 		rcv.CreateResponses(&x, j)
 		t.CreateResponses[j] = x.UnPack()
 	}
-	t.ErrorCode = rcv.ErrorCode()
-	t.ErrorMessage = string(rcv.ErrorMessage())
+	t.Status = rcv.Status(nil).UnPack()
 }
 
 func (rcv *CreateStreamsResponse) UnPack() *CreateStreamsResponseT {
@@ -119,28 +113,21 @@ func (rcv *CreateStreamsResponse) CreateResponsesLength() int {
 	return 0
 }
 
-func (rcv *CreateStreamsResponse) ErrorCode() ErrorCode {
+func (rcv *CreateStreamsResponse) Status(obj *Status) *Status {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(8))
 	if o != 0 {
-		return ErrorCode(rcv._tab.GetInt16(o + rcv._tab.Pos))
-	}
-	return 0
-}
-
-func (rcv *CreateStreamsResponse) MutateErrorCode(n ErrorCode) bool {
-	return rcv._tab.MutateInt16Slot(8, int16(n))
-}
-
-func (rcv *CreateStreamsResponse) ErrorMessage() []byte {
-	o := flatbuffers.UOffsetT(rcv._tab.Offset(10))
-	if o != 0 {
-		return rcv._tab.ByteVector(o + rcv._tab.Pos)
+		x := rcv._tab.Indirect(o + rcv._tab.Pos)
+		if obj == nil {
+			obj = new(Status)
+		}
+		obj.Init(rcv._tab.Bytes, x)
+		return obj
 	}
 	return nil
 }
 
 func CreateStreamsResponseStart(builder *flatbuffers.Builder) {
-	builder.StartObject(4)
+	builder.StartObject(3)
 }
 func CreateStreamsResponseAddThrottleTimeMs(builder *flatbuffers.Builder, throttleTimeMs int32) {
 	builder.PrependInt32Slot(0, throttleTimeMs, 0)
@@ -151,11 +138,8 @@ func CreateStreamsResponseAddCreateResponses(builder *flatbuffers.Builder, creat
 func CreateStreamsResponseStartCreateResponsesVector(builder *flatbuffers.Builder, numElems int) flatbuffers.UOffsetT {
 	return builder.StartVector(4, numElems, 4)
 }
-func CreateStreamsResponseAddErrorCode(builder *flatbuffers.Builder, errorCode ErrorCode) {
-	builder.PrependInt16Slot(2, int16(errorCode), 0)
-}
-func CreateStreamsResponseAddErrorMessage(builder *flatbuffers.Builder, errorMessage flatbuffers.UOffsetT) {
-	builder.PrependUOffsetTSlot(3, flatbuffers.UOffsetT(errorMessage), 0)
+func CreateStreamsResponseAddStatus(builder *flatbuffers.Builder, status flatbuffers.UOffsetT) {
+	builder.PrependUOffsetTSlot(2, flatbuffers.UOffsetT(status), 0)
 }
 func CreateStreamsResponseEnd(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
 	return builder.EndObject()

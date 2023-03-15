@@ -8,38 +8,38 @@ import (
 
 type ListRangesRequestT struct {
 	TimeoutMs int32 `json:"timeout_ms"`
-	RangeOwners []*RangeOwnerT `json:"range_owners"`
+	RangeCriteria []*RangeCriteriaT `json:"range_criteria"`
 }
 
 func (t *ListRangesRequestT) Pack(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
 	if t == nil { return 0 }
-	rangeOwnersOffset := flatbuffers.UOffsetT(0)
-	if t.RangeOwners != nil {
-		rangeOwnersLength := len(t.RangeOwners)
-		rangeOwnersOffsets := make([]flatbuffers.UOffsetT, rangeOwnersLength)
-		for j := 0; j < rangeOwnersLength; j++ {
-			rangeOwnersOffsets[j] = t.RangeOwners[j].Pack(builder)
+	rangeCriteriaOffset := flatbuffers.UOffsetT(0)
+	if t.RangeCriteria != nil {
+		rangeCriteriaLength := len(t.RangeCriteria)
+		rangeCriteriaOffsets := make([]flatbuffers.UOffsetT, rangeCriteriaLength)
+		for j := 0; j < rangeCriteriaLength; j++ {
+			rangeCriteriaOffsets[j] = t.RangeCriteria[j].Pack(builder)
 		}
-		ListRangesRequestStartRangeOwnersVector(builder, rangeOwnersLength)
-		for j := rangeOwnersLength - 1; j >= 0; j-- {
-			builder.PrependUOffsetT(rangeOwnersOffsets[j])
+		ListRangesRequestStartRangeCriteriaVector(builder, rangeCriteriaLength)
+		for j := rangeCriteriaLength - 1; j >= 0; j-- {
+			builder.PrependUOffsetT(rangeCriteriaOffsets[j])
 		}
-		rangeOwnersOffset = builder.EndVector(rangeOwnersLength)
+		rangeCriteriaOffset = builder.EndVector(rangeCriteriaLength)
 	}
 	ListRangesRequestStart(builder)
 	ListRangesRequestAddTimeoutMs(builder, t.TimeoutMs)
-	ListRangesRequestAddRangeOwners(builder, rangeOwnersOffset)
+	ListRangesRequestAddRangeCriteria(builder, rangeCriteriaOffset)
 	return ListRangesRequestEnd(builder)
 }
 
 func (rcv *ListRangesRequest) UnPackTo(t *ListRangesRequestT) {
 	t.TimeoutMs = rcv.TimeoutMs()
-	rangeOwnersLength := rcv.RangeOwnersLength()
-	t.RangeOwners = make([]*RangeOwnerT, rangeOwnersLength)
-	for j := 0; j < rangeOwnersLength; j++ {
-		x := RangeOwner{}
-		rcv.RangeOwners(&x, j)
-		t.RangeOwners[j] = x.UnPack()
+	rangeCriteriaLength := rcv.RangeCriteriaLength()
+	t.RangeCriteria = make([]*RangeCriteriaT, rangeCriteriaLength)
+	for j := 0; j < rangeCriteriaLength; j++ {
+		x := RangeCriteria{}
+		rcv.RangeCriteria(&x, j)
+		t.RangeCriteria[j] = x.UnPack()
 	}
 }
 
@@ -89,7 +89,7 @@ func (rcv *ListRangesRequest) MutateTimeoutMs(n int32) bool {
 	return rcv._tab.MutateInt32Slot(4, n)
 }
 
-func (rcv *ListRangesRequest) RangeOwners(obj *RangeOwner, j int) bool {
+func (rcv *ListRangesRequest) RangeCriteria(obj *RangeCriteria, j int) bool {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(6))
 	if o != 0 {
 		x := rcv._tab.Vector(o)
@@ -101,7 +101,7 @@ func (rcv *ListRangesRequest) RangeOwners(obj *RangeOwner, j int) bool {
 	return false
 }
 
-func (rcv *ListRangesRequest) RangeOwnersLength() int {
+func (rcv *ListRangesRequest) RangeCriteriaLength() int {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(6))
 	if o != 0 {
 		return rcv._tab.VectorLen(o)
@@ -115,10 +115,10 @@ func ListRangesRequestStart(builder *flatbuffers.Builder) {
 func ListRangesRequestAddTimeoutMs(builder *flatbuffers.Builder, timeoutMs int32) {
 	builder.PrependInt32Slot(0, timeoutMs, 0)
 }
-func ListRangesRequestAddRangeOwners(builder *flatbuffers.Builder, rangeOwners flatbuffers.UOffsetT) {
-	builder.PrependUOffsetTSlot(1, flatbuffers.UOffsetT(rangeOwners), 0)
+func ListRangesRequestAddRangeCriteria(builder *flatbuffers.Builder, rangeCriteria flatbuffers.UOffsetT) {
+	builder.PrependUOffsetTSlot(1, flatbuffers.UOffsetT(rangeCriteria), 0)
 }
-func ListRangesRequestStartRangeOwnersVector(builder *flatbuffers.Builder, numElems int) flatbuffers.UOffsetT {
+func ListRangesRequestStartRangeCriteriaVector(builder *flatbuffers.Builder, numElems int) flatbuffers.UOffsetT {
 	return builder.StartVector(4, numElems, 4)
 }
 func ListRangesRequestEnd(builder *flatbuffers.Builder) flatbuffers.UOffsetT {

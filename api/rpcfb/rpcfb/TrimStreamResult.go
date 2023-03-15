@@ -8,32 +8,26 @@ import (
 
 type TrimStreamResultT struct {
 	TrimmedStream *StreamT `json:"trimmed_stream"`
-	ErrorCode ErrorCode `json:"error_code"`
-	ErrorMessage string `json:"error_message"`
 	Range *RangeT `json:"range"`
+	Status *StatusT `json:"status"`
 }
 
 func (t *TrimStreamResultT) Pack(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
 	if t == nil { return 0 }
 	trimmedStreamOffset := t.TrimmedStream.Pack(builder)
-	errorMessageOffset := flatbuffers.UOffsetT(0)
-	if t.ErrorMessage != "" {
-		errorMessageOffset = builder.CreateString(t.ErrorMessage)
-	}
 	range_Offset := t.Range.Pack(builder)
+	statusOffset := t.Status.Pack(builder)
 	TrimStreamResultStart(builder)
 	TrimStreamResultAddTrimmedStream(builder, trimmedStreamOffset)
-	TrimStreamResultAddErrorCode(builder, t.ErrorCode)
-	TrimStreamResultAddErrorMessage(builder, errorMessageOffset)
 	TrimStreamResultAddRange(builder, range_Offset)
+	TrimStreamResultAddStatus(builder, statusOffset)
 	return TrimStreamResultEnd(builder)
 }
 
 func (rcv *TrimStreamResult) UnPackTo(t *TrimStreamResultT) {
 	t.TrimmedStream = rcv.TrimmedStream(nil).UnPack()
-	t.ErrorCode = rcv.ErrorCode()
-	t.ErrorMessage = string(rcv.ErrorMessage())
 	t.Range = rcv.Range(nil).UnPack()
+	t.Status = rcv.Status(nil).UnPack()
 }
 
 func (rcv *TrimStreamResult) UnPack() *TrimStreamResultT {
@@ -83,28 +77,8 @@ func (rcv *TrimStreamResult) TrimmedStream(obj *Stream) *Stream {
 	return nil
 }
 
-func (rcv *TrimStreamResult) ErrorCode() ErrorCode {
-	o := flatbuffers.UOffsetT(rcv._tab.Offset(6))
-	if o != 0 {
-		return ErrorCode(rcv._tab.GetInt16(o + rcv._tab.Pos))
-	}
-	return 0
-}
-
-func (rcv *TrimStreamResult) MutateErrorCode(n ErrorCode) bool {
-	return rcv._tab.MutateInt16Slot(6, int16(n))
-}
-
-func (rcv *TrimStreamResult) ErrorMessage() []byte {
-	o := flatbuffers.UOffsetT(rcv._tab.Offset(8))
-	if o != 0 {
-		return rcv._tab.ByteVector(o + rcv._tab.Pos)
-	}
-	return nil
-}
-
 func (rcv *TrimStreamResult) Range(obj *Range) *Range {
-	o := flatbuffers.UOffsetT(rcv._tab.Offset(10))
+	o := flatbuffers.UOffsetT(rcv._tab.Offset(6))
 	if o != 0 {
 		x := rcv._tab.Indirect(o + rcv._tab.Pos)
 		if obj == nil {
@@ -116,20 +90,30 @@ func (rcv *TrimStreamResult) Range(obj *Range) *Range {
 	return nil
 }
 
+func (rcv *TrimStreamResult) Status(obj *Status) *Status {
+	o := flatbuffers.UOffsetT(rcv._tab.Offset(8))
+	if o != 0 {
+		x := rcv._tab.Indirect(o + rcv._tab.Pos)
+		if obj == nil {
+			obj = new(Status)
+		}
+		obj.Init(rcv._tab.Bytes, x)
+		return obj
+	}
+	return nil
+}
+
 func TrimStreamResultStart(builder *flatbuffers.Builder) {
-	builder.StartObject(4)
+	builder.StartObject(3)
 }
 func TrimStreamResultAddTrimmedStream(builder *flatbuffers.Builder, trimmedStream flatbuffers.UOffsetT) {
 	builder.PrependUOffsetTSlot(0, flatbuffers.UOffsetT(trimmedStream), 0)
 }
-func TrimStreamResultAddErrorCode(builder *flatbuffers.Builder, errorCode ErrorCode) {
-	builder.PrependInt16Slot(1, int16(errorCode), 0)
-}
-func TrimStreamResultAddErrorMessage(builder *flatbuffers.Builder, errorMessage flatbuffers.UOffsetT) {
-	builder.PrependUOffsetTSlot(2, flatbuffers.UOffsetT(errorMessage), 0)
-}
 func TrimStreamResultAddRange(builder *flatbuffers.Builder, range_ flatbuffers.UOffsetT) {
-	builder.PrependUOffsetTSlot(3, flatbuffers.UOffsetT(range_), 0)
+	builder.PrependUOffsetTSlot(1, flatbuffers.UOffsetT(range_), 0)
+}
+func TrimStreamResultAddStatus(builder *flatbuffers.Builder, status flatbuffers.UOffsetT) {
+	builder.PrependUOffsetTSlot(2, flatbuffers.UOffsetT(status), 0)
 }
 func TrimStreamResultEnd(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
 	return builder.EndObject()

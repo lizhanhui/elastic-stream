@@ -19,6 +19,9 @@ type Response interface {
 	// The returned byte slice should be freed after use.
 	Marshal(fmt format.Format) ([]byte, error)
 
+	// Error sets the error status of the response.
+	Error(status *rpcfb.StatusT)
+
 	// IsEnd returns true if the response is the last response of a request.
 	IsEnd() bool
 }
@@ -80,6 +83,10 @@ func (se *SystemErrorResponse) Marshal(fmt format.Format) ([]byte, error) {
 	return marshal(se, fmt)
 }
 
+func (se *SystemErrorResponse) Error(status *rpcfb.StatusT) {
+	se.Status = status
+}
+
 // ListRangesResponse is a response to operation.OpListRanges
 type ListRangesResponse struct {
 	baseResponse
@@ -96,6 +103,10 @@ func (lr *ListRangesResponse) marshalFlatBuffer() ([]byte, error) {
 
 func (lr *ListRangesResponse) Marshal(fmt format.Format) ([]byte, error) {
 	return marshal(lr, fmt)
+}
+
+func (lr *ListRangesResponse) Error(status *rpcfb.StatusT) {
+	lr.Status = status
 }
 
 func (lr *ListRangesResponse) IsEnd() bool {

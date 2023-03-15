@@ -4,6 +4,7 @@ import (
 	"github.com/AutoMQ/placement-manager/api/rpcfb/rpcfb"
 	"github.com/AutoMQ/placement-manager/pkg/sbp/protocol"
 	"github.com/AutoMQ/placement-manager/pkg/server/cluster"
+	"github.com/AutoMQ/placement-manager/pkg/util/fbutil"
 )
 
 // Sbp is an sbp handler, implements server.Handler
@@ -19,27 +20,48 @@ func NewSbp(cluster *cluster.RaftCluster) *Sbp {
 	}
 }
 
-func (s *Sbp) ListRange(req *protocol.ListRangesRequest) *protocol.ListRangesResponse {
-	listResponses := make([]*rpcfb.ListRangesResultT, 0, len(req.RangeOwners))
-	for _, owner := range req.RangeOwners {
+func (s *Sbp) ListRange(req *protocol.ListRangesRequest) (resp *protocol.ListRangesResponse) {
+	resp = &protocol.ListRangesResponse{}
+	if !s.c.IsLeader() {
+		s.notLeaderError(resp)
+		return
+	}
+
+	listResponses := make([]*rpcfb.ListRangesResultT, 0, len(req.RangeCriteria))
+	for _, owner := range req.RangeCriteria {
 		ranges, err := s.c.ListRanges(owner)
 
 		result := &rpcfb.ListRangesResultT{
-			RangeOwner: owner,
+			RangeCriteria: owner,
 		}
 		if err != nil {
-			result.ErrorCode = rpcfb.ErrorCodeUNKNOWN
-			result.ErrorMessage = err.Error()
+			result.Status.Code = rpcfb.ErrorCodeUNKNOWN
+			result.Status.Message = err.Error()
 		} else {
 			result.Ranges = ranges
 		}
 
 		listResponses = append(listResponses, result)
 	}
-	return &protocol.ListRangesResponse{
-		ListRangesResponseT: &rpcfb.ListRangesResponseT{
-			ListResponses: listResponses,
+	resp.ListResponses = listResponses
+	return
+}
+
+// notLeaderError sets "PM_NOT_LEADER" error in the response
+func (s *Sbp) notLeaderError(response protocol.Response) {
+	response.Error(&rpcfb.StatusT{Code: rpcfb.ErrorCodePM_NOT_LEADER, Message: "not leader", Detail: s.pmInfo()})
+}
+
+func (s *Sbp) pmInfo() []byte {
+	leader := s.c.Leader()
+	pm := &rpcfb.PlacementManagerT{
+		Nodes: []*rpcfb.PlacementManagerNodeT{
+			{
+				Name:          leader.Name,
+				AdvertiseAddr: leader.SbpAddr,
+				IsLeader:      true,
+			},
 		},
-		HasNext: false,
 	}
+	return fbutil.Marshal(pm)
 }

@@ -81,6 +81,10 @@ spec:
               value: "/data/placement-manager/default.$(NAME)"
             - name: PM_INITIALCLUSTER
               value: "pm-0=http://pm-0.pm:2380,pm-1=http://pm-1.pm:2380,pm-2=http://pm-2.pm:2380"
+            - name: PM_SBPADDR
+              value: "0.0.0.0:2378"
+            - name: PM_ADVERTISESBPADDR
+              value: "$(NAME).pm:2378"
             - name: PM_ETCD_INITIALCLUSTERTOKEN
               value: "pm-cluster"
   volumeClaimTemplates:

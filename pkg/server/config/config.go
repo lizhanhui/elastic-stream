@@ -27,12 +27,13 @@ const (
 
 	_defaultPeerUrls                          = "http://127.0.0.1:2380"
 	_defaultClientUrls                        = "http://127.0.0.1:2379"
-	defaultCompactionMode                     = "periodic"
-	defaultAutoCompactionRetention            = "1h"
+	_defaultCompactionMode                    = "periodic"
+	_defaultAutoCompactionRetention           = "1h"
 	_defaultNameFormat                        = "pm-%s"
 	_defaultDataDirFormat                     = "default.%s"
-	_defaultInitialClusterPrefix              = "pm="
+	_defaultInitialClusterFormat              = "%s=%s"
 	_defaultInitialClusterToken               = "pm-cluster"
+	_defaultSbpAddr                           = "127.0.0.1:2378"
 	_defaultLeaderLease                 int64 = 3
 	_defaultLeaderPriorityCheckInterval       = time.Minute
 
@@ -58,9 +59,11 @@ type Config struct {
 	AdvertisePeerUrls   string
 	AdvertiseClientUrls string
 
-	Name           string
-	DataDir        string
-	InitialCluster string
+	Name             string
+	DataDir          string
+	InitialCluster   string
+	SbpAddr          string
+	AdvertiseSbpAddr string
 
 	// LeaderLease time, if leader doesn't update its TTL
 	// in etcd after lease time, etcd will expire the leader key
@@ -142,11 +145,17 @@ func (c *Config) Adjust() error {
 		c.DataDir = fmt.Sprintf(_defaultDataDirFormat, c.Name)
 	}
 	if c.InitialCluster == "" {
-		// For example, when AdvertisePeerUrls is set to "http://127.0.0.1:2380,http://127.0.0.1:2381",
-		// the InitialCluster is "pm=http://127.0.0.1:2380,pm=http://127.0.0.1:2381".
-		items := strings.Split(c.AdvertisePeerUrls, URLSeparator)
-		initialCluster := strings.Join(items, URLSeparator+_defaultInitialClusterPrefix)
-		c.InitialCluster += _defaultInitialClusterPrefix + initialCluster
+		// For example, when Name is set "my-pm" and AdvertisePeerUrls is set to "http://127.0.0.1:2380,http://127.0.0.1:2381",
+		// the InitialCluster is "my-pm=http://127.0.0.1:2380,my-pm=http://127.0.0.1:2381".
+		urls := strings.Split(c.AdvertisePeerUrls, URLSeparator)
+		nodes := make([]string, 0, len(urls))
+		for _, u := range urls {
+			nodes = append(nodes, fmt.Sprintf(_defaultInitialClusterFormat, c.Name, u))
+		}
+		c.InitialCluster = strings.Join(nodes, URLSeparator)
+	}
+	if c.AdvertiseSbpAddr == "" {
+		c.AdvertiseSbpAddr = c.SbpAddr
 	}
 
 	// set etcd config
@@ -226,24 +235,28 @@ func configure() (*viper.Viper, *pflag.FlagSet) {
 	_ = v.BindPFlag("advertiseClientUrls", fs.Lookup("advertise-client-urls"))
 
 	// other etcd settings
-	fs.String("etcd-auto-compaction-mode", defaultCompactionMode, "interpret 'auto-compaction-retention' one of: periodic|revision. 'periodic' for duration based retention, defaulting to hours if no time unit is provided (e.g. '5m'). 'revision' for revision number based retention.")
-	fs.String("etcd-auto-compaction-retention", defaultAutoCompactionRetention, "auto compaction retention for mvcc key value store. 0 means disable auto compaction.")
+	fs.String("etcd-auto-compaction-mode", _defaultCompactionMode, "interpret 'auto-compaction-retention' one of: periodic|revision. 'periodic' for duration based retention, defaulting to hours if no time unit is provided (e.g. '5m'). 'revision' for revision number based retention.")
+	fs.String("etcd-auto-compaction-retention", _defaultAutoCompactionRetention, "auto compaction retention for mvcc key value store. 0 means disable auto compaction.")
 	_ = v.BindPFlag("etcd.autoCompactionMode", fs.Lookup("etcd-auto-compaction-mode"))
 	_ = v.BindPFlag("etcd.autoCompactionRetention", fs.Lookup("etcd-auto-compaction-retention"))
 
 	// PM members settings
 	fs.String("name", "", "human-readable name for this PM member (default 'pm-${hostname}')")
 	fs.String("data-dir", "", "path to the data directory (default 'default.${name}')")
-	fs.String("initial-cluster", "", "initial cluster configuration for bootstrapping, e.g. pm=http://127.0.0.1:2380. (default 'pm=${advertise-peer-urls}')")
+	fs.String("initial-cluster", "", "initial cluster configuration for bootstrapping, e.g. pm=http://127.0.0.1:2380. (default '${name}=${advertise-peer-urls}')")
 	fs.Int64("leader-lease", _defaultLeaderLease, "expiration time of the leader, in seconds")
 	fs.Duration("leader-priority-check-interval", _defaultLeaderPriorityCheckInterval, "time interval for checking the leader's priority")
 	fs.String("etcd-initial-cluster-token", _defaultInitialClusterToken, "set different tokens to prevent communication between PMs in different clusters")
+	fs.String("sbp-addr", _defaultSbpAddr, "the address of sbp server")
+	fs.String("advertise-sbp-addr", "", "advertise address of sbp server (default '${sbp-addr}')")
 	_ = v.BindPFlag("name", fs.Lookup("name"))
 	_ = v.BindPFlag("dataDir", fs.Lookup("data-dir"))
 	_ = v.BindPFlag("initialCluster", fs.Lookup("initial-cluster"))
 	_ = v.BindPFlag("leaderLease", fs.Lookup("leader-lease"))
 	_ = v.BindPFlag("leaderPriorityCheckInterval", fs.Lookup("leader-priority-check-interval"))
 	_ = v.BindPFlag("etcd.initialClusterToken", fs.Lookup("etcd-initial-cluster-token"))
+	_ = v.BindPFlag("sbpAddr", fs.Lookup("sbp-addr"))
+	_ = v.BindPFlag("advertiseSbpAddr", fs.Lookup("advertise-sbp-addr"))
 
 	// log settings
 	fs.String("log-level", _defaultLogLevel, "the minimum enabled logging level")

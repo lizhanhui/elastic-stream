@@ -11,23 +11,18 @@ type AppendResultT struct {
 	RequestIndex int32 `json:"request_index"`
 	BaseOffset int64 `json:"base_offset"`
 	StreamAppendTimeMs int64 `json:"stream_append_time_ms"`
-	ErrorCode ErrorCode `json:"error_code"`
-	ErrorMessage string `json:"error_message"`
+	Status *StatusT `json:"status"`
 }
 
 func (t *AppendResultT) Pack(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
 	if t == nil { return 0 }
-	errorMessageOffset := flatbuffers.UOffsetT(0)
-	if t.ErrorMessage != "" {
-		errorMessageOffset = builder.CreateString(t.ErrorMessage)
-	}
+	statusOffset := t.Status.Pack(builder)
 	AppendResultStart(builder)
 	AppendResultAddStreamId(builder, t.StreamId)
 	AppendResultAddRequestIndex(builder, t.RequestIndex)
 	AppendResultAddBaseOffset(builder, t.BaseOffset)
 	AppendResultAddStreamAppendTimeMs(builder, t.StreamAppendTimeMs)
-	AppendResultAddErrorCode(builder, t.ErrorCode)
-	AppendResultAddErrorMessage(builder, errorMessageOffset)
+	AppendResultAddStatus(builder, statusOffset)
 	return AppendResultEnd(builder)
 }
 
@@ -36,8 +31,7 @@ func (rcv *AppendResult) UnPackTo(t *AppendResultT) {
 	t.RequestIndex = rcv.RequestIndex()
 	t.BaseOffset = rcv.BaseOffset()
 	t.StreamAppendTimeMs = rcv.StreamAppendTimeMs()
-	t.ErrorCode = rcv.ErrorCode()
-	t.ErrorMessage = string(rcv.ErrorMessage())
+	t.Status = rcv.Status(nil).UnPack()
 }
 
 func (rcv *AppendResult) UnPack() *AppendResultT {
@@ -122,28 +116,21 @@ func (rcv *AppendResult) MutateStreamAppendTimeMs(n int64) bool {
 	return rcv._tab.MutateInt64Slot(10, n)
 }
 
-func (rcv *AppendResult) ErrorCode() ErrorCode {
+func (rcv *AppendResult) Status(obj *Status) *Status {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(12))
 	if o != 0 {
-		return ErrorCode(rcv._tab.GetInt16(o + rcv._tab.Pos))
-	}
-	return 0
-}
-
-func (rcv *AppendResult) MutateErrorCode(n ErrorCode) bool {
-	return rcv._tab.MutateInt16Slot(12, int16(n))
-}
-
-func (rcv *AppendResult) ErrorMessage() []byte {
-	o := flatbuffers.UOffsetT(rcv._tab.Offset(14))
-	if o != 0 {
-		return rcv._tab.ByteVector(o + rcv._tab.Pos)
+		x := rcv._tab.Indirect(o + rcv._tab.Pos)
+		if obj == nil {
+			obj = new(Status)
+		}
+		obj.Init(rcv._tab.Bytes, x)
+		return obj
 	}
 	return nil
 }
 
 func AppendResultStart(builder *flatbuffers.Builder) {
-	builder.StartObject(6)
+	builder.StartObject(5)
 }
 func AppendResultAddStreamId(builder *flatbuffers.Builder, streamId int64) {
 	builder.PrependInt64Slot(0, streamId, 0)
@@ -157,11 +144,8 @@ func AppendResultAddBaseOffset(builder *flatbuffers.Builder, baseOffset int64) {
 func AppendResultAddStreamAppendTimeMs(builder *flatbuffers.Builder, streamAppendTimeMs int64) {
 	builder.PrependInt64Slot(3, streamAppendTimeMs, 0)
 }
-func AppendResultAddErrorCode(builder *flatbuffers.Builder, errorCode ErrorCode) {
-	builder.PrependInt16Slot(4, int16(errorCode), 0)
-}
-func AppendResultAddErrorMessage(builder *flatbuffers.Builder, errorMessage flatbuffers.UOffsetT) {
-	builder.PrependUOffsetTSlot(5, flatbuffers.UOffsetT(errorMessage), 0)
+func AppendResultAddStatus(builder *flatbuffers.Builder, status flatbuffers.UOffsetT) {
+	builder.PrependUOffsetTSlot(4, flatbuffers.UOffsetT(status), 0)
 }
 func AppendResultEnd(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
 	return builder.EndObject()

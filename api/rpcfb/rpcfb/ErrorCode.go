@@ -12,6 +12,7 @@ const (
 	ErrorCodeINVALID_REQUEST       ErrorCode = 2
 	ErrorCodeUNKNOWN_STORAGE_ERROR ErrorCode = 3
 	ErrorCodeSTORAGE_NOT_AVAILABLE ErrorCode = 4
+	ErrorCodePM_NOT_LEADER         ErrorCode = 5
 )
 
 var EnumNamesErrorCode = map[ErrorCode]string{
@@ -20,6 +21,7 @@ var EnumNamesErrorCode = map[ErrorCode]string{
 	ErrorCodeINVALID_REQUEST:       "INVALID_REQUEST",
 	ErrorCodeUNKNOWN_STORAGE_ERROR: "UNKNOWN_STORAGE_ERROR",
 	ErrorCodeSTORAGE_NOT_AVAILABLE: "STORAGE_NOT_AVAILABLE",
+	ErrorCodePM_NOT_LEADER:         "PM_NOT_LEADER",
 }
 
 var EnumValuesErrorCode = map[string]ErrorCode{
@@ -28,6 +30,7 @@ var EnumValuesErrorCode = map[string]ErrorCode{
 	"INVALID_REQUEST":       ErrorCodeINVALID_REQUEST,
 	"UNKNOWN_STORAGE_ERROR": ErrorCodeUNKNOWN_STORAGE_ERROR,
 	"STORAGE_NOT_AVAILABLE": ErrorCodeSTORAGE_NOT_AVAILABLE,
+	"PM_NOT_LEADER":         ErrorCodePM_NOT_LEADER,
 }
 
 func (v ErrorCode) String() string {

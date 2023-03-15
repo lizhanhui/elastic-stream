@@ -9,8 +9,7 @@ import (
 type TrimStreamsResponseT struct {
 	ThrottleTimeMs int32 `json:"throttle_time_ms"`
 	TrimResponses []*TrimStreamResultT `json:"trim_responses"`
-	ErrorCode ErrorCode `json:"error_code"`
-	ErrorMessage string `json:"error_message"`
+	Status *StatusT `json:"status"`
 }
 
 func (t *TrimStreamsResponseT) Pack(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
@@ -28,15 +27,11 @@ func (t *TrimStreamsResponseT) Pack(builder *flatbuffers.Builder) flatbuffers.UO
 		}
 		trimResponsesOffset = builder.EndVector(trimResponsesLength)
 	}
-	errorMessageOffset := flatbuffers.UOffsetT(0)
-	if t.ErrorMessage != "" {
-		errorMessageOffset = builder.CreateString(t.ErrorMessage)
-	}
+	statusOffset := t.Status.Pack(builder)
 	TrimStreamsResponseStart(builder)
 	TrimStreamsResponseAddThrottleTimeMs(builder, t.ThrottleTimeMs)
 	TrimStreamsResponseAddTrimResponses(builder, trimResponsesOffset)
-	TrimStreamsResponseAddErrorCode(builder, t.ErrorCode)
-	TrimStreamsResponseAddErrorMessage(builder, errorMessageOffset)
+	TrimStreamsResponseAddStatus(builder, statusOffset)
 	return TrimStreamsResponseEnd(builder)
 }
 
@@ -49,8 +44,7 @@ func (rcv *TrimStreamsResponse) UnPackTo(t *TrimStreamsResponseT) {
 		rcv.TrimResponses(&x, j)
 		t.TrimResponses[j] = x.UnPack()
 	}
-	t.ErrorCode = rcv.ErrorCode()
-	t.ErrorMessage = string(rcv.ErrorMessage())
+	t.Status = rcv.Status(nil).UnPack()
 }
 
 func (rcv *TrimStreamsResponse) UnPack() *TrimStreamsResponseT {
@@ -119,28 +113,21 @@ func (rcv *TrimStreamsResponse) TrimResponsesLength() int {
 	return 0
 }
 
-func (rcv *TrimStreamsResponse) ErrorCode() ErrorCode {
+func (rcv *TrimStreamsResponse) Status(obj *Status) *Status {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(8))
 	if o != 0 {
-		return ErrorCode(rcv._tab.GetInt16(o + rcv._tab.Pos))
-	}
-	return 0
-}
-
-func (rcv *TrimStreamsResponse) MutateErrorCode(n ErrorCode) bool {
-	return rcv._tab.MutateInt16Slot(8, int16(n))
-}
-
-func (rcv *TrimStreamsResponse) ErrorMessage() []byte {
-	o := flatbuffers.UOffsetT(rcv._tab.Offset(10))
-	if o != 0 {
-		return rcv._tab.ByteVector(o + rcv._tab.Pos)
+		x := rcv._tab.Indirect(o + rcv._tab.Pos)
+		if obj == nil {
+			obj = new(Status)
+		}
+		obj.Init(rcv._tab.Bytes, x)
+		return obj
 	}
 	return nil
 }
 
 func TrimStreamsResponseStart(builder *flatbuffers.Builder) {
-	builder.StartObject(4)
+	builder.StartObject(3)
 }
 func TrimStreamsResponseAddThrottleTimeMs(builder *flatbuffers.Builder, throttleTimeMs int32) {
 	builder.PrependInt32Slot(0, throttleTimeMs, 0)
@@ -151,11 +138,8 @@ func TrimStreamsResponseAddTrimResponses(builder *flatbuffers.Builder, trimRespo
 func TrimStreamsResponseStartTrimResponsesVector(builder *flatbuffers.Builder, numElems int) flatbuffers.UOffsetT {
 	return builder.StartVector(4, numElems, 4)
 }
-func TrimStreamsResponseAddErrorCode(builder *flatbuffers.Builder, errorCode ErrorCode) {
-	builder.PrependInt16Slot(2, int16(errorCode), 0)
-}
-func TrimStreamsResponseAddErrorMessage(builder *flatbuffers.Builder, errorMessage flatbuffers.UOffsetT) {
-	builder.PrependUOffsetTSlot(3, flatbuffers.UOffsetT(errorMessage), 0)
+func TrimStreamsResponseAddStatus(builder *flatbuffers.Builder, status flatbuffers.UOffsetT) {
+	builder.PrependUOffsetTSlot(2, flatbuffers.UOffsetT(status), 0)
 }
 func TrimStreamsResponseEnd(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
 	return builder.EndObject()

@@ -9,32 +9,26 @@ import (
 type FetchResultT struct {
 	StreamId int64 `json:"stream_id"`
 	RequestIndex int32 `json:"request_index"`
-	ErrorCode ErrorCode `json:"error_code"`
-	ErrorMessage string `json:"error_message"`
 	BatchLength int32 `json:"batch_length"`
+	Status *StatusT `json:"status"`
 }
 
 func (t *FetchResultT) Pack(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
 	if t == nil { return 0 }
-	errorMessageOffset := flatbuffers.UOffsetT(0)
-	if t.ErrorMessage != "" {
-		errorMessageOffset = builder.CreateString(t.ErrorMessage)
-	}
+	statusOffset := t.Status.Pack(builder)
 	FetchResultStart(builder)
 	FetchResultAddStreamId(builder, t.StreamId)
 	FetchResultAddRequestIndex(builder, t.RequestIndex)
-	FetchResultAddErrorCode(builder, t.ErrorCode)
-	FetchResultAddErrorMessage(builder, errorMessageOffset)
 	FetchResultAddBatchLength(builder, t.BatchLength)
+	FetchResultAddStatus(builder, statusOffset)
 	return FetchResultEnd(builder)
 }
 
 func (rcv *FetchResult) UnPackTo(t *FetchResultT) {
 	t.StreamId = rcv.StreamId()
 	t.RequestIndex = rcv.RequestIndex()
-	t.ErrorCode = rcv.ErrorCode()
-	t.ErrorMessage = string(rcv.ErrorMessage())
 	t.BatchLength = rcv.BatchLength()
+	t.Status = rcv.Status(nil).UnPack()
 }
 
 func (rcv *FetchResult) UnPack() *FetchResultT {
@@ -95,28 +89,8 @@ func (rcv *FetchResult) MutateRequestIndex(n int32) bool {
 	return rcv._tab.MutateInt32Slot(6, n)
 }
 
-func (rcv *FetchResult) ErrorCode() ErrorCode {
-	o := flatbuffers.UOffsetT(rcv._tab.Offset(8))
-	if o != 0 {
-		return ErrorCode(rcv._tab.GetInt16(o + rcv._tab.Pos))
-	}
-	return 0
-}
-
-func (rcv *FetchResult) MutateErrorCode(n ErrorCode) bool {
-	return rcv._tab.MutateInt16Slot(8, int16(n))
-}
-
-func (rcv *FetchResult) ErrorMessage() []byte {
-	o := flatbuffers.UOffsetT(rcv._tab.Offset(10))
-	if o != 0 {
-		return rcv._tab.ByteVector(o + rcv._tab.Pos)
-	}
-	return nil
-}
-
 func (rcv *FetchResult) BatchLength() int32 {
-	o := flatbuffers.UOffsetT(rcv._tab.Offset(12))
+	o := flatbuffers.UOffsetT(rcv._tab.Offset(8))
 	if o != 0 {
 		return rcv._tab.GetInt32(o + rcv._tab.Pos)
 	}
@@ -124,11 +98,24 @@ func (rcv *FetchResult) BatchLength() int32 {
 }
 
 func (rcv *FetchResult) MutateBatchLength(n int32) bool {
-	return rcv._tab.MutateInt32Slot(12, n)
+	return rcv._tab.MutateInt32Slot(8, n)
+}
+
+func (rcv *FetchResult) Status(obj *Status) *Status {
+	o := flatbuffers.UOffsetT(rcv._tab.Offset(10))
+	if o != 0 {
+		x := rcv._tab.Indirect(o + rcv._tab.Pos)
+		if obj == nil {
+			obj = new(Status)
+		}
+		obj.Init(rcv._tab.Bytes, x)
+		return obj
+	}
+	return nil
 }
 
 func FetchResultStart(builder *flatbuffers.Builder) {
-	builder.StartObject(5)
+	builder.StartObject(4)
 }
 func FetchResultAddStreamId(builder *flatbuffers.Builder, streamId int64) {
 	builder.PrependInt64Slot(0, streamId, 0)
@@ -136,14 +123,11 @@ func FetchResultAddStreamId(builder *flatbuffers.Builder, streamId int64) {
 func FetchResultAddRequestIndex(builder *flatbuffers.Builder, requestIndex int32) {
 	builder.PrependInt32Slot(1, requestIndex, 0)
 }
-func FetchResultAddErrorCode(builder *flatbuffers.Builder, errorCode ErrorCode) {
-	builder.PrependInt16Slot(2, int16(errorCode), 0)
-}
-func FetchResultAddErrorMessage(builder *flatbuffers.Builder, errorMessage flatbuffers.UOffsetT) {
-	builder.PrependUOffsetTSlot(3, flatbuffers.UOffsetT(errorMessage), 0)
-}
 func FetchResultAddBatchLength(builder *flatbuffers.Builder, batchLength int32) {
-	builder.PrependInt32Slot(4, batchLength, 0)
+	builder.PrependInt32Slot(2, batchLength, 0)
+}
+func FetchResultAddStatus(builder *flatbuffers.Builder, status flatbuffers.UOffsetT) {
+	builder.PrependUOffsetTSlot(3, flatbuffers.UOffsetT(status), 0)
 }
 func FetchResultEnd(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
 	return builder.EndObject()

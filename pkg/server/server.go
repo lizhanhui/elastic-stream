@@ -180,10 +180,9 @@ func (s *Server) startServer() error {
 		return errors.Wrap(err, "init member")
 	}
 	s.storage = storage.NewEtcd(s.client, s.rootPath, logger, s.leaderCmp)
-	s.cluster = cluster.NewRaftCluster(s.ctx, s.clusterID, s.storage, s.lg)
+	s.cluster = cluster.NewRaftCluster(s.ctx, s.clusterID, s.lg)
 
-	// TODO set address in config
-	sbpAddr := "127.0.0.1:2378"
+	sbpAddr := s.cfg.SbpAddr
 	listener, err := net.Listen("tcp", sbpAddr)
 	if err != nil {
 		return errors.Wrapf(err, "listen on %s", sbpAddr)
@@ -308,7 +307,7 @@ func (s *Server) campaignLeader() {
 	s.member.KeepLeader(ctx)
 	logger.Info("success to campaign leader", zap.String("campaign-pm-leader-name", s.Name()))
 
-	err = s.cluster.Start()
+	err = s.cluster.Start(s)
 	if err != nil {
 		logger.Error("failed to start cluster", zap.Error(err))
 		return
@@ -378,6 +377,14 @@ func (s *Server) Name() string {
 // Context returns the context of server.
 func (s *Server) Context() context.Context {
 	return s.ctx
+}
+
+func (s *Server) Storage() storage.Storage {
+	return s.storage
+}
+
+func (s *Server) Member() *member.Member {
+	return s.member
 }
 
 // IsClosed checks whether server is closed or not.

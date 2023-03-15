@@ -8,28 +8,22 @@ import (
 
 type DeleteStreamResultT struct {
 	DeletedStream *StreamT `json:"deleted_stream"`
-	ErrorCode ErrorCode `json:"error_code"`
-	ErrorMessage string `json:"error_message"`
+	Status *StatusT `json:"status"`
 }
 
 func (t *DeleteStreamResultT) Pack(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
 	if t == nil { return 0 }
 	deletedStreamOffset := t.DeletedStream.Pack(builder)
-	errorMessageOffset := flatbuffers.UOffsetT(0)
-	if t.ErrorMessage != "" {
-		errorMessageOffset = builder.CreateString(t.ErrorMessage)
-	}
+	statusOffset := t.Status.Pack(builder)
 	DeleteStreamResultStart(builder)
 	DeleteStreamResultAddDeletedStream(builder, deletedStreamOffset)
-	DeleteStreamResultAddErrorCode(builder, t.ErrorCode)
-	DeleteStreamResultAddErrorMessage(builder, errorMessageOffset)
+	DeleteStreamResultAddStatus(builder, statusOffset)
 	return DeleteStreamResultEnd(builder)
 }
 
 func (rcv *DeleteStreamResult) UnPackTo(t *DeleteStreamResultT) {
 	t.DeletedStream = rcv.DeletedStream(nil).UnPack()
-	t.ErrorCode = rcv.ErrorCode()
-	t.ErrorMessage = string(rcv.ErrorMessage())
+	t.Status = rcv.Status(nil).UnPack()
 }
 
 func (rcv *DeleteStreamResult) UnPack() *DeleteStreamResultT {
@@ -79,37 +73,27 @@ func (rcv *DeleteStreamResult) DeletedStream(obj *Stream) *Stream {
 	return nil
 }
 
-func (rcv *DeleteStreamResult) ErrorCode() ErrorCode {
+func (rcv *DeleteStreamResult) Status(obj *Status) *Status {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(6))
 	if o != 0 {
-		return ErrorCode(rcv._tab.GetInt16(o + rcv._tab.Pos))
-	}
-	return 0
-}
-
-func (rcv *DeleteStreamResult) MutateErrorCode(n ErrorCode) bool {
-	return rcv._tab.MutateInt16Slot(6, int16(n))
-}
-
-func (rcv *DeleteStreamResult) ErrorMessage() []byte {
-	o := flatbuffers.UOffsetT(rcv._tab.Offset(8))
-	if o != 0 {
-		return rcv._tab.ByteVector(o + rcv._tab.Pos)
+		x := rcv._tab.Indirect(o + rcv._tab.Pos)
+		if obj == nil {
+			obj = new(Status)
+		}
+		obj.Init(rcv._tab.Bytes, x)
+		return obj
 	}
 	return nil
 }
 
 func DeleteStreamResultStart(builder *flatbuffers.Builder) {
-	builder.StartObject(3)
+	builder.StartObject(2)
 }
 func DeleteStreamResultAddDeletedStream(builder *flatbuffers.Builder, deletedStream flatbuffers.UOffsetT) {
 	builder.PrependUOffsetTSlot(0, flatbuffers.UOffsetT(deletedStream), 0)
 }
-func DeleteStreamResultAddErrorCode(builder *flatbuffers.Builder, errorCode ErrorCode) {
-	builder.PrependInt16Slot(1, int16(errorCode), 0)
-}
-func DeleteStreamResultAddErrorMessage(builder *flatbuffers.Builder, errorMessage flatbuffers.UOffsetT) {
-	builder.PrependUOffsetTSlot(2, flatbuffers.UOffsetT(errorMessage), 0)
+func DeleteStreamResultAddStatus(builder *flatbuffers.Builder, status flatbuffers.UOffsetT) {
+	builder.PrependUOffsetTSlot(1, flatbuffers.UOffsetT(status), 0)
 }
 func DeleteStreamResultEnd(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
 	return builder.EndObject()

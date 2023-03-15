@@ -8,31 +8,25 @@ import (
 
 type DescribeRangeResultT struct {
 	StreamId int64 `json:"stream_id"`
-	ErrorCode ErrorCode `json:"error_code"`
-	ErrorMessage string `json:"error_message"`
 	Ranges *RangeT `json:"ranges"`
+	Status *StatusT `json:"status"`
 }
 
 func (t *DescribeRangeResultT) Pack(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
 	if t == nil { return 0 }
-	errorMessageOffset := flatbuffers.UOffsetT(0)
-	if t.ErrorMessage != "" {
-		errorMessageOffset = builder.CreateString(t.ErrorMessage)
-	}
 	rangesOffset := t.Ranges.Pack(builder)
+	statusOffset := t.Status.Pack(builder)
 	DescribeRangeResultStart(builder)
 	DescribeRangeResultAddStreamId(builder, t.StreamId)
-	DescribeRangeResultAddErrorCode(builder, t.ErrorCode)
-	DescribeRangeResultAddErrorMessage(builder, errorMessageOffset)
 	DescribeRangeResultAddRanges(builder, rangesOffset)
+	DescribeRangeResultAddStatus(builder, statusOffset)
 	return DescribeRangeResultEnd(builder)
 }
 
 func (rcv *DescribeRangeResult) UnPackTo(t *DescribeRangeResultT) {
 	t.StreamId = rcv.StreamId()
-	t.ErrorCode = rcv.ErrorCode()
-	t.ErrorMessage = string(rcv.ErrorMessage())
 	t.Ranges = rcv.Ranges(nil).UnPack()
+	t.Status = rcv.Status(nil).UnPack()
 }
 
 func (rcv *DescribeRangeResult) UnPack() *DescribeRangeResultT {
@@ -81,28 +75,8 @@ func (rcv *DescribeRangeResult) MutateStreamId(n int64) bool {
 	return rcv._tab.MutateInt64Slot(4, n)
 }
 
-func (rcv *DescribeRangeResult) ErrorCode() ErrorCode {
-	o := flatbuffers.UOffsetT(rcv._tab.Offset(6))
-	if o != 0 {
-		return ErrorCode(rcv._tab.GetInt16(o + rcv._tab.Pos))
-	}
-	return 0
-}
-
-func (rcv *DescribeRangeResult) MutateErrorCode(n ErrorCode) bool {
-	return rcv._tab.MutateInt16Slot(6, int16(n))
-}
-
-func (rcv *DescribeRangeResult) ErrorMessage() []byte {
-	o := flatbuffers.UOffsetT(rcv._tab.Offset(8))
-	if o != 0 {
-		return rcv._tab.ByteVector(o + rcv._tab.Pos)
-	}
-	return nil
-}
-
 func (rcv *DescribeRangeResult) Ranges(obj *Range) *Range {
-	o := flatbuffers.UOffsetT(rcv._tab.Offset(10))
+	o := flatbuffers.UOffsetT(rcv._tab.Offset(6))
 	if o != 0 {
 		x := rcv._tab.Indirect(o + rcv._tab.Pos)
 		if obj == nil {
@@ -114,20 +88,30 @@ func (rcv *DescribeRangeResult) Ranges(obj *Range) *Range {
 	return nil
 }
 
+func (rcv *DescribeRangeResult) Status(obj *Status) *Status {
+	o := flatbuffers.UOffsetT(rcv._tab.Offset(8))
+	if o != 0 {
+		x := rcv._tab.Indirect(o + rcv._tab.Pos)
+		if obj == nil {
+			obj = new(Status)
+		}
+		obj.Init(rcv._tab.Bytes, x)
+		return obj
+	}
+	return nil
+}
+
 func DescribeRangeResultStart(builder *flatbuffers.Builder) {
-	builder.StartObject(4)
+	builder.StartObject(3)
 }
 func DescribeRangeResultAddStreamId(builder *flatbuffers.Builder, streamId int64) {
 	builder.PrependInt64Slot(0, streamId, 0)
 }
-func DescribeRangeResultAddErrorCode(builder *flatbuffers.Builder, errorCode ErrorCode) {
-	builder.PrependInt16Slot(1, int16(errorCode), 0)
-}
-func DescribeRangeResultAddErrorMessage(builder *flatbuffers.Builder, errorMessage flatbuffers.UOffsetT) {
-	builder.PrependUOffsetTSlot(2, flatbuffers.UOffsetT(errorMessage), 0)
-}
 func DescribeRangeResultAddRanges(builder *flatbuffers.Builder, ranges flatbuffers.UOffsetT) {
-	builder.PrependUOffsetTSlot(3, flatbuffers.UOffsetT(ranges), 0)
+	builder.PrependUOffsetTSlot(1, flatbuffers.UOffsetT(ranges), 0)
+}
+func DescribeRangeResultAddStatus(builder *flatbuffers.Builder, status flatbuffers.UOffsetT) {
+	builder.PrependUOffsetTSlot(2, flatbuffers.UOffsetT(status), 0)
 }
 func DescribeRangeResultEnd(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
 	return builder.EndObject()
