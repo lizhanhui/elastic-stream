@@ -383,8 +383,8 @@ func (s *Server) Storage() storage.Storage {
 	return s.storage
 }
 
-func (s *Server) IsLeader() bool {
-	return s.member.IsLeader()
+func (s *Server) Member() *member.Member {
+	return s.member
 }
 
 // IsClosed checks whether server is closed or not.

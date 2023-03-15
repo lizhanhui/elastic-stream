@@ -23,6 +23,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/AutoMQ/placement-manager/pkg/server/cluster/cache"
+	"github.com/AutoMQ/placement-manager/pkg/server/member"
 	"github.com/AutoMQ/placement-manager/pkg/server/storage"
 )
 
@@ -36,9 +37,9 @@ type RaftCluster struct {
 	runningCtx    context.Context
 	runningCancel context.CancelFunc
 
-	storage  storage.Storage
-	isLeader func() bool // isLeader returns true if the current node is the leader.
-	cache    *cache.Cache
+	storage storage.Storage
+	cache   *cache.Cache
+	member  *member.Member
 
 	lg *zap.Logger
 }
@@ -46,7 +47,7 @@ type RaftCluster struct {
 // Server is the interface for starting a RaftCluster.
 type Server interface {
 	Storage() storage.Storage
-	IsLeader() bool
+	Member() *member.Member
 }
 
 // NewRaftCluster creates a new RaftCluster.
@@ -75,7 +76,7 @@ func (c *RaftCluster) Start(s Server) error {
 	logger.Info("starting raft cluster")
 
 	c.storage = s.Storage()
-	c.isLeader = s.IsLeader
+	c.member = s.Member()
 	c.runningCtx, c.runningCancel = context.WithCancel(c.ctx)
 
 	err := c.loadInfo()
@@ -135,5 +136,9 @@ func (c *RaftCluster) IsRunning() bool {
 }
 
 func (c *RaftCluster) IsLeader() bool {
-	return c.isLeader()
+	return c.member.IsLeader()
+}
+
+func (c *RaftCluster) Leader() *member.Info {
+	return c.member.Leader()
 }

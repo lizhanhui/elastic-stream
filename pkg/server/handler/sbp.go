@@ -4,6 +4,7 @@ import (
 	"github.com/AutoMQ/placement-manager/api/rpcfb/rpcfb"
 	"github.com/AutoMQ/placement-manager/pkg/sbp/protocol"
 	"github.com/AutoMQ/placement-manager/pkg/server/cluster"
+	"github.com/AutoMQ/placement-manager/pkg/util/fbutil"
 )
 
 // Sbp is an sbp handler, implements server.Handler
@@ -22,7 +23,7 @@ func NewSbp(cluster *cluster.RaftCluster) *Sbp {
 func (s *Sbp) ListRange(req *protocol.ListRangesRequest) (resp *protocol.ListRangesResponse) {
 	resp = &protocol.ListRangesResponse{}
 	if !s.c.IsLeader() {
-		resp.Error(&rpcfb.StatusT{Code: rpcfb.ErrorCodePM_NOT_LEADER, Message: "not leader"})
+		s.notLeaderError(resp)
 		return
 	}
 
@@ -44,4 +45,23 @@ func (s *Sbp) ListRange(req *protocol.ListRangesRequest) (resp *protocol.ListRan
 	}
 	resp.ListResponses = listResponses
 	return
+}
+
+// notLeaderError sets "PM_NOT_LEADER" error in the response
+func (s *Sbp) notLeaderError(response protocol.Response) {
+	response.Error(&rpcfb.StatusT{Code: rpcfb.ErrorCodePM_NOT_LEADER, Message: "not leader", Detail: s.pmInfo()})
+}
+
+func (s *Sbp) pmInfo() []byte {
+	leader := s.c.Leader()
+	pm := &rpcfb.PlacementManagerT{
+		Nodes: []*rpcfb.PlacementManagerNodeT{
+			{
+				Name:          leader.Name,
+				AdvertiseAddr: leader.SbpAddr,
+				IsLeader:      true,
+			},
+		},
+	}
+	return fbutil.Marshal(pm)
 }
