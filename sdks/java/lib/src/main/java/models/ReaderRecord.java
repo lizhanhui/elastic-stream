@@ -7,8 +7,8 @@ public class ReaderRecord extends Record {
     private long offset;
     private long appendTimestamp;
 
-    public ReaderRecord(long streamId, Headers headers, Map<String, String> properties, ByteBuffer body, long offset, long appendTimestamp) {
-        super(streamId, headers, properties, body);
+    public ReaderRecord(ByteBuffer meta, ByteBuffer body, long offset, long appendTimestamp) {
+        super(meta, body);
         this.offset = offset;
         this.appendTimestamp = appendTimestamp;
     }
