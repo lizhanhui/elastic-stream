@@ -311,7 +311,7 @@ table Stream {
     // The number of replica of the stream.
     replica_nums: int8 (id: 1);
     // The time to live of records in the stream in milliseconds.
-    retention_period_ms: int32 (id: 2);
+    retention_period_ms: int64 (id: 2);
 }
 
 // The create streams request is used to create a batch of streams.
