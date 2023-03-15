@@ -21,7 +21,9 @@ jobs:
       with: 
         path: |
           ~/.cache/sccache
-        key: ${{ runner.os }}-cargo
+        key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-
     - name: Install Deps
       run: |
         ./scripts/install_deps.sh

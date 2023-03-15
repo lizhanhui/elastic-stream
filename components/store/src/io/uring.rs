@@ -286,7 +286,7 @@ impl IO {
 
             // if the log segment file is full, break loop.
 
-            if self.inflight + received == 0 {
+            if self.inflight + received + self.pending_data_tasks.len() == 0 {
                 // Block the thread until at least one IO task arrives
                 match self.receiver.recv() {
                     Ok(mut io_task) => {
@@ -999,8 +999,6 @@ mod tests {
                 sender.send(task).unwrap();
             });
 
-        drop(sender);
-
         for receiver in receivers {
             let res = receiver.blocking_recv()??;
             trace!(
@@ -1010,6 +1008,8 @@ mod tests {
                 res.offset
             );
         }
+
+        drop(sender);
 
         handle.join().map_err(|_| StoreError::AllocLogSegment)?;
 
