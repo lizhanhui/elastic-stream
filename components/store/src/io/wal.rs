@@ -83,7 +83,7 @@ impl Wal {
                         let path = path.as_path();
                         if let Some(offset) = LogSegment::parse_offset(path) {
                             let log_segment_file =
-                                LogSegment::new(self.log.clone(), offset, metadata.len(), path);
+                                LogSegment::new(self.log.clone(), offset, self.file_size, path);
                             Some(log_segment_file)
                         } else {
                             error!(
@@ -105,6 +105,8 @@ impl Wal {
         segment_files.sort();
 
         for mut segment_file in segment_files.into_iter() {
+            
+            
             segment_file.open()?;
             self.segments.push_back(segment_file);
         }
@@ -147,57 +149,54 @@ impl Wal {
             let len = (len_type >> 8) as usize;
 
             // Verify the parsed `len` makes sense.
-            if file_pos + len as u64 > segment.size {
+            if file_pos + len as u64 > segment.size || 0 == len {
                 info!(
                     log,
                     "Got an invalid record length: `{}`. Stop scanning WAL", len
                 );
                 last_found = true;
+                segment.status = Status::ReadWrite;
+                file_pos -= 8;
+                segment.written = file_pos;
                 break;
             }
 
-            let record_type = (len_type & 0xFF) as u8;
-            if let Ok(t) = RecordType::try_from(record_type) {
-                match t {
-                    RecordType::Zero => {
-                        // TODO: validate CRC for Padding?
-                        // Padding
-                        file_pos += len as u64;
-                        // Should have reached EOF
-                        debug_assert_eq!(segment.size, file_pos);
+            buf.resize(len, 0);
+            file.read_exact_at(buf.as_mut(), file_pos)?;
 
-                        segment.written = segment.size;
-                        segment.status = Status::Read;
-                        info!(log, "Reached EOF of {}", segment);
-                    }
-                    RecordType::Full => {
-                        // Full record
-                        buf.resize(len, 0);
-                        file.read_exact_at(buf.as_mut(), file_pos)?;
-
-                        let ckm = util::crc32::crc32(buf.as_ref());
-                        if ckm != crc {
-                            segment.written = file_pos - 4 - 4;
-                            segment.status = Status::ReadWrite;
-                            info!(log, "Found a record failing CRC32c. Expecting: `{:#08x}`, Actual: `{:#08x}`", crc, ckm);
-                            last_found = true;
-                            break;
-                        }
-                        file_pos += len as u64;
-                    }
-                    RecordType::First => {
-                        unimplemented!("Support of RecordType::First not implemented")
-                    }
-                    RecordType::Middle => {
-                        unimplemented!("Support of RecordType::Middle not implemented")
-                    }
-                    RecordType::Last => {
-                        unimplemented!("Support of RecordType::Last not implemented")
-                    }
-                }
-            } else {
+            let ckm = util::crc32::crc32(buf.as_ref());
+            if ckm != crc {
+                segment.written = file_pos - 4 - 4;
+                segment.status = Status::ReadWrite;
+                info!(
+                    log,
+                    "Found a record failing CRC32c. Expecting: `{:#08x}`, Actual: `{:#08x}`",
+                    crc,
+                    ckm
+                );
                 last_found = true;
                 break;
+            }
+
+            // Advance the file position
+            file_pos += len as u64;
+
+            let record_type = (len_type & 0xFF) as u8;
+            if let Ok(t) = RecordType::try_from(record_type) {
+                if let RecordType::Zero = t {
+                    debug_assert_eq!(segment.size, file_pos, "Should have reached EOF");
+
+                    segment.written = segment.size;
+                    segment.status = Status::Read;
+                    info!(log, "Reached EOF of {}", segment);
+
+                    // Break if the scan operation reaches the end of file
+                    break;
+                }
+            } else {
+                // Panic if the record type is unknown.
+                // Panic here is safe since it's in the recovery stage.
+                panic!("Unknown record type: {}", record_type);
             }
 
             buf.resize(len, 0);
