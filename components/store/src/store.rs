@@ -19,7 +19,7 @@ use crate::{
     },
     offset_manager::WalOffsetManager,
     ops::{append::AppendResult, fetch::FetchResult, Append, Fetch, Scan},
-    option::{ReadOptions, WalPath, WriteOptions},
+    option::{ReadOptions, StoreOptions, WalPath, WriteOptions},
     AppendRecordRequest, Store,
 };
 use core_affinity::CoreId;
@@ -46,13 +46,13 @@ pub struct ElasticStore {
 }
 
 impl ElasticStore {
-    pub fn new(log: Logger) -> Result<Self, StoreError> {
+    pub fn new(log: Logger, options: StoreOptions) -> Result<Self, StoreError> {
         let logger = log.clone();
         let mut opt = io::Options::default();
 
         // Customize IO options from store options.
-        let size_10g = 10u64 * (1 << 30);
-        opt.add_wal_path(WalPath::new("/data/store", size_10g)?);
+        opt.add_wal_path(options.store_path);
+        opt.metadata_path = options.metadata_path;
 
         // Build wal offset manager
         let wal_offset_manager = Arc::new(WalOffsetManager::new());
@@ -283,5 +283,101 @@ impl AsRawFd for ElasticStore {
     /// FD of the underlying I/O Uring instance, for the purpose of sharing worker pool with other I/O Uring instances.
     fn as_raw_fd(&self) -> RawFd {
         self.sharing_uring
+    }
+}
+
+/// Some tests for ElasticStore.
+#[cfg(test)]
+mod tests {
+    use bytes::Bytes;
+    use slog::{error, trace, Logger};
+    use tokio::{join, sync::oneshot};
+
+    use crate::{
+        error::{AppendError, FetchError, StoreError},
+        ops::{append::AppendResult, fetch::FetchResult},
+        option::{ReadOptions, StoreOptions, WalPath, WriteOptions},
+        AppendRecordRequest, ElasticStore, Store,
+    };
+
+    fn build_store() -> ElasticStore {
+        let log = test_util::terminal_logger();
+
+        let size_10g = 10u64 * (1 << 30);
+
+        let store_dir = test_util::create_random_path().unwrap();
+        let index_dir = test_util::create_random_path().unwrap();
+        let store_dir = store_dir.as_path();
+        let index_dir = index_dir.as_path();
+        let _store_dir_guard = test_util::DirectoryRemovalGuard::new(log.clone(), store_dir);
+        let _index_dir_guard = test_util::DirectoryRemovalGuard::new(log.clone(), index_dir);
+
+        let wal_path = WalPath::new(store_dir.to_str().unwrap(), size_10g).unwrap();
+
+        let options = StoreOptions::new(&wal_path, index_dir.to_str().unwrap().to_string());
+        let store = match ElasticStore::new(log.clone(), options) {
+            Ok(store) => store,
+            Err(e) => {
+                panic!("Failed to launch ElasticStore: {:?}", e);
+            }
+        };
+        store
+    }
+    /// Test the basic append and fetch operations.
+    #[tokio::test]
+    async fn test_run_store() {
+        let (tx, rx) = oneshot::channel();
+
+        let _ = std::thread::spawn(move || {
+            let store = build_store();
+            let send_r = tx.send(store);
+            if let Err(_) = send_r {
+                panic!("Failed to send store");
+            }
+        });
+
+        let store = rx.await.unwrap();
+
+        let payload = Bytes::from("hello world");
+
+        // Construct a new AppendRecordRequest.
+        let options = WriteOptions::default();
+        let request = AppendRecordRequest {
+            stream_id: 1,
+            offset: 0,
+            buffer: payload.clone(),
+        };
+
+        let append_f = store.append(options, request);
+
+        let append_r: Result<AppendResult, AppendError> = append_f.await;
+
+        // Log the append result
+        match append_r {
+            Ok(res) => {
+                trace!(store.log, "Append result: {:?}", res);
+                let options = ReadOptions {
+                    stream_id: 1,
+                    offset: 0,
+                    max_bytes: 1024,
+                    max_wait_ms: 1000,
+                };
+                let fetch_f: Result<FetchResult, FetchError> = store.fetch(options).await;
+
+                // Assert the fetch result with the append result.
+                match fetch_f {
+                    Ok(res) => {
+                        trace!(store.log, "Fetch result: {:?}", res);
+                        assert_eq!(Bytes::copy_from_slice(&res.payload[0][8..]), payload);
+                    }
+                    Err(e) => {
+                        panic!("Fetch error: {:?}", e);
+                    }
+                }
+            }
+            Err(e) => {
+                panic!("Append error: {:?}", e);
+            }
+        }
     }
 }
