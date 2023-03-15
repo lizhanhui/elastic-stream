@@ -448,7 +448,7 @@ Request Header => timeout_ms [streams]
   timeout_ms
   streams => replica_nums retention_period_ms
     replica_nums => int8
-    retention_period_ms => int32
+    retention_period_ms => int64
   
 Request Payload => Empty
 ```
@@ -458,7 +458,7 @@ Request Payload => Empty
 | timeout_ms | int32 | The timeout in milliseconds to wait for the response. |
 | streams | array | A batch of streams to create. |
 | replica_nums | int8 | The number of replicas of the stream. |
-| retention_period_ms | int32 | The retention period of the records in the stream in milliseconds. |
+| retention_period_ms | int64 | The retention period of the records in the stream in milliseconds. |
 
 **Response Frame:**
 ```
