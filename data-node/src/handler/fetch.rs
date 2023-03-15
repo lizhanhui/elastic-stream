@@ -2,7 +2,9 @@ use codec::frame::Frame;
 
 use flatbuffers::FlatBufferBuilder;
 use futures::future::join_all;
-use protocol::rpc::header::{ErrorCode, FetchRequest, FetchResponseArgs, FetchResultArgs};
+use protocol::rpc::header::{
+    ErrorCode, FetchRequest, FetchResponseArgs, FetchResultArgs, StatusArgs,
+};
 use slog::{warn, Logger};
 use std::rc::Rc;
 use store::{error::FetchError, ops::fetch::FetchResult, option::ReadOptions, ElasticStore, Store};
@@ -62,6 +64,14 @@ impl<'a> Fetch<'a> {
 
         let mut builder = FlatBufferBuilder::with_capacity(MIN_BUFFER_SIZE);
         let mut payloads = Vec::new();
+        let no_err_status = protocol::rpc::header::Status::create(
+            &mut builder,
+            &StatusArgs {
+                code: ErrorCode::NONE,
+                message: None,
+                detail: None,
+            },
+        );
         let fetch_results: Vec<_> = res_from_store
             .into_iter()
             .map(|res| {
@@ -72,8 +82,7 @@ impl<'a> Fetch<'a> {
                             batch_length: fetch_result.payload.len() as i32,
                             // TODO: Fill the request index
                             request_index: 0,
-                            error_code: ErrorCode::NONE,
-                            error_message: None,
+                            status: Some(no_err_status),
                         };
                         payloads.push(fetch_result.payload);
                         protocol::rpc::header::FetchResult::create(&mut builder, &fetch_result_args)
@@ -86,13 +95,19 @@ impl<'a> Fetch<'a> {
                         if let Some(err_message) = err_message {
                             err_message_fb = Some(builder.create_string(err_message.as_str()));
                         }
-
+                        let status = protocol::rpc::header::Status::create(
+                            &mut builder,
+                            &StatusArgs {
+                                code: err_code,
+                                message: err_message_fb,
+                                detail: None,
+                            },
+                        );
                         let fetch_result_args = FetchResultArgs {
                             stream_id: 0,
                             batch_length: 0,
                             request_index: 0,
-                            error_code: err_code,
-                            error_message: err_message_fb,
+                            status: Some(status),
                         };
                         protocol::rpc::header::FetchResult::create(&mut builder, &fetch_result_args)
                     }
@@ -104,8 +119,7 @@ impl<'a> Fetch<'a> {
         let res_args = FetchResponseArgs {
             throttle_time_ms: 0,
             fetch_responses: Some(fetch_results_fb),
-            error_code: ErrorCode::NONE,
-            error_message: None,
+            status: Some(no_err_status),
         };
         let res_offset = protocol::rpc::header::FetchResponse::create(&mut builder, &res_args);
         let res_header = finish_response_builder(&mut builder, res_offset);

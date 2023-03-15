@@ -4,7 +4,9 @@ use codec::frame::Frame;
 use chrono::prelude::*;
 use flatbuffers::FlatBufferBuilder;
 use futures::future::join_all;
-use protocol::rpc::header::{AppendRequest, AppendResponseArgs, AppendResultArgs, ErrorCode};
+use protocol::rpc::header::{
+    AppendRequest, AppendResponseArgs, AppendResultArgs, ErrorCode, StatusArgs,
+};
 use slog::{warn, Logger};
 use std::rc::Rc;
 use store::{
@@ -107,6 +109,14 @@ impl<'a> Append<'a> {
         let res_from_store: Vec<Result<AppendResult, AppendError>> = join_all(futures).await;
 
         let mut builder = FlatBufferBuilder::with_capacity(MIN_BUFFER_SIZE);
+        let no_err_status = protocol::rpc::header::Status::create(
+            &mut builder,
+            &StatusArgs {
+                code: ErrorCode::NONE,
+                message: None,
+                detail: None,
+            },
+        );
         let append_results: Vec<_> = res_from_store
             .iter()
             .map(|res| {
@@ -118,8 +128,7 @@ impl<'a> Append<'a> {
                             request_index: 0,
                             base_offset: result.offset,
                             stream_append_time_ms: Utc::now().timestamp(),
-                            error_code: ErrorCode::NONE,
-                            error_message: None,
+                            status: Some(no_err_status),
                         };
                         protocol::rpc::header::AppendResult::create(&mut builder, &args)
                     }
@@ -131,14 +140,21 @@ impl<'a> Append<'a> {
                         if let Some(error_message) = error_message {
                             error_message_fb = Some(builder.create_string(error_message.as_str()));
                         }
+                        let status = protocol::rpc::header::Status::create(
+                            &mut builder,
+                            &StatusArgs {
+                                code: err_code,
+                                message: error_message_fb,
+                                detail: None,
+                            },
+                        );
 
                         let args = AppendResultArgs {
                             stream_id: 0,
                             request_index: 0,
                             base_offset: 0,
                             stream_append_time_ms: 0,
-                            error_code: err_code,
-                            error_message: error_message_fb,
+                            status: Some(status),
                         };
                         protocol::rpc::header::AppendResult::create(&mut builder, &args)
                     }
@@ -151,8 +167,7 @@ impl<'a> Append<'a> {
         let res_args = AppendResponseArgs {
             throttle_time_ms: 0,
             append_responses: Some(append_results_fb),
-            error_code: ErrorCode::NONE,
-            error_message: None,
+            status: Some(no_err_status),
         };
 
         let res_offset = protocol::rpc::header::AppendResponse::create(&mut builder, &res_args);
