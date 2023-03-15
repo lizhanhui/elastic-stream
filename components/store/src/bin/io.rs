@@ -91,6 +91,8 @@ fn main() -> Result<(), Box<dyn Error>> {
             println!("{cqe:#?}");
         }
         cq.sync();
+
+        unsafe { alloc::dealloc(ptr, layout) };
     }
 
     // Read the written data
@@ -99,8 +101,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         let buf_size = 4096;
 
         let layout = Layout::from_size_align(buf_size as usize, alignment)?;
-        let ptr = unsafe { alloc::alloc(layout) };
-        unsafe { libc::memset(ptr as *mut libc::c_void, 0, buf_size) };
+        let ptr = unsafe { alloc::alloc_zeroed(layout) };
 
         let read_e = opcode::Read::new(types::Fd(fd), ptr, 2048)
             .offset(0)
@@ -117,8 +118,19 @@ fn main() -> Result<(), Box<dyn Error>> {
 
         // Output the read data
         let data = unsafe { std::slice::from_raw_parts(ptr as *const u8, buf_size) };
-        println!("{:?}", data);
+        let actual = &data[0..2048];
+
+        debug_assert_eq!(
+            true,
+            actual.iter().all(|c| c == &65),
+            "First 2048 bytes should be all 'A'"
+        );
+
+        unsafe { alloc::dealloc(ptr, layout) };
     }
+
+    let result = unsafe { libc::close(fd) };
+    debug_assert_eq!(0, result, "Failed to close FD");
 
     Ok(())
 }
