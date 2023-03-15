@@ -47,6 +47,50 @@ func (s *Sbp) ListRange(req *protocol.ListRangesRequest) (resp *protocol.ListRan
 	return
 }
 
+func (s *Sbp) CreateStreams(req *protocol.CreateStreamsRequest) (resp *protocol.CreateStreamsResponse) {
+	resp = &protocol.CreateStreamsResponse{}
+	if !s.c.IsLeader() {
+		s.notLeaderError(resp)
+		return
+	}
+	// TODO implement me
+	_ = req
+	panic("implement me")
+}
+
+func (s *Sbp) DeleteStreams(req *protocol.DeleteStreamsRequest) (resp *protocol.DeleteStreamsResponse) {
+	resp = &protocol.DeleteStreamsResponse{}
+	if !s.c.IsLeader() {
+		s.notLeaderError(resp)
+		return
+	}
+	// TODO implement me
+	_ = req
+	panic("implement me")
+}
+
+func (s *Sbp) UpdateStreams(req *protocol.UpdateStreamsRequest) (resp *protocol.UpdateStreamsResponse) {
+	resp = &protocol.UpdateStreamsResponse{}
+	if !s.c.IsLeader() {
+		s.notLeaderError(resp)
+		return
+	}
+	// TODO implement me
+	_ = req
+	panic("implement me")
+}
+
+func (s *Sbp) DescribeStreams(req *protocol.DescribeStreamsRequest) (resp *protocol.DescribeStreamsResponse) {
+	resp = &protocol.DescribeStreamsResponse{}
+	if !s.c.IsLeader() {
+		s.notLeaderError(resp)
+		return
+	}
+	// TODO implement me
+	_ = req
+	panic("implement me")
+}
+
 // notLeaderError sets "PM_NOT_LEADER" error in the response
 func (s *Sbp) notLeaderError(response protocol.Response) {
 	response.Error(&rpcfb.StatusT{Code: rpcfb.ErrorCodePM_NOT_LEADER, Message: "not leader", Detail: s.pmInfo()})

@@ -71,7 +71,6 @@ func (s *singleResponse) IsEnd() bool {
 type SystemErrorResponse struct {
 	baseResponse
 	singleResponse
-
 	*rpcfb.SystemErrorResponseT
 }
 
@@ -90,7 +89,6 @@ func (se *SystemErrorResponse) Error(status *rpcfb.StatusT) {
 // ListRangesResponse is a response to operation.OpListRanges
 type ListRangesResponse struct {
 	baseResponse
-
 	*rpcfb.ListRangesResponseT
 
 	// HasNext indicates whether there are more responses after this one.
@@ -111,6 +109,82 @@ func (lr *ListRangesResponse) Error(status *rpcfb.StatusT) {
 
 func (lr *ListRangesResponse) IsEnd() bool {
 	return !lr.HasNext
+}
+
+// CreateStreamsResponse is a response to operation.OpCreateStreams
+type CreateStreamsResponse struct {
+	baseResponse
+	singleResponse
+	*rpcfb.CreateStreamsResponseT
+}
+
+func (cs *CreateStreamsResponse) marshalFlatBuffer() ([]byte, error) {
+	return fbutil.Marshal(cs.CreateStreamsResponseT), nil
+}
+
+func (cs *CreateStreamsResponse) Marshal(fmt format.Format) ([]byte, error) {
+	return marshal(cs, fmt)
+}
+
+func (cs *CreateStreamsResponse) Error(status *rpcfb.StatusT) {
+	cs.Status = status
+}
+
+// DeleteStreamsResponse is a response to operation.OpDeleteStreams
+type DeleteStreamsResponse struct {
+	baseResponse
+	singleResponse
+	*rpcfb.DeleteStreamsResponseT
+}
+
+func (ds *DeleteStreamsResponse) marshalFlatBuffer() ([]byte, error) {
+	return fbutil.Marshal(ds.DeleteStreamsResponseT), nil
+}
+
+func (ds *DeleteStreamsResponse) Marshal(fmt format.Format) ([]byte, error) {
+	return marshal(ds, fmt)
+}
+
+func (ds *DeleteStreamsResponse) Error(status *rpcfb.StatusT) {
+	ds.Status = status
+}
+
+// UpdateStreamsResponse is a response to operation.OpUpdateStreams
+type UpdateStreamsResponse struct {
+	baseResponse
+	singleResponse
+	*rpcfb.UpdateStreamsResponseT
+}
+
+func (us *UpdateStreamsResponse) marshalFlatBuffer() ([]byte, error) {
+	return fbutil.Marshal(us.UpdateStreamsResponseT), nil
+}
+
+func (us *UpdateStreamsResponse) Marshal(fmt format.Format) ([]byte, error) {
+	return marshal(us, fmt)
+}
+
+func (us *UpdateStreamsResponse) Error(status *rpcfb.StatusT) {
+	us.Status = status
+}
+
+// DescribeStreamsResponse is a response to operation.OpDescribeStreams
+type DescribeStreamsResponse struct {
+	baseResponse
+	singleResponse
+	*rpcfb.DescribeStreamsResponseT
+}
+
+func (ds *DescribeStreamsResponse) marshalFlatBuffer() ([]byte, error) {
+	return fbutil.Marshal(ds.DescribeStreamsResponseT), nil
+}
+
+func (ds *DescribeStreamsResponse) Marshal(fmt format.Format) ([]byte, error) {
+	return marshal(ds, fmt)
+}
+
+func (ds *DescribeStreamsResponse) Error(status *rpcfb.StatusT) {
+	ds.Status = status
 }
 
 func marshal(response marshaller, fmt format.Format) ([]byte, error) {

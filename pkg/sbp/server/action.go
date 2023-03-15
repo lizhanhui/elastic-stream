@@ -11,6 +11,14 @@ import (
 type Handler interface {
 	// ListRange lists the ranges of a batch of streams. Or it could list the ranges of all the streams in a specific data node.
 	ListRange(req *protocol.ListRangesRequest) *protocol.ListRangesResponse
+	// CreateStreams creates a batch of streams.
+	CreateStreams(req *protocol.CreateStreamsRequest) *protocol.CreateStreamsResponse
+	// DeleteStreams deletes a batch of streams.
+	DeleteStreams(req *protocol.DeleteStreamsRequest) *protocol.DeleteStreamsResponse
+	// UpdateStreams updates a batch of streams.
+	UpdateStreams(req *protocol.UpdateStreamsRequest) *protocol.UpdateStreamsResponse
+	// DescribeStreams describes a batch of streams.
+	DescribeStreams(req *protocol.DescribeStreamsRequest) *protocol.DescribeStreamsResponse
 }
 
 var (
@@ -19,6 +27,30 @@ var (
 			newReq: func() protocol.Request { return &protocol.ListRangesRequest{} },
 			act: func(handler Handler, req protocol.Request) (resp protocol.Response) {
 				return handler.ListRange(req.(*protocol.ListRangesRequest))
+			},
+		},
+		{Code: operation.OpCreateStreams}: {
+			newReq: func() protocol.Request { return &protocol.CreateStreamsRequest{} },
+			act: func(handler Handler, req protocol.Request) (resp protocol.Response) {
+				return handler.CreateStreams(req.(*protocol.CreateStreamsRequest))
+			},
+		},
+		{Code: operation.OpDeleteStreams}: {
+			newReq: func() protocol.Request { return &protocol.DeleteStreamsRequest{} },
+			act: func(handler Handler, req protocol.Request) (resp protocol.Response) {
+				return handler.DeleteStreams(req.(*protocol.DeleteStreamsRequest))
+			},
+		},
+		{Code: operation.OpUpdateStreams}: {
+			newReq: func() protocol.Request { return &protocol.UpdateStreamsRequest{} },
+			act: func(handler Handler, req protocol.Request) (resp protocol.Response) {
+				return handler.UpdateStreams(req.(*protocol.UpdateStreamsRequest))
+			},
+		},
+		{Code: operation.OpDescribeStreams}: {
+			newReq: func() protocol.Request { return &protocol.DescribeStreamsRequest{} },
+			act: func(handler Handler, req protocol.Request) (resp protocol.Response) {
+				return handler.DescribeStreams(req.(*protocol.DescribeStreamsRequest))
 			},
 		},
 	}

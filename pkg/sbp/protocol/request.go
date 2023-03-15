@@ -57,13 +57,73 @@ type ListRangesRequest struct {
 	*rpcfb.ListRangesRequestT
 }
 
-func (l *ListRangesRequest) unmarshalFlatBuffer(data []byte) error {
-	l.ListRangesRequestT = rpcfb.GetRootAsListRangesRequest(data, 0).UnPack()
+func (lr *ListRangesRequest) unmarshalFlatBuffer(data []byte) error {
+	lr.ListRangesRequestT = rpcfb.GetRootAsListRangesRequest(data, 0).UnPack()
 	return nil
 }
 
-func (l *ListRangesRequest) Unmarshal(fmt format.Format, data []byte) error {
-	return unmarshal(l, fmt, data)
+func (lr *ListRangesRequest) Unmarshal(fmt format.Format, data []byte) error {
+	return unmarshal(lr, fmt, data)
+}
+
+// CreateStreamsRequest is a request to operation.OpCreateStreams
+type CreateStreamsRequest struct {
+	baseRequest
+	*rpcfb.CreateStreamsRequestT
+}
+
+func (cs *CreateStreamsRequest) unmarshalFlatBuffer(data []byte) error {
+	cs.CreateStreamsRequestT = rpcfb.GetRootAsCreateStreamsRequest(data, 0).UnPack()
+	return nil
+}
+
+func (cs *CreateStreamsRequest) Unmarshal(fmt format.Format, data []byte) error {
+	return unmarshal(cs, fmt, data)
+}
+
+// DeleteStreamsRequest is a request to operation.OpDeleteStreams
+type DeleteStreamsRequest struct {
+	baseRequest
+	*rpcfb.DeleteStreamsRequestT
+}
+
+func (ds *DeleteStreamsRequest) unmarshalFlatBuffer(data []byte) error {
+	ds.DeleteStreamsRequestT = rpcfb.GetRootAsDeleteStreamsRequest(data, 0).UnPack()
+	return nil
+}
+
+func (ds *DeleteStreamsRequest) Unmarshal(fmt format.Format, data []byte) error {
+	return unmarshal(ds, fmt, data)
+}
+
+// UpdateStreamsRequest is a request to operation.OpUpdateStreams
+type UpdateStreamsRequest struct {
+	baseRequest
+	*rpcfb.UpdateStreamsRequestT
+}
+
+func (us *UpdateStreamsRequest) unmarshalFlatBuffer(data []byte) error {
+	us.UpdateStreamsRequestT = rpcfb.GetRootAsUpdateStreamsRequest(data, 0).UnPack()
+	return nil
+}
+
+func (us *UpdateStreamsRequest) Unmarshal(fmt format.Format, data []byte) error {
+	return unmarshal(us, fmt, data)
+}
+
+// DescribeStreamsRequest is a request to operation.OpDescribeStreams
+type DescribeStreamsRequest struct {
+	baseRequest
+	*rpcfb.DescribeStreamsRequestT
+}
+
+func (ds *DescribeStreamsRequest) unmarshalFlatBuffer(data []byte) error {
+	ds.DescribeStreamsRequestT = rpcfb.GetRootAsDescribeStreamsRequest(data, 0).UnPack()
+	return nil
+}
+
+func (ds *DescribeStreamsRequest) Unmarshal(fmt format.Format, data []byte) error {
+	return unmarshal(ds, fmt, data)
 }
 
 func unmarshal(request unmarshaler, fmt format.Format, data []byte) error {
