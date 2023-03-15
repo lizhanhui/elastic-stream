@@ -289,7 +289,11 @@ impl AsRawFd for ElasticStore {
 /// Some tests for ElasticStore.
 #[cfg(test)]
 mod tests {
+    use std::path::Path;
+
     use bytes::Bytes;
+    use futures::future::join_all;
+    use rand::{seq::SliceRandom, thread_rng};
     use slog::{error, trace, Logger};
     use tokio::{join, sync::oneshot};
 
@@ -300,21 +304,14 @@ mod tests {
         AppendRecordRequest, ElasticStore, Store,
     };
 
-    fn build_store() -> ElasticStore {
+    fn build_store(store_path: &str, index_path: &str) -> ElasticStore {
         let log = test_util::terminal_logger();
 
         let size_10g = 10u64 * (1 << 30);
 
-        let store_dir = test_util::create_random_path().unwrap();
-        let index_dir = test_util::create_random_path().unwrap();
-        let store_dir = store_dir.as_path();
-        let index_dir = index_dir.as_path();
-        let _store_dir_guard = test_util::DirectoryRemovalGuard::new(log.clone(), store_dir);
-        let _index_dir_guard = test_util::DirectoryRemovalGuard::new(log.clone(), index_dir);
+        let wal_path = WalPath::new(store_path, size_10g).unwrap();
 
-        let wal_path = WalPath::new(store_dir.to_str().unwrap(), size_10g).unwrap();
-
-        let options = StoreOptions::new(&wal_path, index_dir.to_str().unwrap().to_string());
+        let options = StoreOptions::new(&wal_path, index_path.to_string());
         let store = match ElasticStore::new(log.clone(), options) {
             Ok(store) => store,
             Err(e) => {
@@ -326,10 +323,24 @@ mod tests {
     /// Test the basic append and fetch operations.
     #[tokio::test]
     async fn test_run_store() {
+        let log = test_util::terminal_logger();
+
+        let store_dir = test_util::create_random_path().unwrap();
+        let index_dir = test_util::create_random_path().unwrap();
+        let store_path = String::from(store_dir.as_path().to_str().unwrap());
+        let index_path = String::from(index_dir.as_path().to_str().unwrap());
+
+        let store_path_g = store_path.clone();
+        let index_path_g = index_path.clone();
+        let _store_dir_guard =
+            test_util::DirectoryRemovalGuard::new(log.clone(), &Path::new(store_path_g.as_str()));
+        let _index_dir_guard =
+            test_util::DirectoryRemovalGuard::new(log.clone(), &Path::new(index_path_g.as_str()));
+
         let (tx, rx) = oneshot::channel();
 
         let _ = std::thread::spawn(move || {
-            let store = build_store();
+            let store = build_store(store_path.as_str(), index_path.as_str());
             let send_r = tx.send(store);
             if let Err(_) = send_r {
                 panic!("Failed to send store");
@@ -338,46 +349,59 @@ mod tests {
 
         let store = rx.await.unwrap();
 
-        let payload = Bytes::from("hello world");
+        let mut append_fs = vec![];
+        (0..2)
+            .into_iter()
+            .map(|i| AppendRecordRequest {
+                stream_id: 1,
+                offset: i,
+                buffer: Bytes::from(format!("{}-{}", "hello, world", i)),
+            })
+            .for_each(|req| {
+                let options = WriteOptions::default();
+                let append_f = store.append(options, req);
+                append_fs.push(append_f)
+            });
 
-        // Construct a new AppendRecordRequest.
-        let options = WriteOptions::default();
-        let request = AppendRecordRequest {
-            stream_id: 1,
-            offset: 0,
-            buffer: payload.clone(),
-        };
+        let append_rs: Vec<Result<AppendResult, AppendError>> = join_all(append_fs).await;
 
-        let append_f = store.append(options, request);
+        let mut fetch_fs = vec![];
 
-        let append_r: Result<AppendResult, AppendError> = append_f.await;
-
-        // Log the append result
-        match append_r {
-            Ok(res) => {
-                trace!(store.log, "Append result: {:?}", res);
-                let options = ReadOptions {
-                    stream_id: 1,
-                    offset: 0,
-                    max_bytes: 1024,
-                    max_wait_ms: 1000,
-                };
-                let fetch_f: Result<FetchResult, FetchError> = store.fetch(options).await;
-
-                // Assert the fetch result with the append result.
-                match fetch_f {
-                    Ok(res) => {
-                        trace!(store.log, "Fetch result: {:?}", res);
-                        assert_eq!(Bytes::copy_from_slice(&res.payload[0][8..]), payload);
-                    }
-                    Err(e) => {
-                        panic!("Fetch error: {:?}", e);
-                    }
+        append_rs.iter().for_each(|res| {
+            // Log the append result
+            match res {
+                Ok(res) => {
+                    trace!(store.log, "Append result: {:?}", res);
+                    let options = ReadOptions {
+                        stream_id: 1,
+                        offset: res.offset,
+                        max_bytes: 1024,
+                        max_wait_ms: 1000,
+                    };
+                    let fetch_f = store.fetch(options);
+                    fetch_fs.push(fetch_f);
+                }
+                Err(e) => {
+                    panic!("Append error: {:?}", e);
                 }
             }
-            Err(e) => {
-                panic!("Append error: {:?}", e);
+        });
+
+        let fetch_rs: Vec<Result<FetchResult, FetchError>> = join_all(fetch_fs).await;
+        fetch_rs.iter().for_each(|res| {
+            // Assert the fetch result with the append result.
+            match res {
+                Ok(res) => {
+                    trace!(store.log, "Fetch result: {:?}", res);
+                    assert_eq!(
+                        Bytes::copy_from_slice(&res.payload[0][8..]),
+                        Bytes::from(format!("{}-{}", "hello, world", res.offset))
+                    );
+                }
+                Err(e) => {
+                    panic!("Fetch error: {:?}", e);
+                }
             }
-        }
+        });
     }
 }

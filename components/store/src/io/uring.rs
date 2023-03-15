@@ -499,6 +499,7 @@ impl IO {
                                     // Switch to a new log segment
                                     continue;
                                 }
+                                let pre_written = segment.written;
                                 if let Ok(pos) = segment.append_record(writer, &task.buffer[..]) {
                                     trace!(
                                         self.log,
@@ -506,7 +507,7 @@ impl IO {
                                         pos
                                     );
                                     // Set the written len of the task
-                                    task.written_len = Some((pos - segment.offset) as u32);
+                                    task.written_len = Some((segment.written - pre_written) as u32);
                                     self.inflight_write_tasks.insert(pos, task);
                                     need_write = true;
                                 }
