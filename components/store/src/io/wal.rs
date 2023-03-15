@@ -678,9 +678,12 @@ mod tests {
         let mut wal = create_wal(super::WalPath::new(wal_dir.to_str().unwrap(), 1234)?)?;
         (0..3)
             .into_iter()
-            .map(|_| wal.open_segment().err())
-            .flatten()
-            .count();
+            .map(|_| wal.open_segment())
+            // `Result` implements the `FromIterator` trait, which allows an iterator over `Result` values to be collected 
+            // into a `Result` of a collection of each contained value of the original `Result` values,
+            // or Err if any of the elements was `Err`.
+            // https://doc.rust-lang.org/std/result/#collecting-into-result
+            .collect::<Result<Vec<()>, StoreError>>()?; 
         wal.segments.iter_mut().for_each(|segment| {
             segment.status = Status::ReadWrite;
         });
