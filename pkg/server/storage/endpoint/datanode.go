@@ -13,11 +13,15 @@ import (
 )
 
 const (
-	_dataNodePath       = "data-node"
-	_dataNodePrefix     = _dataNodePath + kv.KeySeparator
-	_dataNodeFormat     = _dataNodePath + kv.KeySeparator + "%011d" // max length of int32 is 11
-	_dataNodeKeyLen     = len(_dataNodePath) + len(kv.KeySeparator) + 11
-	_dataNodeRangeLimit = 1e4
+	_dataNodeIDFormat = _int32Format
+	_dataNodeIDLen    = _int32Len
+
+	_dataNodePath   = "data-node"
+	_dataNodePrefix = _dataNodePath + kv.KeySeparator
+	_dataNodeFormat = _dataNodePath + kv.KeySeparator + _dataNodeIDFormat
+	_dataNodeKeyLen = len(_dataNodePath) + len(kv.KeySeparator) + _dataNodeIDLen
+
+	_dataNodeByRangeLimit = 1e4
 )
 
 type DataNode interface {
@@ -50,9 +54,9 @@ func (e *Endpoint) SaveDataNode(dataNode *rpcfb.DataNodeT) (*rpcfb.DataNodeT, er
 // ForEachDataNode calls the given function for every data node in the storage.
 // If f returns an error, the iteration is stopped and the error is returned.
 func (e *Endpoint) ForEachDataNode(f func(dataNode *rpcfb.DataNodeT) error) error {
-	var startID int32 = 1
-	for startID > 0 {
-		nextID, err := e.forEachDataNodeLimited(f, startID, _dataNodeRangeLimit)
+	var startID = _minDataNodeID
+	for startID >= _minDataNodeID {
+		nextID, err := e.forEachDataNodeLimited(f, startID, _dataNodeByRangeLimit)
 		if err != nil {
 			return err
 		}

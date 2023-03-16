@@ -14,11 +14,15 @@ import (
 )
 
 const (
-	_streamPath       = "stream"
-	_streamPrefix     = _streamPath + kv.KeySeparator
-	_streamFormat     = _streamPath + kv.KeySeparator + "%020d" // max length of int64 is 20
-	_streamKeyLen     = len(_streamPath) + len(kv.KeySeparator) + 20
-	_streamRangeLimit = 1e4
+	_streamIDFormat = _int64Format
+	_streamIDLen    = _int64Len
+
+	_streamPath   = "stream"
+	_streamPrefix = _streamPath + kv.KeySeparator
+	_streamFormat = _streamPath + kv.KeySeparator + _streamIDFormat // max length of int64 is 20
+	_streamKeyLen = len(_streamPath) + len(kv.KeySeparator) + _streamIDLen
+
+	_streamByRangeLimit = 1e4
 )
 
 // CreateStreamParam defines the parameters of creating a stream.
@@ -51,7 +55,7 @@ func (e *Endpoint) CreateStreams(params []*CreateStreamParam) ([]*rpcfb.StreamT,
 		})
 		ranges = append(ranges, param.RangeT)
 		kvs = append(kvs, kv.KeyValue{
-			Key:   rangePath(param.StreamT.StreamId, param.RangeT.RangeIndex),
+			Key:   rangePathInSteam(param.StreamT.StreamId, param.RangeT.RangeIndex),
 			Value: fbutil.Marshal(param.RangeT),
 		})
 	}
@@ -174,9 +178,9 @@ func (e *Endpoint) GetStream(streamID int64) (*rpcfb.StreamT, error) {
 // ForEachStream calls the given function for every stream in the storage.
 // If f returns an error, the iteration is stopped and the error is returned.
 func (e *Endpoint) ForEachStream(f func(stream *rpcfb.StreamT) error) error {
-	var startID int64 = 1
-	for startID > 0 {
-		nextID, err := e.forEachStreamLimited(f, startID, _streamRangeLimit)
+	var startID = _minStreamID
+	for startID >= _minStreamID {
+		nextID, err := e.forEachStreamLimited(f, startID, _streamByRangeLimit)
 		if err != nil {
 			return err
 		}
