@@ -4,8 +4,8 @@
 use bytes::Bytes;
 use codec::frame::{Frame, OperationCode};
 use protocol::rpc::header::{
-    HeartbeatRequest, HeartbeatResponseT, ListRangesRequest, ListRangesResponseT,
-    ListRangesResultT, RangeT,
+    ErrorCode, HeartbeatRequest, HeartbeatResponseT, ListRangesRequest, ListRangesResponseT,
+    ListRangesResultT, RangeT, StatusT,
 };
 use slog::{debug, error, info, trace, warn, Logger};
 
@@ -20,6 +20,10 @@ fn serve_heartbeat(log: &Logger, request: &HeartbeatRequest, frame: &mut Frame) 
     response.client_id = request.client_id().map(|client_id| client_id.to_owned());
     response.client_role = request.client_role();
     response.data_node = request.data_node().map(|dn| Box::new(dn.unpack()));
+    let mut status = StatusT::default();
+    status.code = ErrorCode::NONE;
+    status.message = Some("OK".to_owned());
+    response.status = Some(Box::new(status));
     let mut builder = flatbuffers::FlatBufferBuilder::with_capacity(1024);
     let resp = response.pack(&mut builder);
     builder.finish(resp, None);

@@ -1,4 +1,4 @@
-mod config;
+pub mod config;
 pub(crate) mod lb_policy;
 mod naming;
 pub(crate) mod placement_client;
@@ -8,3 +8,5 @@ pub(crate) mod response_observer;
 mod session;
 mod session_manager;
 pub(crate) mod session_state;
+mod status;
+mod error_code;

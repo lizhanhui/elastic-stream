@@ -29,7 +29,7 @@ fn client_id() -> String {
 
 /// Placement client configuration
 #[derive(Debug)]
-pub(crate) struct ClientConfig {
+pub struct ClientConfig {
     /// Maximum amount of time to wait when creating connections to placement manager servers.
     pub(crate) connect_timeout: Duration,
 
@@ -51,6 +51,12 @@ impl Default for ClientConfig {
             client_id: client_id(),
             data_node: None,
         }
+    }
+}
+
+impl ClientConfig {
+    pub fn with_data_node(&mut self, data_node: DataNode) {
+        self.data_node = Some(data_node);
     }
 }
 
