@@ -19,12 +19,21 @@ pub struct PlacementClient {
 impl PlacementClient {
     pub async fn list_range(
         &self,
-        stream_id: i64,
+        stream_id: Option<i64>,
         timeout: Duration,
     ) -> Result<response::Response, ListRangeError> {
         trace!(self.log, "list_range"; "stream-id" => stream_id);
         let (tx, rx) = oneshot::channel();
-        let criteria = RangeCriteria::StreamId(stream_id);
+        let criteria = if let Some(stream_id) = stream_id {
+            RangeCriteria::StreamId(stream_id)
+        } else if let Some(ref data_node) = self.config.data_node {
+            RangeCriteria::DataNode(data_node.clone())
+        } else {
+            return Err(ListRangeError::BadArguments(
+                "Either stream_id or data-node is required to list range".to_owned(),
+            ));
+        };
+
         let request = Request::ListRanges {
             timeout: Duration::from_secs(3),
             criteria: vec![criteria],
@@ -52,6 +61,7 @@ impl PlacementClient {
 mod tests {
     use std::time::Duration;
 
+    use slog::trace;
     use test_util::{run_listener, terminal_logger};
 
     use crate::{client::response, error::ListRangeError, PlacementClientBuilder};
@@ -63,7 +73,7 @@ mod tests {
             let port = run_listener(log.clone()).await;
             let addr = format!("dns:localhost:{}", port);
             let client = PlacementClientBuilder::new(&addr)
-                .set_log(log)
+                .set_log(log.clone())
                 .build()
                 .await
                 .map_err(|_e| ListRangeError::Internal)?;
@@ -71,11 +81,18 @@ mod tests {
             let timeout = Duration::from_secs(10);
 
             for i in 0..3 {
-                let result = client.list_range(i as i64, timeout).await.unwrap();
+                let result = client.list_range(Some(i as i64), timeout).await.unwrap();
                 if let response::Response::ListRange { ref ranges, .. } = result {
                     assert!(ranges.is_some(), "Should have got some ranges");
                     if let Some(ranges) = ranges {
-                        assert_eq!(false, ranges.is_empty(), "Test server should have fed some mocking ranges");
+                        assert_eq!(
+                            false,
+                            ranges.is_empty(),
+                            "Test server should have fed some mocking ranges"
+                        );
+                        for range in ranges.iter() {
+                            trace!(log, "{}", range)
+                        }
                     }
                 } else {
                     panic!("Incorrect response enum variant");

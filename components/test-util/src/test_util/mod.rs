@@ -42,7 +42,9 @@ fn serve_list_ranges(log: &Logger, request: &ListRangesRequest, frame: &mut Fram
             .map(|i| {
                 let mut range = RangeT::default();
                 range.stream_id = 0;
+                range.range_index = i as i32;
                 range.start_offset = i * 100;
+                range.next_offset = (i + 1) * 100;
                 range.end_offset = (i + 1) * 100;
                 range
             })
@@ -96,12 +98,10 @@ pub async fn run_listener(logger: Logger) -> u16 {
                             match frame.operation_code {
                                 OperationCode::Heartbeat => {
                                     if let Some(buf) = &frame.header {
-                                        if let Ok(heartbeat) = flatbuffers::root::<HeartbeatRequest>(buf) {
-                                            serve_heartbeat(
-                                                &log,
-                                                &heartbeat,
-                                                &mut response_frame,
-                                            );
+                                        if let Ok(heartbeat) =
+                                            flatbuffers::root::<HeartbeatRequest>(buf)
+                                        {
+                                            serve_heartbeat(&log, &heartbeat, &mut response_frame);
                                         } else {
                                             error!(
                                                 log,

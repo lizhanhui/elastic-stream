@@ -1,4 +1,8 @@
-use crate::error::RangeError;
+use std::fmt::{self, Display, Formatter};
+
+use derivative::Derivative;
+
+use crate::{data_node::DataNode, error::RangeError};
 
 pub trait Range {
     fn sealed(&self) -> bool;
@@ -11,8 +15,13 @@ pub trait Range {
 ///
 /// At the beginning, `end` will be `None` and it would grow as more slots are taken from the range.
 /// Once the range is sealed, it becomes immutable and its right boundary becomes fixed.
-#[derive(Debug, PartialEq, Clone, Copy)]
+#[derive(Derivative)]
+#[derivative(Debug, PartialEq, Clone)]
 pub struct StreamRange {
+    stream_id: i64,
+
+    id: i32,
+
     /// The start slot index, inclusive.
     start: u64,
 
@@ -21,11 +30,30 @@ pub struct StreamRange {
 
     /// The end of the range, exclusive
     end: Option<u64>,
+
+    /// List of data nodes, that all have identical records within the range.
+    #[derivative(PartialEq = "ignore")]
+    replica: Vec<DataNode>,
 }
 
 impl StreamRange {
-    pub fn new(start: u64, next: u64, end: Option<u64>) -> Self {
-        Self { start, next, end }
+    pub fn new(stream_id: i64, id: i32, start: u64, next: u64, end: Option<u64>) -> Self {
+        Self {
+            stream_id,
+            id,
+            start,
+            next,
+            end,
+            replica: vec![],
+        }
+    }
+
+    pub fn replica(&self) -> &Vec<DataNode> {
+        &self.replica
+    }
+
+    pub fn replica_mut(&mut self) -> &mut Vec<DataNode> {
+        &mut self.replica
     }
 
     /// Expand the range by one.
@@ -44,6 +72,10 @@ impl StreamRange {
     /// That is, number of records in the stream range.
     pub fn len(&self) -> u64 {
         self.next - self.start
+    }
+
+    pub fn id(&self) -> i32 {
+        self.id
     }
 
     pub fn start(&self) -> u64 {
@@ -71,13 +103,27 @@ impl Range for StreamRange {
     }
 }
 
+impl Display for StreamRange {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{{stream-id={}, range-id={}}}=[{}, {}, {})",
+            self.stream_id,
+            self.id,
+            self.start,
+            self.next,
+            self.end.unwrap_or(0)
+        )
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn test_take_slot() {
-        let mut range = StreamRange::new(0, 0, None);
+        let mut range = StreamRange::new(0, 0, 0, 0, None);
         assert_eq!(range.sealed(), false);
         assert_eq!(range.len(), 0);
 

@@ -43,6 +43,9 @@ pub enum SessionError {
 
 #[derive(Debug, Error)]
 pub enum ListRangeError {
+    #[error("Bad arguments: {0}")]
+    BadArguments(String),
+
     #[error("Internal client error")]
     Internal,
 

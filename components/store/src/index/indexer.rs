@@ -390,7 +390,7 @@ impl super::LocalRangeManager for Indexer {
                     if !k.starts_with(&prefix[..]) {
                         return None;
                     } else {
-                        debug_assert_eq!(k.len(), 8 + 8 + 1);
+                        debug_assert_eq!(k.len(), 8 + 4 + 8 + 1);
 
                         let mut key_reader = Cursor::new(&k[..]);
                         let _prefix = key_reader.get_u8();
@@ -399,16 +399,18 @@ impl super::LocalRangeManager for Indexer {
                         let _stream_id = key_reader.get_i64();
                         debug_assert_eq!(stream_id, _stream_id);
 
+                        let id = key_reader.get_i32();
+
                         let start = key_reader.get_u64();
 
                         if v.len() == 1 {
-                            Some(StreamRange::new(start, 0, None))
+                            Some(StreamRange::new(stream_id, id, start, 0, None))
                         } else {
                             debug_assert_eq!(v.len(), 8 + 1);
                             let mut value_reader = Cursor::new(&v[..]);
                             let _status = value_reader.get_u8();
                             let end = value_reader.get_u64();
-                            Some(StreamRange::new(start, 0, Some(end)))
+                            Some(StreamRange::new(stream_id, id, start, end, Some(end)))
                         }
                     }
                 })
@@ -435,7 +437,7 @@ impl super::LocalRangeManager for Indexer {
                     if !k.starts_with(&prefix[..]) {
                         return None;
                     } else {
-                        debug_assert_eq!(k.len(), 8 + 8 + 1);
+                        debug_assert_eq!(k.len(), 8 + 4 + 8 + 1);
 
                         let mut key_reader = Cursor::new(&k[..]);
                         let _prefix = key_reader.get_u8();
@@ -443,18 +445,20 @@ impl super::LocalRangeManager for Indexer {
 
                         let _stream_id = key_reader.get_i64();
 
+                        let id = key_reader.get_i32();
+
                         let start = key_reader.get_u64();
 
                         if v.len() == 1 {
                             debug_assert_eq!(0, v[0]);
-                            Some(StreamRange::new(start, 0, None))
+                            Some(StreamRange::new(_stream_id, id, start, 0, None))
                         } else {
                             debug_assert_eq!(v.len(), 8 + 1);
                             let mut value_reader = Cursor::new(&v[..]);
                             let _status = value_reader.get_u8();
                             debug_assert_eq!(1u8, _status);
                             let end = value_reader.get_u64();
-                            Some(StreamRange::new(start, 0, Some(end)))
+                            Some(StreamRange::new(_stream_id, id, start, end, Some(end)))
                         }
                     }
                 })
@@ -470,9 +474,10 @@ impl super::LocalRangeManager for Indexer {
         let end = range.end().ok_or(StoreError::Internal("".to_owned()))?;
         debug_assert!(end >= range.start(), "End of range cannot less than start");
 
-        let mut key_buf = BytesMut::with_capacity(1 + 8 + 8);
+        let mut key_buf = BytesMut::with_capacity(1 + 8 + 4 + 8);
         key_buf.put_u8(RANGE_PREFIX);
         key_buf.put_i64(stream_id);
+        key_buf.put_i32(range.id());
         key_buf.put_u64(range.start());
 
         let mut value_buf = BytesMut::with_capacity(1 + 8);
@@ -492,9 +497,10 @@ impl super::LocalRangeManager for Indexer {
     }
 
     fn add(&self, stream_id: i64, range: &StreamRange) -> Result<(), StoreError> {
-        let mut key_buf = BytesMut::with_capacity(1 + 8 + 8);
+        let mut key_buf = BytesMut::with_capacity(1 + 8 + 4 + 8);
         key_buf.put_u8(RANGE_PREFIX);
         key_buf.put_i64(stream_id);
+        key_buf.put_i32(range.id());
         key_buf.put_u64(range.start());
 
         let mut value_buf = BytesMut::with_capacity(1 + 8);
@@ -522,7 +528,6 @@ impl super::LocalRangeManager for Indexer {
 mod tests {
     use std::{
         error::Error,
-        rc::Rc,
         sync::{
             atomic::{AtomicU64, Ordering},
             Arc,
@@ -574,7 +579,7 @@ mod tests {
     #[test]
     fn test_retrieve_max_key() -> Result<(), Box<dyn Error>> {
         // Case one: have a left key
-        let mut indexer = new_indexer()?;
+        let indexer = new_indexer()?;
         let start_offset = 10;
         let stream_id = 1;
 
@@ -583,8 +588,8 @@ mod tests {
             len: 128,
             hash: 10,
         };
-        indexer.index(stream_id, start_offset, &ptr);
-        indexer.index(stream_id, start_offset + 1, &ptr);
+        indexer.index(stream_id, start_offset, &ptr)?;
+        indexer.index(stream_id, start_offset + 1, &ptr)?;
 
         // Case one: have a max key
         let mut max_key = indexer.retrieve_max_key(stream_id).unwrap().unwrap();
@@ -592,7 +597,7 @@ mod tests {
         assert_eq!(start_offset + 1, max_key.get_u64());
 
         //Case two: no max key
-        let mut max_key = indexer.retrieve_max_key(stream_id + 1).unwrap();
+        let max_key = indexer.retrieve_max_key(stream_id + 1).unwrap();
         assert!(max_key.is_none());
 
         Ok(())
@@ -601,7 +606,7 @@ mod tests {
     #[test]
     fn test_retrieve_left_key() -> Result<(), Box<dyn Error>> {
         // Case one: have a left key
-        let mut indexer = new_indexer()?;
+        let indexer = new_indexer()?;
         let left_offset = 10;
         let stream_id = 1;
 
@@ -610,9 +615,9 @@ mod tests {
             len: 128,
             hash: 10,
         };
-        indexer.index(stream_id, left_offset, &ptr);
-        indexer.index(stream_id, left_offset + 2, &ptr);
-        indexer.index(stream_id, left_offset + 4, &ptr);
+        indexer.index(stream_id, left_offset, &ptr)?;
+        indexer.index(stream_id, left_offset + 2, &ptr)?;
+        indexer.index(stream_id, left_offset + 4, &ptr)?;
 
         let mut left_key = indexer
             .retrieve_left_key(stream_id, left_offset + 1)

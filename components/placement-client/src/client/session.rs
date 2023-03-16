@@ -239,12 +239,16 @@ impl Session {
                                     .map(|range| {
                                         if range.end_offset >= 0 {
                                             StreamRange::new(
+                                                range.stream_id,
+                                                range.range_index,
                                                 range.start_offset as u64,
                                                 range.next_offset as u64,
                                                 Some(range.end_offset as u64),
                                             )
                                         } else {
                                             StreamRange::new(
+                                                range.stream_id,
+                                                range.range_index,
                                                 range.start_offset as u64,
                                                 range.next_offset as u64,
                                                 None,
