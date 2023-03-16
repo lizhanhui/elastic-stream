@@ -1,0 +1,29 @@
+name: Continuous Integration
+
+on:
+  push:
+    branches-ignore:
+      - main
+
+jobs:
+  skip_check:
+    runs-on: ubuntu-latest
+    outputs:
+      should_skip: ${{ steps.skip_check.outputs.should_skip }}
+    steps:
+      - id: skip_check
+        uses: fkirc/skip-duplicate-actions@v5
+        with:
+          skip_after_successful_duplicate: 'true'
+  lint:
+    needs: skip_check
+    if: ${{ needs.skip_check.outputs.should_skip != 'true' }}
+    uses: ./.github/workflows/ci-lint.yaml
+  build:
+    needs: skip_check
+    if: ${{ needs.skip_check.outputs.should_skip != 'true' }}
+    uses: ./.github/workflows/ci-crossbuild.yaml
+  test:
+    needs: skip_check
+    if: ${{ needs.skip_check.outputs.should_skip != 'true' }}
+    uses: ./.github/workflows/ci-tests.yaml

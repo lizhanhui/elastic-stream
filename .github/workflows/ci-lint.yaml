@@ -1,9 +1,7 @@
 name: Run lint
 
-on:
-  push:
-    branches-ignore:
-      - main
+on: workflow_call
+permissions: read-all
 
 jobs:
   lint:
