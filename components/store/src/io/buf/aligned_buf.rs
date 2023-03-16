@@ -72,7 +72,7 @@ impl AlignedBuf {
 
     /// Judge if this buffer covers specified data region in WAL.
     ///
-    /// #Arguments
+    /// # Arguments
     /// * `wal_offset` - Offset in WAL
     /// * `len` - Length of the data.
     ///
@@ -81,6 +81,20 @@ impl AlignedBuf {
     pub(crate) fn covers(&self, wal_offset: u64, len: u32) -> bool {
         self.wal_offset <= wal_offset
             && wal_offset + len as u64 <= self.wal_offset + self.limit() as u64
+    }
+
+    /// Judge if this buffer covers specified data region partially in WAL.
+    ///
+    /// # Arguments
+    /// * `wal_offset` - Offset in WAL
+    /// * `len` - Length of the data.
+    ///
+    /// # Returns
+    /// `true` if the cache hit partially;
+    /// `false` if the cache has no overlap with the specified region.
+    pub(crate) fn covers_partial(&self, wal_offset: u64, len: u32) -> bool {
+        self.wal_offset <= wal_offset + len as u64
+            && wal_offset <= self.wal_offset + self.limit() as u64
     }
 
     pub(crate) fn limit(&self) -> usize {

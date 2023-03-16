@@ -22,6 +22,7 @@
 #![feature(hash_drain_filter)]
 #![feature(btree_drain_filter)]
 #![feature(try_find)]
+#![feature(btree_cursors)]
 
 pub mod error;
 pub mod util;

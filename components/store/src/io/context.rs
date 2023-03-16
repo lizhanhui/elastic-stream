@@ -11,9 +11,11 @@ pub(crate) struct Context {
     pub(crate) buf: Arc<AlignedBuf>,
 
     /// Original starting WAL offset to read. This field makes sense iff opcode is `Read`.
-    pub(crate) offset: Option<u64>,
+    /// This field represents the real starting WAL offset of a read operation.
+    pub(crate) wal_offset: Option<u64>,
 
     /// Original read length. This field makes sense iff opcode is `Read`.
+    /// This field represents the real read length of a read operation.
     pub(crate) len: Option<u32>,
 
     /// Associated io task.
@@ -28,7 +30,7 @@ impl Context {
             opcode,
             buf,
             io_task: None,
-            offset: None,
+            wal_offset: None,
             len: None,
         }))
     }
@@ -45,7 +47,7 @@ impl Context {
             opcode,
             buf,
             io_task: Some(io_task),
-            offset: Some(offset),
+            wal_offset: Some(offset),
             len: Some(len),
         }))
     }

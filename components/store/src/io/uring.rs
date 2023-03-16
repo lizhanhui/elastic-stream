@@ -441,8 +441,6 @@ impl IO {
                         }
                     };
 
-                    segment.block_cache
-
                     if let Some(sd) = segment.sd.as_ref() {
                         if let Ok(buf) = AlignedBufReader::alloc_read_buf(
                             self.log.clone(),
@@ -870,12 +868,12 @@ fn on_complete(
                 error!(
                     log,
                     "Read from WAL range `[{}, {})` failed",
-                    context.offset.unwrap_or_default(),
+                    context.wal_offset.unwrap_or_default(),
                     context.len.unwrap_or_default()
                 );
                 return Err(StoreError::System(-result));
             } else {
-                if let (Some(offset), Some(len)) = (context.offset, context.len) {
+                if let (Some(offset), Some(len)) = (context.wal_offset, context.len) {
                     // Calculates the effective read bytes, without the alignment bytes.
                     let ef_bytes = result - (offset - context.buf.wal_offset) as i32;
 
