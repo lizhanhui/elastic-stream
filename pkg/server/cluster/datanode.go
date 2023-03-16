@@ -7,8 +7,10 @@ import (
 func (c *RaftCluster) Heartbeat(node *rpcfb.DataNodeT) error {
 	updated := c.cache.SaveDataNode(node)
 	if updated {
-		// TODO
-		// err := c.storage.SaveDataNode(node)
+		_, err := c.storage.SaveDataNode(node)
+		if err != nil {
+			return err
+		}
 	}
 	return nil
 }

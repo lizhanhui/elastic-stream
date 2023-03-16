@@ -89,6 +89,11 @@ func (c *Cache) SaveDataNode(nodeT *rpcfb.DataNodeT) (updated bool) {
 	return updated
 }
 
+// DataNodeCount returns the count of data nodes in the cache.
+func (c *Cache) DataNodeCount() int {
+	return c.dataNodes.Count()
+}
+
 func isDataNodeEqual(a, b *rpcfb.DataNodeT) bool {
 	return a.NodeId == b.NodeId &&
 		a.AdvertiseAddr == b.AdvertiseAddr
