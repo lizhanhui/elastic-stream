@@ -4,4 +4,4 @@
 ./components/protocol/src/generated/rpc_generated.rs
 .DS_Store
 components/protocol/src/generated
-sdks/java/lib/src/generated/
+sdks/java/lib/src/generated

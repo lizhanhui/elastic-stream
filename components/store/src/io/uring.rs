@@ -24,7 +24,9 @@ use std::{
     os::fd::AsRawFd,
 };
 
+use super::buf::AlignedBuf;
 use super::task::SingleFetchResult;
+use super::ReadTask;
 
 pub(crate) struct IO {
     options: Options,
@@ -576,6 +578,7 @@ impl IO {
         }
         let committed = self.write_window.committed;
         let mut cache_entries = vec![];
+        let mut completed_read_ctxs = vec![];
         {
             let mut completion = self.data_ring.completion();
             let mut count = 0;
@@ -611,6 +614,11 @@ impl IO {
                     } else {
                         // Add block cache
                         cache_entries.push(Arc::clone(&context.buf));
+
+                        // Cache the completed read context
+                        if opcode::Read::CODE == context.opcode {
+                            completed_read_ctxs.push(context);
+                        }
                     }
                 }
                 // This will flush any entries consumed in this iterator and will make available new entries in the queue
@@ -632,6 +640,8 @@ impl IO {
                 segment.block_cache.add_entry(buf);
             }
         }
+
+        self.complete_read_tasks(completed_read_ctxs);
 
         if self.write_window.committed > committed {
             self.complete_write_tasks();
@@ -662,6 +672,39 @@ impl IO {
         };
         self.indexer
             .index(task.stream_id, task.offset as u64, handle);
+    }
+
+    fn complete_read_tasks(&mut self, read_ctxs: Vec<Box<Context>>) {
+        read_ctxs.into_iter().for_each(|mut ctx| {
+            let read_task = ctx.io_task.take();
+            if let Some(IoTask::Read(read_task)) = read_task {
+                self.complete_read_task(read_task, ctx.buf);
+            } else {
+                error!(self.log, "Invalid read task");
+            }
+        });
+    }
+
+    fn complete_read_task(&mut self, read_task: ReadTask, read_buf: Arc<AlignedBuf>) {
+        // Completes the read task
+        let start_pos = (read_task.wal_offset - read_buf.wal_offset) as u32;
+        let fetch_result = SingleFetchResult {
+            stream_id: read_task.stream_id,
+            wal_offset: read_task.wal_offset as i64,
+            payload: BufSlice::new(read_buf, start_pos, (read_task.len + start_pos) as u32),
+        };
+
+        trace!(
+            self.log,
+            "Completes read task for stream {} at WAL offset {}, return {} bytes",
+            fetch_result.stream_id,
+            fetch_result.wal_offset,
+            read_task.len,
+        );
+
+        if let Err(e) = read_task.observer.send(Ok(fetch_result)) {
+            error!(self.log, "Failed to send read result to observer: {:?}", e);
+        }
     }
 
     fn complete_write_tasks(&mut self) {
@@ -847,36 +890,7 @@ fn on_complete(
                     }
 
                     context.buf.increase_written(result as usize);
-
-                    let io_task = context.io_task.take();
-
-                    if let Some(IoTask::Read(io_task)) = io_task {
-                        // Completes the read task
-                        let start_pos = (io_task.wal_offset - context.buf.wal_offset) as u32;
-                        let fetch_result = SingleFetchResult {
-                            stream_id: io_task.stream_id,
-                            wal_offset: io_task.wal_offset as i64,
-                            payload: BufSlice::new(
-                                Arc::clone(&context.buf),
-                                start_pos,
-                                (io_task.len + start_pos) as u32,
-                            ),
-                        };
-
-                        trace!(
-                            log,
-                            "Completes read task for stream {} at WAL offset {}, read {} bytes",
-                            fetch_result.stream_id,
-                            fetch_result.wal_offset,
-                            result,
-                        );
-
-                        if let Err(e) = io_task.observer.send(Ok(fetch_result)) {
-                            error!(log, "Failed to send read result to observer: {:?}", e);
-                        }
-
-                        return Ok(());
-                    }
+                    return Ok(());
                 }
             }
             // This should never happen, because we have checked the request before.
