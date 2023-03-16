@@ -1,9 +1,7 @@
 name: Build all platforms
 
-on:
-  push:
-    branches-ignore:
-      - main
+on: workflow_call
+permissions: read-all
 
 jobs:
   crossbuild:
