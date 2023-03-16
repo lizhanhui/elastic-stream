@@ -20,7 +20,7 @@ pub trait Range {
 pub struct StreamRange {
     stream_id: i64,
 
-    id: i32,
+    index: i32,
 
     /// The start slot index, inclusive.
     start: u64,
@@ -37,10 +37,10 @@ pub struct StreamRange {
 }
 
 impl StreamRange {
-    pub fn new(stream_id: i64, id: i32, start: u64, next: u64, end: Option<u64>) -> Self {
+    pub fn new(stream_id: i64, index: i32, start: u64, next: u64, end: Option<u64>) -> Self {
         Self {
             stream_id,
-            id,
+            index,
             start,
             next,
             end,
@@ -75,7 +75,7 @@ impl StreamRange {
     }
 
     pub fn id(&self) -> i32 {
-        self.id
+        self.index
     }
 
     pub fn start(&self) -> u64 {
@@ -107,9 +107,9 @@ impl Display for StreamRange {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "{{stream-id={}, range-id={}}}=[{}, {}, {})",
+            "{{stream-id={}, index={}}}=[{}, {}, {})",
             self.stream_id,
-            self.id,
+            self.index,
             self.start,
             self.next,
             self.end.unwrap_or(0)
