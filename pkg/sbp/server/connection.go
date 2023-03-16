@@ -337,8 +337,6 @@ func (c *conn) processFrame(f codec.Frame) error {
 		return c.processPing(f, st)
 	case *codec.GoAwayFrame:
 		return c.processGoAway(f, st)
-	case *codec.HeartbeatFrame:
-		return c.processHeartbeat(f, st)
 	case *codec.DataFrame:
 		return c.processDataFrame(f, st)
 	default:
@@ -364,18 +362,6 @@ func (c *conn) processGoAway(f *codec.GoAwayFrame, _ *stream) error {
 	c.serveG.Check()
 	logger.Info("received GOAWAY frame, starting graceful shutdown", zap.Uint32("max-stream-id", f.StreamID))
 	c.goAway(true)
-	return nil
-}
-
-func (c *conn) processHeartbeat(f *codec.HeartbeatFrame, st *stream) error {
-	c.serveG.Check()
-	outFrame, free := codec.NewHeartBeatFrameResp(f)
-	c.writeFrame(frameWriteRequest{
-		f:         outFrame,
-		free:      free,
-		stream:    st,
-		endStream: true,
-	})
 	return nil
 }
 

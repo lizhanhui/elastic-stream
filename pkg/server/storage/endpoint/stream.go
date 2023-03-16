@@ -13,11 +13,11 @@ import (
 )
 
 const (
-	_streamPath         = "stream"
-	_streamPrefixFormat = _streamPath + kv.KeySeparator
-	_streamFormat       = _streamPath + kv.KeySeparator + "%020d" // max length of int64 is 20
-	_streamKeyLen       = len(_streamPath) + len(kv.KeySeparator) + 20
-	_streamRangeLimit   = 1e4
+	_streamPath       = "stream"
+	_streamPrefix     = _streamPath + kv.KeySeparator
+	_streamFormat     = _streamPath + kv.KeySeparator + "%020d" // max length of int64 is 20
+	_streamKeyLen     = len(_streamPath) + len(kv.KeySeparator) + 20
+	_streamRangeLimit = 1e4
 )
 
 // Stream defines operations on stream.
@@ -26,7 +26,7 @@ type Stream interface {
 	DeleteStreams(streamIDs []int64) ([]*rpcfb.StreamT, error)
 	UpdateStreams(streams []*rpcfb.StreamT) ([]*rpcfb.StreamT, error)
 	GetStream(streamID int64) (*rpcfb.StreamT, error)
-	ForEachStream(f func(stream *rpcfb.StreamT)) error
+	ForEachStream(f func(stream *rpcfb.StreamT) error) error
 }
 
 // CreateStreams creates new streams based on the given streams and returns them.
@@ -158,7 +158,8 @@ func (e *Endpoint) GetStream(streamID int64) (*rpcfb.StreamT, error) {
 }
 
 // ForEachStream calls the given function for every stream in the storage.
-func (e *Endpoint) ForEachStream(f func(stream *rpcfb.StreamT)) error {
+// If f returns an error, the iteration is stopped and the error is returned.
+func (e *Endpoint) ForEachStream(f func(stream *rpcfb.StreamT) error) error {
 	var startID int64 = 1
 	for startID > 0 {
 		nextID, err := e.forEachStreamLimited(f, startID, _streamRangeLimit)
@@ -170,7 +171,7 @@ func (e *Endpoint) ForEachStream(f func(stream *rpcfb.StreamT)) error {
 	return nil
 }
 
-func (e *Endpoint) forEachStreamLimited(f func(stream *rpcfb.StreamT), startID int64, limit int64) (nextID int64, err error) {
+func (e *Endpoint) forEachStreamLimited(f func(stream *rpcfb.StreamT) error, startID int64, limit int64) (nextID int64, err error) {
 	logger := e.lg
 
 	startKey := streamPath(startID)
@@ -183,7 +184,10 @@ func (e *Endpoint) forEachStreamLimited(f func(stream *rpcfb.StreamT), startID i
 	for _, streamKV := range kvs {
 		stream := rpcfb.GetRootAsStream(streamKV.Value, 0).UnPack()
 		nextID = stream.StreamId + 1
-		f(stream)
+		err = f(stream)
+		if err != nil {
+			return 0, err
+		}
 	}
 
 	// return 0 if no more streams
@@ -198,7 +202,7 @@ func (e *Endpoint) nextStreamID() int64 {
 }
 
 func (e *Endpoint) endStreamPath() []byte {
-	return e.GetPrefixRangeEnd([]byte(_streamPrefixFormat))
+	return e.GetPrefixRangeEnd([]byte(_streamPrefix))
 }
 
 func streamPath(streamID int64) []byte {

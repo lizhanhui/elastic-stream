@@ -9,6 +9,8 @@ import (
 // Handler responds to a request
 // TODO support streaming
 type Handler interface {
+	// Heartbeat handles heartbeat requests.
+	Heartbeat(req *protocol.HeartbeatRequest) *protocol.HeartbeatResponse
 	// ListRange lists the ranges of a batch of streams. Or it could list the ranges of all the streams in a specific data node.
 	ListRange(req *protocol.ListRangesRequest) *protocol.ListRangesResponse
 	// CreateStreams creates a batch of streams.
@@ -23,6 +25,12 @@ type Handler interface {
 
 var (
 	_actionMap = map[operation.Operation]Action{
+		{Code: operation.OpHeartbeat}: {
+			newReq: func() protocol.Request { return &protocol.HeartbeatRequest{} },
+			act: func(handler Handler, req protocol.Request) (resp protocol.Response) {
+				return handler.Heartbeat(req.(*protocol.HeartbeatRequest))
+			},
+		},
 		{Code: operation.OpListRanges}: {
 			newReq: func() protocol.Request { return &protocol.ListRangesRequest{} },
 			act: func(handler Handler, req protocol.Request) (resp protocol.Response) {

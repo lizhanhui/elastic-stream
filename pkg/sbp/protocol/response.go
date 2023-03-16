@@ -86,6 +86,25 @@ func (se *SystemErrorResponse) Error(status *rpcfb.StatusT) {
 	se.Status = status
 }
 
+// HeartbeatResponse is a response to operation.OpHeartbeat
+type HeartbeatResponse struct {
+	baseResponse
+	singleResponse
+	*rpcfb.HeartbeatResponseT
+}
+
+func (hr *HeartbeatResponse) marshalFlatBuffer() ([]byte, error) {
+	return fbutil.Marshal(hr.HeartbeatResponseT), nil
+}
+
+func (hr *HeartbeatResponse) Marshal(fmt format.Format) ([]byte, error) {
+	return marshal(hr, fmt)
+}
+
+func (hr *HeartbeatResponse) Error(status *rpcfb.StatusT) {
+	hr.Status = status
+}
+
 // ListRangesResponse is a response to operation.OpListRanges
 type ListRangesResponse struct {
 	baseResponse

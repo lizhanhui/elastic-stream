@@ -51,6 +51,20 @@ func (b *baseRequest) unmarshalJSON(_ []byte) error {
 	return errors.Errorf(_unsupportedReqErrMsg, format.JSON())
 }
 
+type HeartbeatRequest struct {
+	baseRequest
+	*rpcfb.HeartbeatRequestT
+}
+
+func (hr *HeartbeatRequest) unmarshalFlatBuffer(data []byte) error {
+	hr.HeartbeatRequestT = rpcfb.GetRootAsHeartbeatRequest(data, 0).UnPack()
+	return nil
+}
+
+func (hr *HeartbeatRequest) Unmarshal(fmt format.Format, data []byte) error {
+	return unmarshal(hr, fmt, data)
+}
+
 // ListRangesRequest is a request to operation.OpListRanges
 type ListRangesRequest struct {
 	baseRequest
