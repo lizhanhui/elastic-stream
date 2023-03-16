@@ -13,10 +13,11 @@ import (
 )
 
 const (
-	_streamPath       = "stream"
-	_streamFormat     = _streamPath + kv.KeySeparator + "%020d" // max length of int64 is 20
-	_streamKeyLen     = len(_streamPath) + len(kv.KeySeparator) + 20
-	_streamRangeLimit = 1e4
+	_streamPath         = "stream"
+	_streamPrefixFormat = _streamPath + kv.KeySeparator
+	_streamFormat       = _streamPath + kv.KeySeparator + "%020d" // max length of int64 is 20
+	_streamKeyLen       = len(_streamPath) + len(kv.KeySeparator) + 20
+	_streamRangeLimit   = 1e4
 )
 
 // Stream defines operations on stream.
@@ -197,7 +198,7 @@ func (e *Endpoint) nextStreamID() int64 {
 }
 
 func (e *Endpoint) endStreamPath() []byte {
-	return e.GetPrefixRangeEnd([]byte(_streamPath + kv.KeySeparator))
+	return e.GetPrefixRangeEnd([]byte(_streamPrefixFormat))
 }
 
 func streamPath(streamID int64) []byte {

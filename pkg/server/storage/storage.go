@@ -25,4 +25,5 @@ type Storage interface {
 	kv.KV
 
 	endpoint.Stream
+	endpoint.Range
 }
