@@ -22,6 +22,7 @@ import (
 	"github.com/pkg/errors"
 	"go.uber.org/zap"
 
+	"github.com/AutoMQ/placement-manager/api/rpcfb/rpcfb"
 	"github.com/AutoMQ/placement-manager/pkg/server/cluster/cache"
 	"github.com/AutoMQ/placement-manager/pkg/server/member"
 	"github.com/AutoMQ/placement-manager/pkg/server/storage"
@@ -105,7 +106,10 @@ func (c *RaftCluster) loadInfo() error {
 	c.cache.Reset()
 
 	start := time.Now()
-	err := c.storage.ForEachStream(c.cache.SaveStream)
+	err := c.storage.ForEachStream(func(stream *rpcfb.StreamT) error {
+		c.cache.SaveStream(stream)
+		return nil
+	})
 	if err != nil {
 		return errors.Wrap(err, "load streams")
 	}

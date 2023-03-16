@@ -21,7 +21,7 @@ const (
 
 type Range interface {
 	GetRanges(streamID int64) ([]*rpcfb.RangeT, error)
-	ForEachRange(streamID int64, f func(r *rpcfb.RangeT)) error
+	ForEachRange(streamID int64, f func(r *rpcfb.RangeT) error) error
 }
 
 // GetRanges returns the ranges of the given stream.
@@ -30,8 +30,9 @@ func (e *Endpoint) GetRanges(streamID int64) ([]*rpcfb.RangeT, error) {
 
 	// TODO set capacity
 	ranges := make([]*rpcfb.RangeT, 0)
-	err := e.ForEachRange(streamID, func(r *rpcfb.RangeT) {
+	err := e.ForEachRange(streamID, func(r *rpcfb.RangeT) error {
 		ranges = append(ranges, r)
+		return nil
 	})
 	if err != nil {
 		logger.Error("failed to get ranges", zap.Int64("stream-id", streamID), zap.Error(err))
@@ -42,7 +43,8 @@ func (e *Endpoint) GetRanges(streamID int64) ([]*rpcfb.RangeT, error) {
 }
 
 // ForEachRange calls the given function f for each range in the stream.
-func (e *Endpoint) ForEachRange(streamID int64, f func(r *rpcfb.RangeT)) error {
+// If f returns an error, the iteration is stopped and the error is returned.
+func (e *Endpoint) ForEachRange(streamID int64, f func(r *rpcfb.RangeT) error) error {
 	var startID int32 = 1
 	for startID > 0 {
 		nextID, err := e.ForEachRangeLimited(streamID, f, startID, _rangeRangeLimit)
@@ -54,7 +56,7 @@ func (e *Endpoint) ForEachRange(streamID int64, f func(r *rpcfb.RangeT)) error {
 	return nil
 }
 
-func (e *Endpoint) ForEachRangeLimited(streamID int64, f func(r *rpcfb.RangeT), startID int32, limit int64) (nextID int32, err error) {
+func (e *Endpoint) ForEachRangeLimited(streamID int64, f func(r *rpcfb.RangeT) error, startID int32, limit int64) (nextID int32, err error) {
 	logger := e.lg
 
 	startKey := rangePath(streamID, startID)
@@ -67,7 +69,10 @@ func (e *Endpoint) ForEachRangeLimited(streamID int64, f func(r *rpcfb.RangeT), 
 	for _, rangeKV := range kvs {
 		r := rpcfb.GetRootAsRange(rangeKV.Value, 0).UnPack()
 		nextID = r.RangeIndex + 1
-		f(r)
+		err = f(r)
+		if err != nil {
+			return 0, err
+		}
 	}
 
 	// return 0 if no more ranges
