@@ -15,3 +15,8 @@ tokio = { workspace = true, features = ["full"] }
 tokio-util = { workspace = true }
 futures = { workspace = true }
 thiserror = { workspace = true }
+flatbuffers = { workspace = true }
+protocol = { path = "../../components/protocol" }
+
+[dev-dependencies]
+test-util = { path = "../../components/test-util" }

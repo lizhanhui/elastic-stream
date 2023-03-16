@@ -6,6 +6,7 @@ mod client_error;
 mod reader;
 mod session;
 mod session_manager;
+pub(crate) mod test_server;
 mod writer;
 
 pub use crate::reader::Cursor;
