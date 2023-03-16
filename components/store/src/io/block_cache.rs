@@ -31,7 +31,7 @@ impl Entry {
 #[derive(Debug)]
 pub(crate) struct BlockCache {
     log: Logger,
-    offset: u64,
+    wal_offset: u64,
     entries: BTreeMap<u32, Rc<UnsafeCell<Entry>>>,
 }
 
@@ -39,7 +39,7 @@ impl BlockCache {
     pub(crate) fn new(log: Logger, offset: u64) -> Self {
         Self {
             log,
-            offset,
+            wal_offset: offset,
             entries: BTreeMap::new(),
         }
     }
@@ -49,16 +49,16 @@ impl BlockCache {
             self.log,
             "Add block cache entry: [{}, {})",
             buf.wal_offset,
-            buf.wal_offset + buf.write_pos() as u64
+            buf.wal_offset + buf.limit() as u64
         );
-        debug_assert!(buf.wal_offset >= self.offset);
-        let from = (buf.wal_offset - self.offset) as u32;
+        debug_assert!(buf.wal_offset >= self.wal_offset);
+        let from = (buf.wal_offset - self.wal_offset) as u32;
         let entry = Rc::new(UnsafeCell::new(Entry::new(buf)));
         self.entries.insert(from, entry);
     }
 
     pub(crate) fn get_entry(&self, offset: u64, len: u32) -> Option<Arc<AlignedBuf>> {
-        let to = offset.checked_sub(self.offset).expect("out of bound") as u32;
+        let to = offset.checked_sub(self.wal_offset).expect("out of bound") as u32;
         let search = self.entries.range(..to).rev().try_find(|(_k, entry)| {
             let item = unsafe { &mut *entry.get() };
             if item.buf.covers(offset, len) {
@@ -94,7 +94,7 @@ impl BlockCache {
                     self.log,
                     "Remove block cache entry [{}, {})",
                     entry.buf.wal_offset,
-                    entry.buf.wal_offset + entry.buf.write_pos() as u64
+                    entry.buf.wal_offset + entry.buf.limit() as u64
                 );
                 true
             } else {
@@ -125,7 +125,7 @@ mod tests {
                 block_size,
                 block_size,
             )?);
-            buf.written.store(block_size, Ordering::Relaxed);
+            buf.limit.store(block_size, Ordering::Relaxed);
             block_cache.add_entry(buf);
         }
 

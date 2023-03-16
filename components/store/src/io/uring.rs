@@ -359,7 +359,7 @@ impl IO {
 
                         // Track write requests
                         self.write_window
-                            .add(buf.wal_offset, buf.write_pos() as u32)?;
+                            .add(buf.wal_offset, buf.limit() as u32)?;
 
                         let mut io_blocked = false;
                         // Check barrier
@@ -440,6 +440,8 @@ impl IO {
                             todo!("Return error to caller directly")
                         }
                     };
+
+                    segment.block_cache
 
                     if let Some(sd) = segment.sd.as_ref() {
                         if let Ok(buf) = AlignedBufReader::alloc_read_buf(
@@ -858,7 +860,7 @@ fn on_complete(
                 return Err(StoreError::System(-result));
             } else {
                 write_window
-                    .commit(context.buf.wal_offset, context.buf.write_pos() as u32)
+                    .commit(context.buf.wal_offset, context.buf.limit() as u32)
                     .map_err(|_e| StoreError::WriteWindow)?;
             }
             Ok(())

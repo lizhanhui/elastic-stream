@@ -27,7 +27,7 @@ pub(crate) struct AlignedBuf {
     pub(crate) capacity: usize,
 
     /// Write index
-    pub(crate) written: AtomicUsize,
+    pub(crate) limit: AtomicUsize,
 }
 
 impl AlignedBuf {
@@ -66,7 +66,7 @@ impl AlignedBuf {
             ptr,
             layout,
             capacity,
-            written: AtomicUsize::new(0),
+            limit: AtomicUsize::new(0),
         })
     }
 
@@ -80,15 +80,15 @@ impl AlignedBuf {
     /// `true` if the cache hit; `false` otherwise.
     pub(crate) fn covers(&self, wal_offset: u64, len: u32) -> bool {
         self.wal_offset <= wal_offset
-            && wal_offset + len as u64 <= self.wal_offset + self.write_pos() as u64
+            && wal_offset + len as u64 <= self.wal_offset + self.limit() as u64
     }
 
-    pub(crate) fn write_pos(&self) -> usize {
-        self.written.load(Ordering::Relaxed)
+    pub(crate) fn limit(&self) -> usize {
+        self.limit.load(Ordering::Relaxed)
     }
 
     pub(crate) fn write_u32(&self, value: u32) -> bool {
-        if self.written.load(Ordering::Relaxed) + 4 > self.capacity {
+        if self.limit.load(Ordering::Relaxed) + 4 > self.capacity {
             return false;
         }
         let big_endian = value.to_be();
@@ -98,8 +98,8 @@ impl AlignedBuf {
 
     /// Get u32 in big-endian byte order.
     pub(crate) fn read_u32(&self, pos: usize) -> Result<u32, StoreError> {
-        debug_assert!(self.written.load(Ordering::Relaxed) >= pos);
-        if self.written.load(Ordering::Relaxed) - pos < std::mem::size_of::<u32>() {
+        debug_assert!(self.limit.load(Ordering::Relaxed) >= pos);
+        if self.limit.load(Ordering::Relaxed) - pos < std::mem::size_of::<u32>() {
             return Err(StoreError::InsufficientData);
         }
         let value = unsafe { *(self.ptr.as_ptr().offset(pos as isize) as *const u32) };
@@ -107,7 +107,7 @@ impl AlignedBuf {
     }
 
     pub(crate) fn write_u64(&self, value: u64) -> bool {
-        if self.written.load(Ordering::Relaxed) + 8 > self.capacity {
+        if self.limit.load(Ordering::Relaxed) + 8 > self.capacity {
             return false;
         }
         let big_endian = value.to_be();
@@ -116,8 +116,8 @@ impl AlignedBuf {
     }
 
     pub(crate) fn read_u64(&self, pos: usize) -> Result<u64, StoreError> {
-        debug_assert!(self.written.load(Ordering::Relaxed) > pos);
-        if pos + 8 > self.written.load(Ordering::Relaxed) {
+        debug_assert!(self.limit.load(Ordering::Relaxed) > pos);
+        if pos + 8 > self.limit.load(Ordering::Relaxed) {
             return Err(StoreError::InsufficientData);
         }
 
@@ -141,14 +141,14 @@ impl AlignedBuf {
         let end = match range.end_bound() {
             Bound::Included(&m) => m.checked_add(1).expect("out of bound"),
             Bound::Excluded(&m) => m,
-            Bound::Unbounded => self.written.load(Ordering::Relaxed),
+            Bound::Unbounded => self.limit.load(Ordering::Relaxed),
         };
         let len = end - start;
         unsafe { slice::from_raw_parts(self.ptr.as_ptr().offset(start as isize) as *const u8, len) }
     }
 
     pub(crate) fn write_buf(&self, buf: &[u8]) -> bool {
-        let pos = self.written.load(Ordering::Relaxed);
+        let pos = self.limit.load(Ordering::Relaxed);
         if pos + buf.len() > self.capacity {
             return false;
         }
@@ -159,24 +159,24 @@ impl AlignedBuf {
                 buf.len(),
             )
         };
-        self.written.fetch_add(buf.len(), Ordering::Relaxed);
+        self.limit.fetch_add(buf.len(), Ordering::Relaxed);
         true
     }
 
     /// Increase the written position when uring io completion.
     pub(crate) fn increase_written(&self, len: usize) {
-        self.written.fetch_add(len, Ordering::Relaxed);
+        self.limit.fetch_add(len, Ordering::Relaxed);
     }
 
     /// Remaining space to write.
     pub(crate) fn remaining(&self) -> usize {
-        let pos = self.written.load(Ordering::Relaxed);
+        let pos = self.limit.load(Ordering::Relaxed);
         debug_assert!(pos <= self.capacity);
         self.capacity - pos
     }
 
     pub(crate) fn partial(&self) -> bool {
-        self.write_pos() > 0 && self.write_pos() < self.capacity
+        self.limit() > 0 && self.limit() < self.capacity
     }
 }
 
@@ -188,7 +188,7 @@ impl Drop for AlignedBuf {
             self.log,
             "Deallocated `AlignedBuf`: (offset={}, written: {}, capacity: {})",
             self.wal_offset,
-            self.write_pos(),
+            self.limit(),
             self.capacity
         );
     }

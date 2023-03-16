@@ -138,7 +138,7 @@ impl AlignedBufWriter {
                 self.log,
                 "About to flush aligned buffer{{ offset: {}, written: {}, capacity: {} }} to flush",
                 item.wal_offset,
-                item.write_pos(),
+                item.limit(),
                 item.capacity
             );
         });
