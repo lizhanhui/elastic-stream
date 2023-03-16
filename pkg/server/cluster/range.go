@@ -17,13 +17,24 @@ func (c *RaftCluster) ListRanges(rangeOwner *rpcfb.RangeCriteriaT) ([]*rpcfb.Ran
 
 // listRangesInStream lists the ranges of a stream.
 func (c *RaftCluster) listRangesInStream(streamID int64) ([]*rpcfb.RangeT, error) {
-	return c.storage.GetRanges(streamID)
+	return c.storage.GetRangesByStream(streamID)
 }
 
 // listRangesOnDataNode lists the ranges on a data node.
 func (c *RaftCluster) listRangesOnDataNode(dataNodeID int32) ([]*rpcfb.RangeT, error) {
-	// TODO
-	// return c.storage.GetRangesByDataNode(dataNodeID)
-	_ = dataNodeID
-	return nil, nil
+	rangeIDs, err := c.storage.GetRangeIDsByDataNode(dataNodeID)
+	if err != nil {
+		return nil, err
+	}
+
+	ranges := make([]*rpcfb.RangeT, 0, len(rangeIDs))
+	for _, rangeID := range rangeIDs {
+		r, err := c.storage.GetRange(rangeID)
+		if err != nil {
+			return nil, err
+		}
+		ranges = append(ranges, r)
+	}
+
+	return ranges, nil
 }

@@ -20,6 +20,19 @@ import (
 	"github.com/AutoMQ/placement-manager/pkg/server/storage/kv"
 )
 
+const (
+	_int64Format = "%020d" // max length of int64 is 20 (-9223372036854775807)
+	_int64Len    = 20
+	_int32Format = "%011d" // max length of int32 is 11 (-2147483647)
+	_int32Len    = 11
+)
+
+const (
+	_minStreamID   int64 = 1
+	_minRangeIndex int32 = 1
+	_minDataNodeID int32 = 1
+)
+
 // Endpoint is the base underlying storage endpoint for all other upper
 // specific storage backends. It should define some common storage interfaces and operations,
 // which provides the default implementations for all kinds of storages.
