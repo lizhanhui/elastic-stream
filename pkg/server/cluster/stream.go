@@ -10,6 +10,10 @@ func (c *RaftCluster) CreateStreams(streams []*rpcfb.StreamT) ([]*rpcfb.StreamT,
 	params := make([]*endpoint.CreateStreamParam, 0, len(streams))
 	for _, stream := range streams {
 		stream.StreamId = c.nextStreamID()
+		nodes, err := c.chooseDataNodes(stream.ReplicaNums)
+		if err != nil {
+			return nil, err
+		}
 		params = append(params, &endpoint.CreateStreamParam{
 			StreamT: stream,
 			RangeT: &rpcfb.RangeT{
@@ -17,11 +21,13 @@ func (c *RaftCluster) CreateStreams(streams []*rpcfb.StreamT) ([]*rpcfb.StreamT,
 				RangeIndex:   0,
 				StartOffset:  0,
 				EndOffset:    -1,
-				ReplicaNodes: nil, // TODO init data nodes
+				ReplicaNodes: nodes,
 			},
 		})
 	}
+
 	newStreams, newRanges, err := c.storage.CreateStreams(params)
+
 	// TODO sync new ranges to data nodes
 	_ = newRanges
 	return newStreams, err
