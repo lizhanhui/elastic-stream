@@ -54,9 +54,3 @@ tasks.named('test') {
     useJUnitPlatform()
 }
 sourceSets.main.java.srcDirs += 'src/generated/java'
-//
-//java {
-//    toolchain {
-//        languageVersion = JavaLanguageVersion.of(17)
-//    }
-//}
