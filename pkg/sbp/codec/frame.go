@@ -251,8 +251,6 @@ func (fr *Framer) ReadFrame() (Frame, func(), error) {
 		frame = &PingFrame{baseFrame: bFrame}
 	case operation.OpGoAway:
 		frame = &GoAwayFrame{baseFrame: bFrame}
-	case operation.OpHeartbeat:
-		frame = &HeartbeatFrame{baseFrame: bFrame}
 	case operation.OpUnknown:
 		frame = &bFrame
 	default:
@@ -372,28 +370,6 @@ func NewGoAwayFrame(maxStreamID uint32, isResponse bool) *GoAwayFrame {
 		f.Flag = FlagResponse | FlagResponseEnd
 	}
 	return f
-}
-
-// HeartbeatFrame is used to keep clients alive
-type HeartbeatFrame struct {
-	baseFrame
-}
-
-// NewHeartBeatFrameResp creates an out heartbeat with the in heartbeat
-func NewHeartBeatFrameResp(in *HeartbeatFrame) (*HeartbeatFrame, func()) {
-	buf := mcache.Malloc(len(in.Header))
-	free := func() {
-		mcache.Free(buf)
-	}
-	out := &HeartbeatFrame{baseFrame{
-		OpCode:    operation.Operation{Code: operation.OpHeartbeat},
-		Flag:      FlagResponse | FlagResponseEnd,
-		StreamID:  in.StreamID,
-		HeaderFmt: in.HeaderFmt,
-		Header:    buf,
-	}}
-	copy(in.Header, out.Header)
-	return out, free
 }
 
 // DataFrame is used to handle other user-defined requests and responses
