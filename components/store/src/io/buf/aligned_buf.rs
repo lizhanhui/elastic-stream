@@ -16,8 +16,8 @@ use crate::error::StoreError;
 pub(crate) struct AlignedBuf {
     log: Logger,
 
-    /// WAL offset
-    pub(crate) aligned_offset: u64,
+    /// A aligned WAL offset
+    pub(crate) wal_offset: u64,
 
     /// Pointer to the allocated memory
     ptr: NonNull<u8>,
@@ -33,7 +33,7 @@ pub(crate) struct AlignedBuf {
 impl AlignedBuf {
     pub(crate) fn new(
         log: Logger,
-        offset: u64,
+        wal_offset: u64,
         len: usize,
         alignment: usize,
     ) -> Result<Self, StoreError> {
@@ -62,7 +62,7 @@ impl AlignedBuf {
 
         Ok(Self {
             log,
-            aligned_offset: offset,
+            wal_offset,
             ptr,
             layout,
             capacity,
@@ -73,14 +73,14 @@ impl AlignedBuf {
     /// Judge if this buffer covers specified data region in WAL.
     ///
     /// #Arguments
-    /// * `offset` - Offset in WAL
+    /// * `wal_offset` - Offset in WAL
     /// * `len` - Length of the data.
     ///
     /// # Returns
     /// `true` if the cache hit; `false` otherwise.
-    pub(crate) fn covers(&self, offset: u64, len: u32) -> bool {
-        self.aligned_offset <= offset
-            && offset + len as u64 <= self.aligned_offset + self.write_pos() as u64
+    pub(crate) fn covers(&self, wal_offset: u64, len: u32) -> bool {
+        self.wal_offset <= wal_offset
+            && wal_offset + len as u64 <= self.wal_offset + self.write_pos() as u64
     }
 
     pub(crate) fn write_pos(&self) -> usize {
@@ -187,7 +187,7 @@ impl Drop for AlignedBuf {
         debug!(
             self.log,
             "Deallocated `AlignedBuf`: (offset={}, written: {}, capacity: {})",
-            self.aligned_offset,
+            self.wal_offset,
             self.write_pos(),
             self.capacity
         );

@@ -5,24 +5,25 @@ use std::{ptr, slice, sync::Arc};
 
 pub(crate) struct AlignedBufWriter {
     log: Logger,
-    pub(crate) offset: u64,
+    /// It's a aligned wal offset, which is pointing to a absolute address in the wal segment.
+    pub(crate) wal_offset: u64,
     alignment: usize,
     buffers: Vec<Arc<AlignedBuf>>,
 }
 
 impl AlignedBufWriter {
-    pub(crate) fn new(log: Logger, offset: u64, alignment: usize) -> Self {
+    pub(crate) fn new(log: Logger, wal_offset: u64, alignment: usize) -> Self {
         Self {
             log,
-            offset,
+            wal_offset,
             alignment,
             buffers: vec![],
         }
     }
 
     /// Reset offset
-    pub(crate) fn offset(&mut self, offset: u64) {
-        self.offset = offset;
+    pub(crate) fn wal_offset(&mut self, offset: u64) {
+        self.wal_offset = offset;
     }
 
     /// Must invoke this method to reserve enough memory before writing.
@@ -37,15 +38,15 @@ impl AlignedBufWriter {
         // immediately.
         if additional > self.alignment {
             let size = additional / self.alignment * self.alignment;
-            let buf = AlignedBuf::new(self.log.clone(), self.offset, size, self.alignment)?;
+            let buf = AlignedBuf::new(self.log.clone(), self.wal_offset, size, self.alignment)?;
             trace!(
                 self.log,
                 "Reserved {} bytes for WAL data in complete blocks. [{}, {})",
                 buf.capacity,
-                self.offset,
-                self.offset + buf.capacity as u64
+                self.wal_offset,
+                self.wal_offset + buf.capacity as u64
             );
-            self.offset += buf.capacity as u64;
+            self.wal_offset += buf.capacity as u64;
             self.buffers.push(Arc::new(buf));
         }
 
@@ -57,7 +58,7 @@ impl AlignedBufWriter {
         if 0 != r {
             let buf = AlignedBuf::new(
                 self.log.clone(),
-                self.offset,
+                self.wal_offset,
                 self.alignment,
                 self.alignment,
             )?;
@@ -65,10 +66,10 @@ impl AlignedBufWriter {
                 self.log,
                 "Reserved {} bytes for WAL data that may only fill partial of a block. [{}, {})",
                 buf.capacity,
-                self.offset,
-                self.offset + buf.capacity as u64
+                self.wal_offset,
+                self.wal_offset + buf.capacity as u64
             );
-            self.offset += buf.capacity as u64;
+            self.wal_offset += buf.capacity as u64;
             self.buffers.push(Arc::new(buf));
         }
 
@@ -136,7 +137,7 @@ impl AlignedBufWriter {
             trace!(
                 self.log,
                 "About to flush aligned buffer{{ offset: {}, written: {}, capacity: {} }} to flush",
-                item.aligned_offset,
+                item.wal_offset,
                 item.write_pos(),
                 item.capacity
             );
