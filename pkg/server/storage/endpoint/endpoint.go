@@ -15,8 +15,6 @@
 package endpoint
 
 import (
-	"sync/atomic"
-
 	"go.uber.org/zap"
 
 	"github.com/AutoMQ/placement-manager/pkg/server/storage/kv"
@@ -28,9 +26,6 @@ import (
 type Endpoint struct {
 	kv.KV
 
-	// FIXME: use an id generator based on KV
-	streamID atomic.Int64
-
 	lg *zap.Logger
 }
 
@@ -38,8 +33,7 @@ type Endpoint struct {
 // It should be embedded inside a storage backend.
 func NewEndpoint(kv kv.KV, logger *zap.Logger) *Endpoint {
 	return &Endpoint{
-		KV:       kv,
-		streamID: atomic.Int64{},
-		lg:       logger,
+		KV: kv,
+		lg: logger,
 	}
 }

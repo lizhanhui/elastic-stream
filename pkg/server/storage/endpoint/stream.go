@@ -35,8 +35,6 @@ func (e *Endpoint) CreateStreams(streams []*rpcfb.StreamT) ([]*rpcfb.StreamT, er
 
 	kvs := make([]kv.KeyValue, 0, len(streams))
 	for _, stream := range streams {
-		// TODO batch allocate stream ids
-		stream.StreamId = e.nextStreamID()
 		streamInfo := fbutil.Marshal(stream)
 		kvs = append(kvs, kv.KeyValue{
 			Key:   streamPath(stream.StreamId),
@@ -195,10 +193,6 @@ func (e *Endpoint) forEachStreamLimited(f func(stream *rpcfb.StreamT) error, sta
 		nextID = 0
 	}
 	return
-}
-
-func (e *Endpoint) nextStreamID() int64 {
-	return e.streamID.Add(1)
 }
 
 func (e *Endpoint) endStreamPath() []byte {
