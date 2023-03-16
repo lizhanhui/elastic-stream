@@ -42,6 +42,9 @@ type RaftCluster struct {
 	cache   *cache.Cache
 	member  *member.Member
 
+	// FIXME: use an id generator based on KV
+	streamID atomic.Int64
+
 	lg *zap.Logger
 }
 
@@ -57,6 +60,7 @@ func NewRaftCluster(ctx context.Context, clusterID uint64, logger *zap.Logger) *
 		ctx:       ctx,
 		clusterID: clusterID,
 		cache:     cache.NewCache(),
+		streamID:  atomic.Int64{},
 		lg:        logger.With(zap.Uint64("cluster-id", clusterID)),
 	}
 }
@@ -157,4 +161,9 @@ func (c *RaftCluster) IsLeader() bool {
 
 func (c *RaftCluster) Leader() *member.Info {
 	return c.member.Leader()
+}
+
+func (c *RaftCluster) nextStreamID() int64 {
+	// TODO batch allocate stream ids
+	return c.streamID.Add(1)
 }

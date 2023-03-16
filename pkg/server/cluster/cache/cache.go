@@ -61,13 +61,13 @@ func (c *Cache) StreamCount() int {
 // DataNode is the cache for DataNodeT and its status.
 type DataNode struct {
 	*rpcfb.DataNodeT
-	lastActiveTime time.Time
+	LastActiveTime time.Time
 }
 
 func NewDataNode(dataNode *rpcfb.DataNodeT) *DataNode {
 	return &DataNode{
 		DataNodeT:      dataNode,
-		lastActiveTime: time.Now(),
+		LastActiveTime: time.Now(),
 	}
 }
 
@@ -80,13 +80,22 @@ func (c *Cache) SaveDataNode(nodeT *rpcfb.DataNodeT) (updated bool) {
 			updated = true
 			node.DataNodeT = nodeT
 		}
-		node.lastActiveTime = time.Now()
+		node.LastActiveTime = time.Now()
 	} else {
 		node = NewDataNode(nodeT)
 		updated = true
 	}
 	c.dataNodes.Set(node.NodeId, node)
 	return updated
+}
+
+// DataNodes returns all data nodes in the cache.
+func (c *Cache) DataNodes() []*DataNode {
+	nodes := make([]*DataNode, 0, c.dataNodes.Count())
+	c.dataNodes.IterCb(func(_ int32, node *DataNode) {
+		nodes = append(nodes, node)
+	})
+	return nodes
 }
 
 // DataNodeCount returns the count of data nodes in the cache.

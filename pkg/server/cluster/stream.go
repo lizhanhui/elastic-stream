@@ -2,11 +2,35 @@ package cluster
 
 import (
 	"github.com/AutoMQ/placement-manager/api/rpcfb/rpcfb"
+	"github.com/AutoMQ/placement-manager/pkg/server/storage/endpoint"
 )
 
 // CreateStreams creates streams in transaction.
 func (c *RaftCluster) CreateStreams(streams []*rpcfb.StreamT) ([]*rpcfb.StreamT, error) {
-	return c.storage.CreateStreams(streams)
+	params := make([]*endpoint.CreateStreamParam, 0, len(streams))
+	for _, stream := range streams {
+		stream.StreamId = c.nextStreamID()
+		nodes, err := c.chooseDataNodes(stream.ReplicaNums)
+		if err != nil {
+			return nil, err
+		}
+		params = append(params, &endpoint.CreateStreamParam{
+			StreamT: stream,
+			RangeT: &rpcfb.RangeT{
+				StreamId:     stream.StreamId,
+				RangeIndex:   0,
+				StartOffset:  0,
+				EndOffset:    -1,
+				ReplicaNodes: nodes,
+			},
+		})
+	}
+
+	newStreams, newRanges, err := c.storage.CreateStreams(params)
+
+	// TODO sync new ranges to data nodes
+	_ = newRanges
+	return newStreams, err
 }
 
 // DeleteStreams deletes streams in transaction.
