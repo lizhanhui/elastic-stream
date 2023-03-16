@@ -1,6 +1,7 @@
 package endpoint
 
 import (
+	"bytes"
 	"fmt"
 
 	"github.com/bytedance/gopkg/lang/mcache"
@@ -20,9 +21,15 @@ const (
 	_streamRangeLimit = 1e4
 )
 
+// CreateStreamParam defines the parameters of creating a stream.
+type CreateStreamParam struct {
+	*rpcfb.StreamT
+	*rpcfb.RangeT
+}
+
 // Stream defines operations on stream.
 type Stream interface {
-	CreateStreams(streams []*rpcfb.StreamT) ([]*rpcfb.StreamT, error)
+	CreateStreams(params []*CreateStreamParam) ([]*rpcfb.StreamT, []*rpcfb.RangeT, error)
 	DeleteStreams(streamIDs []int64) ([]*rpcfb.StreamT, error)
 	UpdateStreams(streams []*rpcfb.StreamT) ([]*rpcfb.StreamT, error)
 	GetStream(streamID int64) (*rpcfb.StreamT, error)
@@ -30,15 +37,22 @@ type Stream interface {
 }
 
 // CreateStreams creates new streams based on the given streams and returns them.
-func (e *Endpoint) CreateStreams(streams []*rpcfb.StreamT) ([]*rpcfb.StreamT, error) {
+func (e *Endpoint) CreateStreams(params []*CreateStreamParam) ([]*rpcfb.StreamT, []*rpcfb.RangeT, error) {
 	logger := e.lg
 
-	kvs := make([]kv.KeyValue, 0, len(streams))
-	for _, stream := range streams {
-		streamInfo := fbutil.Marshal(stream)
+	streams := make([]*rpcfb.StreamT, 0, len(params))
+	ranges := make([]*rpcfb.RangeT, 0, len(params))
+	kvs := make([]kv.KeyValue, 0, len(params)*2)
+	for _, param := range params {
+		streams = append(streams, param.StreamT)
 		kvs = append(kvs, kv.KeyValue{
-			Key:   streamPath(stream.StreamId),
-			Value: streamInfo,
+			Key:   streamPath(param.StreamT.StreamId),
+			Value: fbutil.Marshal(param.StreamT),
+		})
+		ranges = append(ranges, param.RangeT)
+		kvs = append(kvs, kv.KeyValue{
+			Key:   rangePath(param.StreamT.StreamId, param.RangeT.RangeIndex),
+			Value: fbutil.Marshal(param.RangeT),
 		})
 	}
 
@@ -47,22 +61,24 @@ func (e *Endpoint) CreateStreams(streams []*rpcfb.StreamT) ([]*rpcfb.StreamT, er
 		mcache.Free(keyValue.Value)
 	}
 	if err != nil {
-		streamIDs := make([]int64, 0, len(streams))
-		for _, stream := range streams {
-			streamIDs = append(streamIDs, stream.StreamId)
+		streamIDs := make([]int64, 0, len(params))
+		for _, param := range params {
+			streamIDs = append(streamIDs, param.StreamT.StreamId)
 		}
 		logger.Error("failed to save streams", zap.Int64s("stream-ids", streamIDs), zap.Error(err))
-		return nil, errors.Wrap(err, "save streams")
+		return nil, nil, errors.Wrap(err, "save streams")
 	}
 	if len(prevKvs) != 0 {
 		streamKeys := make([][]byte, 0, len(prevKvs))
 		for _, prevKv := range prevKvs {
-			streamKeys = append(streamKeys, prevKv.Key)
+			if bytes.HasPrefix(prevKv.Key, []byte(_streamPrefix)) {
+				streamKeys = append(streamKeys, prevKv.Key)
+			}
 		}
 		logger.Warn("streams already exist, will override them", zap.ByteStrings("existed-stream-ids", streamKeys))
 	}
 
-	return streams, nil
+	return streams, ranges, nil
 }
 
 // DeleteStreams deletes the streams with the given stream ids and returns them.
