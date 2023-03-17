@@ -15,7 +15,7 @@ func (s *Sbp) CreateStreams(req *protocol.CreateStreamsRequest) (resp *protocol.
 		return
 	}
 
-	streams, err := s.c.CreateStreams(req.Streams)
+	results, err := s.c.CreateStreams(req.Streams)
 	if err != nil {
 		if errors.Is(err, cluster.ErrNotEnoughDataNodes) {
 			resp.Error(&rpcfb.StatusT{Code: rpcfb.ErrorCodePM_NO_AVAILABLE_DN, Message: err.Error()})
@@ -25,13 +25,10 @@ func (s *Sbp) CreateStreams(req *protocol.CreateStreamsRequest) (resp *protocol.
 		return
 	}
 
-	resp.CreateResponses = make([]*rpcfb.CreateStreamResultT, 0, len(streams))
-	for _, stream := range streams {
-		resp.CreateResponses = append(resp.CreateResponses, &rpcfb.CreateStreamResultT{
-			Stream: stream,
-			Status: &rpcfb.StatusT{Code: rpcfb.ErrorCodeOK},
-		})
+	for _, result := range results {
+		result.Status = &rpcfb.StatusT{Code: rpcfb.ErrorCodeOK}
 	}
+	resp.CreateResponses = results
 	resp.OK()
 	return
 }

@@ -6,7 +6,7 @@ import (
 )
 
 // CreateStreams creates streams in transaction.
-func (c *RaftCluster) CreateStreams(streams []*rpcfb.StreamT) ([]*rpcfb.StreamT, error) {
+func (c *RaftCluster) CreateStreams(streams []*rpcfb.StreamT) ([]*rpcfb.CreateStreamResultT, error) {
 	params := make([]*endpoint.CreateStreamParam, 0, len(streams))
 	for _, stream := range streams {
 		stream.StreamId = c.nextStreamID()
@@ -26,11 +26,10 @@ func (c *RaftCluster) CreateStreams(streams []*rpcfb.StreamT) ([]*rpcfb.StreamT,
 		})
 	}
 
-	newStreams, newRanges, err := c.storage.CreateStreams(params)
+	results, err := c.storage.CreateStreams(params)
 
 	// TODO sync new ranges to data nodes
-	_ = newRanges
-	return newStreams, err
+	return results, err
 }
 
 // DeleteStreams deletes streams in transaction.
