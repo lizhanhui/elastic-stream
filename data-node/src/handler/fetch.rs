@@ -30,7 +30,7 @@ impl<'a> Fetch<'a> {
                     logger,
                     "FetchRequest[stream-id={}] received without payload", request.stream_id
                 );
-                return Err(ErrorCode::INVALID_REQUEST);
+                return Err(ErrorCode::BAD_REQUEST);
             }
         };
 
@@ -43,7 +43,7 @@ impl<'a> Fetch<'a> {
                     request.stream_id,
                     e
                 );
-                return Err(ErrorCode::INVALID_REQUEST);
+                return Err(ErrorCode::BAD_REQUEST);
             }
         };
 
@@ -154,7 +154,7 @@ impl<'a> Fetch<'a> {
 
     fn convert_store_error(&self, err: &FetchError) -> (ErrorCode, Option<String>) {
         match err {
-            _ => (ErrorCode::UNKNOWN, Some(err.to_string())),
+            _ => (ErrorCode::PM_INTERNAL_SERVER_ERROR, Some(err.to_string())),
         }
     }
 }

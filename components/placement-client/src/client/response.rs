@@ -1,24 +1,6 @@
 use model::range::StreamRange;
 
-#[derive(Debug, Clone, Copy)]
-pub enum Status {
-    OK,
-    Cancelled,
-    InvalidArgument,
-    DeadlineExceeded,
-    NotFound,
-    AlreadyExists,
-    PermissionDenied,
-    ResourceExhausted,
-    FailedPrecondition,
-    Aborted,
-    OutOfRange,
-    Unimplemented,
-    Internal,
-    Unavailable,
-    DataLoss,
-    Unauthenticated,
-}
+use super::status::Status;
 
 #[derive(Debug, Clone)]
 pub enum Response {

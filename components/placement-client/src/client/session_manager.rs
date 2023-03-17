@@ -17,7 +17,7 @@ use tokio::{
 };
 use tokio_uring::net::TcpStream;
 
-use crate::{client::response::Status, error::ClientError, notifier::Notifier};
+use crate::{client::status::Status, error::ClientError, notifier::Notifier};
 
 use super::{
     config::{self, ClientConfig},
@@ -232,7 +232,7 @@ impl SessionManager {
                     Request::Heartbeat { .. } => {}
                     Request::ListRanges { .. } => {
                         let response = response::Response::ListRange {
-                            status: Status::Unavailable,
+                            status: Status::internal("Connection timeout".to_owned()),
                             ranges: None,
                         };
                         match response_observer.send(response) {

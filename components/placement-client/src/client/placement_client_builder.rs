@@ -5,7 +5,7 @@ use tokio::sync::mpsc;
 
 use crate::{
     error::ClientError,
-    notifier::{self, Notifier, UnsupportedNotifier},
+    notifier::{Notifier, UnsupportedNotifier},
 };
 
 use super::{config, placement_client::PlacementClient, session_manager::SessionManager};

@@ -76,13 +76,11 @@ unsafe impl Sync for BufSlice {}
 
 #[cfg(test)]
 mod tests {
-    use std::{error::Error, sync::Arc};
-
+    use crate::io::buf::AlignedBuf;
     use slog::{info, trace};
+    use std::{error::Error, sync::Arc};
     use tokio::sync::oneshot;
     use tokio_uring::net::{TcpListener, TcpStream};
-
-    use crate::io::buf::AlignedBuf;
 
     #[test]
     fn test_buf_slice() -> Result<(), Box<dyn Error>> {

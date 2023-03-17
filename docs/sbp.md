@@ -18,7 +18,7 @@ The design of SBP follows two principles:
 The Frame Header is a fixed 12-octet header that appears at the beginning of every frame. It contains fields for the Frame Length, Magic Code, Operation Code, Flags, and Stream Identifier.
 
 ### Frame Length
-The length of the frame is expressed as a 32-bit integer.
+The length of the frame is expressed as a 32-bit integer. `Frame Length` = 16 + `Header.length` + `Payload.length`.
 ### Magic Code
 A fixed value representing the protocol self. Currently, the value is 23. This field is used to detect the presence of the SBP protocol, and implementations MUST discard any frame that does not contain the correct magic number.
 ### Operation Code

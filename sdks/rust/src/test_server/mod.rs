@@ -10,9 +10,9 @@ use protocol::rpc::header::{
 };
 use slog::{debug, error, info, trace, warn, Logger};
 
-use tokio::sync::oneshot;
-use tokio_uring::net::TcpListener;
-use transport::channel::Channel;
+use tokio::{net::TcpListener, sync::oneshot};
+
+use crate::{channel_reader::ChannelReader, channel_writer::ChannelWriter};
 
 fn serve_heartbeat(log: &Logger, request: &HeartbeatRequest, frame: &mut Frame) {
     debug!(log, "{:?}", request);
@@ -69,10 +69,10 @@ fn serve_list_ranges(log: &Logger, request: &ListRangesRequest, frame: &mut Fram
 /// Once it accepts a connection, it quits immediately.
 pub async fn run_listener(logger: Logger) -> u16 {
     let (tx, rx) = oneshot::channel();
-    tokio_uring::spawn(async move {
+    tokio::spawn(async move {
         // We are using dual-stack mode.
         // Binding to "[::]:0", the any address for IPv6, will also listen for IPv4.
-        let listener = TcpListener::bind("[::]:0".parse().unwrap()).unwrap();
+        let listener = TcpListener::bind("[::]:0").await.unwrap();
         let port = listener.local_addr().unwrap().port();
         debug!(logger, "TestServer is up, listening {}", port);
         tx.send(port).unwrap();
@@ -83,13 +83,15 @@ pub async fn run_listener(logger: Logger) -> u16 {
             );
             let log = logger.clone();
 
-            tokio_uring::spawn(async move {
+            tokio::spawn(async move {
                 let logger = log.clone();
                 let addr = sock_addr.to_string();
-                let channel = Channel::new(conn, &addr, logger.clone());
+                let (read_half, write_half) = conn.into_split();
+                let mut channel_reader = ChannelReader::new(read_half, log.clone());
+                let mut channel_writer = ChannelWriter::new(write_half, log.clone());
 
                 loop {
-                    if let Ok(frame) = channel.read_frame().await {
+                    if let Ok(frame) = channel_reader.read_frame().await {
                         if let Some(frame) = frame {
                             info!(
                                 logger,
@@ -155,7 +157,7 @@ pub async fn run_listener(logger: Logger) -> u16 {
                                 }
                             }
 
-                            match channel.write_frame(&response_frame).await {
+                            match channel_writer.write(&response_frame).await {
                                 Ok(_) => {
                                     trace!(
                                         logger,
@@ -227,6 +229,3 @@ fn serve_create_streams(log: &Logger, req: &CreateStreamsRequest, response_frame
     let data = builder.finished_data();
     response_frame.header = Some(Bytes::copy_from_slice(data));
 }
-
-pub mod fs;
-pub mod log;

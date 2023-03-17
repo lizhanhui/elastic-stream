@@ -1,10 +1,12 @@
 use super::session_state::SessionState;
 use super::{config, response};
-use crate::{client::response::Status, notifier::Notifier};
+use crate::client::error_code::ErrorCode;
+use crate::client::status::Status;
+use crate::notifier::Notifier;
 use codec::frame::{Frame, OperationCode};
 use model::range::StreamRange;
 use model::{client_role::ClientRole, request::Request};
-use protocol::rpc::header::ListRangesResponse;
+use protocol::rpc::header::{self, HeartbeatResponse, ListRangesResponse};
 use slog::{error, trace, warn, Logger};
 use std::{
     cell::UnsafeCell,
@@ -216,12 +218,45 @@ impl Session {
             Some(sender) => {
                 let res = match frame.operation_code {
                     OperationCode::Heartbeat => {
-                        trace!(log, "Mock parsing {} response", frame.operation_code);
-                        response::Response::Heartbeat { status: Status::OK }
+                        let mut resp = response::Response::Heartbeat {
+                            status: Status::ok(),
+                        };
+                        if let Some(buf) = frame.header {
+                            if let Ok(heartbeat) = flatbuffers::root::<HeartbeatResponse>(&buf) {
+                                trace!(log, "Heartbeat response: {:?}", heartbeat);
+                                let hb = heartbeat.unpack();
+                                let _client_id = hb.client_id;
+                                let _client_role = hb.client_role;
+                                let _status = hb.status;
+                                if let response::Response::Heartbeat { ref mut status } = resp {
+                                    if let Some(_status) = _status {
+                                        let code = match _status.code {
+                                            header::ErrorCode::NONE => ErrorCode::Ok,
+                                            header::ErrorCode::BAD_REQUEST => {
+                                                ErrorCode::InvalidRequest
+                                            }
+                                            header::ErrorCode::PM_NOT_LEADER => {
+                                                ErrorCode::NotLeader
+                                            }
+                                            header::ErrorCode::PM_NO_AVAILABLE_DN => {
+                                                ErrorCode::DataNodeNotAvailable
+                                            }
+                                            _ => ErrorCode::Internal,
+                                        };
+                                        status.code = code;
+
+                                        if let Some(msg) = _status.message {
+                                            status.message = msg;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        resp
                     }
                     OperationCode::ListRanges => {
                         let mut response = response::Response::ListRange {
-                            status: Status::OK,
+                            status: Status::ok(),
                             ranges: None,
                         };
                         if let Some(hdr) = frame.header {
@@ -239,12 +274,16 @@ impl Session {
                                     .map(|range| {
                                         if range.end_offset >= 0 {
                                             StreamRange::new(
+                                                range.stream_id,
+                                                range.range_index,
                                                 range.start_offset as u64,
                                                 range.next_offset as u64,
                                                 Some(range.end_offset as u64),
                                             )
                                         } else {
                                             StreamRange::new(
+                                                range.stream_id,
+                                                range.range_index,
                                                 range.start_offset as u64,
                                                 range.next_offset as u64,
                                                 None,
@@ -285,7 +324,7 @@ impl Drop for Session {
         let requests = unsafe { &mut *self.inflight_requests.get() };
         requests.drain().for_each(|(_stream_id, sender)| {
             let aborted_response = response::Response::ListRange {
-                status: Status::Aborted,
+                status: Status::internal("Aborted".to_owned()),
                 ranges: None,
             };
             sender.send(aborted_response).unwrap_or_else(|_response| {
@@ -300,6 +339,7 @@ mod tests {
 
     use std::error::Error;
 
+    use model::data_node::DataNode;
     use test_util::{run_listener, terminal_logger};
 
     use crate::notifier::UnsupportedNotifier;
@@ -333,31 +373,24 @@ mod tests {
             let port = run_listener(logger.clone()).await;
             let target = format!("127.0.0.1:{}", port);
             let stream = TcpStream::connect(target.parse()?).await?;
-            let config = Rc::new(config::ClientConfig::default());
+            let mut config = config::ClientConfig::default();
+            let data_node = DataNode {
+                node_id: 0,
+                advertise_address: "localhost: 1234".to_owned(),
+            };
+            config.with_data_node(data_node);
+            let config = Rc::new(config);
             let notifier = Rc::new(UnsupportedNotifier {});
             let mut session = Session::new(stream, &target, &config, notifier, &logger);
 
             let result = session.heartbeat().await;
-            let response = result.unwrap().await;
-            assert_eq!(true, response.is_ok());
-            Ok(())
-        })
-    }
-
-    #[test]
-    fn test_list_ranges() -> Result<(), Box<dyn Error>> {
-        tokio_uring::start(async {
-            let logger = terminal_logger();
-            let port = run_listener(logger.clone()).await;
-            let target = format!("127.0.0.1:{}", port);
-            let stream = TcpStream::connect(target.parse()?).await?;
-            let config = Rc::new(config::ClientConfig::default());
-            let notifier = Rc::new(UnsupportedNotifier {});
-            let mut session = Session::new(stream, &target, &config, notifier, &logger);
-
-            let result = session.heartbeat().await;
-            let response = result.unwrap().await;
-            assert_eq!(true, response.is_ok());
+            let response = result.unwrap().await?;
+            trace!(logger, "Heartbeat response: {:?}", response);
+            if let response::Response::Heartbeat { ref status } = response {
+                assert_eq!(ErrorCode::Ok, status.code);
+            } else {
+                panic!("Unexpected response type");
+            }
             Ok(())
         })
     }

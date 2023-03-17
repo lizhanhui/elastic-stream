@@ -24,7 +24,9 @@ use std::{
     os::fd::AsRawFd,
 };
 
+use super::buf::AlignedBuf;
 use super::task::SingleFetchResult;
+use super::ReadTask;
 
 pub(crate) struct IO {
     options: Options,
@@ -216,7 +218,7 @@ impl IO {
         let pos = self.wal.recover(offset)?;
 
         // Reset offset of write buffer
-        self.buf_writer.get_mut().offset(pos);
+        self.buf_writer.get_mut().wal_offset(pos);
 
         // Reset committed WAL offset
         self.write_window.reset_committed(pos);
@@ -346,33 +348,32 @@ impl IO {
             .into_iter()
             .flat_map(|buf| {
                 let ptr = buf.as_ptr();
-                if let Some(segment) = self.wal.segment_file_of(buf.aligned_offset) {
+                if let Some(segment) = self.wal.segment_file_of(buf.wal_offset) {
                     debug_assert_eq!(Status::ReadWrite, segment.status);
                     if let Some(sd) = segment.sd.as_ref() {
-                        debug_assert!(buf.aligned_offset >= segment.offset);
+                        debug_assert!(buf.wal_offset >= segment.offset);
                         debug_assert!(
-                            buf.aligned_offset + buf.capacity as u64
-                                <= segment.offset + segment.size
+                            buf.wal_offset + buf.capacity as u64 <= segment.offset + segment.size
                         );
-                        let file_offset = buf.aligned_offset - segment.offset;
+                        let file_offset = buf.wal_offset - segment.offset;
 
                         // Track write requests
                         self.write_window
-                            .add(buf.aligned_offset, buf.write_pos() as u32)?;
+                            .add(buf.wal_offset, buf.limit() as u32)?;
 
                         let mut io_blocked = false;
                         // Check barrier
-                        if self.barrier.contains(&buf.aligned_offset) {
+                        if self.barrier.contains(&buf.wal_offset) {
                             // Submit SQE to io_uring when the blocking IO task completed.
                             io_blocked = true;
                         } else {
                             // Insert barrier, blocking future write to this aligned block issued to `io_uring` until `sqe` is reaped.
                             if buf.partial() {
-                                self.barrier.insert(buf.aligned_offset);
+                                self.barrier.insert(buf.wal_offset);
                             }
                         }
 
-                        let buf_offset = buf.aligned_offset;
+                        let buf_offset = buf.wal_offset;
                         let buf_len = buf.capacity as u32;
 
                         // The pointer will be set into user_data of uring.
@@ -449,10 +450,14 @@ impl IO {
                         ) {
                             let ptr = buf.as_ptr() as *mut u8;
 
-                            // A read offset that is already aligned, but it's not the same as the requested offset.
-                            let read_offset = buf.aligned_offset;
-                            // The length of the aligned buffer, which is always larger than or equal the requested length.
+                            // The allocated buffer is always aligned, so use the aligned offset as the read offset.
+                            let read_offset = buf.wal_offset;
+
+                            // The length of the aligned buffer is multiple of alignment,
+                            // use it as the read length to maximize the value of a single IO.
+                            // Note that the read len is always larger than or equal the requested length.
                             let read_len = buf.capacity as u32;
+
                             // The pointer will be set into user_data of uring.
                             // When the uring io completes, the pointer will be used to retrieve the `Context`.
                             let context = Context::read_ctx(
@@ -477,7 +482,7 @@ impl IO {
                 IoTask::Write(mut task) => {
                     let writer = unsafe { &mut *self.buf_writer.get() };
                     loop {
-                        if let Some(segment) = self.wal.segment_file_of(writer.offset) {
+                        if let Some(segment) = self.wal.segment_file_of(writer.wal_offset) {
                             if !segment.writable() {
                                 trace!(
                                     log,
@@ -573,6 +578,7 @@ impl IO {
         }
         let committed = self.write_window.committed;
         let mut cache_entries = vec![];
+        let mut completed_read_ctxs = vec![];
         {
             let mut completion = self.data_ring.completion();
             let mut count = 0;
@@ -589,7 +595,7 @@ impl IO {
                     let mut context = unsafe { Box::from_raw(ptr) };
 
                     // Remove barrier
-                    self.barrier.remove(&context.buf.aligned_offset);
+                    self.barrier.remove(&context.buf.wal_offset);
 
                     if let Err(e) = on_complete(
                         &mut self.write_window,
@@ -608,6 +614,11 @@ impl IO {
                     } else {
                         // Add block cache
                         cache_entries.push(Arc::clone(&context.buf));
+
+                        // Cache the completed read context
+                        if opcode::Read::CODE == context.opcode {
+                            completed_read_ctxs.push(context);
+                        }
                     }
                 }
                 // This will flush any entries consumed in this iterator and will make available new entries in the queue
@@ -625,10 +636,12 @@ impl IO {
 
         // Add to block cache
         for buf in cache_entries {
-            if let Some(segment) = self.wal.segment_file_of(buf.aligned_offset) {
+            if let Some(segment) = self.wal.segment_file_of(buf.wal_offset) {
                 segment.block_cache.add_entry(buf);
             }
         }
+
+        self.complete_read_tasks(completed_read_ctxs);
 
         if self.write_window.committed > committed {
             self.complete_write_tasks();
@@ -659,6 +672,39 @@ impl IO {
         };
         self.indexer
             .index(task.stream_id, task.offset as u64, handle);
+    }
+
+    fn complete_read_tasks(&mut self, read_ctxs: Vec<Box<Context>>) {
+        read_ctxs.into_iter().for_each(|mut ctx| {
+            let read_task = ctx.io_task.take();
+            if let Some(IoTask::Read(read_task)) = read_task {
+                self.complete_read_task(read_task, ctx.buf);
+            } else {
+                error!(self.log, "Invalid read task");
+            }
+        });
+    }
+
+    fn complete_read_task(&mut self, read_task: ReadTask, read_buf: Arc<AlignedBuf>) {
+        // Completes the read task
+        let start_pos = (read_task.wal_offset - read_buf.wal_offset) as u32;
+        let fetch_result = SingleFetchResult {
+            stream_id: read_task.stream_id,
+            wal_offset: read_task.wal_offset as i64,
+            payload: BufSlice::new(read_buf, start_pos, (read_task.len + start_pos) as u32),
+        };
+
+        trace!(
+            self.log,
+            "Completes read task for stream {} at WAL offset {}, return {} bytes",
+            fetch_result.stream_id,
+            fetch_result.wal_offset,
+            read_task.len,
+        );
+
+        if let Err(e) = read_task.observer.send(Ok(fetch_result)) {
+            error!(self.log, "Failed to send read result to observer: {:?}", e);
+        }
     }
 
     fn complete_write_tasks(&mut self) {
@@ -806,13 +852,13 @@ fn on_complete(
                 error!(
                     log,
                     "Write to WAL range `[{}, {})` failed",
-                    context.buf.aligned_offset,
+                    context.buf.wal_offset,
                     context.buf.capacity
                 );
                 return Err(StoreError::System(-result));
             } else {
                 write_window
-                    .commit(context.buf.aligned_offset, context.buf.write_pos() as u32)
+                    .commit(context.buf.wal_offset, context.buf.limit() as u32)
                     .map_err(|_e| StoreError::WriteWindow)?;
             }
             Ok(())
@@ -822,14 +868,14 @@ fn on_complete(
                 error!(
                     log,
                     "Read from WAL range `[{}, {})` failed",
-                    context.offset.unwrap_or_default(),
+                    context.wal_offset.unwrap_or_default(),
                     context.len.unwrap_or_default()
                 );
                 return Err(StoreError::System(-result));
             } else {
-                if let (Some(offset), Some(len)) = (context.offset, context.len) {
+                if let (Some(offset), Some(len)) = (context.wal_offset, context.len) {
                     // Calculates the effective read bytes, without the alignment bytes.
-                    let ef_bytes = result - (offset - context.buf.aligned_offset) as i32;
+                    let ef_bytes = result - (offset - context.buf.wal_offset) as i32;
 
                     if ef_bytes < len as i32 {
                         error!(
@@ -844,36 +890,7 @@ fn on_complete(
                     }
 
                     context.buf.increase_written(result as usize);
-
-                    let io_task = context.io_task.take();
-
-                    if let Some(IoTask::Read(io_task)) = io_task {
-                        // Completes the read task
-                        let start_pos = (io_task.wal_offset - context.buf.aligned_offset) as u32;
-                        let fetch_result = SingleFetchResult {
-                            stream_id: io_task.stream_id,
-                            wal_offset: io_task.wal_offset as i64,
-                            payload: BufSlice::new(
-                                Arc::clone(&context.buf),
-                                start_pos,
-                                (io_task.len + start_pos) as u32,
-                            ),
-                        };
-
-                        trace!(
-                            log,
-                            "Completes read task for stream {} at WAL offset {}, read {} bytes",
-                            fetch_result.stream_id,
-                            fetch_result.wal_offset,
-                            result,
-                        );
-
-                        if let Err(e) = io_task.observer.send(Ok(fetch_result)) {
-                            error!(log, "Failed to send read result to observer: {:?}", e);
-                        }
-
-                        return Ok(());
-                    }
+                    return Ok(());
                 }
             }
             // This should never happen, because we have checked the request before.

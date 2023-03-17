@@ -1,12 +1,75 @@
 namespace header;
 
+// Use HTTP status codes where possible: https://en.wikipedia.org/wiki/List_of_HTTP_status_codes
+// 5xx is not used as we have two kinds of servers: placement manager and data node. Instead, use
+// 15xx for placement manager errors and 25xx for data node errors.
 enum ErrorCode : int16 {
     NONE = 0,
-    UNKNOWN = 1,
-    INVALID_REQUEST = 2,
-    UNKNOWN_STORAGE_ERROR = 3,
-    STORAGE_NOT_AVAILABLE = 4,
-    PM_NOT_LEADER = 5,
+
+    // 12xx means success or partial success.
+    OK = 1200,
+
+    // 14xx for client errors
+    BAD_REQUEST = 1400,
+    UNAUTHORIZED = 1401,
+    PAYMENT_REQUIRED = 1402,
+    FORBIDDEN = 1403,
+    NOT_FOUND = 1404,
+    METHOD_NOT_ALLOWED = 1405,
+    PRECONDITION_FAILED = 1412,
+    PAYLOAD_TOO_LARGE = 1413,
+    TOO_MANY_REQUESTS = 1429,
+    HEADER_FIELDS_TOO_LARGE = 1431,
+
+    // 15xx is reserved for placement manager errors
+    // In case placement manager encounters an internal error, normally, this implies 
+    // that a design or implementation bug is triggered and should be fixed.
+    PM_INTERNAL_SERVER_ERROR = 1500,
+
+    // Feature not implemented yet.
+    PM_NOT_IMPLEMENTED = 1501,
+
+    // When creating a new stream or sealing a mutable range, placement managers need to create
+    // a new replica-set of mutable range, which requires at least replica number of survival 
+    // data nodes. If this requirement is not met, use this error code to signal the client.
+    PM_NO_AVAILABLE_DN = 1502,
+
+    // Placement manager nodes are running RAFT concensus algorithm, write operations should go to
+    // leader nodes. Otherwise, use this code to signal the client to redirect future requests.
+    PM_NOT_LEADER = 1503,
+
+    // 25xx is reserved for data node errors
+    DN_INTERNAL_SERVER_ERROR = 2500,
+    DN_NOT_IMPLEMENTED = 2501,
+    DN_NOT_LEADER_RANGE = 2502,
+}
+
+// The Status type defines a logical error model.
+// Each `Status` message contains three pieces of data: error code, error message, and error detail.
+table Status {
+    // The top-level error code, or 0 if there was no error.
+    code: ErrorCode (id: 0);
+    // The error message, or omitted if there was no error.
+    message: string (id: 1);
+    // Additional information about the error, if any.
+    // Its format depends on the specific `ErrorCode`.
+    detail: [ubyte] (id: 2);
+}
+
+// The Placement Manager information.
+// It will be set in `Status.detail` if the `Status.code` is `PM_NOT_LEADER`.
+table PlacementManager {
+    nodes: [PlacementManagerNode] (id: 0);
+}
+
+// A node in the Placement Manager.
+table PlacementManagerNode {
+    // The name of the PM node.
+    name: string (id: 0);
+    // The advertise address of the PM node, for client traffic from outside.
+    // The schema of the address is `host:port`, while host supports both domain name and IPv4/IPv6 address.
+    advertise_addr: string (id: 1);
+    is_leader: bool (id: 2);
 }
 
 // The Status type defines a logical error model.

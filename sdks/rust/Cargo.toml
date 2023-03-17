@@ -11,5 +11,12 @@ slog =  { workspace = true }
 slog-async =  { workspace = true }
 slog-term =  { workspace = true }
 bytes = { workspace = true }
-tokio = { version = "1", features = ["full"] }
+tokio = { workspace = true, features = ["full"] }
+tokio-util = { workspace = true }
 futures = { workspace = true }
+thiserror = { workspace = true }
+flatbuffers = { workspace = true }
+protocol = { path = "../../components/protocol" }
+
+[dev-dependencies]
+test-util = { path = "../../components/test-util" }
