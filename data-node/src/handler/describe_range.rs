@@ -26,7 +26,7 @@ impl<'a> DescribeRange<'a> {
                     "DescribeRangesRequest[stream-id={}] received without payload",
                     request.stream_id
                 );
-                return Err(ErrorCode::INVALID_REQUEST);
+                return Err(ErrorCode::BAD_REQUEST);
             }
         };
 
@@ -39,7 +39,7 @@ impl<'a> DescribeRange<'a> {
                     request.stream_id,
                     e
                 );
-                return Err(ErrorCode::INVALID_REQUEST);
+                return Err(ErrorCode::BAD_REQUEST);
             }
         };
 

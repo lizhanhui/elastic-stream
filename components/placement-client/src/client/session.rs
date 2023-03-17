@@ -232,13 +232,13 @@ impl Session {
                                     if let Some(_status) = _status {
                                         let code = match _status.code {
                                             header::ErrorCode::NONE => ErrorCode::Ok,
-                                            header::ErrorCode::INVALID_REQUEST => {
+                                            header::ErrorCode::BAD_REQUEST => {
                                                 ErrorCode::InvalidRequest
                                             }
                                             header::ErrorCode::PM_NOT_LEADER => {
                                                 ErrorCode::NotLeader
                                             }
-                                            header::ErrorCode::STORAGE_NOT_AVAILABLE => {
+                                            header::ErrorCode::PM_NO_AVAILABLE_DN => {
                                                 ErrorCode::DataNodeNotAvailable
                                             }
                                             _ => ErrorCode::Internal,

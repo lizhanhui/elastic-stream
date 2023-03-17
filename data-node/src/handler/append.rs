@@ -40,7 +40,7 @@ impl<'a> Append<'a> {
                     logger,
                     "AppendRequest[stream-id={}] received without payload", request.stream_id
                 );
-                return Err(ErrorCode::INVALID_REQUEST);
+                return Err(ErrorCode::BAD_REQUEST);
             }
         };
 
@@ -53,19 +53,19 @@ impl<'a> Append<'a> {
                     request.stream_id,
                     e
                 );
-                return Err(ErrorCode::INVALID_REQUEST);
+                return Err(ErrorCode::BAD_REQUEST);
             }
         };
 
         let payload = match request.payload {
             // For append frame, the payload must be a single buffer
-            Some(ref buf) if buf.len() == 1 => buf.first().ok_or(ErrorCode::INVALID_REQUEST)?,
+            Some(ref buf) if buf.len() == 1 => buf.first().ok_or(ErrorCode::BAD_REQUEST)?,
             _ => {
                 warn!(
                     logger,
                     "AppendRequest[stream-id={}] received without payload", request.stream_id
                 );
-                return Err(ErrorCode::INVALID_REQUEST);
+                return Err(ErrorCode::BAD_REQUEST);
             }
         };
 
@@ -199,7 +199,7 @@ impl<'a> Append<'a> {
 
                 // Split the current batch payload from the whole payload
                 if payload.len() < batch_len as usize {
-                    err_code = ErrorCode::INVALID_REQUEST;
+                    err_code = ErrorCode::BAD_REQUEST;
                     return None;
                 }
                 let payload_b = payload.split_to(batch_len as usize);
@@ -221,23 +221,23 @@ impl<'a> Append<'a> {
     fn convert_store_error(&self, err: &AppendError) -> (ErrorCode, Option<String>) {
         match err {
             AppendError::SubmissionQueue => (
-                ErrorCode::STORAGE_NOT_AVAILABLE,
+                ErrorCode::PM_NO_AVAILABLE_DN,
                 Some(AppendError::SubmissionQueue.to_string()),
             ),
             AppendError::ChannelRecv => (
-                ErrorCode::STORAGE_NOT_AVAILABLE,
+                ErrorCode::PM_NO_AVAILABLE_DN,
                 Some(AppendError::SubmissionQueue.to_string()),
             ),
             AppendError::System(_) => (
-                ErrorCode::UNKNOWN_STORAGE_ERROR,
+                ErrorCode::PM_NO_AVAILABLE_DN,
                 Some(AppendError::SubmissionQueue.to_string()),
             ),
             AppendError::BadRequest => (
-                ErrorCode::INVALID_REQUEST,
+                ErrorCode::BAD_REQUEST,
                 Some(AppendError::SubmissionQueue.to_string()),
             ),
             AppendError::Internal => (
-                ErrorCode::UNKNOWN_STORAGE_ERROR,
+                ErrorCode::PM_NO_AVAILABLE_DN,
                 Some(AppendError::SubmissionQueue.to_string()),
             ),
         }

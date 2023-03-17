@@ -128,8 +128,13 @@ impl Session {
                         }
                         // Wrap redirect info...
                     }
+
+                    ErrorCode::PM_NO_AVAILABLE_DN => {
+                        dbg!(status);
+                    }
                     _ => {
                         // Return error
+                        dbg!(status);
                     }
                 }
             }
