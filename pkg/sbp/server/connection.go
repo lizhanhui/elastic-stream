@@ -38,7 +38,7 @@ type conn struct {
 
 	// Everything following is owned by the serve loop; use serveG.Check():
 	serveG              tphttp2.GoroutineLock // used to verify func is on serve()
-	maxClientStreamID   uint32                // max ever seen from client, or 0 if there have been no client requests
+	nextClientStreamID  uint32                // next client stream ID, which is, maxClientStreamID+1
 	streams             map[uint32]*stream
 	wScheduler          *writeScheduler // wScheduler manages frames to be written
 	inFrameScheduleLoop bool            // whether we're in the scheduleFrameWrite loop
@@ -208,9 +208,9 @@ func (c *conn) scheduleFrameWrite() {
 			c.needToSendGoAway = false
 			var goAwayStream *stream
 			if c.isGoAwayResponse {
-				goAwayStream = c.streams[c.maxClientStreamID]
+				goAwayStream = c.streams[c.nextClientStreamID-1]
 			} else {
-				goAwayStream = c.newStream(c.maxClientStreamID + 1)
+				goAwayStream = c.newStream(c.nextClientStreamID)
 			}
 			c.startFrameWrite(frameWriteRequest{
 				f:         codec.NewGoAwayFrame(goAwayStream.id, c.isGoAwayResponse),
@@ -280,7 +280,7 @@ func (c *conn) processFrameFromReader(res frameReadResult) bool {
 
 	err := res.err
 	if err != nil {
-		clientGone := err == io.EOF || err == io.ErrUnexpectedEOF || strings.Contains(err.Error(), "use of closed network connection")
+		clientGone := errors.As(err, &io.EOF) || errors.As(err, &io.ErrUnexpectedEOF) || strings.Contains(err.Error(), "use of closed network connection")
 		if clientGone {
 			return false
 		}
@@ -312,7 +312,7 @@ func (c *conn) processFrame(f codec.Frame) error {
 	streamID := f.Base().StreamID
 
 	// Discard frames for streams initiated after the identified last stream sent in a GOAWAY
-	if c.inGoAway && streamID > c.maxClientStreamID {
+	if c.inGoAway && streamID >= c.nextClientStreamID {
 		logger.Warn("server ignoring frame for stream initiated after GOAWAY", zap.String("frame", f.Info()))
 		return nil
 	}
@@ -325,7 +325,7 @@ func (c *conn) processFrame(f codec.Frame) error {
 		return nil
 	}
 
-	if streamID <= c.maxClientStreamID {
+	if streamID < c.nextClientStreamID {
 		logger.Error("server received a frame with an ID that has decreased", zap.String("frame", f.Info()))
 		return errors.New("decreased stream ID")
 	}
@@ -474,7 +474,7 @@ func (c *conn) newStream(id uint32) *stream {
 		state: stateOpen,
 	}
 	c.streams[id] = st
-	c.maxClientStreamID = id
+	c.nextClientStreamID = id + 1
 	return st
 }
 
