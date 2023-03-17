@@ -1,4 +1,6 @@
-use std::{cell::UnsafeCell, collections::BTreeMap, ops::Bound, rc::Rc, sync::Arc, time::Instant};
+use std::{
+    cell::UnsafeCell, cmp, collections::BTreeMap, ops::Bound, rc::Rc, sync::Arc, time::Instant,
+};
 
 use slog::{error, info, trace, Logger};
 use thiserror::Error;
@@ -118,30 +120,28 @@ pub trait MergeRange<T> {
 }
 
 impl MergeRange<EntryRange> for Vec<EntryRange> {
+    /// The merge algorithm supports merging disorderly, repeated entries as well as overlapping entries.
     fn merge(self) -> Vec<EntryRange> {
-        let mut ranges = Vec::new();
-        let mut last_range: Option<EntryRange> = None;
-        for entry_range in self {
-            if let Some(range) = last_range {
-                if range.wal_offset + range.len as u64 == entry_range.wal_offset {
-                    last_range = Some(EntryRange {
-                        wal_offset: range.wal_offset,
-                        len: range.len + entry_range.len,
-                    });
-                } else {
-                    ranges.push(range);
-                    last_range = Some(entry_range);
+        let mut ranges = self;
+        ranges.sort_by_key(|r| r.wal_offset);
+
+        let mut merged_ranges: Vec<EntryRange> = Vec::with_capacity(ranges.len());
+
+        // Iterate the sorted ranges from the end.
+        for range in ranges.into_iter() {
+            if let Some(last_m) = merged_ranges.last_mut() {
+                if last_m.wal_offset + last_m.len as u64 >= range.wal_offset {
+                    // Adjust the length of the last merged range.
+                    last_m.len = cmp::max(
+                        range.wal_offset + range.len as u64 - last_m.wal_offset,
+                        last_m.len as u64,
+                    ) as u32;
+                    continue;
                 }
-            } else {
-                last_range = Some(entry_range);
             }
+            merged_ranges.push(range);
         }
-
-        if let Some(range) = last_range {
-            ranges.push(range);
-        }
-
-        ranges
+        merged_ranges
     }
 }
 
@@ -327,6 +327,8 @@ impl BlockCache {
 mod tests {
     use std::sync::{atomic::Ordering, Arc};
 
+    use rand::{seq::SliceRandom, thread_rng};
+
     use crate::io::{block_cache::MergeRange, buf::AlignedBuf};
 
     /// Test merge missed entry ranges.
@@ -335,13 +337,15 @@ mod tests {
         let block_size = 4096;
 
         // Case one: add 16 entries, and merge to one range.
-        let missed_entries: Vec<_> = (0..16)
+        let mut missed_entries: Vec<_> = (0..16)
             .into_iter()
             .map(|n| super::EntryRange {
                 wal_offset: n * block_size as u64,
                 len: block_size,
             })
             .collect();
+        let mut rng = thread_rng();
+        missed_entries.shuffle(&mut rng);
 
         let merged = missed_entries.merge();
         assert_eq!(1, merged.len());
@@ -365,6 +369,8 @@ mod tests {
             });
         });
 
+        missed_entries.shuffle(&mut rng);
+
         let merged = missed_entries.merge();
         assert_eq!(2, merged.len());
         assert_eq!(0, merged[0].wal_offset);
@@ -373,18 +379,72 @@ mod tests {
         assert_eq!(8 * block_size, merged[1].len);
 
         // Case three: no merge
-        let missed_entries: Vec<_> = (0..8)
+        let mut missed_entries: Vec<_> = (0..8)
             .into_iter()
             .map(|n| super::EntryRange {
                 wal_offset: n * 3 * block_size as u64,
                 len: block_size,
             })
             .collect();
+
+        missed_entries.shuffle(&mut rng);
         let merged = missed_entries.merge();
         assert_eq!(8, merged.len());
         (0..8).into_iter().for_each(|n| {
             assert_eq!(n * 3 * block_size as u64, merged[n as usize].wal_offset);
         });
+
+        // Case four: discard the redundant range.
+        let mut missed_entries: Vec<_> = (0..8)
+            .into_iter()
+            .map(|n| super::EntryRange {
+                wal_offset: n * block_size as u64,
+                len: block_size,
+            })
+            .collect();
+
+        (0..8).into_iter().for_each(|n| {
+            missed_entries.push(super::EntryRange {
+                wal_offset: n * block_size as u64,
+                len: block_size,
+            });
+        });
+
+        missed_entries.shuffle(&mut rng);
+        let merged = missed_entries.merge();
+        assert_eq!(1, merged.len());
+        assert_eq!(0, merged[0].wal_offset);
+        assert_eq!(8 * block_size, merged[0].len);
+
+        // Case five: handle the case that the ranges are overlapped.
+        let mut missed_entries: Vec<_> = vec![];
+
+        // Add a range [0, 2 * block_size)
+        missed_entries.push(super::EntryRange {
+            wal_offset: 0,
+            len: 2 * block_size,
+        });
+        // Add a range [block_size, 3 * block_size)
+        missed_entries.push(super::EntryRange {
+            wal_offset: block_size as u64,
+            len: 3 * block_size,
+        });
+        // Add a range [1 * block_size, 2* block_size)
+        missed_entries.push(super::EntryRange {
+            wal_offset: block_size as u64,
+            len: 2 * block_size,
+        });
+        // Add a range [3 * block_size, 3 * block_size)
+        missed_entries.push(super::EntryRange {
+            wal_offset: 3 * block_size as u64,
+            len: 3 * block_size,
+        });
+
+        missed_entries.shuffle(&mut rng);
+        let merged = missed_entries.merge();
+        assert_eq!(1, merged.len());
+        assert_eq!(0, merged[0].wal_offset);
+        assert_eq!(6 * block_size, merged[0].len);
     }
 
     /// Test add entry.
