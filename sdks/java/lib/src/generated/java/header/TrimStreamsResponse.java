@@ -33,31 +33,26 @@ public final class TrimStreamsResponse extends Table {
   public int trimResponsesLength() { int o = __offset(6); return o != 0 ? __vector_len(o) : 0; }
   public header.TrimStreamResult.Vector trimResponsesVector() { return trimResponsesVector(new header.TrimStreamResult.Vector()); }
   public header.TrimStreamResult.Vector trimResponsesVector(header.TrimStreamResult.Vector obj) { int o = __offset(6); return o != 0 ? obj.__assign(__vector(o), 4, bb) : null; }
-  public short errorCode() { int o = __offset(8); return o != 0 ? bb.getShort(o + bb_pos) : 0; }
-  public String errorMessage() { int o = __offset(10); return o != 0 ? __string(o + bb_pos) : null; }
-  public ByteBuffer errorMessageAsByteBuffer() { return __vector_as_bytebuffer(10, 1); }
-  public ByteBuffer errorMessageInByteBuffer(ByteBuffer _bb) { return __vector_in_bytebuffer(_bb, 10, 1); }
+  public header.Status status() { return status(new header.Status()); }
+  public header.Status status(header.Status obj) { int o = __offset(8); return o != 0 ? obj.__assign(__indirect(o + bb_pos), bb) : null; }
 
   public static int createTrimStreamsResponse(FlatBufferBuilder builder,
       int throttleTimeMs,
       int trimResponsesOffset,
-      short errorCode,
-      int errorMessageOffset) {
-    builder.startTable(4);
-    TrimStreamsResponse.addErrorMessage(builder, errorMessageOffset);
+      int statusOffset) {
+    builder.startTable(3);
+    TrimStreamsResponse.addStatus(builder, statusOffset);
     TrimStreamsResponse.addTrimResponses(builder, trimResponsesOffset);
     TrimStreamsResponse.addThrottleTimeMs(builder, throttleTimeMs);
-    TrimStreamsResponse.addErrorCode(builder, errorCode);
     return TrimStreamsResponse.endTrimStreamsResponse(builder);
   }
 
-  public static void startTrimStreamsResponse(FlatBufferBuilder builder) { builder.startTable(4); }
+  public static void startTrimStreamsResponse(FlatBufferBuilder builder) { builder.startTable(3); }
   public static void addThrottleTimeMs(FlatBufferBuilder builder, int throttleTimeMs) { builder.addInt(0, throttleTimeMs, 0); }
   public static void addTrimResponses(FlatBufferBuilder builder, int trimResponsesOffset) { builder.addOffset(1, trimResponsesOffset, 0); }
   public static int createTrimResponsesVector(FlatBufferBuilder builder, int[] data) { builder.startVector(4, data.length, 4); for (int i = data.length - 1; i >= 0; i--) builder.addOffset(data[i]); return builder.endVector(); }
   public static void startTrimResponsesVector(FlatBufferBuilder builder, int numElems) { builder.startVector(4, numElems, 4); }
-  public static void addErrorCode(FlatBufferBuilder builder, short errorCode) { builder.addShort(2, errorCode, 0); }
-  public static void addErrorMessage(FlatBufferBuilder builder, int errorMessageOffset) { builder.addOffset(3, errorMessageOffset, 0); }
+  public static void addStatus(FlatBufferBuilder builder, int statusOffset) { builder.addOffset(2, statusOffset, 0); }
   public static int endTrimStreamsResponse(FlatBufferBuilder builder) {
     int o = builder.endTable();
     return o;
@@ -80,10 +75,8 @@ public final class TrimStreamsResponse extends Table {
     header.TrimStreamResultT[] _oTrimResponses = new header.TrimStreamResultT[trimResponsesLength()];
     for (int _j = 0; _j < trimResponsesLength(); ++_j) {_oTrimResponses[_j] = (trimResponses(_j) != null ? trimResponses(_j).unpack() : null);}
     _o.setTrimResponses(_oTrimResponses);
-    short _oErrorCode = errorCode();
-    _o.setErrorCode(_oErrorCode);
-    String _oErrorMessage = errorMessage();
-    _o.setErrorMessage(_oErrorMessage);
+    if (status() != null) _o.setStatus(status().unpack());
+    else _o.setStatus(null);
   }
   public static int pack(FlatBufferBuilder builder, TrimStreamsResponseT _o) {
     if (_o == null) return 0;
@@ -94,13 +87,12 @@ public final class TrimStreamsResponse extends Table {
       for (header.TrimStreamResultT _e : _o.getTrimResponses()) { __trimResponses[_j] = header.TrimStreamResult.pack(builder, _e); _j++;}
       _trimResponses = createTrimResponsesVector(builder, __trimResponses);
     }
-    int _errorMessage = _o.getErrorMessage() == null ? 0 : builder.createString(_o.getErrorMessage());
+    int _status = _o.getStatus() == null ? 0 : header.Status.pack(builder, _o.getStatus());
     return createTrimStreamsResponse(
       builder,
       _o.getThrottleTimeMs(),
       _trimResponses,
-      _o.getErrorCode(),
-      _errorMessage);
+      _status);
   }
 }
 

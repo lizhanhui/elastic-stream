@@ -24,8 +24,7 @@ public class AppendResultT {
   private int requestIndex;
   private long baseOffset;
   private long streamAppendTimeMs;
-  private short errorCode;
-  private String errorMessage;
+  private header.StatusT status;
 
   public long getStreamId() { return streamId; }
 
@@ -43,13 +42,9 @@ public class AppendResultT {
 
   public void setStreamAppendTimeMs(long streamAppendTimeMs) { this.streamAppendTimeMs = streamAppendTimeMs; }
 
-  public short getErrorCode() { return errorCode; }
+  public header.StatusT getStatus() { return status; }
 
-  public void setErrorCode(short errorCode) { this.errorCode = errorCode; }
-
-  public String getErrorMessage() { return errorMessage; }
-
-  public void setErrorMessage(String errorMessage) { this.errorMessage = errorMessage; }
+  public void setStatus(header.StatusT status) { this.status = status; }
 
 
   public AppendResultT() {
@@ -57,8 +52,7 @@ public class AppendResultT {
     this.requestIndex = 0;
     this.baseOffset = 0L;
     this.streamAppendTimeMs = 0L;
-    this.errorCode = 0;
-    this.errorMessage = null;
+    this.status = null;
   }
 }
 

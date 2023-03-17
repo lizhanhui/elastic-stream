@@ -43,10 +43,6 @@ public class ResourceManagerImpl implements ResourceManager {
         this.streamRangeCache = new StreamRangeCache(id -> null);
     }
 
-    public void start() throws Exception {
-        nettyClient.start();
-    }
-
     @Override
     public CompletableFuture<List<ListRangesResultT>> listRanges(List<RangeCriteriaT> rangeCriteriaList,
         Duration timeout) {
@@ -55,7 +51,7 @@ public class ResourceManagerImpl implements ResourceManager {
 
     @Override
     public CompletableFuture<Byte> pingPong(Duration timeout) {
-        SbpFrame sbpFrame = constructRequestSbpFrame(OperationCode.PING, 0, null);
+        SbpFrame sbpFrame = constructRequestSbpFrame(OperationCode.PING, 0, ByteBuffer.wrap(new byte[] {1,2,3}), new ByteBuffer[]{ByteBuffer.wrap(new byte[] {4,5,6})});
         return nettyClient.invokeAsync(sbpFrame, timeout).thenCompose(responseFrame -> CompletableFuture.completedFuture(responseFrame.getFlag()));
     }
 

@@ -31,35 +31,30 @@ public final class AppendResult extends Table {
   public int requestIndex() { int o = __offset(6); return o != 0 ? bb.getInt(o + bb_pos) : 0; }
   public long baseOffset() { int o = __offset(8); return o != 0 ? bb.getLong(o + bb_pos) : 0L; }
   public long streamAppendTimeMs() { int o = __offset(10); return o != 0 ? bb.getLong(o + bb_pos) : 0L; }
-  public short errorCode() { int o = __offset(12); return o != 0 ? bb.getShort(o + bb_pos) : 0; }
-  public String errorMessage() { int o = __offset(14); return o != 0 ? __string(o + bb_pos) : null; }
-  public ByteBuffer errorMessageAsByteBuffer() { return __vector_as_bytebuffer(14, 1); }
-  public ByteBuffer errorMessageInByteBuffer(ByteBuffer _bb) { return __vector_in_bytebuffer(_bb, 14, 1); }
+  public header.Status status() { return status(new header.Status()); }
+  public header.Status status(header.Status obj) { int o = __offset(12); return o != 0 ? obj.__assign(__indirect(o + bb_pos), bb) : null; }
 
   public static int createAppendResult(FlatBufferBuilder builder,
       long streamId,
       int requestIndex,
       long baseOffset,
       long streamAppendTimeMs,
-      short errorCode,
-      int errorMessageOffset) {
-    builder.startTable(6);
+      int statusOffset) {
+    builder.startTable(5);
     AppendResult.addStreamAppendTimeMs(builder, streamAppendTimeMs);
     AppendResult.addBaseOffset(builder, baseOffset);
     AppendResult.addStreamId(builder, streamId);
-    AppendResult.addErrorMessage(builder, errorMessageOffset);
+    AppendResult.addStatus(builder, statusOffset);
     AppendResult.addRequestIndex(builder, requestIndex);
-    AppendResult.addErrorCode(builder, errorCode);
     return AppendResult.endAppendResult(builder);
   }
 
-  public static void startAppendResult(FlatBufferBuilder builder) { builder.startTable(6); }
+  public static void startAppendResult(FlatBufferBuilder builder) { builder.startTable(5); }
   public static void addStreamId(FlatBufferBuilder builder, long streamId) { builder.addLong(0, streamId, 0L); }
   public static void addRequestIndex(FlatBufferBuilder builder, int requestIndex) { builder.addInt(1, requestIndex, 0); }
   public static void addBaseOffset(FlatBufferBuilder builder, long baseOffset) { builder.addLong(2, baseOffset, 0L); }
   public static void addStreamAppendTimeMs(FlatBufferBuilder builder, long streamAppendTimeMs) { builder.addLong(3, streamAppendTimeMs, 0L); }
-  public static void addErrorCode(FlatBufferBuilder builder, short errorCode) { builder.addShort(4, errorCode, 0); }
-  public static void addErrorMessage(FlatBufferBuilder builder, int errorMessageOffset) { builder.addOffset(5, errorMessageOffset, 0); }
+  public static void addStatus(FlatBufferBuilder builder, int statusOffset) { builder.addOffset(4, statusOffset, 0); }
   public static int endAppendResult(FlatBufferBuilder builder) {
     int o = builder.endTable();
     return o;
@@ -85,22 +80,19 @@ public final class AppendResult extends Table {
     _o.setBaseOffset(_oBaseOffset);
     long _oStreamAppendTimeMs = streamAppendTimeMs();
     _o.setStreamAppendTimeMs(_oStreamAppendTimeMs);
-    short _oErrorCode = errorCode();
-    _o.setErrorCode(_oErrorCode);
-    String _oErrorMessage = errorMessage();
-    _o.setErrorMessage(_oErrorMessage);
+    if (status() != null) _o.setStatus(status().unpack());
+    else _o.setStatus(null);
   }
   public static int pack(FlatBufferBuilder builder, AppendResultT _o) {
     if (_o == null) return 0;
-    int _errorMessage = _o.getErrorMessage() == null ? 0 : builder.createString(_o.getErrorMessage());
+    int _status = _o.getStatus() == null ? 0 : header.Status.pack(builder, _o.getStatus());
     return createAppendResult(
       builder,
       _o.getStreamId(),
       _o.getRequestIndex(),
       _o.getBaseOffset(),
       _o.getStreamAppendTimeMs(),
-      _o.getErrorCode(),
-      _errorMessage);
+      _status);
   }
 }
 

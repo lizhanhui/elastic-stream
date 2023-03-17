@@ -21,32 +21,26 @@ import java.nio.ByteOrder;
 
 public class SyncRangesResultT {
   private long streamId;
-  private short errorCode;
-  private String errorMessage;
   private header.RangeT[] ranges;
+  private header.StatusT status;
 
   public long getStreamId() { return streamId; }
 
   public void setStreamId(long streamId) { this.streamId = streamId; }
 
-  public short getErrorCode() { return errorCode; }
-
-  public void setErrorCode(short errorCode) { this.errorCode = errorCode; }
-
-  public String getErrorMessage() { return errorMessage; }
-
-  public void setErrorMessage(String errorMessage) { this.errorMessage = errorMessage; }
-
   public header.RangeT[] getRanges() { return ranges; }
 
   public void setRanges(header.RangeT[] ranges) { this.ranges = ranges; }
 
+  public header.StatusT getStatus() { return status; }
+
+  public void setStatus(header.StatusT status) { this.status = status; }
+
 
   public SyncRangesResultT() {
     this.streamId = 0L;
-    this.errorCode = 0;
-    this.errorMessage = null;
     this.ranges = null;
+    this.status = null;
   }
 }
 

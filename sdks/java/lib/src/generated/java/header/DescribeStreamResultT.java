@@ -21,26 +21,20 @@ import java.nio.ByteOrder;
 
 public class DescribeStreamResultT {
   private header.StreamT stream;
-  private short errorCode;
-  private String errorMessage;
+  private header.StatusT status;
 
   public header.StreamT getStream() { return stream; }
 
   public void setStream(header.StreamT stream) { this.stream = stream; }
 
-  public short getErrorCode() { return errorCode; }
+  public header.StatusT getStatus() { return status; }
 
-  public void setErrorCode(short errorCode) { this.errorCode = errorCode; }
-
-  public String getErrorMessage() { return errorMessage; }
-
-  public void setErrorMessage(String errorMessage) { this.errorMessage = errorMessage; }
+  public void setStatus(header.StatusT status) { this.status = status; }
 
 
   public DescribeStreamResultT() {
     this.stream = null;
-    this.errorCode = 0;
-    this.errorMessage = null;
+    this.status = null;
   }
 }
 

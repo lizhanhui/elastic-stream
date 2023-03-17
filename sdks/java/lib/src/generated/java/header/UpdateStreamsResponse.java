@@ -33,31 +33,26 @@ public final class UpdateStreamsResponse extends Table {
   public int updateResponsesLength() { int o = __offset(6); return o != 0 ? __vector_len(o) : 0; }
   public header.UpdateStreamResult.Vector updateResponsesVector() { return updateResponsesVector(new header.UpdateStreamResult.Vector()); }
   public header.UpdateStreamResult.Vector updateResponsesVector(header.UpdateStreamResult.Vector obj) { int o = __offset(6); return o != 0 ? obj.__assign(__vector(o), 4, bb) : null; }
-  public short errorCode() { int o = __offset(8); return o != 0 ? bb.getShort(o + bb_pos) : 0; }
-  public String errorMessage() { int o = __offset(10); return o != 0 ? __string(o + bb_pos) : null; }
-  public ByteBuffer errorMessageAsByteBuffer() { return __vector_as_bytebuffer(10, 1); }
-  public ByteBuffer errorMessageInByteBuffer(ByteBuffer _bb) { return __vector_in_bytebuffer(_bb, 10, 1); }
+  public header.Status status() { return status(new header.Status()); }
+  public header.Status status(header.Status obj) { int o = __offset(8); return o != 0 ? obj.__assign(__indirect(o + bb_pos), bb) : null; }
 
   public static int createUpdateStreamsResponse(FlatBufferBuilder builder,
       int throttleTimeMs,
       int updateResponsesOffset,
-      short errorCode,
-      int errorMessageOffset) {
-    builder.startTable(4);
-    UpdateStreamsResponse.addErrorMessage(builder, errorMessageOffset);
+      int statusOffset) {
+    builder.startTable(3);
+    UpdateStreamsResponse.addStatus(builder, statusOffset);
     UpdateStreamsResponse.addUpdateResponses(builder, updateResponsesOffset);
     UpdateStreamsResponse.addThrottleTimeMs(builder, throttleTimeMs);
-    UpdateStreamsResponse.addErrorCode(builder, errorCode);
     return UpdateStreamsResponse.endUpdateStreamsResponse(builder);
   }
 
-  public static void startUpdateStreamsResponse(FlatBufferBuilder builder) { builder.startTable(4); }
+  public static void startUpdateStreamsResponse(FlatBufferBuilder builder) { builder.startTable(3); }
   public static void addThrottleTimeMs(FlatBufferBuilder builder, int throttleTimeMs) { builder.addInt(0, throttleTimeMs, 0); }
   public static void addUpdateResponses(FlatBufferBuilder builder, int updateResponsesOffset) { builder.addOffset(1, updateResponsesOffset, 0); }
   public static int createUpdateResponsesVector(FlatBufferBuilder builder, int[] data) { builder.startVector(4, data.length, 4); for (int i = data.length - 1; i >= 0; i--) builder.addOffset(data[i]); return builder.endVector(); }
   public static void startUpdateResponsesVector(FlatBufferBuilder builder, int numElems) { builder.startVector(4, numElems, 4); }
-  public static void addErrorCode(FlatBufferBuilder builder, short errorCode) { builder.addShort(2, errorCode, 0); }
-  public static void addErrorMessage(FlatBufferBuilder builder, int errorMessageOffset) { builder.addOffset(3, errorMessageOffset, 0); }
+  public static void addStatus(FlatBufferBuilder builder, int statusOffset) { builder.addOffset(2, statusOffset, 0); }
   public static int endUpdateStreamsResponse(FlatBufferBuilder builder) {
     int o = builder.endTable();
     return o;
@@ -80,10 +75,8 @@ public final class UpdateStreamsResponse extends Table {
     header.UpdateStreamResultT[] _oUpdateResponses = new header.UpdateStreamResultT[updateResponsesLength()];
     for (int _j = 0; _j < updateResponsesLength(); ++_j) {_oUpdateResponses[_j] = (updateResponses(_j) != null ? updateResponses(_j).unpack() : null);}
     _o.setUpdateResponses(_oUpdateResponses);
-    short _oErrorCode = errorCode();
-    _o.setErrorCode(_oErrorCode);
-    String _oErrorMessage = errorMessage();
-    _o.setErrorMessage(_oErrorMessage);
+    if (status() != null) _o.setStatus(status().unpack());
+    else _o.setStatus(null);
   }
   public static int pack(FlatBufferBuilder builder, UpdateStreamsResponseT _o) {
     if (_o == null) return 0;
@@ -94,13 +87,12 @@ public final class UpdateStreamsResponse extends Table {
       for (header.UpdateStreamResultT _e : _o.getUpdateResponses()) { __updateResponses[_j] = header.UpdateStreamResult.pack(builder, _e); _j++;}
       _updateResponses = createUpdateResponsesVector(builder, __updateResponses);
     }
-    int _errorMessage = _o.getErrorMessage() == null ? 0 : builder.createString(_o.getErrorMessage());
+    int _status = _o.getStatus() == null ? 0 : header.Status.pack(builder, _o.getStatus());
     return createUpdateStreamsResponse(
       builder,
       _o.getThrottleTimeMs(),
       _updateResponses,
-      _o.getErrorCode(),
-      _errorMessage);
+      _status);
   }
 }
 

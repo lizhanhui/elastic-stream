@@ -33,32 +33,27 @@ public final class HeartbeatResponse extends Table {
   public byte clientRole() { int o = __offset(6); return o != 0 ? bb.get(o + bb_pos) : 0; }
   public header.DataNode dataNode() { return dataNode(new header.DataNode()); }
   public header.DataNode dataNode(header.DataNode obj) { int o = __offset(8); return o != 0 ? obj.__assign(__indirect(o + bb_pos), bb) : null; }
-  public short errorCode() { int o = __offset(10); return o != 0 ? bb.getShort(o + bb_pos) : 0; }
-  public String errorMessage() { int o = __offset(12); return o != 0 ? __string(o + bb_pos) : null; }
-  public ByteBuffer errorMessageAsByteBuffer() { return __vector_as_bytebuffer(12, 1); }
-  public ByteBuffer errorMessageInByteBuffer(ByteBuffer _bb) { return __vector_in_bytebuffer(_bb, 12, 1); }
+  public header.Status status() { return status(new header.Status()); }
+  public header.Status status(header.Status obj) { int o = __offset(10); return o != 0 ? obj.__assign(__indirect(o + bb_pos), bb) : null; }
 
   public static int createHeartbeatResponse(FlatBufferBuilder builder,
       int clientIdOffset,
       byte clientRole,
       int dataNodeOffset,
-      short errorCode,
-      int errorMessageOffset) {
-    builder.startTable(5);
-    HeartbeatResponse.addErrorMessage(builder, errorMessageOffset);
+      int statusOffset) {
+    builder.startTable(4);
+    HeartbeatResponse.addStatus(builder, statusOffset);
     HeartbeatResponse.addDataNode(builder, dataNodeOffset);
     HeartbeatResponse.addClientId(builder, clientIdOffset);
-    HeartbeatResponse.addErrorCode(builder, errorCode);
     HeartbeatResponse.addClientRole(builder, clientRole);
     return HeartbeatResponse.endHeartbeatResponse(builder);
   }
 
-  public static void startHeartbeatResponse(FlatBufferBuilder builder) { builder.startTable(5); }
+  public static void startHeartbeatResponse(FlatBufferBuilder builder) { builder.startTable(4); }
   public static void addClientId(FlatBufferBuilder builder, int clientIdOffset) { builder.addOffset(0, clientIdOffset, 0); }
   public static void addClientRole(FlatBufferBuilder builder, byte clientRole) { builder.addByte(1, clientRole, 0); }
   public static void addDataNode(FlatBufferBuilder builder, int dataNodeOffset) { builder.addOffset(2, dataNodeOffset, 0); }
-  public static void addErrorCode(FlatBufferBuilder builder, short errorCode) { builder.addShort(3, errorCode, 0); }
-  public static void addErrorMessage(FlatBufferBuilder builder, int errorMessageOffset) { builder.addOffset(4, errorMessageOffset, 0); }
+  public static void addStatus(FlatBufferBuilder builder, int statusOffset) { builder.addOffset(3, statusOffset, 0); }
   public static int endHeartbeatResponse(FlatBufferBuilder builder) {
     int o = builder.endTable();
     return o;
@@ -82,23 +77,20 @@ public final class HeartbeatResponse extends Table {
     _o.setClientRole(_oClientRole);
     if (dataNode() != null) _o.setDataNode(dataNode().unpack());
     else _o.setDataNode(null);
-    short _oErrorCode = errorCode();
-    _o.setErrorCode(_oErrorCode);
-    String _oErrorMessage = errorMessage();
-    _o.setErrorMessage(_oErrorMessage);
+    if (status() != null) _o.setStatus(status().unpack());
+    else _o.setStatus(null);
   }
   public static int pack(FlatBufferBuilder builder, HeartbeatResponseT _o) {
     if (_o == null) return 0;
     int _clientId = _o.getClientId() == null ? 0 : builder.createString(_o.getClientId());
     int _dataNode = _o.getDataNode() == null ? 0 : header.DataNode.pack(builder, _o.getDataNode());
-    int _errorMessage = _o.getErrorMessage() == null ? 0 : builder.createString(_o.getErrorMessage());
+    int _status = _o.getStatus() == null ? 0 : header.Status.pack(builder, _o.getStatus());
     return createHeartbeatResponse(
       builder,
       _clientId,
       _o.getClientRole(),
       _dataNode,
-      _o.getErrorCode(),
-      _errorMessage);
+      _status);
   }
 }
 

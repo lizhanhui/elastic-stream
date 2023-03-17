@@ -28,31 +28,26 @@ public final class DescribeRangeResult extends Table {
   public DescribeRangeResult __assign(int _i, ByteBuffer _bb) { __init(_i, _bb); return this; }
 
   public long streamId() { int o = __offset(4); return o != 0 ? bb.getLong(o + bb_pos) : 0L; }
-  public short errorCode() { int o = __offset(6); return o != 0 ? bb.getShort(o + bb_pos) : 0; }
-  public String errorMessage() { int o = __offset(8); return o != 0 ? __string(o + bb_pos) : null; }
-  public ByteBuffer errorMessageAsByteBuffer() { return __vector_as_bytebuffer(8, 1); }
-  public ByteBuffer errorMessageInByteBuffer(ByteBuffer _bb) { return __vector_in_bytebuffer(_bb, 8, 1); }
   public header.Range ranges() { return ranges(new header.Range()); }
-  public header.Range ranges(header.Range obj) { int o = __offset(10); return o != 0 ? obj.__assign(__indirect(o + bb_pos), bb) : null; }
+  public header.Range ranges(header.Range obj) { int o = __offset(6); return o != 0 ? obj.__assign(__indirect(o + bb_pos), bb) : null; }
+  public header.Status status() { return status(new header.Status()); }
+  public header.Status status(header.Status obj) { int o = __offset(8); return o != 0 ? obj.__assign(__indirect(o + bb_pos), bb) : null; }
 
   public static int createDescribeRangeResult(FlatBufferBuilder builder,
       long streamId,
-      short errorCode,
-      int errorMessageOffset,
-      int rangesOffset) {
-    builder.startTable(4);
+      int rangesOffset,
+      int statusOffset) {
+    builder.startTable(3);
     DescribeRangeResult.addStreamId(builder, streamId);
+    DescribeRangeResult.addStatus(builder, statusOffset);
     DescribeRangeResult.addRanges(builder, rangesOffset);
-    DescribeRangeResult.addErrorMessage(builder, errorMessageOffset);
-    DescribeRangeResult.addErrorCode(builder, errorCode);
     return DescribeRangeResult.endDescribeRangeResult(builder);
   }
 
-  public static void startDescribeRangeResult(FlatBufferBuilder builder) { builder.startTable(4); }
+  public static void startDescribeRangeResult(FlatBufferBuilder builder) { builder.startTable(3); }
   public static void addStreamId(FlatBufferBuilder builder, long streamId) { builder.addLong(0, streamId, 0L); }
-  public static void addErrorCode(FlatBufferBuilder builder, short errorCode) { builder.addShort(1, errorCode, 0); }
-  public static void addErrorMessage(FlatBufferBuilder builder, int errorMessageOffset) { builder.addOffset(2, errorMessageOffset, 0); }
-  public static void addRanges(FlatBufferBuilder builder, int rangesOffset) { builder.addOffset(3, rangesOffset, 0); }
+  public static void addRanges(FlatBufferBuilder builder, int rangesOffset) { builder.addOffset(1, rangesOffset, 0); }
+  public static void addStatus(FlatBufferBuilder builder, int statusOffset) { builder.addOffset(2, statusOffset, 0); }
   public static int endDescribeRangeResult(FlatBufferBuilder builder) {
     int o = builder.endTable();
     return o;
@@ -72,23 +67,20 @@ public final class DescribeRangeResult extends Table {
   public void unpackTo(DescribeRangeResultT _o) {
     long _oStreamId = streamId();
     _o.setStreamId(_oStreamId);
-    short _oErrorCode = errorCode();
-    _o.setErrorCode(_oErrorCode);
-    String _oErrorMessage = errorMessage();
-    _o.setErrorMessage(_oErrorMessage);
     if (ranges() != null) _o.setRanges(ranges().unpack());
     else _o.setRanges(null);
+    if (status() != null) _o.setStatus(status().unpack());
+    else _o.setStatus(null);
   }
   public static int pack(FlatBufferBuilder builder, DescribeRangeResultT _o) {
     if (_o == null) return 0;
-    int _errorMessage = _o.getErrorMessage() == null ? 0 : builder.createString(_o.getErrorMessage());
     int _ranges = _o.getRanges() == null ? 0 : header.Range.pack(builder, _o.getRanges());
+    int _status = _o.getStatus() == null ? 0 : header.Status.pack(builder, _o.getStatus());
     return createDescribeRangeResult(
       builder,
       _o.getStreamId(),
-      _o.getErrorCode(),
-      _errorMessage,
-      _ranges);
+      _ranges,
+      _status);
   }
 }
 

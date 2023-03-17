@@ -22,8 +22,7 @@ import java.nio.ByteOrder;
 public class AppendResponseT {
   private int throttleTimeMs;
   private header.AppendResultT[] appendResponses;
-  private short errorCode;
-  private String errorMessage;
+  private header.StatusT status;
 
   public int getThrottleTimeMs() { return throttleTimeMs; }
 
@@ -33,20 +32,15 @@ public class AppendResponseT {
 
   public void setAppendResponses(header.AppendResultT[] appendResponses) { this.appendResponses = appendResponses; }
 
-  public short getErrorCode() { return errorCode; }
+  public header.StatusT getStatus() { return status; }
 
-  public void setErrorCode(short errorCode) { this.errorCode = errorCode; }
-
-  public String getErrorMessage() { return errorMessage; }
-
-  public void setErrorMessage(String errorMessage) { this.errorMessage = errorMessage; }
+  public void setStatus(header.StatusT status) { this.status = status; }
 
 
   public AppendResponseT() {
     this.throttleTimeMs = 0;
     this.appendResponses = null;
-    this.errorCode = 0;
-    this.errorMessage = null;
+    this.status = null;
   }
 }
 

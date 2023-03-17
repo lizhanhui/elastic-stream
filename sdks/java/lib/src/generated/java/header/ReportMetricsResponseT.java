@@ -21,26 +21,20 @@ import java.nio.ByteOrder;
 
 public class ReportMetricsResponseT {
   private header.DataNodeT dataNode;
-  private short errorCode;
-  private String errorMessage;
+  private header.StatusT status;
 
   public header.DataNodeT getDataNode() { return dataNode; }
 
   public void setDataNode(header.DataNodeT dataNode) { this.dataNode = dataNode; }
 
-  public short getErrorCode() { return errorCode; }
+  public header.StatusT getStatus() { return status; }
 
-  public void setErrorCode(short errorCode) { this.errorCode = errorCode; }
-
-  public String getErrorMessage() { return errorMessage; }
-
-  public void setErrorMessage(String errorMessage) { this.errorMessage = errorMessage; }
+  public void setStatus(header.StatusT status) { this.status = status; }
 
 
   public ReportMetricsResponseT() {
     this.dataNode = null;
-    this.errorCode = 0;
-    this.errorMessage = null;
+    this.status = null;
   }
 }
 

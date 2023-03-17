@@ -29,15 +29,15 @@ public final class Stream extends Table {
 
   public long streamId() { int o = __offset(4); return o != 0 ? bb.getLong(o + bb_pos) : 0L; }
   public byte replicaNums() { int o = __offset(6); return o != 0 ? bb.get(o + bb_pos) : 0; }
-  public int retentionPeriodMs() { int o = __offset(8); return o != 0 ? bb.getInt(o + bb_pos) : 0; }
+  public long retentionPeriodMs() { int o = __offset(8); return o != 0 ? bb.getLong(o + bb_pos) : 0L; }
 
   public static int createStream(FlatBufferBuilder builder,
       long streamId,
       byte replicaNums,
-      int retentionPeriodMs) {
+      long retentionPeriodMs) {
     builder.startTable(3);
-    Stream.addStreamId(builder, streamId);
     Stream.addRetentionPeriodMs(builder, retentionPeriodMs);
+    Stream.addStreamId(builder, streamId);
     Stream.addReplicaNums(builder, replicaNums);
     return Stream.endStream(builder);
   }
@@ -45,7 +45,7 @@ public final class Stream extends Table {
   public static void startStream(FlatBufferBuilder builder) { builder.startTable(3); }
   public static void addStreamId(FlatBufferBuilder builder, long streamId) { builder.addLong(0, streamId, 0L); }
   public static void addReplicaNums(FlatBufferBuilder builder, byte replicaNums) { builder.addByte(1, replicaNums, 0); }
-  public static void addRetentionPeriodMs(FlatBufferBuilder builder, int retentionPeriodMs) { builder.addInt(2, retentionPeriodMs, 0); }
+  public static void addRetentionPeriodMs(FlatBufferBuilder builder, long retentionPeriodMs) { builder.addLong(2, retentionPeriodMs, 0L); }
   public static int endStream(FlatBufferBuilder builder) {
     int o = builder.endTable();
     return o;
@@ -67,7 +67,7 @@ public final class Stream extends Table {
     _o.setStreamId(_oStreamId);
     byte _oReplicaNums = replicaNums();
     _o.setReplicaNums(_oReplicaNums);
-    int _oRetentionPeriodMs = retentionPeriodMs();
+    long _oRetentionPeriodMs = retentionPeriodMs();
     _o.setRetentionPeriodMs(_oRetentionPeriodMs);
   }
   public static int pack(FlatBufferBuilder builder, StreamT _o) {
