@@ -33,7 +33,7 @@ type DataNode interface {
 func (e *Endpoint) SaveDataNode(dataNode *rpcfb.DataNodeT) (*rpcfb.DataNodeT, error) {
 	logger := e.lg
 
-	if dataNode.NodeId <= 0 {
+	if dataNode.NodeId < _minDataNodeID {
 		logger.Error("invalid data node id", zap.Int32("node-id", dataNode.NodeId))
 		return nil, errors.New("invalid data node id")
 	}
