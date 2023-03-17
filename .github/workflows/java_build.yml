@@ -24,13 +24,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v3
-      - name: cache flatc
-        id: cache-flatc
-        uses: actions/cache@v3
-        with:
-          path: |
-            /usr/local/bin/flatc
-          key: ${{ runner.os }}-flatc
       - name: Install Deps
         run: |
           ./scripts/install_deps.sh
