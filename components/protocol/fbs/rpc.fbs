@@ -72,34 +72,6 @@ table PlacementManagerNode {
     is_leader: bool (id: 2);
 }
 
-// The Status type defines a logical error model.
-// Each `Status` message contains three pieces of data: error code, error message, and error detail.
-table Status {
-    // The top-level error code, or 0 if there was no error.
-    code: ErrorCode (id: 0);
-    // The error message, or omitted if there was no error.
-    message: string (id: 1);
-    // Additional information about the error, if any.
-    // Its format depends on the specific `ErrorCode`.
-    detail: [ubyte] (id: 2);
-}
-
-// The Placement Manager information.
-// It will be set in `Status.detail` if the `Status.code` is `PM_NOT_LEADER`.
-table PlacementManager {
-    nodes: [PlacementManagerNode] (id: 0);
-}
-
-// A node in the Placement Manager.
-table PlacementManagerNode {
-    // The name of the PM node.
-    name: string (id: 0);
-    // The advertise address of the PM node, for client traffic from outside.
-    // The schema of the address is `host:port`, while host supports both domain name and IPv4/IPv6 address.
-    advertise_addr: string (id: 1);
-    is_leader: bool (id: 2);
-}
-
 // The system error response is used to return the error code and error message if the system error flag of sbp is set.
 table SystemErrorResponse {
     status: Status (id: 0);
