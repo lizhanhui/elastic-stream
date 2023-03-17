@@ -219,6 +219,8 @@ impl BlockCache {
             let from = from as u32;
             let to = from + len;
 
+            // The start cursor is the first entry whose start wal_offset is less than or equal the query wal_offset.
+            // This behavior is aim to resolve the case that the query wal_offset is in the middle of an entry.
             let start_cursor = self.entries.upper_bound(Bound::Included(&from));
             let start_key = start_cursor.key().unwrap_or(&from);
 
