@@ -204,12 +204,12 @@ impl BlockCache {
     /// * `len` - The length of the query.
     ///
     /// # Returns
-    /// * `Ok` - The cached entries. If the ok result is empty, it means the caller should wait for the loading io task.
+    /// * `Ok` - The cached entries. If the ok result is None, it means the caller should wait for the ongoing io tasks.
     /// * `Err` - The missed entries, may split the request into multiple missed ranges.
     pub(crate) fn try_get_entries(
         &self,
         entry_range: EntryRange,
-    ) -> Result<Vec<Arc<AlignedBuf>>, Vec<EntryRange>> {
+    ) -> Result<Option<Vec<Arc<AlignedBuf>>>, Vec<EntryRange>> {
         let wal_offset = entry_range.wal_offset;
         let len = entry_range.len;
 
@@ -239,7 +239,7 @@ impl BlockCache {
                 return Err(vec![entry_range]);
             }
 
-            // Return partial missed entries if the search result is not cover the specified range.
+            // Return partially missed entries if the search result is not cover the specified range.
             let mut missed_entries: Vec<_> = Vec::new();
             let mut last_end = from;
 
@@ -284,10 +284,10 @@ impl BlockCache {
             if buf_res.len() != search_len {
                 // There is some loading entry in the search result, the caller should wait for the loading.
                 // So we return a empty ok result to indicate the caller to wait.
-                return Ok(Vec::new());
+                return Ok(None);
             }
 
-            Ok(buf_res)
+            Ok(Some(buf_res))
         } else {
             error!(
                 self.log,
@@ -484,6 +484,7 @@ mod tests {
                 wal_offset: 4096 * 2,
                 len: 4096 * 10,
             })
+            .unwrap()
             .unwrap();
         assert_eq!(1, hit.len());
         assert_eq!(block_size * 1024, hit[0].limit());
@@ -531,7 +532,7 @@ mod tests {
 
         let pending_hit = block_cache.try_get_entries(target_entry);
         assert_eq!(true, pending_hit.is_ok());
-        assert_eq!(0, pending_hit.unwrap().len());
+        assert_eq!(true, pending_hit.unwrap().is_none());
 
         // Complete the loading entry
         hit.iter().for_each(|r| {
@@ -543,7 +544,7 @@ mod tests {
         });
 
         // Hit again, with 5 entries returned
-        let hit = block_cache.try_get_entries(target_entry).unwrap();
+        let hit = block_cache.try_get_entries(target_entry).unwrap().unwrap();
         assert_eq!(5, hit.len());
     }
 }
