@@ -92,10 +92,17 @@ impl Session {
         })
     }
 
+    /// Create a new stream in placement manager.
+    ///
+    /// # Arguments
+    /// * `replica` - Number of replica required before acknowledgement
+    /// * `retention_period` - Data retention period of the created stream.
+    ///
     pub(crate) async fn create_stream(
         &mut self,
         replica: i8,
         retention_period: Duration,
+        timeout: Duration,
     ) -> Result<Vec<Stream>, ClientError> {
         let stream_id = STREAM_ID_COUNTER.fetch_add(1, Ordering::Relaxed);
         let (tx, rx) = oneshot::channel();
@@ -123,7 +130,11 @@ impl Session {
 
         self.channel_writer.write(&frame).await?;
 
-        let frame = rx.await?;
+        let frame = match tokio::time::timeout(timeout, rx).await {
+            Ok(Ok(frame)) => frame,
+            Ok(Err(e)) => return Err(e.into()),
+            Err(elapsed) => return Err(elapsed.into()),
+        };
 
         // Check if RPC is OK
         if frame.system_error() {
@@ -228,10 +239,10 @@ mod tests {
 
     use slog::{error, info};
 
-    use crate::{session::Session, test_server::run_listener};
+    use crate::{client_error::ClientError, session::Session, test_server::run_listener};
 
     #[tokio::test]
-    async fn test_session() -> Result<(), Box<dyn Error>> {
+    async fn test_create_stream() -> Result<(), Box<dyn Error>> {
         let log = test_util::terminal_logger();
         let port = 2378;
         let port = run_listener(log.clone()).await;
@@ -241,10 +252,42 @@ mod tests {
             Ok(mut session) => {
                 info!(log, "Session connected");
                 let streams = session
-                    .create_stream(1, Duration::from_secs(60 * 60 * 24 * 3))
+                    .create_stream(
+                        1,
+                        Duration::from_secs(60 * 60 * 24 * 3),
+                        Duration::from_secs(3),
+                    )
                     .await
                     .unwrap();
                 assert_eq!(1, streams.len());
+            }
+            Err(e) => {
+                error!(log, "Failed to create session: {:?}", e);
+            }
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_create_stream_timeout() -> Result<(), Box<dyn Error>> {
+        let log = test_util::terminal_logger();
+        let port = run_listener(log.clone()).await;
+        let target = format!("127.0.0.1:{}", port);
+        info!(log, "Connecting {}", target);
+        match Session::new(&target, log.clone()).await {
+            Ok(mut session) => {
+                info!(log, "Session connected");
+                let res = session
+                    .create_stream(
+                        1,
+                        Duration::from_secs(60 * 60 * 24 * 3),
+                        Duration::from_millis(10),
+                    )
+                    .await;
+                if let Err(ClientError::Timeout(ref _elapsed)) = res {
+                } else {
+                    panic!("Should get a timeout error");
+                }
             }
             Err(e) => {
                 error!(log, "Failed to create session: {:?}", e);

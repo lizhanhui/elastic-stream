@@ -5,7 +5,7 @@ use codec::error::FrameError;
 use flatbuffers::InvalidFlatbuffer;
 use model::Status;
 use thiserror::Error;
-use tokio::sync::oneshot;
+use tokio::{sync::oneshot, time::error::Elapsed};
 
 #[derive(Debug, Error)]
 pub enum ClientError {
@@ -17,6 +17,9 @@ pub enum ClientError {
 
     #[error("ConnectTimeout")]
     ConnectTimeout(#[from] io::Error),
+
+    #[error("RPC timeout: {0}")]
+    Timeout(#[from] Elapsed),
 
     #[error("Codec error")]
     Codec(#[from] FrameError),

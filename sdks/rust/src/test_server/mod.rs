@@ -144,6 +144,12 @@ pub async fn run_listener(logger: Logger) -> u16 {
                                         if let Ok(req) =
                                             flatbuffers::root::<CreateStreamsRequest>(buf)
                                         {
+                                            // Wait 100ms such that we can unit test timeout
+                                            tokio::time::sleep(std::time::Duration::from_millis(
+                                                100,
+                                            ))
+                                            .await;
+
                                             serve_create_streams(&log, &req, &mut response_frame);
                                         } else {
                                             error!(
