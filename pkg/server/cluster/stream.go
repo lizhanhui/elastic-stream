@@ -59,6 +59,7 @@ func (c *RaftCluster) DescribeStreams(streamIDs []int64) []*rpcfb.DescribeStream
 		}
 		results = append(results, &rpcfb.DescribeStreamResultT{
 			Stream: stream,
+			Status: &rpcfb.StatusT{Code: rpcfb.ErrorCodeOK},
 		})
 	}
 	return results

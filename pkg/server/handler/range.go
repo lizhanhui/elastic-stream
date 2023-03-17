@@ -18,6 +18,7 @@ func (s *Sbp) ListRange(req *protocol.ListRangesRequest) (resp *protocol.ListRan
 
 		result := &rpcfb.ListRangesResultT{
 			RangeCriteria: owner,
+			Status:        &rpcfb.StatusT{Code: rpcfb.ErrorCodeOK},
 		}
 		if err != nil {
 			resp.Error(&rpcfb.StatusT{Code: rpcfb.ErrorCodePM_INTERNAL_SERVER_ERROR, Message: err.Error()})
