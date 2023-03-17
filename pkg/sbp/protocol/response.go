@@ -22,6 +22,9 @@ type Response interface {
 	// Error sets the error status of the response.
 	Error(status *rpcfb.StatusT)
 
+	// OK sets the status of the response to rpcfb.ErrorCodeOK.
+	OK()
+
 	// IsEnd returns true if the response is the last response of a request.
 	IsEnd() bool
 }
@@ -86,6 +89,10 @@ func (se *SystemErrorResponse) Error(status *rpcfb.StatusT) {
 	se.Status = status
 }
 
+func (se *SystemErrorResponse) OK() {
+	se.Status = &rpcfb.StatusT{Code: rpcfb.ErrorCodeOK}
+}
+
 // HeartbeatResponse is a response to operation.OpHeartbeat
 type HeartbeatResponse struct {
 	baseResponse
@@ -103,6 +110,10 @@ func (hr *HeartbeatResponse) Marshal(fmt format.Format) ([]byte, error) {
 
 func (hr *HeartbeatResponse) Error(status *rpcfb.StatusT) {
 	hr.Status = status
+}
+
+func (hr *HeartbeatResponse) OK() {
+	hr.Status = &rpcfb.StatusT{Code: rpcfb.ErrorCodeOK}
 }
 
 // ListRangesResponse is a response to operation.OpListRanges
@@ -130,6 +141,10 @@ func (lr *ListRangesResponse) IsEnd() bool {
 	return !lr.HasNext
 }
 
+func (lr *ListRangesResponse) OK() {
+	lr.Status = &rpcfb.StatusT{Code: rpcfb.ErrorCodeOK}
+}
+
 // CreateStreamsResponse is a response to operation.OpCreateStreams
 type CreateStreamsResponse struct {
 	baseResponse
@@ -147,6 +162,10 @@ func (cs *CreateStreamsResponse) Marshal(fmt format.Format) ([]byte, error) {
 
 func (cs *CreateStreamsResponse) Error(status *rpcfb.StatusT) {
 	cs.Status = status
+}
+
+func (cs *CreateStreamsResponse) OK() {
+	cs.Status = &rpcfb.StatusT{Code: rpcfb.ErrorCodeOK}
 }
 
 // DeleteStreamsResponse is a response to operation.OpDeleteStreams
@@ -168,6 +187,10 @@ func (ds *DeleteStreamsResponse) Error(status *rpcfb.StatusT) {
 	ds.Status = status
 }
 
+func (ds *DeleteStreamsResponse) OK() {
+	ds.Status = &rpcfb.StatusT{Code: rpcfb.ErrorCodeOK}
+}
+
 // UpdateStreamsResponse is a response to operation.OpUpdateStreams
 type UpdateStreamsResponse struct {
 	baseResponse
@@ -187,6 +210,10 @@ func (us *UpdateStreamsResponse) Error(status *rpcfb.StatusT) {
 	us.Status = status
 }
 
+func (us *UpdateStreamsResponse) OK() {
+	us.Status = &rpcfb.StatusT{Code: rpcfb.ErrorCodeOK}
+}
+
 // DescribeStreamsResponse is a response to operation.OpDescribeStreams
 type DescribeStreamsResponse struct {
 	baseResponse
@@ -204,6 +231,10 @@ func (ds *DescribeStreamsResponse) Marshal(fmt format.Format) ([]byte, error) {
 
 func (ds *DescribeStreamsResponse) Error(status *rpcfb.StatusT) {
 	ds.Status = status
+}
+
+func (ds *DescribeStreamsResponse) OK() {
+	ds.Status = &rpcfb.StatusT{Code: rpcfb.ErrorCodeOK}
 }
 
 func marshal(response marshaller, fmt format.Format) ([]byte, error) {

@@ -20,7 +20,7 @@ func (s *Sbp) ListRange(req *protocol.ListRangesRequest) (resp *protocol.ListRan
 			RangeCriteria: owner,
 		}
 		if err != nil {
-			resp.Error(&rpcfb.StatusT{Code: rpcfb.ErrorCodeUNKNOWN, Message: err.Error()})
+			resp.Error(&rpcfb.StatusT{Code: rpcfb.ErrorCodePM_INTERNAL_SERVER_ERROR, Message: err.Error()})
 		} else {
 			result.Ranges = ranges
 		}
@@ -28,5 +28,6 @@ func (s *Sbp) ListRange(req *protocol.ListRangesRequest) (resp *protocol.ListRan
 		listResponses = append(listResponses, result)
 	}
 	resp.ListResponses = listResponses
+	resp.OK()
 	return
 }

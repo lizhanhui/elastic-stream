@@ -1,8 +1,11 @@
 package handler
 
 import (
+	"github.com/pkg/errors"
+
 	"github.com/AutoMQ/placement-manager/api/rpcfb/rpcfb"
 	"github.com/AutoMQ/placement-manager/pkg/sbp/protocol"
+	"github.com/AutoMQ/placement-manager/pkg/server/cluster"
 )
 
 func (s *Sbp) CreateStreams(req *protocol.CreateStreamsRequest) (resp *protocol.CreateStreamsResponse) {
@@ -14,7 +17,11 @@ func (s *Sbp) CreateStreams(req *protocol.CreateStreamsRequest) (resp *protocol.
 
 	streams, err := s.c.CreateStreams(req.Streams)
 	if err != nil {
-		resp.Error(&rpcfb.StatusT{Code: rpcfb.ErrorCodeUNKNOWN, Message: err.Error()})
+		if errors.Is(err, cluster.ErrNotEnoughDataNodes) {
+			resp.Error(&rpcfb.StatusT{Code: rpcfb.ErrorCodePM_NO_AVAILABLE_DN, Message: err.Error()})
+			return
+		}
+		resp.Error(&rpcfb.StatusT{Code: rpcfb.ErrorCodePM_INTERNAL_SERVER_ERROR, Message: err.Error()})
 		return
 	}
 
@@ -22,6 +29,7 @@ func (s *Sbp) CreateStreams(req *protocol.CreateStreamsRequest) (resp *protocol.
 	for _, stream := range streams {
 		resp.CreateResponses = append(resp.CreateResponses, &rpcfb.CreateStreamResultT{Stream: stream})
 	}
+	resp.OK()
 	return
 }
 
@@ -38,7 +46,7 @@ func (s *Sbp) DeleteStreams(req *protocol.DeleteStreamsRequest) (resp *protocol.
 	}
 	streams, err := s.c.DeleteStreams(streamIDs)
 	if err != nil {
-		resp.Error(&rpcfb.StatusT{Code: rpcfb.ErrorCodeUNKNOWN, Message: err.Error()})
+		resp.Error(&rpcfb.StatusT{Code: rpcfb.ErrorCodePM_INTERNAL_SERVER_ERROR, Message: err.Error()})
 		return
 	}
 
@@ -46,6 +54,7 @@ func (s *Sbp) DeleteStreams(req *protocol.DeleteStreamsRequest) (resp *protocol.
 	for _, stream := range streams {
 		resp.DeleteResponses = append(resp.DeleteResponses, &rpcfb.DeleteStreamResultT{DeletedStream: stream})
 	}
+	resp.OK()
 	return
 }
 
@@ -58,7 +67,7 @@ func (s *Sbp) UpdateStreams(req *protocol.UpdateStreamsRequest) (resp *protocol.
 
 	streams, err := s.c.UpdateStreams(req.Streams)
 	if err != nil {
-		resp.Error(&rpcfb.StatusT{Code: rpcfb.ErrorCodeUNKNOWN, Message: err.Error()})
+		resp.Error(&rpcfb.StatusT{Code: rpcfb.ErrorCodePM_INTERNAL_SERVER_ERROR, Message: err.Error()})
 		return
 	}
 
@@ -66,6 +75,7 @@ func (s *Sbp) UpdateStreams(req *protocol.UpdateStreamsRequest) (resp *protocol.
 	for _, stream := range streams {
 		resp.UpdateResponses = append(resp.UpdateResponses, &rpcfb.UpdateStreamResultT{Stream: stream})
 	}
+	resp.OK()
 	return
 }
 
@@ -78,5 +88,6 @@ func (s *Sbp) DescribeStreams(req *protocol.DescribeStreamsRequest) (resp *proto
 
 	result := s.c.DescribeStreams(req.StreamIds)
 	resp.DescribeResponses = result
+	resp.OK()
 	return
 }
