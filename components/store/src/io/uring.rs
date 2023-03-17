@@ -16,6 +16,7 @@ use crossbeam::channel::{Receiver, Sender, TryRecvError};
 use io_uring::register;
 use io_uring::{opcode, squeue, types};
 use slog::{error, info, trace, warn, Logger};
+use std::borrow::{Borrow, BorrowMut};
 use std::collections::{BTreeMap, HashSet};
 use std::sync::Arc;
 use std::{
@@ -24,6 +25,7 @@ use std::{
     os::fd::AsRawFd,
 };
 
+use super::block_cache::{EntryRange, MergeRange};
 use super::buf::AlignedBuf;
 use super::task::SingleFetchResult;
 use super::ReadTask;
@@ -96,6 +98,11 @@ pub(crate) struct IO {
     ///
     /// Assume the target record of the `WriteTask` is [n, n + len) in WAL, we use `n + len` as key.
     inflight_write_tasks: BTreeMap<u64, WriteTask>,
+
+    /// Inflight read tasks that are not yet acknowledged
+    ///
+    /// The key is the start wal offset of segment that contains the read tasks.
+    inflight_read_tasks: BTreeMap<u64, VecDeque<ReadTask>>,
 
     /// Offsets of blocks that are partially filled with data and are still inflight.
     barrier: HashSet<u64>,
@@ -203,6 +210,7 @@ impl IO {
             inflight: 0,
             pending_data_tasks: VecDeque::new(),
             inflight_write_tasks: BTreeMap::new(),
+            inflight_read_tasks: BTreeMap::new(),
             barrier: HashSet::new(),
             blocked: HashMap::new(),
             indexer,
@@ -334,6 +342,65 @@ impl IO {
         self.wal.calculate_write_buffers(&mut requirement)
     }
 
+    fn build_read_sqe(
+        &mut self,
+        entries: &mut Vec<squeue::Entry>,
+        missed_entries: HashMap<u64, Vec<EntryRange>>,
+    ) {
+        missed_entries.into_iter().for_each(|(wal_offset, ranges)| {
+            // Merge the ranges to reduce the number of IOs.
+            let merged_ranges = ranges.merge();
+
+            merged_ranges.iter().for_each(|range| {
+                if let Ok(buf) = AlignedBufReader::alloc_read_buf(
+                    self.log.clone(),
+                    range.wal_offset,
+                    range.len as usize,
+                    self.options.alignment as u64,
+                ) {
+                    let ptr = buf.as_ptr() as *mut u8;
+
+                    // The allocated buffer is always aligned, so use the aligned offset as the read offset.
+                    let read_offset = buf.wal_offset;
+
+                    // The length of the aligned buffer is multiple of alignment,
+                    // use it as the read length to maximize the value of a single IO.
+                    // Note that the read len is always larger than or equal the requested length.
+                    let read_len = buf.capacity as u32;
+
+                    let segment = match self.wal.segment_file_of(wal_offset) {
+                        Some(segment) => segment,
+                        None => {
+                            // Consume io_task directly
+                            todo!("Return error to caller directly")
+                        }
+                    };
+
+                    if let Some(sd) = segment.sd.as_ref() {
+                        // The pointer will be set into user_data of uring.
+                        // When the uring io completes, the pointer will be used to retrieve the `Context`.
+                        let context = Context::read_ctx(
+                            opcode::Read::CODE,
+                            Arc::new(buf),
+                            read_offset,
+                            read_len,
+                        );
+
+                        let sqe = opcode::Read::new(types::Fd(sd.fd), ptr, read_len)
+                            .offset(read_offset as i64)
+                            .build()
+                            .user_data(context as u64);
+
+                        entries.push(sqe);
+                    }
+
+                    // Add the ongoing entries to the block cache
+                    segment.block_cache.add_loading_entry(*range);
+                }
+            });
+        });
+    }
+
     fn build_write_sqe(&mut self, entries: &mut Vec<squeue::Entry>) {
         // Add previously blocked entries.
         self.blocked
@@ -358,8 +425,7 @@ impl IO {
                         let file_offset = buf.wal_offset - segment.offset;
 
                         // Track write requests
-                        self.write_window
-                            .add(buf.wal_offset, buf.limit() as u32)?;
+                        self.write_window.add(buf.wal_offset, buf.limit() as u32)?;
 
                         let mut io_blocked = false;
                         // Check barrier
@@ -429,10 +495,12 @@ impl IO {
 
         let mut need_write = false;
 
+        // The missed entries that are not in the cache, group by the start offset of segments.
+        let mut missed_entries: HashMap<u64, Vec<EntryRange>> = HashMap::new();
+
         'task_loop: while let Some(io_task) = self.pending_data_tasks.pop_front() {
             match io_task {
                 IoTask::Read(task) => {
-                    // TODO: Check if there is an on-going read IO covering this request.
                     let segment = match self.wal.segment_file_of(task.wal_offset) {
                         Some(segment) => segment,
                         None => {
@@ -442,38 +510,37 @@ impl IO {
                     };
 
                     if let Some(sd) = segment.sd.as_ref() {
-                        if let Ok(buf) = AlignedBufReader::alloc_read_buf(
-                            self.log.clone(),
-                            task.wal_offset,
-                            task.len as usize,
-                            alignment as u64,
-                        ) {
-                            let ptr = buf.as_ptr() as *mut u8;
+                        let range_to_read =
+                            EntryRange::new(task.wal_offset, task.len, alignment as u64);
 
-                            // The allocated buffer is always aligned, so use the aligned offset as the read offset.
-                            let read_offset = buf.wal_offset;
+                        // Try to read from the buffer first.
+                        let buf_res = segment.block_cache.try_get_entries(range_to_read);
+                        let mut move_to_inflight = false;
+                        match buf_res {
+                            Ok(Some(buf_v)) => {
+                                // Complete the task directly.
+                                self.complete_read_task(task, buf_v);
+                                continue;
+                            }
+                            Ok(None) => {
+                                // The dependent entries are inflight, move to inflight list directly.
+                                move_to_inflight = true;
+                            }
+                            Err(mut entries) => {
+                                // Cache miss, there are some entries should be read from disk.
+                                missed_entries
+                                    .entry(segment.offset)
+                                    .or_default()
+                                    .append(&mut entries);
 
-                            // The length of the aligned buffer is multiple of alignment,
-                            // use it as the read length to maximize the value of a single IO.
-                            // Note that the read len is always larger than or equal the requested length.
-                            let read_len = buf.capacity as u32;
-
-                            // The pointer will be set into user_data of uring.
-                            // When the uring io completes, the pointer will be used to retrieve the `Context`.
-                            let context = Context::read_ctx(
-                                opcode::Read::CODE,
-                                Arc::new(buf),
-                                task.wal_offset,
-                                task.len,
-                                IoTask::Read(task),
-                            );
-
-                            let sqe = opcode::Read::new(types::Fd(sd.fd), ptr, read_len)
-                                .offset(read_offset as i64)
-                                .build()
-                                .user_data(context as u64);
-
-                            entries.push(sqe);
+                                move_to_inflight = true;
+                            }
+                        }
+                        if move_to_inflight {
+                            self.inflight_read_tasks
+                                .entry(segment.offset)
+                                .or_default()
+                                .push_back(task);
                         }
                     } else {
                         self.pending_data_tasks.push_front(IoTask::Read(task));
@@ -529,6 +596,8 @@ impl IO {
             }
         }
 
+        self.build_read_sqe(entries, missed_entries);
+
         if need_write {
             self.build_write_sqe(entries);
         }
@@ -578,7 +647,7 @@ impl IO {
         }
         let committed = self.write_window.committed;
         let mut cache_entries = vec![];
-        let mut completed_read_ctxs = vec![];
+        let mut effected_segments = HashSet::new();
         {
             let mut completion = self.data_ring.completion();
             let mut count = 0;
@@ -617,7 +686,16 @@ impl IO {
 
                         // Cache the completed read context
                         if opcode::Read::CODE == context.opcode {
-                            completed_read_ctxs.push(context);
+                            match context.wal_offset {
+                                Some(wal_offset) => {
+                                    if let Some(segment) = self.wal.segment_file_of(wal_offset) {
+                                        effected_segments.insert(wal_offset);
+                                    }
+                                }
+                                None => {
+                                    error!(self.log, "Read context without wal_offset");
+                                }
+                            }
                         }
                     }
                 }
@@ -641,7 +719,7 @@ impl IO {
             }
         }
 
-        self.complete_read_tasks(completed_read_ctxs);
+        self.complete_read_tasks(effected_segments);
 
         if self.write_window.committed > committed {
             self.complete_write_tasks();
@@ -674,24 +752,83 @@ impl IO {
             .index(task.stream_id, task.offset as u64, handle);
     }
 
-    fn complete_read_tasks(&mut self, read_ctxs: Vec<Box<Context>>) {
-        read_ctxs.into_iter().for_each(|mut ctx| {
-            let read_task = ctx.io_task.take();
-            if let Some(IoTask::Read(read_task)) = read_task {
-                self.complete_read_task(read_task, ctx.buf);
-            } else {
-                error!(self.log, "Invalid read task");
+    fn complete_read_tasks(&mut self, effected_segments: HashSet<u64>) {
+        effected_segments.into_iter().for_each(|wal_offset| {
+            let inflight_read_tasks = self.inflight_read_tasks.remove(&wal_offset);
+            if let Some(mut inflight_read_tasks) = inflight_read_tasks {
+                // If the inflight read task is completed, we need to complete it and remove it from the inflight list
+                // Pop the completed task from the inflight list and send back if it's completed
+                let mut send_back = vec![];
+                while let Some(task) = inflight_read_tasks.pop_front() {
+                    if let Some(segment) = self.wal.segment_file_of(wal_offset) {
+                        let range = EntryRange::new(
+                            task.wal_offset,
+                            task.len,
+                            self.options.alignment as u64,
+                        );
+
+                        match segment.block_cache.try_get_entries(range) {
+                            Ok(Some(buf)) => {
+                                self.complete_read_task(task, buf);
+                                continue;
+                            }
+                            Ok(None) => {
+                                // Wait for the next IO to complete this task
+                            }
+                            Err(_) => {
+                                // The error means we need issue some read IOs for this task,
+                                // but it's impossible for inflight read task since we already handle this situation in `submit_read_task`
+                                error!(
+                                    self.log,
+                                    "Unexpected error when get entries from block cache"
+                                );
+                            }
+                        }
+                    }
+                    // Send back the task since it's not completed
+                    send_back.push(task);
+                }
+                inflight_read_tasks.extend(send_back);
+
+                self.inflight_read_tasks
+                    .insert(wal_offset, inflight_read_tasks);
             }
         });
     }
 
-    fn complete_read_task(&mut self, read_task: ReadTask, read_buf: Arc<AlignedBuf>) {
+    fn complete_read_task(&mut self, read_task: ReadTask, read_buf_v: Vec<Arc<AlignedBuf>>) {
         // Completes the read task
-        let start_pos = (read_task.wal_offset - read_buf.wal_offset) as u32;
+        // Construct the SingleFetchResult from the read buffer
+        // We need narrow the first and the last AlignedBuf to the actual read range
+        let mut slice_v = vec![];
+        read_buf_v.into_iter().for_each(|buf| {
+            trace!(
+                self.log,
+                "Read buffer: offset: {}, len: {}",
+                buf.wal_offset,
+                buf.limit()
+            );
+
+            let mut start_pos = 0;
+
+            if buf.wal_offset < read_task.wal_offset {
+                start_pos = (read_task.wal_offset - buf.wal_offset) as u32;
+            }
+
+            let mut limit = buf.limit();
+            let limit_len = (buf.wal_offset + buf.limit() as u64)
+                .checked_sub(read_task.wal_offset + read_task.len as u64);
+            if let Some(limit_len) = limit_len {
+                limit -= limit_len as usize;
+            }
+
+            slice_v.push(BufSlice::new(buf, start_pos, limit as u32));
+        });
+
         let fetch_result = SingleFetchResult {
             stream_id: read_task.stream_id,
             wal_offset: read_task.wal_offset as i64,
-            payload: BufSlice::new(read_buf, start_pos, (read_task.len + start_pos) as u32),
+            payload: slice_v,
         };
 
         trace!(
@@ -731,6 +868,7 @@ impl IO {
         0 == self.inflight
             && self.pending_data_tasks.is_empty()
             && self.inflight_write_tasks.is_empty()
+            && self.inflight_read_tasks.is_empty()
             && self.wal.control_task_num() == 0
             && self.channel_disconnected
     }
@@ -1147,7 +1285,12 @@ mod tests {
             // Assert the payload is equal to the write buffer
             // trace the length
 
-            assert_eq!(buffer, Bytes::copy_from_slice(&res.payload[8..]));
+            let mut res_payload = BytesMut::new();
+            res.payload.iter().for_each(|r| {
+                res_payload.extend_from_slice(&r[8..]);
+            });
+
+            assert_eq!(buffer, res_payload.freeze());
         }
 
         drop(sender);

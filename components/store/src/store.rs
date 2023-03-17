@@ -258,7 +258,11 @@ impl Store for ElasticStore {
                 result.sort_by(|a, b| a.wal_offset.cmp(&b.wal_offset));
 
                 // Extract the payload from the result, and assemble the final result.
-                let final_result: Vec<_> = result.into_iter().map(|res| res.payload).collect();
+                let final_result: Vec<_> = result
+                    .into_iter()
+                    .map(|res| res.payload)
+                    .flatten()
+                    .collect();
 
                 return Ok(FetchResult {
                     stream_id: options.stream_id,

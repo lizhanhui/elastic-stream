@@ -28,7 +28,7 @@ pub(crate) struct ReadTask {
 pub(crate) struct SingleFetchResult {
     pub(crate) stream_id: i64,
     pub(crate) wal_offset: i64,
-    pub(crate) payload: BufSlice,
+    pub(crate) payload: Vec<BufSlice>,
 }
 
 #[derive(Debug)]

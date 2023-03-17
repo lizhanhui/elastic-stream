@@ -107,6 +107,23 @@ pub(crate) struct EntryRange {
     pub(crate) len: u32,
 }
 
+impl EntryRange {
+    /// The new EntryRange is aligned to the specified alignment.
+    pub(crate) fn new(wal_offset: u64, len: u32, alignment: u64) -> Self {
+        // Alignment must be positive
+        debug_assert_ne!(0, alignment);
+        // Alignment must be power of 2.
+        debug_assert_eq!(0, alignment & (alignment - 1));
+        let from = wal_offset / alignment * alignment;
+        let to = (wal_offset + len as u64 + alignment - 1) / alignment * alignment;
+
+        Self {
+            wal_offset: from,
+            len: (to - from) as u32,
+        }
+    }
+}
+
 pub trait MergeRange<T> {
     /// Merge the entries to bigger continuous ranges as possible.
     /// This may reduce the number of loading io tasks.
@@ -241,7 +258,7 @@ impl BlockCache {
                 return Err(vec![entry_range]);
             }
 
-            // Return partially missed entries if the search result is not cover the specified range.
+            // Return partially missed entries if the search result does not cover the specified range.
             let mut missed_entries: Vec<_> = Vec::new();
             let mut last_end = from;
 

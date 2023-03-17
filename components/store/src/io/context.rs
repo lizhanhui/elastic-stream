@@ -17,10 +17,6 @@ pub(crate) struct Context {
     /// Original read length. This field makes sense iff opcode is `Read`.
     /// This field represents the real read length of a read operation.
     pub(crate) len: Option<u32>,
-
-    /// Associated io task.
-    /// Currently, we only support associate io_task with read context.
-    pub(crate) io_task: Option<IoTask>,
 }
 
 impl Context {
@@ -29,7 +25,6 @@ impl Context {
         Box::into_raw(Box::new(Self {
             opcode,
             buf,
-            io_task: None,
             wal_offset: None,
             len: None,
         }))
@@ -41,12 +36,10 @@ impl Context {
         buf: Arc<AlignedBuf>,
         offset: u64,
         len: u32,
-        io_task: IoTask,
     ) -> *mut Self {
         Box::into_raw(Box::new(Self {
             opcode,
             buf,
-            io_task: Some(io_task),
             wal_offset: Some(offset),
             len: Some(len),
         }))
