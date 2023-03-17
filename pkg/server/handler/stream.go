@@ -14,7 +14,7 @@ func (s *Sbp) CreateStreams(req *protocol.CreateStreamsRequest) (resp *protocol.
 
 	streams, err := s.c.CreateStreams(req.Streams)
 	if err != nil {
-		resp.Error(&rpcfb.StatusT{Code: rpcfb.ErrorCodeUNKNOWN, Message: err.Error()})
+		resp.Error(&rpcfb.StatusT{Code: rpcfb.ErrorCodePM_INTERNAL_SERVER_ERROR, Message: err.Error()})
 		return
 	}
 
@@ -38,7 +38,7 @@ func (s *Sbp) DeleteStreams(req *protocol.DeleteStreamsRequest) (resp *protocol.
 	}
 	streams, err := s.c.DeleteStreams(streamIDs)
 	if err != nil {
-		resp.Error(&rpcfb.StatusT{Code: rpcfb.ErrorCodeUNKNOWN, Message: err.Error()})
+		resp.Error(&rpcfb.StatusT{Code: rpcfb.ErrorCodePM_INTERNAL_SERVER_ERROR, Message: err.Error()})
 		return
 	}
 
@@ -58,7 +58,7 @@ func (s *Sbp) UpdateStreams(req *protocol.UpdateStreamsRequest) (resp *protocol.
 
 	streams, err := s.c.UpdateStreams(req.Streams)
 	if err != nil {
-		resp.Error(&rpcfb.StatusT{Code: rpcfb.ErrorCodeUNKNOWN, Message: err.Error()})
+		resp.Error(&rpcfb.StatusT{Code: rpcfb.ErrorCodePM_INTERNAL_SERVER_ERROR, Message: err.Error()})
 		return
 	}
 

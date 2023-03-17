@@ -51,7 +51,7 @@ func (c *RaftCluster) DescribeStreams(streamIDs []int64) []*rpcfb.DescribeStream
 		if err != nil {
 			results = append(results, &rpcfb.DescribeStreamResultT{
 				Status: &rpcfb.StatusT{
-					Code:    rpcfb.ErrorCodeUNKNOWN,
+					Code:    rpcfb.ErrorCodePM_INTERNAL_SERVER_ERROR,
 					Message: err.Error(),
 				},
 			})
