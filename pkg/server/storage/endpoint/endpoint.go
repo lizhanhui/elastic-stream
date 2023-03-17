@@ -28,9 +28,9 @@ const (
 )
 
 const (
-	_minStreamID   int64 = 1
-	_minRangeIndex int32 = 1
-	_minDataNodeID int32 = 1
+	_minStreamID   int64 = 0
+	_minRangeIndex int32 = 0
+	_minDataNodeID int32 = 0
 )
 
 // Endpoint is the base underlying storage endpoint for all other upper
