@@ -236,7 +236,8 @@ func (e *Etcd) BatchDelete(keys [][]byte, prevKV bool) ([]KeyValue, error) {
 
 func (e *Etcd) GetPrefixRangeEnd(p []byte) []byte {
 	prefix := e.addPrefix(p)
-	return []byte(clientv3.GetPrefixRangeEnd(string(prefix)))
+	end := []byte(clientv3.GetPrefixRangeEnd(string(prefix)))
+	return e.trimPrefix(end)
 }
 
 func (e *Etcd) addPrefix(k []byte) []byte {
