@@ -1,4 +1,4 @@
-name: Build all platforms
+name: CI - Build all platforms
 
 on: workflow_call
 permissions: read-all

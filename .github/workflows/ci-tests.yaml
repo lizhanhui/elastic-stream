@@ -1,4 +1,4 @@
-name: Run tests
+name: CI - Run tests
 
 on: workflow_call
 permissions: read-all
