@@ -16,7 +16,8 @@ pub(crate) const MIN_FRAME_LENGTH: u32 = 16;
 pub(crate) const MAX_FRAME_LENGTH: u32 = 16 * 1024 * 1024;
 
 const FLAG_RESPONSE: u8 = 0x01;
-const FLAG_UNSUPPORTED: u8 = 0x04;
+const FLAG_END_OF_STREAM: u8 = 0x01 << 1;
+const FLAG_SYSTEM_ERROR: u8 = 0x01 << 2;
 
 thread_local! {
     static STREAM_ID: RefCell<u32> = RefCell::new(1);
@@ -66,16 +67,23 @@ impl Frame {
         self.flag |= FLAG_RESPONSE;
     }
 
-    pub fn flag_unsupported(&mut self) {
-        self.flag |= FLAG_UNSUPPORTED;
+    pub fn end_of_stream(&self) -> bool {
+        self.flag & FLAG_END_OF_STREAM == FLAG_END_OF_STREAM
     }
 
-    pub fn flag_end_response(&mut self) {
-        self.flag |= 0x03;
+    pub fn flag_end_of_response_stream(&mut self) {
+        self.flag |= FLAG_END_OF_STREAM;
+        self.flag |= FLAG_RESPONSE;
+    }
+
+    pub fn system_error(&self) -> bool {
+        self.flag & FLAG_SYSTEM_ERROR == FLAG_SYSTEM_ERROR
     }
 
     pub fn flag_system_err(&mut self) {
-        self.flag |= 0x07;
+        self.flag |= FLAG_END_OF_STREAM;
+        self.flag |= FLAG_RESPONSE;
+        self.flag |= FLAG_SYSTEM_ERROR;
     }
 
     pub fn check(src: &mut Cursor<&[u8]>, logger: &Logger) -> Result<(), FrameError> {

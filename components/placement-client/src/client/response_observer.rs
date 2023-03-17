@@ -1,6 +1,6 @@
+use super::response;
+use model::Status;
 use tokio::sync::oneshot;
-
-use super::{response, status::Status};
 
 pub(crate) struct ResponseObserver {
     /// Indicate if the response has been written.

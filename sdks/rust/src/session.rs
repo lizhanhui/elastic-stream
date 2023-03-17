@@ -11,7 +11,8 @@ use bytes::Bytes;
 use codec::frame::{Frame, OperationCode};
 use model::stream::Stream;
 use protocol::rpc::header::{
-    CreateStreamsRequestT, CreateStreamsResponse, ErrorCode, PlacementManager, StatusT, StreamT,
+    CreateStreamsRequestT, CreateStreamsResponse, ErrorCode, PlacementManager, StreamT,
+    SystemErrorResponse,
 };
 use slog::{error, info, trace, warn, Logger};
 use tokio::{net::TcpStream, sync::oneshot};
@@ -124,8 +125,28 @@ impl Session {
 
         let frame = rx.await?;
 
-        if let Some(buf) = frame.header {
-            let response = flatbuffers::root::<CreateStreamsResponse>(&buf)?;
+        // Check if RPC is OK
+        if frame.system_error() {
+            if let Some(ref buf) = frame.header {
+                let system_error = flatbuffers::root::<SystemErrorResponse>(&buf)?;
+                let system_error = system_error.unpack();
+                if let Some(status) = system_error.status.map(|st| model::Status {
+                    code: st.code,
+                    message: st.message.unwrap_or_default(),
+                    details: st.detail.map(|details| Bytes::copy_from_slice(&details)),
+                }) {
+                    return Err(ClientError::Internal(status));
+                }
+            } else {
+                return Err(ClientError::UnexpectedResponse(String::from(
+                    "Mal-formed system error frame",
+                )));
+            }
+        }
+
+        // Parse create streams response
+        if let Some(ref buf) = frame.header {
+            let response = flatbuffers::root::<CreateStreamsResponse>(buf)?;
             let response = response.unpack();
             if let Some(status) = response.status {
                 match status.code {
@@ -210,6 +231,7 @@ mod tests {
     #[tokio::test]
     async fn test_session() -> Result<(), Box<dyn Error>> {
         let log = test_util::terminal_logger();
+        // let port = 2378;
         let port = run_listener(log.clone()).await;
         let target = format!("127.0.0.1:{}", port);
         info!(log, "Connecting {}", target);
@@ -217,7 +239,7 @@ mod tests {
             Ok(mut session) => {
                 info!(log, "Session connected");
                 let streams = session
-                    .create_stream(2, Duration::from_secs(60 * 60 * 24 * 3))
+                    .create_stream(1, Duration::from_secs(60 * 60 * 24 * 3))
                     .await
                     .unwrap();
                 assert_eq!(1, streams.len());

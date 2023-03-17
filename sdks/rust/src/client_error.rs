@@ -1,14 +1,17 @@
 use std::io;
 
+use crate::node::Node;
 use codec::error::FrameError;
 use flatbuffers::InvalidFlatbuffer;
+use model::Status;
 use thiserror::Error;
 use tokio::sync::oneshot;
 
-use crate::node::Node;
-
 #[derive(Debug, Error)]
 pub enum ClientError {
+    #[error("Internal system error: {0:?}")]
+    Internal(Status),
+
     #[error("Unexpected response: {0}")]
     UnexpectedResponse(String),
 

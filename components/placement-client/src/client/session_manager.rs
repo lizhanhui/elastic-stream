@@ -8,7 +8,6 @@ use std::{
     str::FromStr,
     time::Duration,
 };
-
 use model::request::Request;
 use slog::{debug, error, info, trace, warn, Logger};
 use tokio::{
@@ -16,9 +15,8 @@ use tokio::{
     time::{timeout, Instant},
 };
 use tokio_uring::net::TcpStream;
-
-use crate::{client::status::Status, error::ClientError, notifier::Notifier};
-
+use crate::{error::ClientError, notifier::Notifier};
+use model::Status;
 use super::{
     config::{self, ClientConfig},
     lb_policy::LBPolicy,

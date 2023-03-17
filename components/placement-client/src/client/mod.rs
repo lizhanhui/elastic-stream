@@ -8,5 +8,3 @@ pub(crate) mod response_observer;
 mod session;
 mod session_manager;
 pub(crate) mod session_state;
-mod status;
-mod error_code;

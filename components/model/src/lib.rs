@@ -7,8 +7,10 @@ pub mod range;
 pub mod range_criteria;
 pub mod record;
 pub mod request;
+pub mod status;
 pub mod stream;
 
 pub use crate::record::Record;
 pub use crate::record::RecordBatch;
 pub use crate::record::RecordMetadata;
+pub use crate::status::Status;

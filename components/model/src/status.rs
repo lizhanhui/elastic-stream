@@ -1,6 +1,5 @@
 use bytes::Bytes;
-
-use super::error_code::ErrorCode;
+use protocol::rpc::header::ErrorCode;
 
 #[derive(Debug, Clone)]
 pub struct Status {
@@ -12,7 +11,7 @@ pub struct Status {
 impl Status {
     pub fn ok() -> Self {
         Self {
-            code: ErrorCode::Ok,
+            code: ErrorCode::OK,
             message: "OK".to_owned(),
             details: None,
         }
@@ -20,15 +19,15 @@ impl Status {
 
     pub fn internal(message: String) -> Self {
         Self {
-            code: ErrorCode::Internal,
+            code: ErrorCode::DN_INTERNAL_SERVER_ERROR,
             message,
             details: None,
         }
     }
 
-    pub fn invalid_request(message: String) -> Self {
+    pub fn bad_request(message: String) -> Self {
         Self {
-            code: ErrorCode::InvalidRequest,
+            code: ErrorCode::BAD_REQUEST,
             message,
             details: None,
         }

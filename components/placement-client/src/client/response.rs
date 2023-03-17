@@ -1,6 +1,6 @@
 use model::range::StreamRange;
 
-use super::status::Status;
+use model::Status;
 
 #[derive(Debug, Clone)]
 pub enum Response {

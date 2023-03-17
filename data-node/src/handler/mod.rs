@@ -56,7 +56,7 @@ impl ServerCall {
 
         // Flag it's a response frame, as well as the end of the response.
         // If the response sequence is not ended, please note reset the flag in the subsequent logic.
-        response.flag_end_response();
+        response.flag_end_of_response_stream();
 
         let cmd = match Command::from_frame(self.logger.clone(), &self.request).ok() {
             Some(it) => it,

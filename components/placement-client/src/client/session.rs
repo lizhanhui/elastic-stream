@@ -1,10 +1,9 @@
 use super::session_state::SessionState;
 use super::{config, response};
-use crate::client::error_code::ErrorCode;
-use crate::client::status::Status;
 use crate::notifier::Notifier;
 use codec::frame::{Frame, OperationCode};
 use model::range::StreamRange;
+use model::Status;
 use model::{client_role::ClientRole, request::Request};
 use protocol::rpc::header::{self, HeartbeatResponse, ListRangesResponse};
 use slog::{error, trace, warn, Logger};
@@ -230,21 +229,7 @@ impl Session {
                                 let _status = hb.status;
                                 if let response::Response::Heartbeat { ref mut status } = resp {
                                     if let Some(_status) = _status {
-                                        let code = match _status.code {
-                                            header::ErrorCode::NONE => ErrorCode::Ok,
-                                            header::ErrorCode::BAD_REQUEST => {
-                                                ErrorCode::InvalidRequest
-                                            }
-                                            header::ErrorCode::PM_NOT_LEADER => {
-                                                ErrorCode::NotLeader
-                                            }
-                                            header::ErrorCode::PM_NO_AVAILABLE_DN => {
-                                                ErrorCode::DataNodeNotAvailable
-                                            }
-                                            _ => ErrorCode::Internal,
-                                        };
-                                        status.code = code;
-
+                                        status.code = _status.code;
                                         if let Some(msg) = _status.message {
                                             status.message = msg;
                                         }
@@ -340,6 +325,7 @@ mod tests {
     use std::error::Error;
 
     use model::data_node::DataNode;
+    use protocol::rpc::header::ErrorCode;
     use test_util::{run_listener, terminal_logger};
 
     use crate::notifier::UnsupportedNotifier;
@@ -370,13 +356,14 @@ mod tests {
     fn test_heartbeat() -> Result<(), Box<dyn Error>> {
         tokio_uring::start(async {
             let logger = terminal_logger();
+            // let port = 2378;
             let port = run_listener(logger.clone()).await;
             let target = format!("127.0.0.1:{}", port);
             let stream = TcpStream::connect(target.parse()?).await?;
             let mut config = config::ClientConfig::default();
             let data_node = DataNode {
-                node_id: 0,
-                advertise_address: "localhost: 1234".to_owned(),
+                node_id: 1,
+                advertise_address: "localhost:1234".to_owned(),
             };
             config.with_data_node(data_node);
             let config = Rc::new(config);
@@ -387,7 +374,7 @@ mod tests {
             let response = result.unwrap().await?;
             trace!(logger, "Heartbeat response: {:?}", response);
             if let response::Response::Heartbeat { ref status } = response {
-                assert_eq!(ErrorCode::Ok, status.code);
+                assert_eq!(ErrorCode::OK, status.code);
             } else {
                 panic!("Unexpected response type");
             }

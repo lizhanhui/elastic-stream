@@ -9,8 +9,7 @@ pub struct UnsupportedNotifier {}
 impl Notifier for UnsupportedNotifier {
     fn on_notification(&self, frame: Frame) -> Frame {
         let mut response = Frame::new(frame.operation_code);
-        response.flag_response();
-        response.flag_unsupported();
+        response.flag_system_err();
         response
     }
 }

@@ -27,7 +27,7 @@ The 16-bit opcode of the frame. The frame opcode determines the format and seman
 Flags apply to this frame. The flags have the following meaning (described by the mask that allows selecting them):
 - 0x01: Response flag. If set, the frame contains the response payload to a specific request frame identified by a stream identifier. If not set, the frame represents a request frame.
 - 0x02: Response end flag. If set, the frame is the last frame in a response sequence. If not set, the response sequence continues with more frames. The response sequence may contain one or more frames.
-- 0x04: System error flag. If a response frame has the this flag set, its extended header will be an error code ([int16]) followed by a [string] error message. Then, depending on the exception, more content may follow.
+- 0x04: System error flag. If a response frame has the this flag set, its extended header will be type of `SystemErrorResponse`.
 
 The rest of the flags are currently unused and ignored.
 ### Stream Identifier
