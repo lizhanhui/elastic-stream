@@ -147,6 +147,7 @@ impl Session {
         // Parse create streams response
         if let Some(ref buf) = frame.header {
             let response = flatbuffers::root::<CreateStreamsResponse>(buf)?;
+            trace!(self.log, "CreateStreamsResponse: {:?}", response);
             let response = response.unpack();
             if let Some(status) = response.status {
                 match status.code {
@@ -200,6 +201,7 @@ impl Session {
             }
 
             if let Some(results) = response.create_responses {
+                trace!(self.log, "CreateStreamsResults: {:?}", results);
                 let streams = results
                     .into_iter()
                     .filter(|result| {
@@ -231,8 +233,8 @@ mod tests {
     #[tokio::test]
     async fn test_session() -> Result<(), Box<dyn Error>> {
         let log = test_util::terminal_logger();
-        // let port = 2378;
-        let port = run_listener(log.clone()).await;
+        let port = 2378;
+        // let port = run_listener(log.clone()).await;
         let target = format!("127.0.0.1:{}", port);
         info!(log, "Connecting {}", target);
         match Session::new(&target, log.clone()).await {

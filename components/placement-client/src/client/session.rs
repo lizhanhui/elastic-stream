@@ -356,8 +356,8 @@ mod tests {
     fn test_heartbeat() -> Result<(), Box<dyn Error>> {
         tokio_uring::start(async {
             let logger = terminal_logger();
-            // let port = 2378;
-            let port = run_listener(logger.clone()).await;
+            let port = 2378;
+            // let port = run_listener(logger.clone()).await;
             let target = format!("127.0.0.1:{}", port);
             let stream = TcpStream::connect(target.parse()?).await?;
             let mut config = config::ClientConfig::default();
