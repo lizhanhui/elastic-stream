@@ -31,12 +31,11 @@ enum ErrorCode : int16 {
 
     // When creating a new stream or sealing a mutable range, placement managers need to create
     // a new replica-set of mutable range, which requires at least replica number of survival 
-    // data nodes. If this requirement is not met, this error code is employed to deliver the error
-    // to caller client.
+    // data nodes. If this requirement is not met, use this error code to signal the client.
     PM_NO_AVAILABLE_DN = 1502,
 
     // Placement manager nodes are running RAFT concensus algorithm, write operations should go to
-    // leader nodes. Otherwise, use this code to err caller client and to redirect client future requests.
+    // leader nodes. Otherwise, use this code to signal the client to redirect future requests.
     PM_NOT_LEADER = 1503,
 
     // 25xx is reserved for data node errors
