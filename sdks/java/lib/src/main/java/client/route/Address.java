@@ -25,6 +25,7 @@ import com.google.common.base.Objects;
  *
  */
 public class Address {
+    private static final String COLON = ":";
     private final String host;
     private final int port;
 
@@ -34,7 +35,7 @@ public class Address {
     }
 
     public String getAddress() {
-        return host + ":" + port;
+        return host + COLON + port;
     }
 
     public String getHost() {
@@ -43,6 +44,11 @@ public class Address {
 
     public int getPort() {
         return this.port;
+    }
+
+    public static Address fromAddress(String address) {
+        String[] hostAndPort = address.split(COLON);
+        return new Address(hostAndPort[0], Integer.parseInt(hostAndPort[1]));
     }
 
     @Override

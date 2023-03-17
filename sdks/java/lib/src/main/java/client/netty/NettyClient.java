@@ -49,10 +49,11 @@ public class NettyClient extends NettyRemotingAbstract implements RemotingClient
 
     protected final ClientId clientId;
     protected final ClientConfiguration clientConfiguration;
-    protected final Address pmAddress;
+    protected Address pmAddress;
     private final Bootstrap bootstrap = new Bootstrap();
     private final EventLoopGroup eventLoopGroupWorker;
     private final Lock lockChannelTables = new ReentrantLock();
+    private final Lock pmAddressUpdateLock = new ReentrantLock();
     private final ConcurrentMap<Address, ChannelWrapper> channelTables = new ConcurrentHashMap<>();
     private final HashedWheelTimer timer = new HashedWheelTimer(r -> new Thread(r, "ClientHouseKeepingService"));
 
@@ -112,6 +113,27 @@ public class NettyClient extends NettyRemotingAbstract implements RemotingClient
 
     public CompletableFuture<SbpFrame> invokeAsync(RemotingItem request, Duration timeout) {
         return invokeAsync(pmAddress, request, timeout);
+    }
+
+    public void updatePmAddress(Address address) {
+        try{
+            if (pmAddressUpdateLock.tryLock(LOCK_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS)) {
+                try {
+                    if (!pmAddress.equals(address)) {
+                        log.info("update pm address from {} to {}", pmAddress, address);
+                        pmAddress = address;
+                    }
+                } catch (Exception e) {
+                    log.error("update pm address error", e);
+                } finally {
+                    pmAddressUpdateLock.unlock();
+                }
+            } else {
+                log.error("update pm address timeout");
+            }
+        } catch (InterruptedException e) {
+            log.warn("update pm address interrupted", e);
+        }
     }
 
     @Override
@@ -256,40 +278,44 @@ public class NettyClient extends NettyRemotingAbstract implements RemotingClient
 
         try {
             if (this.lockChannelTables.tryLock(LOCK_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS)) {
-                boolean createNewConnection;
-                cw = this.channelTables.get(address);
-                if (cw != null) {
+                try {
+                    boolean createNewConnection;
+                    cw = this.channelTables.get(address);
+                    if (cw != null) {
 
-                    if (cw.isOK()) {
-                        completableFuture.complete(cw.getChannel());
-                        return completableFuture;
-                    } else if (!cw.getChannelFuture().isDone()) {
-                        createNewConnection = false;
+                        if (cw.isOK()) {
+                            completableFuture.complete(cw.getChannel());
+                            return completableFuture;
+                        } else if (!cw.getChannelFuture().isDone()) {
+                            createNewConnection = false;
+                        } else {
+                            this.channelTables.remove(address);
+                            createNewConnection = true;
+                        }
                     } else {
-                        this.channelTables.remove(address);
                         createNewConnection = true;
                     }
-                } else {
-                    createNewConnection = true;
-                }
 
-                if (createNewConnection) {
-                    ChannelFuture channelFuture = bootstrap
-                        .connect(address.getHost(), address.getPort());
-                    log.info("createChannel: begin to connect remote host[{}] asynchronously", address);
-                    cw = new ChannelWrapper(channelFuture);
-                    this.channelTables.put(address, cw);
-                }
+                    if (createNewConnection) {
+                        ChannelFuture channelFuture = bootstrap
+                            .connect(address.getHost(), address.getPort());
+                        log.info("createChannel: begin to connect remote host[{}] asynchronously", address);
+                        cw = new ChannelWrapper(channelFuture);
+                        this.channelTables.put(address, cw);
+                    }
 
+                } catch (Exception e) {
+                    log.error("createChannel: create channel exception", e);
+                    completableFuture.completeExceptionally(e);
+                    return completableFuture;
+                } finally {
+                    this.lockChannelTables.unlock();
+                }
             } else {
                 log.warn("createChannel: try to lock channel table, but timeout, {}ms", LOCK_TIMEOUT_MILLIS);
             }
-        } catch (Exception e) {
-            log.error("createChannel: create channel exception", e);
-            completableFuture.completeExceptionally(e);
-            return completableFuture;
-        } finally {
-            this.lockChannelTables.unlock();
+        } catch (InterruptedException e) {
+            log.error("interrupted when creating channel: {}", e.getMessage());
         }
 
         if (cw != null) {

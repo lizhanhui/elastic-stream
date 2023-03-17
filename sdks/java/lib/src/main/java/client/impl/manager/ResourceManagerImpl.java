@@ -1,10 +1,13 @@
 package client.impl.manager;
 
+import apis.exception.ClientException;
 import apis.manager.ResourceManager;
 import client.cache.StreamRangeCache;
+import client.common.FlatBuffersUtil;
 import client.netty.NettyClient;
 import client.protocol.SbpFrame;
 import client.protocol.SbpFrameBuilder;
+import client.route.Address;
 import com.google.common.base.Preconditions;
 import com.google.common.cache.CacheLoader;
 import com.google.flatbuffers.FlatBufferBuilder;
@@ -16,13 +19,16 @@ import header.CreateStreamsRequest;
 import header.CreateStreamsRequestT;
 import header.CreateStreamsResponse;
 import header.ListRangesResultT;
+import header.PlacementManager;
 import header.Range;
 import header.RangeCriteriaT;
+import header.Status;
 import header.StreamT;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -32,6 +38,9 @@ import models.RecordBatch;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import records.RecordBatchMeta;
+
+import static header.ErrorCode.OK;
+import static header.ErrorCode.PM_NOT_LEADER;
 
 public class ResourceManagerImpl implements ResourceManager {
     private static final Logger log = LoggerFactory.getLogger(ResourceManagerImpl.class);
@@ -58,7 +67,7 @@ public class ResourceManagerImpl implements ResourceManager {
 
     @Override
     public CompletableFuture<Byte> pingPong(Duration timeout) {
-        SbpFrame sbpFrame = constructRequestSbpFrame(OperationCode.PING, 0, ByteBuffer.wrap(new byte[] {1,2,3}), new ByteBuffer[]{ByteBuffer.wrap(new byte[] {4,5,6})});
+        SbpFrame sbpFrame = constructRequestSbpFrame(OperationCode.PING, 0, null);
         return nettyClient.invokeAsync(sbpFrame, timeout).thenCompose(responseFrame -> CompletableFuture.completedFuture(responseFrame.getFlag()));
     }
 
@@ -75,13 +84,40 @@ public class ResourceManagerImpl implements ResourceManager {
 
         SbpFrame sbpFrame = constructRequestSbpFrame(OperationCode.CREATE_STREAMS, 0, builder.dataBuffer());
         return nettyClient.invokeAsync(sbpFrame, timeout).thenCompose(responseFrame -> {
-            List<CreateStreamResultT> resultList = new ArrayList<>();
             CreateStreamsResponse response = CreateStreamsResponse.getRootAsCreateStreamsResponse(responseFrame.getHeader());
-            for (int i = 0; i < response.createResponsesVector().length(); i++) {
-                resultList.add(response.createResponsesVector().get(i).unpack());
+            Address updatePmAddress = extractNewPmAddress(response.status());
+            // need to connect to new Pm primary node.
+            if (updatePmAddress != null) {
+                nettyClient.updatePmAddress(updatePmAddress);
+                return nettyClient.invokeAsync(sbpFrame, timeout).thenCompose(responseFrame2 -> extractResponse(CreateStreamsResponse.getRootAsCreateStreamsResponse(responseFrame2.getHeader())));
             }
-            return CompletableFuture.completedFuture(resultList);
+            return extractResponse(response);
         });
+    }
+
+    private CompletableFuture<List<CreateStreamResultT>> extractResponse(CreateStreamsResponse response) {
+        CompletableFuture<List<CreateStreamResultT>> completableFuture = new CompletableFuture<>();
+        if (response.status().code() != OK) {
+            completableFuture.completeExceptionally(new ClientException("Create streams failed with code " + response.status().code() + ", msg: " + response.status().message()));
+            return completableFuture;
+        }
+        completableFuture.complete(Arrays.asList(response.unpack().getCreateResponses()));
+        return completableFuture;
+    }
+
+    private Address extractNewPmAddress(Status status) {
+        if (status.code() != PM_NOT_LEADER) {
+            return null;
+        }
+
+        PlacementManager manager = PlacementManager.getRootAsPlacementManager(FlatBuffersUtil.byteVector2ByteBuffer(status.detailVector()));
+        for (int i = 0; i < manager.nodesVector().length(); i++) {
+            if (manager.nodesVector().get(i).isLeader()) {
+                String hostPortString = manager.nodesVector().get(i).advertiseAddr();
+                return Address.fromAddress(hostPortString);
+            }
+        }
+        return null;
     }
 
     /**

@@ -34,6 +34,8 @@ jobs:
       - name: Set up flatc
         if: steps.cache-flatc.outputs.cache-hit != 'true'
         run: sudo apt update && sudo apt install -y flatbuffers-compiler
+      - name: Generate flatbuffers java classes
+        run: mkdir -p sdks/java/lib/src/generated/java;flatc --java -o 'sdks/java/lib/src/generated/java' --gen-object-api components/protocol/fbs/rpc.fbs components/protocol/fbs/model.fbs
       - name: Set up JDK ${{ matrix.jdk }}
         uses: actions/setup-java@v3
         with:
