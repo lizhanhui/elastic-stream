@@ -1,8 +1,11 @@
 package handler
 
 import (
+	"github.com/pkg/errors"
+
 	"github.com/AutoMQ/placement-manager/api/rpcfb/rpcfb"
 	"github.com/AutoMQ/placement-manager/pkg/sbp/protocol"
+	"github.com/AutoMQ/placement-manager/pkg/server/cluster"
 )
 
 func (s *Sbp) CreateStreams(req *protocol.CreateStreamsRequest) (resp *protocol.CreateStreamsResponse) {
@@ -14,6 +17,10 @@ func (s *Sbp) CreateStreams(req *protocol.CreateStreamsRequest) (resp *protocol.
 
 	streams, err := s.c.CreateStreams(req.Streams)
 	if err != nil {
+		if errors.Is(err, cluster.ErrNotEnoughDataNodes) {
+			resp.Error(&rpcfb.StatusT{Code: rpcfb.ErrorCodePM_NO_AVAILABLE_DN, Message: err.Error()})
+			return
+		}
 		resp.Error(&rpcfb.StatusT{Code: rpcfb.ErrorCodePM_INTERNAL_SERVER_ERROR, Message: err.Error()})
 		return
 	}
