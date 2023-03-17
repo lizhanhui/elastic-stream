@@ -25,5 +25,6 @@ func (s *Sbp) Heartbeat(req *protocol.HeartbeatRequest) (resp *protocol.Heartbea
 			return
 		}
 	}
+	resp.OK()
 	return
 }

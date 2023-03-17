@@ -29,6 +29,7 @@ func (s *Sbp) CreateStreams(req *protocol.CreateStreamsRequest) (resp *protocol.
 	for _, stream := range streams {
 		resp.CreateResponses = append(resp.CreateResponses, &rpcfb.CreateStreamResultT{Stream: stream})
 	}
+	resp.OK()
 	return
 }
 
@@ -53,6 +54,7 @@ func (s *Sbp) DeleteStreams(req *protocol.DeleteStreamsRequest) (resp *protocol.
 	for _, stream := range streams {
 		resp.DeleteResponses = append(resp.DeleteResponses, &rpcfb.DeleteStreamResultT{DeletedStream: stream})
 	}
+	resp.OK()
 	return
 }
 
@@ -73,6 +75,7 @@ func (s *Sbp) UpdateStreams(req *protocol.UpdateStreamsRequest) (resp *protocol.
 	for _, stream := range streams {
 		resp.UpdateResponses = append(resp.UpdateResponses, &rpcfb.UpdateStreamResultT{Stream: stream})
 	}
+	resp.OK()
 	return
 }
 
@@ -85,5 +88,6 @@ func (s *Sbp) DescribeStreams(req *protocol.DescribeStreamsRequest) (resp *proto
 
 	result := s.c.DescribeStreams(req.StreamIds)
 	resp.DescribeResponses = result
+	resp.OK()
 	return
 }

@@ -28,5 +28,6 @@ func (s *Sbp) ListRange(req *protocol.ListRangesRequest) (resp *protocol.ListRan
 		listResponses = append(listResponses, result)
 	}
 	resp.ListResponses = listResponses
+	resp.OK()
 	return
 }
