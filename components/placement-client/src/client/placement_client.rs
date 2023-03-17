@@ -71,6 +71,7 @@ mod tests {
     fn test_list_range() -> Result<(), ListRangeError> {
         tokio_uring::start(async {
             let log = terminal_logger();
+            let port = 2378;
             let port = run_listener(log.clone()).await;
             let addr = format!("dns:localhost:{}", port);
             let client = PlacementClientBuilder::new(&addr)
