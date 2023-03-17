@@ -2,47 +2,47 @@ namespace header;
 
 // Use HTTP status codes where possible: https://en.wikipedia.org/wiki/List_of_HTTP_status_codes
 // 5xx is not used as we have two kinds of servers: placement manager and data node. Instead, use
-// 6xx for placement manager errors and 7xx for data node errors.
+// 15xx for placement manager errors and 25xx for data node errors.
 enum ErrorCode : int16 {
     NONE = 0,
 
-    // 2xx means success or partial success.
-    OK = 200,
+    // 12xx means success or partial success.
+    OK = 1200,
 
-    // 4xx for client errors
-    BAD_REQUEST = 400,
-    UNAUTHORIZED = 401,
-    PAYMENT_REQUIRED = 402,
-    FORBIDDEN = 403,
-    NOT_FOUND = 404,
-    METHOD_NOT_ALLOWED = 405,
-    PRECONDITION_FAILED = 412,
-    PAYLOAD_TOO_LARGE = 413,
-    TOO_MANY_REQUESTS = 429,
-    HEADER_FIELDS_TOO_LARGE = 431,
+    // 14xx for client errors
+    BAD_REQUEST = 1400,
+    UNAUTHORIZED = 1401,
+    PAYMENT_REQUIRED = 1402,
+    FORBIDDEN = 1403,
+    NOT_FOUND = 1404,
+    METHOD_NOT_ALLOWED = 1405,
+    PRECONDITION_FAILED = 1412,
+    PAYLOAD_TOO_LARGE = 1413,
+    TOO_MANY_REQUESTS = 1429,
+    HEADER_FIELDS_TOO_LARGE = 1431,
 
-    // 6xx is reserved for placement manager errors
+    // 15xx is reserved for placement manager errors
     // In case placement manager encounters an internal error, normally, this implies 
     // that a design or implementation bug is triggered and should be fixed.
-    PM_INTERNAL_SERVER_ERROR = 600,
+    PM_INTERNAL_SERVER_ERROR = 1500,
 
     // Feature not implemented yet.
-    PM_NOT_IMPLEMENTED = 601,
+    PM_NOT_IMPLEMENTED = 1501,
 
     // When creating a new stream or sealing a mutable range, placement managers need to create
     // a new replica-set of mutable range, which requires at least replica number of survival 
     // data nodes. If this requirement is not met, this error code is employed to deliver the error
     // to caller client.
-    PM_NO_AVAILABLE_DN = 602,
+    PM_NO_AVAILABLE_DN = 1502,
 
     // Placement manager nodes are running RAFT concensus algorithm, write operations should go to
     // leader nodes. Otherwise, use this code to err caller client and to redirect client future requests.
-    PM_NOT_LEADER = 603,
+    PM_NOT_LEADER = 1503,
 
-    // 7xx is reserved for data node errors
-    DN_INTERNAL_SERVER_ERROR = 700,
-    DN_NOT_IMPLEMENTED = 701,
-    DN_NOT_LEADER_RANGE = 702,
+    // 25xx is reserved for data node errors
+    DN_INTERNAL_SERVER_ERROR = 2500,
+    DN_NOT_IMPLEMENTED = 2501,
+    DN_NOT_LEADER_RANGE = 2502,
 }
 
 // The Status type defines a logical error model.
