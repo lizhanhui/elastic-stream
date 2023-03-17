@@ -29,36 +29,31 @@ public final class ListRangesResult extends Table {
 
   public header.RangeCriteria rangeCriteria() { return rangeCriteria(new header.RangeCriteria()); }
   public header.RangeCriteria rangeCriteria(header.RangeCriteria obj) { int o = __offset(4); return o != 0 ? obj.__assign(__indirect(o + bb_pos), bb) : null; }
-  public short errorCode() { int o = __offset(6); return o != 0 ? bb.getShort(o + bb_pos) : 0; }
-  public String errorMessage() { int o = __offset(8); return o != 0 ? __string(o + bb_pos) : null; }
-  public ByteBuffer errorMessageAsByteBuffer() { return __vector_as_bytebuffer(8, 1); }
-  public ByteBuffer errorMessageInByteBuffer(ByteBuffer _bb) { return __vector_in_bytebuffer(_bb, 8, 1); }
   public header.Range ranges(int j) { return ranges(new header.Range(), j); }
-  public header.Range ranges(header.Range obj, int j) { int o = __offset(10); return o != 0 ? obj.__assign(__indirect(__vector(o) + j * 4), bb) : null; }
-  public int rangesLength() { int o = __offset(10); return o != 0 ? __vector_len(o) : 0; }
+  public header.Range ranges(header.Range obj, int j) { int o = __offset(6); return o != 0 ? obj.__assign(__indirect(__vector(o) + j * 4), bb) : null; }
+  public int rangesLength() { int o = __offset(6); return o != 0 ? __vector_len(o) : 0; }
   public header.Range.Vector rangesVector() { return rangesVector(new header.Range.Vector()); }
-  public header.Range.Vector rangesVector(header.Range.Vector obj) { int o = __offset(10); return o != 0 ? obj.__assign(__vector(o), 4, bb) : null; }
+  public header.Range.Vector rangesVector(header.Range.Vector obj) { int o = __offset(6); return o != 0 ? obj.__assign(__vector(o), 4, bb) : null; }
+  public header.Status status() { return status(new header.Status()); }
+  public header.Status status(header.Status obj) { int o = __offset(8); return o != 0 ? obj.__assign(__indirect(o + bb_pos), bb) : null; }
 
   public static int createListRangesResult(FlatBufferBuilder builder,
       int rangeCriteriaOffset,
-      short errorCode,
-      int errorMessageOffset,
-      int rangesOffset) {
-    builder.startTable(4);
+      int rangesOffset,
+      int statusOffset) {
+    builder.startTable(3);
+    ListRangesResult.addStatus(builder, statusOffset);
     ListRangesResult.addRanges(builder, rangesOffset);
-    ListRangesResult.addErrorMessage(builder, errorMessageOffset);
     ListRangesResult.addRangeCriteria(builder, rangeCriteriaOffset);
-    ListRangesResult.addErrorCode(builder, errorCode);
     return ListRangesResult.endListRangesResult(builder);
   }
 
-  public static void startListRangesResult(FlatBufferBuilder builder) { builder.startTable(4); }
+  public static void startListRangesResult(FlatBufferBuilder builder) { builder.startTable(3); }
   public static void addRangeCriteria(FlatBufferBuilder builder, int rangeCriteriaOffset) { builder.addOffset(0, rangeCriteriaOffset, 0); }
-  public static void addErrorCode(FlatBufferBuilder builder, short errorCode) { builder.addShort(1, errorCode, 0); }
-  public static void addErrorMessage(FlatBufferBuilder builder, int errorMessageOffset) { builder.addOffset(2, errorMessageOffset, 0); }
-  public static void addRanges(FlatBufferBuilder builder, int rangesOffset) { builder.addOffset(3, rangesOffset, 0); }
+  public static void addRanges(FlatBufferBuilder builder, int rangesOffset) { builder.addOffset(1, rangesOffset, 0); }
   public static int createRangesVector(FlatBufferBuilder builder, int[] data) { builder.startVector(4, data.length, 4); for (int i = data.length - 1; i >= 0; i--) builder.addOffset(data[i]); return builder.endVector(); }
   public static void startRangesVector(FlatBufferBuilder builder, int numElems) { builder.startVector(4, numElems, 4); }
+  public static void addStatus(FlatBufferBuilder builder, int statusOffset) { builder.addOffset(2, statusOffset, 0); }
   public static int endListRangesResult(FlatBufferBuilder builder) {
     int o = builder.endTable();
     return o;
@@ -78,18 +73,15 @@ public final class ListRangesResult extends Table {
   public void unpackTo(ListRangesResultT _o) {
     if (rangeCriteria() != null) _o.setRangeCriteria(rangeCriteria().unpack());
     else _o.setRangeCriteria(null);
-    short _oErrorCode = errorCode();
-    _o.setErrorCode(_oErrorCode);
-    String _oErrorMessage = errorMessage();
-    _o.setErrorMessage(_oErrorMessage);
     header.RangeT[] _oRanges = new header.RangeT[rangesLength()];
     for (int _j = 0; _j < rangesLength(); ++_j) {_oRanges[_j] = (ranges(_j) != null ? ranges(_j).unpack() : null);}
     _o.setRanges(_oRanges);
+    if (status() != null) _o.setStatus(status().unpack());
+    else _o.setStatus(null);
   }
   public static int pack(FlatBufferBuilder builder, ListRangesResultT _o) {
     if (_o == null) return 0;
     int _rangeCriteria = _o.getRangeCriteria() == null ? 0 : header.RangeCriteria.pack(builder, _o.getRangeCriteria());
-    int _errorMessage = _o.getErrorMessage() == null ? 0 : builder.createString(_o.getErrorMessage());
     int _ranges = 0;
     if (_o.getRanges() != null) {
       int[] __ranges = new int[_o.getRanges().length];
@@ -97,12 +89,12 @@ public final class ListRangesResult extends Table {
       for (header.RangeT _e : _o.getRanges()) { __ranges[_j] = header.Range.pack(builder, _e); _j++;}
       _ranges = createRangesVector(builder, __ranges);
     }
+    int _status = _o.getStatus() == null ? 0 : header.Status.pack(builder, _o.getStatus());
     return createListRangesResult(
       builder,
       _rangeCriteria,
-      _o.getErrorCode(),
-      _errorMessage,
-      _ranges);
+      _ranges,
+      _status);
   }
 }
 

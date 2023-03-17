@@ -29,26 +29,21 @@ public final class CreateStreamResult extends Table {
 
   public header.Stream stream() { return stream(new header.Stream()); }
   public header.Stream stream(header.Stream obj) { int o = __offset(4); return o != 0 ? obj.__assign(__indirect(o + bb_pos), bb) : null; }
-  public short errorCode() { int o = __offset(6); return o != 0 ? bb.getShort(o + bb_pos) : 0; }
-  public String errorMessage() { int o = __offset(8); return o != 0 ? __string(o + bb_pos) : null; }
-  public ByteBuffer errorMessageAsByteBuffer() { return __vector_as_bytebuffer(8, 1); }
-  public ByteBuffer errorMessageInByteBuffer(ByteBuffer _bb) { return __vector_in_bytebuffer(_bb, 8, 1); }
+  public header.Status status() { return status(new header.Status()); }
+  public header.Status status(header.Status obj) { int o = __offset(6); return o != 0 ? obj.__assign(__indirect(o + bb_pos), bb) : null; }
 
   public static int createCreateStreamResult(FlatBufferBuilder builder,
       int streamOffset,
-      short errorCode,
-      int errorMessageOffset) {
-    builder.startTable(3);
-    CreateStreamResult.addErrorMessage(builder, errorMessageOffset);
+      int statusOffset) {
+    builder.startTable(2);
+    CreateStreamResult.addStatus(builder, statusOffset);
     CreateStreamResult.addStream(builder, streamOffset);
-    CreateStreamResult.addErrorCode(builder, errorCode);
     return CreateStreamResult.endCreateStreamResult(builder);
   }
 
-  public static void startCreateStreamResult(FlatBufferBuilder builder) { builder.startTable(3); }
+  public static void startCreateStreamResult(FlatBufferBuilder builder) { builder.startTable(2); }
   public static void addStream(FlatBufferBuilder builder, int streamOffset) { builder.addOffset(0, streamOffset, 0); }
-  public static void addErrorCode(FlatBufferBuilder builder, short errorCode) { builder.addShort(1, errorCode, 0); }
-  public static void addErrorMessage(FlatBufferBuilder builder, int errorMessageOffset) { builder.addOffset(2, errorMessageOffset, 0); }
+  public static void addStatus(FlatBufferBuilder builder, int statusOffset) { builder.addOffset(1, statusOffset, 0); }
   public static int endCreateStreamResult(FlatBufferBuilder builder) {
     int o = builder.endTable();
     return o;
@@ -68,20 +63,17 @@ public final class CreateStreamResult extends Table {
   public void unpackTo(CreateStreamResultT _o) {
     if (stream() != null) _o.setStream(stream().unpack());
     else _o.setStream(null);
-    short _oErrorCode = errorCode();
-    _o.setErrorCode(_oErrorCode);
-    String _oErrorMessage = errorMessage();
-    _o.setErrorMessage(_oErrorMessage);
+    if (status() != null) _o.setStatus(status().unpack());
+    else _o.setStatus(null);
   }
   public static int pack(FlatBufferBuilder builder, CreateStreamResultT _o) {
     if (_o == null) return 0;
     int _stream = _o.getStream() == null ? 0 : header.Stream.pack(builder, _o.getStream());
-    int _errorMessage = _o.getErrorMessage() == null ? 0 : builder.createString(_o.getErrorMessage());
+    int _status = _o.getStatus() == null ? 0 : header.Status.pack(builder, _o.getStatus());
     return createCreateStreamResult(
       builder,
       _stream,
-      _o.getErrorCode(),
-      _errorMessage);
+      _status);
   }
 }
 

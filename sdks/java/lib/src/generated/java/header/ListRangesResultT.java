@@ -21,32 +21,26 @@ import java.nio.ByteOrder;
 
 public class ListRangesResultT {
   private header.RangeCriteriaT rangeCriteria;
-  private short errorCode;
-  private String errorMessage;
   private header.RangeT[] ranges;
+  private header.StatusT status;
 
   public header.RangeCriteriaT getRangeCriteria() { return rangeCriteria; }
 
   public void setRangeCriteria(header.RangeCriteriaT rangeCriteria) { this.rangeCriteria = rangeCriteria; }
 
-  public short getErrorCode() { return errorCode; }
-
-  public void setErrorCode(short errorCode) { this.errorCode = errorCode; }
-
-  public String getErrorMessage() { return errorMessage; }
-
-  public void setErrorMessage(String errorMessage) { this.errorMessage = errorMessage; }
-
   public header.RangeT[] getRanges() { return ranges; }
 
   public void setRanges(header.RangeT[] ranges) { this.ranges = ranges; }
 
+  public header.StatusT getStatus() { return status; }
+
+  public void setStatus(header.StatusT status) { this.status = status; }
+
 
   public ListRangesResultT() {
     this.rangeCriteria = null;
-    this.errorCode = 0;
-    this.errorMessage = null;
     this.ranges = null;
+    this.status = null;
   }
 }
 

@@ -33,31 +33,26 @@ public final class SyncRangesResponse extends Table {
   public int syncResponsesLength() { int o = __offset(6); return o != 0 ? __vector_len(o) : 0; }
   public header.SyncRangesResult.Vector syncResponsesVector() { return syncResponsesVector(new header.SyncRangesResult.Vector()); }
   public header.SyncRangesResult.Vector syncResponsesVector(header.SyncRangesResult.Vector obj) { int o = __offset(6); return o != 0 ? obj.__assign(__vector(o), 4, bb) : null; }
-  public short errorCode() { int o = __offset(8); return o != 0 ? bb.getShort(o + bb_pos) : 0; }
-  public String errorMessage() { int o = __offset(10); return o != 0 ? __string(o + bb_pos) : null; }
-  public ByteBuffer errorMessageAsByteBuffer() { return __vector_as_bytebuffer(10, 1); }
-  public ByteBuffer errorMessageInByteBuffer(ByteBuffer _bb) { return __vector_in_bytebuffer(_bb, 10, 1); }
+  public header.Status status() { return status(new header.Status()); }
+  public header.Status status(header.Status obj) { int o = __offset(8); return o != 0 ? obj.__assign(__indirect(o + bb_pos), bb) : null; }
 
   public static int createSyncRangesResponse(FlatBufferBuilder builder,
       int throttleTimeMs,
       int syncResponsesOffset,
-      short errorCode,
-      int errorMessageOffset) {
-    builder.startTable(4);
-    SyncRangesResponse.addErrorMessage(builder, errorMessageOffset);
+      int statusOffset) {
+    builder.startTable(3);
+    SyncRangesResponse.addStatus(builder, statusOffset);
     SyncRangesResponse.addSyncResponses(builder, syncResponsesOffset);
     SyncRangesResponse.addThrottleTimeMs(builder, throttleTimeMs);
-    SyncRangesResponse.addErrorCode(builder, errorCode);
     return SyncRangesResponse.endSyncRangesResponse(builder);
   }
 
-  public static void startSyncRangesResponse(FlatBufferBuilder builder) { builder.startTable(4); }
+  public static void startSyncRangesResponse(FlatBufferBuilder builder) { builder.startTable(3); }
   public static void addThrottleTimeMs(FlatBufferBuilder builder, int throttleTimeMs) { builder.addInt(0, throttleTimeMs, 0); }
   public static void addSyncResponses(FlatBufferBuilder builder, int syncResponsesOffset) { builder.addOffset(1, syncResponsesOffset, 0); }
   public static int createSyncResponsesVector(FlatBufferBuilder builder, int[] data) { builder.startVector(4, data.length, 4); for (int i = data.length - 1; i >= 0; i--) builder.addOffset(data[i]); return builder.endVector(); }
   public static void startSyncResponsesVector(FlatBufferBuilder builder, int numElems) { builder.startVector(4, numElems, 4); }
-  public static void addErrorCode(FlatBufferBuilder builder, short errorCode) { builder.addShort(2, errorCode, 0); }
-  public static void addErrorMessage(FlatBufferBuilder builder, int errorMessageOffset) { builder.addOffset(3, errorMessageOffset, 0); }
+  public static void addStatus(FlatBufferBuilder builder, int statusOffset) { builder.addOffset(2, statusOffset, 0); }
   public static int endSyncRangesResponse(FlatBufferBuilder builder) {
     int o = builder.endTable();
     return o;
@@ -80,10 +75,8 @@ public final class SyncRangesResponse extends Table {
     header.SyncRangesResultT[] _oSyncResponses = new header.SyncRangesResultT[syncResponsesLength()];
     for (int _j = 0; _j < syncResponsesLength(); ++_j) {_oSyncResponses[_j] = (syncResponses(_j) != null ? syncResponses(_j).unpack() : null);}
     _o.setSyncResponses(_oSyncResponses);
-    short _oErrorCode = errorCode();
-    _o.setErrorCode(_oErrorCode);
-    String _oErrorMessage = errorMessage();
-    _o.setErrorMessage(_oErrorMessage);
+    if (status() != null) _o.setStatus(status().unpack());
+    else _o.setStatus(null);
   }
   public static int pack(FlatBufferBuilder builder, SyncRangesResponseT _o) {
     if (_o == null) return 0;
@@ -94,13 +87,12 @@ public final class SyncRangesResponse extends Table {
       for (header.SyncRangesResultT _e : _o.getSyncResponses()) { __syncResponses[_j] = header.SyncRangesResult.pack(builder, _e); _j++;}
       _syncResponses = createSyncResponsesVector(builder, __syncResponses);
     }
-    int _errorMessage = _o.getErrorMessage() == null ? 0 : builder.createString(_o.getErrorMessage());
+    int _status = _o.getStatus() == null ? 0 : header.Status.pack(builder, _o.getStatus());
     return createSyncRangesResponse(
       builder,
       _o.getThrottleTimeMs(),
       _syncResponses,
-      _o.getErrorCode(),
-      _errorMessage);
+      _status);
   }
 }
 

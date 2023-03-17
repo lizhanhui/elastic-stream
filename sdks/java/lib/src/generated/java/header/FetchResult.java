@@ -29,33 +29,28 @@ public final class FetchResult extends Table {
 
   public long streamId() { int o = __offset(4); return o != 0 ? bb.getLong(o + bb_pos) : 0L; }
   public int requestIndex() { int o = __offset(6); return o != 0 ? bb.getInt(o + bb_pos) : 0; }
-  public short errorCode() { int o = __offset(8); return o != 0 ? bb.getShort(o + bb_pos) : 0; }
-  public String errorMessage() { int o = __offset(10); return o != 0 ? __string(o + bb_pos) : null; }
-  public ByteBuffer errorMessageAsByteBuffer() { return __vector_as_bytebuffer(10, 1); }
-  public ByteBuffer errorMessageInByteBuffer(ByteBuffer _bb) { return __vector_in_bytebuffer(_bb, 10, 1); }
-  public int batchLength() { int o = __offset(12); return o != 0 ? bb.getInt(o + bb_pos) : 0; }
+  public int batchLength() { int o = __offset(8); return o != 0 ? bb.getInt(o + bb_pos) : 0; }
+  public header.Status status() { return status(new header.Status()); }
+  public header.Status status(header.Status obj) { int o = __offset(10); return o != 0 ? obj.__assign(__indirect(o + bb_pos), bb) : null; }
 
   public static int createFetchResult(FlatBufferBuilder builder,
       long streamId,
       int requestIndex,
-      short errorCode,
-      int errorMessageOffset,
-      int batchLength) {
-    builder.startTable(5);
+      int batchLength,
+      int statusOffset) {
+    builder.startTable(4);
     FetchResult.addStreamId(builder, streamId);
+    FetchResult.addStatus(builder, statusOffset);
     FetchResult.addBatchLength(builder, batchLength);
-    FetchResult.addErrorMessage(builder, errorMessageOffset);
     FetchResult.addRequestIndex(builder, requestIndex);
-    FetchResult.addErrorCode(builder, errorCode);
     return FetchResult.endFetchResult(builder);
   }
 
-  public static void startFetchResult(FlatBufferBuilder builder) { builder.startTable(5); }
+  public static void startFetchResult(FlatBufferBuilder builder) { builder.startTable(4); }
   public static void addStreamId(FlatBufferBuilder builder, long streamId) { builder.addLong(0, streamId, 0L); }
   public static void addRequestIndex(FlatBufferBuilder builder, int requestIndex) { builder.addInt(1, requestIndex, 0); }
-  public static void addErrorCode(FlatBufferBuilder builder, short errorCode) { builder.addShort(2, errorCode, 0); }
-  public static void addErrorMessage(FlatBufferBuilder builder, int errorMessageOffset) { builder.addOffset(3, errorMessageOffset, 0); }
-  public static void addBatchLength(FlatBufferBuilder builder, int batchLength) { builder.addInt(4, batchLength, 0); }
+  public static void addBatchLength(FlatBufferBuilder builder, int batchLength) { builder.addInt(2, batchLength, 0); }
+  public static void addStatus(FlatBufferBuilder builder, int statusOffset) { builder.addOffset(3, statusOffset, 0); }
   public static int endFetchResult(FlatBufferBuilder builder) {
     int o = builder.endTable();
     return o;
@@ -77,23 +72,20 @@ public final class FetchResult extends Table {
     _o.setStreamId(_oStreamId);
     int _oRequestIndex = requestIndex();
     _o.setRequestIndex(_oRequestIndex);
-    short _oErrorCode = errorCode();
-    _o.setErrorCode(_oErrorCode);
-    String _oErrorMessage = errorMessage();
-    _o.setErrorMessage(_oErrorMessage);
     int _oBatchLength = batchLength();
     _o.setBatchLength(_oBatchLength);
+    if (status() != null) _o.setStatus(status().unpack());
+    else _o.setStatus(null);
   }
   public static int pack(FlatBufferBuilder builder, FetchResultT _o) {
     if (_o == null) return 0;
-    int _errorMessage = _o.getErrorMessage() == null ? 0 : builder.createString(_o.getErrorMessage());
+    int _status = _o.getStatus() == null ? 0 : header.Status.pack(builder, _o.getStatus());
     return createFetchResult(
       builder,
       _o.getStreamId(),
       _o.getRequestIndex(),
-      _o.getErrorCode(),
-      _errorMessage,
-      _o.getBatchLength());
+      _o.getBatchLength(),
+      _status);
   }
 }
 

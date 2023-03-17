@@ -16,22 +16,19 @@
  */
 package client.netty;
 
-import apis.exception.RemotingSendRequestException;
-import apis.exception.RemotingTimeoutException;
-import client.InvokeCallback;
+import apis.exception.ClientException;
 import client.common.RemotingUtil;
 import client.protocol.SbpFrame;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelFutureListener;
 import io.netty.channel.ChannelHandlerContext;
-import java.net.SocketAddress;
 import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map.Entry;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
-import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import org.slf4j.Logger;
@@ -58,7 +55,7 @@ public abstract class NettyRemotingAbstract {
     /**
      * Constructor, specifying capacity of one-way and asynchronous semaphores.
      *
-     * @param permitsAsync  Number of permits for asynchronous requests.
+     * @param permitsAsync Number of permits for asynchronous requests.
      */
     public NettyRemotingAbstract(final int permitsAsync) {
         this.semaphoreAsync = new Semaphore(permitsAsync, true);
@@ -66,8 +63,8 @@ public abstract class NettyRemotingAbstract {
 
     /**
      * Entry of incoming SbpFrame processing.
-     *  @param ctx Channel handler context.
      *
+     * @param ctx   Channel handler context.
      * @param frame incoming SbpFrame.
      */
     public void processMessageReceived(ChannelHandlerContext ctx, SbpFrame frame) {
@@ -91,7 +88,6 @@ public abstract class NettyRemotingAbstract {
 
     }
 
-
     /**
      * Process response from remote peer to the previous issued requests.
      *
@@ -102,60 +98,13 @@ public abstract class NettyRemotingAbstract {
         final int opaque = frame.getId();
         final ResponseFuture responseFuture = responseTable.get(opaque);
         if (responseFuture != null) {
-            responseFuture.setResponseSbpFrame(frame);
-
+            responseFuture.getCompletableFuture().complete(frame);
             responseTable.remove(opaque);
-
-            if (responseFuture.getInvokeCallback() != null) {
-                executeInvokeCallback(responseFuture);
-            } else {
-                responseFuture.putResponse(frame);
-            }
         } else {
             log.warn("receive response, but not matched any request, " + RemotingUtil.parseChannelRemoteAddr(ctx.channel()));
             log.warn(frame.toString());
         }
     }
-
-    /**
-     * Execute callback in callback executor. If callback executor is null, run directly in current thread
-     */
-    private void executeInvokeCallback(final ResponseFuture responseFuture) {
-        boolean runInThisThread = false;
-        ExecutorService executor = this.getCallbackExecutor();
-        if (executor != null && !executor.isShutdown()) {
-            try {
-                executor.submit(() -> {
-                    try {
-                        responseFuture.executeInvokeCallback();
-                    } catch (Throwable e) {
-                        log.warn("execute callback in executor exception, and callback throw", e);
-                    }
-                });
-            } catch (Exception e) {
-                runInThisThread = true;
-                log.warn("execute callback in executor exception, maybe executor busy", e);
-            }
-        } else {
-            runInThisThread = true;
-        }
-
-        if (runInThisThread) {
-            try {
-                responseFuture.executeInvokeCallback();
-            } catch (Throwable e) {
-                log.warn("executeInvokeCallback Exception", e);
-            }
-        }
-    }
-
-    /**
-     * This method specifies thread pool to use while invoking callback methods.
-     *
-     * @return Dedicated thread pool instance if specified; or null if the callback is supposed to be executed in the
-     * netty event-loop thread.
-     */
-    public abstract ExecutorService getCallbackExecutor();
 
     /**
      * <p>
@@ -177,68 +126,21 @@ public abstract class NettyRemotingAbstract {
         }
 
         for (ResponseFuture rf : rfList) {
-            try {
-                executeInvokeCallback(rf);
-            } catch (Throwable e) {
-                log.warn("scanResponseTable, operationComplete Exception", e);
-            }
+            rf.getCompletableFuture().completeExceptionally(new ClientException("timeout waiting for response"));
         }
     }
 
-    public SbpFrame invokeSyncImpl(final Channel channel, final SbpFrame request,
-        final long timeoutMillis)
-        throws InterruptedException, RemotingSendRequestException, RemotingTimeoutException {
-        //get the request id
+    public CompletableFuture<SbpFrame> invokeAsyncImpl(final Channel channel, final SbpFrame request,
+        final long timeoutMillis,
+        final CompletableFuture<SbpFrame> future) {
         final int opaque = request.getId();
 
         try {
-            final ResponseFuture responseFuture = new ResponseFuture(channel, opaque, timeoutMillis, null);
-            this.responseTable.put(opaque, responseFuture);
-            final SocketAddress addr = channel.remoteAddress();
-            channel.writeAndFlush(request).addListener((ChannelFutureListener) f -> {
-                if (f.isSuccess()) {
-                    responseFuture.setSendRequestOK(true);
-                    return;
-                }
+            boolean acquired = this.semaphoreAsync.tryAcquire(timeoutMillis, TimeUnit.MILLISECONDS);
+            if (acquired) {
+                final ResponseFuture responseFuture = new ResponseFuture(channel, opaque, timeoutMillis, future);
 
-                responseFuture.setSendRequestOK(false);
-                responseTable.remove(opaque);
-                responseFuture.setCause(f.cause());
-                responseFuture.putResponse(null);
-                log.warn("Failed to write a request SbpFrame to {}, caused by underlying I/O operation failure", addr);
-            });
-
-            SbpFrame responseFrame = responseFuture.waitResponse(timeoutMillis);
-            if (null == responseFrame) {
-                if (responseFuture.isSendRequestOK()) {
-                    throw new RemotingTimeoutException(RemotingUtil.parseSocketAddressAddr(addr), timeoutMillis,
-                        responseFuture.getCause());
-                } else {
-                    throw new RemotingSendRequestException(RemotingUtil.parseSocketAddressAddr(addr), responseFuture.getCause());
-                }
-            }
-
-            return responseFrame;
-        } finally {
-            this.responseTable.remove(opaque);
-        }
-    }
-
-    public void invokeAsyncImpl(final Channel channel, final SbpFrame request, final long timeoutMillis,
-        final InvokeCallback invokeCallback)
-        throws InterruptedException, RemotingTimeoutException, RemotingSendRequestException {
-        long beginStartTime = System.currentTimeMillis();
-        final int opaque = request.getId();
-        boolean acquired = this.semaphoreAsync.tryAcquire(timeoutMillis, TimeUnit.MILLISECONDS);
-        if (acquired) {
-            long costTime = System.currentTimeMillis() - beginStartTime;
-            if (timeoutMillis < costTime) {
-                throw new RemotingTimeoutException("invokeAsyncImpl call timeout");
-            }
-
-            final ResponseFuture responseFuture = new ResponseFuture(channel, opaque, timeoutMillis - costTime, invokeCallback);
-            this.responseTable.put(opaque, responseFuture);
-            try {
+                this.responseTable.put(opaque, responseFuture);
                 channel.writeAndFlush(request).addListener((ChannelFutureListener) f -> {
                     if (f.isSuccess()) {
                         responseFuture.setSendRequestOK(true);
@@ -247,36 +149,37 @@ public abstract class NettyRemotingAbstract {
                     requestFail(opaque);
                     log.warn("send a request SbpFrame to channel <{}> failed.", RemotingUtil.parseChannelRemoteAddr(channel));
                 });
-            } catch (Exception e) {
-                log.warn("send a request SbpFrame to channel <" + RemotingUtil.parseChannelRemoteAddr(channel) + "> Exception", e);
-                throw new RemotingSendRequestException(RemotingUtil.parseChannelRemoteAddr(channel), e);
-            }
-        } else {
-            if (timeoutMillis <= 0) {
-                throw new RemotingSendRequestException("invokeAsyncImpl invoke too fast");
             } else {
-                String info =
-                    String.format("invokeAsyncImpl tryAcquire semaphore timeout, %dms, waiting thread nums: %d semaphoreAsyncValue: %d",
-                        timeoutMillis,
-                        this.semaphoreAsync.getQueueLength(),
-                        this.semaphoreAsync.availablePermits()
-                    );
-                log.warn(info);
-                throw new RemotingTimeoutException(info);
+                if (timeoutMillis <= 0) {
+                    String info = "invokeAsyncImpl invoke too fast";
+                    log.error(info);
+                    future.completeExceptionally(new ClientException(info));
+                    return future;
+                } else {
+                    String info =
+                        String.format("invokeAsyncImpl tryAcquire semaphore timeout, %dms, waiting thread nums: %d semaphoreAsyncValue: %d",
+                            timeoutMillis,
+                            this.semaphoreAsync.getQueueLength(),
+                            this.semaphoreAsync.availablePermits()
+                        );
+                    log.warn(info);
+                    future.completeExceptionally(new ClientException(info));
+                    return future;
+                }
             }
+
+        } catch (Throwable ex) {
+            future.completeExceptionally(ex);
         }
+
+        return future;
     }
 
     private void requestFail(final int opaque) {
         ResponseFuture responseFuture = responseTable.remove(opaque);
         if (responseFuture != null) {
             responseFuture.setSendRequestOK(false);
-            responseFuture.putResponse(null);
-            try {
-                executeInvokeCallback(responseFuture);
-            } catch (Throwable e) {
-                log.warn("execute callback in requestFail, and callback throw", e);
-            }
+            responseFuture.getCompletableFuture().completeExceptionally(new ClientException("fail to send request to server"));
         }
     }
 

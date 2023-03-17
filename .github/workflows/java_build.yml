@@ -19,17 +19,27 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ ubuntu-22.04]
-        jdk: [ 11, 17 ]
+        os: [ubuntu-22.04]
+        jdk: [11, 17]
     steps:
       - name: Checkout
         uses: actions/checkout@v3
+      - name: cache flatc
+        id: cache-flatc
+        uses: actions/cache@v3
+        with:
+          path: |
+            /usr/bin/flatc
+          key: ${{ runner.os }}-flatc
+      - name: Set up flatc
+        if: steps.cache-flatc.outputs.cache-hit != 'true'
+        run: sudo apt update && sudo apt install -y flatbuffers-compiler
       - name: Set up JDK ${{ matrix.jdk }}
         uses: actions/setup-java@v3
         with:
           java-version: ${{ matrix.jdk }}
-          distribution: 'zulu'
-          cache: 'gradle'
+          distribution: "zulu"
+          cache: "gradle"
       - name: Build with Gradle
         uses: gradle/gradle-build-action@v2
         with:

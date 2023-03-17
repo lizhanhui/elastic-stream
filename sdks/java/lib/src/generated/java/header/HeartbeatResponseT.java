@@ -23,8 +23,7 @@ public class HeartbeatResponseT {
   private String clientId;
   private byte clientRole;
   private header.DataNodeT dataNode;
-  private short errorCode;
-  private String errorMessage;
+  private header.StatusT status;
 
   public String getClientId() { return clientId; }
 
@@ -38,21 +37,16 @@ public class HeartbeatResponseT {
 
   public void setDataNode(header.DataNodeT dataNode) { this.dataNode = dataNode; }
 
-  public short getErrorCode() { return errorCode; }
+  public header.StatusT getStatus() { return status; }
 
-  public void setErrorCode(short errorCode) { this.errorCode = errorCode; }
-
-  public String getErrorMessage() { return errorMessage; }
-
-  public void setErrorMessage(String errorMessage) { this.errorMessage = errorMessage; }
+  public void setStatus(header.StatusT status) { this.status = status; }
 
 
   public HeartbeatResponseT() {
     this.clientId = null;
     this.clientRole = 0;
     this.dataNode = null;
-    this.errorCode = 0;
-    this.errorMessage = null;
+    this.status = null;
   }
 }
 

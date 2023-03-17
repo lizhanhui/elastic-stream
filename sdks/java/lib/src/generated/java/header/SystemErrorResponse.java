@@ -27,23 +27,18 @@ public final class SystemErrorResponse extends Table {
   public void __init(int _i, ByteBuffer _bb) { __reset(_i, _bb); }
   public SystemErrorResponse __assign(int _i, ByteBuffer _bb) { __init(_i, _bb); return this; }
 
-  public short errorCode() { int o = __offset(4); return o != 0 ? bb.getShort(o + bb_pos) : 0; }
-  public String errorMessage() { int o = __offset(6); return o != 0 ? __string(o + bb_pos) : null; }
-  public ByteBuffer errorMessageAsByteBuffer() { return __vector_as_bytebuffer(6, 1); }
-  public ByteBuffer errorMessageInByteBuffer(ByteBuffer _bb) { return __vector_in_bytebuffer(_bb, 6, 1); }
+  public header.Status status() { return status(new header.Status()); }
+  public header.Status status(header.Status obj) { int o = __offset(4); return o != 0 ? obj.__assign(__indirect(o + bb_pos), bb) : null; }
 
   public static int createSystemErrorResponse(FlatBufferBuilder builder,
-      short errorCode,
-      int errorMessageOffset) {
-    builder.startTable(2);
-    SystemErrorResponse.addErrorMessage(builder, errorMessageOffset);
-    SystemErrorResponse.addErrorCode(builder, errorCode);
+      int statusOffset) {
+    builder.startTable(1);
+    SystemErrorResponse.addStatus(builder, statusOffset);
     return SystemErrorResponse.endSystemErrorResponse(builder);
   }
 
-  public static void startSystemErrorResponse(FlatBufferBuilder builder) { builder.startTable(2); }
-  public static void addErrorCode(FlatBufferBuilder builder, short errorCode) { builder.addShort(0, errorCode, 0); }
-  public static void addErrorMessage(FlatBufferBuilder builder, int errorMessageOffset) { builder.addOffset(1, errorMessageOffset, 0); }
+  public static void startSystemErrorResponse(FlatBufferBuilder builder) { builder.startTable(1); }
+  public static void addStatus(FlatBufferBuilder builder, int statusOffset) { builder.addOffset(0, statusOffset, 0); }
   public static int endSystemErrorResponse(FlatBufferBuilder builder) {
     int o = builder.endTable();
     return o;
@@ -61,18 +56,15 @@ public final class SystemErrorResponse extends Table {
     return _o;
   }
   public void unpackTo(SystemErrorResponseT _o) {
-    short _oErrorCode = errorCode();
-    _o.setErrorCode(_oErrorCode);
-    String _oErrorMessage = errorMessage();
-    _o.setErrorMessage(_oErrorMessage);
+    if (status() != null) _o.setStatus(status().unpack());
+    else _o.setStatus(null);
   }
   public static int pack(FlatBufferBuilder builder, SystemErrorResponseT _o) {
     if (_o == null) return 0;
-    int _errorMessage = _o.getErrorMessage() == null ? 0 : builder.createString(_o.getErrorMessage());
+    int _status = _o.getStatus() == null ? 0 : header.Status.pack(builder, _o.getStatus());
     return createSystemErrorResponse(
       builder,
-      _o.getErrorCode(),
-      _errorMessage);
+      _status);
   }
 }
 

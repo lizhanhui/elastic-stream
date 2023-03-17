@@ -29,31 +29,26 @@ public final class TrimStreamResult extends Table {
 
   public header.Stream trimmedStream() { return trimmedStream(new header.Stream()); }
   public header.Stream trimmedStream(header.Stream obj) { int o = __offset(4); return o != 0 ? obj.__assign(__indirect(o + bb_pos), bb) : null; }
-  public short errorCode() { int o = __offset(6); return o != 0 ? bb.getShort(o + bb_pos) : 0; }
-  public String errorMessage() { int o = __offset(8); return o != 0 ? __string(o + bb_pos) : null; }
-  public ByteBuffer errorMessageAsByteBuffer() { return __vector_as_bytebuffer(8, 1); }
-  public ByteBuffer errorMessageInByteBuffer(ByteBuffer _bb) { return __vector_in_bytebuffer(_bb, 8, 1); }
   public header.Range range() { return range(new header.Range()); }
-  public header.Range range(header.Range obj) { int o = __offset(10); return o != 0 ? obj.__assign(__indirect(o + bb_pos), bb) : null; }
+  public header.Range range(header.Range obj) { int o = __offset(6); return o != 0 ? obj.__assign(__indirect(o + bb_pos), bb) : null; }
+  public header.Status status() { return status(new header.Status()); }
+  public header.Status status(header.Status obj) { int o = __offset(8); return o != 0 ? obj.__assign(__indirect(o + bb_pos), bb) : null; }
 
   public static int createTrimStreamResult(FlatBufferBuilder builder,
       int trimmedStreamOffset,
-      short errorCode,
-      int errorMessageOffset,
-      int rangeOffset) {
-    builder.startTable(4);
+      int rangeOffset,
+      int statusOffset) {
+    builder.startTable(3);
+    TrimStreamResult.addStatus(builder, statusOffset);
     TrimStreamResult.addRange(builder, rangeOffset);
-    TrimStreamResult.addErrorMessage(builder, errorMessageOffset);
     TrimStreamResult.addTrimmedStream(builder, trimmedStreamOffset);
-    TrimStreamResult.addErrorCode(builder, errorCode);
     return TrimStreamResult.endTrimStreamResult(builder);
   }
 
-  public static void startTrimStreamResult(FlatBufferBuilder builder) { builder.startTable(4); }
+  public static void startTrimStreamResult(FlatBufferBuilder builder) { builder.startTable(3); }
   public static void addTrimmedStream(FlatBufferBuilder builder, int trimmedStreamOffset) { builder.addOffset(0, trimmedStreamOffset, 0); }
-  public static void addErrorCode(FlatBufferBuilder builder, short errorCode) { builder.addShort(1, errorCode, 0); }
-  public static void addErrorMessage(FlatBufferBuilder builder, int errorMessageOffset) { builder.addOffset(2, errorMessageOffset, 0); }
-  public static void addRange(FlatBufferBuilder builder, int rangeOffset) { builder.addOffset(3, rangeOffset, 0); }
+  public static void addRange(FlatBufferBuilder builder, int rangeOffset) { builder.addOffset(1, rangeOffset, 0); }
+  public static void addStatus(FlatBufferBuilder builder, int statusOffset) { builder.addOffset(2, statusOffset, 0); }
   public static int endTrimStreamResult(FlatBufferBuilder builder) {
     int o = builder.endTable();
     return o;
@@ -73,24 +68,21 @@ public final class TrimStreamResult extends Table {
   public void unpackTo(TrimStreamResultT _o) {
     if (trimmedStream() != null) _o.setTrimmedStream(trimmedStream().unpack());
     else _o.setTrimmedStream(null);
-    short _oErrorCode = errorCode();
-    _o.setErrorCode(_oErrorCode);
-    String _oErrorMessage = errorMessage();
-    _o.setErrorMessage(_oErrorMessage);
     if (range() != null) _o.setRange(range().unpack());
     else _o.setRange(null);
+    if (status() != null) _o.setStatus(status().unpack());
+    else _o.setStatus(null);
   }
   public static int pack(FlatBufferBuilder builder, TrimStreamResultT _o) {
     if (_o == null) return 0;
     int _trimmedStream = _o.getTrimmedStream() == null ? 0 : header.Stream.pack(builder, _o.getTrimmedStream());
-    int _errorMessage = _o.getErrorMessage() == null ? 0 : builder.createString(_o.getErrorMessage());
     int _range = _o.getRange() == null ? 0 : header.Range.pack(builder, _o.getRange());
+    int _status = _o.getStatus() == null ? 0 : header.Status.pack(builder, _o.getStatus());
     return createTrimStreamResult(
       builder,
       _trimmedStream,
-      _o.getErrorCode(),
-      _errorMessage,
-      _range);
+      _range,
+      _status);
   }
 }
 

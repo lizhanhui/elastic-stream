@@ -1,6 +1,7 @@
 package models;
 
 public enum OperationCode {
+    PING((short) 0x0001),
     APPEND((short) 0x1001),
     FETCH((short) 0x1002),
     LIST_RANGES((short) 0x2001),

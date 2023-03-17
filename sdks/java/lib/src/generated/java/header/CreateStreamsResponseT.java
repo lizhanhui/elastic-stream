@@ -22,8 +22,7 @@ import java.nio.ByteOrder;
 public class CreateStreamsResponseT {
   private int throttleTimeMs;
   private header.CreateStreamResultT[] createResponses;
-  private short errorCode;
-  private String errorMessage;
+  private header.StatusT status;
 
   public int getThrottleTimeMs() { return throttleTimeMs; }
 
@@ -33,20 +32,15 @@ public class CreateStreamsResponseT {
 
   public void setCreateResponses(header.CreateStreamResultT[] createResponses) { this.createResponses = createResponses; }
 
-  public short getErrorCode() { return errorCode; }
+  public header.StatusT getStatus() { return status; }
 
-  public void setErrorCode(short errorCode) { this.errorCode = errorCode; }
-
-  public String getErrorMessage() { return errorMessage; }
-
-  public void setErrorMessage(String errorMessage) { this.errorMessage = errorMessage; }
+  public void setStatus(header.StatusT status) { this.status = status; }
 
 
   public CreateStreamsResponseT() {
     this.throttleTimeMs = 0;
     this.createResponses = null;
-    this.errorCode = 0;
-    this.errorMessage = null;
+    this.status = null;
   }
 }
 

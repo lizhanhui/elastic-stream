@@ -20,21 +20,15 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 
 public class SystemErrorResponseT {
-  private short errorCode;
-  private String errorMessage;
+  private header.StatusT status;
 
-  public short getErrorCode() { return errorCode; }
+  public header.StatusT getStatus() { return status; }
 
-  public void setErrorCode(short errorCode) { this.errorCode = errorCode; }
-
-  public String getErrorMessage() { return errorMessage; }
-
-  public void setErrorMessage(String errorMessage) { this.errorMessage = errorMessage; }
+  public void setStatus(header.StatusT status) { this.status = status; }
 
 
   public SystemErrorResponseT() {
-    this.errorCode = 0;
-    this.errorMessage = null;
+    this.status = null;
   }
 }
 

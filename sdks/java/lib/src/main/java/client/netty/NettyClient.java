@@ -1,13 +1,8 @@
 package client.netty;
 
 import apis.ClientConfiguration;
-import apis.exception.RemotingConnectException;
-import apis.exception.RemotingSendRequestException;
-import apis.exception.RemotingTimeoutException;
-import client.InvokeCallback;
+import apis.exception.ClientException;
 import client.RemotingClient;
-import client.cache.StreamNameIdCache;
-import client.cache.StreamRangeCache;
 import client.common.ClientId;
 import client.common.RemotingUtil;
 import client.misc.ThreadFactoryImpl;
@@ -19,6 +14,7 @@ import io.netty.bootstrap.Bootstrap;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelDuplexHandler;
 import io.netty.channel.ChannelFuture;
+import io.netty.channel.ChannelFutureListener;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInitializer;
 import io.netty.channel.ChannelOption;
@@ -36,13 +32,11 @@ import io.netty.util.Timeout;
 import io.netty.util.TimerTask;
 import java.io.IOException;
 import java.net.SocketAddress;
+import java.time.Duration;
 import java.util.Map;
-import java.util.Objects;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
@@ -56,9 +50,6 @@ public class NettyClient extends NettyRemotingAbstract implements RemotingClient
     protected final ClientId clientId;
     protected final ClientConfiguration clientConfiguration;
     protected final Address pmAddress;
-    protected final ExecutorService clientCallbackExecutor;
-    private final StreamNameIdCache streamNameIdCache;
-    private final StreamRangeCache streamRangeCache;
     private final Bootstrap bootstrap = new Bootstrap();
     private final EventLoopGroup eventLoopGroupWorker;
     private final Lock lockChannelTables = new ReentrantLock();
@@ -76,26 +67,8 @@ public class NettyClient extends NettyRemotingAbstract implements RemotingClient
 
         this.pmAddress = new Endpoints(clientConfiguration.getPlacementManagerEndpoint()).getAddresses().get(0);
         this.clientId = new ClientId();
-
-        this.streamNameIdCache = new StreamNameIdCache();
-        this.streamRangeCache = new StreamRangeCache();
-
-        final long clientIdIndex = clientId.getIndex();
-        this.clientCallbackExecutor = new ThreadPoolExecutor(
-            Runtime.getRuntime().availableProcessors(),
-            Runtime.getRuntime().availableProcessors(),
-            60,
-            TimeUnit.SECONDS,
-            new LinkedBlockingQueue<>(),
-            new ThreadFactoryImpl("ClientCallbackWorker", clientIdIndex));
-
-        this.eventLoopGroupWorker = Objects.requireNonNullElseGet(eventLoopGroup, () -> new NioEventLoopGroup(1,
-            new ThreadFactoryImpl("ClientEventLoopGroupWorker", clientId.getIndex())));
-    }
-
-    @Override
-    public Endpoints getEndpoints() {
-        return new Endpoints(clientConfiguration.getPlacementManagerEndpoint());
+        this.eventLoopGroupWorker = eventLoopGroup == null ? new NioEventLoopGroup(1,
+            new ThreadFactoryImpl("ClientEventLoopGroupWorker", clientId.getIndex())) : eventLoopGroup;
     }
 
     @Override
@@ -137,52 +110,22 @@ public class NettyClient extends NettyRemotingAbstract implements RemotingClient
         this.timer.newTimeout(timerTaskScanResponseTable, 3, TimeUnit.SECONDS);
     }
 
-    @Override
-    public RemotingItem invokeSync(Address address, RemotingItem request,
-        long timeoutMillis) throws InterruptedException, RemotingSendRequestException, RemotingTimeoutException, RemotingConnectException {
-        long beginStartTime = System.currentTimeMillis();
-        final Channel channel = this.getOrCreateChannel(address);
-        if (channel != null && channel.isActive()) {
-            try {
-                long costTime = System.currentTimeMillis() - beginStartTime;
-                if (timeoutMillis < costTime) {
-                    throw new RemotingTimeoutException("invokeSync call the addr[" + address + "] timeout");
-                }
-                SbpFrame response = this.invokeSyncImpl(channel, (SbpFrame) request, timeoutMillis - costTime);
-                updateChannelLastResponseTime(address);
-                return response;
-            } catch (RemotingSendRequestException | RemotingTimeoutException e) {
-                log.warn("invokeSync: send request exception, so close the channel[{}]", address);
-                this.closeChannel(address, channel);
-                throw e;
-            }
-        } else {
-            this.closeChannel(address, channel);
-            throw new RemotingConnectException(address);
-        }
+    public CompletableFuture<SbpFrame> invokeAsync(RemotingItem request, Duration timeout) {
+        return invokeAsync(pmAddress, request, timeout);
     }
 
     @Override
-    public void invokeAsync(Address address, RemotingItem request, long timeoutMillis,
-        InvokeCallback invokeCallback) throws InterruptedException, RemotingSendRequestException, RemotingTimeoutException, RemotingConnectException {
-        long beginStartTime = System.currentTimeMillis();
-        final Channel channel = this.getOrCreateChannel(address);
-        if (channel != null && channel.isActive()) {
-            try {
-                long costTime = System.currentTimeMillis() - beginStartTime;
-                if (timeoutMillis < costTime) {
-                    throw new RemotingTimeoutException("invokeAsync call the addr[" + address + "] timeout");
-                }
-                this.invokeAsyncImpl(channel, (SbpFrame) request, timeoutMillis - costTime, new InvokeCallbackWrapper(invokeCallback, address));
-            } catch (RemotingSendRequestException | RemotingTimeoutException e) {
-                log.warn("invokeAsync: send request exception, so close the channel[{}]", address);
+    public CompletableFuture<SbpFrame> invokeAsync(Address address, RemotingItem request, Duration timeout) {
+        return this.getOrCreateChannel(address).thenCompose(channel -> {
+            CompletableFuture<SbpFrame> responseFuture = new CompletableFuture<>();
+            if (channel != null && channel.isActive()) {
+                super.invokeAsyncImpl(channel, (SbpFrame) request, timeout.toMillis(), responseFuture);
+            } else {
                 this.closeChannel(address, channel);
-                throw e;
+                responseFuture.completeExceptionally(new ClientException("netty channel not available"));
             }
-        } else {
-            this.closeChannel(address, channel);
-            throw new RemotingConnectException(address);
-        }
+            return responseFuture;
+        });
     }
 
     @Override
@@ -197,10 +140,6 @@ public class NettyClient extends NettyRemotingAbstract implements RemotingClient
             this.channelTables.clear();
 
             this.eventLoopGroupWorker.shutdownGracefully();
-
-            if (this.clientCallbackExecutor != null) {
-                this.clientCallbackExecutor.shutdown();
-            }
         } catch (Exception e) {
             log.error("NettyRemotingClient shutdown exception, ", e);
         }
@@ -296,29 +235,34 @@ public class NettyClient extends NettyRemotingAbstract implements RemotingClient
         }
     }
 
-    private Channel getOrCreateChannel(final Address address) throws InterruptedException {
+    private CompletableFuture<Channel> getOrCreateChannel(final Address address) {
+        CompletableFuture<Channel> completeFuture = new CompletableFuture<>();
         ChannelWrapper cw = this.channelTables.get(address);
         if (cw != null && cw.isOK()) {
-            return cw.getChannel();
+            completeFuture.complete(cw.getChannel());
+        } else {
+            createChannel(address).thenApply(completeFuture::complete);
         }
-
-        return createChannel(address);
+        return completeFuture;
     }
 
-    private Channel createChannel(final Address address) throws InterruptedException {
+    private CompletableFuture<Channel> createChannel(final Address address) {
+        CompletableFuture<Channel> completableFuture = new CompletableFuture<>();
         ChannelWrapper cw = this.channelTables.get(address);
         if (cw != null && cw.isOK()) {
-            return cw.getChannel();
+            completableFuture.complete(cw.getChannel());
+            return completableFuture;
         }
 
-        if (this.lockChannelTables.tryLock(LOCK_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS)) {
-            try {
+        try {
+            if (this.lockChannelTables.tryLock(LOCK_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS)) {
                 boolean createNewConnection;
                 cw = this.channelTables.get(address);
                 if (cw != null) {
 
                     if (cw.isOK()) {
-                        return cw.getChannel();
+                        completableFuture.complete(cw.getChannel());
+                        return completableFuture;
                     } else if (!cw.getChannelFuture().isDone()) {
                         createNewConnection = false;
                     } else {
@@ -336,51 +280,32 @@ public class NettyClient extends NettyRemotingAbstract implements RemotingClient
                     cw = new ChannelWrapper(channelFuture);
                     this.channelTables.put(address, cw);
                 }
-            } catch (Exception e) {
-                log.error("createChannel: create channel exception", e);
-            } finally {
-                this.lockChannelTables.unlock();
+
+            } else {
+                log.warn("createChannel: try to lock channel table, but timeout, {}ms", LOCK_TIMEOUT_MILLIS);
             }
-        } else {
-            log.warn("createChannel: try to lock channel table, but timeout, {}ms", LOCK_TIMEOUT_MILLIS);
+        } catch (Exception e) {
+            log.error("createChannel: create channel exception", e);
+            completableFuture.completeExceptionally(e);
+            return completableFuture;
+        } finally {
+            this.lockChannelTables.unlock();
         }
 
         if (cw != null) {
             ChannelFuture channelFuture = cw.getChannelFuture();
-            if (channelFuture.awaitUninterruptibly(clientConfiguration.getConnectionTimeout().toMillis())) {
-                if (cw.isOK()) {
+            channelFuture.addListener((ChannelFutureListener) future -> {
+                if (future.isSuccess()) {
                     log.info("createChannel: connect remote host[{}] success, {}", address, channelFuture);
-                    return cw.getChannel();
+                    completableFuture.complete(future.channel());
                 } else {
                     log.warn("createChannel: connect remote host[" + address + "] failed, " + channelFuture);
+                    completableFuture.completeExceptionally(future.cause());
                 }
-            } else {
-                log.warn("createChannel: connect remote host[{}] timeout {}ms, {}", address, clientConfiguration.getConnectionTimeout().toMillis(),
-                    channelFuture);
-            }
+            });
         }
 
-        return null;
-    }
-
-    @Override
-    public ExecutorService getCallbackExecutor() {
-        return this.clientCallbackExecutor;
-    }
-
-    private void updateChannelLastResponseTime(final Address addr) {
-        Address address = addr;
-        if (address == null) {
-            address = this.pmAddress;
-        }
-        if (address == null) {
-            log.warn("[updateChannelLastResponseTime] could not find address!!");
-            return;
-        }
-        ChannelWrapper channelWrapper = this.channelTables.get(address);
-        if (channelWrapper != null && channelWrapper.isOK()) {
-            channelWrapper.updateLastResponseTime();
-        }
+        return completableFuture;
     }
 
     class NettyClientHandler extends SimpleChannelInboundHandler<SbpFrame> {
@@ -423,25 +348,6 @@ public class NettyClient extends NettyRemotingAbstract implements RemotingClient
 
         public void updateLastResponseTime() {
             this.lastResponseTime = System.currentTimeMillis();
-        }
-    }
-
-    class InvokeCallbackWrapper implements InvokeCallback {
-
-        private final InvokeCallback invokeCallback;
-        private final Address addr;
-
-        public InvokeCallbackWrapper(InvokeCallback invokeCallback, Address addr) {
-            this.invokeCallback = invokeCallback;
-            this.addr = addr;
-        }
-
-        @Override
-        public void operationComplete(ResponseFuture responseFuture) {
-            if (responseFuture != null && responseFuture.isSendRequestOK() && responseFuture.getResponseSbpFrame() != null) {
-                NettyClient.this.updateChannelLastResponseTime(addr);
-            }
-            this.invokeCallback.operationComplete(responseFuture);
         }
     }
 

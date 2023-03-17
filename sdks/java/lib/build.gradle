@@ -12,7 +12,7 @@ plugins {
     // Apply the maven-publish plugin to allow publishing to Maven Central.
     id 'maven-publish'
 }
-sourceCompatibility = '11'
+sourceCompatibility = '1.8'
 
 java {
     withSourcesJar()
@@ -37,7 +37,6 @@ dependencies {
     // Use flatbuffers to decode and encode sbp messages
     implementation group: 'com.google.flatbuffers', name: 'flatbuffers-java', version: '23.1.21'
 
-    implementation group: 'com.github.ben-manes.caffeine', name: 'caffeine', version: '3.1.5'
     implementation group: 'org.apache.commons', name: 'commons-lang3', version: '3.12.0'
     implementation group: 'io.netty', name: 'netty-all', version: '4.1.89.Final'
 
@@ -45,8 +44,6 @@ dependencies {
     implementation 'org.apache.logging.log4j:log4j-api:2.20.0'
     implementation 'org.apache.logging.log4j:log4j-core:2.20.0'
     implementation 'org.apache.logging.log4j:log4j-slf4j2-impl:2.20.0'
-
-    implementation 'net.javacrumbs.future-converter:future-converter-java8-guava:1.2.0'
 }
 
 tasks.named('test') {

@@ -21,32 +21,26 @@ import java.nio.ByteOrder;
 
 public class TrimStreamResultT {
   private header.StreamT trimmedStream;
-  private short errorCode;
-  private String errorMessage;
   private header.RangeT range;
+  private header.StatusT status;
 
   public header.StreamT getTrimmedStream() { return trimmedStream; }
 
   public void setTrimmedStream(header.StreamT trimmedStream) { this.trimmedStream = trimmedStream; }
 
-  public short getErrorCode() { return errorCode; }
-
-  public void setErrorCode(short errorCode) { this.errorCode = errorCode; }
-
-  public String getErrorMessage() { return errorMessage; }
-
-  public void setErrorMessage(String errorMessage) { this.errorMessage = errorMessage; }
-
   public header.RangeT getRange() { return range; }
 
   public void setRange(header.RangeT range) { this.range = range; }
 
+  public header.StatusT getStatus() { return status; }
+
+  public void setStatus(header.StatusT status) { this.status = status; }
+
 
   public TrimStreamResultT() {
     this.trimmedStream = null;
-    this.errorCode = 0;
-    this.errorMessage = null;
     this.range = null;
+    this.status = null;
   }
 }
 

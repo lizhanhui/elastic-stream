@@ -22,7 +22,7 @@ import java.nio.ByteOrder;
 public class StreamT {
   private long streamId;
   private byte replicaNums;
-  private int retentionPeriodMs;
+  private long retentionPeriodMs;
 
   public long getStreamId() { return streamId; }
 
@@ -32,15 +32,15 @@ public class StreamT {
 
   public void setReplicaNums(byte replicaNums) { this.replicaNums = replicaNums; }
 
-  public int getRetentionPeriodMs() { return retentionPeriodMs; }
+  public long getRetentionPeriodMs() { return retentionPeriodMs; }
 
-  public void setRetentionPeriodMs(int retentionPeriodMs) { this.retentionPeriodMs = retentionPeriodMs; }
+  public void setRetentionPeriodMs(long retentionPeriodMs) { this.retentionPeriodMs = retentionPeriodMs; }
 
 
   public StreamT() {
     this.streamId = 0L;
     this.replicaNums = 0;
-    this.retentionPeriodMs = 0;
+    this.retentionPeriodMs = 0L;
   }
 }
 

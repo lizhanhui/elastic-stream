@@ -30,7 +30,7 @@
     </appenders>
     <loggers>
         <root level="all">
-<!--            <appender-ref ref="Console"/>-->
+            <appender-ref ref="Console"/>
 <!--            <appender-ref ref="RollingFileInfo"/>-->
         </root>
     </loggers>

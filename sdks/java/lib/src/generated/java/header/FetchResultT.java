@@ -22,9 +22,8 @@ import java.nio.ByteOrder;
 public class FetchResultT {
   private long streamId;
   private int requestIndex;
-  private short errorCode;
-  private String errorMessage;
   private int batchLength;
+  private header.StatusT status;
 
   public long getStreamId() { return streamId; }
 
@@ -34,25 +33,20 @@ public class FetchResultT {
 
   public void setRequestIndex(int requestIndex) { this.requestIndex = requestIndex; }
 
-  public short getErrorCode() { return errorCode; }
-
-  public void setErrorCode(short errorCode) { this.errorCode = errorCode; }
-
-  public String getErrorMessage() { return errorMessage; }
-
-  public void setErrorMessage(String errorMessage) { this.errorMessage = errorMessage; }
-
   public int getBatchLength() { return batchLength; }
 
   public void setBatchLength(int batchLength) { this.batchLength = batchLength; }
+
+  public header.StatusT getStatus() { return status; }
+
+  public void setStatus(header.StatusT status) { this.status = status; }
 
 
   public FetchResultT() {
     this.streamId = 0L;
     this.requestIndex = 0;
-    this.errorCode = 0;
-    this.errorMessage = null;
     this.batchLength = 0;
+    this.status = null;
   }
 }
 

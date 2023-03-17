@@ -29,26 +29,21 @@ public final class ReportMetricsResponse extends Table {
 
   public header.DataNode dataNode() { return dataNode(new header.DataNode()); }
   public header.DataNode dataNode(header.DataNode obj) { int o = __offset(4); return o != 0 ? obj.__assign(__indirect(o + bb_pos), bb) : null; }
-  public short errorCode() { int o = __offset(6); return o != 0 ? bb.getShort(o + bb_pos) : 0; }
-  public String errorMessage() { int o = __offset(8); return o != 0 ? __string(o + bb_pos) : null; }
-  public ByteBuffer errorMessageAsByteBuffer() { return __vector_as_bytebuffer(8, 1); }
-  public ByteBuffer errorMessageInByteBuffer(ByteBuffer _bb) { return __vector_in_bytebuffer(_bb, 8, 1); }
+  public header.Status status() { return status(new header.Status()); }
+  public header.Status status(header.Status obj) { int o = __offset(6); return o != 0 ? obj.__assign(__indirect(o + bb_pos), bb) : null; }
 
   public static int createReportMetricsResponse(FlatBufferBuilder builder,
       int dataNodeOffset,
-      short errorCode,
-      int errorMessageOffset) {
-    builder.startTable(3);
-    ReportMetricsResponse.addErrorMessage(builder, errorMessageOffset);
+      int statusOffset) {
+    builder.startTable(2);
+    ReportMetricsResponse.addStatus(builder, statusOffset);
     ReportMetricsResponse.addDataNode(builder, dataNodeOffset);
-    ReportMetricsResponse.addErrorCode(builder, errorCode);
     return ReportMetricsResponse.endReportMetricsResponse(builder);
   }
 
-  public static void startReportMetricsResponse(FlatBufferBuilder builder) { builder.startTable(3); }
+  public static void startReportMetricsResponse(FlatBufferBuilder builder) { builder.startTable(2); }
   public static void addDataNode(FlatBufferBuilder builder, int dataNodeOffset) { builder.addOffset(0, dataNodeOffset, 0); }
-  public static void addErrorCode(FlatBufferBuilder builder, short errorCode) { builder.addShort(1, errorCode, 0); }
-  public static void addErrorMessage(FlatBufferBuilder builder, int errorMessageOffset) { builder.addOffset(2, errorMessageOffset, 0); }
+  public static void addStatus(FlatBufferBuilder builder, int statusOffset) { builder.addOffset(1, statusOffset, 0); }
   public static int endReportMetricsResponse(FlatBufferBuilder builder) {
     int o = builder.endTable();
     return o;
@@ -68,20 +63,17 @@ public final class ReportMetricsResponse extends Table {
   public void unpackTo(ReportMetricsResponseT _o) {
     if (dataNode() != null) _o.setDataNode(dataNode().unpack());
     else _o.setDataNode(null);
-    short _oErrorCode = errorCode();
-    _o.setErrorCode(_oErrorCode);
-    String _oErrorMessage = errorMessage();
-    _o.setErrorMessage(_oErrorMessage);
+    if (status() != null) _o.setStatus(status().unpack());
+    else _o.setStatus(null);
   }
   public static int pack(FlatBufferBuilder builder, ReportMetricsResponseT _o) {
     if (_o == null) return 0;
     int _dataNode = _o.getDataNode() == null ? 0 : header.DataNode.pack(builder, _o.getDataNode());
-    int _errorMessage = _o.getErrorMessage() == null ? 0 : builder.createString(_o.getErrorMessage());
+    int _status = _o.getStatus() == null ? 0 : header.Status.pack(builder, _o.getStatus());
     return createReportMetricsResponse(
       builder,
       _dataNode,
-      _o.getErrorCode(),
-      _errorMessage);
+      _status);
   }
 }
 
