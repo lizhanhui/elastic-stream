@@ -35,6 +35,9 @@ const (
 	// If set, the frame is the last frame in a response sequence.
 	// If not set, the response sequence continues with more frames.
 	FlagResponseEnd Flags = 0x1 << 1
+
+	// FlagSystemError indicates whether the response frame is a system error response.
+	FlagSystemError Flags = 0x1 << 2
 )
 
 // Flags is a bitmask of SBP flags.
@@ -397,7 +400,7 @@ func NewDataFrameReq(context *DataFrameContext, header []byte, payload []byte, f
 }
 
 // NewDataFrameResp returns a new DataFrame response with the given header and payload
-func NewDataFrameResp(context *DataFrameContext, header []byte, payload []byte, isEnd bool) *DataFrame {
+func NewDataFrameResp(context *DataFrameContext, header []byte, payload []byte, flags ...Flags) *DataFrame {
 	resp := &DataFrame{baseFrame{
 		OpCode:    context.OpCode,
 		Flag:      FlagResponse,
@@ -406,8 +409,8 @@ func NewDataFrameResp(context *DataFrameContext, header []byte, payload []byte, 
 		Header:    header,
 		Payload:   payload,
 	}}
-	if isEnd {
-		resp.Flag |= FlagResponseEnd
+	for _, flag := range flags {
+		resp.Flag |= flag
 	}
 	return resp
 }
