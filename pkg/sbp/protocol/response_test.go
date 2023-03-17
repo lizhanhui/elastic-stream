@@ -13,7 +13,7 @@ import (
 func TestListRangesResponse_Marshal(t *testing.T) {
 	var mockListRangesResponse ListRangesResponse
 	_ = gofakeit.Struct(&mockListRangesResponse)
-	mockData := fbutil.Marshal(mockListRangesResponse.ListRangesResponseT)
+	mockData := fbutil.Marshal(&mockListRangesResponse.ListRangesResponseT)
 	tests := []struct {
 		name    string
 		resp    ListRangesResponse

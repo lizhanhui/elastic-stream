@@ -53,11 +53,11 @@ func (b *baseRequest) unmarshalJSON(_ []byte) error {
 
 type HeartbeatRequest struct {
 	baseRequest
-	*rpcfb.HeartbeatRequestT
+	rpcfb.HeartbeatRequestT
 }
 
 func (hr *HeartbeatRequest) unmarshalFlatBuffer(data []byte) error {
-	hr.HeartbeatRequestT = rpcfb.GetRootAsHeartbeatRequest(data, 0).UnPack()
+	hr.HeartbeatRequestT = *rpcfb.GetRootAsHeartbeatRequest(data, 0).UnPack()
 	return nil
 }
 
@@ -68,11 +68,11 @@ func (hr *HeartbeatRequest) Unmarshal(fmt format.Format, data []byte) error {
 // ListRangesRequest is a request to operation.OpListRanges
 type ListRangesRequest struct {
 	baseRequest
-	*rpcfb.ListRangesRequestT
+	rpcfb.ListRangesRequestT
 }
 
 func (lr *ListRangesRequest) unmarshalFlatBuffer(data []byte) error {
-	lr.ListRangesRequestT = rpcfb.GetRootAsListRangesRequest(data, 0).UnPack()
+	lr.ListRangesRequestT = *rpcfb.GetRootAsListRangesRequest(data, 0).UnPack()
 	return nil
 }
 
@@ -83,11 +83,11 @@ func (lr *ListRangesRequest) Unmarshal(fmt format.Format, data []byte) error {
 // CreateStreamsRequest is a request to operation.OpCreateStreams
 type CreateStreamsRequest struct {
 	baseRequest
-	*rpcfb.CreateStreamsRequestT
+	rpcfb.CreateStreamsRequestT
 }
 
 func (cs *CreateStreamsRequest) unmarshalFlatBuffer(data []byte) error {
-	cs.CreateStreamsRequestT = rpcfb.GetRootAsCreateStreamsRequest(data, 0).UnPack()
+	cs.CreateStreamsRequestT = *rpcfb.GetRootAsCreateStreamsRequest(data, 0).UnPack()
 	return nil
 }
 
@@ -98,11 +98,11 @@ func (cs *CreateStreamsRequest) Unmarshal(fmt format.Format, data []byte) error 
 // DeleteStreamsRequest is a request to operation.OpDeleteStreams
 type DeleteStreamsRequest struct {
 	baseRequest
-	*rpcfb.DeleteStreamsRequestT
+	rpcfb.DeleteStreamsRequestT
 }
 
 func (ds *DeleteStreamsRequest) unmarshalFlatBuffer(data []byte) error {
-	ds.DeleteStreamsRequestT = rpcfb.GetRootAsDeleteStreamsRequest(data, 0).UnPack()
+	ds.DeleteStreamsRequestT = *rpcfb.GetRootAsDeleteStreamsRequest(data, 0).UnPack()
 	return nil
 }
 
@@ -113,11 +113,11 @@ func (ds *DeleteStreamsRequest) Unmarshal(fmt format.Format, data []byte) error 
 // UpdateStreamsRequest is a request to operation.OpUpdateStreams
 type UpdateStreamsRequest struct {
 	baseRequest
-	*rpcfb.UpdateStreamsRequestT
+	rpcfb.UpdateStreamsRequestT
 }
 
 func (us *UpdateStreamsRequest) unmarshalFlatBuffer(data []byte) error {
-	us.UpdateStreamsRequestT = rpcfb.GetRootAsUpdateStreamsRequest(data, 0).UnPack()
+	us.UpdateStreamsRequestT = *rpcfb.GetRootAsUpdateStreamsRequest(data, 0).UnPack()
 	return nil
 }
 
@@ -128,11 +128,11 @@ func (us *UpdateStreamsRequest) Unmarshal(fmt format.Format, data []byte) error 
 // DescribeStreamsRequest is a request to operation.OpDescribeStreams
 type DescribeStreamsRequest struct {
 	baseRequest
-	*rpcfb.DescribeStreamsRequestT
+	rpcfb.DescribeStreamsRequestT
 }
 
 func (ds *DescribeStreamsRequest) unmarshalFlatBuffer(data []byte) error {
-	ds.DescribeStreamsRequestT = rpcfb.GetRootAsDescribeStreamsRequest(data, 0).UnPack()
+	ds.DescribeStreamsRequestT = *rpcfb.GetRootAsDescribeStreamsRequest(data, 0).UnPack()
 	return nil
 }
 

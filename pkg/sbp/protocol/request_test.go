@@ -13,7 +13,7 @@ import (
 func TestListRangesRequest_Unmarshal(t *testing.T) {
 	var mockListRangesRequest ListRangesRequest
 	_ = gofakeit.Struct(&mockListRangesRequest)
-	mockData := fbutil.Marshal(mockListRangesRequest.ListRangesRequestT)
+	mockData := fbutil.Marshal(&mockListRangesRequest.ListRangesRequestT)
 
 	type args struct {
 		fmt  format.Format

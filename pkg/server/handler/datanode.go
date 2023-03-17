@@ -7,7 +7,7 @@ import (
 
 func (s *Sbp) Heartbeat(req *protocol.HeartbeatRequest) (resp *protocol.HeartbeatResponse) {
 	resp = &protocol.HeartbeatResponse{
-		HeartbeatResponseT: &rpcfb.HeartbeatResponseT{
+		HeartbeatResponseT: rpcfb.HeartbeatResponseT{
 			ClientId:   req.ClientId,
 			ClientRole: req.ClientRole,
 			DataNode:   req.DataNode,

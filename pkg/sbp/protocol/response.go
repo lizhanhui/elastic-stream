@@ -71,11 +71,11 @@ func (s *singleResponse) IsEnd() bool {
 type SystemErrorResponse struct {
 	baseResponse
 	singleResponse
-	*rpcfb.SystemErrorResponseT
+	rpcfb.SystemErrorResponseT
 }
 
 func (se *SystemErrorResponse) marshalFlatBuffer() ([]byte, error) {
-	return fbutil.Marshal(se.SystemErrorResponseT), nil
+	return fbutil.Marshal(&se.SystemErrorResponseT), nil
 }
 
 func (se *SystemErrorResponse) Marshal(fmt format.Format) ([]byte, error) {
@@ -90,11 +90,11 @@ func (se *SystemErrorResponse) Error(status *rpcfb.StatusT) {
 type HeartbeatResponse struct {
 	baseResponse
 	singleResponse
-	*rpcfb.HeartbeatResponseT
+	rpcfb.HeartbeatResponseT
 }
 
 func (hr *HeartbeatResponse) marshalFlatBuffer() ([]byte, error) {
-	return fbutil.Marshal(hr.HeartbeatResponseT), nil
+	return fbutil.Marshal(&hr.HeartbeatResponseT), nil
 }
 
 func (hr *HeartbeatResponse) Marshal(fmt format.Format) ([]byte, error) {
@@ -108,14 +108,14 @@ func (hr *HeartbeatResponse) Error(status *rpcfb.StatusT) {
 // ListRangesResponse is a response to operation.OpListRanges
 type ListRangesResponse struct {
 	baseResponse
-	*rpcfb.ListRangesResponseT
+	rpcfb.ListRangesResponseT
 
 	// HasNext indicates whether there are more responses after this one.
 	HasNext bool
 }
 
 func (lr *ListRangesResponse) marshalFlatBuffer() ([]byte, error) {
-	return fbutil.Marshal(lr.ListRangesResponseT), nil
+	return fbutil.Marshal(&lr.ListRangesResponseT), nil
 }
 
 func (lr *ListRangesResponse) Marshal(fmt format.Format) ([]byte, error) {
@@ -134,11 +134,11 @@ func (lr *ListRangesResponse) IsEnd() bool {
 type CreateStreamsResponse struct {
 	baseResponse
 	singleResponse
-	*rpcfb.CreateStreamsResponseT
+	rpcfb.CreateStreamsResponseT
 }
 
 func (cs *CreateStreamsResponse) marshalFlatBuffer() ([]byte, error) {
-	return fbutil.Marshal(cs.CreateStreamsResponseT), nil
+	return fbutil.Marshal(&cs.CreateStreamsResponseT), nil
 }
 
 func (cs *CreateStreamsResponse) Marshal(fmt format.Format) ([]byte, error) {
@@ -153,11 +153,11 @@ func (cs *CreateStreamsResponse) Error(status *rpcfb.StatusT) {
 type DeleteStreamsResponse struct {
 	baseResponse
 	singleResponse
-	*rpcfb.DeleteStreamsResponseT
+	rpcfb.DeleteStreamsResponseT
 }
 
 func (ds *DeleteStreamsResponse) marshalFlatBuffer() ([]byte, error) {
-	return fbutil.Marshal(ds.DeleteStreamsResponseT), nil
+	return fbutil.Marshal(&ds.DeleteStreamsResponseT), nil
 }
 
 func (ds *DeleteStreamsResponse) Marshal(fmt format.Format) ([]byte, error) {
@@ -172,11 +172,11 @@ func (ds *DeleteStreamsResponse) Error(status *rpcfb.StatusT) {
 type UpdateStreamsResponse struct {
 	baseResponse
 	singleResponse
-	*rpcfb.UpdateStreamsResponseT
+	rpcfb.UpdateStreamsResponseT
 }
 
 func (us *UpdateStreamsResponse) marshalFlatBuffer() ([]byte, error) {
-	return fbutil.Marshal(us.UpdateStreamsResponseT), nil
+	return fbutil.Marshal(&us.UpdateStreamsResponseT), nil
 }
 
 func (us *UpdateStreamsResponse) Marshal(fmt format.Format) ([]byte, error) {
@@ -191,11 +191,11 @@ func (us *UpdateStreamsResponse) Error(status *rpcfb.StatusT) {
 type DescribeStreamsResponse struct {
 	baseResponse
 	singleResponse
-	*rpcfb.DescribeStreamsResponseT
+	rpcfb.DescribeStreamsResponseT
 }
 
 func (ds *DescribeStreamsResponse) marshalFlatBuffer() ([]byte, error) {
-	return fbutil.Marshal(ds.DescribeStreamsResponseT), nil
+	return fbutil.Marshal(&ds.DescribeStreamsResponseT), nil
 }
 
 func (ds *DescribeStreamsResponse) Marshal(fmt format.Format) ([]byte, error) {
