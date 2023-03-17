@@ -9,14 +9,18 @@ use std::{
 
 use bytes::Bytes;
 use codec::frame::{Frame, OperationCode};
+use model::stream::Stream;
 use protocol::rpc::header::{
-    CreateStreamsRequestT, CreateStreamsResponse, ErrorCode, PlacementManager, StreamT,
+    CreateStreamsRequestT, CreateStreamsResponse, ErrorCode, PlacementManager, StatusT, StreamT,
 };
 use slog::{error, info, trace, warn, Logger};
 use tokio::{net::TcpStream, sync::oneshot};
 
 use crate::{
-    channel_reader::ChannelReader, channel_writer::ChannelWriter, client_error::ClientError,
+    channel_reader::ChannelReader,
+    channel_writer::ChannelWriter,
+    client_error::ClientError,
+    node::{Node, Role},
 };
 
 const STREAM_ID_COUNTER: AtomicU32 = AtomicU32::new(0);
@@ -91,7 +95,7 @@ impl Session {
         &mut self,
         replica: i8,
         retention_period: Duration,
-    ) -> Result<(), ClientError> {
+    ) -> Result<Vec<Stream>, ClientError> {
         let stream_id = STREAM_ID_COUNTER.fetch_add(1, Ordering::Relaxed);
         let (tx, rx) = oneshot::channel();
         {
@@ -125,19 +129,39 @@ impl Session {
             let response = response.unpack();
             if let Some(status) = response.status {
                 match status.code {
-                    ErrorCode::OK => {}
+                    ErrorCode::OK => {
+                        trace!(self.log, "Stream created");
+                    }
 
                     ErrorCode::PM_NOT_LEADER => {
+                        warn!(self.log, "Failed to create stream: targeting placement manager node is not leader");
                         if let Some(detail) = status.detail {
                             let placement_manager = flatbuffers::root::<PlacementManager>(&detail)?;
                             let placement_manager = placement_manager.unpack();
-                            
-                            dbg!(detail);
+                            let nodes = placement_manager
+                                .nodes
+                                .iter()
+                                .map(|nodes| nodes.iter())
+                                .flatten()
+                                .map(|node| Node {
+                                    name: node.name.clone().unwrap_or_default(),
+                                    advertise_address: node
+                                        .advertise_addr
+                                        .clone()
+                                        .unwrap_or_default(),
+                                    role: if node.is_leader {
+                                        Role::Leader
+                                    } else {
+                                        Role::Follower
+                                    },
+                                })
+                                .collect::<Vec<_>>();
+                            return Err(ClientError::LeadershipChanged { nodes });
                         }
-                        // Wrap redirect info...
                     }
 
                     ErrorCode::PM_NO_AVAILABLE_DN => {
+                        error!(self.log, "Placement manager has no enough data nodes");
                         return Err(ClientError::DataNodeNotAvailable);
                     }
 
@@ -155,11 +179,23 @@ impl Session {
             }
 
             if let Some(results) = response.create_responses {
-                dbg!(results);
+                let streams = results
+                    .into_iter()
+                    .filter(|result| {
+                        if let Some(ref status) = result.status {
+                            return status.code == ErrorCode::OK && result.stream.is_some();
+                        }
+                        false
+                    })
+                    .map(|result| {
+                        let created = result.stream.expect("Stream should be present");
+                        Stream::open(created.stream_id)
+                    })
+                    .collect::<Vec<_>>();
+                return Ok(streams);
             }
         }
-
-        Ok(())
+        Err(ClientError::UnexpectedResponse("Bad response".to_owned()))
     }
 }
 
@@ -180,10 +216,11 @@ mod tests {
         match Session::new(&target, log.clone()).await {
             Ok(mut session) => {
                 info!(log, "Session connected");
-                session
+                let streams = session
                     .create_stream(2, Duration::from_secs(60 * 60 * 24 * 3))
                     .await
                     .unwrap();
+                assert_eq!(1, streams.len());
             }
             Err(e) => {
                 error!(log, "Failed to create session: {:?}", e);

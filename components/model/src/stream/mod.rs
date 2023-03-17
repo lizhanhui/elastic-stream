@@ -7,7 +7,7 @@ pub struct Stream {
 }
 
 impl Stream {
-    fn open(id: i64) -> Self {
+    pub fn open(id: i64) -> Self {
         Self { id, ranges: vec![] }
     }
 }

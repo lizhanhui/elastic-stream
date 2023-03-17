@@ -6,7 +6,7 @@ pub enum Role {
 
 #[derive(Debug)]
 pub struct Node {
-    id: usize,
-    advertise_address: String,
-    role: Role,
+    pub(crate) name: String,
+    pub(crate) advertise_address: String,
+    pub(crate) role: Role,
 }

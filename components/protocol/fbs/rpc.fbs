@@ -359,6 +359,8 @@ table CreateStreamsResponse {
     throttle_time_ms: int32 (id: 0);
     // The responses of create streams request
     create_responses: [CreateStreamResult] (id: 1);
+
+    // Flag status of the RPC.
     status: Status (id: 2);
 }
 

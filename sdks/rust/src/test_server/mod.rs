@@ -213,7 +213,8 @@ fn serve_create_streams(log: &Logger, req: &CreateStreamsRequest, response_frame
             let mut result = CreateStreamResultT::default();
             result.stream = Some(Box::new(stream));
             let mut status = StatusT::default();
-            status.code = ErrorCode::NONE;
+            status.code = ErrorCode::OK;
+            status.message = Some(String::from("OK"));
             result.status = Some(Box::new(status));
 
             result
