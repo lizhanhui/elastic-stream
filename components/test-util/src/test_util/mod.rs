@@ -4,9 +4,8 @@
 use bytes::Bytes;
 use codec::frame::{Frame, OperationCode};
 use protocol::rpc::header::{
-    CreateStreamResultT, CreateStreamsRequest, CreateStreamsResponseT, ErrorCode, HeartbeatRequest,
-    HeartbeatResponseT, ListRangesRequest, ListRangesResponseT, ListRangesResultT, RangeT, StatusT,
-    StreamT,
+    ErrorCode, HeartbeatRequest, HeartbeatResponseT, ListRangesRequest, ListRangesResponseT,
+    ListRangesResultT, RangeT, StatusT,
 };
 use slog::{debug, error, info, trace, warn, Logger};
 
@@ -42,6 +41,12 @@ fn serve_list_ranges(log: &Logger, request: &ListRangesRequest, frame: &mut Fram
 
     {
         let mut result = ListRangesResultT::default();
+
+        let mut status = StatusT::default();
+        status.code = ErrorCode::OK;
+        status.message = Some(String::from("OK"));
+        result.status = Some(Box::new(status));
+
         let ranges = (0..10)
             .into_iter()
             .map(|i| {
@@ -130,22 +135,6 @@ pub async fn run_listener(logger: Logger) -> u16 {
                                     }
                                 }
 
-                                OperationCode::CreateStreams => {
-                                    response_frame.operation_code = OperationCode::CreateStreams;
-                                    if let Some(buf) = frame.header.as_ref() {
-                                        if let Ok(req) =
-                                            flatbuffers::root::<CreateStreamsRequest>(buf)
-                                        {
-                                            serve_create_streams(&log, &req, &mut response_frame);
-                                        } else {
-                                            error!(
-                                                log,
-                                                "Failed to decode create-streams request header"
-                                            );
-                                        }
-                                    }
-                                }
-
                                 _ => {
                                     warn!(
                                         log,
@@ -189,43 +178,6 @@ pub async fn run_listener(logger: Logger) -> u16 {
         info!(logger, "TestServer shut down OK");
     });
     rx.await.unwrap()
-}
-
-fn serve_create_streams(log: &Logger, req: &CreateStreamsRequest, response_frame: &mut Frame) {
-    trace!(log, "CreateStreams {:?}", req);
-
-    let request = req.unpack();
-
-    let mut builder = flatbuffers::FlatBufferBuilder::new();
-    let mut response = CreateStreamsResponseT::default();
-
-    let results = request
-        .streams
-        .into_iter()
-        .map(|stream| stream.into_iter())
-        .flatten()
-        .enumerate()
-        .map(|(id, mut stream)| {
-            stream.stream_id = id as i64;
-
-            let mut result = CreateStreamResultT::default();
-            result.stream = Some(Box::new(stream));
-            let mut status = StatusT::default();
-            status.code = ErrorCode::NONE;
-            result.status = Some(Box::new(status));
-
-            result
-        })
-        .collect();
-
-    response.create_responses = Some(results);
-
-    let mut stream = StreamT::default();
-    stream.stream_id = 1;
-    let response = response.pack(&mut builder);
-    builder.finish(response, None);
-    let data = builder.finished_data();
-    response_frame.header = Some(Bytes::copy_from_slice(data));
 }
 
 pub mod fs;

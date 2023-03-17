@@ -61,6 +61,7 @@ impl PlacementClient {
 mod tests {
     use std::time::Duration;
 
+    use protocol::rpc::header::ErrorCode;
     use slog::trace;
     use test_util::{run_listener, terminal_logger};
 
@@ -82,7 +83,13 @@ mod tests {
 
             for i in 0..3 {
                 let result = client.list_range(Some(i as i64), timeout).await.unwrap();
-                if let response::Response::ListRange { ref ranges, .. } = result {
+                if let response::Response::ListRange {
+                    ref ranges,
+                    ref status,
+                    ..
+                } = result
+                {
+                    assert_eq!(ErrorCode::OK, status.code);
                     assert!(ranges.is_some(), "Should have got some ranges");
                     if let Some(ranges) = ranges {
                         assert_eq!(
