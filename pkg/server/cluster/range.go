@@ -2,14 +2,15 @@ package cluster
 
 import (
 	"github.com/AutoMQ/placement-manager/api/rpcfb/rpcfb"
+	"github.com/AutoMQ/placement-manager/pkg/server/storage/endpoint"
 )
 
 // ListRanges lists the ranges of a stream or a data node.
 func (c *RaftCluster) ListRanges(rangeOwner *rpcfb.RangeCriteriaT) ([]*rpcfb.RangeT, error) {
-	if rangeOwner.StreamId > 0 {
+	if rangeOwner.StreamId >= endpoint.MinStreamID {
 		return c.listRangesInStream(rangeOwner.StreamId)
 	}
-	if rangeOwner.DataNode.NodeId > 0 {
+	if rangeOwner.DataNode != nil && rangeOwner.DataNode.NodeId >= endpoint.MinDataNodeID {
 		return c.listRangesOnDataNode(rangeOwner.DataNode.NodeId)
 	}
 	return nil, nil

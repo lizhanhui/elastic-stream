@@ -166,8 +166,8 @@ func (e *Endpoint) GetStream(streamID int64) (*rpcfb.StreamT, error) {
 // ForEachStream calls the given function for every stream in the storage.
 // If f returns an error, the iteration is stopped and the error is returned.
 func (e *Endpoint) ForEachStream(f func(stream *rpcfb.StreamT) error) error {
-	var startID = _minStreamID
-	for startID >= _minStreamID {
+	var startID = MinStreamID
+	for startID >= MinStreamID {
 		nextID, err := e.forEachStreamLimited(f, startID, _streamByRangeLimit)
 		if err != nil {
 			return err
