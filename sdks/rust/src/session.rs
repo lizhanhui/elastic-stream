@@ -234,7 +234,7 @@ mod tests {
     async fn test_session() -> Result<(), Box<dyn Error>> {
         let log = test_util::terminal_logger();
         let port = 2378;
-        // let port = run_listener(log.clone()).await;
+        let port = run_listener(log.clone()).await;
         let target = format!("127.0.0.1:{}", port);
         info!(log, "Connecting {}", target);
         match Session::new(&target, log.clone()).await {
