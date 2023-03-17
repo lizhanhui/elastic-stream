@@ -19,7 +19,7 @@ import java.io.Closeable;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
-import java.util.concurrent.ExecutorService;
+import models.OperationCode;
 
 public class DefaultMockNettyServer extends NettyRemotingAbstract implements Closeable {
     private final EventLoopGroup bossGroup;
@@ -32,7 +32,7 @@ public class DefaultMockNettyServer extends NettyRemotingAbstract implements Clo
      *
      * @param permitsAsync Number of permits for asynchronous requests.
      */
-    public DefaultMockNettyServer(int permitsAsync, int port, String responsePrefix){
+    public DefaultMockNettyServer(int permitsAsync, int port, String responsePrefix) {
         super(permitsAsync);
 
         bossGroup = new NioEventLoopGroup(1);
@@ -66,11 +66,6 @@ public class DefaultMockNettyServer extends NettyRemotingAbstract implements Clo
     }
 
     @Override
-    public ExecutorService getCallbackExecutor() {
-        return null;
-    }
-
-    @Override
     public void close() throws IOException {
         // Shut down all event loops to terminate all threads.
         bossGroup.shutdownGracefully();
@@ -81,6 +76,11 @@ public class DefaultMockNettyServer extends NettyRemotingAbstract implements Clo
 
         @Override
         protected void channelRead0(ChannelHandlerContext ctx, SbpFrame frame) throws Exception {
+            if (frame.getOperationCode() == OperationCode.PING.getCode()) {
+                ctx.writeAndFlush(handlePing(frame));
+                return;
+            }
+
             ByteBuffer[] resultPayload = new ByteBuffer[frame.getPayload().length + 1];
             resultPayload[0] = ByteBuffer.wrap(responsePrefix.getBytes(StandardCharsets.ISO_8859_1));
             for (int i = 0; i < frame.getPayload().length; i++) {
@@ -89,9 +89,20 @@ public class DefaultMockNettyServer extends NettyRemotingAbstract implements Clo
             ctx.writeAndFlush(new SbpFrameBuilder()
                 .setFlag(SbpFrame.GENERAL_RESPONSE_FLAG)
                 .setPayload(resultPayload)
+                .setHeader(frame.getHeader())
                 .setStreamId(frame.getStreamId())
                 .setOperationCode((short) 1)
                 .build());
+        }
+
+        private SbpFrame handlePing(SbpFrame frame) {
+            return new SbpFrameBuilder()
+                .setFlag((byte) (SbpFrame.GENERAL_RESPONSE_FLAG | SbpFrame.ENDING_RESPONSE_FLAG))
+                .setPayload(frame.getPayload())
+                .setHeader(frame.getHeader())
+                .setStreamId(frame.getStreamId())
+                .setOperationCode(frame.getOperationCode())
+                .build();
         }
     }
 }

@@ -28,7 +28,7 @@ public class NettyDecoder extends LengthFieldBasedFrameDecoder {
     private static final Logger log = LoggerFactory.getLogger(NettyDecoder.class);
 
     public NettyDecoder() {
-        super(Integer.MAX_VALUE, 0, SbpFrame.FRAME_SIZE_LENGTH, -SbpFrame.FRAME_SIZE_LENGTH, 0);
+        super(Integer.MAX_VALUE, 0, SbpFrame.FRAME_SIZE_LENGTH, 0, 0);
     }
 
     @Override

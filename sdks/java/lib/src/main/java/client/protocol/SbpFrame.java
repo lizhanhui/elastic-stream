@@ -10,7 +10,8 @@ public class SbpFrame implements RemotingItem {
     public static final byte DEFAULT_MAGIC_CODE = 23;
     public static final int MAX_HEADER_LENGTH = 0xFFFFFF;
     public static final int FRAME_SIZE_LENGTH = 4;
-    public static final int MIN_FRAME_SIZE = 12 + 4 + 4;
+    public static final int MIN_FRAME_SIZE = 8 + 4 + 4;
+    public static final byte DEFAULT_REQUEST_FLAG = 0x00;
     public static final byte GENERAL_RESPONSE_FLAG = 0x01;
     public static final byte ENDING_RESPONSE_FLAG = 0x02;
     public static final byte ERROR_RESPONSE_FLAG = 0x04;
@@ -45,16 +46,15 @@ public class SbpFrame implements RemotingItem {
         this.header = header;
         this.payload = payload;
         this.payloadCrc = (int) Utilities.crc32Calculation(payload);
-        this.length = calculateTotalLength();
+        this.length = calculateLength();
         this.byteBuf = byteBuf;
     }
 
     public SbpFrame(ByteBuf buf) {
-        int bufLength = buf.readableBytes();
-        assert bufLength >= MIN_FRAME_SIZE;
+        assert buf.readableBytes() >= MIN_FRAME_SIZE;
 
         this.length = buf.readInt();
-        if (this.length != bufLength) {
+        if (this.length != buf.readableBytes()) {
             throw new IllegalArgumentException("inconsistent frame length");
         }
 
@@ -88,7 +88,7 @@ public class SbpFrame implements RemotingItem {
     }
 
     public byte[] encode() {
-        ByteBuffer result = ByteBuffer.allocate(length);
+        ByteBuffer result = ByteBuffer.allocate(length + FRAME_SIZE_LENGTH);
 
         result.putInt(length);
         result.put(magicCode);
@@ -114,7 +114,7 @@ public class SbpFrame implements RemotingItem {
         return result.array();
     }
 
-    private int calculateTotalLength() {
+    private int calculateLength() {
         return MIN_FRAME_SIZE + headerLength + Utilities.calculateValidBytes(payload);
     }
 
@@ -171,12 +171,18 @@ public class SbpFrame implements RemotingItem {
         return payload;
     }
 
-    public byte getFlag() {
-        return flag;
+    public ByteBuffer getHeader() {
+        return header;
+    }
+    public byte getMagicCode() {
+        return magicCode;
+    }
+    public short getOperationCode() {
+        return operationCode;
     }
 
-    public boolean isResponse() {
-        return flag == GENERAL_RESPONSE_FLAG || flag == ENDING_RESPONSE_FLAG || flag == ERROR_RESPONSE_FLAG;
+    public byte getFlag() {
+        return flag;
     }
 
     @Override
@@ -186,7 +192,7 @@ public class SbpFrame implements RemotingItem {
 
     @Override
     public boolean isRequest() {
-        return !isResponse();
+        return this.flag == DEFAULT_REQUEST_FLAG;
     }
 
     public static SbpFrameBuilder newBuilder() {

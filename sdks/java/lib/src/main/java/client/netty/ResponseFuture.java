@@ -16,60 +16,34 @@
  */
 package client.netty;
 
-import client.InvokeCallback;
 import client.protocol.SbpFrame;
 import io.netty.channel.Channel;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.CompletableFuture;
 
 public class ResponseFuture {
     private final int id;
     private final Channel channel;
     private final SbpFrame request;
     private final long timeoutMillis;
-    private final InvokeCallback invokeCallback;
+    private final CompletableFuture<SbpFrame> completableFuture;
     private final long beginTimestamp = System.currentTimeMillis();
-    private final CountDownLatch countDownLatch = new CountDownLatch(1);
-
-    private final AtomicBoolean executeCallbackOnlyOnce = new AtomicBoolean(false);
-    private volatile SbpFrame responseSbpFrame;
     private volatile boolean sendRequestOK = true;
-    private volatile Throwable cause;
 
-    public ResponseFuture(Channel channel, int id, long timeoutMillis, InvokeCallback invokeCallback) {
-        this(channel, id, null, timeoutMillis, invokeCallback);
+    public ResponseFuture(Channel channel, int id, long timeoutMillis, CompletableFuture<SbpFrame> completableFuture) {
+        this(channel, id, null, timeoutMillis, completableFuture);
     }
 
-    public ResponseFuture(Channel channel, int id, SbpFrame request, long timeoutMillis, InvokeCallback invokeCallback) {
+    public ResponseFuture(Channel channel, int id, SbpFrame request, long timeoutMillis, CompletableFuture<SbpFrame> completableFuture) {
         this.id = id;
         this.channel = channel;
         this.request = request;
         this.timeoutMillis = timeoutMillis;
-        this.invokeCallback = invokeCallback;
-    }
-
-    public void executeInvokeCallback() {
-        if (invokeCallback != null) {
-            if (this.executeCallbackOnlyOnce.compareAndSet(false, true)) {
-                invokeCallback.operationComplete(this);
-            }
-        }
+        this.completableFuture = completableFuture;
     }
 
     public boolean isTimeout() {
         long diff = System.currentTimeMillis() - this.beginTimestamp;
         return diff > this.timeoutMillis;
-    }
-
-    public SbpFrame waitResponse(final long timeoutMillis) throws InterruptedException {
-        this.countDownLatch.await(timeoutMillis, TimeUnit.MILLISECONDS);
-        return this.responseSbpFrame;
-    }
-
-    public void putResponse(final SbpFrame response) {
-        this.responseSbpFrame = response;
-        this.countDownLatch.countDown();
     }
 
     public long getBeginTimestamp() {
@@ -88,24 +62,8 @@ public class ResponseFuture {
         return timeoutMillis;
     }
 
-    public InvokeCallback getInvokeCallback() {
-        return invokeCallback;
-    }
-
-    public Throwable getCause() {
-        return cause;
-    }
-
-    public void setCause(Throwable cause) {
-        this.cause = cause;
-    }
-
-    public SbpFrame getResponseSbpFrame() {
-        return responseSbpFrame;
-    }
-
-    public void setResponseSbpFrame(SbpFrame responseSbpFrame) {
-        this.responseSbpFrame = responseSbpFrame;
+    public CompletableFuture<SbpFrame> getCompletableFuture() {
+        return completableFuture;
     }
 
     public SbpFrame getRequestSbpFrame() {
@@ -114,13 +72,5 @@ public class ResponseFuture {
 
     public Channel getChannel() {
         return channel;
-    }
-
-    @Override
-    public String toString() {
-        return "ResponseFuture [responseSbpFrame=" + responseSbpFrame + ", sendRequestOK=" + sendRequestOK
-            + ", cause=" + cause + ", id=" + id +  ", timeoutMillis=" + timeoutMillis
-            + ", invokeCallback=" + invokeCallback + ", beginTimestamp=" + beginTimestamp
-            + ", countDownLatch=" + countDownLatch + "]";
     }
 }
