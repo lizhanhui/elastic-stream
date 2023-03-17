@@ -1,6 +1,8 @@
 //! Util functions for tests.
 //!
 
+use std::time::Duration;
+
 use bytes::Bytes;
 use codec::frame::{Frame, OperationCode};
 use protocol::rpc::header::{
@@ -111,6 +113,9 @@ pub async fn run_listener(logger: Logger) -> u16 {
                                         if let Ok(heartbeat) =
                                             flatbuffers::root::<HeartbeatRequest>(buf)
                                         {
+                                            trace!(log, "Start to sleep...");
+                                            tokio::time::sleep(Duration::from_millis(500)).await;
+                                            trace!(log, "Heartbeat sleep completed");
                                             serve_heartbeat(&log, &heartbeat, &mut response_frame);
                                         } else {
                                             error!(

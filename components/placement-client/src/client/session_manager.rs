@@ -1,3 +1,14 @@
+use super::{
+    config::{self, ClientConfig},
+    lb_policy::LBPolicy,
+    naming::Endpoints,
+    response,
+    session::Session,
+};
+use crate::{error::ClientError, notifier::Notifier};
+use model::request::Request;
+use model::Status;
+use slog::{debug, error, info, trace, warn, Logger};
 use std::{
     borrow::Borrow,
     cell::UnsafeCell,
@@ -8,22 +19,11 @@ use std::{
     str::FromStr,
     time::Duration,
 };
-use model::request::Request;
-use slog::{debug, error, info, trace, warn, Logger};
 use tokio::{
     sync::{mpsc, oneshot},
     time::{timeout, Instant},
 };
 use tokio_uring::net::TcpStream;
-use crate::{error::ClientError, notifier::Notifier};
-use model::Status;
-use super::{
-    config::{self, ClientConfig},
-    lb_policy::LBPolicy,
-    naming::Endpoints,
-    response,
-    session::Session,
-};
 
 pub struct SessionManager {
     /// Configuration for the transport layer.
@@ -53,13 +53,19 @@ impl SessionManager {
         log: Logger,
         notifier: Rc<dyn Notifier>,
     ) {
-        let timeout = config.connect_timeout;
+        let connect_timeout = config.connect_timeout;
         tokio_uring::spawn(async move {
             while let Some((addr, tx)) = reconnect_rx.recv().await {
                 trace!(log, "Creating a session to {}", addr);
                 let sessions = unsafe { &mut *sessions.get() };
-                match SessionManager::connect(&addr, timeout, &config, Rc::clone(&notifier), &log)
-                    .await
+                match SessionManager::connect(
+                    &addr,
+                    connect_timeout,
+                    &config,
+                    Rc::clone(&notifier),
+                    &log,
+                )
+                .await
                 {
                     Ok(session) => {
                         sessions.insert(addr, session);
@@ -92,14 +98,15 @@ impl SessionManager {
         mut stop_rx: mpsc::Receiver<()>,
         sessions: Rc<UnsafeCell<HashMap<SocketAddr, Session>>>,
     ) {
-        let idle_interval = config.heartbeat_interval;
+        let heartbeat_interval = config.heartbeat_interval;
+        let io_timeout = config.io_timeout;
 
         tokio_uring::spawn(async move {
             tokio::pin! {
                 let stop_fut = stop_rx.recv();
 
                 // Interval to check if a session needs to send a heartbeat request.
-                let sleep = tokio::time::sleep(idle_interval);
+                let sleep = tokio::time::sleep(heartbeat_interval);
             }
 
             loop {
@@ -110,16 +117,34 @@ impl SessionManager {
                     }
 
                     hb = &mut sleep => {
-                        sleep.as_mut().reset(Instant::now() + idle_interval);
+                        sleep.as_mut().reset(Instant::now() + heartbeat_interval);
 
                         let sessions = unsafe {&mut *sessions.get()};
                         let mut futs = Vec::with_capacity(sessions.len());
                         for (_addr, session) in sessions.iter_mut() {
-                            if session.need_heartbeat(&idle_interval) {
-                                futs.push(session.heartbeat());
+                            if session.need_heartbeat(&heartbeat_interval) {
+                                trace!(logger, "Heartbeat to {:?}", _addr);
+                                futs.push(timeout(io_timeout, session.heartbeat()));
                             }
                         }
-                        futures::future::join_all(futs).await;
+                         futures::future::join_all(futs).await
+                         .into_iter()
+                         .for_each(|entry| {
+                            match entry {
+                                Ok(Some(mut rx)) => {
+                                    if let Ok(response) = rx.try_recv() {
+                                        trace!(logger, "Received heartbeat response: {:?}", response);
+                                    }
+                                },
+                                Ok(None) => {
+                                    trace!(logger, "Session is closing");
+                                }
+                                Err(elapsed) => {
+                                    warn!(logger, "Timeout when performing heartbeat: {:?}", elapsed);
+                                }
+                            }
+                         });
+
                     }
                 }
             }

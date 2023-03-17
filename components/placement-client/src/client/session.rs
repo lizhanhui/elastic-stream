@@ -322,11 +322,12 @@ impl Drop for Session {
 #[cfg(test)]
 mod tests {
 
-    use std::error::Error;
+    use std::{error::Error, time::Duration};
 
     use model::data_node::DataNode;
     use protocol::rpc::header::ErrorCode;
     use test_util::{run_listener, terminal_logger};
+    use tokio::time::{sleep, timeout};
 
     use crate::notifier::UnsupportedNotifier;
 
@@ -377,6 +378,38 @@ mod tests {
                 assert_eq!(ErrorCode::OK, status.code);
             } else {
                 panic!("Unexpected response type");
+            }
+            Ok(())
+        })
+    }
+
+    #[test]
+    #[ignore]
+    fn test_heartbeat_timeout() -> Result<(), Box<dyn Error>> {
+        tokio_uring::start(async {
+            let logger = terminal_logger();
+            let port = run_listener(logger.clone()).await;
+            let target = format!("127.0.0.1:{}", port);
+            let stream = TcpStream::connect(target.parse()?).await?;
+            let mut config = config::ClientConfig::default();
+            let data_node = DataNode {
+                node_id: 1,
+                advertise_address: "localhost:1234".to_owned(),
+            };
+            config.with_data_node(data_node);
+            let config = Rc::new(config);
+            let notifier = Rc::new(UnsupportedNotifier {});
+            let mut session = Session::new(stream, &target, &config, notifier, &logger);
+
+            if let Some(rx) = session.heartbeat().await {
+                let start = Instant::now();
+                let result = timeout(Duration::from_millis(200), rx).await;
+                let duration = start.elapsed();
+                assert!(duration.as_millis() >= 200, "Timeout should work");
+                if let Err(ref _elapsed) = result {
+                } else {
+                    panic!("Should get timeout");
+                }
             }
             Ok(())
         })

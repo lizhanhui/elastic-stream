@@ -187,7 +187,7 @@ impl Channel {
             bytes_to_write,
             self.peer_address
         );
-        
+
         let (res, _buf) = self.stream.writev(encode_result).await;
         match res {
             Ok(_) => {

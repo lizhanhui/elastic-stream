@@ -1,11 +1,12 @@
 #[cfg(test)]
 mod tests {
     use std::{
-        env,
         error::Error,
         ffi::CString,
-        rc::Rc,
-        sync::{atomic::{AtomicU64, Ordering}, Arc},
+        sync::{
+            atomic::{AtomicU64, Ordering},
+            Arc,
+        },
         time::Instant,
     };
 
@@ -14,7 +15,6 @@ mod tests {
         BlockBasedOptions, ColumnFamilyDescriptor, DBCompressionType, IteratorMode, Options,
         ReadOptions, WriteOptions, DB,
     };
-    use uuid::Uuid;
 
     use crate::index::MinOffset;
 

@@ -9,7 +9,7 @@ edition = "2021"
 slog = { workspace = true }
 slog-async =  { workspace = true }
 slog-term =  { workspace = true }
-tokio = { workspace = true }
+tokio = { workspace = true, features = ["full"] }
 tokio-uring = { workspace = true }
 bytes = { workspace = true }
 uuid = { workspace = true}

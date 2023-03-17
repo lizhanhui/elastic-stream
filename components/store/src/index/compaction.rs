@@ -1,7 +1,8 @@
 use std::{
     ffi::{CStr, CString},
     io::Cursor,
-    rc::Rc, sync::Arc,
+    rc::Rc,
+    sync::Arc,
 };
 
 use bytes::Buf;
