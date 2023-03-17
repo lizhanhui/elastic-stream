@@ -91,7 +91,7 @@ func (e *Endpoint) forEachRangeInStreamLimited(streamID int64, f func(r *rpcfb.R
 	kvs, err := e.GetByRange(kv.Range{StartKey: startKey, EndKey: e.endRangePathInStream(streamID)}, limit)
 	if err != nil {
 		logger.Error("failed to get ranges", zap.Int64("stream-id", streamID), zap.Int32("start-id", startID), zap.Int64("limit", limit), zap.Error(err))
-		return 0, errors.Wrap(err, "get ranges")
+		return MinRangeIndex - 1, errors.Wrap(err, "get ranges")
 	}
 
 	for _, rangeKV := range kvs {
@@ -99,13 +99,13 @@ func (e *Endpoint) forEachRangeInStreamLimited(streamID int64, f func(r *rpcfb.R
 		nextID = r.RangeIndex + 1
 		err = f(r)
 		if err != nil {
-			return 0, err
+			return MinRangeIndex - 1, err
 		}
 	}
 
-	// return 0 if no more ranges
 	if int64(len(kvs)) < limit {
-		nextID = 0
+		// no more ranges
+		nextID = MinRangeIndex - 1
 	}
 	return
 }

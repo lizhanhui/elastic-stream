@@ -72,7 +72,7 @@ func (e *Endpoint) forEachDataNodeLimited(f func(dataNode *rpcfb.DataNodeT) erro
 	kvs, err := e.GetByRange(kv.Range{StartKey: startKey, EndKey: e.endDataNodePath()}, limit)
 	if err != nil {
 		logger.Error("failed to get data nodes", zap.Int32("start-id", startID), zap.Int64("limit", limit), zap.Error(err))
-		return 0, errors.Wrap(err, "get data nodes")
+		return MinDataNodeID - 1, errors.Wrap(err, "get data nodes")
 	}
 
 	for _, keyValue := range kvs {
@@ -80,13 +80,13 @@ func (e *Endpoint) forEachDataNodeLimited(f func(dataNode *rpcfb.DataNodeT) erro
 		nextID = dataNode.NodeId + 1
 		err = f(dataNode)
 		if err != nil {
-			return 0, err
+			return MinDataNodeID - 1, err
 		}
 	}
 
-	// return 0 if no more data nodes
 	if int64(len(kvs)) < limit {
-		nextID = 0
+		// no more data nodes
+		nextID = MinDataNodeID - 1
 	}
 	return
 }
