@@ -303,6 +303,7 @@ func (fr *Framer) Available() int {
 
 // Write the fixed header
 func (fr *Framer) startWrite(frame baseFrame) {
+	fr.wbuf = fr.wbuf[:0]
 	fr.wbuf = binary.BigEndian.AppendUint32(fr.wbuf, 0) // 4 bytes of frame length, will be filled in endWrite
 	fr.wbuf = append(fr.wbuf, _magicCode)
 	fr.wbuf = binary.BigEndian.AppendUint16(fr.wbuf, frame.OpCode.Code)
