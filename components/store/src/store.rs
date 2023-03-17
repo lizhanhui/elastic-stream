@@ -295,7 +295,7 @@ mod tests {
     use std::path::Path;
     use tokio::time::{sleep, Duration};
 
-    use bytes::Bytes;
+    use bytes::{Bytes, BytesMut};
     use futures::future::join_all;
     use slog::trace;
     use tokio::sync::oneshot;
@@ -378,7 +378,8 @@ mod tests {
                     let options = ReadOptions {
                         stream_id: 1,
                         offset: res.offset,
-                        max_bytes: 1024,
+                        // TODO: Currently, indexer explain the max_bytes as number of records, not bytes.
+                        max_bytes: 1,
                         max_wait_ms: 1000,
                     };
                     let fetch_f = store.fetch(options);
@@ -396,8 +397,14 @@ mod tests {
             match res {
                 Ok(res) => {
                     trace!(store.log, "Fetch result: {:?}", res);
+
+                    let mut res_payload = BytesMut::new();
+                    res.payload.iter().for_each(|r| {
+                        res_payload.extend_from_slice(&r[..]);
+                    });
+
                     assert_eq!(
-                        Bytes::copy_from_slice(&res.payload[0][8..]),
+                        Bytes::copy_from_slice(&res_payload[8..]),
                         Bytes::from(format!("{}-{}", "hello, world", res.offset))
                     );
                 }

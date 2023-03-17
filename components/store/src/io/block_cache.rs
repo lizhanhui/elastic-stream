@@ -115,7 +115,10 @@ impl EntryRange {
         // Alignment must be power of 2.
         debug_assert_eq!(0, alignment & (alignment - 1));
         let from = wal_offset / alignment * alignment;
-        let to = (wal_offset + len as u64 + alignment - 1) / alignment * alignment;
+
+        // We don't align the end offset in the cache query, to avoid loading the last page in read path.
+        // Note: the last page always added in write path.
+        let to = wal_offset + len as u64;
 
         Self {
             wal_offset: from,

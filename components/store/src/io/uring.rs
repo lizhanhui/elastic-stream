@@ -392,10 +392,16 @@ impl IO {
                             .user_data(context as u64);
 
                         entries.push(sqe);
-                    }
 
-                    // Add the ongoing entries to the block cache
-                    segment.block_cache.add_loading_entry(*range);
+                        // Trace the submit read IO
+                        trace!(self.log, "Submit read IO";
+                            "offset" => read_offset,
+                            "len" => read_len,
+                            "segment" => segment.offset,
+                        );
+                        // Add the ongoing entries to the block cache
+                        segment.block_cache.add_loading_entry(*range);
+                    }
                 }
             });
         });
@@ -1012,10 +1018,7 @@ fn on_complete(
                 return Err(StoreError::System(-result));
             } else {
                 if let (Some(offset), Some(len)) = (context.wal_offset, context.len) {
-                    // Calculates the effective read bytes, without the alignment bytes.
-                    let ef_bytes = result - (offset - context.buf.wal_offset) as i32;
-
-                    if ef_bytes < len as i32 {
+                    if result != len as i32 {
                         error!(
                             log,
                             "Read {} bytes from WAL range `[{}, {})`, but {} bytes expected",
@@ -1280,17 +1283,17 @@ mod tests {
                 "{{Read result is stream-id: {}, wal_offset: {}, payload length: {}}}",
                 res.stream_id,
                 res.wal_offset,
-                res.payload.len()
+                res.payload[0].len()
             );
             // Assert the payload is equal to the write buffer
             // trace the length
 
             let mut res_payload = BytesMut::new();
             res.payload.iter().for_each(|r| {
-                res_payload.extend_from_slice(&r[8..]);
+                res_payload.extend_from_slice(&r[..]);
             });
 
-            assert_eq!(buffer, res_payload.freeze());
+            assert_eq!(buffer, res_payload.freeze()[8..]);
         }
 
         drop(sender);
