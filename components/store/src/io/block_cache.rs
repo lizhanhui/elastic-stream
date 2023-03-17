@@ -105,6 +105,46 @@ pub(crate) struct EntryRange {
     pub(crate) len: u32,
 }
 
+pub trait MergeRange<T> {
+    /// Merge the entries to bigger continuous ranges as possible.
+    /// This may reduce the number of loading io tasks.
+    ///
+    /// # Arguments
+    /// * `self` - The entries to be merged.
+    ///
+    /// # Returns
+    /// * The continuous ranges of the missed entries.
+    fn merge(self) -> Vec<T>;
+}
+
+impl MergeRange<EntryRange> for Vec<EntryRange> {
+    fn merge(self) -> Vec<EntryRange> {
+        let mut ranges = Vec::new();
+        let mut last_range: Option<EntryRange> = None;
+        for entry_range in self {
+            if let Some(range) = last_range {
+                if range.wal_offset + range.len as u64 == entry_range.wal_offset {
+                    last_range = Some(EntryRange {
+                        wal_offset: range.wal_offset,
+                        len: range.len + entry_range.len,
+                    });
+                } else {
+                    ranges.push(range);
+                    last_range = Some(entry_range);
+                }
+            } else {
+                last_range = Some(entry_range);
+            }
+        }
+
+        if let Some(range) = last_range {
+            ranges.push(range);
+        }
+
+        ranges
+    }
+}
+
 impl BlockCache {
     pub(crate) fn new(log: Logger, offset: u64) -> Self {
         Self {
@@ -154,43 +194,6 @@ impl BlockCache {
 
         // The replace occurs when the new entry overlaps with the existing entry.
         self.entries.insert(from, entry);
-    }
-
-    /// Merge the missed entries to bigger continuous ranges as possible.
-    /// This may reduce the number of loading io tasks.
-    ///
-    /// # Arguments
-    /// * `missed_entries` - The missed entries.
-    ///
-    /// # Returns
-    /// The continuous ranges of the missed entries.
-    pub(crate) fn merge_missed_entries(
-        &mut self,
-        missed_entries: Vec<EntryRange>,
-    ) -> Vec<EntryRange> {
-        let mut ranges = Vec::new();
-        let mut last_range: Option<EntryRange> = None;
-        for entry_range in missed_entries {
-            if let Some(range) = last_range {
-                if range.wal_offset + range.len as u64 == entry_range.wal_offset {
-                    last_range = Some(EntryRange {
-                        wal_offset: range.wal_offset,
-                        len: range.len + entry_range.len,
-                    });
-                } else {
-                    ranges.push(range);
-                    last_range = Some(entry_range);
-                }
-            } else {
-                last_range = Some(entry_range);
-            }
-        }
-
-        if let Some(range) = last_range {
-            ranges.push(range);
-        }
-
-        ranges
     }
 
     /// Get cached entries from the cache.
@@ -322,18 +325,13 @@ impl BlockCache {
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        error::Error,
-        sync::{atomic::Ordering, Arc},
-    };
+    use std::sync::{atomic::Ordering, Arc};
 
-    use crate::io::buf::AlignedBuf;
+    use crate::io::{block_cache::MergeRange, buf::AlignedBuf};
 
     /// Test merge missed entry ranges.
     #[test]
     fn test_merge_entries() {
-        let log = test_util::terminal_logger();
-        let mut block_cache = super::BlockCache::new(log.clone(), 0);
         let block_size = 4096;
 
         // Case one: add 16 entries, and merge to one range.
@@ -345,7 +343,7 @@ mod tests {
             })
             .collect();
 
-        let merged = block_cache.merge_missed_entries(missed_entries);
+        let merged = missed_entries.merge();
         assert_eq!(1, merged.len());
         assert_eq!(0, merged[0].wal_offset);
         assert_eq!(16 * block_size, merged[0].len);
@@ -367,7 +365,7 @@ mod tests {
             });
         });
 
-        let merged = block_cache.merge_missed_entries(missed_entries);
+        let merged = missed_entries.merge();
         assert_eq!(2, merged.len());
         assert_eq!(0, merged[0].wal_offset);
         assert_eq!(8 * block_size, merged[0].len);
@@ -382,7 +380,7 @@ mod tests {
                 len: block_size,
             })
             .collect();
-        let merged = block_cache.merge_missed_entries(missed_entries);
+        let merged = missed_entries.merge();
         assert_eq!(8, merged.len());
         (0..8).into_iter().for_each(|n| {
             assert_eq!(n * 3 * block_size as u64, merged[n as usize].wal_offset);
