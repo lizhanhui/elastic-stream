@@ -1,4 +1,4 @@
-name: Run lint
+name: CI - Run lint
 
 on: workflow_call
 permissions: read-all
