@@ -6,6 +6,7 @@ import client.netty.NettyClient;
 import client.protocol.SbpFrame;
 import client.protocol.SbpFrameBuilder;
 import com.google.common.base.Preconditions;
+import com.google.common.cache.CacheLoader;
 import com.google.flatbuffers.FlatBufferBuilder;
 import header.AppendInfoT;
 import header.AppendRequest;
@@ -40,7 +41,13 @@ public class ResourceManagerImpl implements ResourceManager {
     public ResourceManagerImpl(NettyClient nettyClient) {
         this.nettyClient = nettyClient;
 
-        this.streamRangeCache = new StreamRangeCache(id -> null);
+        this.streamRangeCache = new StreamRangeCache(
+            new CacheLoader<Long, List<Range>>() {
+                @Override
+                public List<Range> load(Long streamId) {
+                    return null;
+                }
+            });
     }
 
     @Override

@@ -1,8 +1,8 @@
 package client.cache;
 
-import com.github.benmanes.caffeine.cache.CacheLoader;
-import com.github.benmanes.caffeine.cache.Caffeine;
-import com.github.benmanes.caffeine.cache.LoadingCache;
+import com.google.common.cache.CacheBuilder;
+import com.google.common.cache.CacheLoader;
+import com.google.common.cache.LoadingCache;
 
 /**
  * StreamNameIdCache is a cache for StreamName to StreamId mapping.
@@ -16,13 +16,13 @@ public class StreamNameIdCache {
     }
 
     public StreamNameIdCache(int size, CacheLoader<String, Long> loader) {
-        this.cache = Caffeine.newBuilder()
+        this.cache = CacheBuilder.newBuilder()
             .maximumSize(size)
             .build(loader);
     }
 
     public Long get(String streamName) {
-        return cache.get(streamName);
+        return cache.getUnchecked(streamName);
     }
 
     public void put(String key, Long value) {
@@ -32,6 +32,6 @@ public class StreamNameIdCache {
     }
 
     public long getSize() {
-        return cache.estimatedSize();
+        return cache.size();
     }
 }

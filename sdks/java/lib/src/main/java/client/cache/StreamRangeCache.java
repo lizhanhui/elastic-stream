@@ -1,8 +1,8 @@
 package client.cache;
 
-import com.github.benmanes.caffeine.cache.CacheLoader;
-import com.github.benmanes.caffeine.cache.Caffeine;
-import com.github.benmanes.caffeine.cache.LoadingCache;
+import com.google.common.cache.CacheBuilder;
+import com.google.common.cache.CacheLoader;
+import com.google.common.cache.LoadingCache;
 import java.util.List;
 import header.Range;
 
@@ -20,7 +20,7 @@ public class StreamRangeCache {
      * @param loader - the CacheLoader used to compute values
      */
     public StreamRangeCache(int size, CacheLoader<Long, List<Range>> loader) {
-        this.cache = Caffeine.newBuilder()
+        this.cache = CacheBuilder.newBuilder()
             .maximumSize(size)
             .build(loader);
     }
@@ -42,7 +42,7 @@ public class StreamRangeCache {
      * @return stream ranges - the current (existing or computed) ranges associated with the specified streamId, or null if the computed value is null
      */
     public List<Range> get(Long streamId) {
-        return cache.get(streamId);
+        return cache.getUnchecked(streamId);
     }
 
     /**
@@ -62,6 +62,6 @@ public class StreamRangeCache {
      * @return the estimated size of this cache.
      */
     public long getSize() {
-        return cache.estimatedSize();
+        return cache.size();
     }
 }
