@@ -9,7 +9,9 @@ use std::{
 
 use bytes::Bytes;
 use codec::frame::{Frame, OperationCode};
-use protocol::rpc::header::{CreateStreamsRequestT, CreateStreamsResponse, ErrorCode, StreamT};
+use protocol::rpc::header::{
+    CreateStreamsRequestT, CreateStreamsResponse, ErrorCode, PlacementManager, StreamT,
+};
 use slog::{error, info, trace, warn, Logger};
 use tokio::{net::TcpStream, sync::oneshot};
 
@@ -24,6 +26,7 @@ pub(crate) struct Session {
     log: Logger,
     inflight: Arc<Mutex<HashMap<u32, oneshot::Sender<Frame>>>>,
     channel_writer: ChannelWriter,
+    peer_address: String,
 }
 
 impl Session {
@@ -80,6 +83,7 @@ impl Session {
             log,
             inflight: Arc::clone(&inflight),
             channel_writer: writer,
+            peer_address: target.to_owned(),
         })
     }
 
@@ -121,20 +125,31 @@ impl Session {
             let response = response.unpack();
             if let Some(status) = response.status {
                 match status.code {
-                    ErrorCode::NONE => {}
+                    ErrorCode::OK => {}
+
                     ErrorCode::PM_NOT_LEADER => {
                         if let Some(detail) = status.detail {
+                            let placement_manager = flatbuffers::root::<PlacementManager>(&detail)?;
+                            let placement_manager = placement_manager.unpack();
+                            
                             dbg!(detail);
                         }
                         // Wrap redirect info...
                     }
 
                     ErrorCode::PM_NO_AVAILABLE_DN => {
-                        dbg!(status);
+                        return Err(ClientError::DataNodeNotAvailable);
                     }
+
                     _ => {
-                        // Return error
-                        dbg!(status);
+                        error!(
+                            self.log,
+                            "Unexpected error code from server: {}", self.peer_address
+                        );
+                        return Err(ClientError::UnexpectedResponse(format!(
+                            "Unexpected response status: {:?}",
+                            status
+                        )));
                     }
                 }
             }

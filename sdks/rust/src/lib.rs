@@ -3,6 +3,7 @@ mod channel_writer;
 mod client;
 mod client_builder;
 mod client_error;
+pub mod node;
 mod reader;
 mod session;
 mod session_manager;
