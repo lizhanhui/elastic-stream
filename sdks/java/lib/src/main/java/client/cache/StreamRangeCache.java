@@ -3,8 +3,8 @@ package client.cache;
 import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.CacheLoader;
 import com.google.common.cache.LoadingCache;
+import header.RangeT;
 import java.util.List;
-import header.Range;
 
 /**
  * StreamRangeCache is a cache for StreamId to StreamRanges mapping.
@@ -12,14 +12,15 @@ import header.Range;
 public class StreamRangeCache {
     private static final int DEFAULT_CACHE_SIZE = 100;
 
-    private final LoadingCache<Long, List<Range>> cache;
+    private final LoadingCache<Long, List<RangeT>> cache;
 
     /**
      * Create a new StreamRangeCache with the specified size and CacheLoader.
-     * @param size - the maximum number of entries the cache may contain
+     *
+     * @param size   - the maximum number of entries the cache may contain
      * @param loader - the CacheLoader used to compute values
      */
-    public StreamRangeCache(int size, CacheLoader<Long, List<Range>> loader) {
+    public StreamRangeCache(int size, CacheLoader<Long, List<RangeT>> loader) {
         this.cache = CacheBuilder.newBuilder()
             .maximumSize(size)
             .build(loader);
@@ -28,9 +29,10 @@ public class StreamRangeCache {
     /**
      * Create a new StreamRangeCache with the specified CacheLoader.
      * The cache size is set to the default value.
+     *
      * @param loader - the CacheLoader used to compute values
      */
-    public StreamRangeCache(CacheLoader<Long, List<Range>> loader) {
+    public StreamRangeCache(CacheLoader<Long, List<RangeT>> loader) {
         this(DEFAULT_CACHE_SIZE, loader);
     }
 
@@ -38,27 +40,38 @@ public class StreamRangeCache {
      * Get stream ranges by stream id.
      * Returns the value associated with the key in this cache, obtaining that value from CacheLoader.load(Object) if necessary.
      *
-     * @param streamId - with which the specified ranges is to be associated
-     * @return stream ranges - the current (existing or computed) ranges associated with the specified streamId, or null if the computed value is null
+     * @param streamId with which the specified ranges is to be associated
+     * @return stream ranges, the current (existing or computed) ranges associated with the specified streamId, or null if the computed value is null
      */
-    public List<Range> get(Long streamId) {
+    public List<RangeT> get(Long streamId) {
         return cache.getUnchecked(streamId);
     }
 
     /**
      * Put stream ranges by stream id.
      * If streamId is null or ranges is null or ranges is empty, do nothing.
+     *
      * @param streamId - with which the specified ranges is to be associated
-     * @param ranges - the ranges to be associated with the specified streamId
+     * @param ranges   - the ranges to be associated with the specified streamId
      */
-    public void put(Long streamId, List<Range> ranges) {
+    public void put(Long streamId, List<RangeT> ranges) {
         if (streamId != null && ranges != null && ranges.size() > 0) {
             cache.put(streamId, ranges);
         }
     }
 
     /**
+     * Refresh stream ranges by stream id.
+     *
+     * @param streamId - with which the specified ranges is to be associated
+     */
+    public void refresh(Long streamId) {
+        cache.refresh(streamId);
+    }
+
+    /**
      * Returns the approximate number of entries in this cache. The value returned is an estimate.
+     *
      * @return the estimated size of this cache.
      */
     public long getSize() {

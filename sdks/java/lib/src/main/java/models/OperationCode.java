@@ -8,6 +8,7 @@ public enum OperationCode {
     SEAL_RANGES((short) 0x2002),
     DESCRIBE_RANGES((short) 0x2004),
     CREATE_STREAMS((short) 0x3001),
+    DESCRIBE_STREAMS((short) 0x3004),
     ;
     private final short code;
     OperationCode(short code) {

@@ -138,6 +138,12 @@ public class NettyClient extends NettyRemotingAbstract implements RemotingClient
 
     @Override
     public CompletableFuture<SbpFrame> invokeAsync(Address address, RemotingItem request, Duration timeout) {
+        if (timeout.isNegative() || timeout.isZero()) {
+            CompletableFuture<SbpFrame> responseFuture = new CompletableFuture<>();
+            responseFuture.completeExceptionally(new ClientException("timeout must be positive"));
+            return responseFuture;
+        }
+
         return this.getOrCreateChannel(address).thenCompose(channel -> {
             CompletableFuture<SbpFrame> responseFuture = new CompletableFuture<>();
             if (channel != null && channel.isActive()) {
@@ -258,17 +264,6 @@ public class NettyClient extends NettyRemotingAbstract implements RemotingClient
     }
 
     private CompletableFuture<Channel> getOrCreateChannel(final Address address) {
-        CompletableFuture<Channel> completeFuture = new CompletableFuture<>();
-        ChannelWrapper cw = this.channelTables.get(address);
-        if (cw != null && cw.isOK()) {
-            completeFuture.complete(cw.getChannel());
-        } else {
-            createChannel(address).thenApply(completeFuture::complete);
-        }
-        return completeFuture;
-    }
-
-    private CompletableFuture<Channel> createChannel(final Address address) {
         CompletableFuture<Channel> completableFuture = new CompletableFuture<>();
         ChannelWrapper cw = this.channelTables.get(address);
         if (cw != null && cw.isOK()) {

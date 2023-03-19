@@ -42,7 +42,7 @@ class NettyClientTest {
                 .setOperationCode((short) 10)
                 .build();
 
-            SbpFrame responseFrame = client.invokeAsync(client.pmAddress, sbpFrame, Duration.ofSeconds(3)).get();
+            SbpFrame responseFrame = client.invokeAsync(sbpFrame, Duration.ofSeconds(3)).get();
 
             Assertions.assertEquals(responseFrame.getFlag(), SbpFrame.GENERAL_RESPONSE_FLAG);
             Assertions.assertEquals(responseFrame.getStreamId(), requestStreamId);

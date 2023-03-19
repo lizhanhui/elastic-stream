@@ -1,7 +1,10 @@
 package models;
 
+import com.google.flatbuffers.FlatBufferBuilder;
 import java.nio.ByteBuffer;
 import java.util.List;
+import records.RecordBatchMeta;
+import records.RecordBatchMetaT;
 
 public class RecordBatch {
     private static final int MIN_LENGTH = 9;
@@ -10,11 +13,14 @@ public class RecordBatch {
     private ByteBuffer batchMeta;
     private List<Record> records;
 
-    public RecordBatch(byte magic, int baseOffset, ByteBuffer batchMeta, List<Record> records) {
+    public RecordBatch(byte magic, int baseOffset, RecordBatchMetaT batchMeta, List<Record> records) {
         this.magic = magic;
         this.baseOffset = baseOffset;
-        this.batchMeta = batchMeta;
         this.records = records;
+        FlatBufferBuilder builder = new FlatBufferBuilder();
+        int pack = RecordBatchMeta.pack(builder, batchMeta);
+        builder.finish(pack);
+        this.batchMeta = builder.dataBuffer();
     }
 
     public RecordBatch(ByteBuffer buffer) {
@@ -66,8 +72,8 @@ public class RecordBatch {
         return baseOffset;
     }
 
-    public ByteBuffer getBatchMeta() {
-        return batchMeta;
+    public RecordBatchMetaT getBatchMeta() {
+        return RecordBatchMeta.getRootAsRecordBatchMeta(batchMeta).unpack();
     }
 
     public List<Record> getRecords() {

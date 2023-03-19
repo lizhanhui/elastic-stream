@@ -175,11 +175,15 @@ public abstract class NettyRemotingAbstract {
         return future;
     }
 
+    /**
+     * Send failure response immediately due to channel problem.
+     * @param opaque unique id of responseFuture.
+     */
     private void requestFail(final int opaque) {
         ResponseFuture responseFuture = responseTable.remove(opaque);
         if (responseFuture != null) {
             responseFuture.setSendRequestOK(false);
-            responseFuture.getCompletableFuture().completeExceptionally(new ClientException("fail to send request to server"));
+            responseFuture.getCompletableFuture().completeExceptionally(new ClientException("fail fast due to channel problem"));
         }
     }
 

@@ -1,16 +1,22 @@
 package models;
 
+import com.google.flatbuffers.FlatBufferBuilder;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
+import records.RecordMeta;
+import records.RecordMetaT;
 
 public class Record {
     private static final int MIN_LENGTH = 8;
     private ByteBuffer meta;
     private ByteBuffer body;
 
-    public Record(ByteBuffer meta, ByteBuffer body) {
-        this.meta = meta;
+    public Record(RecordMetaT meta, ByteBuffer body) {
+        FlatBufferBuilder builder = new FlatBufferBuilder();
+        int pack = RecordMeta.pack(builder, meta);
+        builder.finish(pack);
+        this.meta = builder.dataBuffer();
         this.body = body;
     }
 
@@ -36,8 +42,8 @@ public class Record {
         return records;
     }
 
-    public ByteBuffer getMeta() {
-        return meta;
+    public RecordMetaT getMeta() {
+        return RecordMeta.getRootAsRecordMeta(meta).unpack();
     }
 
     public ByteBuffer getBody() {
