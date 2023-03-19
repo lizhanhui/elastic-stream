@@ -103,6 +103,7 @@ pub(crate) struct BlockCache {
 #[derive(Debug, Copy, Clone)]
 pub(crate) struct EntryRange {
     // The start wal_offset of the entry which is a absolute wal_offset.
+    // It's expected to be aligned to the IO alignment.
     pub(crate) wal_offset: u64,
     pub(crate) len: u32,
 }

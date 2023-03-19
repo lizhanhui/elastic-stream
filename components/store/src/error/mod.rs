@@ -71,6 +71,9 @@ pub enum StoreError {
 
     #[error("Cache missed")]
     CacheMiss,
+
+    #[error("Unexpected cache error")]
+    CacheError,
 }
 
 #[derive(Debug, Error, Clone)]

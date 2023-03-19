@@ -126,22 +126,17 @@ impl Wal {
         log: &Logger,
     ) -> Result<bool, StoreError> {
         let mut file_pos = *pos - segment.offset;
-        let sd = segment.sd.as_ref().ok_or(StoreError::NotOpened)?;
-
-        // Open the file with the given `fd`.
-        let file = unsafe { File::from_raw_fd(sd.fd) };
-
         let mut meta_buf = [0; 4];
 
         let mut buf = bytes::BytesMut::new();
         let mut last_found = false;
         // Find the last continuous record
         loop {
-            file.read_exact_at(&mut meta_buf, file_pos)?;
+            segment.read_exact_at(&mut meta_buf, file_pos)?;
             file_pos += 4;
             let crc = u32::from_be_bytes(meta_buf);
 
-            file.read_exact_at(&mut meta_buf, file_pos)?;
+            segment.read_exact_at(&mut meta_buf, file_pos)?;
             file_pos += 4;
             let len_type = u32::from_be_bytes(meta_buf);
             let len = (len_type >> 8) as usize;
@@ -160,7 +155,7 @@ impl Wal {
             }
 
             buf.resize(len, 0);
-            file.read_exact_at(buf.as_mut(), file_pos)?;
+            segment.read_exact_at(buf.as_mut(), file_pos)?;
 
             let ckm = util::crc32::crc32(buf.as_ref());
             if ckm != crc {
@@ -200,6 +195,8 @@ impl Wal {
             buf.resize(len, 0);
         }
         *pos = segment.offset + file_pos;
+
+        segment.truncate_to(segment.written)?;
         Ok(last_found)
     }
 

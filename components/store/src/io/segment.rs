@@ -1,5 +1,6 @@
-use bytes::{BufMut, BytesMut};
+use bytes::{Buf, BufMut, BytesMut};
 use derivative::Derivative;
+use io_uring::cqueue::Entry;
 use nix::fcntl;
 use slog::Logger;
 use std::{
@@ -9,15 +10,25 @@ use std::{
     fs::{File, OpenOptions},
     os::{
         fd::{AsRawFd, FromRawFd, IntoRawFd, RawFd},
-        unix::prelude::{OpenOptionsExt, OsStrExt},
+        unix::prelude::{FileExt, OpenOptionsExt, OsStrExt},
     },
     path::Path,
+    sync::Arc,
     time::SystemTime,
 };
 
-use crate::{error::StoreError, io::record::RecordType};
+use crate::{
+    error::StoreError,
+    io::{buf::AlignedBuf, record::RecordType},
+    BufSlice,
+};
 
-use super::{block_cache::BlockCache, buf::AlignedBufWriter, record::RECORD_PREFIX_LENGTH};
+use super::{
+    block_cache::{BlockCache, EntryRange},
+    buf::{AlignedBufReader, AlignedBufWriter},
+    record::RECORD_PREFIX_LENGTH,
+    Options,
+};
 
 // CRC(4B) + length(3B) + Type(1B) + earliest_record_time(8B) + latest_record_time(8B)
 pub(crate) const FOOTER_LENGTH: u64 = 24;
@@ -42,6 +53,9 @@ impl TimeRange {
 #[derive(Derivative)]
 #[derivative(PartialEq, Eq, Debug)]
 pub(crate) struct LogSegment {
+    #[derivative(PartialEq = "ignore")]
+    log: Logger,
+
     /// Log segment offset in bytes, it's the absolute offset in the whole WAL.
     pub(crate) offset: u64,
 
@@ -110,7 +124,6 @@ pub(crate) enum Status {
     UnlinkAt,
 }
 
-// TODO: a better display format is needed.
 impl Display for LogSegment {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let path = self.path.to_str().map_err(|_| fmt::Error)?;
@@ -162,6 +175,7 @@ impl LogSegment {
         path: &Path,
     ) -> Result<Self, StoreError> {
         Ok(Self {
+            log: log.clone(),
             offset,
             size,
             written: 0,
@@ -289,6 +303,191 @@ impl LogSegment {
         writer.write(payload)?;
         self.written += 4 + 4 + payload.len() as u64;
         Ok(self.offset + self.written)
+    }
+
+    /// Reads the exact number of byte required to fill `buf` from the given relative offset of the segment.
+    ///
+    /// This method will try read from the block cache first. If the block is not cached,
+    /// it will read from the underlying sd(SegmentDescriptor), and then cache the block.
+    ///
+    /// # Arguments
+    /// * `buf` - The buffer to read into.
+    /// * `r_offset` - The relative offset of the segment.
+    ///
+    /// # Note
+    /// This method uses classical read-at approach to read data from the underlying file,
+    /// it's designed to be used in the recovery procedure.
+    pub(crate) fn read_exact_at(
+        &mut self,
+        buf: &mut [u8],
+        r_offset: u64,
+    ) -> Result<(), StoreError> {
+        // TODO: Consider use a unified way to provide the IO options.
+        let options = Options::default();
+        let entry = EntryRange::new(
+            self.offset + r_offset,
+            buf.len() as u32,
+            options.alignment as u64,
+        );
+
+        let read_at = self.offset + r_offset;
+        let read_len = buf.len() as u64;
+
+        // Store the slices of the needed data temporarily.
+        let mut slice_v = vec![];
+
+        loop {
+            let buf_res = self.block_cache.try_get_entries(entry);
+            match buf_res {
+                Ok(Some(buf_v)) => {
+                    // Copy the cached data to the given buffer.
+                    // We need narrow the first and the last AlignedBuf to the actual read range
+                    buf_v.into_iter().for_each(|buf_r| {
+                        let mut start_pos = 0;
+
+                        if buf_r.wal_offset < read_at {
+                            start_pos = (read_at - buf_r.wal_offset) as u32;
+                        }
+
+                        let mut limit = buf_r.limit();
+                        let limit_len = (buf_r.wal_offset + buf_r.limit() as u64)
+                            .checked_sub(read_at + read_len as u64);
+                        if let Some(limit_len) = limit_len {
+                            limit -= limit_len as usize;
+                        }
+                        let mut buf = buf_r.slice(start_pos as usize..(start_pos as usize + limit));
+                        let mut dst = vec![0 as u8; buf.len()];
+                        buf.copy_to_slice(&mut dst[..]);
+                        slice_v.push(dst);
+                    });
+                    break;
+                }
+                Ok(None) => {
+                    // Impossible, the block cache should always return a result since this is in recovery procedure.
+                    return Err(StoreError::CacheError);
+                }
+                Err(mut entries) => {
+                    // Cache miss, there are some entries should be read from disk.
+                    let sd = self.sd.as_ref().ok_or(StoreError::NotOpened)?;
+
+                    // Open the file with the given `fd`.
+                    let file = unsafe { File::from_raw_fd(sd.fd) };
+
+                    let try_r: Result<(), StoreError> = entries.into_iter().try_for_each(|e| {
+                        if let Ok(buf) = AlignedBufReader::alloc_read_buf(
+                            self.log.clone(),
+                            e.wal_offset,
+                            e.len as usize,
+                            options.alignment as u64,
+                        ) {
+                            let mut file_pos = e.wal_offset - self.offset;
+                            let _ = file
+                                .read_exact_at(&mut buf.slice(..), file_pos)
+                                .map_err(|e| StoreError::IO(e))?;
+
+                            self.block_cache.add_entry(Arc::new(buf));
+
+                            ()
+                        }
+
+                        Ok(())
+                    });
+
+                    if let Err(e) = try_r {
+                        return Err(e);
+                    }
+                }
+            }
+        }
+
+        // Assert that the length of the given buffer is equal to the sum of the length of the slices.
+        debug_assert_eq!(buf.len(), slice_v.iter().map(|s| s.len()).sum::<usize>());
+
+        // Copy the slice_v to the given buffer.
+        buf.copy_from_slice(&slice_v.concat()[..]);
+
+        Ok(())
+    }
+
+    /// Truncate the segment to the given `written` offset.
+    ///
+    /// Currently, the only behavior of this method is to split the last page from the block cache.
+    pub(crate) fn truncate_to(&mut self, written: u64) -> Result<(), StoreError> {
+        // Assert the given `written` offset is equal to the current `written` offset.
+        debug_assert_eq!(written, self.written);
+
+        // TODO: Consider use a unified way to provide the IO options.
+        let options = Options::default();
+        let alignment = options.alignment as u64;
+        let last_page_start = written / alignment * alignment;
+        let last_page_len = (written - last_page_start) as u32;
+
+        let buf_res = self.block_cache.try_get_entries(EntryRange {
+            wal_offset: last_page_start,
+            len: last_page_len,
+        });
+
+        match buf_res {
+            Ok(Some(mut buf_v)) => {
+                // Assert there is only one buf returned of the last page.
+                debug_assert_eq!(buf_v.len(), 1);
+                let mut buf = &buf_v[0];
+
+                debug_assert_eq!(
+                    true,
+                    ((buf.wal_offset + buf.limit() as u64) >= last_page_start)
+                );
+
+                if (buf.wal_offset + buf.limit() as u64) > last_page_start {
+                    // Split the last page from the returned  buf
+                    if last_page_len != 0 {
+                        let mut last_page_buf = AlignedBuf::new(
+                            self.log.clone(),
+                            last_page_start,
+                            last_page_len as usize,
+                            alignment as usize,
+                        )?;
+
+                        let copy_start = (last_page_start - buf.wal_offset) as usize;
+                        let mut buf_src =
+                            buf.slice(copy_start..copy_start + last_page_len as usize);
+                        let mut buf_dst = last_page_buf.slice(..);
+
+                        buf_dst.copy_from_slice(buf_src);
+                        // buf_src.copy_to_slice(&mut buf_dst);
+
+                        //last_page_buf.slice(..).copy_from_slice(buf_src);
+
+                        self.block_cache.add_entry(Arc::new(last_page_buf));
+                    }
+
+                    // Truncate the last buf
+                    let last_len = last_page_start - buf.wal_offset;
+                    let last_buf = AlignedBuf::new(
+                        self.log.clone(),
+                        buf.wal_offset,
+                        last_len as usize,
+                        alignment as usize,
+                    )?;
+
+                    last_buf
+                        .slice(..)
+                        .copy_from_slice(&buf.slice(..last_len as usize));
+
+                    self.block_cache.add_entry(Arc::new(last_buf));
+                }
+
+                return Ok(());
+            }
+            Ok(None) => {
+                // Impossible, the block cache should always return a result since this is in recovery procedure.
+                return Err(StoreError::CacheError);
+            }
+            Err(_) => {
+                // The last page is not cached, it's also impossible.
+                return Err(StoreError::CacheError);
+            }
+        }
     }
 }
 
