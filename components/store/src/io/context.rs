@@ -31,12 +31,7 @@ impl Context {
     }
 
     /// Create read context
-    pub(crate) fn read_ctx(
-        opcode: u8,
-        buf: Arc<AlignedBuf>,
-        offset: u64,
-        len: u32,
-    ) -> *mut Self {
+    pub(crate) fn read_ctx(opcode: u8, buf: Arc<AlignedBuf>, offset: u64, len: u32) -> *mut Self {
         Box::into_raw(Box::new(Self {
             opcode,
             buf,

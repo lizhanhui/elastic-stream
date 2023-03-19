@@ -924,12 +924,12 @@ impl IO {
                 if io.borrow().wal.writable_segment_count() > min_preallocated_segment_files {
                     break;
                 }
-                io.borrow_mut().wal.try_open()?;
+                io.borrow_mut().wal.try_open_segment()?;
             }
 
             // check if we have expired segment files to close and delete
             {
-                io.borrow_mut().wal.try_close()?;
+                io.borrow_mut().wal.try_close_segment()?;
             }
 
             let mut entries = vec![];
@@ -1162,7 +1162,7 @@ mod tests {
         let _store_dir_guard = test_util::DirectoryRemovalGuard::new(log, store_dir);
         let mut io = create_io(store_dir)?;
 
-        io.wal.open_segment()?;
+        io.wal.open_segment_directly()?;
 
         let len = 4088;
         let mut buffer = BytesMut::with_capacity(len);

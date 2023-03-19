@@ -233,7 +233,8 @@ impl Wal {
         Ok(pos)
     }
 
-    pub(crate) fn try_open(&mut self) -> Result<(), StoreError> {
+    /// New a segment, and then open it in the uring driver.
+    pub(crate) fn try_open_segment(&mut self) -> Result<(), StoreError> {
         let log = self.log.clone();
         let segment = self.alloc_segment()?;
         let offset = segment.offset;
@@ -259,7 +260,7 @@ impl Wal {
         Ok(())
     }
 
-    pub(crate) fn try_close(&mut self) -> Result<(), StoreError> {
+    pub(crate) fn try_close_segment(&mut self) -> Result<(), StoreError> {
         let to_close: Vec<&LogSegment> = self
             .segments
             .iter()
@@ -290,10 +291,9 @@ impl Wal {
         Ok(())
     }
 
-    /// Open a new segment without uring
-    /// Currently only used in tests
-    /// TODO: a better way to handle open
-    pub(crate) fn open_segment(&mut self) -> Result<(), StoreError> {
+    /// New a segment, and then open it in the classic way, i.e. without uring.
+    /// Notes: this is only used in tests to avoid the complexity of uring.
+    pub(crate) fn open_segment_directly(&mut self) -> Result<(), StoreError> {
         let mut segment = self.alloc_segment()?;
         segment.open()?;
         self.segments.push_back(segment);
@@ -675,7 +675,7 @@ mod tests {
         let mut wal = create_wal(super::WalPath::new(wal_dir.to_str().unwrap(), 1234)?)?;
         (0..3)
             .into_iter()
-            .map(|_| wal.open_segment())
+            .map(|_| wal.open_segment_directly())
             // `Result` implements the `FromIterator` trait, which allows an iterator over `Result` values to be collected
             // into a `Result` of a collection of each contained value of the original `Result` values,
             // or Err if any of the elements was `Err`.
