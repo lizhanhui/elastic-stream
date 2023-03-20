@@ -174,7 +174,6 @@ func (fr *Framer) ReadFrame() (Frame, func(), error) {
 	buf := fr.fixedBuf[:_fixedHeaderLen]
 	_, err := io.ReadFull(fr.r, buf)
 	if err != nil {
-		logger.Error("failed to read fixed header", zap.Error(err))
 		return &baseFrame{}, nil, errors.WithMessage(err, "read fixed header")
 	}
 	headerBuf := bytes.NewBuffer(buf)
@@ -206,7 +205,6 @@ func (fr *Framer) ReadFrame() (Frame, func(), error) {
 	free := func() { mcache.Free(tBuf) }
 	_, err = io.ReadFull(fr.r, tBuf)
 	if err != nil {
-		logger.Error("failed to read extended header and payload", zap.Error(err))
 		free()
 		return &baseFrame{}, nil, errors.WithMessage(err, "read extended header and payload")
 	}
@@ -227,7 +225,6 @@ func (fr *Framer) ReadFrame() (Frame, func(), error) {
 	var checksum uint32
 	err = binary.Read(fr.r, binary.BigEndian, &checksum)
 	if err != nil {
-		logger.Error("failed to read payload checksum", zap.Error(err))
 		free()
 		return &baseFrame{}, nil, errors.WithMessage(err, "read payload checksum")
 	}
