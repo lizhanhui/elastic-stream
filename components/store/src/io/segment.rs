@@ -804,8 +804,41 @@ mod tests {
             segment.block_cache.remove(|t| t.wal_offset() >= wal_offset);
         }
 
-        // Case three: the last page should be splitted, without dirty cache.
+        {
+            // Case three: the last page should be splitted, with dirty cache.
+            // Load the all the four pages.
+            let mut buf = [0u8; 4 * 4096 as usize];
+            segment.read_exact_at(&mut buf, 0).unwrap();
 
-        // Case four: the last page should be splitted, with dirty cache.
+            segment.written = 3 * alignment + 1024;
+            segment.truncate_to(3 * alignment + 1024).unwrap();
+
+            let buf_v = segment
+                .block_cache
+                .try_get_entries(EntryRange::new(wal_offset, alignment as u32, alignment))
+                .unwrap()
+                .unwrap();
+            assert_eq!(buf_v.len(), 1);
+            let buf = buf_v.first().unwrap();
+            assert_eq!(buf.wal_offset, wal_offset);
+            assert_eq!(buf.limit(), alignment as usize * 3);
+
+            let buf_v = segment
+                .block_cache
+                .try_get_entries(EntryRange::new(
+                    wal_offset + 3 * alignment,
+                    1024 as u32,
+                    alignment,
+                ))
+                .unwrap()
+                .unwrap();
+            assert_eq!(buf_v.len(), 1);
+            let buf = buf_v.first().unwrap();
+            assert_eq!(buf.limit(), 1024 as usize);
+            assert_eq!(buf.capacity, alignment as usize);
+
+            // Clear the cache
+            segment.block_cache.remove(|t| t.wal_offset() >= wal_offset);
+        }
     }
 }
