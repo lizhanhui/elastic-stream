@@ -166,7 +166,7 @@ impl SessionManager {
         Self::reconnect(
             reconnect_rx,
             Rc::clone(&sessions),
-            Rc::clone(&config),
+            Rc::clone(config),
             log.clone(),
             Rc::clone(&notifier),
         );
@@ -175,7 +175,7 @@ impl SessionManager {
         let (stop_tx, stop_rx) = mpsc::channel::<()>(1);
         Self::heartbeat(
             log.clone(),
-            Rc::clone(&config),
+            Rc::clone(config),
             stop_rx,
             Rc::clone(&sessions),
         );
@@ -280,15 +280,14 @@ impl SessionManager {
             let res = sessions
                 .iter_mut()
                 .try_find(|(k, _)| Some(!attempted.contains(k.borrow())))
-                .map(|e| {
+                .and_then(|e| {
                     if let Some((k, v)) = e {
-                        attempted.insert(k.clone());
+                        attempted.insert(*k);
                         Some((k, v))
                     } else {
                         None
                     }
-                })
-                .flatten();
+                });
 
             if let Some((addr, session)) = res {
                 response_observer = match session.write(&request, response_observer).await {

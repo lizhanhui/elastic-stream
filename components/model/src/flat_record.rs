@@ -127,7 +127,7 @@ impl FlatRecordBatch {
 
     /// Inits a FlatRecordBatch from a buffer of bytes received from storage or network layer.
     pub fn init_from_buf(mut buf: Bytes) -> Result<Self, DecodeError> {
-        let mut basic_part_len = 13;
+        let basic_part_len = 13;
         if buf.len() < basic_part_len {
             return Err(DecodeError::DataLengthMismatch);
         }

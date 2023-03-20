@@ -112,6 +112,6 @@ impl Stream for Cursor {
             }
         };
 
-        return Poll::Ready(Some(record));
+        Poll::Ready(Some(record))
     }
 }

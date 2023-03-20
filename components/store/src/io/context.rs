@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use super::{buf::AlignedBuf, IoTask};
+use super::buf::AlignedBuf;
 
 /// IO context for `Read` and `Write`.
 pub(crate) struct Context {

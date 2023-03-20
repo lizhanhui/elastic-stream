@@ -10,6 +10,6 @@ mod wal;
 mod write_window;
 
 pub(crate) use self::options::Options;
-pub(crate) use self::task::{IoTask, ReadTask, WriteTask};
+pub(crate) use self::task::ReadTask;
 pub(crate) use self::uring::IO;
-pub(crate) use self::write_window::{WriteWindow, WriteWindowError};
+pub(crate) use self::write_window::WriteWindowError;

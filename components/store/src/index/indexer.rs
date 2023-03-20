@@ -1,9 +1,9 @@
-use std::{ffi::CString, fs, io::Cursor, path::Path, rc::Rc, sync::Arc};
+use std::{ffi::CString, fs, io::Cursor, path::Path, sync::Arc};
 
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use model::range::{Range, StreamRange};
 use rocksdb::{
-    BlockBasedOptions, ColumnFamilyDescriptor, DBCompressionType, Direction, IteratorMode, Options,
+    BlockBasedOptions, ColumnFamilyDescriptor, DBCompressionType, IteratorMode, Options,
     ReadOptions, WriteOptions, DB,
 };
 use slog::{error, info, warn, Logger};
@@ -181,7 +181,7 @@ impl Indexer {
                     .db
                     .iterator_cf_opt(cf, read_opts, IteratorMode::Start)
                     .flatten()
-                    .filter(|(k, v)| {
+                    .filter(|(_k, v)| {
                         if v.len() < 8 + 4 {
                             warn!(
                                 self.log,

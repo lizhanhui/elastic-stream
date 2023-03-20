@@ -39,7 +39,7 @@ impl From<&Request> for Bytes {
 
             Request::ListRanges { timeout, criteria } => {
                 let list: Vec<_> = criteria
-                    .into_iter()
+                    .iter()
                     .map(|c| {
                         let mut criteria = RangeCriteriaT::default();
                         match c {

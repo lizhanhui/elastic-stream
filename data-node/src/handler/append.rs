@@ -204,7 +204,7 @@ impl<'a> Append<'a> {
 
                 let to_store = AppendRecordRequest {
                     stream_id,
-                    offset: offset,
+                    offset,
                     buffer: payload_b,
                 };
                 Some(to_store)

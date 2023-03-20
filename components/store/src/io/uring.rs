@@ -16,7 +16,6 @@ use crossbeam::channel::{Receiver, Sender, TryRecvError};
 use io_uring::register;
 use io_uring::{opcode, squeue, types};
 use slog::{error, info, trace, warn, Logger};
-use std::borrow::{Borrow, BorrowMut};
 use std::collections::{BTreeMap, HashSet};
 use std::sync::Arc;
 use std::{

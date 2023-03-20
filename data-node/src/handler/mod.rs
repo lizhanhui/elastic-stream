@@ -55,7 +55,7 @@ impl ServerCall {
             Some(it) => it,
             None => {
                 // TODO: return error response
-                return ();
+                return;
             }
         };
 

@@ -64,7 +64,7 @@ impl IndexDriver {
     }
 
     pub(crate) fn index(&self, stream_id: i64, offset: u64, handle: RecordHandle) {
-        if let Err(e) = self.tx.send(IndexCommand::Index {
+        if let Err(_e) = self.tx.send(IndexCommand::Index {
             stream_id,
             offset,
             handle,
@@ -80,7 +80,7 @@ impl IndexDriver {
         max_bytes: u32,
         observer: oneshot::Sender<Result<Option<Vec<RecordHandle>>, StoreError>>,
     ) {
-        if let Err(e) = self.tx.send(IndexCommand::ScanRecord {
+        if let Err(_e) = self.tx.send(IndexCommand::ScanRecord {
             stream_id,
             offset,
             max_bytes,

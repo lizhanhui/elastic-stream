@@ -135,7 +135,6 @@ impl<'a> Fetch<'a> {
             .map(|payload| Bytes::copy_from_slice(&payload[8..]))
             .collect();
         response.payload = Some(payloads);
-        ()
     }
 
     fn build_store_requests(&self) -> Vec<ReadOptions> {

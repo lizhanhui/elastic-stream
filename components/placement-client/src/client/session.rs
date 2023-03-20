@@ -250,12 +250,9 @@ impl Session {
                                     .unpack()
                                     .list_responses
                                     .iter()
-                                    .map(|result| result.iter())
-                                    .flatten()
-                                    .map(|res| res.ranges.as_ref())
-                                    .flatten()
-                                    .map(|e| e.iter())
-                                    .flatten()
+                                    .flat_map(|result| result.iter())
+                                    .flat_map(|res| res.ranges.as_ref())
+                                    .flat_map(|e| e.iter())
                                     .map(|range| {
                                         if range.end_offset >= 0 {
                                             StreamRange::new(
