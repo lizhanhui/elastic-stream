@@ -151,7 +151,7 @@ func (s *Server) startEtcd(ctx context.Context) error {
 	client, err := clientv3.New(clientv3.Config{
 		Endpoints:   endpoints,
 		DialTimeout: _etcdTimeout,
-		Logger:      logger,
+		Logger:      logger.With(zap.Namespace("etcd-client"), zap.Strings("endpoints", endpoints)),
 	})
 	if err != nil {
 		return errors.WithMessage(err, "new client")

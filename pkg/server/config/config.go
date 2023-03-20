@@ -27,6 +27,7 @@ const (
 
 	_defaultPeerUrls                          = "http://127.0.0.1:2380"
 	_defaultClientUrls                        = "http://127.0.0.1:2379"
+	_defaultEtcdLogLevel                      = "warn"
 	_defaultCompactionMode                    = "periodic"
 	_defaultAutoCompactionRetention           = "1h"
 	_defaultNameFormat                        = "pm-%s"
@@ -235,8 +236,10 @@ func configure() (*viper.Viper, *pflag.FlagSet) {
 	_ = v.BindPFlag("advertiseClientUrls", fs.Lookup("advertise-client-urls"))
 
 	// other etcd settings
+	fs.String("etcd-log-level", _defaultEtcdLogLevel, "log level for etcd. One of: debug|info|warn|error|panic|fatal")
 	fs.String("etcd-auto-compaction-mode", _defaultCompactionMode, "interpret 'auto-compaction-retention' one of: periodic|revision. 'periodic' for duration based retention, defaulting to hours if no time unit is provided (e.g. '5m'). 'revision' for revision number based retention.")
 	fs.String("etcd-auto-compaction-retention", _defaultAutoCompactionRetention, "auto compaction retention for mvcc key value store. 0 means disable auto compaction.")
+	_ = v.BindPFlag("etcd.logLevel", fs.Lookup("etcd-log-level"))
 	_ = v.BindPFlag("etcd.autoCompactionMode", fs.Lookup("etcd-auto-compaction-mode"))
 	_ = v.BindPFlag("etcd.autoCompactionRetention", fs.Lookup("etcd-auto-compaction-retention"))
 
