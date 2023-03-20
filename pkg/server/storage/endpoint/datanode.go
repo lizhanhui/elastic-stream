@@ -45,7 +45,7 @@ func (e *Endpoint) SaveDataNode(dataNode *rpcfb.DataNodeT) (*rpcfb.DataNodeT, er
 	_, err := e.Put(key, value, false)
 	if err != nil {
 		logger.Error("failed to save data node", zap.Int32("node-id", dataNode.NodeId), zap.Error(err))
-		return nil, errors.Wrap(err, "save data node")
+		return nil, errors.WithMessage(err, "save data node")
 	}
 
 	return dataNode, nil
@@ -72,7 +72,7 @@ func (e *Endpoint) forEachDataNodeLimited(f func(dataNode *rpcfb.DataNodeT) erro
 	kvs, err := e.GetByRange(kv.Range{StartKey: startKey, EndKey: e.endDataNodePath()}, limit)
 	if err != nil {
 		logger.Error("failed to get data nodes", zap.Int32("start-id", startID), zap.Int64("limit", limit), zap.Error(err))
-		return MinDataNodeID - 1, errors.Wrap(err, "get data nodes")
+		return MinDataNodeID - 1, errors.WithMessage(err, "get data nodes")
 	}
 
 	for _, keyValue := range kvs {

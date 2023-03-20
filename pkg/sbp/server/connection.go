@@ -377,7 +377,7 @@ func (c *conn) processDataFrame(f *codec.DataFrame, st *stream) error {
 	req := action.newReq()
 	err := req.Unmarshal(f.HeaderFmt, f.Header)
 	if err != nil {
-		return errors.Wrap(err, "unmarshal frame header")
+		return errors.WithMessage(err, "unmarshal frame header")
 	}
 	// TODO if there are too many handlers running, put the request into a priority queue (or put important requests into a priority queue)
 	go c.runHandlerAndWrite(f.Context(), st, func() protocol.Response { return action.act(c.server.handler, req) })

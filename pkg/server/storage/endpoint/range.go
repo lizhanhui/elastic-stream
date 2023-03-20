@@ -46,7 +46,7 @@ func (e *Endpoint) GetRange(rangeID *rpcfb.RangeIdT) (*rpcfb.RangeT, error) {
 	value, err := e.Get(key)
 	if err != nil {
 		logger.Error("failed to get range", zap.Int64("stream-id", rangeID.StreamId), zap.Int32("range-index", rangeID.RangeIndex), zap.Error(err))
-		return nil, errors.Wrap(err, "get range")
+		return nil, errors.WithMessage(err, "get range")
 	}
 
 	return rpcfb.GetRootAsRange(value, 0).UnPack(), nil
@@ -64,7 +64,7 @@ func (e *Endpoint) GetRangesByStream(streamID int64) ([]*rpcfb.RangeT, error) {
 	})
 	if err != nil {
 		logger.Error("failed to get ranges", zap.Int64("stream-id", streamID), zap.Error(err))
-		return nil, errors.Wrap(err, "get ranges")
+		return nil, errors.WithMessage(err, "get ranges")
 	}
 
 	return ranges, nil
@@ -91,7 +91,7 @@ func (e *Endpoint) forEachRangeInStreamLimited(streamID int64, f func(r *rpcfb.R
 	kvs, err := e.GetByRange(kv.Range{StartKey: startKey, EndKey: e.endRangePathInStream(streamID)}, limit)
 	if err != nil {
 		logger.Error("failed to get ranges", zap.Int64("stream-id", streamID), zap.Int32("start-id", startID), zap.Int64("limit", limit), zap.Error(err))
-		return MinRangeIndex - 1, errors.Wrap(err, "get ranges")
+		return MinRangeIndex - 1, errors.WithMessage(err, "get ranges")
 	}
 
 	for _, rangeKV := range kvs {
@@ -131,7 +131,7 @@ func (e *Endpoint) GetRangeIDsByDataNode(dataNodeID int32) ([]*rpcfb.RangeIdT, e
 	})
 	if err != nil {
 		logger.Error("failed to get range ids", zap.Int32("data-node-id", dataNodeID), zap.Error(err))
-		return nil, errors.Wrap(err, "get range ids")
+		return nil, errors.WithMessage(err, "get range ids")
 	}
 
 	return rangeIDs, nil
@@ -158,7 +158,7 @@ func (e *Endpoint) forEachRangeIDOnDataNodeLimited(dataNodeID int32, f func(rang
 	kvs, err := e.GetByRange(kv.Range{StartKey: startKey, EndKey: e.endRangePathOnDataNode(dataNodeID)}, limit)
 	if err != nil {
 		logger.Error("failed to get range ids", zap.Int32("data-node-id", dataNodeID), zap.Int64("start-stream-id", startID.StreamId), zap.Int32("start-range-index", startID.RangeIndex), zap.Int64("limit", limit), zap.Error(err))
-		return nil, errors.Wrap(err, "get range ids")
+		return nil, errors.WithMessage(err, "get range ids")
 	}
 
 	nextID = startID
@@ -195,7 +195,7 @@ func rangePathOnDataNode(dataNodeID int32, streamID int64, rangeIndex int32) []b
 func rangeIDFromPath(path []byte) (dataNodeID int32, streamID int64, rangeIndex int32, err error) {
 	_, err = fmt.Sscanf(string(path), _rangeNodeFormat, &dataNodeID, &streamID, &rangeIndex)
 	if err != nil {
-		err = errors.Wrapf(err, "parse range path: %s", string(path))
+		err = errors.WithMessagef(err, "parse range path: %s", string(path))
 	}
 	return
 }

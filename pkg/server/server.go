@@ -98,10 +98,10 @@ func NewServer(ctx context.Context, cfg *config.Config, logger *zap.Logger) (*Se
 // Start starts the server
 func (s *Server) Start() error {
 	if err := s.startEtcd(s.ctx); err != nil {
-		return errors.Wrap(err, "start etcd")
+		return errors.WithMessage(err, "start etcd")
 	}
 	if err := s.startServer(); err != nil {
-		return errors.Wrap(err, "start server")
+		return errors.WithMessage(err, "start server")
 	}
 	s.startLoop(s.ctx)
 
@@ -121,18 +121,18 @@ func (s *Server) startEtcd(ctx context.Context) error {
 		etcd, err = embed.StartEtcd(s.cfg.Etcd)
 	}
 	if err != nil {
-		return errors.Wrap(err, "start etcd by config")
+		return errors.WithMessage(err, "start etcd by config")
 	}
 
 	// Check cluster ID
 	urlMap, err := types.NewURLsMap(s.cfg.InitialCluster)
 	if err != nil {
 		logger.Error("failed to parse urls map from config", zap.String("config-initial-cluster", s.cfg.InitialCluster), zap.Error(err))
-		return errors.Wrap(err, "parse urlMap from config")
+		return errors.WithMessage(err, "parse urlMap from config")
 	}
 	err = checkClusterID(etcd.Server.Cluster().ID(), urlMap, logger)
 	if err != nil {
-		return errors.Wrap(err, "check cluster ID")
+		return errors.WithMessage(err, "check cluster ID")
 	}
 
 	// wait until etcd is ready or timeout
@@ -154,7 +154,7 @@ func (s *Server) startEtcd(ctx context.Context) error {
 		Logger:      logger,
 	})
 	if err != nil {
-		return errors.Wrap(err, "new client")
+		return errors.WithMessage(err, "new client")
 	}
 	logger.Info("new etcd client", zap.Strings("endpoints", endpoints))
 	s.client = client
@@ -168,7 +168,7 @@ func (s *Server) startEtcd(ctx context.Context) error {
 func (s *Server) startServer() error {
 	// init cluster id
 	if err := s.initClusterID(); err != nil {
-		return errors.Wrap(err, "init cluster ID")
+		return errors.WithMessage(err, "init cluster ID")
 	}
 
 	logger := s.lg
@@ -177,7 +177,7 @@ func (s *Server) startServer() error {
 	s.rootPath = path.Join(_rootPathPrefix, strconv.FormatUint(s.clusterID, 10))
 	err := s.member.Init(s.cfg, s.Name(), s.rootPath)
 	if err != nil {
-		return errors.Wrap(err, "init member")
+		return errors.WithMessage(err, "init member")
 	}
 	s.storage = storage.NewEtcd(s.client, s.rootPath, logger, s.leaderCmp)
 	s.cluster = cluster.NewRaftCluster(s.ctx, s.clusterID, s.lg)
@@ -185,7 +185,7 @@ func (s *Server) startServer() error {
 	sbpAddr := s.cfg.SbpAddr
 	listener, err := net.Listen("tcp", sbpAddr)
 	if err != nil {
-		return errors.Wrapf(err, "listen on %s", sbpAddr)
+		return errors.WithMessagef(err, "listen on %s", sbpAddr)
 	}
 	go s.serveSbp(listener, s.cluster)
 
@@ -217,20 +217,20 @@ func (s *Server) initClusterID() error {
 	kv, err := etcdutil.GetOne(s.client, []byte(_clusterIDPath), logger)
 	if err != nil {
 		logger.Error("failed to query cluster id", zap.String("cluster-id-path", _clusterIDPath), zap.Error(err))
-		return errors.Wrap(err, "get value from etcd")
+		return errors.WithMessage(err, "get value from etcd")
 	}
 
 	// use an existed ID
 	if kv != nil {
 		s.clusterID, err = typeutil.BytesToUint64(kv.Value)
 		logger.Info("use an existing cluster id", zap.Uint64("cluster-id", s.clusterID))
-		return errors.Wrap(err, "convert bytes to uint64")
+		return errors.WithMessage(err, "convert bytes to uint64")
 	}
 
 	// new an ID
 	s.clusterID, err = initOrGetClusterID(s.client, _clusterIDPath)
 	if err != nil {
-		return errors.Wrap(err, "new an ID")
+		return errors.WithMessage(err, "new an ID")
 	}
 	logger.Info("use a new cluster id", zap.Uint64("cluster-id", s.clusterID))
 	return nil
@@ -468,7 +468,7 @@ func initOrGetClusterID(c *clientv3.Client, key string) (uint64, error) {
 	ts := uint64(time.Now().Unix())
 	rd, err := randutil.Uint64()
 	if err != nil {
-		return 0, errors.Wrap(err, "generate random int64")
+		return 0, errors.WithMessage(err, "generate random int64")
 	}
 	ID := (ts << 32) + rd
 	value := typeutil.Uint64ToBytes(ID)
@@ -482,7 +482,7 @@ func initOrGetClusterID(c *clientv3.Client, key string) (uint64, error) {
 		Else(clientv3.OpGet(key)).
 		Commit()
 	if err != nil {
-		return 0, errors.Wrap(err, "init cluster ID by etcd transaction")
+		return 0, errors.WithMessage(err, "init cluster ID by etcd transaction")
 	}
 
 	// Txn commits ok, return the generated cluster ID.

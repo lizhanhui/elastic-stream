@@ -71,7 +71,7 @@ func (e *Etcd) Get(k []byte) ([]byte, error) {
 
 	kv, err := etcdutil.GetOne(e.client, key, logger)
 	if err != nil {
-		return nil, errors.Wrap(err, "kv get")
+		return nil, errors.WithMessage(err, "kv get")
 	}
 
 	return kv.Value, nil
@@ -88,7 +88,7 @@ func (e *Etcd) GetByRange(r Range, limit int64) ([]KeyValue, error) {
 
 	resp, err := etcdutil.Get(e.client, startKey, logger, clientv3.WithRange(string(endKey)), clientv3.WithLimit(limit))
 	if err != nil {
-		return nil, errors.Wrap(err, "kv get by range")
+		return nil, errors.WithMessage(err, "kv get by range")
 	}
 
 	kvs := make([]KeyValue, 0, len(resp.Kvs))
@@ -108,7 +108,7 @@ func (e *Etcd) Put(k, v []byte, prevKV bool) ([]byte, error) {
 
 	prevKvs, err := e.BatchPut([]KeyValue{{Key: k, Value: v}}, prevKV)
 	if err != nil {
-		return nil, errors.Wrap(err, "kv put")
+		return nil, errors.WithMessage(err, "kv put")
 	}
 
 	if !prevKV {
@@ -144,7 +144,7 @@ func (e *Etcd) BatchPut(kvs []KeyValue, prevKV bool) ([]KeyValue, error) {
 	txn := e.newTxnFunc().Then(ops...)
 	resp, err := txn.Commit()
 	if err != nil {
-		return nil, errors.Wrap(err, "kv batch put")
+		return nil, errors.WithMessage(err, "kv batch put")
 	}
 	if !resp.Succeeded {
 		return nil, ErrTxnFailed
@@ -177,7 +177,7 @@ func (e *Etcd) Delete(k []byte, prevKV bool) ([]byte, error) {
 
 	prevKvs, err := e.BatchDelete([][]byte{k}, prevKV)
 	if err != nil {
-		return nil, errors.Wrap(err, "kv delete")
+		return nil, errors.WithMessage(err, "kv delete")
 	}
 
 	if !prevKV {
@@ -212,7 +212,7 @@ func (e *Etcd) BatchDelete(keys [][]byte, prevKV bool) ([]KeyValue, error) {
 	txn := e.newTxnFunc().Then(ops...)
 	resp, err := txn.Commit()
 	if err != nil {
-		return nil, errors.Wrap(err, "kv batch delete")
+		return nil, errors.WithMessage(err, "kv batch delete")
 	}
 	if !resp.Succeeded {
 		return nil, ErrTxnFailed

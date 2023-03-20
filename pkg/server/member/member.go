@@ -90,7 +90,7 @@ func (m *Member) Init(cfg *config.Config, name string, clusterRootPath string) e
 	m.info = info
 	bytes, err := json.Marshal(info)
 	if err != nil {
-		return errors.Wrap(err, "marshal member info")
+		return errors.WithMessage(err, "marshal member info")
 	}
 	m.infoValue = bytes
 	m.clusterRootPath = clusterRootPath
@@ -139,7 +139,7 @@ func (m *Member) GetLeader() (*Info, etcdutil.ModRevision, error) {
 	kv, err := etcdutil.GetOne(m.client, []byte(m.LeaderPath()), logger)
 	if err != nil {
 		logger.Error("failed to get leader", zap.String("leader-key", m.LeaderPath()), zap.Error(err))
-		return nil, 0, errors.Wrap(err, "get kv from etcd")
+		return nil, 0, errors.WithMessage(err, "get kv from etcd")
 	}
 	if kv == nil {
 		return nil, 0, nil
@@ -149,7 +149,7 @@ func (m *Member) GetLeader() (*Info, etcdutil.ModRevision, error) {
 	err = json.Unmarshal(kv.Value, info)
 	if err != nil {
 		logger.Error("failed to unmarshal leader info", zap.ByteString("raw-string", kv.Value), zap.Error(err))
-		return nil, 0, errors.Wrap(err, "unmarshal leader info")
+		return nil, 0, errors.WithMessage(err, "unmarshal leader info")
 	}
 
 	return info, kv.ModRevision, nil
@@ -199,17 +199,17 @@ func (m *Member) CheckPriorityAndMoveLeader(ctx context.Context) error {
 
 	myPriority, err := m.GetMemberPriority(m.id)
 	if err != nil {
-		return errors.Wrap(err, "load current member priority")
+		return errors.WithMessage(err, "load current member priority")
 	}
 	leaderPriority, err := m.GetMemberPriority(etcdLeaderID)
 	if err != nil {
-		return errors.Wrap(err, "load etcd leader member priority")
+		return errors.WithMessage(err, "load etcd leader member priority")
 	}
 
 	if myPriority > leaderPriority {
 		err := m.MoveEtcdLeader(ctx, etcdLeaderID, m.id)
 		if err != nil {
-			return errors.Wrap(err, "transfer etcd leader")
+			return errors.WithMessage(err, "transfer etcd leader")
 		}
 		logger.Info("transfer etcd leader", zap.Uint64("from", etcdLeaderID), zap.Uint64("to", m.id))
 	}
@@ -228,7 +228,7 @@ func (m *Member) GetMemberPriority(id uint64) (int, error) {
 	key := m.getPriorityPath(id)
 	kv, err := etcdutil.GetOne(m.client, []byte(key), logger)
 	if err != nil {
-		return 0, errors.Wrapf(err, "failed to get member's leader priority by key %s", key)
+		return 0, errors.WithMessagef(err, "failed to get member's leader priority by key %s", key)
 	}
 	if kv == nil {
 		return 0, nil
@@ -236,7 +236,7 @@ func (m *Member) GetMemberPriority(id uint64) (int, error) {
 
 	priority, err := strconv.Atoi(string(kv.Value))
 	if err != nil {
-		return 0, errors.Wrap(err, "parse priority")
+		return 0, errors.WithMessage(err, "parse priority")
 	}
 	return priority, nil
 }
@@ -251,7 +251,7 @@ func (m *Member) MoveEtcdLeader(ctx context.Context, old, new uint64) error {
 	err := m.etcd.Server.MoveLeader(moveCtx, old, new)
 	if err != nil {
 		logger.Error("failed to move etcd leader", zap.Uint64("from", old), zap.Uint64("to", new), zap.Error(err))
-		return errors.Wrap(err, "move leader")
+		return errors.WithMessage(err, "move leader")
 	}
 	return nil
 }
