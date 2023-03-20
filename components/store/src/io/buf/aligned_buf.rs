@@ -1,7 +1,7 @@
 use slog::{debug, Logger};
 use std::{
     alloc::{self, Layout},
-    ops::{Bound, RangeBounds},
+    ops::{Bound, Deref, DerefMut, RangeBounds},
     ptr::{self, NonNull},
     slice,
     sync::atomic::{AtomicUsize, Ordering},
@@ -159,6 +159,28 @@ impl AlignedBuf {
         };
         let len = end - start;
         unsafe { slice::from_raw_parts(self.ptr.as_ptr().offset(start as isize) as *const u8, len) }
+    }
+
+    /// Generate a mutable slice from the buffer.
+    /// Since it's aimed to be written, the upper bound is equal to the capacity.
+    pub(crate) fn slice_mut<R>(&self, range: R) -> &mut [u8]
+    where
+        R: RangeBounds<usize>,
+    {
+        let start = match range.start_bound() {
+            Bound::Included(&n) => n,
+            Bound::Excluded(&n) => n.checked_add(1).expect("out of bound"),
+            Bound::Unbounded => 0,
+        };
+        let end = match range.end_bound() {
+            Bound::Included(&m) => m.checked_add(1).expect("out of bound"),
+            Bound::Excluded(&m) => m,
+            Bound::Unbounded => self.capacity,
+        };
+        let len = end - start;
+        unsafe {
+            slice::from_raw_parts_mut(self.ptr.as_ptr().offset(start as isize) as *mut u8, len)
+        }
     }
 
     pub(crate) fn write_buf(&self, buf: &[u8]) -> bool {

@@ -1,4 +1,5 @@
 use bytes::{Buf, BufMut, BytesMut};
+use core::slice;
 use derivative::Derivative;
 use io_uring::cqueue::Entry;
 use nix::fcntl;
@@ -366,7 +367,7 @@ impl LogSegment {
                     // Impossible, the block cache should always return a result since this is in recovery procedure.
                     return Err(StoreError::CacheError);
                 }
-                Err(mut entries) => {
+                Err(entries) => {
                     // Cache miss, there are some entries should be read from disk.
                     let sd = self.sd.as_ref().ok_or(StoreError::NotOpened)?;
 
@@ -380,10 +381,13 @@ impl LogSegment {
                             e.len as usize,
                             options.alignment as u64,
                         ) {
-                            let mut file_pos = e.wal_offset - self.offset;
+                            let file_pos = e.wal_offset - self.offset;
+
                             let _ = file
-                                .read_exact_at(&mut buf.slice(..), file_pos)
+                                .read_exact_at(buf.slice_mut(..), file_pos)
                                 .map_err(|e| StoreError::IO(e))?;
+
+                            buf.increase_written(buf.capacity);
 
                             self.block_cache.add_entry(Arc::new(buf));
 
@@ -428,10 +432,10 @@ impl LogSegment {
         });
 
         match buf_res {
-            Ok(Some(mut buf_v)) => {
+            Ok(Some(buf_v)) => {
                 // Assert there is only one buf returned of the last page.
                 debug_assert_eq!(buf_v.len(), 1);
-                let mut buf = &buf_v[0];
+                let buf = &buf_v[0];
 
                 debug_assert_eq!(
                     true,
@@ -441,7 +445,7 @@ impl LogSegment {
                 if (buf.wal_offset + buf.limit() as u64) > last_page_start {
                     // Split the last page from the returned  buf
                     if last_page_len != 0 {
-                        let mut last_page_buf = AlignedBuf::new(
+                        let last_page_buf = AlignedBuf::new(
                             self.log.clone(),
                             last_page_start,
                             last_page_len as usize,
@@ -449,14 +453,9 @@ impl LogSegment {
                         )?;
 
                         let copy_start = (last_page_start - buf.wal_offset) as usize;
-                        let mut buf_src =
-                            buf.slice(copy_start..copy_start + last_page_len as usize);
-                        let mut buf_dst = last_page_buf.slice(..);
+                        let buf_src = buf.slice(copy_start..copy_start + last_page_len as usize);
 
-                        buf_dst.copy_from_slice(buf_src);
-                        // buf_src.copy_to_slice(&mut buf_dst);
-
-                        //last_page_buf.slice(..).copy_from_slice(buf_src);
+                        last_page_buf.slice_mut(..).copy_from_slice(buf_src);
 
                         self.block_cache.add_entry(Arc::new(last_page_buf));
                     }
@@ -471,7 +470,7 @@ impl LogSegment {
                     )?;
 
                     last_buf
-                        .slice(..)
+                        .slice_mut(..)
                         .copy_from_slice(&buf.slice(..last_len as usize));
 
                     self.block_cache.add_entry(Arc::new(last_buf));
