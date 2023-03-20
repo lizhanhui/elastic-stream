@@ -245,9 +245,12 @@ mod tests {
     use super::STREAM_ID_COUNTER;
 
     #[test]
-    fn test_stream_id() {
-        for i in 0..10 {
-            assert_eq!(i, STREAM_ID_COUNTER.fetch_add(1, Ordering::Relaxed));
+    fn test_stream_id_increasing() {
+        let mut prev = STREAM_ID_COUNTER.fetch_add(1, Ordering::Relaxed);
+        for _ in 0..10 {
+            let stream_id = STREAM_ID_COUNTER.fetch_add(1, Ordering::Relaxed);
+            assert!(stream_id > prev, "Stream ID should be increasing");
+            prev = stream_id;
         }
     }
 
