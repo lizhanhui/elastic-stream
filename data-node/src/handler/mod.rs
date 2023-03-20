@@ -86,18 +86,4 @@ impl ServerCall {
             }
         };
     }
-
-    /// Process Ping request
-    ///
-    /// Ping-pong mechanism is designed to be a light weight API to probe liveness of data-node.
-    /// The Pong response return the same header and payload as the Ping request.
-    /// TODO: move to ping module
-    async fn on_ping(&self, response: &mut Frame) {
-        debug!(
-            self.logger,
-            "PingRequest[stream-id={}] received", self.request.stream_id
-        );
-        response.header = self.request.header.clone();
-        response.payload = self.request.payload.clone();
-    }
 }

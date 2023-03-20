@@ -5,7 +5,7 @@ use codec::frame::{Frame, OperationCode};
 use model::range::StreamRange;
 use model::Status;
 use model::{client_role::ClientRole, request::Request};
-use protocol::rpc::header::{self, HeartbeatResponse, ListRangesResponse};
+use protocol::rpc::header::{HeartbeatResponse, ListRangesResponse};
 use slog::{error, trace, warn, Logger};
 use std::{
     cell::UnsafeCell,

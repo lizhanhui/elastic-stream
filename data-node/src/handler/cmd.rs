@@ -16,7 +16,7 @@ pub(crate) enum Command<'a> {
     DescribeRange(DescribeRange<'a>),
     Fetch(Fetch<'a>),
     SealRange(SealRange<'a>),
-    Ping(Ping),
+    Ping(Ping<'a>),
     Heartbeat(Heartbeat<'a>),
 }
 
@@ -26,18 +26,18 @@ impl<'a> Command<'a> {
             OperationCode::DescribeRanges => Ok(Command::DescribeRange(
                 DescribeRange::parse_frame(logger.clone(), frame)?,
             )),
-            
+
             OperationCode::Unknown => todo!(),
-            
-            OperationCode::Ping => Ok(Command::Ping(Ping {})),
-            
+
+            OperationCode::Ping => Ok(Command::Ping(Ping::new(logger.clone(), frame))),
+
             OperationCode::GoAway => todo!(),
-            
+
             OperationCode::Heartbeat => Ok(Command::Heartbeat(Heartbeat::parse_frame(
                 logger.clone(),
                 frame,
             )?)),
-            
+
             OperationCode::Append => {
                 Ok(Command::Append(Append::parse_frame(logger.clone(), frame)?))
             }

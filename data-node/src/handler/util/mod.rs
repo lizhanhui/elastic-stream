@@ -4,6 +4,7 @@ use protocol::rpc::header::{ErrorCode, StatusArgs, SystemErrorResponse, SystemEr
 
 pub(crate) const MIN_BUFFER_SIZE: usize = 64;
 pub(crate) const MEDIUM_BUFFER_SIZE: usize = 4 * MIN_BUFFER_SIZE;
+#[allow(unused)]
 pub(crate) const LARGE_BUFFER_SIZE: usize = 16 * MEDIUM_BUFFER_SIZE;
 
 /// Verifies that a buffer of bytes contains a rpc request and returns it.

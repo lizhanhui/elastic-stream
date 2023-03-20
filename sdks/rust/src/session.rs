@@ -24,7 +24,9 @@ use crate::{
     node::{Node, Role},
 };
 
-const STREAM_ID_COUNTER: AtomicU32 = AtomicU32::new(0);
+lazy_static::lazy_static! {
+    static ref STREAM_ID_COUNTER: AtomicU32 = AtomicU32::new(0);
+}
 
 #[derive(Debug)]
 pub(crate) struct Session {
@@ -234,11 +236,20 @@ impl Session {
 
 #[cfg(test)]
 mod tests {
-    use std::{error::Error, time::Duration};
+    use std::{error::Error, sync::atomic::Ordering, time::Duration};
 
     use slog::{error, info};
 
     use crate::{client_error::ClientError, session::Session, test_server::run_listener};
+
+    use super::STREAM_ID_COUNTER;
+
+    #[test]
+    fn test_stream_id() {
+        for i in 0..10 {
+            assert_eq!(i, STREAM_ID_COUNTER.fetch_add(1, Ordering::Relaxed));
+        }
+    }
 
     #[tokio::test]
     async fn test_create_stream() -> Result<(), Box<dyn Error>> {
