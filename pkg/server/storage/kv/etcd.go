@@ -240,6 +240,10 @@ func (e *Etcd) GetPrefixRangeEnd(p []byte) []byte {
 	return e.trimPrefix(end)
 }
 
+func (e *Etcd) Logger() *zap.Logger {
+	return e.lg
+}
+
 func (e *Etcd) addPrefix(k []byte) []byte {
 	return bytes.Join([][]byte{e.rootPath, k}, []byte(KeySeparator))
 }
