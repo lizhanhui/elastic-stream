@@ -432,7 +432,7 @@ func (s *Server) stopSbpServer() {
 // leaderCmp returns a cmp with leader comparison to guarantee that
 // the transaction can be executed only if the server is leader.
 func (s *Server) leaderCmp() clientv3.Cmp {
-	return clientv3.Compare(clientv3.Value(s.member.LeaderPath()), "=", s.member.Info())
+	return clientv3.Compare(clientv3.Value(s.member.LeaderPath()), "=", string(s.member.Info()))
 }
 
 // checkClusterID checks etcd cluster ID, returns an error if mismatched.

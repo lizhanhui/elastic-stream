@@ -28,9 +28,12 @@ const (
 )
 
 const (
-	_minStreamID   int64 = 1
-	_minRangeIndex int32 = 1
-	_minDataNodeID int32 = 1
+	// MinStreamID is the minimum stream ID.
+	MinStreamID int64 = 0
+	// MinRangeIndex is the minimum range index.
+	MinRangeIndex int32 = 0
+	// MinDataNodeID is the minimum data node ID.
+	MinDataNodeID int32 = 0
 )
 
 // Endpoint is the base underlying storage endpoint for all other upper

@@ -73,8 +73,8 @@ func (e *Endpoint) GetRangesByStream(streamID int64) ([]*rpcfb.RangeT, error) {
 // ForEachRangeInStream calls the given function f for each range in the stream.
 // If f returns an error, the iteration is stopped and the error is returned.
 func (e *Endpoint) ForEachRangeInStream(streamID int64, f func(r *rpcfb.RangeT) error) error {
-	var startID = _minRangeIndex
-	for startID >= _minRangeIndex {
+	var startID = MinRangeIndex
+	for startID >= MinRangeIndex {
 		nextID, err := e.forEachRangeInStreamLimited(streamID, f, startID, _rangeByRangeLimit)
 		if err != nil {
 			return err
@@ -91,7 +91,7 @@ func (e *Endpoint) forEachRangeInStreamLimited(streamID int64, f func(r *rpcfb.R
 	kvs, err := e.GetByRange(kv.Range{StartKey: startKey, EndKey: e.endRangePathInStream(streamID)}, limit)
 	if err != nil {
 		logger.Error("failed to get ranges", zap.Int64("stream-id", streamID), zap.Int32("start-id", startID), zap.Int64("limit", limit), zap.Error(err))
-		return 0, errors.Wrap(err, "get ranges")
+		return MinRangeIndex - 1, errors.Wrap(err, "get ranges")
 	}
 
 	for _, rangeKV := range kvs {
@@ -99,13 +99,13 @@ func (e *Endpoint) forEachRangeInStreamLimited(streamID int64, f func(r *rpcfb.R
 		nextID = r.RangeIndex + 1
 		err = f(r)
 		if err != nil {
-			return 0, err
+			return MinRangeIndex - 1, err
 		}
 	}
 
-	// return 0 if no more ranges
 	if int64(len(kvs)) < limit {
-		nextID = 0
+		// no more ranges
+		nextID = MinRangeIndex - 1
 	}
 	return
 }
@@ -140,8 +140,8 @@ func (e *Endpoint) GetRangeIDsByDataNode(dataNodeID int32) ([]*rpcfb.RangeIdT, e
 // ForEachRangeIDOnDataNode calls the given function f for each range on the data node.
 // If f returns an error, the iteration is stopped and the error is returned.
 func (e *Endpoint) ForEachRangeIDOnDataNode(dataNodeID int32, f func(rangeID *rpcfb.RangeIdT) error) error {
-	startID := &rpcfb.RangeIdT{StreamId: _minStreamID, RangeIndex: _minRangeIndex}
-	for startID != nil && startID.StreamId >= _minStreamID && startID.RangeIndex >= _minRangeIndex {
+	startID := &rpcfb.RangeIdT{StreamId: MinStreamID, RangeIndex: MinRangeIndex}
+	for startID != nil && startID.StreamId >= MinStreamID && startID.RangeIndex >= MinRangeIndex {
 		nextID, err := e.forEachRangeIDOnDataNodeLimited(dataNodeID, f, startID, _rangeByRangeLimit)
 		if err != nil {
 			return err

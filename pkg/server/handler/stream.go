@@ -15,7 +15,7 @@ func (s *Sbp) CreateStreams(req *protocol.CreateStreamsRequest) (resp *protocol.
 		return
 	}
 
-	streams, err := s.c.CreateStreams(req.Streams)
+	results, err := s.c.CreateStreams(req.Streams)
 	if err != nil {
 		if errors.Is(err, cluster.ErrNotEnoughDataNodes) {
 			resp.Error(&rpcfb.StatusT{Code: rpcfb.ErrorCodePM_NO_AVAILABLE_DN, Message: err.Error()})
@@ -25,10 +25,10 @@ func (s *Sbp) CreateStreams(req *protocol.CreateStreamsRequest) (resp *protocol.
 		return
 	}
 
-	resp.CreateResponses = make([]*rpcfb.CreateStreamResultT, 0, len(streams))
-	for _, stream := range streams {
-		resp.CreateResponses = append(resp.CreateResponses, &rpcfb.CreateStreamResultT{Stream: stream})
+	for _, result := range results {
+		result.Status = &rpcfb.StatusT{Code: rpcfb.ErrorCodeOK}
 	}
+	resp.CreateResponses = results
 	resp.OK()
 	return
 }
@@ -52,7 +52,10 @@ func (s *Sbp) DeleteStreams(req *protocol.DeleteStreamsRequest) (resp *protocol.
 
 	resp.DeleteResponses = make([]*rpcfb.DeleteStreamResultT, 0, len(streams))
 	for _, stream := range streams {
-		resp.DeleteResponses = append(resp.DeleteResponses, &rpcfb.DeleteStreamResultT{DeletedStream: stream})
+		resp.DeleteResponses = append(resp.DeleteResponses, &rpcfb.DeleteStreamResultT{
+			DeletedStream: stream,
+			Status:        &rpcfb.StatusT{Code: rpcfb.ErrorCodeOK},
+		})
 	}
 	resp.OK()
 	return
@@ -73,7 +76,10 @@ func (s *Sbp) UpdateStreams(req *protocol.UpdateStreamsRequest) (resp *protocol.
 
 	resp.UpdateResponses = make([]*rpcfb.UpdateStreamResultT, 0, len(streams))
 	for _, stream := range streams {
-		resp.UpdateResponses = append(resp.UpdateResponses, &rpcfb.UpdateStreamResultT{Stream: stream})
+		resp.UpdateResponses = append(resp.UpdateResponses, &rpcfb.UpdateStreamResultT{
+			Stream: stream,
+			Status: &rpcfb.StatusT{Code: rpcfb.ErrorCodeOK},
+		})
 	}
 	resp.OK()
 	return

@@ -406,8 +406,15 @@ func (c *conn) runHandlerAndWrite(frameCtx *codec.DataFrameContext, st *stream, 
 		free = func() { mcache.Free(header) }
 	}
 
+	flags := make([]codec.Flags, 0, 2)
+	if resp.IsEnd() {
+		flags = append(flags, codec.FlagResponseEnd)
+	}
+	if _, ok := resp.(*protocol.SystemErrorResponse); ok {
+		flags = append(flags, codec.FlagSystemError)
+	}
 	err = c.writeFrameFromHandler(frameWriteRequest{
-		f:         codec.NewDataFrameResp(frameCtx, header, nil, resp.IsEnd()),
+		f:         codec.NewDataFrameResp(frameCtx, header, nil, flags...),
 		free:      free,
 		stream:    st,
 		done:      errCh,

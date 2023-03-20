@@ -32,7 +32,7 @@ type CreateStreamParam struct {
 
 // Stream defines operations on stream.
 type Stream interface {
-	CreateStreams(params []*CreateStreamParam) ([]*rpcfb.StreamT, []*rpcfb.RangeT, error)
+	CreateStreams(params []*CreateStreamParam) ([]*rpcfb.CreateStreamResultT, error)
 	DeleteStreams(streamIDs []int64) ([]*rpcfb.StreamT, error)
 	UpdateStreams(streams []*rpcfb.StreamT) ([]*rpcfb.StreamT, error)
 	GetStream(streamID int64) (*rpcfb.StreamT, error)
@@ -40,22 +40,23 @@ type Stream interface {
 }
 
 // CreateStreams creates new streams based on the given streams and returns them.
-func (e *Endpoint) CreateStreams(params []*CreateStreamParam) ([]*rpcfb.StreamT, []*rpcfb.RangeT, error) {
+func (e *Endpoint) CreateStreams(params []*CreateStreamParam) ([]*rpcfb.CreateStreamResultT, error) {
 	logger := e.lg
 
-	streams := make([]*rpcfb.StreamT, 0, len(params))
-	ranges := make([]*rpcfb.RangeT, 0, len(params))
+	results := make([]*rpcfb.CreateStreamResultT, 0, len(params))
 	kvs := make([]kv.KeyValue, 0, len(params)*2)
 	for _, param := range params {
-		streams = append(streams, param.StreamT)
 		kvs = append(kvs, kv.KeyValue{
 			Key:   streamPath(param.StreamT.StreamId),
 			Value: fbutil.Marshal(param.StreamT),
 		})
-		ranges = append(ranges, param.RangeT)
 		kvs = append(kvs, kv.KeyValue{
 			Key:   rangePathInSteam(param.StreamT.StreamId, param.RangeT.RangeIndex),
 			Value: fbutil.Marshal(param.RangeT),
+		})
+		results = append(results, &rpcfb.CreateStreamResultT{
+			Stream: param.StreamT,
+			Range:  param.RangeT,
 		})
 	}
 
@@ -69,14 +70,14 @@ func (e *Endpoint) CreateStreams(params []*CreateStreamParam) ([]*rpcfb.StreamT,
 			streamIDs = append(streamIDs, param.StreamT.StreamId)
 		}
 		logger.Error("failed to save streams", zap.Int64s("stream-ids", streamIDs), zap.Error(err))
-		return nil, nil, errors.Wrap(err, "save streams")
+		return nil, errors.Wrap(err, "save streams")
 	}
 	if len(prevKvs) != 0 {
 		existedStreamIDs := streamIDsFromPaths(prevKvs)
 		logger.Warn("streams already exist, will override them", zap.Int64s("existed-stream-ids", existedStreamIDs))
 	}
 
-	return streams, ranges, nil
+	return results, nil
 }
 
 // DeleteStreams deletes the streams with the given stream ids and returns them.
@@ -166,8 +167,8 @@ func (e *Endpoint) GetStream(streamID int64) (*rpcfb.StreamT, error) {
 // ForEachStream calls the given function for every stream in the storage.
 // If f returns an error, the iteration is stopped and the error is returned.
 func (e *Endpoint) ForEachStream(f func(stream *rpcfb.StreamT) error) error {
-	var startID = _minStreamID
-	for startID >= _minStreamID {
+	var startID = MinStreamID
+	for startID >= MinStreamID {
 		nextID, err := e.forEachStreamLimited(f, startID, _streamByRangeLimit)
 		if err != nil {
 			return err
@@ -184,7 +185,7 @@ func (e *Endpoint) forEachStreamLimited(f func(stream *rpcfb.StreamT) error, sta
 	kvs, err := e.GetByRange(kv.Range{StartKey: startKey, EndKey: e.endStreamPath()}, limit)
 	if err != nil {
 		logger.Error("failed to get streams", zap.Int64("start-id", startID), zap.Int64("limit", limit), zap.Error(err))
-		return 0, errors.Wrap(err, "get streams")
+		return MinStreamID - 1, errors.Wrap(err, "get streams")
 	}
 
 	for _, streamKV := range kvs {
@@ -192,13 +193,13 @@ func (e *Endpoint) forEachStreamLimited(f func(stream *rpcfb.StreamT) error, sta
 		nextID = stream.StreamId + 1
 		err = f(stream)
 		if err != nil {
-			return 0, err
+			return MinStreamID - 1, err
 		}
 	}
 
-	// return 0 if no more streams
 	if int64(len(kvs)) < limit {
-		nextID = 0
+		// no more streams
+		nextID = MinStreamID - 1
 	}
 	return
 }

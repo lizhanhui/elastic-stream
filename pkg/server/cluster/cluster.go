@@ -165,5 +165,5 @@ func (c *RaftCluster) Leader() *member.Info {
 
 func (c *RaftCluster) nextStreamID() int64 {
 	// TODO batch allocate stream ids
-	return c.streamID.Add(1)
+	return c.streamID.Add(1) - 1
 }
