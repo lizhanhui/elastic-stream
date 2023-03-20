@@ -356,7 +356,7 @@ impl LogSegment {
                         if let Some(limit_len) = limit_len {
                             limit -= limit_len as usize;
                         }
-                        let mut buf = buf_r.slice(start_pos as usize..(start_pos as usize + limit));
+                        let mut buf = buf_r.slice(start_pos as usize..limit);
                         let mut dst = vec![0 as u8; buf.len()];
                         buf.copy_to_slice(&mut dst[..]);
                         slice_v.push(dst);
@@ -397,6 +397,9 @@ impl LogSegment {
                         Ok(())
                     });
 
+                    // leak the fd from file to avoid closing it.
+                    let _ = file.into_raw_fd();
+
                     if let Err(e) = try_r {
                         return Err(e);
                     }
@@ -415,7 +418,9 @@ impl LogSegment {
 
     /// Truncate the segment to the given `written` offset.
     ///
-    /// Currently, the only behavior of this method is to split the last page from the block cache.
+    /// Currently, there are two tasks to do:
+    /// * Truncate the block cache to the given `written` offset, i.e. remove the cached blocks after the given `written` offset.
+    /// * Split the last page and make it independent, the last page will be updated in the subsequent write operations.
     pub(crate) fn truncate_to(&mut self, written: u64) -> Result<(), StoreError> {
         // Assert the given `written` offset is equal to the current `written` offset.
         debug_assert_eq!(written, self.written);
@@ -518,9 +523,22 @@ impl Ord for LogSegment {
 
 #[cfg(test)]
 mod tests {
-    use crate::io::{buf::AlignedBufWriter, record::RecordType};
+    use crate::io::{
+        block_cache::EntryRange,
+        buf::{AlignedBuf, AlignedBufWriter},
+        record::RecordType,
+        Options,
+    };
     use bytes::BytesMut;
-    use std::error::Error;
+    use rand::{Rng, RngCore};
+    use std::{
+        error::Error,
+        fs::File,
+        io::Write,
+        os::{fd::FromRawFd, unix::prelude::FileExt},
+        path::{self, Path},
+    };
+    use uuid::Uuid;
 
     use super::{LogSegment, Status};
 
@@ -561,5 +579,95 @@ mod tests {
         let payload = buf.slice(8..);
         assert_eq!(&data, payload);
         Ok(())
+    }
+
+    #[test]
+    fn test_read_exact_at() {
+        let log = test_util::terminal_logger();
+
+        // Start offset of current segment
+        let wal_offset = 1024 * 1024;
+        let alignment = Options::default().alignment as u64;
+
+        let uuid = Uuid::new_v4();
+
+        // Generate some random data
+        let buf_w = AlignedBuf::new(
+            log.clone(),
+            wal_offset,
+            4 * alignment as usize,
+            alignment as usize,
+        )
+        .unwrap();
+
+        rand::thread_rng().fill_bytes(buf_w.slice_mut(..));
+        buf_w.increase_written(buf_w.capacity);
+
+        let mut store_dir = test_util::create_random_path().unwrap();
+        let store_dir_c = store_dir.clone();
+        let _store_dir_guard =
+            test_util::DirectoryRemovalGuard::new(log.clone(), &Path::new(store_dir_c.as_os_str()));
+
+        store_dir.push(path::PathBuf::from(uuid.simple().to_string()));
+
+        let mut segment =
+            super::LogSegment::new(log, wal_offset, 1024 * 1024, store_dir.as_path()).unwrap();
+        segment.open().unwrap();
+
+        let sd = segment.sd.as_ref().unwrap();
+        // Open the file with the given `fd`.
+        let file = unsafe { File::from_raw_fd(sd.fd) };
+        // Write pages to file
+        file.write_all_at(buf_w.slice(..), 0).unwrap();
+
+        // Read some bytes in the second page, and test whether the whole second page is cached.
+        let mut buf = [0u8; 5];
+        segment.read_exact_at(&mut buf, alignment + 2).unwrap();
+        assert_eq!(
+            &buf,
+            buf_w.slice((alignment + 2) as usize..(alignment + 2 + 5) as usize)
+        );
+
+        let buf_v = segment
+            .block_cache
+            .try_get_entries(EntryRange::new(
+                segment.offset + alignment,
+                alignment as u32,
+                alignment,
+            ))
+            .unwrap()
+            .unwrap();
+        assert_eq!(buf_v.len(), 1);
+        let buf = buf_v.first().unwrap();
+        assert_eq!(buf.wal_offset, segment.offset + alignment);
+        assert_eq!(buf.limit(), alignment as usize);
+        assert_eq!(
+            buf.slice(..),
+            buf_w.slice(alignment as usize..(alignment + alignment) as usize)
+        );
+
+        // Read some bytes cross the page boundary, and test whether the whole two pages is cached.
+        let mut buf = [0u8; 5];
+        segment.read_exact_at(&mut buf, alignment * 3 - 2).unwrap();
+        assert_eq!(
+            &buf,
+            buf_w.slice((alignment * 3 - 2) as usize..(alignment * 3 - 2 + 5) as usize)
+        );
+
+        let buf_v = segment
+            .block_cache
+            .try_get_entries(EntryRange::new(
+                segment.offset + alignment * 2,
+                alignment as u32 * 2,
+                alignment,
+            ))
+            .unwrap()
+            .unwrap();
+        assert_eq!(buf_v.len(), 1);
+        let buf = buf_v.first().unwrap();
+        assert_eq!(
+            buf.slice(..),
+            buf_w.slice((alignment * 2) as usize..(alignment * 4) as usize)
+        );
     }
 }
