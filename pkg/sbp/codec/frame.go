@@ -12,6 +12,7 @@ import (
 	"github.com/bytedance/gopkg/lang/mcache"
 	"github.com/pkg/errors"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 
 	"github.com/AutoMQ/placement-manager/pkg/sbp/codec/format"
 	"github.com/AutoMQ/placement-manager/pkg/sbp/codec/operation"
@@ -244,6 +245,9 @@ func (fr *Framer) ReadFrame() (Frame, func(), error) {
 		Header:    header,
 		Payload:   payload,
 	}
+	if logger.Core().Enabled(zapcore.DebugLevel) {
+		logger.Debug("read frame", zap.String("frame", bFrame.Summarize()))
+	}
 
 	var frame Frame
 	switch bFrame.OpCode.Code {
@@ -265,6 +269,11 @@ func (fr *Framer) ReadFrame() (Frame, func(), error) {
 // It is the caller's responsibility not to violate the maximum frame size
 // and to not call other Write methods concurrently.
 func (fr *Framer) WriteFrame(f Frame) error {
+	logger := fr.lg
+	if logger.Core().Enabled(zapcore.DebugLevel) {
+		logger.Debug("write frame", zap.String("frame", f.Summarize()))
+	}
+
 	frame := f.Base()
 	fr.startWrite(frame)
 

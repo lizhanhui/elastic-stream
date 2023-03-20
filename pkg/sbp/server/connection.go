@@ -12,7 +12,6 @@ import (
 	"github.com/bytedance/gopkg/lang/mcache"
 	"github.com/pkg/errors"
 	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
 
 	"github.com/AutoMQ/placement-manager/api/rpcfb/rpcfb"
 	"github.com/AutoMQ/placement-manager/pkg/sbp/codec"
@@ -286,9 +285,6 @@ func (c *conn) processFrameFromReader(res frameReadResult) bool {
 		}
 	} else {
 		f := res.f
-		if logger.Core().Enabled(zapcore.DebugLevel) {
-			logger.Debug("server read frame", zap.String("frame", f.Summarize()))
-		}
 
 		err = c.processFrame(f)
 		if err == nil {

@@ -4,6 +4,7 @@ import (
 	"sort"
 
 	"github.com/pkg/errors"
+	"go.uber.org/zap"
 
 	"github.com/AutoMQ/placement-manager/api/rpcfb/rpcfb"
 )
@@ -17,7 +18,9 @@ var (
 func (c *RaftCluster) Heartbeat(node *rpcfb.DataNodeT) error {
 	updated := c.cache.SaveDataNode(node)
 	if updated {
+		c.lg.Info("data node updated, start to save it", zap.Int32("node-id", node.NodeId), zap.String("advertise-addr", node.AdvertiseAddr))
 		_, err := c.storage.SaveDataNode(node)
+		c.lg.Info("finish saving data node", zap.Int32("node-id", node.NodeId), zap.Error(err))
 		if err != nil {
 			return err
 		}
