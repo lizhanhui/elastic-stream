@@ -249,7 +249,7 @@ func TestReadFrame(t *testing.T) {
 				return
 			}
 			re.NoError(err)
-			t.Log(frame.Base().Summarize())
+			zap.NewNop().Info("test", frame.Base().Summarize()...)
 			re.Equal(len(tt.input), frame.Base().Size())
 			re.Equal(tt.want, frame)
 		})

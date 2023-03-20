@@ -57,10 +57,10 @@ type Frame interface {
 	Size() int
 
 	// Summarize returns all info of the frame, only for debug use
-	Summarize() string
+	Summarize() []zap.Field
 
 	// Info returns fixed header info of the frame
-	Info() string
+	Info() []zap.Field
 
 	// IsRequest returns whether the frame is a request
 	IsRequest() bool
@@ -104,30 +104,22 @@ func (f baseFrame) Size() int {
 	return _fixedHeaderLen + len(f.Header) + len(f.Payload) + 4
 }
 
-func (f baseFrame) Summarize() string {
-	var buf bytes.Buffer
-	buf.WriteString(f.Info())
-	_, _ = fmt.Fprintf(&buf, " header=%q", f.Header)
-	payload := f.Payload
-	const max = 256
-	if len(payload) > max {
-		payload = payload[:max]
-	}
-	_, _ = fmt.Fprintf(&buf, " payload=%q", payload)
-	if len(f.Payload) > max {
-		_, _ = fmt.Fprintf(&buf, " (%d bytes omitted)", len(f.Payload)-max)
-	}
-	return buf.String()
+func (f baseFrame) Summarize() []zap.Field {
+	fields := make([]zapcore.Field, 0, 7)
+	fields = append(fields, f.Info()...)
+	fields = append(fields, zap.Binary("header", f.Header))
+	fields = append(fields, zap.Binary("payload", f.Payload))
+	return fields
 }
 
-func (f baseFrame) Info() string {
-	var buf bytes.Buffer
-	_, _ = fmt.Fprintf(&buf, "size=%d", f.Size())
-	_, _ = fmt.Fprintf(&buf, " operation=%s", f.OpCode.String())
-	_, _ = fmt.Fprintf(&buf, " flag=%08b", f.Flag)
-	_, _ = fmt.Fprintf(&buf, " streamID=%d", f.StreamID)
-	_, _ = fmt.Fprintf(&buf, " format=%s", f.HeaderFmt.String())
-	return buf.String()
+func (f baseFrame) Info() []zap.Field {
+	fields := make([]zapcore.Field, 0, 5)
+	fields = append(fields, zap.Int("size", f.Size()))
+	fields = append(fields, zap.String("operation", f.OpCode.String()))
+	fields = append(fields, zap.String("flag", fmt.Sprintf("%08b", f.Flag)))
+	fields = append(fields, zap.Uint32("streamID", f.StreamID))
+	fields = append(fields, zap.String("format", f.HeaderFmt.String()))
+	return fields
 }
 
 func (f baseFrame) IsRequest() bool {
@@ -246,7 +238,7 @@ func (fr *Framer) ReadFrame() (Frame, func(), error) {
 		Payload:   payload,
 	}
 	if logger.Core().Enabled(zapcore.DebugLevel) {
-		logger.Debug("read frame", zap.String("frame", bFrame.Summarize()))
+		logger.Debug("read frame", bFrame.Summarize()...)
 	}
 
 	var frame Frame
@@ -271,7 +263,7 @@ func (fr *Framer) ReadFrame() (Frame, func(), error) {
 func (fr *Framer) WriteFrame(f Frame) error {
 	logger := fr.lg
 	if logger.Core().Enabled(zapcore.DebugLevel) {
-		logger.Debug("write frame", zap.String("frame", f.Summarize()))
+		logger.Debug("write frame", f.Summarize()...)
 	}
 
 	frame := f.Base()

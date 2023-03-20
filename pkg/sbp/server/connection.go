@@ -309,20 +309,20 @@ func (c *conn) processFrame(f codec.Frame) error {
 
 	// Discard frames for streams initiated after the identified last stream sent in a GOAWAY
 	if c.inGoAway && streamID >= c.nextClientStreamID {
-		logger.Warn("server ignoring frame for stream initiated after GOAWAY", zap.String("frame", f.Info()))
+		logger.Warn("server ignoring frame for stream initiated after GOAWAY", f.Info()...)
 		return nil
 	}
 
 	// ignore response frames
 	if f.IsResponse() {
 		if _, ok := f.(*codec.GoAwayFrame); !ok {
-			logger.Warn("server ignoring response frame", zap.String("frame", f.Info()))
+			logger.Warn("server ignoring response frame", f.Info()...)
 		}
 		return nil
 	}
 
 	if streamID < c.nextClientStreamID {
-		logger.Error("server received a frame with an ID that has decreased", zap.String("frame", f.Info()))
+		logger.Error("server received a frame with an ID that has decreased", f.Info()...)
 		return errors.Errorf("decreased stream ID: %d < %d", streamID, c.nextClientStreamID)
 	}
 
@@ -336,7 +336,7 @@ func (c *conn) processFrame(f codec.Frame) error {
 	case *codec.DataFrame:
 		return c.processDataFrame(f, st)
 	default:
-		logger.Warn("server ignoring unknown type frame", zap.String("frame", f.Info()))
+		logger.Warn("server ignoring unknown type frame", f.Info()...)
 		return nil
 	}
 }
