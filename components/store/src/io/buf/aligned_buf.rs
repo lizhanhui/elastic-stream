@@ -107,7 +107,7 @@ impl AlignedBuf {
         }
         let big_endian = value.to_be();
         let data = unsafe { slice::from_raw_parts(ptr::addr_of!(big_endian) as *const u8, 4) };
-        self.write_buf(&data[..])
+        self.write_buf(data)
     }
 
     /// Get u32 in big-endian byte order.
@@ -116,7 +116,7 @@ impl AlignedBuf {
         if self.limit.load(Ordering::Relaxed) - pos < std::mem::size_of::<u32>() {
             return Err(StoreError::InsufficientData);
         }
-        let value = unsafe { *(self.ptr.as_ptr().offset(pos as isize) as *const u32) };
+        let value = unsafe { *(self.ptr.as_ptr().add(pos) as *const u32) };
         Ok(u32::from_be(value))
     }
 
@@ -126,7 +126,7 @@ impl AlignedBuf {
         }
         let big_endian = value.to_be();
         let data = unsafe { slice::from_raw_parts(ptr::addr_of!(big_endian) as *const u8, 8) };
-        self.write_buf(&data[..])
+        self.write_buf(data)
     }
 
     pub(crate) fn read_u64(&self, pos: usize) -> Result<u64, StoreError> {
@@ -135,7 +135,7 @@ impl AlignedBuf {
             return Err(StoreError::InsufficientData);
         }
 
-        let value = unsafe { *(self.ptr.as_ptr().offset(pos as isize) as *const u64) };
+        let value = unsafe { *(self.ptr.as_ptr().add(pos) as *const u64) };
         Ok(u64::from_be(value))
     }
 
@@ -158,7 +158,7 @@ impl AlignedBuf {
             Bound::Unbounded => self.limit.load(Ordering::Relaxed),
         };
         let len = end - start;
-        unsafe { slice::from_raw_parts(self.ptr.as_ptr().offset(start as isize) as *const u8, len) }
+        unsafe { slice::from_raw_parts(self.ptr.as_ptr().add(start) as *const u8, len) }
     }
 
     /// Generate a mutable slice from the buffer.
@@ -188,13 +188,7 @@ impl AlignedBuf {
         if pos + buf.len() > self.capacity {
             return false;
         }
-        unsafe {
-            ptr::copy_nonoverlapping(
-                buf.as_ptr(),
-                self.ptr.as_ptr().offset(pos as isize),
-                buf.len(),
-            )
-        };
+        unsafe { ptr::copy_nonoverlapping(buf.as_ptr(), self.ptr.as_ptr().add(pos), buf.len()) };
         self.limit.fetch_add(buf.len(), Ordering::Relaxed);
         true
     }

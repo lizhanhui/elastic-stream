@@ -44,7 +44,7 @@ impl ServerCall {
     /// Delegate each incoming request to its dedicated `on_xxx` method according to
     /// operation code.
     pub async fn call(&mut self) {
-        let mut response = Frame::new(OperationCode::Unknown);
+        let mut response = Frame::new(self.request.operation_code);
         response.stream_id = self.request.stream_id;
 
         // Flag it's a response frame, as well as the end of the response.

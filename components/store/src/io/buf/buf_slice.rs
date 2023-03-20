@@ -104,8 +104,8 @@ mod tests {
         let _log = log.clone();
         std::thread::scope(|scope| {
             scope.spawn(move || {
-                slice_buf.len();
-                ptr.len();
+                let _ = slice_buf.len();
+                let _ = ptr.len();
                 info!(
                     log,
                     "Scoped thread {:?} completed",
@@ -114,7 +114,7 @@ mod tests {
             });
         });
 
-        cloned.len();
+        let _ = cloned.len();
         info!(
             _log,
             "main thread {:?} completed",

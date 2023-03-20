@@ -150,18 +150,18 @@ impl FlatRecordBatch {
         let meta_buffer = buf_for_slice.slice(cur_ptr..(cur_ptr + meta_len as usize));
 
         buf.advance(meta_len as usize);
-        cur_ptr = cur_ptr + meta_len as usize;
+        cur_ptr += meta_len as usize;
 
         let mut flat_record_batch = FlatRecordBatch {
             magic: Some(magic),
             meta_buffer,
-            base_offset: Some(base_offset as i64),
+            base_offset: Some(base_offset),
             records: Vec::new(),
         };
 
-        while buf.len() > 0 {
+        while !buf.is_empty() {
             let record_basic_len = 4 + 4;
-            if buf.len() < record_basic_len as usize {
+            if buf.len() < record_basic_len {
                 return Err(DecodeError::DataLengthMismatch);
             }
             // Read the meta length

@@ -285,10 +285,10 @@ impl LogSegment {
 
     pub(crate) fn remaining(&self) -> u64 {
         if Status::ReadWrite != self.status {
-            return 0;
+            0
         } else {
             debug_assert!(self.size >= self.written);
-            return self.size - self.written;
+            self.size - self.written
         }
     }
 

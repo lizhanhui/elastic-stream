@@ -128,7 +128,7 @@ impl AlignedBufWriter {
         self.buffers
             .iter()
             .filter(|buf| buf.partial())
-            .map(|buf| Arc::clone(buf))
+            .map(Arc::clone)
             .for_each(|buf| {
                 items.push(buf);
             });

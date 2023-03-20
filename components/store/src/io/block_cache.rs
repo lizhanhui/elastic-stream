@@ -253,7 +253,7 @@ impl BlockCache {
                     if item.covers_partial(&entry_range) {
                         return true;
                     }
-                    return false;
+                    false
                 })
                 .collect();
 
@@ -274,7 +274,7 @@ impl BlockCache {
                         len: **k - last_end,
                     });
                 }
-                last_end = **k + item.len() as u32;
+                last_end = **k + item.len();
             });
 
             if last_end < to {
@@ -291,7 +291,7 @@ impl BlockCache {
             let search_len = search.len();
             let buf_res: Vec<_> = search
                 .into_iter()
-                .map(|(_k, entry)| {
+                .flat_map(|(_k, entry)| {
                     let item = unsafe { &mut *entry.get() };
 
                     // Although here we may not return the buffer to the caller,
@@ -300,8 +300,7 @@ impl BlockCache {
                     item.last_hit_instant = Instant::now();
                     &item.buf
                 })
-                .flatten()
-                .map(|buf| Arc::clone(buf))
+                .map(Arc::clone)
                 .collect();
 
             if buf_res.len() != search_len {

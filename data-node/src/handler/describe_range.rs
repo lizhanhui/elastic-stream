@@ -50,6 +50,5 @@ impl<'a> DescribeRange<'a> {
     }
 
     pub(crate) async fn apply(&self, store: Rc<ElasticStore>, response: &mut Frame) {
-        response.operation_code = OperationCode::DescribeRanges;
     }
 }

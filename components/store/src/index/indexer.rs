@@ -70,7 +70,7 @@ impl Indexer {
         let path = Path::new(path);
         if !path.exists() {
             info!(log, "Create directory: {:?}", path);
-            fs::create_dir_all(path).map_err(|e| StoreError::IO(e))?;
+            fs::create_dir_all(path)?;
         }
 
         let index_cf_opts = Self::build_index_column_family_options(log.clone(), min_offset)?;
@@ -167,7 +167,7 @@ impl Indexer {
         let lower = self.build_index_key(stream_id, offset);
         read_opts.set_iterate_lower_bound(&lower[..]);
         read_opts.set_iterate_upper_bound((stream_id + 1).to_be_bytes());
-        return self.scan_record_handles_from(read_opts, batch_size);
+        self.scan_record_handles_from(read_opts, batch_size)
     }
 
     fn scan_record_handles_from(
@@ -388,7 +388,7 @@ impl super::LocalRangeManager for Indexer {
                 .flatten()
                 .map_while(|(k, v)| {
                     if !k.starts_with(&prefix[..]) {
-                        return None;
+                        None
                     } else {
                         debug_assert_eq!(k.len(), 8 + 4 + 8 + 1);
 
@@ -435,7 +435,7 @@ impl super::LocalRangeManager for Indexer {
                 .flatten()
                 .map_while(|(k, v)| {
                     if !k.starts_with(&prefix[..]) {
-                        return None;
+                        None
                     } else {
                         debug_assert_eq!(k.len(), 8 + 4 + 8 + 1);
 

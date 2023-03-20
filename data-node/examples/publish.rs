@@ -24,7 +24,7 @@ fn main() {
             .collect();
 
         for handle in handles.into_iter() {
-            handle.await;
+            let _ = handle.await;
         }
     })
 }
@@ -94,7 +94,7 @@ async fn launch(args: &Args, logger: Logger) {
         .for_each(|ele| bytes_mute.put_slice(&ele));
     let buffer = bytes_mute.freeze();
 
-    let mut channel = Channel::new(stream, &connect, logger.new(o!()));
+    let channel = Channel::new(stream, &connect, logger.new(o!()));
     channel.write_frame(&frame).await.unwrap();
     let mut cnt = 0;
     trace!(logger, "{cnt} Publish");

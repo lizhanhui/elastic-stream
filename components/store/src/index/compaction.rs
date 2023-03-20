@@ -41,13 +41,13 @@ impl CompactionFilter for IndexCompactionFilter {
         if value.len() < 8 {
             return CompactionDecision::Remove;
         }
-        let mut rdr = Cursor::new(&value[..]);
+        let mut rdr = Cursor::new(value);
         let offset = rdr.get_u64();
         if offset < self.min_offset {
             trace!(
                 self.log,
                 "Removed {} -> {}, min-offset: {}",
-                Cursor::new(&key[..]).get_u64(),
+                Cursor::new(key).get_u64(),
                 offset,
                 self.min_offset
             );

@@ -241,7 +241,7 @@ impl IO {
                 return false;
             }
         }
-        return true;
+        true
     }
 
     fn on_bad_request(io_task: IoTask) {
@@ -332,7 +332,7 @@ impl IO {
             .iter()
             .map(|task| match task {
                 IoTask::Write(task) => {
-                    debug_assert!(task.buffer.len() > 0);
+                    debug_assert!(!task.buffer.is_empty());
                     task.total_len() as usize
                 }
                 _ => 0,
@@ -1036,7 +1036,7 @@ fn on_complete(
                 }
             }
             // This should never happen, because we have checked the request before.
-            return Err(StoreError::Internal("Invalid read request".to_string()));
+            Err(StoreError::Internal("Invalid read request".to_string()))
         }
         _ => Ok(()),
     }
