@@ -72,8 +72,8 @@ impl Frame {
     }
 
     pub fn flag_end_of_response_stream(&mut self) {
-        self.flag |= FLAG_END_OF_STREAM;
         self.flag |= FLAG_RESPONSE;
+        self.flag |= FLAG_END_OF_STREAM;
     }
 
     pub fn system_error(&self) -> bool {

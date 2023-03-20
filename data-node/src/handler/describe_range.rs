@@ -1,4 +1,4 @@
-use codec::frame::Frame;
+use codec::frame::{Frame, OperationCode};
 
 use protocol::rpc::header::{DescribeRangesRequest, ErrorCode};
 use slog::{warn, Logger};
@@ -49,5 +49,7 @@ impl<'a> DescribeRange<'a> {
         })
     }
 
-    pub(crate) async fn apply(&self, store: Rc<ElasticStore>, response: &mut Frame) {}
+    pub(crate) async fn apply(&self, store: Rc<ElasticStore>, response: &mut Frame) {
+        response.operation_code = OperationCode::DescribeRanges;
+    }
 }

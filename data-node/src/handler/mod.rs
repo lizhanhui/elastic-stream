@@ -6,23 +6,13 @@ mod append;
 mod cmd;
 mod describe_range;
 mod fetch;
+mod seal_range;
 mod util;
-
-use bytes::{BufMut, Bytes, BytesMut};
+use self::cmd::Command;
 use codec::frame::{Frame, OperationCode};
-use flatbuffers::{FlatBufferBuilder, Verifiable, WIPOffset};
-
-use protocol::rpc::header::{
-    DescribeRangeResult, DescribeRangeResultArgs, DescribeRangesRequest, DescribeRangesResponse,
-    DescribeRangesResponseArgs, ErrorCode,
-};
 use slog::{debug, trace, warn, Logger};
 use std::rc::Rc;
-use store::{
-    ops::append::AppendResult, option::WriteOptions, AppendRecordRequest, ElasticStore, Store,
-};
-
-use self::cmd::Command;
+use store::ElasticStore;
 
 /// Representation of the incoming request.
 ///
