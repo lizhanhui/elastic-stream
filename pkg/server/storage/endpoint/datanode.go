@@ -35,7 +35,7 @@ func (e *Endpoint) SaveDataNode(dataNode *rpcfb.DataNodeT) (*rpcfb.DataNodeT, er
 
 	if dataNode.NodeId < MinDataNodeID {
 		logger.Error("invalid data node id", zap.Int32("node-id", dataNode.NodeId))
-		return nil, errors.New("invalid data node id")
+		return nil, errors.Errorf("invalid data node id: %d < %d", dataNode.NodeId, MinDataNodeID)
 	}
 
 	key := dataNodePath(dataNode.NodeId)

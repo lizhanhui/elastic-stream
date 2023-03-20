@@ -327,7 +327,7 @@ func (c *conn) processFrame(f codec.Frame) error {
 
 	if streamID < c.nextClientStreamID {
 		logger.Error("server received a frame with an ID that has decreased", zap.String("frame", f.Info()))
-		return errors.New("decreased stream ID")
+		return errors.Errorf("decreased stream ID: %d < %d", streamID, c.nextClientStreamID)
 	}
 
 	st := c.newStream(streamID)

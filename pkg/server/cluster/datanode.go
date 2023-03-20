@@ -29,7 +29,7 @@ func (c *RaftCluster) Heartbeat(node *rpcfb.DataNodeT) error {
 // It returns ErrNotEnoughDataNodes if there are not enough data nodes to allocate.
 func (c *RaftCluster) chooseDataNodes(cnt int8) ([]*rpcfb.ReplicaNodeT, error) {
 	if int(cnt) > c.cache.DataNodeCount() {
-		return nil, ErrNotEnoughDataNodes
+		return nil, errors.WithMessagef(ErrNotEnoughDataNodes, "required %d, available %d", cnt, c.cache.DataNodeCount())
 	}
 
 	nodes := c.cache.DataNodes()

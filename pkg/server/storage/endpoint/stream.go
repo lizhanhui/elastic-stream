@@ -113,8 +113,8 @@ func (e *Endpoint) UpdateStreams(streams []*rpcfb.StreamT) ([]*rpcfb.StreamT, er
 
 	kvs := make([]kv.KeyValue, 0, len(streams))
 	for _, stream := range streams {
-		if stream.StreamId <= 0 {
-			return nil, errors.New("invalid stream id")
+		if stream.StreamId < MinStreamID {
+			return nil, errors.Errorf("invalid stream id: %d < %d", stream.StreamId, MinStreamID)
 		}
 		streamInfo := fbutil.Marshal(stream)
 		kvs = append(kvs, kv.KeyValue{

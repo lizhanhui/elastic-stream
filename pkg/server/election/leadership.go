@@ -170,7 +170,7 @@ func (ls *Leadership) DeleteLeaderKey() error {
 	}
 	if !resp.Succeeded {
 		logger.Error("failed to delete etcd key, transaction failed", zap.String("leader-key", ls.leaderKey))
-		return errors.New("failed to delete etcd key: transaction failed")
+		return errors.Errorf("failed to delete etcd key %s: transaction failed", ls.leaderKey)
 	}
 
 	// Reset the lease as soon as possible.
