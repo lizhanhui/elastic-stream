@@ -5,14 +5,10 @@ import (
 	"github.com/AutoMQ/placement-manager/pkg/sbp/protocol"
 )
 
-func (s *Sbp) Heartbeat(req *protocol.HeartbeatRequest) (resp *protocol.HeartbeatResponse) {
-	resp = &protocol.HeartbeatResponse{
-		HeartbeatResponseT: rpcfb.HeartbeatResponseT{
-			ClientId:   req.ClientId,
-			ClientRole: req.ClientRole,
-			DataNode:   req.DataNode,
-		},
-	}
+func (s *Sbp) Heartbeat(req *protocol.HeartbeatRequest, resp *protocol.HeartbeatResponse) {
+	resp.ClientId = req.ClientId
+	resp.ClientRole = req.ClientRole
+	resp.DataNode = req.DataNode
 	if !s.c.IsLeader() {
 		s.notLeaderError(resp)
 		return
@@ -26,5 +22,4 @@ func (s *Sbp) Heartbeat(req *protocol.HeartbeatRequest) (resp *protocol.Heartbea
 		}
 	}
 	resp.OK()
-	return
 }

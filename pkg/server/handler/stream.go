@@ -8,8 +8,7 @@ import (
 	"github.com/AutoMQ/placement-manager/pkg/server/cluster"
 )
 
-func (s *Sbp) CreateStreams(req *protocol.CreateStreamsRequest) (resp *protocol.CreateStreamsResponse) {
-	resp = &protocol.CreateStreamsResponse{}
+func (s *Sbp) CreateStreams(req *protocol.CreateStreamsRequest, resp *protocol.CreateStreamsResponse) {
 	if !s.c.IsLeader() {
 		s.notLeaderError(resp)
 		return
@@ -30,11 +29,9 @@ func (s *Sbp) CreateStreams(req *protocol.CreateStreamsRequest) (resp *protocol.
 	}
 	resp.CreateResponses = results
 	resp.OK()
-	return
 }
 
-func (s *Sbp) DeleteStreams(req *protocol.DeleteStreamsRequest) (resp *protocol.DeleteStreamsResponse) {
-	resp = &protocol.DeleteStreamsResponse{}
+func (s *Sbp) DeleteStreams(req *protocol.DeleteStreamsRequest, resp *protocol.DeleteStreamsResponse) {
 	if !s.c.IsLeader() {
 		s.notLeaderError(resp)
 		return
@@ -58,11 +55,9 @@ func (s *Sbp) DeleteStreams(req *protocol.DeleteStreamsRequest) (resp *protocol.
 		})
 	}
 	resp.OK()
-	return
 }
 
-func (s *Sbp) UpdateStreams(req *protocol.UpdateStreamsRequest) (resp *protocol.UpdateStreamsResponse) {
-	resp = &protocol.UpdateStreamsResponse{}
+func (s *Sbp) UpdateStreams(req *protocol.UpdateStreamsRequest, resp *protocol.UpdateStreamsResponse) {
 	if !s.c.IsLeader() {
 		s.notLeaderError(resp)
 		return
@@ -82,11 +77,9 @@ func (s *Sbp) UpdateStreams(req *protocol.UpdateStreamsRequest) (resp *protocol.
 		})
 	}
 	resp.OK()
-	return
 }
 
-func (s *Sbp) DescribeStreams(req *protocol.DescribeStreamsRequest) (resp *protocol.DescribeStreamsResponse) {
-	resp = &protocol.DescribeStreamsResponse{}
+func (s *Sbp) DescribeStreams(req *protocol.DescribeStreamsRequest, resp *protocol.DescribeStreamsResponse) {
 	if !s.c.IsLeader() {
 		s.notLeaderError(resp)
 		return
@@ -95,5 +88,4 @@ func (s *Sbp) DescribeStreams(req *protocol.DescribeStreamsRequest) (resp *proto
 	result := s.c.DescribeStreams(req.StreamIds)
 	resp.DescribeResponses = result
 	resp.OK()
-	return
 }

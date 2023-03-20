@@ -371,12 +371,20 @@ func (c *conn) processDataFrame(f *codec.DataFrame, st *stream) error {
 
 	action := GetAction(f.OpCode)
 	req := action.newReq()
+	resp := action.newResp()
+	act := func(resp protocol.Response) { action.act(c.server.handler, req, resp) }
+
+	// f.Header will be freed in the serve loop, so we need to unmarshal it here
 	err := req.Unmarshal(f.HeaderFmt, f.Header)
 	if err != nil {
-		return errors.WithMessage(err, "unmarshal frame header")
+		resp.Error(&rpcfb.StatusT{
+			Code:    rpcfb.ErrorCodeBAD_REQUEST,
+			Message: "failed to unmarshal frame header",
+		})
+		act = func(_ protocol.Response) {}
 	}
 	// TODO if there are too many handlers running, put the request into a priority queue (or put important requests into a priority queue)
-	go c.runHandlerAndWrite(f.Context(), st, func() protocol.Response { return action.act(c.server.handler, req) })
+	go c.runHandlerAndWrite(f.Context(), st, act, resp)
 	return nil
 }
 
@@ -384,16 +392,18 @@ var errChanPool = sync.Pool{
 	New: func() interface{} { return make(chan error, 1) },
 }
 
-func (c *conn) runHandlerAndWrite(frameCtx *codec.DataFrameContext, st *stream, act func() protocol.Response) {
+func (c *conn) runHandlerAndWrite(frameCtx *codec.DataFrameContext, st *stream, act func(protocol.Response), resp protocol.Response) {
 	logger := c.lg
 	c.serveG.CheckNotOn()
 
-	resp := c.runHandler(act)
+	c.runHandler(act, resp)
 	header, err := resp.Marshal(frameCtx.HeaderFmt)
 	if err != nil {
-		// TODO error is always nil now, handle it later
+		resp.Error(&rpcfb.StatusT{
+			Code:    rpcfb.ErrorCodeBAD_REQUEST,
+			Message: "failed to marshal response header",
+		})
 		logger.Error("failed to marshal response header", zap.Error(err))
-		return
 	}
 
 	errCh := errChanPool.Get().(chan error)
@@ -434,20 +444,20 @@ func (c *conn) runHandlerAndWrite(frameCtx *codec.DataFrameContext, st *stream, 
 	}
 }
 
-func (c *conn) runHandler(act func() protocol.Response) (resp protocol.Response) {
+func (c *conn) runHandler(act func(protocol.Response), resp protocol.Response) {
 	logger := c.lg
 	didPanic := true
 	defer func() {
 		if didPanic {
 			e := recover()
-			resp = &protocol.SystemErrorResponse{}
 			resp.Error(&rpcfb.StatusT{Code: rpcfb.ErrorCodePM_INTERNAL_SERVER_ERROR, Message: "handler panic"})
 			logger.Error("panic serving", zap.Reflect("panic", e), zap.Stack("stack"))
 		}
 	}()
-	resp = act()
+
+	act(resp)
+
 	didPanic = false
-	return
 }
 
 // writeFrameFromHandler sends wr to conn.wantWriteFrameCh, but aborts
