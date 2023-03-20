@@ -5,15 +5,23 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/pkg/errors"
 	"go.uber.org/zap"
+	"go.uber.org/zap/buffer"
 	"go.uber.org/zap/zapcore"
 	"gopkg.in/natefinch/lumberjack.v2"
 )
 
 const (
 	RotationSchema = "rotate" // RotationSchema is used to identify the log files that need to be rotated
+
+	_callerDepth = 2 // callerDepth is used to get the caller of the logging function
+)
+
+var (
+	_bufPool = buffer.NewPool()
 )
 
 // Log is configuration item for logging, including configuration for Zap.Logger and log rotation
@@ -29,6 +37,7 @@ func NewLog() *Log {
 	log := &Log{
 		Zap: zap.NewProductionConfig(),
 	}
+	log.Zap.EncoderConfig.EncodeCaller = encodeCaller
 	return log
 }
 
@@ -71,6 +80,35 @@ func (l *Log) Logger() (*zap.Logger, error) {
 		return nil, errors.Wrap(err, "build logger")
 	}
 	return logger, nil
+}
+
+func encodeCaller(caller zapcore.EntryCaller, enc zapcore.PrimitiveArrayEncoder) {
+	if !caller.Defined {
+		enc.AppendString("<unknown>")
+		return
+	}
+
+	idx := indexByteBackward(caller.File, '/', _callerDepth+1)
+	if idx == -1 {
+		enc.AppendString(caller.FullPath())
+		return
+	}
+
+	buf := _bufPool.Get()
+	defer buf.Free()
+	buf.AppendString(caller.File[idx+1:])
+	buf.AppendByte(':')
+	buf.AppendInt(int64(caller.Line))
+	enc.AppendString(buf.String())
+}
+
+func indexByteBackward(s string, c byte, cnt int) int {
+	idx := len(s)
+	for cnt > 0 && idx != -1 {
+		idx = strings.LastIndexByte(s[:idx], c)
+		cnt--
+	}
+	return idx
 }
 
 // Rotate is a copy of the configuration section in lumberjack.Logger
