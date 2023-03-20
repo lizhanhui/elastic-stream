@@ -397,7 +397,7 @@ impl IO {
                         trace!(self.log, "Submit read IO";
                             "offset" => read_offset,
                             "len" => read_len,
-                            "segment" => segment.offset,
+                            "segment" => segment.wal_offset,
                         );
                         // Add the ongoing entries to the block cache
                         segment.block_cache.add_loading_entry(*range);
@@ -424,11 +424,12 @@ impl IO {
                 if let Some(segment) = self.wal.segment_file_of(buf.wal_offset) {
                     debug_assert_eq!(Status::ReadWrite, segment.status);
                     if let Some(sd) = segment.sd.as_ref() {
-                        debug_assert!(buf.wal_offset >= segment.offset);
+                        debug_assert!(buf.wal_offset >= segment.wal_offset);
                         debug_assert!(
-                            buf.wal_offset + buf.capacity as u64 <= segment.offset + segment.size
+                            buf.wal_offset + buf.capacity as u64
+                                <= segment.wal_offset + segment.size
                         );
-                        let file_offset = buf.wal_offset - segment.offset;
+                        let file_offset = buf.wal_offset - segment.wal_offset;
 
                         // Track write requests
                         self.write_window.add(buf.wal_offset, buf.limit() as u32)?;
@@ -535,7 +536,7 @@ impl IO {
                             Err(mut entries) => {
                                 // Cache miss, there are some entries should be read from disk.
                                 missed_entries
-                                    .entry(segment.offset)
+                                    .entry(segment.wal_offset)
                                     .or_default()
                                     .append(&mut entries);
 
@@ -544,7 +545,7 @@ impl IO {
                         }
                         if move_to_inflight {
                             self.inflight_read_tasks
-                                .entry(segment.offset)
+                                .entry(segment.wal_offset)
                                 .or_default()
                                 .push_back(task);
                         }

@@ -113,10 +113,9 @@ impl Wal {
     }
 
     pub(crate) fn segment_file_of(&mut self, offset: u64) -> Option<&mut LogSegment> {
-        self.segments
-            .iter_mut()
-            .rev()
-            .find(|segment| segment.offset <= offset && (segment.offset + segment.size > offset))
+        self.segments.iter_mut().rev().find(|segment| {
+            segment.wal_offset <= offset && (segment.wal_offset + segment.size > offset)
+        })
     }
 
     /// Return whether has reached end of the WAL
@@ -125,7 +124,7 @@ impl Wal {
         pos: &mut u64,
         log: &Logger,
     ) -> Result<bool, StoreError> {
-        let mut file_pos = *pos - segment.offset;
+        let mut file_pos = *pos - segment.wal_offset;
         let mut meta_buf = [0; 4];
 
         let mut buf = bytes::BytesMut::new();
@@ -194,7 +193,7 @@ impl Wal {
 
             buf.resize(len, 0);
         }
-        *pos = segment.offset + file_pos;
+        *pos = segment.wal_offset + file_pos;
 
         segment.truncate_to(segment.written)?;
         Ok(last_found)
@@ -206,7 +205,7 @@ impl Wal {
         info!(log, "Start to recover WAL segment files");
         let mut need_scan = true;
         for segment in self.segments.iter_mut() {
-            if segment.offset + segment.size <= offset {
+            if segment.wal_offset + segment.size <= offset {
                 segment.status = Status::Read;
                 segment.written = segment.size;
                 debug!(log, "Mark {} as read-only", segment);
@@ -234,7 +233,7 @@ impl Wal {
     pub(crate) fn try_open_segment(&mut self) -> Result<(), StoreError> {
         let log = self.log.clone();
         let segment = self.alloc_segment()?;
-        let offset = segment.offset;
+        let offset = segment.wal_offset;
         debug_assert_eq!(segment.status, Status::OpenAt);
         info!(log, "About to create/open LogSegmentFile: `{}`", segment);
         let status = segment.status;
@@ -262,14 +261,18 @@ impl Wal {
             .segments
             .iter()
             .take_while(|segment| segment.status == Status::Close)
-            .filter(|segment| !self.inflight_control_tasks.contains_key(&segment.offset))
+            .filter(|segment| {
+                !self
+                    .inflight_control_tasks
+                    .contains_key(&segment.wal_offset)
+            })
             .collect();
 
         for segment in to_close {
             if let Some(sd) = segment.sd.as_ref() {
                 let sqe = opcode::Close::new(types::Fd(sd.fd))
                     .build()
-                    .user_data(segment.offset);
+                    .user_data(segment.wal_offset);
                 info!(self.log, "About to close LogSegmentFile: {}", segment);
                 unsafe {
                     self.control_ring.submission().push(&sqe).map_err(|e| {
@@ -301,7 +304,7 @@ impl Wal {
         let offset = if self.segments.is_empty() {
             0
         } else if let Some(last) = self.segments.back() {
-            last.offset + self.file_size
+            last.wal_offset + self.file_size
         } else {
             unreachable!("Should-not-reach-here")
         };
@@ -329,7 +332,7 @@ impl Wal {
         }
 
         self.segments.retain(|segment| {
-            !(segment.status == Status::UnlinkAt && offsets.contains(&segment.offset))
+            !(segment.status == Status::UnlinkAt && offsets.contains(&segment.wal_offset))
         });
     }
 
@@ -584,11 +587,11 @@ mod tests {
         let _wal_dir_guard = test_util::DirectoryRemovalGuard::new(log, wal_dir.as_path());
         let mut wal = create_wal(super::WalPath::new(wal_dir.to_str().unwrap(), 1234)?)?;
         let segment = wal.alloc_segment()?;
-        assert_eq!(0, segment.offset);
+        assert_eq!(0, segment.wal_offset);
         wal.segments.push_back(segment);
 
         let segment = wal.alloc_segment()?;
-        assert_eq!(DEFAULT_LOG_SEGMENT_FILE_SIZE, segment.offset);
+        assert_eq!(DEFAULT_LOG_SEGMENT_FILE_SIZE, segment.wal_offset);
         Ok(())
     }
 
@@ -628,16 +631,16 @@ mod tests {
         let segment = wal
             .segment_file_of(wal.file_size - 1)
             .ok_or(StoreError::AllocLogSegment)?;
-        assert_eq!(0, segment.offset);
+        assert_eq!(0, segment.wal_offset);
 
         let segment = wal.segment_file_of(0).ok_or(StoreError::AllocLogSegment)?;
-        assert_eq!(0, segment.offset);
+        assert_eq!(0, segment.wal_offset);
 
         let segment = wal
             .segment_file_of(wal.file_size)
             .ok_or(StoreError::AllocLogSegment)?;
 
-        assert_eq!(file_size, segment.offset);
+        assert_eq!(file_size, segment.wal_offset);
 
         Ok(())
     }
@@ -656,7 +659,7 @@ mod tests {
             .iter_mut()
             .map(|segment| {
                 segment.status = Status::UnlinkAt;
-                segment.offset
+                segment.wal_offset
             })
             .collect();
         wal.delete_segments(offsets);
