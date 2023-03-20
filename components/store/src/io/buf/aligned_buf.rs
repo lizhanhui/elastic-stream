@@ -1,7 +1,8 @@
 use slog::{debug, Logger};
 use std::{
     alloc::{self, Layout},
-    ops::{Bound, Deref, DerefMut, RangeBounds},
+    fmt::{self, Display, Formatter},
+    ops::{Bound, RangeBounds},
     ptr::{self, NonNull},
     slice,
     sync::atomic::{AtomicUsize, Ordering},
@@ -27,6 +28,12 @@ pub(crate) struct AlignedBuf {
     pub(crate) capacity: usize,
 
     /// Write index
+    ///
+    /// Data within [0, limit) are valid whilst [limit, capacity) are uninitialized.
+    ///
+    /// # Warning
+    /// We need keep limit atomic since reference of it may be shared to other threads to read the valid
+    /// parts and `BufWriter` expands the valid boundary concurrently.
     pub(crate) limit: AtomicUsize,
 }
 
@@ -214,13 +221,19 @@ impl AlignedBuf {
 impl Drop for AlignedBuf {
     fn drop(&mut self) {
         unsafe { alloc::dealloc(self.ptr.as_ptr(), self.layout) };
-        debug!(
-            self.log,
-            "Deallocated `AlignedBuf`: (offset={}, written: {}, capacity: {})",
+        debug!(self.log, "Deallocated {}", self);
+    }
+}
+
+impl Display for AlignedBuf {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "`AlignedBuf`={{wal_offset={}, limit={}, capacity={}}}",
             self.wal_offset,
             self.limit(),
             self.capacity
-        );
+        )
     }
 }
 

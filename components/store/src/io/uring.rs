@@ -227,6 +227,25 @@ impl IO {
         // Reset offset of write buffer
         self.buf_writer.get_mut().wal_offset(pos);
 
+        // Rebase `buf_writer` to include the last partially written buffer `page`.
+        {
+            if let Some(segment) = self.wal.segment_file_of(pos) {
+                let buf = segment.block_cache.buf_of_last_cache_entry();
+                if let Some(buf) = buf {
+                    // Only the last cache entry is possibly partially filled.
+                    if buf.remaining() > 0 {
+                        trace!(
+                            self.log,
+                            "Rebase `BufWriter` to include the last partially written buffer: {}",
+                            buf
+                        );
+                        debug_assert_eq!(pos, buf.wal_offset + buf.limit() as u64);
+                        self.buf_writer.get_mut().rebase_buf(buf);
+                    }
+                }
+            }
+        }
+
         // Reset committed WAL offset
         self.write_window.reset_committed(pos);
 
@@ -515,7 +534,7 @@ impl IO {
                         }
                     };
 
-                    if let Some(sd) = segment.sd.as_ref() {
+                    if let Some(_sd) = segment.sd.as_ref() {
                         let range_to_read =
                             EntryRange::new(task.wal_offset, task.len, alignment as u64);
 
@@ -694,7 +713,7 @@ impl IO {
                         if opcode::Read::CODE == context.opcode {
                             match context.wal_offset {
                                 Some(wal_offset) => {
-                                    if let Some(segment) = self.wal.segment_file_of(wal_offset) {
+                                    if let Some(_segment) = self.wal.segment_file_of(wal_offset) {
                                         effected_segments.insert(wal_offset);
                                     }
                                 }
@@ -1060,7 +1079,8 @@ mod tests {
     use crate::index::MinOffset;
     use crate::io::ReadTask;
     use crate::offset_manager::WalOffsetManager;
-    use bytes::{Bytes, BytesMut};
+    use crate::store;
+    use bytes::BytesMut;
     use slog::trace;
     use std::cell::RefCell;
     use std::error::Error;
@@ -1297,6 +1317,125 @@ mod tests {
 
         drop(sender);
         handle.join().map_err(|_| StoreError::AllocLogSegment)?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_recover() -> Result<(), Box<dyn Error>> {
+        let log = test_util::terminal_logger();
+
+        let (tx, rx) = oneshot::channel();
+        let logger = log.clone();
+        let store_dir = random_store_dir().unwrap();
+        // Delete the directory after restart and verification of `recover`.
+        let _store_dir_guard = test_util::DirectoryRemovalGuard::new(logger, store_dir.as_path());
+        let store_path = store_dir.as_os_str().to_os_string();
+
+        let handle = std::thread::spawn(move || {
+            let store_dir = Path::new(&store_path);
+            let mut io = create_io(store_dir).unwrap();
+            let sender = io
+                .sender
+                .take()
+                .ok_or(StoreError::Configuration("IO channel".to_owned()))
+                .unwrap();
+            let _ = tx.send(sender);
+            let io = RefCell::new(io);
+
+            let _ = super::IO::run(io);
+            println!("Module io stopped");
+        });
+
+        let sender = rx
+            .blocking_recv()
+            .map_err(|_| StoreError::Internal("Internal error".to_owned()))?;
+
+        let mut buffer = BytesMut::with_capacity(4096);
+        buffer.resize(4096, 65);
+        let buffer = buffer.freeze();
+
+        let mut receivers = vec![];
+
+        (0..16)
+            .into_iter()
+            .map(|i| {
+                let (tx, rx) = oneshot::channel();
+                receivers.push(rx);
+                IoTask::Write(WriteTask {
+                    stream_id: 0,
+                    offset: i as i64,
+                    buffer: buffer.clone(),
+                    observer: tx,
+                    written_len: None,
+                })
+            })
+            .for_each(|task| {
+                sender.send(task).unwrap();
+            });
+
+        let mut results = Vec::new();
+        for receiver in receivers {
+            let res = receiver.blocking_recv()??;
+            trace!(
+                log,
+                "{{ stream-id: {}, offset: {} , wal_offset: {}}}",
+                res.stream_id,
+                res.offset,
+                res.wal_offset
+            );
+            results.push(res);
+        }
+
+        // Read the data from store
+        let mut receivers = vec![];
+
+        results
+            .iter()
+            .map(|res| {
+                let (tx, rx) = oneshot::channel();
+                receivers.push(rx);
+                IoTask::Read(ReadTask {
+                    stream_id: res.stream_id,
+                    wal_offset: res.wal_offset,
+                    len: 4096 + 8, // 4096 is the write buffer size, 8 is the prefix added by the store
+                    observer: tx,
+                })
+            })
+            .for_each(|task| {
+                sender.send(task).unwrap();
+            });
+
+        for receiver in receivers {
+            let res = receiver.blocking_recv()??;
+            trace!(
+                log,
+                "{{Read result is stream-id: {}, wal_offset: {}, payload length: {}}}",
+                res.stream_id,
+                res.wal_offset,
+                res.payload[0].len()
+            );
+            // Assert the payload is equal to the write buffer
+            // trace the length
+
+            let mut res_payload = BytesMut::new();
+            res.payload.iter().for_each(|r| {
+                res_payload.extend_from_slice(&r[..]);
+            });
+
+            assert_eq!(buffer, res_payload.freeze()[8..]);
+        }
+
+        drop(sender);
+        handle.join().map_err(|_| StoreError::AllocLogSegment)?;
+
+        {
+            let mut io = create_io(store_dir.as_path()).unwrap();
+            io.load()?;
+            let pos = io.indexer.get_wal_checkpoint()?;
+            io.recover(pos)?;
+            assert!(!io.buf_writer.get_mut().take().is_empty());
+        }
+
         Ok(())
     }
 }

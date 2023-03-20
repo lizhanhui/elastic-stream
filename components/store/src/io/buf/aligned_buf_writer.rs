@@ -26,6 +26,19 @@ impl AlignedBufWriter {
         self.wal_offset = offset;
     }
 
+    /// Rebase buffer during after recovery and prior to writing new records.
+    ///
+    /// # Note
+    /// The last page of WAL may be partially committed on restart. As a result,
+    /// we need to reuse the buffer when appending new records.
+    pub(crate) fn rebase_buf(&mut self, buf: Arc<AlignedBuf>) {
+        debug_assert!(
+            self.buffers.is_empty(),
+            "BufWriter should have not allocated any buffers"
+        );
+        self.buffers.push(buf);
+    }
+
     /// Must invoke this method to reserve enough memory before writing.
     pub(crate) fn reserve(&mut self, additional: usize) -> Result<(), StoreError> {
         trace!(
@@ -134,13 +147,7 @@ impl AlignedBufWriter {
             });
 
         items.iter().for_each(|item| {
-            trace!(
-                self.log,
-                "About to flush aligned buffer{{ offset: {}, written: {}, capacity: {} }} to flush",
-                item.wal_offset,
-                item.limit(),
-                item.capacity
-            );
+            trace!(self.log, "About to flush {} to disk", item);
         });
 
         items

@@ -343,15 +343,31 @@ impl BlockCache {
             }
         });
     }
+
+    pub(crate) fn buf_of_last_cache_entry(&mut self) -> Option<Arc<AlignedBuf>> {
+        if let Some(entry) = self.entries.last_entry() {
+            let v = Rc::clone(entry.get());
+            let entry = unsafe { &*v.get() };
+            if let Some(ref buf) = entry.buf {
+                return Some(Arc::clone(buf));
+            }
+        }
+        None
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{atomic::Ordering, Arc};
+    use std::{
+        error::Error,
+        sync::{atomic::Ordering, Arc},
+    };
 
     use rand::{seq::SliceRandom, thread_rng};
 
     use crate::io::{block_cache::MergeRange, buf::AlignedBuf};
+
+    use super::BlockCache;
 
     /// Test merge missed entry ranges.
     #[test]
@@ -568,5 +584,20 @@ mod tests {
         // Hit again, with 5 entries returned
         let hit = block_cache.try_get_entries(target_entry).unwrap().unwrap();
         assert_eq!(5, hit.len());
+    }
+
+    #[test]
+    fn test_buf_of_last_cache_entry() -> Result<(), Box<dyn Error>> {
+        let log = test_util::terminal_logger();
+        let mut block_cache = BlockCache::new(log.clone(), 0);
+
+        assert!(block_cache.buf_of_last_cache_entry().is_none());
+
+        let buf = Arc::new(AlignedBuf::new(log, 0, 4096, 512)?);
+        block_cache.add_entry(Arc::clone(&buf));
+
+        let buf_ = block_cache.buf_of_last_cache_entry().unwrap();
+        assert!(Arc::ptr_eq(&buf, &buf_));
+        Ok(())
     }
 }
