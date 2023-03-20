@@ -153,8 +153,6 @@ impl<'a> Fetch<'a> {
     }
 
     fn convert_store_error(&self, err: &FetchError) -> (ErrorCode, Option<String>) {
-        match err {
-            _ => (ErrorCode::PM_INTERNAL_SERVER_ERROR, Some(err.to_string())),
-        }
+        (ErrorCode::PM_INTERNAL_SERVER_ERROR, Some(err.to_string()))
     }
 }

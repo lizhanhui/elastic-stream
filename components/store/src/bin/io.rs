@@ -100,7 +100,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         let alignment = 4096;
         let buf_size = 4096;
 
-        let layout = Layout::from_size_align(buf_size as usize, alignment)?;
+        let layout = Layout::from_size_align(buf_size, alignment)?;
         let ptr = unsafe { alloc::alloc_zeroed(layout) };
 
         let read_e = opcode::Read::new(types::Fd(fd), ptr, 2048)
@@ -119,9 +119,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         // Output the read data
         let data = unsafe { std::slice::from_raw_parts(ptr as *const u8, buf_size) };
         let actual = &data[0..2048];
-
-        debug_assert_eq!(
-            true,
+        debug_assert!(
             actual.iter().all(|c| c == &65),
             "First 2048 bytes should be all 'A'"
         );

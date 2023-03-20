@@ -49,7 +49,6 @@ fn serve_list_ranges(log: &Logger, request: &ListRangesRequest, frame: &mut Fram
         result.status = Some(Box::new(status));
 
         let ranges = (0..10)
-            .into_iter()
             .map(|i| {
                 let mut range = RangeT::default();
                 range.stream_id = 0;
@@ -216,8 +215,7 @@ fn serve_create_streams(log: &Logger, req: &CreateStreamsRequest, response_frame
     let results = request
         .streams
         .into_iter()
-        .map(|stream| stream.into_iter())
-        .flatten()
+        .flat_map(|stream| stream.into_iter())
         .enumerate()
         .map(|(id, mut stream)| {
             stream.stream_id = id as i64;

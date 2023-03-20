@@ -173,8 +173,6 @@ impl<'a> Append<'a> {
         let res_offset = protocol::rpc::header::AppendResponse::create(&mut builder, &res_args);
         let res_header = finish_response_builder(&mut builder, res_offset);
         response.header = Some(res_header);
-
-        ()
     }
 
     fn build_store_requests(&self) -> Result<Vec<AppendRecordRequest>, ErrorCode> {
@@ -188,7 +186,7 @@ impl<'a> Append<'a> {
             .flatten()
             .map_while(|record_batch| {
                 let stream_id = record_batch.stream_id();
-                let request_index = record_batch.request_index();
+                let _request_index = record_batch.request_index();
                 let batch_len = record_batch.batch_length();
 
                 // TODO: Check if the stream exists and

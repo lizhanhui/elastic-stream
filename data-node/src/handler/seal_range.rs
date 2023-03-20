@@ -1,6 +1,6 @@
 use std::rc::Rc;
 
-use codec::frame::{Frame, OperationCode};
+use codec::frame::Frame;
 use protocol::rpc::header::{ErrorCode, SealRangesRequest};
 use slog::{warn, Logger};
 use store::ElasticStore;
@@ -31,6 +31,5 @@ impl<'a> SealRange<'a> {
         Ok(Self { log, request })
     }
 
-    pub(crate) async fn apply(&self, store: Rc<ElasticStore>, response: &mut Frame) {
-    }
+    pub(crate) async fn apply(&self, _store: Rc<ElasticStore>, _response: &mut Frame) {}
 }

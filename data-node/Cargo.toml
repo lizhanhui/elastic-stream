@@ -22,7 +22,6 @@ slog-term =  { workspace = true }
 codec = { path = "../components/codec" }
 protocol = {path = "../components/protocol" }
 transport = { path = "../components/transport" }
-service = { path = "../components/service" }
 store = { path = "../components/store" }
 placement-client = { path = "../components/placement-client" }
 io-uring = { workspace = true }

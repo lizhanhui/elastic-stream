@@ -30,6 +30,7 @@ impl Channel {
         &self.peer_address
     }
 
+    #[allow(clippy::mut_from_ref)]
     pub fn buf_mut(&self) -> &mut BytesMut {
         unsafe { &mut *self.buffer.get() }
     }

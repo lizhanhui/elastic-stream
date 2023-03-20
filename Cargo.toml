@@ -9,7 +9,6 @@ members = [
     "components/protocol",
     "components/placement-client",
     "components/transport",
-    "components/service",
     "components/store",
     "components/util",
     "components/test-util",

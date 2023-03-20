@@ -50,7 +50,6 @@ fn serve_list_ranges(log: &Logger, request: &ListRangesRequest, frame: &mut Fram
         result.status = Some(Box::new(status));
 
         let ranges = (0..10)
-            .into_iter()
             .map(|i| {
                 let mut range = RangeT::default();
                 range.stream_id = 0;

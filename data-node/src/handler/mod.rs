@@ -12,7 +12,7 @@ mod ping;
 mod seal_range;
 mod util;
 use self::cmd::Command;
-use codec::frame::{Frame, OperationCode};
+use codec::frame::Frame;
 use slog::{debug, trace, warn, Logger};
 use std::rc::Rc;
 use store::ElasticStore;

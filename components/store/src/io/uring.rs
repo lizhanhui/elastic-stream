@@ -1017,24 +1017,23 @@ fn on_complete(
                     context.len.unwrap_or_default()
                 );
                 return Err(StoreError::System(-result));
-            } else {
-                if let (Some(offset), Some(len)) = (context.wal_offset, context.len) {
-                    if result != len as i32 {
-                        error!(
-                            log,
-                            "Read {} bytes from WAL range `[{}, {})`, but {} bytes expected",
-                            result,
-                            offset,
-                            len,
-                            len
-                        );
-                        return Err(StoreError::InsufficientData);
-                    }
-
-                    context.buf.increase_written(result as usize);
-                    return Ok(());
+            } else if let (Some(offset), Some(len)) = (context.wal_offset, context.len) {
+                if result != len as i32 {
+                    error!(
+                        log,
+                        "Read {} bytes from WAL range `[{}, {})`, but {} bytes expected",
+                        result,
+                        offset,
+                        len,
+                        len
+                    );
+                    return Err(StoreError::InsufficientData);
                 }
+
+                context.buf.increase_written(result as usize);
+                return Ok(());
             }
+
             // This should never happen, because we have checked the request before.
             Err(StoreError::Internal("Invalid read request".to_string()))
         }

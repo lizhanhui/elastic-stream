@@ -139,7 +139,7 @@ impl Session {
         // Check if RPC is OK
         if frame.system_error() {
             if let Some(ref buf) = frame.header {
-                let system_error = flatbuffers::root::<SystemErrorResponse>(&buf)?;
+                let system_error = flatbuffers::root::<SystemErrorResponse>(buf)?;
                 let system_error = system_error.unpack();
                 if let Some(status) = system_error.status.map(|st| model::Status {
                     code: st.code,
@@ -174,8 +174,7 @@ impl Session {
                             let nodes = placement_manager
                                 .nodes
                                 .iter()
-                                .map(|nodes| nodes.iter())
-                                .flatten()
+                                .flat_map(|nodes| nodes.iter())
                                 .map(|node| Node {
                                     name: node.name.clone().unwrap_or_default(),
                                     advertise_address: node

@@ -1,5 +1,4 @@
-use codec::frame::{Frame, OperationCode};
-
+use codec::frame::Frame;
 use protocol::rpc::header::{DescribeRangesRequest, ErrorCode};
 use slog::{warn, Logger};
 use std::rc::Rc;
@@ -49,6 +48,5 @@ impl<'a> DescribeRange<'a> {
         })
     }
 
-    pub(crate) async fn apply(&self, store: Rc<ElasticStore>, response: &mut Frame) {
-    }
+    pub(crate) async fn apply(&self, _store: Rc<ElasticStore>, _response: &mut Frame) {}
 }
