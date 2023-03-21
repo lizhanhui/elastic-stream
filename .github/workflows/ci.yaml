@@ -1,9 +1,6 @@
 name: Continuous Integration
 
-on:
-  push:
-    branches-ignore:
-      - main
+on: push
 
 jobs:
   skip_check:
