@@ -7,6 +7,7 @@ jobs:
   lint:
     strategy:
       matrix:
+        go-version: [ "1.19" ]
         platform: [ "ubuntu-latest" ]
     runs-on: ${{ matrix.platform }}
     timeout-minutes: 10
@@ -22,4 +23,4 @@ jobs:
           ${{matrix.platform}}-${{matrix.go-version}}-go-lint-
           ${{matrix.platform}}-${{matrix.go-version}}-go-
     - name: Lint
-      run: make lint
+      run: make lint GO_VERSION=${{ matrix.go-version }}
