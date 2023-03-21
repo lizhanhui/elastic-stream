@@ -53,6 +53,11 @@ public abstract class NettyRemotingAbstract {
         new ConcurrentHashMap<>(256);
 
     /**
+     * This map caches all alive channels based on responseTable.
+     */
+    public final ConcurrentMap<Channel, Boolean> aliveChannelTable = new ConcurrentHashMap<>(256);
+
+    /**
      * Constructor, specifying capacity of one-way and asynchronous semaphores.
      *
      * @param permitsAsync Number of permits for asynchronous requests.
@@ -96,6 +101,8 @@ public abstract class NettyRemotingAbstract {
      */
     public void processResponseSbpFrame(ChannelHandlerContext ctx, SbpFrame frame) {
         final int opaque = frame.getId();
+
+        // TODO: multiple responses may be received for just one request. Therefore, response flags have to be handled.
         final ResponseFuture responseFuture = responseTable.get(opaque);
         if (responseFuture != null) {
             responseFuture.getCompletableFuture().complete(frame);
@@ -111,7 +118,7 @@ public abstract class NettyRemotingAbstract {
      * This method is periodically invoked to scan and expire deprecated request.
      * </p>
      */
-    public void scanResponseTable() {
+    public void purifyResponseTable() {
         final List<ResponseFuture> rfList = new LinkedList<>();
         Iterator<Entry<Integer, ResponseFuture>> it = this.responseTable.entrySet().iterator();
         while (it.hasNext()) {
@@ -120,8 +127,11 @@ public abstract class NettyRemotingAbstract {
 
             if ((rep.getBeginTimestamp() + rep.getTimeoutMillis() + 1000) <= System.currentTimeMillis()) {
                 it.remove();
+                aliveChannelTable.remove(rep.getChannel());
                 rfList.add(rep);
                 log.warn("remove timeout request, " + rep);
+            } else {
+                aliveChannelTable.put(rep.getChannel(), true);
             }
         }
 

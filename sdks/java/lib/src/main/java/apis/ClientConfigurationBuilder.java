@@ -9,6 +9,10 @@ public class ClientConfigurationBuilder {
     private Duration connectionTimeout = Duration.ofSeconds(10);
     private Duration channelMaxIdleTime = Duration.ofMinutes(10);
     private int clientAsyncSemaphoreValue = 65535;
+    /**
+     * Heartbeat interval to keep the client. Default is 10 seconds.
+     */
+    private Duration heartbeatInterval = Duration.ofSeconds(10);
 
     /**
      * Set the endpoint of the placement manager.
@@ -18,6 +22,12 @@ public class ClientConfigurationBuilder {
     public ClientConfigurationBuilder setPmEndpoint(String endpoint) {
         checkNotNull(endpoint, "endpoint should not be null");
         this.placementManagerEndpoint = endpoint;
+        return this;
+    }
+
+    public ClientConfigurationBuilder setHeartBeatInterval(Duration heartbeatInterval) {
+        checkNotNull(heartbeatInterval, "heartbeatInterval should not be null");
+        this.heartbeatInterval = heartbeatInterval;
         return this;
     }
 
@@ -59,6 +69,6 @@ public class ClientConfigurationBuilder {
      */
     public ClientConfiguration build() {
         checkNotNull(placementManagerEndpoint, "endpoints should not be null");
-        return new ClientConfiguration(placementManagerEndpoint, connectionTimeout, channelMaxIdleTime, clientAsyncSemaphoreValue);
+        return new ClientConfiguration(placementManagerEndpoint, connectionTimeout, channelMaxIdleTime, clientAsyncSemaphoreValue, heartbeatInterval);
     }
 }

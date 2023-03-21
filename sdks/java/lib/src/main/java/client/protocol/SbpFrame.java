@@ -19,7 +19,7 @@ public class SbpFrame implements RemotingItem {
     private final byte magicCode;
     private final short operationCode;
     private final byte flag;
-    private final int streamId;
+    private int streamId;
     private final byte headerFormat;
     private final int headerLength;
     private final ByteBuffer header;
@@ -161,6 +161,10 @@ public class SbpFrame implements RemotingItem {
 
     public int getStreamId() {
         return streamId;
+    }
+
+    public void setStreamId(int streamId) {
+        this.streamId = streamId;
     }
 
     public int getLength() {

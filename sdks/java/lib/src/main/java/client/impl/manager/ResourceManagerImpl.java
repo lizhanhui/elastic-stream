@@ -34,6 +34,7 @@ import header.SealRangesRequestT;
 import header.SealRangesResponse;
 import header.SealRangesResultT;
 import header.StreamT;
+import java.nio.ByteBuffer;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -69,7 +70,7 @@ public class ResourceManagerImpl implements ResourceManager {
         int listRangesRequestOffset = ListRangesRequest.pack(builder, listRangesRequestT);
         builder.finish(listRangesRequestOffset);
 
-        SbpFrame sbpFrame = ProtocolUtil.constructRequestSbpFrame(OperationCode.LIST_RANGES, 0, builder.dataBuffer());
+        SbpFrame sbpFrame = ProtocolUtil.constructRequestSbpFrame(OperationCode.LIST_RANGES, builder.dataBuffer());
         return nettyClient.invokeAsync(sbpFrame, timeout)
             .thenCompose(responseFrame -> {
                 ListRangesResponse response = ListRangesResponse.getRootAsListRangesResponse(responseFrame.getHeader());
@@ -85,7 +86,7 @@ public class ResourceManagerImpl implements ResourceManager {
 
     @Override
     public CompletableFuture<Byte> pingPong(Duration timeout) {
-        SbpFrame sbpFrame = ProtocolUtil.constructRequestSbpFrame(OperationCode.PING, 0, null);
+        SbpFrame sbpFrame = ProtocolUtil.constructRequestSbpFrame(OperationCode.PING, null);
         return nettyClient.invokeAsync(sbpFrame, timeout)
             .thenCompose(responseFrame -> CompletableFuture.completedFuture(responseFrame.getFlag()));
     }
@@ -101,7 +102,7 @@ public class ResourceManagerImpl implements ResourceManager {
         int sealRangesRequestOffset = header.SealRangesRequest.pack(builder, sealRangesRequestT);
         builder.finish(sealRangesRequestOffset);
 
-        SbpFrame sbpFrame = ProtocolUtil.constructRequestSbpFrame(OperationCode.SEAL_RANGES, 0, builder.dataBuffer());
+        SbpFrame sbpFrame = ProtocolUtil.constructRequestSbpFrame(OperationCode.SEAL_RANGES, builder.dataBuffer());
         return nettyClient.invokeAsync(sbpFrame, timeout)
             .thenCompose(responseFrame -> {
                 header.SealRangesResponse response = header.SealRangesResponse.getRootAsSealRangesResponse(responseFrame.getHeader());
@@ -116,7 +117,7 @@ public class ResourceManagerImpl implements ResourceManager {
     }
 
     @Override
-    public CompletableFuture<List<DescribeRangeResultT>> describeRanges(List<RangeIdT> rangeIdList, Duration timeout) {
+    public CompletableFuture<List<DescribeRangeResultT>> describeRanges(Address dataNodeAddress, List<RangeIdT> rangeIdList, Duration timeout) {
         Preconditions.checkArgument(rangeIdList != null && rangeIdList.size() > 0, "Invalid range id list since no range id was found.");
 
         DescribeRangesRequestT describeRangesRequestT = new DescribeRangesRequestT();
@@ -126,16 +127,10 @@ public class ResourceManagerImpl implements ResourceManager {
         int describeRangesRequestOffset = DescribeRangesRequest.pack(builder, describeRangesRequestT);
         builder.finish(describeRangesRequestOffset);
 
-        SbpFrame sbpFrame = ProtocolUtil.constructRequestSbpFrame(OperationCode.DESCRIBE_RANGES, 0, builder.dataBuffer());
-        return nettyClient.invokeAsync(sbpFrame, timeout)
+        SbpFrame sbpFrame = ProtocolUtil.constructRequestSbpFrame(OperationCode.DESCRIBE_RANGES, builder.dataBuffer());
+        return nettyClient.invokeAsync(dataNodeAddress, sbpFrame, timeout)
             .thenCompose(responseFrame -> {
                 DescribeRangesResponse response = DescribeRangesResponse.getRootAsDescribeRangesResponse(responseFrame.getHeader());
-                Address updatePmAddress = PmUtil.extractNewPmAddress(response.status());
-                // need to connect to new Pm primary node.
-                if (updatePmAddress != null) {
-                    nettyClient.updatePmAddress(updatePmAddress);
-                    return nettyClient.invokeAsync(sbpFrame, timeout).thenCompose(responseFrame2 -> extractResponse(header.DescribeRangesResponse.getRootAsDescribeRangesResponse(responseFrame2.getHeader())));
-                }
                 return extractResponse(response);
             });
     }
@@ -151,7 +146,7 @@ public class ResourceManagerImpl implements ResourceManager {
         int describeStreamsRequestOffset = DescribeStreamsRequest.pack(builder, describeStreamsRequestT);
         builder.finish(describeStreamsRequestOffset);
 
-        SbpFrame sbpFrame = ProtocolUtil.constructRequestSbpFrame(OperationCode.DESCRIBE_STREAMS, 0, builder.dataBuffer());
+        SbpFrame sbpFrame = ProtocolUtil.constructRequestSbpFrame(OperationCode.DESCRIBE_STREAMS, builder.dataBuffer());
         return nettyClient.invokeAsync(sbpFrame, timeout)
             .thenCompose(responseFrame -> {
                 DescribeStreamsResponse response = DescribeStreamsResponse.getRootAsDescribeStreamsResponse(responseFrame.getHeader());
@@ -176,7 +171,7 @@ public class ResourceManagerImpl implements ResourceManager {
         int createStreamsRequestOffset = CreateStreamsRequest.pack(builder, createStreamsRequestT);
         builder.finish(createStreamsRequestOffset);
 
-        SbpFrame sbpFrame = ProtocolUtil.constructRequestSbpFrame(OperationCode.CREATE_STREAMS, 0, builder.dataBuffer());
+        SbpFrame sbpFrame = ProtocolUtil.constructRequestSbpFrame(OperationCode.CREATE_STREAMS, builder.dataBuffer());
         return nettyClient.invokeAsync(sbpFrame, timeout)
             .thenCompose(responseFrame -> {
                 CreateStreamsResponse response = CreateStreamsResponse.getRootAsCreateStreamsResponse(responseFrame.getHeader());
@@ -271,18 +266,20 @@ public class ResourceManagerImpl implements ResourceManager {
     }
 
     /**
-     * Generate AppendRequests based on provided recordBatches.
-     * Note that recordBatches with the same streamId are grouped into the same AppendRequest.
+     * Generate SbpFrames for Append based on provided recordBatches.
+     * Note that recordBatches with the same streamId are grouped into the same SbpFrame.
      *
      * @param recordBatches recordBatches to be sent to server. They may contain different streamId.
      * @param timeoutMillis timeout for each AppendRequest.
-     * @return Map of streamId to AppendRequest.
+     * @return Map of streamId to SbpFrame.
      */
-    private Map<Long, AppendRequest> generateAppendRequest(List<RecordBatch> recordBatches, int timeoutMillis) {
+    private Map<Long, SbpFrame> generateAppendRequest(List<RecordBatch> recordBatches, int timeoutMillis) {
         // streamId -> List<AppendInfoT>
         Map<Long, List<AppendInfoT>> appendInfoTMap = new HashMap<>();
         // streamId -> request_index
         Map<Long, Integer> appendInfoIndexMap = new HashMap<>();
+        // streamId -> payloadList
+        Map<Long, List<ByteBuffer>> payloadMap = new HashMap<>();
 
         for (RecordBatch batch : recordBatches) {
             // no need to send empty batch
@@ -292,8 +289,9 @@ public class ResourceManagerImpl implements ResourceManager {
             Long streamId = batch.getBatchMeta().getStreamId();
 
             AppendInfoT appendInfoT = new AppendInfoT();
+            ByteBuffer encodedBuffer = batch.encode();
             appendInfoT.setStreamId(streamId);
-            appendInfoT.setBatchLength(batch.getEncodeLength());
+            appendInfoT.setBatchLength(encodedBuffer.remaining());
 
             // find the request index in the appendRequest for this batch
             int index = appendInfoIndexMap.getOrDefault(streamId, 0);
@@ -303,9 +301,11 @@ public class ResourceManagerImpl implements ResourceManager {
             // add to the right batch list
             appendInfoTMap.computeIfAbsent(streamId, key -> new ArrayList<>())
                 .add(appendInfoT);
+            payloadMap.computeIfAbsent(streamId, key -> new ArrayList<>())
+                .add(encodedBuffer);
         }
 
-        Map<Long, AppendRequest> streamIdToAppendRequestMap = new HashMap<>();
+        Map<Long, SbpFrame> streamIdToSbpFrameMap = new HashMap<>(appendInfoTMap.size());
         appendInfoTMap.forEach((streamId, appendInfoTList) -> {
             AppendRequestT appendRequestT = new AppendRequestT();
             appendRequestT.setTimeoutMs(timeoutMillis);
@@ -314,9 +314,11 @@ public class ResourceManagerImpl implements ResourceManager {
             FlatBufferBuilder builder = new FlatBufferBuilder();
             int pack = AppendRequest.pack(builder, appendRequestT);
             builder.finish(pack);
-            streamIdToAppendRequestMap.put(streamId, AppendRequest.getRootAsAppendRequest(builder.dataBuffer()));
+
+            SbpFrame sbpFrame = ProtocolUtil.constructRequestSbpFrame(OperationCode.APPEND, builder.dataBuffer(), payloadMap.get(streamId).toArray(new ByteBuffer[0]));
+            streamIdToSbpFrameMap.put(streamId, sbpFrame);
         });
 
-        return streamIdToAppendRequestMap;
+        return streamIdToSbpFrameMap;
     }
 }

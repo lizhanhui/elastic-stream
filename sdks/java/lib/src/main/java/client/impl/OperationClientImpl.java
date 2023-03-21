@@ -5,7 +5,9 @@ import apis.OperationClient;
 import apis.exception.ClientException;
 import apis.manager.ResourceManager;
 import client.cache.StreamRangeCache;
+import client.common.PmUtil;
 import client.common.ProtocolUtil;
+import client.common.RemotingUtil;
 import client.impl.manager.ResourceManagerImpl;
 import client.netty.NettyClient;
 import client.protocol.SbpFrame;
@@ -17,14 +19,24 @@ import header.AppendInfoT;
 import header.AppendRequestT;
 import header.AppendResponse;
 import header.AppendResultT;
+import header.ClientRole;
+import header.CreateStreamResultT;
 import header.FetchInfoT;
 import header.FetchRequestT;
 import header.FetchResponse;
 import header.FetchResultT;
+import header.HeartbeatRequestT;
+import header.HeartbeatResponse;
 import header.RangeCriteriaT;
 import header.RangeIdT;
 import header.RangeT;
 import header.ReplicaNodeT;
+import header.SealRangesResultT;
+import header.StreamT;
+import io.netty.channel.Channel;
+import io.netty.util.HashedWheelTimer;
+import io.netty.util.Timeout;
+import io.netty.util.TimerTask;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.time.Duration;
@@ -32,8 +44,10 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
+import java.util.TreeMap;
 import java.util.concurrent.CompletableFuture;
-import models.FetchedRecordBatch;
+import java.util.concurrent.TimeUnit;
 import models.OperationCode;
 import models.RecordBatch;
 import org.slf4j.Logger;
@@ -46,19 +60,31 @@ public class OperationClientImpl implements OperationClient {
     private final NettyClient nettyClient;
     private final ResourceManager resourceManager;
     private final StreamRangeCache streamRangeCache;
+    private final ClientConfiguration clientConfiguration;
+    private final HashedWheelTimer timer = new HashedWheelTimer(r -> new Thread(r, "HouseKeepingService"));
 
-    private static final Duration cacheLoadTimeout = Duration.ofSeconds(3);
+    private static final Duration CACHE_LOAD_TIMEOUT = Duration.ofSeconds(3);
 
     public OperationClientImpl(ClientConfiguration clientConfiguration) {
-        this.nettyClient = new NettyClient(clientConfiguration);
+        this.clientConfiguration = clientConfiguration;
+        this.nettyClient = new NettyClient(clientConfiguration, timer);
         this.resourceManager = new ResourceManagerImpl(this.nettyClient);
         this.streamRangeCache = new StreamRangeCache(
-            new CacheLoader<Long, List<RangeT>>() {
+            new CacheLoader<Long, TreeMap<Long, RangeT>>() {
                 @Override
-                public List<RangeT> load(Long streamId) {
-                    return fetchRangeTListBasedOnStreamId(streamId).join();
+                public TreeMap<Long, RangeT> load(Long streamId) {
+                    TreeMap<Long, RangeT> rangesMap = new TreeMap<>();
+                    for (RangeT rangeT : fetchRangeArrayBasedOnStreamId(streamId).join()) {
+                        rangesMap.put(rangeT.getStartOffset(), rangeT);
+                    }
+                    return rangesMap;
                 }
             });
+    }
+
+    @Override
+    public CompletableFuture<List<CreateStreamResultT>> createStreams(List<StreamT> streams, Duration timeout) {
+        return this.resourceManager.createStreams(streams, timeout);
     }
 
     @Override
@@ -66,11 +92,12 @@ public class OperationClientImpl implements OperationClient {
         Preconditions.checkArgument(recordBatch != null && recordBatch.getRecords().size() > 0, "Invalid recordBatch since no records were found.");
 
         long streamId = recordBatch.getBatchMeta().getStreamId();
+        ByteBuffer encodedBuffer = recordBatch.encode();
 
         AppendInfoT appendInfoT = new AppendInfoT();
         appendInfoT.setRequestIndex(0);
         appendInfoT.setStreamId(streamId);
-        appendInfoT.setBatchLength(recordBatch.getEncodeLength());
+        appendInfoT.setBatchLength(encodedBuffer.remaining());
         AppendRequestT appendRequestT = new AppendRequestT();
         appendRequestT.setTimeoutMs((int) timeout.toMillis());
         appendRequestT.setAppendRequests(new AppendInfoT[] {appendInfoT});
@@ -78,8 +105,8 @@ public class OperationClientImpl implements OperationClient {
         int appendRequestOffset = header.AppendRequest.pack(builder, appendRequestT);
         builder.finish(appendRequestOffset);
 
-        SbpFrame sbpFrame = ProtocolUtil.constructRequestSbpFrame(OperationCode.APPEND, (int) streamId, builder.dataBuffer(), new ByteBuffer[] {recordBatch.encode()});
-        return getLastRangeOrCreateOne(streamId).thenCompose(rangeT -> {
+        SbpFrame sbpFrame = ProtocolUtil.constructRequestSbpFrame(OperationCode.APPEND, builder.dataBuffer(), new ByteBuffer[] {encodedBuffer});
+        return this.streamRangeCache.getLastRange(streamId).thenCompose(rangeT -> {
                 Address targetDataNode = null;
                 for (ReplicaNodeT node : rangeT.getReplicaNodes()) {
                     if (node.getIsPrimary()) {
@@ -87,7 +114,9 @@ public class OperationClientImpl implements OperationClient {
                         break;
                     }
                 }
-                log.debug("trying to append a batch for streamId {} to datanode {}", streamId, targetDataNode);
+                assert targetDataNode != null;
+                log.debug("trying to append a batch for streamId {} to datanode {}", streamId, targetDataNode.getAddress());
+
                 return nettyClient.invokeAsync(targetDataNode, sbpFrame, timeout)
                     .thenCompose(responseFrame -> {
                         AppendResponse response = AppendResponse.getRootAsAppendResponse(responseFrame.getHeader());
@@ -99,10 +128,9 @@ public class OperationClientImpl implements OperationClient {
                         rangeIdT.setRangeIndex(0);
                         // seal the range now.
                         resourceManager.sealRanges(Collections.singletonList(rangeIdT), timeout)
-                            .thenAccept(sealResult -> {
-                                log.info("seal result for streamId {}, result: {}", streamId, sealResult.get(0));
-                                // update the ranges.
-                                streamRangeCache.put(streamId, Arrays.asList(sealResult.get(0).getRanges()));
+                            .thenAccept(sealResultList -> {
+                                log.info("sealed for streamId {}, result: {}", streamId, sealResultList.get(0));
+                                handleSealRangesResultList(sealResultList);
                             }).join();
                         return new ArrayList<>();
                     });
@@ -111,41 +139,64 @@ public class OperationClientImpl implements OperationClient {
     }
 
     @Override
-    public CompletableFuture<Long> getLastOffset(long streamId, Duration timeout) {
-        return getLastRangeOrCreateOne(streamId).thenApply(RangeT::getNextOffset);
+    public CompletableFuture<Long> getLastWritableOffset(long streamId, Duration timeout) {
+        return this.streamRangeCache.getLastRange(streamId).thenCompose(rangeT -> {
+            RangeIdT rangeIdT = new RangeIdT();
+            rangeIdT.setStreamId(rangeT.getStreamId());
+            rangeIdT.setRangeIndex(rangeT.getRangeIndex());
+            log.debug("trying to get last writable offset for streamId {}", streamId);
+            // Any data node is ok.
+            Address dataNodeAddress = Address.fromAddress(rangeT.getReplicaNodes()[0].getDataNode().getAdvertiseAddr());
+            // The nextOffset in the cache may be out of date, so we need to fetch the latest range info from the PM.
+            return this.resourceManager.describeRanges(dataNodeAddress, Collections.singletonList(rangeIdT), timeout)
+                .thenCompose(list -> {
+                    CompletableFuture<Long> future = new CompletableFuture<>();
+                    if (list.get(0).getStatus().getCode() != OK) {
+                        future.completeExceptionally(new ClientException("Get last writableOffset failed with code " + list.get(0).getStatus().getCode() + ", msg: " + list.get(0).getStatus().getMessage()));
+                        return future;
+                    }
+                    future.complete(list.get(0).getRanges().getNextOffset());
+                    return future;
+                });
+        });
     }
 
     @Override
-    public CompletableFuture<FetchedRecordBatch> fetchBatches(long streamId, long startOffset, int minBytes,
+    public CompletableFuture<List<RecordBatch>> fetchBatches(long streamId, long startOffset, int minBytes,
         int maxBytes, Duration timeout) {
-        FetchInfoT fetchInfoT = new FetchInfoT();
-        fetchInfoT.setStreamId(streamId);
-        fetchInfoT.setRequestIndex(0);
-        fetchInfoT.setFetchOffset(startOffset);
-        fetchInfoT.setBatchMaxBytes(maxBytes);
-        FetchRequestT fetchRequestT = new FetchRequestT();
-        fetchRequestT.setMaxWaitMs((int) timeout.toMillis());
-        fetchRequestT.setMinBytes(minBytes);
-        fetchRequestT.setFetchRequests(new FetchInfoT[] {fetchInfoT});
-        FlatBufferBuilder builder = new FlatBufferBuilder();
-        int fetchRequestOffset = header.FetchRequest.pack(builder, fetchRequestT);
-        builder.finish(fetchRequestOffset);
+        return this.streamRangeCache.getFloorRange(streamId, startOffset).thenCompose(rangeT -> {
+                // "floor" range may be the higher range.
+                long realStartOffset = Math.max(startOffset, rangeT.getStartOffset());
+                FetchInfoT fetchInfoT = new FetchInfoT();
+                fetchInfoT.setStreamId(streamId);
+                fetchInfoT.setRequestIndex(0);
+                fetchInfoT.setFetchOffset(realStartOffset);
+                fetchInfoT.setBatchMaxBytes(maxBytes);
+                FetchRequestT fetchRequestT = new FetchRequestT();
+                fetchRequestT.setMaxWaitMs((int) timeout.toMillis());
+                fetchRequestT.setMinBytes(minBytes);
+                fetchRequestT.setFetchRequests(new FetchInfoT[] {fetchInfoT});
+                FlatBufferBuilder builder = new FlatBufferBuilder();
+                int fetchRequestOffset = header.FetchRequest.pack(builder, fetchRequestT);
+                builder.finish(fetchRequestOffset);
+                SbpFrame sbpFrame = ProtocolUtil.constructRequestSbpFrame(OperationCode.FETCH, builder.dataBuffer());
 
-        SbpFrame sbpFrame = ProtocolUtil.constructRequestSbpFrame(OperationCode.FETCH, (int) streamId, builder.dataBuffer());
-        return getLastRangeOrCreateOne(streamId).thenCompose(rangeT -> {
                 // No need to fetch from primary node. Fetch from the first node.
-                Address targetDataNode = Address.fromAddress(rangeT.getReplicaNodes()[0].getDataNode().getAdvertiseAddr());
-                log.debug("trying to fetch batches from datanode {}", targetDataNode);
-                return nettyClient.invokeAsync(targetDataNode, sbpFrame, timeout)
+                Address targetDataNodeAddress = Address.fromAddress(rangeT.getReplicaNodes()[0].getDataNode().getAdvertiseAddr());
+                log.debug("trying to fetch batches from datanode {}", targetDataNodeAddress);
+                // TODO: fully implement the fetch logic. Now we just fetch from the floor range.
+                return nettyClient.invokeAsync(targetDataNodeAddress, sbpFrame, timeout)
                     .thenCompose(responseFrame -> {
                         FetchResponse response = FetchResponse.getRootAsFetchResponse(responseFrame.getHeader());
-                        return extractResponse(response).thenApply(list -> {
-                            int length = list.get(0).getBatchLength();
-                            // TODO: make sure about the response format.
-                            if (length != responseFrame.getPayload()[0].remaining()) {
-                                throw new RuntimeException("Batch length is not equal to the actual length.");
+                        return extractResponse(response).thenCompose(list -> {
+                            CompletableFuture<List<RecordBatch>> future = new CompletableFuture<>();
+                            if (list.get(0).getStatus().getCode() != OK) {
+                                future.completeExceptionally(new ClientException("Fetch batches failed with code " + list.get(0).getStatus().getCode() + ", msg: " + list.get(0).getStatus().getMessage()));
+                                return future;
                             }
-                            return new FetchedRecordBatch(streamId, startOffset, responseFrame.getPayload()[0]);
+                            int length = list.get(0).getBatchLength();
+                            future.complete(RecordBatch.decode(responseFrame.getPayload()[0], length));
+                            return future;
                         });
                     });
             }
@@ -153,34 +204,51 @@ public class OperationClientImpl implements OperationClient {
     }
 
     @Override
-    public void start() throws Exception {
-        this.nettyClient.start();
+    public CompletableFuture<Boolean> heartbeat(Address address, Duration timeout) {
+        HeartbeatRequestT heartbeatRequestT = new HeartbeatRequestT();
+        heartbeatRequestT.setClientId(getClientId());
+        heartbeatRequestT.setClientRole(ClientRole.CLIENT_ROLE_CUSTOMER);
+        FlatBufferBuilder builder = new FlatBufferBuilder();
+        int heartbeatRequestOffset = header.HeartbeatRequest.pack(builder, heartbeatRequestT);
+        builder.finish(heartbeatRequestOffset);
+
+        SbpFrame sbpFrame = ProtocolUtil.constructRequestSbpFrame(OperationCode.HEARTBEAT, builder.dataBuffer());
+        return nettyClient.invokeAsync(address, sbpFrame, timeout)
+            .thenCompose(responseFrame -> {
+                HeartbeatResponse response = HeartbeatResponse.getRootAsHeartbeatResponse(responseFrame.getHeader());
+                Address updatePmAddress = PmUtil.extractNewPmAddress(response.status());
+                // need to connect to new Pm primary node.
+                if (updatePmAddress != null) {
+                    nettyClient.updatePmAddress(updatePmAddress);
+                    return nettyClient.invokeAsync(address, sbpFrame, timeout).thenCompose(responseFrame2 -> extractResponse(HeartbeatResponse.getRootAsHeartbeatResponse(responseFrame2.getHeader())));
+                }
+
+                return extractResponse(response);
+            });
     }
 
-    private CompletableFuture<RangeT> getLastRangeOrCreateOne(long streamId) {
-        CompletableFuture<RangeT> completableFuture = new CompletableFuture<>();
-        try {
-            List<RangeT> ranges = this.streamRangeCache.get(streamId);
+    @Override
+    public String getClientId() {
+        return this.nettyClient.getClientId().toString();
+    }
 
-            RangeT targetRange = ranges.get(ranges.size() - 1);
-            // Data nodes may have been ready. Try again.
-            if (targetRange.getReplicaNodes().length == 0) {
-                this.streamRangeCache.refresh(streamId);
-                targetRange = this.streamRangeCache.get(streamId).get(ranges.size() - 1);
+    @Override
+    public void start() throws Exception {
+        this.nettyClient.start();
+
+        TimerTask timerTaskHeartBeat = new TimerTask() {
+            @Override
+            public void run(Timeout timeout) {
+                try {
+                    OperationClientImpl.this.keepNettyChannelsAlive();
+                } catch (Throwable e) {
+                    log.error("heartbeat exception ", e);
+                } finally {
+                    timer.newTimeout(this, OperationClientImpl.this.clientConfiguration.getHeartbeatInterval().getSeconds(), TimeUnit.SECONDS);
+                }
             }
-            if (targetRange.getReplicaNodes().length == 0) {
-                completableFuture.completeExceptionally(new ClientException("Failed to get ReplicaNodes of the last range of stream " + streamId));
-                return completableFuture;
-            }
-            // TODO: the last range is sealed. A new range is needed.
-//            if (targetRange.getEndOffset() <= 0) {
-//
-//            }
-            completableFuture.complete(targetRange);
-        } catch (Throwable ex) {
-            completableFuture.completeExceptionally(ex);
-        }
-        return completableFuture;
+        };
+        this.timer.newTimeout(timerTaskHeartBeat, this.clientConfiguration.getHeartbeatInterval().getSeconds(), TimeUnit.SECONDS);
     }
 
     private CompletableFuture<List<AppendResultT>> extractResponse(AppendResponse response) {
@@ -189,7 +257,35 @@ public class OperationClientImpl implements OperationClient {
             future.completeExceptionally(new ClientException("Append batch failed with code " + response.status().code() + ", msg: " + response.status().message()));
             return future;
         }
-        future.complete(Arrays.asList(response.unpack().getAppendResponses()));
+        List<AppendResultT> appendResultList = Arrays.asList(response.unpack().getAppendResponses());
+
+        // invalidate the cache if the append request is successful.
+        appendResultList.forEach(appendResultT -> {
+            if (appendResultT.getStatus().getCode() == OK) {
+                this.streamRangeCache.invalidate(appendResultT.getStreamId());
+            }
+        });
+        future.complete(appendResultList);
+        return future;
+    }
+
+    private void handleSealRangesResultList(List<SealRangesResultT> sealResultList) {
+        sealResultList.forEach(sealResultT -> {
+            if (sealResultT.getStatus().getCode() == OK) {
+                // update the ranges.
+                streamRangeCache.put(sealResultT.getStreamId(), sealResultList.get(0).getRanges());
+            }
+        });
+    }
+
+    private CompletableFuture<Boolean> extractResponse(HeartbeatResponse response) {
+        CompletableFuture<Boolean> future = new CompletableFuture<>();
+        if (response.status().code() != OK) {
+            future.completeExceptionally(new ClientException("Heartbeat failed with code " + response.status().code() + ", msg: " + response.status().message() + ", clientId: " + response.clientId()));
+            return future;
+        }
+        log.debug("Heartbeat success, clientId: {}", response.clientId());
+        future.complete(true);
         return future;
     }
 
@@ -203,16 +299,35 @@ public class OperationClientImpl implements OperationClient {
         return future;
     }
 
-    private CompletableFuture<List<RangeT>> fetchRangeTListBasedOnStreamId(long streamId) {
+    private CompletableFuture<RangeT[]> fetchRangeArrayBasedOnStreamId(long streamId) {
         RangeCriteriaT rangeCriteriaT = new RangeCriteriaT();
         // no need to setDataNode since we only need to get the ranges based on streamId.
         rangeCriteriaT.setStreamId(streamId);
-        return resourceManager.listRanges(Collections.singletonList(rangeCriteriaT), cacheLoadTimeout)
-            .thenApply(list -> Arrays.asList(list.get(0).getRanges()));
+        return resourceManager.listRanges(Collections.singletonList(rangeCriteriaT), CACHE_LOAD_TIMEOUT)
+            .thenApply(list -> list.get(0).getRanges());
+    }
+
+    /**
+     * Keep the netty channels alive by sending heartbeat request to the server.
+     */
+    private void keepNettyChannelsAlive() {
+        for (Map.Entry<Channel, Boolean> item : this.nettyClient.aliveChannelTable.entrySet()) {
+            if (item.getValue()) {
+                Channel channel = item.getKey();
+                Address address = RemotingUtil.parseChannelRemoteAddress(channel);
+                try {
+                    this.heartbeat(address, Duration.ofSeconds(3)).join();
+                    log.debug("Successfully refresh channel with address {} ", address);
+                } catch (Throwable ex) {
+                    log.error("Failed to refresh channel with address {} ", address, ex);
+                }
+            }
+        }
     }
 
     @Override
     public void close() throws IOException {
+        this.timer.stop();
         this.nettyClient.close();
     }
 }

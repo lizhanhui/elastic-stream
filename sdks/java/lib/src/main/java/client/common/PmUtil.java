@@ -20,9 +20,9 @@ public class PmUtil {
         }
 
         PlacementManager manager = PlacementManager.getRootAsPlacementManager(FlatBuffersUtil.byteVector2ByteBuffer(status.detailVector()));
-        for (int i = 0; i < manager.nodesVector().length(); i++) {
-            if (manager.nodesVector().get(i).isLeader()) {
-                String hostPortString = manager.nodesVector().get(i).advertiseAddr();
+        for (int i = 0; i < manager.nodesLength(); i++) {
+            if (manager.nodes(i).isLeader()) {
+                String hostPortString = manager.nodes(i).advertiseAddr();
                 return Address.fromAddress(hostPortString);
             }
         }

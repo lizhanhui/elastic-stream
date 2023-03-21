@@ -4,6 +4,7 @@ import apis.ClientConfigurationBuilder;
 import client.protocol.SbpFrame;
 import client.protocol.SbpFrameBuilder;
 import client.route.Address;
+import io.netty.util.HashedWheelTimer;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
@@ -17,6 +18,7 @@ class NettyClientTest {
     private static final int serverPort = 8100;
     private static final String defaultResponsePrefix = "hello, world: ";
     private static final Address defaultPmAddress = new Address("localhost", serverPort);
+    private static final HashedWheelTimer timer = new HashedWheelTimer(r -> new Thread(r, "TestHouseKeepingService"));
     private static DefaultMockNettyServerThread serverThread;
 
     @BeforeAll
@@ -33,12 +35,11 @@ class NettyClientTest {
             .setPmEndpoint(String.format("%s:%d", defaultPmAddress.getHost(), defaultPmAddress.getPort()))
             .setConnectionTimeout(Duration.ofSeconds(3))
             .setChannelMaxIdleTime(Duration.ofSeconds(10));
-        try (NettyClient client = new NettyClient(builder.build())) {
+        try (NettyClient client = new NettyClient(builder.build(), timer)) {
             client.start();
             SbpFrame sbpFrame = new SbpFrameBuilder()
                 .setFlag(SbpFrame.GENERAL_RESPONSE_FLAG)
                 .setPayload(new ByteBuffer[] {ByteBuffer.wrap(requestMessage.getBytes(StandardCharsets.ISO_8859_1))})
-                .setStreamId(requestStreamId)
                 .setOperationCode((short) 10)
                 .build();
 

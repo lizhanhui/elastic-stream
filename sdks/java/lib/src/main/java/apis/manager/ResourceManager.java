@@ -1,10 +1,10 @@
 package apis.manager;
 
+import client.route.Address;
 import header.CreateStreamResultT;
 import header.DescribeRangeResultT;
 import header.DescribeStreamResultT;
 import header.ListRangesResultT;
-import header.Range;
 import header.RangeCriteriaT;
 import header.RangeIdT;
 import header.SealRangesResultT;
@@ -36,11 +36,13 @@ public interface ResourceManager {
      * Describe the ranges of a batch of streams.
      * It is often used to get the recent end offset of the stream after the write operation.
      *
-     * @param rangeIdList range id list.
-     * @param timeout     request timeout.
+     * @param dataNodeAddress any valid data node address.
+     * @param rangeIdList     range id list.
+     * @param timeout         request timeout.
      * @return describe ranges results.
      */
-    CompletableFuture<List<DescribeRangeResultT>> describeRanges(List<RangeIdT> rangeIdList, Duration timeout);
+    CompletableFuture<List<DescribeRangeResultT>> describeRanges(Address dataNodeAddress, List<RangeIdT> rangeIdList,
+        Duration timeout);
 
     /**
      * Create a batch of streams.

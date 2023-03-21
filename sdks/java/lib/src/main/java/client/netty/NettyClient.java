@@ -5,6 +5,7 @@ import apis.exception.ClientException;
 import client.RemotingClient;
 import client.common.ClientId;
 import client.common.RemotingUtil;
+import client.common.RequestIdGenerator;
 import client.misc.ThreadFactoryImpl;
 import client.protocol.RemotingItem;
 import client.protocol.SbpFrame;
@@ -55,16 +56,22 @@ public class NettyClient extends NettyRemotingAbstract implements RemotingClient
     private final Lock lockChannelTables = new ReentrantLock();
     private final Lock pmAddressUpdateLock = new ReentrantLock();
     private final ConcurrentMap<Address, ChannelWrapper> channelTables = new ConcurrentHashMap<>();
-    private final HashedWheelTimer timer = new HashedWheelTimer(r -> new Thread(r, "ClientHouseKeepingService"));
+    private final HashedWheelTimer timer;
+    /**
+     * Since a netty client has separate input channels and output channels, one RequestIdGenerator is created for one client rather than one channel.
+     */
+    private final RequestIdGenerator requestIdGenerator;
 
-    public NettyClient(final ClientConfiguration clientConfiguration) {
-        this(clientConfiguration, null);
+    public NettyClient(final ClientConfiguration clientConfiguration, HashedWheelTimer timer) {
+        this(clientConfiguration, timer, null);
     }
 
     public NettyClient(final ClientConfiguration clientConfiguration,
-        final EventLoopGroup eventLoopGroup) {
+        HashedWheelTimer timer, final EventLoopGroup eventLoopGroup) {
         super(clientConfiguration.getClientAsyncSemaphoreValue());
         this.clientConfiguration = clientConfiguration;
+        this.requestIdGenerator = new RequestIdGenerator();
+        this.timer = timer;
 
         this.pmAddress = new Endpoints(clientConfiguration.getPlacementManagerEndpoint()).getAddresses().get(0);
         this.clientId = new ClientId();
@@ -100,9 +107,9 @@ public class NettyClient extends NettyRemotingAbstract implements RemotingClient
             @Override
             public void run(Timeout timeout) {
                 try {
-                    NettyClient.this.scanResponseTable();
+                    NettyClient.this.purifyResponseTable();
                 } catch (Throwable e) {
-                    log.error("scanResponseTable exception", e);
+                    log.error("purifyResponseTable exception", e);
                 } finally {
                     timer.newTimeout(this, 1, TimeUnit.SECONDS);
                 }
@@ -116,7 +123,7 @@ public class NettyClient extends NettyRemotingAbstract implements RemotingClient
     }
 
     public void updatePmAddress(Address address) {
-        try{
+        try {
             if (pmAddressUpdateLock.tryLock(LOCK_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS)) {
                 try {
                     if (!pmAddress.equals(address)) {
@@ -147,7 +154,9 @@ public class NettyClient extends NettyRemotingAbstract implements RemotingClient
         return this.getOrCreateChannel(address).thenCompose(channel -> {
             CompletableFuture<SbpFrame> responseFuture = new CompletableFuture<>();
             if (channel != null && channel.isActive()) {
-                super.invokeAsyncImpl(channel, (SbpFrame) request, timeout.toMillis(), responseFuture);
+                SbpFrame requestFrame = (SbpFrame) request;
+                requestFrame.setStreamId(this.requestIdGenerator.getId());
+                super.invokeAsyncImpl(channel, requestFrame, timeout.toMillis(), responseFuture);
             } else {
                 this.closeChannel(address, channel);
                 responseFuture.completeExceptionally(new ClientException("netty channel not available"));
@@ -159,8 +168,6 @@ public class NettyClient extends NettyRemotingAbstract implements RemotingClient
     @Override
     public void close() throws IOException {
         try {
-            this.timer.stop();
-
             for (Address address : this.channelTables.keySet()) {
                 this.closeChannel(address, this.channelTables.get(address).getChannel());
             }

@@ -1,47 +1,31 @@
 package models;
 
-import com.google.flatbuffers.FlatBufferBuilder;
 import java.nio.ByteBuffer;
+import java.util.List;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
-import records.RecordBatchMeta;
-import records.RecordBatchMetaT;
-
-import static org.junit.jupiter.api.Assertions.*;
 
 class RecordBatchTest {
 
     @Test
-    void testEncodeAndDecode() {
+    public void testEncodeAndDecode() {
         long streamId = 1L;
-        short flags = (short) 2;
-        long baseOffset = 3L;
-        int lastOffsetDelta = 4;
-        long baseTimestamp = 5L;
-
-        RecordBatchMetaT metaT = new RecordBatchMetaT();
-        metaT.setStreamId(streamId);
-        metaT.setFlags(flags);
-        metaT.setBaseOffset(baseOffset);
-        metaT.setLastOffsetDelta(lastOffsetDelta);
-        metaT.setBaseTimestamp(baseTimestamp);
-
-        byte magic = 6;
-        int batchBaseOffset = 7;
-        RecordBatch batch = new RecordBatch(magic, batchBaseOffset, metaT, null);
+        short flags = (short) 11;
+        RecordBatch batch = RecordBatchesGenerator.generateOneRecordBatch(streamId, flags);
         ByteBuffer encode = batch.encode();
-        RecordBatch decodedBatch = new RecordBatch(encode);
+        List<RecordBatch> decodeList = RecordBatch.decode(encode, encode.remaining());
 
-        Assertions.assertEquals(magic, decodedBatch.getMagic());
-        Assertions.assertEquals(batchBaseOffset, decodedBatch.getBaseOffset());
+        Assertions.assertEquals(1, decodeList.size());
+        RecordBatch decodedBatch = decodeList.get(0);
 
-        RecordBatchMetaT decodedBatchMeta = decodedBatch.getBatchMeta();
-        Assertions.assertEquals(streamId, decodedBatchMeta.getStreamId());
-        Assertions.assertEquals(flags, decodedBatchMeta.getFlags());
-        Assertions.assertEquals(baseOffset, decodedBatchMeta.getBaseOffset());
-        Assertions.assertEquals(lastOffsetDelta, decodedBatchMeta.getLastOffsetDelta());
-        Assertions.assertEquals(baseTimestamp, decodedBatchMeta.getBaseTimestamp());
+        Assertions.assertEquals(batch.getMagic(), decodedBatch.getMagic());
 
-        Assertions.assertEquals(decodedBatch.getRecords().size(), 0);
+        Assertions.assertEquals(batch.getBatchMeta().getBaseTimestamp(), decodedBatch.getBatchMeta().getBaseTimestamp());
+        Assertions.assertEquals(batch.getBaseOffset(), decodedBatch.getBaseOffset());
+        Assertions.assertEquals(batch.getBatchMeta().getStreamId(), decodedBatch.getBatchMeta().getStreamId());
+        Assertions.assertEquals(batch.getBatchMeta().getFlags(), decodedBatch.getBatchMeta().getFlags());
+        Assertions.assertEquals(batch.getBatchMeta().getLastOffsetDelta(), decodedBatch.getBatchMeta().getLastOffsetDelta());
+
+        Assertions.assertEquals(batch.getRecords(), decodedBatch.getRecords());
     }
 }
