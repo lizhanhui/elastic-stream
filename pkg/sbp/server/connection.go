@@ -10,16 +10,21 @@ import (
 	"time"
 
 	"github.com/bytedance/gopkg/lang/mcache"
+	"github.com/google/uuid"
 	"github.com/pkg/errors"
 	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
 
 	"github.com/AutoMQ/placement-manager/api/rpcfb/rpcfb"
 	"github.com/AutoMQ/placement-manager/pkg/sbp/codec"
 	"github.com/AutoMQ/placement-manager/pkg/sbp/protocol"
 	"github.com/AutoMQ/placement-manager/pkg/util/logutil"
+	"github.com/AutoMQ/placement-manager/pkg/util/traceutil"
 	tphttp2 "github.com/AutoMQ/placement-manager/third_party/forked/golang/net/http2"
 )
+
+func init() {
+	uuid.EnableRandPool()
+}
 
 // conn is the state of a connection between server and client.
 type conn struct {
@@ -286,9 +291,6 @@ func (c *conn) processFrameFromReader(res frameReadResult) bool {
 		}
 	} else {
 		f := res.f
-		if logger.Core().Enabled(zapcore.DebugLevel) {
-			logger.Debug("server read frame", zap.String("frame", f.Summarize()))
-		}
 
 		err = c.processFrame(f)
 		if err == nil {
@@ -313,21 +315,21 @@ func (c *conn) processFrame(f codec.Frame) error {
 
 	// Discard frames for streams initiated after the identified last stream sent in a GOAWAY
 	if c.inGoAway && streamID >= c.nextClientStreamID {
-		logger.Warn("server ignoring frame for stream initiated after GOAWAY", zap.String("frame", f.Info()))
+		logger.Warn("server ignoring frame for stream initiated after GOAWAY", f.Info()...)
 		return nil
 	}
 
 	// ignore response frames
 	if f.IsResponse() {
 		if _, ok := f.(*codec.GoAwayFrame); !ok {
-			logger.Warn("server ignoring response frame", zap.String("frame", f.Info()))
+			logger.Warn("server ignoring response frame", f.Info()...)
 		}
 		return nil
 	}
 
 	if streamID < c.nextClientStreamID {
-		logger.Error("server received a frame with an ID that has decreased", zap.String("frame", f.Info()))
-		return errors.New("decreased stream ID")
+		logger.Error("server received a frame with an ID that has decreased", f.Info()...)
+		return errors.Errorf("decreased stream ID: %d < %d", streamID, c.nextClientStreamID)
 	}
 
 	st := c.newStream(streamID)
@@ -340,7 +342,7 @@ func (c *conn) processFrame(f codec.Frame) error {
 	case *codec.DataFrame:
 		return c.processDataFrame(f, st)
 	default:
-		logger.Warn("server ignoring unknown type frame", zap.String("frame", f.Info()))
+		logger.Warn("server ignoring unknown type frame", f.Info()...)
 		return nil
 	}
 }
@@ -367,37 +369,67 @@ func (c *conn) processGoAway(f *codec.GoAwayFrame, _ *stream) error {
 
 func (c *conn) processDataFrame(f *codec.DataFrame, st *stream) error {
 	c.serveG.Check()
-	_ = f
-	_ = st
 	if c.idleTimer != nil {
 		c.idleTimer.Stop()
 	}
 
 	action := GetAction(f.OpCode)
+	act, resp := c.generateAct(f, action)
+
+	// TODO if there are too many handlers running, put the request into a priority queue (or put important requests into a priority queue)
+	go c.runHandlerAndWrite(f.Context(), st, act, resp)
+	return nil
+}
+
+func (c *conn) generateAct(f *codec.DataFrame, action *Action) (act func(resp protocol.Response), resp protocol.Response) {
 	req := action.newReq()
+	resp = action.newResp()
+
+	// f.Header will be freed in the serve loop, so we need to unmarshal it here
 	err := req.Unmarshal(f.HeaderFmt, f.Header)
 	if err != nil {
-		return errors.Wrap(err, "unmarshal frame header")
+		resp.Error(&rpcfb.StatusT{
+			Code:    rpcfb.ErrorCodeBAD_REQUEST,
+			Message: "failed to unmarshal frame header",
+		})
+		act = func(_ protocol.Response) {}
+		return
 	}
-	// TODO if there are too many handlers running, put the request into a priority queue (or put important requests into a priority queue)
-	go c.runHandlerAndWrite(f.Context(), st, func() protocol.Response { return action.act(c.server.handler, req) })
-	return nil
+
+	id, _ := uuid.NewRandom()
+	ctx := traceutil.SetTraceID(c.ctx, id.String())
+
+	if req.Timeout() > 0 {
+		ctx, cancel := context.WithTimeout(ctx, time.Duration(req.Timeout())*time.Millisecond)
+		act = func(resp protocol.Response) {
+			defer cancel()
+			action.act(ctx, c.server.handler, req, resp)
+		}
+		return
+	}
+
+	act = func(resp protocol.Response) {
+		action.act(ctx, c.server.handler, req, resp)
+	}
+	return
 }
 
 var errChanPool = sync.Pool{
 	New: func() interface{} { return make(chan error, 1) },
 }
 
-func (c *conn) runHandlerAndWrite(frameCtx *codec.DataFrameContext, st *stream, act func() protocol.Response) {
+func (c *conn) runHandlerAndWrite(frameCtx *codec.DataFrameContext, st *stream, act func(protocol.Response), resp protocol.Response) {
 	logger := c.lg
 	c.serveG.CheckNotOn()
 
-	resp := c.runHandler(act)
+	c.runHandler(act, resp)
 	header, err := resp.Marshal(frameCtx.HeaderFmt)
 	if err != nil {
-		// TODO error is always nil now, handle it later
+		resp.Error(&rpcfb.StatusT{
+			Code:    rpcfb.ErrorCodeBAD_REQUEST,
+			Message: "failed to marshal response header",
+		})
 		logger.Error("failed to marshal response header", zap.Error(err))
-		return
 	}
 
 	errCh := errChanPool.Get().(chan error)
@@ -438,20 +470,20 @@ func (c *conn) runHandlerAndWrite(frameCtx *codec.DataFrameContext, st *stream, 
 	}
 }
 
-func (c *conn) runHandler(act func() protocol.Response) (resp protocol.Response) {
+func (c *conn) runHandler(act func(protocol.Response), resp protocol.Response) {
 	logger := c.lg
 	didPanic := true
 	defer func() {
 		if didPanic {
 			e := recover()
-			resp = &protocol.SystemErrorResponse{}
 			resp.Error(&rpcfb.StatusT{Code: rpcfb.ErrorCodePM_INTERNAL_SERVER_ERROR, Message: "handler panic"})
 			logger.Error("panic serving", zap.Reflect("panic", e), zap.Stack("stack"))
 		}
 	}()
-	resp = act()
+
+	act(resp)
+
 	didPanic = false
-	return
 }
 
 // writeFrameFromHandler sends wr to conn.wantWriteFrameCh, but aborts

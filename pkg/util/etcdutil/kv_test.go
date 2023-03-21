@@ -92,7 +92,7 @@ func TestGetOne(t *testing.T) {
 			}
 
 			// run
-			got, err := GetOne(client, tt.args.key, zap.NewNop())
+			got, err := GetOne(context.Background(), client, tt.args.key, zap.NewNop())
 
 			// check
 			if tt.wantErr {
@@ -208,7 +208,7 @@ func TestGet(t *testing.T) {
 			}
 
 			// run
-			resp, err := Get(client, tt.args.key, zap.NewNop(), tt.args.opts...)
+			resp, err := Get(context.Background(), client, tt.args.key, zap.NewNop(), tt.args.opts...)
 
 			// check
 			if tt.wantErr {

@@ -13,6 +13,7 @@ leaderPriorityCheckInterval = 3661000000000
 
 [etcd]
 initialClusterToken = "test-initial-cluster-token"
+logLevel = "test-etcd-log-level"
 autoCompactionMode = "test-auto-compaction-mode"
 autoCompactionRetention = "test-auto-compaction-retention"
 tickMs = 123

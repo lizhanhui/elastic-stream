@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"context"
+
 	"github.com/pkg/errors"
 
 	"github.com/AutoMQ/placement-manager/api/rpcfb/rpcfb"
@@ -8,14 +10,13 @@ import (
 	"github.com/AutoMQ/placement-manager/pkg/server/cluster"
 )
 
-func (s *Sbp) CreateStreams(req *protocol.CreateStreamsRequest) (resp *protocol.CreateStreamsResponse) {
-	resp = &protocol.CreateStreamsResponse{}
+func (s *Sbp) CreateStreams(ctx context.Context, req *protocol.CreateStreamsRequest, resp *protocol.CreateStreamsResponse) {
 	if !s.c.IsLeader() {
-		s.notLeaderError(resp)
+		s.notLeaderError(ctx, resp)
 		return
 	}
 
-	results, err := s.c.CreateStreams(req.Streams)
+	results, err := s.c.CreateStreams(ctx, req.Streams)
 	if err != nil {
 		if errors.Is(err, cluster.ErrNotEnoughDataNodes) {
 			resp.Error(&rpcfb.StatusT{Code: rpcfb.ErrorCodePM_NO_AVAILABLE_DN, Message: err.Error()})
@@ -30,13 +31,11 @@ func (s *Sbp) CreateStreams(req *protocol.CreateStreamsRequest) (resp *protocol.
 	}
 	resp.CreateResponses = results
 	resp.OK()
-	return
 }
 
-func (s *Sbp) DeleteStreams(req *protocol.DeleteStreamsRequest) (resp *protocol.DeleteStreamsResponse) {
-	resp = &protocol.DeleteStreamsResponse{}
+func (s *Sbp) DeleteStreams(ctx context.Context, req *protocol.DeleteStreamsRequest, resp *protocol.DeleteStreamsResponse) {
 	if !s.c.IsLeader() {
-		s.notLeaderError(resp)
+		s.notLeaderError(ctx, resp)
 		return
 	}
 
@@ -44,7 +43,7 @@ func (s *Sbp) DeleteStreams(req *protocol.DeleteStreamsRequest) (resp *protocol.
 	for _, stream := range req.Streams {
 		streamIDs = append(streamIDs, stream.StreamId)
 	}
-	streams, err := s.c.DeleteStreams(streamIDs)
+	streams, err := s.c.DeleteStreams(ctx, streamIDs)
 	if err != nil {
 		resp.Error(&rpcfb.StatusT{Code: rpcfb.ErrorCodePM_INTERNAL_SERVER_ERROR, Message: err.Error()})
 		return
@@ -58,17 +57,15 @@ func (s *Sbp) DeleteStreams(req *protocol.DeleteStreamsRequest) (resp *protocol.
 		})
 	}
 	resp.OK()
-	return
 }
 
-func (s *Sbp) UpdateStreams(req *protocol.UpdateStreamsRequest) (resp *protocol.UpdateStreamsResponse) {
-	resp = &protocol.UpdateStreamsResponse{}
+func (s *Sbp) UpdateStreams(ctx context.Context, req *protocol.UpdateStreamsRequest, resp *protocol.UpdateStreamsResponse) {
 	if !s.c.IsLeader() {
-		s.notLeaderError(resp)
+		s.notLeaderError(ctx, resp)
 		return
 	}
 
-	streams, err := s.c.UpdateStreams(req.Streams)
+	streams, err := s.c.UpdateStreams(ctx, req.Streams)
 	if err != nil {
 		resp.Error(&rpcfb.StatusT{Code: rpcfb.ErrorCodePM_INTERNAL_SERVER_ERROR, Message: err.Error()})
 		return
@@ -82,18 +79,15 @@ func (s *Sbp) UpdateStreams(req *protocol.UpdateStreamsRequest) (resp *protocol.
 		})
 	}
 	resp.OK()
-	return
 }
 
-func (s *Sbp) DescribeStreams(req *protocol.DescribeStreamsRequest) (resp *protocol.DescribeStreamsResponse) {
-	resp = &protocol.DescribeStreamsResponse{}
+func (s *Sbp) DescribeStreams(ctx context.Context, req *protocol.DescribeStreamsRequest, resp *protocol.DescribeStreamsResponse) {
 	if !s.c.IsLeader() {
-		s.notLeaderError(resp)
+		s.notLeaderError(ctx, resp)
 		return
 	}
 
-	result := s.c.DescribeStreams(req.StreamIds)
+	result := s.c.DescribeStreams(ctx, req.StreamIds)
 	resp.DescribeResponses = result
 	resp.OK()
-	return
 }

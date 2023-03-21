@@ -158,7 +158,7 @@ func TestEtcd_Put(t *testing.T) {
 			}
 
 			// run
-			got, err := etcd.Put(tt.args.key, tt.args.value, tt.args.prevKV)
+			got, err := etcd.Put(context.Background(), tt.args.key, tt.args.value, tt.args.prevKV)
 
 			// check
 			if tt.wantErr {
@@ -380,7 +380,7 @@ func TestEtcd_BatchPut(t *testing.T) {
 			}
 
 			// run
-			got, err := etcd.BatchPut(tt.args.kvs, tt.args.prevKV)
+			got, err := etcd.BatchPut(context.Background(), tt.args.kvs, tt.args.prevKV)
 
 			// check
 			if tt.wantErr {
@@ -484,7 +484,7 @@ func TestEtcd_Delete(t *testing.T) {
 			}
 
 			// run
-			got, err := etcd.Delete(tt.args.key, tt.args.prevKV)
+			got, err := etcd.Delete(context.Background(), tt.args.key, tt.args.prevKV)
 
 			// check
 			if tt.wantErr {
@@ -611,7 +611,7 @@ func TestEtcd_BatchDelete(t *testing.T) {
 			}
 
 			// run
-			got, err := etcd.BatchDelete(tt.args.keys, tt.args.prevKV)
+			got, err := etcd.BatchDelete(context.Background(), tt.args.keys, tt.args.prevKV)
 
 			// check
 			if tt.wantErr {

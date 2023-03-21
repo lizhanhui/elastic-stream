@@ -12,6 +12,7 @@ import (
 	"github.com/bytedance/gopkg/lang/mcache"
 	"github.com/pkg/errors"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 
 	"github.com/AutoMQ/placement-manager/pkg/sbp/codec/format"
 	"github.com/AutoMQ/placement-manager/pkg/sbp/codec/operation"
@@ -56,10 +57,10 @@ type Frame interface {
 	Size() int
 
 	// Summarize returns all info of the frame, only for debug use
-	Summarize() string
+	Summarize() []zap.Field
 
 	// Info returns fixed header info of the frame
-	Info() string
+	Info() []zap.Field
 
 	// IsRequest returns whether the frame is a request
 	IsRequest() bool
@@ -103,30 +104,22 @@ func (f baseFrame) Size() int {
 	return _fixedHeaderLen + len(f.Header) + len(f.Payload) + 4
 }
 
-func (f baseFrame) Summarize() string {
-	var buf bytes.Buffer
-	buf.WriteString(f.Info())
-	_, _ = fmt.Fprintf(&buf, " header=%q", f.Header)
-	payload := f.Payload
-	const max = 256
-	if len(payload) > max {
-		payload = payload[:max]
-	}
-	_, _ = fmt.Fprintf(&buf, " payload=%q", payload)
-	if len(f.Payload) > max {
-		_, _ = fmt.Fprintf(&buf, " (%d bytes omitted)", len(f.Payload)-max)
-	}
-	return buf.String()
+func (f baseFrame) Summarize() []zap.Field {
+	fields := make([]zapcore.Field, 0, 7)
+	fields = append(fields, f.Info()...)
+	fields = append(fields, zap.Binary("header", f.Header))
+	fields = append(fields, zap.Binary("payload", f.Payload))
+	return fields
 }
 
-func (f baseFrame) Info() string {
-	var buf bytes.Buffer
-	_, _ = fmt.Fprintf(&buf, "size=%d", f.Size())
-	_, _ = fmt.Fprintf(&buf, " operation=%s", f.OpCode.String())
-	_, _ = fmt.Fprintf(&buf, " flag=%08b", f.Flag)
-	_, _ = fmt.Fprintf(&buf, " streamID=%d", f.StreamID)
-	_, _ = fmt.Fprintf(&buf, " format=%s", f.HeaderFmt.String())
-	return buf.String()
+func (f baseFrame) Info() []zap.Field {
+	fields := make([]zapcore.Field, 0, 5)
+	fields = append(fields, zap.Int("size", f.Size()))
+	fields = append(fields, zap.String("operation", f.OpCode.String()))
+	fields = append(fields, zap.String("flag", fmt.Sprintf("%08b", f.Flag)))
+	fields = append(fields, zap.Uint32("streamID", f.StreamID))
+	fields = append(fields, zap.String("format", f.HeaderFmt.String()))
+	return fields
 }
 
 func (f baseFrame) IsRequest() bool {
@@ -174,25 +167,24 @@ func (fr *Framer) ReadFrame() (Frame, func(), error) {
 	buf := fr.fixedBuf[:_fixedHeaderLen]
 	_, err := io.ReadFull(fr.r, buf)
 	if err != nil {
-		logger.Error("failed to read fixed header", zap.Error(err))
-		return &baseFrame{}, nil, errors.Wrap(err, "read fixed header")
+		return &baseFrame{}, nil, errors.WithMessage(err, "read fixed header")
 	}
 	headerBuf := bytes.NewBuffer(buf)
 
 	frameLen := binary.BigEndian.Uint32(headerBuf.Next(4))
 	if frameLen < _minFrameLen {
 		logger.Error("illegal frame length, fewer than minimum", zap.Uint32("frame-length", frameLen), zap.Uint32("min-length", _minFrameLen))
-		return &baseFrame{}, nil, errors.New("frame too small")
+		return &baseFrame{}, nil, errors.Errorf("frame too small: %d < %d", frameLen, _minFrameLen)
 	}
 	if frameLen > _maxFrameLen {
 		logger.Error("illegal frame length, greater than maximum", zap.Uint32("frame-length", frameLen), zap.Uint32("max-length", _maxFrameLen))
-		return &baseFrame{}, nil, errors.New("frame too large")
+		return &baseFrame{}, nil, errors.Errorf("frame too large: %d > %d", frameLen, _maxFrameLen)
 	}
 
 	magicCode := headerBuf.Next(1)[0]
 	if magicCode != _magicCode {
 		logger.Error("illegal magic code", zap.Uint8("expected", _magicCode), zap.Uint8("got", magicCode))
-		return &baseFrame{}, nil, errors.New("magic code mismatch")
+		return &baseFrame{}, nil, errors.Errorf("magic code mismatch: %d != %d", magicCode, _magicCode)
 	}
 
 	opCode := binary.BigEndian.Uint16(headerBuf.Next(2))
@@ -206,9 +198,8 @@ func (fr *Framer) ReadFrame() (Frame, func(), error) {
 	free := func() { mcache.Free(tBuf) }
 	_, err = io.ReadFull(fr.r, tBuf)
 	if err != nil {
-		logger.Error("failed to read extended header and payload", zap.Error(err))
 		free()
-		return &baseFrame{}, nil, errors.Wrap(err, "read extended header and payload")
+		return &baseFrame{}, nil, errors.WithMessage(err, "read extended header and payload")
 	}
 
 	header := func() []byte {
@@ -227,15 +218,14 @@ func (fr *Framer) ReadFrame() (Frame, func(), error) {
 	var checksum uint32
 	err = binary.Read(fr.r, binary.BigEndian, &checksum)
 	if err != nil {
-		logger.Error("failed to read payload checksum", zap.Error(err))
 		free()
-		return &baseFrame{}, nil, errors.Wrap(err, "read payload checksum")
+		return &baseFrame{}, nil, errors.WithMessage(err, "read payload checksum")
 	}
 	if payloadLen > 0 {
 		if ckm := crc32.ChecksumIEEE(payload); ckm != checksum {
 			logger.Error("payload checksum mismatch", zap.Uint32("expected", ckm), zap.Uint32("got", checksum))
 			free()
-			return &baseFrame{}, nil, errors.New("payload checksum mismatch")
+			return &baseFrame{}, nil, errors.Errorf("payload checksum mismatch: %d != %d", ckm, checksum)
 		}
 	}
 
@@ -246,6 +236,9 @@ func (fr *Framer) ReadFrame() (Frame, func(), error) {
 		HeaderFmt: format.NewFormat(headerFmt),
 		Header:    header,
 		Payload:   payload,
+	}
+	if logger.Core().Enabled(zapcore.DebugLevel) {
+		logger.Debug("read frame", bFrame.Summarize()...)
 	}
 
 	var frame Frame
@@ -268,6 +261,11 @@ func (fr *Framer) ReadFrame() (Frame, func(), error) {
 // It is the caller's responsibility not to violate the maximum frame size
 // and to not call other Write methods concurrently.
 func (fr *Framer) WriteFrame(f Frame) error {
+	logger := fr.lg
+	if logger.Core().Enabled(zapcore.DebugLevel) {
+		logger.Debug("write frame", f.Summarize()...)
+	}
+
 	frame := f.Base()
 	fr.startWrite(frame)
 
@@ -321,14 +319,14 @@ func (fr *Framer) endWrite() error {
 	length := len(fr.wbuf) - 4 // sub frameLen width
 	if length > (_maxFrameLen) {
 		logger.Error("frame too large, greater than maximum", zap.Int("frame-length", length), zap.Uint32("max-length", _maxFrameLen))
-		return errors.New("frame too large")
+		return errors.Errorf("frame too large: %d > %d", length, _maxFrameLen)
 	}
 	_ = binary.BigEndian.AppendUint32(fr.wbuf[:0], uint32(length))
 
 	_, err := fr.w.Write(fr.wbuf)
 	if err != nil {
 		logger.Error("failed to write frame", zap.Error(err))
-		return errors.Wrap(err, "write frame")
+		return errors.WithMessage(err, "write frame")
 	}
 	return nil
 }

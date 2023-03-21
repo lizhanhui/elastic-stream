@@ -27,6 +27,7 @@ const (
 
 	_defaultPeerUrls                          = "http://127.0.0.1:2380"
 	_defaultClientUrls                        = "http://127.0.0.1:2379"
+	_defaultEtcdLogLevel                      = "warn"
 	_defaultCompactionMode                    = "periodic"
 	_defaultAutoCompactionRetention           = "1h"
 	_defaultNameFormat                        = "pm-%s"
@@ -98,24 +99,24 @@ func NewConfig(arguments []string) (*Config, error) {
 	err = v.ReadInConfig()
 	if err != nil {
 		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
-			return nil, errors.Wrap(err, "read configuration file")
+			return nil, errors.WithMessage(err, "read configuration file")
 		}
 	}
 
 	// set config
 	err = v.Unmarshal(cfg)
 	if err != nil {
-		return nil, errors.Wrap(err, "unmarshal configuration")
+		return nil, errors.WithMessage(err, "unmarshal configuration")
 	}
 
 	// new and set logger (first thing after configuration loaded)
 	err = cfg.Log.Adjust()
 	if err != nil {
-		return nil, errors.Wrap(err, "adjust log config")
+		return nil, errors.WithMessage(err, "adjust log config")
 	}
 	logger, err := cfg.Log.Logger()
 	if err != nil {
-		return nil, errors.Wrap(err, "create logger")
+		return nil, errors.WithMessage(err, "create logger")
 	}
 	cfg.lg = logger
 
@@ -137,7 +138,7 @@ func (c *Config) Adjust() error {
 	if c.Name == "" {
 		hostname, err := os.Hostname()
 		if err != nil {
-			return errors.Wrap(err, "get hostname")
+			return errors.WithMessage(err, "get hostname")
 		}
 		c.Name = fmt.Sprintf(_defaultNameFormat, hostname)
 	}
@@ -161,7 +162,7 @@ func (c *Config) Adjust() error {
 	// set etcd config
 	err := c.adjustEtcd()
 	if err != nil {
-		return errors.Wrap(err, "adjust etcd config")
+		return errors.WithMessage(err, "adjust etcd config")
 	}
 
 	return nil
@@ -177,19 +178,19 @@ func (c *Config) adjustEtcd() error {
 	var err error
 	cfg.LPUrls, err = parseUrls(c.PeerUrls)
 	if err != nil {
-		return errors.Wrap(err, "parse peer url")
+		return errors.WithMessage(err, "parse peer url")
 	}
 	cfg.LCUrls, err = parseUrls(c.ClientUrls)
 	if err != nil {
-		return errors.Wrap(err, "parse client url")
+		return errors.WithMessage(err, "parse client url")
 	}
 	cfg.APUrls, err = parseUrls(c.AdvertisePeerUrls)
 	if err != nil {
-		return errors.Wrap(err, "parse advertise peer url")
+		return errors.WithMessage(err, "parse advertise peer url")
 	}
 	cfg.ACUrls, err = parseUrls(c.AdvertiseClientUrls)
 	if err != nil {
-		return errors.Wrap(err, "parse advertise client url")
+		return errors.WithMessage(err, "parse advertise client url")
 	}
 
 	return nil
@@ -199,7 +200,7 @@ func (c *Config) adjustEtcd() error {
 func (c *Config) Validate() error {
 	_, err := filepath.Abs(c.DataDir)
 	if err != nil {
-		return errors.Wrap(err, "invalid data dir path")
+		return errors.WithMessage(err, "invalid data dir path")
 	}
 	return nil
 }
@@ -235,8 +236,10 @@ func configure() (*viper.Viper, *pflag.FlagSet) {
 	_ = v.BindPFlag("advertiseClientUrls", fs.Lookup("advertise-client-urls"))
 
 	// other etcd settings
+	fs.String("etcd-log-level", _defaultEtcdLogLevel, "log level for etcd. One of: debug|info|warn|error|panic|fatal")
 	fs.String("etcd-auto-compaction-mode", _defaultCompactionMode, "interpret 'auto-compaction-retention' one of: periodic|revision. 'periodic' for duration based retention, defaulting to hours if no time unit is provided (e.g. '5m'). 'revision' for revision number based retention.")
 	fs.String("etcd-auto-compaction-retention", _defaultAutoCompactionRetention, "auto compaction retention for mvcc key value store. 0 means disable auto compaction.")
+	_ = v.BindPFlag("etcd.logLevel", fs.Lookup("etcd-log-level"))
 	_ = v.BindPFlag("etcd.autoCompactionMode", fs.Lookup("etcd-auto-compaction-mode"))
 	_ = v.BindPFlag("etcd.autoCompactionRetention", fs.Lookup("etcd-auto-compaction-retention"))
 
@@ -293,7 +296,7 @@ func parseUrls(s string) ([]url.URL, error) {
 	for _, item := range items {
 		u, err := url.Parse(item)
 		if err != nil {
-			return nil, errors.Wrapf(err, "parse url %s", item)
+			return nil, errors.WithMessagef(err, "parse url %s", item)
 		}
 
 		urls = append(urls, *u)

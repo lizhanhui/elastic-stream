@@ -5,15 +5,23 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/pkg/errors"
 	"go.uber.org/zap"
+	"go.uber.org/zap/buffer"
 	"go.uber.org/zap/zapcore"
 	"gopkg.in/natefinch/lumberjack.v2"
 )
 
 const (
 	RotationSchema = "rotate" // RotationSchema is used to identify the log files that need to be rotated
+
+	_callerDepth = 2 // callerDepth is used to get the caller of the logging function
+)
+
+var (
+	_bufPool = buffer.NewPool()
 )
 
 // Log is configuration item for logging, including configuration for Zap.Logger and log rotation
@@ -29,6 +37,7 @@ func NewLog() *Log {
 	log := &Log{
 		Zap: zap.NewProductionConfig(),
 	}
+	log.Zap.EncoderConfig.EncodeCaller = encodeCaller
 	return log
 }
 
@@ -42,7 +51,7 @@ func (l *Log) Adjust() error {
 	if l.EnableRotation {
 		wd, err := os.Getwd()
 		if err != nil {
-			return errors.Wrap(err, "get current directory")
+			return errors.WithMessage(err, "get current directory")
 		}
 		l.Zap.OutputPaths = addRotationSchema(l.Zap.OutputPaths, wd)
 		l.Zap.ErrorOutputPaths = addRotationSchema(l.Zap.ErrorOutputPaths, wd)
@@ -50,7 +59,7 @@ func (l *Log) Adjust() error {
 
 	level, err := zapcore.ParseLevel(l.Level)
 	if err != nil {
-		return errors.Wrap(err, "parse log level")
+		return errors.WithMessage(err, "parse log level")
 	}
 	l.Zap.Level = zap.NewAtomicLevelAt(level)
 
@@ -62,15 +71,44 @@ func (l *Log) Logger() (*zap.Logger, error) {
 	if l.EnableRotation {
 		err := l.setupRotation()
 		if err != nil {
-			return nil, errors.Wrap(err, "setup rotation")
+			return nil, errors.WithMessage(err, "setup rotation")
 		}
 	}
 
 	logger, err := l.Zap.Build()
 	if err != nil {
-		return nil, errors.Wrap(err, "build logger")
+		return nil, errors.WithMessage(err, "build logger")
 	}
 	return logger, nil
+}
+
+func encodeCaller(caller zapcore.EntryCaller, enc zapcore.PrimitiveArrayEncoder) {
+	if !caller.Defined {
+		enc.AppendString("<unknown>")
+		return
+	}
+
+	idx := indexByteBackward(caller.File, '/', _callerDepth+1)
+	if idx == -1 {
+		enc.AppendString(caller.FullPath())
+		return
+	}
+
+	buf := _bufPool.Get()
+	defer buf.Free()
+	buf.AppendString(caller.File[idx+1:])
+	buf.AppendByte(':')
+	buf.AppendInt(int64(caller.Line))
+	enc.AppendString(buf.String())
+}
+
+func indexByteBackward(s string, c byte, cnt int) int {
+	idx := len(s)
+	for cnt > 0 && idx != -1 {
+		idx = strings.LastIndexByte(s[:idx], c)
+		cnt--
+	}
+	return idx
 }
 
 // Rotate is a copy of the configuration section in lumberjack.Logger
@@ -124,7 +162,7 @@ func (l *Log) setupRotation() error {
 		}}, nil
 	})
 	if err != nil {
-		return errors.Wrap(err, "register sink")
+		return errors.WithMessage(err, "register sink")
 	}
 	return nil
 }

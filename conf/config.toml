@@ -27,6 +27,8 @@ leaderPriorityCheckInterval = 60000000000 # 1 minute
 [etcd]
 # set different tokens to prevent communication between PMs in different clusters
 initialClusterToken = "pm-cluster"
+# log level for etcd. One of: debug|info|warn|error|panic|fatal
+logLevel = "warn"
 # interpret 'auto-compaction-retention' one of: periodic|revision
 autoCompactionMode = "periodic"
 # auto compaction retention for mvcc key value store

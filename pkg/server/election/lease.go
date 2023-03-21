@@ -53,7 +53,7 @@ func (l *lease) Grant(leaseTimeout int64, logger *zap.Logger) error {
 	cancel()
 
 	if err != nil {
-		return errors.Wrap(err, "etcd grant lease")
+		return errors.WithMessage(err, "etcd grant lease")
 	}
 	if cost := time.Since(start); cost > etcdutil.DefaultSlowRequestTime {
 		logger.Warn("lease grants too slow", zap.Duration("cost", cost), zap.String("purpose", l.purpose))

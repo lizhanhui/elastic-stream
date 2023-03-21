@@ -241,7 +241,7 @@ func TestReadFrame(t *testing.T) {
 			t.Parallel()
 			re := require.New(t)
 
-			framer := NewFramer(nil, bytes.NewReader(tt.input), zap.NewExample())
+			framer := NewFramer(nil, bytes.NewReader(tt.input), zap.NewNop())
 			frame, _, err := framer.ReadFrame()
 
 			if tt.wantErr {
@@ -249,7 +249,7 @@ func TestReadFrame(t *testing.T) {
 				return
 			}
 			re.NoError(err)
-			t.Log(frame.Base().Summarize())
+			zap.NewNop().Info("test", frame.Base().Summarize()...)
 			re.Equal(len(tt.input), frame.Base().Size())
 			re.Equal(tt.want, frame)
 		})
@@ -374,7 +374,7 @@ func TestWriteFrame(t *testing.T) {
 			re := require.New(t)
 
 			buf := &bytes.Buffer{}
-			framer := NewFramer(buf, nil, zap.NewExample())
+			framer := NewFramer(buf, nil, zap.NewNop())
 			err := framer.WriteFrame(tt.frame)
 
 			if tt.wantErr {
@@ -396,7 +396,7 @@ func (ew *errorWriter) Write([]byte) (n int, err error) {
 func TestWriteFrameError(t *testing.T) {
 	t.Parallel()
 	re := require.New(t)
-	framer := NewFramer(&errorWriter{}, nil, zap.NewExample())
+	framer := NewFramer(&errorWriter{}, nil, zap.NewNop())
 	err := framer.WriteFrame(baseFrame{
 		OpCode:    operation.Operation{Code: operation.OpPing},
 		Flag:      3,

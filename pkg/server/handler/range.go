@@ -1,20 +1,21 @@
 package handler
 
 import (
+	"context"
+
 	"github.com/AutoMQ/placement-manager/api/rpcfb/rpcfb"
 	"github.com/AutoMQ/placement-manager/pkg/sbp/protocol"
 )
 
-func (s *Sbp) ListRange(req *protocol.ListRangesRequest) (resp *protocol.ListRangesResponse) {
-	resp = &protocol.ListRangesResponse{}
+func (s *Sbp) ListRange(ctx context.Context, req *protocol.ListRangesRequest, resp *protocol.ListRangesResponse) {
 	if !s.c.IsLeader() {
-		s.notLeaderError(resp)
+		s.notLeaderError(ctx, resp)
 		return
 	}
 
 	listResponses := make([]*rpcfb.ListRangesResultT, 0, len(req.RangeCriteria))
 	for _, owner := range req.RangeCriteria {
-		ranges, err := s.c.ListRanges(owner)
+		ranges, err := s.c.ListRanges(ctx, owner)
 
 		result := &rpcfb.ListRangesResultT{
 			RangeCriteria: owner,
@@ -30,5 +31,4 @@ func (s *Sbp) ListRange(req *protocol.ListRangesRequest) (resp *protocol.ListRan
 	}
 	resp.ListResponses = listResponses
 	resp.OK()
-	return
 }

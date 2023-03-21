@@ -131,3 +131,54 @@ func TestLogRotation(t *testing.T) {
 	re.ErrorContains(err, "setup rotation")
 	re.ErrorContains(err, "register sink")
 }
+
+func Test_indexByteBackward(t *testing.T) {
+	type args struct {
+		s   string
+		c   byte
+		cnt int
+	}
+	tests := []struct {
+		name string
+		args args
+		want int
+	}{
+		{
+			name: "normal",
+			args: args{
+				s:   "a/b/c/d/e.go",
+				c:   '/',
+				cnt: 2,
+			},
+			want: 5,
+		},
+		{
+			name: "not found",
+			args: args{
+				s:   "a/b/c/d/e.go",
+				c:   '/',
+				cnt: 10,
+			},
+			want: -1,
+		},
+		{
+			name: "cnt is 0",
+			args: args{
+				s:   "a/b/c/d/e.go",
+				c:   '/',
+				cnt: 0,
+			},
+			want: 12,
+		},
+	}
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			re := require.New(t)
+
+			got := indexByteBackward(tt.args.s, tt.args.c, tt.args.cnt)
+			re.Equal(tt.want, got)
+		})
+	}
+}
