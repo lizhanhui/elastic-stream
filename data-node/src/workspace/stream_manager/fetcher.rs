@@ -10,7 +10,10 @@ pub(crate) enum Fetcher {
 }
 
 impl Fetcher {
-    pub(crate) async fn fetch(&self, stream_id: i64) -> Result<Option<StreamRange>, ServiceError> {
+    pub(crate) async fn fetch(
+        &self,
+        stream_id: i64,
+    ) -> Result<Option<Vec<StreamRange>>, ServiceError> {
         match self {
             Fetcher::Channel { sender } => Self::fetch_from_peer_node(sender, stream_id).await,
             Fetcher::PlacementClient { client } => Self::fetch_by_client(client, stream_id).await,
@@ -20,14 +23,14 @@ impl Fetcher {
     async fn fetch_by_client(
         _client: &PlacementClient,
         _stream_id: i64,
-    ) -> Result<Option<StreamRange>, ServiceError> {
+    ) -> Result<Option<Vec<StreamRange>>, ServiceError> {
         todo!()
     }
 
     async fn fetch_from_peer_node(
         _tx: &Sender<()>,
         _stream_id: i64,
-    ) -> Result<Option<StreamRange>, ServiceError> {
+    ) -> Result<Option<Vec<StreamRange>>, ServiceError> {
         todo!()
     }
 }

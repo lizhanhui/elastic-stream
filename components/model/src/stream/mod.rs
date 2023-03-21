@@ -7,11 +7,23 @@ pub struct Stream {
 }
 
 impl Stream {
+    pub fn new(id: i64, ranges: Vec<StreamRange>) -> Self {
+        Self { id, ranges }
+    }
+
     pub fn open(id: i64) -> Self {
         Self { id, ranges: vec![] }
     }
 
     pub fn seal(&self, committed: u64) {
         todo!()
+    }
+
+    pub fn range(&self, index: i32) -> Option<StreamRange> {
+        self.ranges
+            .iter()
+            .try_find(|&range| Some(range.id() == index))
+            .flatten()
+            .map(|range| range.clone())
     }
 }

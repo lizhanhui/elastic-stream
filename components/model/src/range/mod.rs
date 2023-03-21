@@ -25,8 +25,11 @@ pub struct StreamRange {
     /// The start slot index, inclusive.
     start: u64,
 
-    /// The next slot index to allocate for the incoming record.
-    next: u64,
+    /// Records within `[start, limit)` are properly stored and readily readable.
+    ///
+    /// # Note
+    /// The following relation holds: `limit <= end`.
+    limit: u64,
 
     /// The end of the range, exclusive
     end: Option<u64>,
@@ -37,12 +40,12 @@ pub struct StreamRange {
 }
 
 impl StreamRange {
-    pub fn new(stream_id: i64, index: i32, start: u64, next: u64, end: Option<u64>) -> Self {
+    pub fn new(stream_id: i64, index: i32, start: u64, limit: u64, end: Option<u64>) -> Self {
         Self {
             stream_id,
             index,
             start,
-            next,
+            limit,
             end,
             replica: vec![],
         }
@@ -60,8 +63,8 @@ impl StreamRange {
     pub fn take_slot(&mut self) -> Result<u64, RangeError> {
         match self.end {
             None => {
-                let index = self.next;
-                self.next += 1;
+                let index = self.limit;
+                self.limit += 1;
                 Ok(index)
             }
             Some(offset) => Err(RangeError::AlreadySealed(offset)),
@@ -71,7 +74,7 @@ impl StreamRange {
     /// Length of the range.
     /// That is, number of records in the stream range.
     pub fn len(&self) -> u64 {
-        self.next - self.start
+        self.limit - self.start
     }
 
     pub fn id(&self) -> i32 {
@@ -85,6 +88,10 @@ impl StreamRange {
     pub fn end(&self) -> Option<u64> {
         self.end
     }
+
+    pub fn set_limit(&mut self, limit: u64) {
+        self.limit = limit;
+    }
 }
 
 impl Range for StreamRange {
@@ -95,8 +102,8 @@ impl Range for StreamRange {
     fn seal(&mut self) -> Result<u64, RangeError> {
         match self.end {
             None => {
-                self.end = Some(self.next);
-                Ok(self.next)
+                self.end = Some(self.limit);
+                Ok(self.limit)
             }
             Some(offset) => Err(RangeError::AlreadySealed(offset)),
         }
@@ -111,7 +118,7 @@ impl Display for StreamRange {
             self.stream_id,
             self.index,
             self.start,
-            self.next,
+            self.limit,
             self.end.unwrap_or(0)
         )
     }

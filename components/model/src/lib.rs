@@ -1,3 +1,5 @@
+#![feature(try_find)]
+
 pub mod client_role;
 pub mod data_node;
 pub mod error;

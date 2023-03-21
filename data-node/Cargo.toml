@@ -31,3 +31,6 @@ tokio-uring = { workspace = true }
 tokio = { workspace = true }
 futures = { workspace = true }
 chrono = "0.4.23"
+
+[dev-dependencies]
+mockall = { workspace = true }
