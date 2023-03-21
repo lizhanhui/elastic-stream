@@ -205,7 +205,7 @@ func (s *Server) serveSbp(listener net.Listener, c *cluster.RaftCluster) {
 	ctx, cancel := context.WithCancel(s.ctx)
 	defer cancel()
 
-	sbpSvr := sbpServer.NewServer(ctx, handler.NewSbp(c), logger)
+	sbpSvr := sbpServer.NewServer(ctx, handler.NewSbp(c, logger), logger)
 	s.sbpServer = sbpSvr
 
 	logger.Info("sbp server started")
@@ -218,7 +218,7 @@ func (s *Server) initClusterID() error {
 	logger := s.lg
 
 	// query any existing ID in etcd
-	kv, err := etcdutil.GetOne(s.client, []byte(_clusterIDPath), logger)
+	kv, err := etcdutil.GetOne(s.ctx, s.client, []byte(_clusterIDPath), logger)
 	if err != nil {
 		logger.Error("failed to query cluster id", zap.String("cluster-id-path", _clusterIDPath), zap.Error(err))
 		return errors.WithMessage(err, "get value from etcd")
@@ -261,7 +261,7 @@ func (s *Server) leaderLoop() {
 			return
 		}
 
-		leader, rev, checkAgain := s.member.CheckLeader()
+		leader, rev, checkAgain := s.member.CheckLeader(s.ctx)
 		if checkAgain {
 			continue
 		}
@@ -289,7 +289,7 @@ func (s *Server) campaignLeader() {
 	logger.Info("start to campaign PM leader", zap.String("campaign-pm-leader-name", s.Name()))
 
 	// campaign leader
-	success, err := s.member.CampaignLeader(s.cfg.LeaderLease)
+	success, err := s.member.CampaignLeader(s.ctx, s.cfg.LeaderLease)
 	if err != nil {
 		logger.Error("an error when campaign leader", zap.String("campaign-pm-leader-name", s.Name()), zap.Error(err))
 		return

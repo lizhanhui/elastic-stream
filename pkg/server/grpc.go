@@ -43,7 +43,7 @@ func NewGrpcServer(s *Server, lg *zap.Logger) *GrpcServer {
 }
 
 // Store stores kv into etcd by transaction
-func (s *GrpcServer) Store(_ context.Context, request *kvpb.StoreRequest) (*kvpb.StoreResponse, error) {
+func (s *GrpcServer) Store(ctx context.Context, request *kvpb.StoreRequest) (*kvpb.StoreResponse, error) {
 	logger := s.lg
 	prefix := request.GetPrefix()
 	if prefix == nil {
@@ -64,7 +64,7 @@ func (s *GrpcServer) Store(_ context.Context, request *kvpb.StoreRequest) (*kvpb
 		}
 	}
 	res, err :=
-		etcdutil.NewTxn(s.client, logger).Then(ops...).Commit()
+		etcdutil.NewTxn(ctx, s.client, logger).Then(ops...).Commit()
 	if err != nil {
 		return &kvpb.StoreResponse{}, err
 	}

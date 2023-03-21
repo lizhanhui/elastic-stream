@@ -7,15 +7,15 @@ import (
 	"github.com/AutoMQ/placement-manager/pkg/sbp/protocol"
 )
 
-func (s *Sbp) ListRange(_ context.Context, req *protocol.ListRangesRequest, resp *protocol.ListRangesResponse) {
+func (s *Sbp) ListRange(ctx context.Context, req *protocol.ListRangesRequest, resp *protocol.ListRangesResponse) {
 	if !s.c.IsLeader() {
-		s.notLeaderError(resp)
+		s.notLeaderError(ctx, resp)
 		return
 	}
 
 	listResponses := make([]*rpcfb.ListRangesResultT, 0, len(req.RangeCriteria))
 	for _, owner := range req.RangeCriteria {
-		ranges, err := s.c.ListRanges(owner)
+		ranges, err := s.c.ListRanges(ctx, owner)
 
 		result := &rpcfb.ListRangesResultT{
 			RangeCriteria: owner,

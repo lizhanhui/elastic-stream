@@ -1,9 +1,12 @@
 package kv
 
 import (
+	"context"
 	"fmt"
 
 	"go.uber.org/zap"
+
+	"github.com/AutoMQ/placement-manager/pkg/util/traceutil"
 )
 
 type LogAble interface {
@@ -16,19 +19,21 @@ type Logger struct {
 	LogAble
 }
 
-func (l Logger) Get(k []byte) (v []byte, err error) {
+func (l Logger) Get(ctx context.Context, k []byte) (v []byte, err error) {
 	logger := l.logger()
-	v, err = l.LogAble.Get(k)
+	v, err = l.LogAble.Get(ctx, k)
 	if logger.Core().Enabled(zap.DebugLevel) {
+		logger = logger.With(traceutil.TraceLogField(ctx))
 		logger.Debug("kv get", zap.ByteString("key", k), zap.Binary("value", v), zap.Error(err))
 	}
 	return
 }
 
-func (l Logger) GetByRange(r Range, limit int64) (kvs []KeyValue, err error) {
+func (l Logger) GetByRange(ctx context.Context, r Range, limit int64) (kvs []KeyValue, err error) {
 	logger := l.logger()
-	kvs, err = l.LogAble.GetByRange(r, limit)
+	kvs, err = l.LogAble.GetByRange(ctx, r, limit)
 	if logger.Core().Enabled(zap.DebugLevel) {
+		logger = logger.With(traceutil.TraceLogField(ctx))
 		fields := []zap.Field{
 			zap.ByteString("start-key", r.StartKey),
 			zap.ByteString("end-key", r.EndKey),
@@ -43,19 +48,21 @@ func (l Logger) GetByRange(r Range, limit int64) (kvs []KeyValue, err error) {
 	return
 }
 
-func (l Logger) Put(k, v []byte, prevKV bool) (prevV []byte, err error) {
+func (l Logger) Put(ctx context.Context, k, v []byte, prevKV bool) (prevV []byte, err error) {
 	logger := l.logger()
-	prevV, err = l.LogAble.Put(k, v, prevKV)
+	prevV, err = l.LogAble.Put(ctx, k, v, prevKV)
 	if logger.Core().Enabled(zap.DebugLevel) {
+		logger = logger.With(traceutil.TraceLogField(ctx))
 		logger.Debug("kv put", zap.ByteString("key", k), zap.Binary("value", v), zap.Bool("prev-kv", prevKV), zap.Binary("prev-value", prevV), zap.Error(err))
 	}
 	return
 }
 
-func (l Logger) BatchPut(kvs []KeyValue, prevKV bool) (prevKvs []KeyValue, err error) {
+func (l Logger) BatchPut(ctx context.Context, kvs []KeyValue, prevKV bool) (prevKvs []KeyValue, err error) {
 	logger := l.logger()
-	prevKvs, err = l.LogAble.BatchPut(kvs, prevKV)
+	prevKvs, err = l.LogAble.BatchPut(ctx, kvs, prevKV)
 	if logger.Core().Enabled(zap.DebugLevel) {
+		logger = logger.With(traceutil.TraceLogField(ctx))
 		fields := []zap.Field{
 			zap.Bool("prev-kv", prevKV),
 			zap.Error(err),
@@ -71,19 +78,21 @@ func (l Logger) BatchPut(kvs []KeyValue, prevKV bool) (prevKvs []KeyValue, err e
 	return
 }
 
-func (l Logger) Delete(k []byte, prevKV bool) (prevV []byte, err error) {
+func (l Logger) Delete(ctx context.Context, k []byte, prevKV bool) (prevV []byte, err error) {
 	logger := l.logger()
-	prevV, err = l.LogAble.Delete(k, prevKV)
+	prevV, err = l.LogAble.Delete(ctx, k, prevKV)
 	if logger.Core().Enabled(zap.DebugLevel) {
+		logger = logger.With(traceutil.TraceLogField(ctx))
 		logger.Debug("kv delete", zap.ByteString("key", k), zap.Bool("prev-kv", prevKV), zap.Binary("prev-value", prevV), zap.Error(err))
 	}
 	return
 }
 
-func (l Logger) BatchDelete(ks [][]byte, prevKV bool) (prevKvs []KeyValue, err error) {
+func (l Logger) BatchDelete(ctx context.Context, ks [][]byte, prevKV bool) (prevKvs []KeyValue, err error) {
 	logger := l.logger()
-	prevKvs, err = l.LogAble.BatchDelete(ks, prevKV)
+	prevKvs, err = l.LogAble.BatchDelete(ctx, ks, prevKV)
 	if logger.Core().Enabled(zap.DebugLevel) {
+		logger = logger.With(traceutil.TraceLogField(ctx))
 		fields := []zap.Field{
 			zap.Bool("prev-kv", prevKV),
 			zap.Error(err),

@@ -99,7 +99,7 @@ func (m *Member) Init(cfg *config.Config, name string, clusterRootPath string) e
 }
 
 // CheckLeader checks returns true if it is needed to check later.
-func (m *Member) CheckLeader() (*Info, etcdutil.ModRevision, bool) {
+func (m *Member) CheckLeader(ctx context.Context) (*Info, etcdutil.ModRevision, bool) {
 	logger := m.lg
 
 	if m.EtcdLeaderID() == 0 {
@@ -108,7 +108,7 @@ func (m *Member) CheckLeader() (*Info, etcdutil.ModRevision, bool) {
 		return nil, 0, true
 	}
 
-	leader, rev, err := m.GetLeader()
+	leader, rev, err := m.GetLeader(ctx)
 	if err != nil {
 		logger.Warn("failed to get PM leader", zap.Error(err))
 		time.Sleep(CheckAgainInterval)
@@ -120,7 +120,7 @@ func (m *Member) CheckLeader() (*Info, etcdutil.ModRevision, bool) {
 		// in previous CampaignLeader. We should delete the leadership and campaign again.
 		logger.Warn("PM leader has not changed, delete and campaign again", zap.Object("old-pm-leader", leader))
 		// Delete the leader itself and let others start a new election again.
-		if err = m.leadership.DeleteLeaderKey(); err != nil {
+		if err = m.leadership.DeleteLeaderKey(ctx); err != nil {
 			logger.Warn("deleting PM leader key meets error", zap.Error(err))
 			time.Sleep(CheckAgainInterval)
 			return nil, 0, true
@@ -133,10 +133,10 @@ func (m *Member) CheckLeader() (*Info, etcdutil.ModRevision, bool) {
 }
 
 // GetLeader gets the corresponding leader from etcd by given leaderPath (as the key).
-func (m *Member) GetLeader() (*Info, etcdutil.ModRevision, error) {
+func (m *Member) GetLeader(ctx context.Context) (*Info, etcdutil.ModRevision, error) {
 	logger := m.lg
 
-	kv, err := etcdutil.GetOne(m.client, []byte(m.LeaderPath()), logger)
+	kv, err := etcdutil.GetOne(ctx, m.client, []byte(m.LeaderPath()), logger)
 	if err != nil {
 		logger.Error("failed to get leader", zap.String("leader-key", m.LeaderPath()), zap.Error(err))
 		return nil, 0, errors.WithMessage(err, "get kv from etcd")
@@ -164,8 +164,8 @@ func (m *Member) WatchLeader(serverCtx context.Context, leader *Info, revision e
 
 // CampaignLeader is used to campaign a PM member's leadership and make it become a PM leader.
 // returns true if successfully campaign leader
-func (m *Member) CampaignLeader(leaseTimeout int64) (bool, error) {
-	return m.leadership.Campaign(leaseTimeout, string(m.Info()))
+func (m *Member) CampaignLeader(ctx context.Context, leaseTimeout int64) (bool, error) {
+	return m.leadership.Campaign(ctx, leaseTimeout, string(m.Info()))
 }
 
 func (m *Member) Info() []byte {
@@ -197,11 +197,11 @@ func (m *Member) CheckPriorityAndMoveLeader(ctx context.Context) error {
 	}
 	logger := m.lg
 
-	myPriority, err := m.GetMemberPriority(m.id)
+	myPriority, err := m.GetMemberPriority(ctx, m.id)
 	if err != nil {
 		return errors.WithMessage(err, "load current member priority")
 	}
-	leaderPriority, err := m.GetMemberPriority(etcdLeaderID)
+	leaderPriority, err := m.GetMemberPriority(ctx, etcdLeaderID)
 	if err != nil {
 		return errors.WithMessage(err, "load etcd leader member priority")
 	}
@@ -222,11 +222,11 @@ func (m *Member) EtcdLeaderID() uint64 {
 }
 
 // GetMemberPriority loads a member's priority to be elected as the etcd leader.
-func (m *Member) GetMemberPriority(id uint64) (int, error) {
+func (m *Member) GetMemberPriority(ctx context.Context, id uint64) (int, error) {
 	logger := m.lg
 
 	key := m.getPriorityPath(id)
-	kv, err := etcdutil.GetOne(m.client, []byte(key), logger)
+	kv, err := etcdutil.GetOne(ctx, m.client, []byte(key), logger)
 	if err != nil {
 		return 0, errors.WithMessagef(err, "failed to get member's leader priority by key %s", key)
 	}

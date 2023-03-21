@@ -16,12 +16,14 @@ package kv
 
 import (
 	"bytes"
+	"context"
 
 	"github.com/pkg/errors"
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"go.uber.org/zap"
 
 	"github.com/AutoMQ/placement-manager/pkg/util/etcdutil"
+	"github.com/AutoMQ/placement-manager/pkg/util/traceutil"
 )
 
 var (
@@ -33,7 +35,7 @@ var (
 type Etcd struct {
 	client     *clientv3.Client
 	rootPath   []byte
-	newTxnFunc func() clientv3.Txn
+	newTxnFunc func(ctx context.Context) clientv3.Txn
 
 	lg *zap.Logger
 }
@@ -49,27 +51,27 @@ func NewEtcd(client *clientv3.Client, rootPath string, lg *zap.Logger, cmpFunc f
 		lg:       lg,
 	}
 	if cmpFunc != nil {
-		e.newTxnFunc = func() clientv3.Txn {
+		e.newTxnFunc = func(ctx context.Context) clientv3.Txn {
 			// cmpFunc should be evaluated lazily.
-			return etcdutil.NewTxn(client, lg).If(cmpFunc())
+			return etcdutil.NewTxn(ctx, client, lg.With(traceutil.TraceLogField(ctx))).If(cmpFunc())
 		}
 	} else {
-		e.newTxnFunc = func() clientv3.Txn {
-			return etcdutil.NewTxn(client, lg)
+		e.newTxnFunc = func(ctx context.Context) clientv3.Txn {
+			return etcdutil.NewTxn(ctx, client, lg.With(traceutil.TraceLogField(ctx)))
 		}
 	}
 	return e
 }
 
-func (e *Etcd) Get(k []byte) ([]byte, error) {
+func (e *Etcd) Get(ctx context.Context, k []byte) ([]byte, error) {
 	if len(k) == 0 {
 		return nil, nil
 	}
-	logger := e.lg
+	logger := e.lg.With(traceutil.TraceLogField(ctx))
 
 	key := e.addPrefix(k)
 
-	kv, err := etcdutil.GetOne(e.client, key, logger)
+	kv, err := etcdutil.GetOne(ctx, e.client, key, logger)
 	if err != nil {
 		return nil, errors.WithMessage(err, "kv get")
 	}
@@ -77,7 +79,7 @@ func (e *Etcd) Get(k []byte) ([]byte, error) {
 	return kv.Value, nil
 }
 
-func (e *Etcd) GetByRange(r Range, limit int64) ([]KeyValue, error) {
+func (e *Etcd) GetByRange(ctx context.Context, r Range, limit int64) ([]KeyValue, error) {
 	if len(r.StartKey) == 0 {
 		return nil, nil
 	}
@@ -86,7 +88,7 @@ func (e *Etcd) GetByRange(r Range, limit int64) ([]KeyValue, error) {
 	startKey := e.addPrefix(r.StartKey)
 	endKey := e.addPrefix(r.EndKey)
 
-	resp, err := etcdutil.Get(e.client, startKey, logger, clientv3.WithRange(string(endKey)), clientv3.WithLimit(limit))
+	resp, err := etcdutil.Get(ctx, e.client, startKey, logger, clientv3.WithRange(string(endKey)), clientv3.WithLimit(limit))
 	if err != nil {
 		return nil, errors.WithMessage(err, "kv get by range")
 	}
@@ -101,12 +103,12 @@ func (e *Etcd) GetByRange(r Range, limit int64) ([]KeyValue, error) {
 	return kvs, nil
 }
 
-func (e *Etcd) Put(k, v []byte, prevKV bool) ([]byte, error) {
+func (e *Etcd) Put(ctx context.Context, k, v []byte, prevKV bool) ([]byte, error) {
 	if len(k) == 0 {
 		return nil, nil
 	}
 
-	prevKvs, err := e.BatchPut([]KeyValue{{Key: k, Value: v}}, prevKV)
+	prevKvs, err := e.BatchPut(ctx, []KeyValue{{Key: k, Value: v}}, prevKV)
 	if err != nil {
 		return nil, errors.WithMessage(err, "kv put")
 	}
@@ -123,7 +125,7 @@ func (e *Etcd) Put(k, v []byte, prevKV bool) ([]byte, error) {
 	return nil, nil
 }
 
-func (e *Etcd) BatchPut(kvs []KeyValue, prevKV bool) ([]KeyValue, error) {
+func (e *Etcd) BatchPut(ctx context.Context, kvs []KeyValue, prevKV bool) ([]KeyValue, error) {
 	if len(kvs) == 0 {
 		return nil, nil
 	}
@@ -141,7 +143,7 @@ func (e *Etcd) BatchPut(kvs []KeyValue, prevKV bool) ([]KeyValue, error) {
 		ops = append(ops, clientv3.OpPut(string(key), string(kv.Value), opts...))
 	}
 
-	txn := e.newTxnFunc().Then(ops...)
+	txn := e.newTxnFunc(ctx).Then(ops...)
 	resp, err := txn.Commit()
 	if err != nil {
 		return nil, errors.WithMessage(err, "kv batch put")
@@ -170,12 +172,12 @@ func (e *Etcd) BatchPut(kvs []KeyValue, prevKV bool) ([]KeyValue, error) {
 	return prevKvs, nil
 }
 
-func (e *Etcd) Delete(k []byte, prevKV bool) ([]byte, error) {
+func (e *Etcd) Delete(ctx context.Context, k []byte, prevKV bool) ([]byte, error) {
 	if len(k) == 0 {
 		return nil, nil
 	}
 
-	prevKvs, err := e.BatchDelete([][]byte{k}, prevKV)
+	prevKvs, err := e.BatchDelete(ctx, [][]byte{k}, prevKV)
 	if err != nil {
 		return nil, errors.WithMessage(err, "kv delete")
 	}
@@ -191,7 +193,7 @@ func (e *Etcd) Delete(k []byte, prevKV bool) ([]byte, error) {
 	return nil, nil
 }
 
-func (e *Etcd) BatchDelete(keys [][]byte, prevKV bool) ([]KeyValue, error) {
+func (e *Etcd) BatchDelete(ctx context.Context, keys [][]byte, prevKV bool) ([]KeyValue, error) {
 	if len(keys) == 0 {
 		return nil, nil
 	}
@@ -209,7 +211,7 @@ func (e *Etcd) BatchDelete(keys [][]byte, prevKV bool) ([]KeyValue, error) {
 		ops = append(ops, clientv3.OpDelete(string(key), opts...))
 	}
 
-	txn := e.newTxnFunc().Then(ops...)
+	txn := e.newTxnFunc(ctx).Then(ops...)
 	resp, err := txn.Commit()
 	if err != nil {
 		return nil, errors.WithMessage(err, "kv batch delete")

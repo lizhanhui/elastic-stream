@@ -2,6 +2,8 @@ package traceutil
 
 import (
 	"context"
+
+	"go.uber.org/zap"
 )
 
 type traceIDKey struct{}
@@ -17,4 +19,13 @@ func TraceID(ctx context.Context) string {
 		return traceID
 	}
 	return ""
+}
+
+// TraceLogField returns a zap.Field for logging.
+// It returns zap.Skip() if the traceID is not found in the context.
+func TraceLogField(ctx context.Context) zap.Field {
+	if traceID, ok := ctx.Value(traceIDKey{}).(string); ok {
+		return zap.String("trace-id", traceID)
+	}
+	return zap.Skip()
 }

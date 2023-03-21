@@ -31,8 +31,8 @@ type ModRevision = int64
 // GetOne gets KeyValue with key from etcd.
 // GetOne will return nil if the specified key is not found
 // GetOne will return an error if etcd returns multiple KeyValue
-func GetOne(c *clientv3.Client, key []byte, logger *zap.Logger) (*mvccpb.KeyValue, error) {
-	resp, err := Get(c, key, logger)
+func GetOne(ctx context.Context, c *clientv3.Client, key []byte, logger *zap.Logger) (*mvccpb.KeyValue, error) {
+	resp, err := Get(ctx, c, key, logger)
 	if err != nil {
 		return nil, errors.WithMessage(err, "get value from etcd")
 	}
@@ -47,8 +47,8 @@ func GetOne(c *clientv3.Client, key []byte, logger *zap.Logger) (*mvccpb.KeyValu
 }
 
 // Get returns the etcd GetResponse by given key and options
-func Get(c *clientv3.Client, k []byte, logger *zap.Logger, opts ...clientv3.OpOption) (*clientv3.GetResponse, error) {
-	ctx, cancel := context.WithTimeout(c.Ctx(), DefaultRequestTimeout)
+func Get(ctx context.Context, c *clientv3.Client, k []byte, logger *zap.Logger, opts ...clientv3.OpOption) (*clientv3.GetResponse, error) {
+	ctx, cancel := context.WithTimeout(ctx, DefaultRequestTimeout)
 	defer cancel()
 
 	key := string(k)

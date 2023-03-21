@@ -1,6 +1,7 @@
 package endpoint
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/bytedance/gopkg/lang/mcache"
@@ -10,6 +11,7 @@ import (
 	"github.com/AutoMQ/placement-manager/api/rpcfb/rpcfb"
 	"github.com/AutoMQ/placement-manager/pkg/server/storage/kv"
 	"github.com/AutoMQ/placement-manager/pkg/util/fbutil"
+	"github.com/AutoMQ/placement-manager/pkg/util/traceutil"
 )
 
 const (
@@ -32,16 +34,16 @@ type CreateStreamParam struct {
 
 // Stream defines operations on stream.
 type Stream interface {
-	CreateStreams(params []*CreateStreamParam) ([]*rpcfb.CreateStreamResultT, error)
-	DeleteStreams(streamIDs []int64) ([]*rpcfb.StreamT, error)
-	UpdateStreams(streams []*rpcfb.StreamT) ([]*rpcfb.StreamT, error)
-	GetStream(streamID int64) (*rpcfb.StreamT, error)
-	ForEachStream(f func(stream *rpcfb.StreamT) error) error
+	CreateStreams(ctx context.Context, params []*CreateStreamParam) ([]*rpcfb.CreateStreamResultT, error)
+	DeleteStreams(ctx context.Context, streamIDs []int64) ([]*rpcfb.StreamT, error)
+	UpdateStreams(ctx context.Context, streams []*rpcfb.StreamT) ([]*rpcfb.StreamT, error)
+	GetStream(ctx context.Context, streamID int64) (*rpcfb.StreamT, error)
+	ForEachStream(ctx context.Context, f func(stream *rpcfb.StreamT) error) error
 }
 
 // CreateStreams creates new streams based on the given streams and returns them.
-func (e *Endpoint) CreateStreams(params []*CreateStreamParam) ([]*rpcfb.CreateStreamResultT, error) {
-	logger := e.lg
+func (e *Endpoint) CreateStreams(ctx context.Context, params []*CreateStreamParam) ([]*rpcfb.CreateStreamResultT, error) {
+	logger := e.lg.With(traceutil.TraceLogField(ctx))
 
 	results := make([]*rpcfb.CreateStreamResultT, 0, len(params))
 	kvs := make([]kv.KeyValue, 0, len(params)*2)
@@ -60,7 +62,7 @@ func (e *Endpoint) CreateStreams(params []*CreateStreamParam) ([]*rpcfb.CreateSt
 		})
 	}
 
-	prevKvs, err := e.BatchPut(kvs, true)
+	prevKvs, err := e.BatchPut(ctx, kvs, true)
 	for _, keyValue := range kvs {
 		mcache.Free(keyValue.Value)
 	}
@@ -81,21 +83,21 @@ func (e *Endpoint) CreateStreams(params []*CreateStreamParam) ([]*rpcfb.CreateSt
 }
 
 // DeleteStreams deletes the streams with the given stream ids and returns them.
-func (e *Endpoint) DeleteStreams(streamIDs []int64) ([]*rpcfb.StreamT, error) {
-	logger := e.lg
+func (e *Endpoint) DeleteStreams(ctx context.Context, streamIDs []int64) ([]*rpcfb.StreamT, error) {
+	logger := e.lg.With(zap.Int64s("stream-ids", streamIDs), traceutil.TraceLogField(ctx))
 
 	streamPaths := make([][]byte, 0, len(streamIDs))
 	for _, streamID := range streamIDs {
 		streamPaths = append(streamPaths, streamPath(streamID))
 	}
-	prevKvs, err := e.BatchDelete(streamPaths, true)
+	prevKvs, err := e.BatchDelete(ctx, streamPaths, true)
 	if err != nil {
-		logger.Error("failed to delete stream", zap.Int64s("stream-ids", streamIDs), zap.Error(err))
+		logger.Error("failed to delete stream", zap.Error(err))
 		return nil, errors.WithMessage(err, "delete stream")
 	}
 	if len(prevKvs) < len(streamIDs) {
 		existedStreamIDs := streamIDsFromPaths(prevKvs)
-		logger.Warn("streams not found when delete streams", zap.Int64s("existed-stream-ids", existedStreamIDs), zap.Int64s("stream-ids", streamIDs))
+		logger.Warn("streams not found when delete streams", zap.Int64s("existed-stream-ids", existedStreamIDs))
 		return nil, nil
 	}
 
@@ -108,8 +110,8 @@ func (e *Endpoint) DeleteStreams(streamIDs []int64) ([]*rpcfb.StreamT, error) {
 }
 
 // UpdateStreams updates the streams with the given streams and returns them.
-func (e *Endpoint) UpdateStreams(streams []*rpcfb.StreamT) ([]*rpcfb.StreamT, error) {
-	logger := e.lg
+func (e *Endpoint) UpdateStreams(ctx context.Context, streams []*rpcfb.StreamT) ([]*rpcfb.StreamT, error) {
+	logger := e.lg.With(traceutil.TraceLogField(ctx))
 
 	kvs := make([]kv.KeyValue, 0, len(streams))
 	for _, stream := range streams {
@@ -123,7 +125,7 @@ func (e *Endpoint) UpdateStreams(streams []*rpcfb.StreamT) ([]*rpcfb.StreamT, er
 		})
 	}
 
-	prevKvs, err := e.BatchPut(kvs, true)
+	prevKvs, err := e.BatchPut(ctx, kvs, true)
 	for _, keyValue := range kvs {
 		mcache.Free(keyValue.Value)
 	}
@@ -149,12 +151,12 @@ func (e *Endpoint) UpdateStreams(streams []*rpcfb.StreamT) ([]*rpcfb.StreamT, er
 }
 
 // GetStream gets the stream with the given stream id.
-func (e *Endpoint) GetStream(streamID int64) (*rpcfb.StreamT, error) {
-	logger := e.lg
+func (e *Endpoint) GetStream(ctx context.Context, streamID int64) (*rpcfb.StreamT, error) {
+	logger := e.lg.With(zap.Int64("stream-id", streamID), traceutil.TraceLogField(ctx))
 
-	value, err := e.Get(streamPath(streamID))
+	value, err := e.Get(ctx, streamPath(streamID))
 	if err != nil {
-		logger.Error("failed to get stream", zap.Int64("stream-id", streamID), zap.Error(err))
+		logger.Error("failed to get stream", zap.Error(err))
 		return nil, errors.WithMessage(err, "get stream")
 	}
 	if value == nil {
@@ -166,10 +168,10 @@ func (e *Endpoint) GetStream(streamID int64) (*rpcfb.StreamT, error) {
 
 // ForEachStream calls the given function for every stream in the storage.
 // If f returns an error, the iteration is stopped and the error is returned.
-func (e *Endpoint) ForEachStream(f func(stream *rpcfb.StreamT) error) error {
+func (e *Endpoint) ForEachStream(ctx context.Context, f func(stream *rpcfb.StreamT) error) error {
 	var startID = MinStreamID
 	for startID >= MinStreamID {
-		nextID, err := e.forEachStreamLimited(f, startID, _streamByRangeLimit)
+		nextID, err := e.forEachStreamLimited(ctx, f, startID, _streamByRangeLimit)
 		if err != nil {
 			return err
 		}
@@ -178,11 +180,11 @@ func (e *Endpoint) ForEachStream(f func(stream *rpcfb.StreamT) error) error {
 	return nil
 }
 
-func (e *Endpoint) forEachStreamLimited(f func(stream *rpcfb.StreamT) error, startID int64, limit int64) (nextID int64, err error) {
-	logger := e.lg
+func (e *Endpoint) forEachStreamLimited(ctx context.Context, f func(stream *rpcfb.StreamT) error, startID int64, limit int64) (nextID int64, err error) {
+	logger := e.lg.With(traceutil.TraceLogField(ctx))
 
 	startKey := streamPath(startID)
-	kvs, err := e.GetByRange(kv.Range{StartKey: startKey, EndKey: e.endStreamPath()}, limit)
+	kvs, err := e.GetByRange(ctx, kv.Range{StartKey: startKey, EndKey: e.endStreamPath()}, limit)
 	if err != nil {
 		logger.Error("failed to get streams", zap.Int64("start-id", startID), zap.Int64("limit", limit), zap.Error(err))
 		return MinStreamID - 1, errors.WithMessage(err, "get streams")

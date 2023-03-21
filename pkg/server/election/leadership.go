@@ -108,7 +108,7 @@ func (ls *Leadership) Watch(serverCtx context.Context, revision etcdutil.ModRevi
 
 // Campaign is used to campaign the leader with given lease and returns a leadership
 // returns true if successfully campaign leader
-func (ls *Leadership) Campaign(leaseTimeout int64, leaderData string) (bool, error) {
+func (ls *Leadership) Campaign(ctx context.Context, leaseTimeout int64, leaderData string) (bool, error) {
 	logger := ls.lg
 
 	ls.leaderValue = leaderData
@@ -124,7 +124,7 @@ func (ls *Leadership) Campaign(leaseTimeout int64, leaderData string) (bool, err
 		return false, errors.WithMessage(err, "grant lease")
 	}
 
-	resp, err := etcdutil.NewTxn(ls.client, logger).
+	resp, err := etcdutil.NewTxn(ctx, ls.client, logger).
 		// The leader key must not exist, so the CreateRevision is 0.
 		If(clientv3.Compare(clientv3.CreateRevision(ls.leaderKey), "=", 0)).
 		Then(clientv3.OpPut(ls.leaderKey, leaderData, clientv3.WithLease(newLease.ID))).
@@ -160,10 +160,10 @@ func (ls *Leadership) Keep(ctx context.Context) {
 }
 
 // DeleteLeaderKey deletes the corresponding leader from etcd by the leaderPath as the key.
-func (ls *Leadership) DeleteLeaderKey() error {
+func (ls *Leadership) DeleteLeaderKey(ctx context.Context) error {
 	logger := ls.lg
 
-	resp, err := etcdutil.NewTxn(ls.client, logger).Then(clientv3.OpDelete(ls.leaderKey)).Commit()
+	resp, err := etcdutil.NewTxn(ctx, ls.client, logger).Then(clientv3.OpDelete(ls.leaderKey)).Commit()
 	if err != nil {
 		logger.Error("failed to delete leader key", zap.String("leader-key", ls.leaderKey))
 		return errors.WithMessage(err, "delete etcd key")

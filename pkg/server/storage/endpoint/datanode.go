@@ -1,6 +1,7 @@
 package endpoint
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/bytedance/gopkg/lang/mcache"
@@ -10,6 +11,7 @@ import (
 	"github.com/AutoMQ/placement-manager/api/rpcfb/rpcfb"
 	"github.com/AutoMQ/placement-manager/pkg/server/storage/kv"
 	"github.com/AutoMQ/placement-manager/pkg/util/fbutil"
+	"github.com/AutoMQ/placement-manager/pkg/util/traceutil"
 )
 
 const (
@@ -25,16 +27,16 @@ const (
 )
 
 type DataNode interface {
-	SaveDataNode(dataNode *rpcfb.DataNodeT) (*rpcfb.DataNodeT, error)
-	ForEachDataNode(f func(dataNode *rpcfb.DataNodeT) error) error
+	SaveDataNode(ctx context.Context, dataNode *rpcfb.DataNodeT) (*rpcfb.DataNodeT, error)
+	ForEachDataNode(ctx context.Context, f func(dataNode *rpcfb.DataNodeT) error) error
 }
 
 // SaveDataNode creates or updates the given data node and returns it.
-func (e *Endpoint) SaveDataNode(dataNode *rpcfb.DataNodeT) (*rpcfb.DataNodeT, error) {
-	logger := e.lg
+func (e *Endpoint) SaveDataNode(ctx context.Context, dataNode *rpcfb.DataNodeT) (*rpcfb.DataNodeT, error) {
+	logger := e.lg.With(zap.Int32("node-id", dataNode.NodeId), traceutil.TraceLogField(ctx))
 
 	if dataNode.NodeId < MinDataNodeID {
-		logger.Error("invalid data node id", zap.Int32("node-id", dataNode.NodeId))
+		logger.Error("invalid data node id")
 		return nil, errors.Errorf("invalid data node id: %d < %d", dataNode.NodeId, MinDataNodeID)
 	}
 
@@ -42,9 +44,9 @@ func (e *Endpoint) SaveDataNode(dataNode *rpcfb.DataNodeT) (*rpcfb.DataNodeT, er
 	value := fbutil.Marshal(dataNode)
 	defer mcache.Free(value)
 
-	_, err := e.Put(key, value, false)
+	_, err := e.Put(ctx, key, value, false)
 	if err != nil {
-		logger.Error("failed to save data node", zap.Int32("node-id", dataNode.NodeId), zap.Error(err))
+		logger.Error("failed to save data node", zap.Error(err))
 		return nil, errors.WithMessage(err, "save data node")
 	}
 
@@ -53,10 +55,10 @@ func (e *Endpoint) SaveDataNode(dataNode *rpcfb.DataNodeT) (*rpcfb.DataNodeT, er
 
 // ForEachDataNode calls the given function for every data node in the storage.
 // If f returns an error, the iteration is stopped and the error is returned.
-func (e *Endpoint) ForEachDataNode(f func(dataNode *rpcfb.DataNodeT) error) error {
+func (e *Endpoint) ForEachDataNode(ctx context.Context, f func(dataNode *rpcfb.DataNodeT) error) error {
 	var startID = MinDataNodeID
 	for startID >= MinDataNodeID {
-		nextID, err := e.forEachDataNodeLimited(f, startID, _dataNodeByRangeLimit)
+		nextID, err := e.forEachDataNodeLimited(ctx, f, startID, _dataNodeByRangeLimit)
 		if err != nil {
 			return err
 		}
@@ -65,11 +67,11 @@ func (e *Endpoint) ForEachDataNode(f func(dataNode *rpcfb.DataNodeT) error) erro
 	return nil
 }
 
-func (e *Endpoint) forEachDataNodeLimited(f func(dataNode *rpcfb.DataNodeT) error, startID int32, limit int64) (nextID int32, err error) {
-	logger := e.lg
+func (e *Endpoint) forEachDataNodeLimited(ctx context.Context, f func(dataNode *rpcfb.DataNodeT) error, startID int32, limit int64) (nextID int32, err error) {
+	logger := e.lg.With(traceutil.TraceLogField(ctx))
 
 	startKey := dataNodePath(startID)
-	kvs, err := e.GetByRange(kv.Range{StartKey: startKey, EndKey: e.endDataNodePath()}, limit)
+	kvs, err := e.GetByRange(ctx, kv.Range{StartKey: startKey, EndKey: e.endDataNodePath()}, limit)
 	if err != nil {
 		logger.Error("failed to get data nodes", zap.Int32("start-id", startID), zap.Int64("limit", limit), zap.Error(err))
 		return MinDataNodeID - 1, errors.WithMessage(err, "get data nodes")

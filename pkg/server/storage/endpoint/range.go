@@ -1,6 +1,7 @@
 package endpoint
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/pkg/errors"
@@ -8,6 +9,7 @@ import (
 
 	"github.com/AutoMQ/placement-manager/api/rpcfb/rpcfb"
 	"github.com/AutoMQ/placement-manager/pkg/server/storage/kv"
+	"github.com/AutoMQ/placement-manager/pkg/util/traceutil"
 )
 
 const (
@@ -32,20 +34,20 @@ const (
 )
 
 type Range interface {
-	GetRange(t *rpcfb.RangeIdT) (*rpcfb.RangeT, error)
-	GetRangesByStream(streamID int64) ([]*rpcfb.RangeT, error)
-	ForEachRangeInStream(streamID int64, f func(r *rpcfb.RangeT) error) error
-	GetRangeIDsByDataNode(dataNodeID int32) ([]*rpcfb.RangeIdT, error)
-	ForEachRangeIDOnDataNode(dataNodeID int32, f func(rangeID *rpcfb.RangeIdT) error) error
+	GetRange(ctx context.Context, t *rpcfb.RangeIdT) (*rpcfb.RangeT, error)
+	GetRangesByStream(ctx context.Context, streamID int64) ([]*rpcfb.RangeT, error)
+	ForEachRangeInStream(ctx context.Context, streamID int64, f func(r *rpcfb.RangeT) error) error
+	GetRangeIDsByDataNode(ctx context.Context, dataNodeID int32) ([]*rpcfb.RangeIdT, error)
+	ForEachRangeIDOnDataNode(ctx context.Context, dataNodeID int32, f func(rangeID *rpcfb.RangeIdT) error) error
 }
 
-func (e *Endpoint) GetRange(rangeID *rpcfb.RangeIdT) (*rpcfb.RangeT, error) {
-	logger := e.lg
+func (e *Endpoint) GetRange(ctx context.Context, rangeID *rpcfb.RangeIdT) (*rpcfb.RangeT, error) {
+	logger := e.lg.With(zap.Int64("stream-id", rangeID.StreamId), zap.Int32("range-index", rangeID.RangeIndex), traceutil.TraceLogField(ctx))
 
 	key := rangePathInSteam(rangeID.StreamId, rangeID.RangeIndex)
-	value, err := e.Get(key)
+	value, err := e.Get(ctx, key)
 	if err != nil {
-		logger.Error("failed to get range", zap.Int64("stream-id", rangeID.StreamId), zap.Int32("range-index", rangeID.RangeIndex), zap.Error(err))
+		logger.Error("failed to get range", zap.Error(err))
 		return nil, errors.WithMessage(err, "get range")
 	}
 
@@ -53,17 +55,17 @@ func (e *Endpoint) GetRange(rangeID *rpcfb.RangeIdT) (*rpcfb.RangeT, error) {
 }
 
 // GetRangesByStream returns the ranges of the given stream.
-func (e *Endpoint) GetRangesByStream(streamID int64) ([]*rpcfb.RangeT, error) {
-	logger := e.lg
+func (e *Endpoint) GetRangesByStream(ctx context.Context, streamID int64) ([]*rpcfb.RangeT, error) {
+	logger := e.lg.With(zap.Int64("stream-id", streamID), traceutil.TraceLogField(ctx))
 
 	// TODO set capacity
 	ranges := make([]*rpcfb.RangeT, 0)
-	err := e.ForEachRangeInStream(streamID, func(r *rpcfb.RangeT) error {
+	err := e.ForEachRangeInStream(ctx, streamID, func(r *rpcfb.RangeT) error {
 		ranges = append(ranges, r)
 		return nil
 	})
 	if err != nil {
-		logger.Error("failed to get ranges", zap.Int64("stream-id", streamID), zap.Error(err))
+		logger.Error("failed to get ranges", zap.Error(err))
 		return nil, errors.WithMessage(err, "get ranges")
 	}
 
@@ -72,10 +74,10 @@ func (e *Endpoint) GetRangesByStream(streamID int64) ([]*rpcfb.RangeT, error) {
 
 // ForEachRangeInStream calls the given function f for each range in the stream.
 // If f returns an error, the iteration is stopped and the error is returned.
-func (e *Endpoint) ForEachRangeInStream(streamID int64, f func(r *rpcfb.RangeT) error) error {
+func (e *Endpoint) ForEachRangeInStream(ctx context.Context, streamID int64, f func(r *rpcfb.RangeT) error) error {
 	var startID = MinRangeIndex
 	for startID >= MinRangeIndex {
-		nextID, err := e.forEachRangeInStreamLimited(streamID, f, startID, _rangeByRangeLimit)
+		nextID, err := e.forEachRangeInStreamLimited(ctx, streamID, f, startID, _rangeByRangeLimit)
 		if err != nil {
 			return err
 		}
@@ -84,13 +86,13 @@ func (e *Endpoint) ForEachRangeInStream(streamID int64, f func(r *rpcfb.RangeT) 
 	return nil
 }
 
-func (e *Endpoint) forEachRangeInStreamLimited(streamID int64, f func(r *rpcfb.RangeT) error, startID int32, limit int64) (nextID int32, err error) {
-	logger := e.lg
+func (e *Endpoint) forEachRangeInStreamLimited(ctx context.Context, streamID int64, f func(r *rpcfb.RangeT) error, startID int32, limit int64) (nextID int32, err error) {
+	logger := e.lg.With(zap.Int64("stream-id", streamID), traceutil.TraceLogField(ctx))
 
 	startKey := rangePathInSteam(streamID, startID)
-	kvs, err := e.GetByRange(kv.Range{StartKey: startKey, EndKey: e.endRangePathInStream(streamID)}, limit)
+	kvs, err := e.GetByRange(ctx, kv.Range{StartKey: startKey, EndKey: e.endRangePathInStream(streamID)}, limit)
 	if err != nil {
-		logger.Error("failed to get ranges", zap.Int64("stream-id", streamID), zap.Int32("start-id", startID), zap.Int64("limit", limit), zap.Error(err))
+		logger.Error("failed to get ranges", zap.Int32("start-id", startID), zap.Int64("limit", limit), zap.Error(err))
 		return MinRangeIndex - 1, errors.WithMessage(err, "get ranges")
 	}
 
@@ -120,17 +122,17 @@ func rangePathInSteam(streamID int64, rangeIndex int32) []byte {
 	return res
 }
 
-func (e *Endpoint) GetRangeIDsByDataNode(dataNodeID int32) ([]*rpcfb.RangeIdT, error) {
-	logger := e.lg
+func (e *Endpoint) GetRangeIDsByDataNode(ctx context.Context, dataNodeID int32) ([]*rpcfb.RangeIdT, error) {
+	logger := e.lg.With(zap.Int32("data-node-id", dataNodeID), traceutil.TraceLogField(ctx))
 
 	// TODO set capacity
 	rangeIDs := make([]*rpcfb.RangeIdT, 0)
-	err := e.ForEachRangeIDOnDataNode(dataNodeID, func(rangeID *rpcfb.RangeIdT) error {
+	err := e.ForEachRangeIDOnDataNode(ctx, dataNodeID, func(rangeID *rpcfb.RangeIdT) error {
 		rangeIDs = append(rangeIDs, rangeID)
 		return nil
 	})
 	if err != nil {
-		logger.Error("failed to get range ids", zap.Int32("data-node-id", dataNodeID), zap.Error(err))
+		logger.Error("failed to get range ids", zap.Error(err))
 		return nil, errors.WithMessage(err, "get range ids")
 	}
 
@@ -139,10 +141,10 @@ func (e *Endpoint) GetRangeIDsByDataNode(dataNodeID int32) ([]*rpcfb.RangeIdT, e
 
 // ForEachRangeIDOnDataNode calls the given function f for each range on the data node.
 // If f returns an error, the iteration is stopped and the error is returned.
-func (e *Endpoint) ForEachRangeIDOnDataNode(dataNodeID int32, f func(rangeID *rpcfb.RangeIdT) error) error {
+func (e *Endpoint) ForEachRangeIDOnDataNode(ctx context.Context, dataNodeID int32, f func(rangeID *rpcfb.RangeIdT) error) error {
 	startID := &rpcfb.RangeIdT{StreamId: MinStreamID, RangeIndex: MinRangeIndex}
 	for startID != nil && startID.StreamId >= MinStreamID && startID.RangeIndex >= MinRangeIndex {
-		nextID, err := e.forEachRangeIDOnDataNodeLimited(dataNodeID, f, startID, _rangeByRangeLimit)
+		nextID, err := e.forEachRangeIDOnDataNodeLimited(ctx, dataNodeID, f, startID, _rangeByRangeLimit)
 		if err != nil {
 			return err
 		}
@@ -151,13 +153,13 @@ func (e *Endpoint) ForEachRangeIDOnDataNode(dataNodeID int32, f func(rangeID *rp
 	return nil
 }
 
-func (e *Endpoint) forEachRangeIDOnDataNodeLimited(dataNodeID int32, f func(rangeID *rpcfb.RangeIdT) error, startID *rpcfb.RangeIdT, limit int64) (nextID *rpcfb.RangeIdT, err error) {
-	logger := e.lg
+func (e *Endpoint) forEachRangeIDOnDataNodeLimited(ctx context.Context, dataNodeID int32, f func(rangeID *rpcfb.RangeIdT) error, startID *rpcfb.RangeIdT, limit int64) (nextID *rpcfb.RangeIdT, err error) {
+	logger := e.lg.With(zap.Int32("data-node-id", dataNodeID), traceutil.TraceLogField(ctx))
 
 	startKey := rangePathOnDataNode(dataNodeID, startID.StreamId, startID.RangeIndex)
-	kvs, err := e.GetByRange(kv.Range{StartKey: startKey, EndKey: e.endRangePathOnDataNode(dataNodeID)}, limit)
+	kvs, err := e.GetByRange(ctx, kv.Range{StartKey: startKey, EndKey: e.endRangePathOnDataNode(dataNodeID)}, limit)
 	if err != nil {
-		logger.Error("failed to get range ids", zap.Int32("data-node-id", dataNodeID), zap.Int64("start-stream-id", startID.StreamId), zap.Int32("start-range-index", startID.RangeIndex), zap.Int64("limit", limit), zap.Error(err))
+		logger.Error("failed to get range ids", zap.Int64("start-stream-id", startID.StreamId), zap.Int32("start-range-index", startID.RangeIndex), zap.Int64("limit", limit), zap.Error(err))
 		return nil, errors.WithMessage(err, "get range ids")
 	}
 
