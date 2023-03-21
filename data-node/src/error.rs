@@ -12,6 +12,9 @@ pub enum ServiceError {
     #[error("Failed to seal a stream range")]
     Seal,
 
+    #[error("The range is already sealed")]
+    AlreadySealed,
+
     #[error("Resource `{0}` is not found")]
     NotFound(String),
 

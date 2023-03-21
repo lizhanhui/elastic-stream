@@ -470,7 +470,7 @@ impl super::LocalRangeManager for Indexer {
     }
 
     fn seal(&self, stream_id: i64, range: &StreamRange) -> Result<(), StoreError> {
-        debug_assert!(range.sealed(), "Range is not sealed yet");
+        debug_assert!(range.is_sealed(), "Range is not sealed yet");
         let end = range.end().ok_or(StoreError::Internal("".to_owned()))?;
         debug_assert!(end >= range.start(), "End of range cannot less than start");
 

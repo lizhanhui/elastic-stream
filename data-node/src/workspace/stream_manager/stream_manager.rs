@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use model::{
     range::{Range, StreamRange},
-    stream::Stream,
+    stream::{self, Stream},
 };
 use slog::{error, trace, warn, Logger};
 use tokio::sync::oneshot;
@@ -47,7 +47,7 @@ impl StreamManager {
                 .last()
                 .expect("Stream range list must have at least one range");
             debug_assert!(
-                !range.sealed(),
+                !range.is_sealed(),
                 "The last range of a stream should always be mutable"
             );
             let start = range.start();
@@ -68,6 +68,27 @@ impl StreamManager {
 
             self.streams.insert(stream_id, stream);
             trace!(self.log, "Create Stream[id={}]", stream_id);
+
+            return Ok(());
+        }
+        Ok(())
+    }
+
+    async fn ensure_mutable(&mut self, stream_id: i64) -> Result<(), ServiceError> {
+        if let Some(stream) = self.streams.get_mut(&stream_id) {
+            if stream.is_mut() {
+                return Ok(());
+            }
+        }
+
+        let ranges = self.fetcher.fetch(stream_id).await?;
+        if let Some(range) = ranges.last() {
+            if range.is_sealed() {
+                return Err(ServiceError::AlreadySealed);
+            }
+        }
+        if let Some(stream) = self.streams.get_mut(&stream_id) {
+            stream.refresh(ranges);
         }
 
         Ok(())
@@ -82,6 +103,7 @@ impl StreamManager {
         tx: oneshot::Sender<()>,
     ) -> Result<u64, ServiceError> {
         self.create_stream_if_missing(stream_id).await?;
+        self.ensure_mutable(stream_id).await?;
 
         if let Some(window) = self.windows.get_mut(&stream_id) {
             let slot = window.alloc_slot(tx);
@@ -91,8 +113,17 @@ impl StreamManager {
         unreachable!("Should have an `AppendWindow` for stream[id={}]", stream_id);
     }
 
+    pub(crate) async fn ack(&mut self, stream_id: i64, offset: u64) -> Result<(), ServiceError> {
+        self.ensure_mutable(stream_id).await?;
+        if let Some(window) = self.windows.get_mut(&stream_id) {
+            window.ack(offset);
+        }
+        Ok(())
+    }
+
     /// TODO: Consider current
-    pub(crate) fn seal(&mut self, stream_id: i64) -> Result<u64, ServiceError> {
+    pub(crate) async fn seal(&mut self, stream_id: i64) -> Result<u64, ServiceError> {
+        self.ensure_mutable(stream_id).await?;
         let committed = match self.windows.remove(&stream_id) {
             Some(window) => window.commit,
             None => {
@@ -101,7 +132,7 @@ impl StreamManager {
             }
         };
 
-        if let Some(stream) = self.streams.get(&stream_id) {
+        if let Some(stream) = self.streams.get_mut(&stream_id) {
             stream.seal(committed);
             Ok(committed)
         } else {
@@ -136,9 +167,65 @@ impl StreamManager {
 mod tests {
     use std::error::Error;
 
+    use model::range::StreamRange;
+    use tokio::sync::oneshot;
+
+    use crate::workspace::stream_manager::{fetcher::Fetcher, StreamManager};
+
     #[test]
     fn test_seal() -> Result<(), Box<dyn Error>> {
-        Ok(())
+        let logger = test_util::terminal_logger();
+        tokio_uring::start(async {
+            let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+
+            let fetcher = Fetcher::Channel { sender: tx };
+            const TOTAL: i32 = 16;
+
+            tokio_uring::spawn(async move {
+                loop {
+                    match rx.recv().await {
+                        Some(task) => {
+                            let stream_id = task.stream_id;
+                            let ranges = (0..TOTAL)
+                                .map(|i| {
+                                    if i < TOTAL - 1 {
+                                        StreamRange::new(
+                                            stream_id,
+                                            i,
+                                            (i * 100) as u64,
+                                            ((i + 1) * 100) as u64,
+                                            Some(((i + 1) * 100) as u64),
+                                        )
+                                    } else {
+                                        StreamRange::new(stream_id, i, (i * 100) as u64, 0, None)
+                                    }
+                                })
+                                .collect::<Vec<_>>();
+                            if let Err(e) = task.tx.send(Ok(ranges)) {
+                                panic!("Failed to transfer mocked ranges");
+                            }
+                        }
+                        None => {
+                            break;
+                        }
+                    }
+                }
+            });
+
+            let stream_id = 1;
+
+            let mut stream_manager = StreamManager::new(logger, fetcher);
+            let (tx, rx) = oneshot::channel();
+            let offset = stream_manager
+                .alloc_record_slot(stream_id, tx)
+                .await
+                .unwrap();
+            stream_manager.ack(stream_id, offset).await?;
+            let seal_offset = stream_manager.seal(stream_id).await.unwrap();
+            assert_eq!(offset + 1, seal_offset);
+
+            Ok(())
+        })
     }
 
     #[test]

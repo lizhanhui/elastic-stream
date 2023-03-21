@@ -31,6 +31,7 @@ tokio-uring = { workspace = true }
 tokio = { workspace = true }
 futures = { workspace = true }
 chrono = "0.4.23"
+test-util = { path = "../components/test-util" }
 
 [dev-dependencies]
 mockall = { workspace = true }

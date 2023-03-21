@@ -5,7 +5,7 @@ use derivative::Derivative;
 use crate::{data_node::DataNode, error::RangeError};
 
 pub trait Range {
-    fn sealed(&self) -> bool;
+    fn is_sealed(&self) -> bool;
 
     fn seal(&mut self) -> Result<u64, RangeError>;
 }
@@ -95,7 +95,7 @@ impl StreamRange {
 }
 
 impl Range for StreamRange {
-    fn sealed(&self) -> bool {
+    fn is_sealed(&self) -> bool {
         self.end.is_some()
     }
 
@@ -131,26 +131,26 @@ mod tests {
     #[test]
     fn test_take_slot() {
         let mut range = StreamRange::new(0, 0, 0, 0, None);
-        assert_eq!(range.sealed(), false);
+        assert_eq!(range.is_sealed(), false);
         assert_eq!(range.len(), 0);
 
         assert_eq!(range.take_slot(), Ok(0));
         assert_eq!(range.len(), 1);
-        assert_eq!(range.sealed(), false);
+        assert_eq!(range.is_sealed(), false);
 
         assert_eq!(range.take_slot(), Ok(1));
         assert_eq!(range.len(), 2);
-        assert_eq!(range.sealed(), false);
+        assert_eq!(range.is_sealed(), false);
 
         assert_eq!(range.take_slot(), Ok(2));
         assert_eq!(range.len(), 3);
-        assert_eq!(range.sealed(), false);
+        assert_eq!(range.is_sealed(), false);
 
         assert_eq!(range.seal(), Ok(3));
-        assert_eq!(range.sealed(), true);
+        assert_eq!(range.is_sealed(), true);
         assert_eq!(range.seal(), Err(RangeError::AlreadySealed(3)));
         assert_eq!(range.take_slot(), Err(RangeError::AlreadySealed(3)));
         assert_eq!(range.len(), 3);
-        assert_eq!(range.sealed(), true);
+        assert_eq!(range.is_sealed(), true);
     }
 }

@@ -1,4 +1,4 @@
-use crate::range::StreamRange;
+use crate::range::{Range, StreamRange};
 
 /// Stream is the basic storage unit in the system that store records in an append-only fashion.
 pub struct Stream {
@@ -15,8 +15,19 @@ impl Stream {
         Self { id, ranges: vec![] }
     }
 
-    pub fn seal(&self, committed: u64) {
-        todo!()
+    pub fn seal(&mut self, committed: u64) {
+        self.ranges.last_mut().and_then(|range| {
+            range.set_limit(committed);
+            Some(range.seal())
+        });
+    }
+
+    /// A stream is mutable iff its last range is not sealed.
+    pub fn is_mut(&self) -> bool {
+        self.ranges
+            .last()
+            .and_then(|range| Some(!range.is_sealed()))
+            .unwrap_or(false)
     }
 
     pub fn range(&self, index: i32) -> Option<StreamRange> {
@@ -25,5 +36,13 @@ impl Stream {
             .try_find(|&range| Some(range.id() == index))
             .flatten()
             .map(|range| range.clone())
+    }
+
+    pub fn refresh(&mut self, ranges: Vec<StreamRange>) {
+        let to_append = ranges
+            .into_iter()
+            .filter(|range| self.ranges.iter().find(|r| range.id() == r.id()).is_none())
+            .collect::<Vec<_>>();
+        self.ranges.extend(to_append);
     }
 }

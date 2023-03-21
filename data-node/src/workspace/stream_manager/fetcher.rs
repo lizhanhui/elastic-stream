@@ -7,10 +7,10 @@ use crate::error::ServiceError;
 /// Non-primary `Node` uses this task to delegate query range task to the primary one.
 pub struct FetchRangeTask {
     /// Stream-id to query
-    stream_id: i64,
+    pub stream_id: i64,
 
     /// Once the query completes, transfer results back to the caller through this oneshot channel.
-    tx: oneshot::Sender<Result<Vec<StreamRange>, ServiceError>>,
+    pub tx: oneshot::Sender<Result<Vec<StreamRange>, ServiceError>>,
 }
 
 pub(crate) enum Fetcher {
@@ -27,6 +27,7 @@ pub(crate) enum Fetcher {
 }
 
 impl Fetcher {
+    /// TODO: filter out ranges that is not hosted in current data node.
     pub(crate) async fn fetch(&mut self, stream_id: i64) -> Result<Vec<StreamRange>, ServiceError> {
         match self {
             Fetcher::Channel { sender } => Self::fetch_from_peer_node(sender, stream_id).await,
@@ -57,7 +58,7 @@ impl Fetcher {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use std::error::Error;
 
     use model::range::StreamRange;
