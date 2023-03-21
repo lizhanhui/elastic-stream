@@ -19,7 +19,7 @@ enum RecordMagic {
 ///
 /// RecordBatch =>
 ///  Magic => Int8
-///  BaseOffset => Int32
+///  BaseOffset => Int64
 ///  MetaLength => Int32
 ///  Meta => RecordBatchMeta
 ///  Records => [Record]
