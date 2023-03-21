@@ -76,6 +76,7 @@ BUILDX_NAME := $(shell basename $$(pwd))
 
 # Satisfy --warn-undefined-variables.
 GOFLAGS ?=
+GOPROXY ?= $(shell go env GOPROXY)
 HTTP_PROXY ?=
 HTTPS_PROXY ?=
 
@@ -179,6 +180,7 @@ go-build: | $(BUILD_DIRS)
 	    --env VERSION="$(VERSION)"                              \
 	    --env DEBUG="$(DBG)"                                    \
 	    --env GOFLAGS="$(GOFLAGS)"                              \
+	    --env GOPROXY="$(GOPROXY)"                              \
 	    --env HTTP_PROXY="$(HTTP_PROXY)"                        \
 	    --env HTTPS_PROXY="$(HTTPS_PROXY)"                      \
 	    $(BUILD_IMAGE)                                          \
@@ -204,6 +206,7 @@ shell: | $(BUILD_DIRS)
 	    --env VERSION="$(VERSION)"                              \
 	    --env DEBUG="$(DBG)"                                    \
 	    --env GOFLAGS="$(GOFLAGS)"                              \
+	    --env GOPROXY="$(GOPROXY)"                              \
 	    --env HTTP_PROXY="$(HTTP_PROXY)"                        \
 	    --env HTTPS_PROXY="$(HTTPS_PROXY)"                      \
 	    $(BUILD_IMAGE)                                          \
@@ -321,6 +324,7 @@ test: | $(BUILD_DIRS)
 	    --env VERSION="$(VERSION)"                              \
 	    --env DEBUG="$(DBG)"                                    \
 	    --env GOFLAGS="$(GOFLAGS)"                              \
+	    --env GOPROXY="$(GOPROXY)"                              \
 	    --env HTTP_PROXY="$(HTTP_PROXY)"                        \
 	    --env HTTPS_PROXY="$(HTTPS_PROXY)"                      \
 	    $(BUILD_IMAGE)                                          \
@@ -344,6 +348,7 @@ lint: | $(BUILD_DIRS)
 	    --env VERSION="$(VERSION)"                              \
 	    --env DEBUG="$(DBG)"                                    \
 	    --env GOFLAGS="$(GOFLAGS)"                              \
+	    --env GOPROXY="$(GOPROXY)"                              \
 	    --env HTTP_PROXY="$(HTTP_PROXY)"                        \
 	    --env HTTPS_PROXY="$(HTTPS_PROXY)"                      \
 	    $(BUILD_IMAGE)                                          \
@@ -367,6 +372,7 @@ fmt: | $(BUILD_DIRS)
 	    --env VERSION="$(VERSION)"                              \
 	    --env DEBUG="$(DBG)"                                    \
 	    --env GOFLAGS="$(GOFLAGS)"                              \
+	    --env GOPROXY="$(GOPROXY)"                              \
 	    --env HTTP_PROXY="$(HTTP_PROXY)"                        \
 	    --env HTTPS_PROXY="$(HTTPS_PROXY)"                      \
 	    $(BUILD_IMAGE)                                          \
@@ -393,6 +399,7 @@ help:
 	echo "  ARCH = $(ARCH)"
 	echo "  DBG = $(DBG)"
 	echo "  GOFLAGS = $(GOFLAGS)"
+	echo "  GOPROXY = $(GOPROXY)"
 	echo "  REGISTRY = $(REGISTRY)"
 	echo
 	echo "TARGETS:"
