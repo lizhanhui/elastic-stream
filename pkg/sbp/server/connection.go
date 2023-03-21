@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/bytedance/gopkg/lang/mcache"
+	"github.com/google/uuid"
 	"github.com/pkg/errors"
 	"go.uber.org/zap"
 
@@ -17,8 +18,13 @@ import (
 	"github.com/AutoMQ/placement-manager/pkg/sbp/codec"
 	"github.com/AutoMQ/placement-manager/pkg/sbp/protocol"
 	"github.com/AutoMQ/placement-manager/pkg/util/logutil"
+	"github.com/AutoMQ/placement-manager/pkg/util/traceutil"
 	tphttp2 "github.com/AutoMQ/placement-manager/third_party/forked/golang/net/http2"
 )
+
+func init() {
+	uuid.EnableRandPool()
+}
 
 // conn is the state of a connection between server and client.
 type conn struct {
@@ -390,7 +396,9 @@ func (c *conn) generateAct(f *codec.DataFrame, action *Action) (act func(resp pr
 		return
 	}
 
-	ctx := c.ctx
+	id, _ := uuid.NewRandom()
+	ctx := traceutil.SetTraceID(c.ctx, id.String())
+
 	if req.Timeout() > 0 {
 		ctx, cancel := context.WithTimeout(ctx, time.Duration(req.Timeout())*time.Millisecond)
 		act = func(resp protocol.Response) {
