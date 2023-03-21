@@ -37,43 +37,37 @@ impl StreamManager {
                 "About to fetch ranges for stream[id={}]",
                 stream_id
             );
-            if let Some(ranges) = self.fetcher.fetch(stream_id).await? {
-                debug_assert!(
-                    !ranges.is_empty(),
-                    "PlacementManager should not respond with empty range list"
-                );
-                let range = ranges
-                    .last()
-                    .expect("Stream range list must have at least one range");
-                debug_assert!(
-                    !range.sealed(),
-                    "The last range of a stream should always be mutable"
-                );
-                let start = range.start();
-                trace!(
-                    self.log,
-                    "Mutable range of stream[id={}] is: [{}, -1)",
-                    stream_id,
-                    start
-                );
+            let ranges = self.fetcher.fetch(stream_id).await?;
 
-                // TODO: verify current node is actually a leader or follower of the last mutable range.
+            debug_assert!(
+                !ranges.is_empty(),
+                "PlacementManager should not respond with empty range list"
+            );
+            let range = ranges
+                .last()
+                .expect("Stream range list must have at least one range");
+            debug_assert!(
+                !range.sealed(),
+                "The last range of a stream should always be mutable"
+            );
+            let start = range.start();
+            trace!(
+                self.log,
+                "Mutable range of stream[id={}] is: [{}, -1)",
+                stream_id,
+                start
+            );
 
-                let window = AppendWindow::new(start);
+            // TODO: verify current node is actually a leader or follower of the last mutable range.
 
-                self.windows.insert(stream_id, window);
+            let window = AppendWindow::new(start);
 
-                let stream = Stream::new(stream_id, ranges);
+            self.windows.insert(stream_id, window);
 
-                self.streams.insert(stream_id, stream);
-                trace!(self.log, "Create Stream[id={}]", stream_id);
-            } else {
-                warn!(self.log, "Failed to list range from placement manager");
-                return Err(ServiceError::Internal(format!(
-                    "ListRange for stream[id={}] failed",
-                    stream_id
-                )));
-            }
+            let stream = Stream::new(stream_id, ranges);
+
+            self.streams.insert(stream_id, stream);
+            trace!(self.log, "Create Stream[id={}]", stream_id);
         }
 
         Ok(())
@@ -138,10 +132,17 @@ impl StreamManager {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
+    use std::error::Error;
 
-    
+    #[test]
+    fn test_seal() -> Result<(), Box<dyn Error>> {
+        Ok(())
+    }
 
+    #[test]
+    fn test_describe_range() -> Result<(), Box<dyn Error>> {
+        Ok(())
+    }
 }
