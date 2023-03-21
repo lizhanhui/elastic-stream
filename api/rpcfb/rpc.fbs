@@ -22,7 +22,7 @@ enum ErrorCode : int16 {
     HEADER_FIELDS_TOO_LARGE = 1431,
 
     // 15xx is reserved for placement manager errors
-    // In case placement manager encounters an internal error, normally, this implies
+    // In case placement manager encounters an internal error, normally, this implies 
     // that a design or implementation bug is triggered and should be fixed.
     PM_INTERNAL_SERVER_ERROR = 1500,
 
@@ -30,7 +30,7 @@ enum ErrorCode : int16 {
     PM_NOT_IMPLEMENTED = 1501,
 
     // When creating a new stream or sealing a mutable range, placement managers need to create
-    // a new replica-set of mutable range, which requires at least replica number of survival
+    // a new replica-set of mutable range, which requires at least replica number of survival 
     // data nodes. If this requirement is not met, use this error code to signal the client.
     PM_NO_AVAILABLE_DN = 1502,
 
@@ -81,6 +81,7 @@ enum ClientRole : byte {
     CLIENT_ROLE_UNKNOWN = 0,
     CLIENT_ROLE_PM = 1,
     CLIENT_ROLE_DATA_NODE = 2,
+    CLIENT_ROLE_CUSTOMER = 3,
 }
 
 // The heartbeat is used to keep the connection alive.
@@ -110,7 +111,7 @@ table AppendRequest {
 
 table AppendInfo {
     // The id of the stream to append records.
-    stream_id: int64 (id: 0);
+    stream_id: int64 = -1 (id: 0);
     // The index of the request in the batch.
     request_index: int32 (id: 1);
     // The payload length of this record batch to append
@@ -127,7 +128,7 @@ table AppendResponse {
 
 table AppendResult {
     // The id of the stream
-    stream_id: int64 (id: 0);
+    stream_id: int64 = -1 (id: 0);
     // The index of the request that this response is for.
     request_index: int32 (id: 1);
     // The offset of the first record in the record batch.
@@ -151,7 +152,7 @@ table FetchRequest {
 
 table FetchInfo {
     // A specfic stream to fetch data from.
-    stream_id: int64 (id: 0);
+    stream_id: int64 = -1 (id: 0);
     // The index of the request in the batch.
     request_index: int32 (id: 1);
     // The offset to fetch from.
@@ -170,7 +171,7 @@ table FetchResponse {
 
 table FetchResult {
     // The id of the stream
-    stream_id: int64 (id: 0);
+    stream_id: int64 = -1 (id: 0);
     // The index of the request that this response is for.
     request_index: int32 (id: 1);
     // The data length of the returned batch is used to decode the data from the payload.
@@ -184,12 +185,12 @@ table FetchResult {
 table RangeCriteria {
     data_node: DataNode (id: 0);
     // The stream id to list the ranges.
-    stream_id: int64 (id: 1);
+    stream_id: int64 = -1 (id: 1);
 }
 
 table DataNode {
     // The node id of the data node.
-    node_id: int32 (id: 0);
+    node_id: int32 = -1 (id: 0);
 
     // The advertise address of the data node, for client traffic from outside.
     // The schema of the address is `host:port`, while host supports both domain name and IPv4/IPv6 address.
@@ -224,9 +225,9 @@ table ListRangesResult {
 
 table Range {
     // The id of the stream
-    stream_id: int64 (id: 0);
+    stream_id: int64 = -1 (id: 0);
     // The index of the range in the stream.
-    range_index: int32 (id: 1);
+    range_index: int32 = -1 (id: 1);
 
     // The start offset of the range. Offset is 0-based index and follows left-boundary-inclusive and right-boundary-exclusive.
     start_offset: int64 (id: 2);
@@ -259,8 +260,8 @@ table SealRangesRequest {
 }
 
 table RangeId {
-    stream_id: int64 (id: 0);
-    range_index: int32 (id: 1);
+    stream_id: int64 = -1 (id: 0);
+    range_index: int32 = -1 (id: 1);
 }
 
 table SealRangesResponse {
@@ -273,7 +274,7 @@ table SealRangesResponse {
 
 table SealRangesResult {
     // The id of the stream
-    stream_id: int64 (id: 0);
+    stream_id: int64 = -1 (id: 0);
     // The array of ranges, returned by the seal ranges request.
     // Both the PM and the data node will handle the seal ranges request.
     // Only the sealed ranges will be returned from the data node, while the sealed ranges and the newly writable ranges will be returned from the PM.
@@ -291,7 +292,7 @@ table SyncRangesRequest {
 
 // Contains the ranges of a specific stream.
 table StreamRanges {
-    stream_id: int64 (id: 0);
+    stream_id: int64 = -1 (id: 0);
     ranges: [Range] (id: 1);
 }
 
@@ -305,7 +306,7 @@ table SyncRangesResponse {
 
 table SyncRangesResult {
     // The id of the stream
-    stream_id: int64 (id: 0);
+    stream_id: int64 = -1 (id: 0);
     // The array of ranges, returned by the sync ranges request.
     ranges: [Range] (id: 1);
     status: Status (id: 2);
@@ -329,7 +330,7 @@ table DescribeRangesResponse {
 
 table DescribeRangeResult {
     // The id of the stream
-    stream_id: int64 (id: 0);
+    stream_id: int64 = -1 (id: 0);
     // The array of ranges, returned by the describe ranges request.
     ranges: Range (id: 1);
     status: Status (id: 2);
@@ -338,7 +339,7 @@ table DescribeRangeResult {
 table Stream {
     // The id of the stream
     // Omitted if the stream is not created.
-    stream_id: int64 (id: 0);
+    stream_id: int64 = -1 (id: 0);
     // The number of replica of the stream.
     replica_nums: int8 (id: 1);
     // The time to live of records in the stream in milliseconds.
@@ -456,7 +457,7 @@ table TrimStreamsRequest {
 
 table TrimmedStream {
     // The id of the stream
-    stream_id: int64 (id: 0);
+    stream_id: int64 = -1 (id: 0);
     // The current minimum offset of the stream.
     // All the records before this offset have be deleted.
     trim_offset: int64 (id: 1);
