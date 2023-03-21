@@ -22,5 +22,5 @@ export CGO_ENABLED=0
 export GO111MODULE=on
 
 echo "Running tests:"
-go test -tags testing -coverprofile=covprofile -covermode=atomic -installsuffix "static" -v=0 "$@"
+go test -tags testing -coverprofile=covprofile -covermode=atomic -installsuffix "static" "$@"
 echo
