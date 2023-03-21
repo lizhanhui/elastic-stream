@@ -46,3 +46,7 @@ func (s *Sbp) pmInfo() []byte {
 	}
 	return fbutil.Marshal(pm)
 }
+
+func (s *Sbp) Logger() *zap.Logger {
+	return s.lg
+}

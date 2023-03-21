@@ -20,8 +20,9 @@ type Logger struct {
 }
 
 func (l Logger) Get(ctx context.Context, k []byte) (v []byte, err error) {
-	logger := l.logger()
 	v, err = l.LogAble.Get(ctx, k)
+
+	logger := l.logger()
 	if logger.Core().Enabled(zap.DebugLevel) {
 		logger = logger.With(traceutil.TraceLogField(ctx))
 		logger.Debug("kv get", zap.ByteString("key", k), zap.Binary("value", v), zap.Error(err))
@@ -30,8 +31,9 @@ func (l Logger) Get(ctx context.Context, k []byte) (v []byte, err error) {
 }
 
 func (l Logger) GetByRange(ctx context.Context, r Range, limit int64) (kvs []KeyValue, err error) {
-	logger := l.logger()
 	kvs, err = l.LogAble.GetByRange(ctx, r, limit)
+
+	logger := l.logger()
 	if logger.Core().Enabled(zap.DebugLevel) {
 		logger = logger.With(traceutil.TraceLogField(ctx))
 		fields := []zap.Field{
@@ -49,8 +51,9 @@ func (l Logger) GetByRange(ctx context.Context, r Range, limit int64) (kvs []Key
 }
 
 func (l Logger) Put(ctx context.Context, k, v []byte, prevKV bool) (prevV []byte, err error) {
-	logger := l.logger()
 	prevV, err = l.LogAble.Put(ctx, k, v, prevKV)
+
+	logger := l.logger()
 	if logger.Core().Enabled(zap.DebugLevel) {
 		logger = logger.With(traceutil.TraceLogField(ctx))
 		logger.Debug("kv put", zap.ByteString("key", k), zap.Binary("value", v), zap.Bool("prev-kv", prevKV), zap.Binary("prev-value", prevV), zap.Error(err))
@@ -59,8 +62,9 @@ func (l Logger) Put(ctx context.Context, k, v []byte, prevKV bool) (prevV []byte
 }
 
 func (l Logger) BatchPut(ctx context.Context, kvs []KeyValue, prevKV bool) (prevKvs []KeyValue, err error) {
-	logger := l.logger()
 	prevKvs, err = l.LogAble.BatchPut(ctx, kvs, prevKV)
+
+	logger := l.logger()
 	if logger.Core().Enabled(zap.DebugLevel) {
 		logger = logger.With(traceutil.TraceLogField(ctx))
 		fields := []zap.Field{
@@ -79,8 +83,9 @@ func (l Logger) BatchPut(ctx context.Context, kvs []KeyValue, prevKV bool) (prev
 }
 
 func (l Logger) Delete(ctx context.Context, k []byte, prevKV bool) (prevV []byte, err error) {
-	logger := l.logger()
 	prevV, err = l.LogAble.Delete(ctx, k, prevKV)
+
+	logger := l.logger()
 	if logger.Core().Enabled(zap.DebugLevel) {
 		logger = logger.With(traceutil.TraceLogField(ctx))
 		logger.Debug("kv delete", zap.ByteString("key", k), zap.Bool("prev-kv", prevKV), zap.Binary("prev-value", prevV), zap.Error(err))
@@ -89,8 +94,9 @@ func (l Logger) Delete(ctx context.Context, k []byte, prevKV bool) (prevV []byte
 }
 
 func (l Logger) BatchDelete(ctx context.Context, ks [][]byte, prevKV bool) (prevKvs []KeyValue, err error) {
-	logger := l.logger()
 	prevKvs, err = l.LogAble.BatchDelete(ctx, ks, prevKV)
+
+	logger := l.logger()
 	if logger.Core().Enabled(zap.DebugLevel) {
 		logger = logger.With(traceutil.TraceLogField(ctx))
 		fields := []zap.Field{
