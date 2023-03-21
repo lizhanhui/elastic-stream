@@ -10,4 +10,8 @@ impl Stream {
     pub fn open(id: i64) -> Self {
         Self { id, ranges: vec![] }
     }
+
+    pub fn seal(&self, committed: u64) {
+        todo!()
+    }
 }

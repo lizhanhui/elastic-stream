@@ -2,6 +2,7 @@ pub mod cfg;
 pub mod error;
 pub mod handler;
 pub mod server;
+mod workspace;
 
 pub use crate::cfg::server_config::ServerConfig;
 

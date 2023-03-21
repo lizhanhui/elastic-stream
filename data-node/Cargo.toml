@@ -10,6 +10,7 @@ byteorder =  { workspace = true }
 bytes =  { workspace = true }
 core_affinity =  { workspace = true }
 crc =  { workspace = true }
+crossbeam = { workspace = true }
 num_cpus =  { workspace = true }
 thiserror =  { workspace = true }
 clap = { workspace = true }
@@ -20,6 +21,7 @@ slog =  { workspace = true }
 slog-async =  { workspace = true }
 slog-term =  { workspace = true }
 codec = { path = "../components/codec" }
+model = { path = "../components/model" }
 protocol = {path = "../components/protocol" }
 transport = { path = "../components/transport" }
 store = { path = "../components/store" }
