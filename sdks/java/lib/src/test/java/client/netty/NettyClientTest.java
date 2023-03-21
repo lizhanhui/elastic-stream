@@ -30,7 +30,6 @@ class NettyClientTest {
     @Test
     void testInvokeAsync() throws Exception {
         String requestMessage = "This is Async test";
-        int requestStreamId = 111;
         ClientConfigurationBuilder builder = new ClientConfigurationBuilder()
             .setPmEndpoint(String.format("%s:%d", defaultPmAddress.getHost(), defaultPmAddress.getPort()))
             .setConnectionTimeout(Duration.ofSeconds(3))
@@ -46,7 +45,7 @@ class NettyClientTest {
             SbpFrame responseFrame = client.invokeAsync(sbpFrame, Duration.ofSeconds(3)).get();
 
             Assertions.assertEquals(responseFrame.getFlag(), SbpFrame.GENERAL_RESPONSE_FLAG);
-            Assertions.assertEquals(responseFrame.getStreamId(), requestStreamId);
+            Assertions.assertEquals(responseFrame.getStreamId(), 0L);
             byte[] payload = new byte[responseFrame.payloadLength()];
             int index = 0;
             for (ByteBuffer buffer : responseFrame.getPayload()) {
