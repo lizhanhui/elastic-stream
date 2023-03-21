@@ -137,3 +137,11 @@ impl StreamManager {
         return Err(ServiceError::NotFound(format!("Stream[id={}]", stream_id)));
     }
 }
+
+
+#[cfg(test)]
+mod tests {
+
+    
+
+}

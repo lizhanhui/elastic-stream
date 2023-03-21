@@ -49,6 +49,8 @@ impl AppendWindow {
 
                     debug_assert_eq!(self.commit, *offset);
                 }
+            } else {
+                break;
             }
 
             let _ = self.completed.pop();
@@ -57,5 +59,77 @@ impl AppendWindow {
                 self.commit = offset + 1;
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::error::Error;
+
+    use tokio::sync::oneshot;
+
+    use super::AppendWindow;
+
+    #[test]
+    fn test_alloc_slot() -> Result<(), Box<dyn Error>> {
+        let mut window = AppendWindow::new(0);
+        const TOTAL: u64 = 16;
+        for i in 0..TOTAL {
+            let (tx, _rx) = oneshot::channel();
+            let slot = window.alloc_slot(tx);
+            assert_eq!(i, slot);
+        }
+
+        assert_eq!(TOTAL as usize, window.inflight.len());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_ack() -> Result<(), Box<dyn Error>> {
+        let mut window = AppendWindow::new(0);
+        const TOTAL: u64 = 16;
+        let mut v = vec![];
+        for i in 0..TOTAL {
+            let (tx, rx) = oneshot::channel();
+            v.push(rx);
+            let slot = window.alloc_slot(tx);
+            assert_eq!(i, slot);
+        }
+
+        for i in 0..TOTAL {
+            window.ack(i);
+            assert_eq!((TOTAL - i - 1) as usize, window.inflight.len());
+            assert!(window.completed.is_empty());
+            assert_eq!(i + 1, window.commit);
+        }
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_ack_out_of_order() -> Result<(), Box<dyn Error>> {
+        let mut window = AppendWindow::new(0);
+        const TOTAL: u64 = 16;
+        let mut v = vec![];
+        for i in 0..TOTAL {
+            let (tx, rx) = oneshot::channel();
+            v.push(rx);
+            let slot = window.alloc_slot(tx);
+            assert_eq!(i, slot);
+        }
+
+        for i in (0..TOTAL).rev() {
+            window.ack(i);
+            if i > 0 {
+                assert_eq!(window.inflight.len(), TOTAL as usize);
+                continue;
+            }
+            assert!(window.inflight.is_empty());
+            assert!(window.completed.is_empty());
+        }
+        assert_eq!(TOTAL, window.commit);
+
+        Ok(())
     }
 }
