@@ -363,16 +363,21 @@ func (c *conn) processGoAway(f *codec.GoAwayFrame, _ *stream) error {
 
 func (c *conn) processDataFrame(f *codec.DataFrame, st *stream) error {
 	c.serveG.Check()
-	_ = f
-	_ = st
 	if c.idleTimer != nil {
 		c.idleTimer.Stop()
 	}
 
 	action := GetAction(f.OpCode)
+	act, resp := c.generateAct(f, action)
+
+	// TODO if there are too many handlers running, put the request into a priority queue (or put important requests into a priority queue)
+	go c.runHandlerAndWrite(f.Context(), st, act, resp)
+	return nil
+}
+
+func (c *conn) generateAct(f *codec.DataFrame, action *Action) (act func(resp protocol.Response), resp protocol.Response) {
 	req := action.newReq()
-	resp := action.newResp()
-	act := func(resp protocol.Response) { action.act(c.server.handler, req, resp) }
+	resp = action.newResp()
 
 	// f.Header will be freed in the serve loop, so we need to unmarshal it here
 	err := req.Unmarshal(f.HeaderFmt, f.Header)
@@ -382,10 +387,23 @@ func (c *conn) processDataFrame(f *codec.DataFrame, st *stream) error {
 			Message: "failed to unmarshal frame header",
 		})
 		act = func(_ protocol.Response) {}
+		return
 	}
-	// TODO if there are too many handlers running, put the request into a priority queue (or put important requests into a priority queue)
-	go c.runHandlerAndWrite(f.Context(), st, act, resp)
-	return nil
+
+	ctx := c.ctx
+	if req.Timeout() > 0 {
+		ctx, cancel := context.WithTimeout(ctx, time.Duration(req.Timeout())*time.Millisecond)
+		act = func(resp protocol.Response) {
+			defer cancel()
+			action.act(ctx, c.server.handler, req, resp)
+		}
+		return
+	}
+
+	act = func(resp protocol.Response) {
+		action.act(ctx, c.server.handler, req, resp)
+	}
+	return
 }
 
 var errChanPool = sync.Pool{

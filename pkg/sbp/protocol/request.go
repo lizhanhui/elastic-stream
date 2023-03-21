@@ -13,9 +13,13 @@ const (
 
 // Request is an SBP request
 type Request interface {
-	// Unmarshal decodes data into the Request using the specified format
-	// data is expired after the call, so the implementation should copy the data if needed
+	// Unmarshal decodes data into the Request using the specified format.
+	// data is expired after the call, so the implementation should copy the data if needed.
 	Unmarshal(fmt format.Format, data []byte) error
+
+	// Timeout returns the timeout of the request in milliseconds.
+	// It returns 0 if the request doesn't have a timeout.
+	Timeout() int32
 }
 
 type unmarshaler interface {
@@ -36,7 +40,7 @@ type jsonUnmarshaler interface {
 	unmarshalJSON(data []byte) error
 }
 
-// baseRequest is a default implementation of unmarshaler.
+// baseRequest is a base implementation of Request
 type baseRequest struct{}
 
 func (b *baseRequest) unmarshalFlatBuffer(_ []byte) error {
@@ -49,6 +53,10 @@ func (b *baseRequest) unmarshalProtoBuffer(_ []byte) error {
 
 func (b *baseRequest) unmarshalJSON(_ []byte) error {
 	return errors.Errorf(_unsupportedReqErrMsg, format.JSON())
+}
+
+func (b *baseRequest) Timeout() int32 {
+	return 0
 }
 
 type HeartbeatRequest struct {
@@ -80,6 +88,10 @@ func (lr *ListRangesRequest) Unmarshal(fmt format.Format, data []byte) error {
 	return unmarshal(lr, fmt, data)
 }
 
+func (lr *ListRangesRequest) Timeout() int32 {
+	return lr.TimeoutMs
+}
+
 // CreateStreamsRequest is a request to operation.OpCreateStreams
 type CreateStreamsRequest struct {
 	baseRequest
@@ -93,6 +105,10 @@ func (cs *CreateStreamsRequest) unmarshalFlatBuffer(data []byte) error {
 
 func (cs *CreateStreamsRequest) Unmarshal(fmt format.Format, data []byte) error {
 	return unmarshal(cs, fmt, data)
+}
+
+func (cs *CreateStreamsRequest) Timeout() int32 {
+	return cs.TimeoutMs
 }
 
 // DeleteStreamsRequest is a request to operation.OpDeleteStreams
@@ -110,6 +126,10 @@ func (ds *DeleteStreamsRequest) Unmarshal(fmt format.Format, data []byte) error 
 	return unmarshal(ds, fmt, data)
 }
 
+func (ds *DeleteStreamsRequest) Timeout() int32 {
+	return ds.TimeoutMs
+}
+
 // UpdateStreamsRequest is a request to operation.OpUpdateStreams
 type UpdateStreamsRequest struct {
 	baseRequest
@@ -125,6 +145,10 @@ func (us *UpdateStreamsRequest) Unmarshal(fmt format.Format, data []byte) error 
 	return unmarshal(us, fmt, data)
 }
 
+func (us *UpdateStreamsRequest) Timeout() int32 {
+	return us.TimeoutMs
+}
+
 // DescribeStreamsRequest is a request to operation.OpDescribeStreams
 type DescribeStreamsRequest struct {
 	baseRequest
@@ -138,6 +162,10 @@ func (ds *DescribeStreamsRequest) unmarshalFlatBuffer(data []byte) error {
 
 func (ds *DescribeStreamsRequest) Unmarshal(fmt format.Format, data []byte) error {
 	return unmarshal(ds, fmt, data)
+}
+
+func (ds *DescribeStreamsRequest) Timeout() int32 {
+	return ds.TimeoutMs
 }
 
 func unmarshal(request unmarshaler, fmt format.Format, data []byte) error {

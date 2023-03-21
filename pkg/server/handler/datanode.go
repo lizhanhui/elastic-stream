@@ -1,11 +1,13 @@
 package handler
 
 import (
+	"context"
+
 	"github.com/AutoMQ/placement-manager/api/rpcfb/rpcfb"
 	"github.com/AutoMQ/placement-manager/pkg/sbp/protocol"
 )
 
-func (s *Sbp) Heartbeat(req *protocol.HeartbeatRequest, resp *protocol.HeartbeatResponse) {
+func (s *Sbp) Heartbeat(_ context.Context, req *protocol.HeartbeatRequest, resp *protocol.HeartbeatResponse) {
 	resp.ClientId = req.ClientId
 	resp.ClientRole = req.ClientRole
 	resp.DataNode = req.DataNode
