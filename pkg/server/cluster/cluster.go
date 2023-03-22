@@ -47,16 +47,21 @@ type RaftCluster struct {
 
 	storage       storage.Storage
 	streamIDAlloc id.Allocator
+	member        Member
 	cache         *cache.Cache
-	member        *member.Member
 
 	lg *zap.Logger
+}
+
+type Member interface {
+	IsLeader() bool
+	Leader() *member.Info
 }
 
 // Server is the interface for starting a RaftCluster.
 type Server interface {
 	Storage() storage.Storage
-	Member() *member.Member
+	Member() Member
 	IDAllocator(key string, start, step uint64) id.Allocator
 }
 
