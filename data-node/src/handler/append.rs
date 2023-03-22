@@ -10,8 +10,8 @@ use protocol::rpc::header::{
 use slog::{warn, Logger};
 use std::{cell::RefCell, rc::Rc};
 use store::{
-    error::AppendError, ops::append::AppendResult, option::WriteOptions, AppendRecordRequest,
-    ElasticStore, Store,
+    error::AppendError, option::WriteOptions, AppendRecordRequest, AppendResult, ElasticStore,
+    Store,
 };
 
 use crate::workspace::stream_manager::StreamManager;

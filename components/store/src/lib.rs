@@ -23,21 +23,15 @@
 #![feature(btree_drain_filter)]
 #![feature(try_find)]
 #![feature(btree_cursors)]
+#![feature(async_fn_in_trait)]
 
 pub mod error;
 pub mod util;
 
-use self::{
-    ops::{Append, Fetch, Scan},
-    option::{ReadOptions, WriteOptions},
-};
+use self::option::{ReadOptions, WriteOptions};
 use error::{AppendError, FetchError};
-use futures::Future;
-use ops::append::AppendResult;
-use ops::fetch::FetchResult;
 
 pub mod cursor;
-pub mod ops;
 pub mod option;
 
 mod index;
@@ -49,30 +43,22 @@ mod store;
 pub use crate::io::buf::buf_slice::BufSlice;
 pub use crate::store::ElasticStore;
 pub use request::AppendRecordRequest;
+pub use crate::store::AppendResult;
+pub use crate::store::FetchResult;
 
 /// Definition of core storage trait.
-///
-///
 pub trait Store {
-    /// Inner operation that actually appends record into store.
-    type AppendOp;
-    /// Inner operation that actually fetches record from store.
-    type FetchOp;
-
     /// Append a new record into store.
     ///
     /// * `options` - Write options, specifying how the record is written to persistent medium.
     /// * `record` - Data record to append.
-    fn append(&self, options: WriteOptions, request: AppendRecordRequest) -> Append<Self::AppendOp>
-    where
-        <Self as Store>::AppendOp: Future<Output = Result<AppendResult, AppendError>>;
+    async fn append(
+        &self,
+        options: WriteOptions,
+        request: AppendRecordRequest,
+    ) -> Result<AppendResult, AppendError>;
 
     /// Retrieve a single existing record at the given stream and offset.
     /// * `options` - Read options, specifying target stream and offset.
-    fn fetch(&self, options: ReadOptions) -> Fetch<Self::FetchOp>
-    where
-        <Self as Store>::FetchOp: Future<Output = Result<FetchResult, FetchError>>;
-
-    /// Scan a range of stream for matched records.
-    fn scan(&self, options: ReadOptions) -> Scan;
+    async fn fetch(&self, options: ReadOptions) -> Result<FetchResult, FetchError>;
 }

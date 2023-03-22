@@ -3,7 +3,7 @@ use tokio::sync::oneshot;
 
 use crate::{
     error::{AppendError, FetchError},
-    ops::append::AppendResult,
+    store::AppendResult,
     BufSlice,
 };
 

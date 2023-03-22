@@ -9,8 +9,8 @@ use crate::io::task::IoTask;
 use crate::io::task::WriteTask;
 use crate::io::wal::Wal;
 use crate::io::write_window::WriteWindow;
-use crate::ops::append::AppendResult;
 use crate::BufSlice;
+use crate::store::AppendResult;
 
 use crossbeam::channel::{Receiver, Sender, TryRecvError};
 use io_uring::register;

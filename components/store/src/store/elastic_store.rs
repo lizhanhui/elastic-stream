@@ -17,15 +17,16 @@ use crate::{
         ReadTask,
     },
     offset_manager::WalOffsetManager,
-    ops::{append::AppendResult, fetch::FetchResult, Append, Fetch, Scan},
     option::{ReadOptions, StoreOptions, WriteOptions},
     AppendRecordRequest, Store,
 };
 use core_affinity::CoreId;
 use crossbeam::channel::Sender;
-use futures::{future::join_all, Future};
+use futures::future::join_all;
 use slog::{error, trace, Logger};
 use tokio::sync::oneshot;
+
+use super::{append_result::AppendResult, fetch_result::FetchResult};
 
 #[derive(Clone)]
 pub struct ElasticStore {
@@ -169,31 +170,22 @@ impl ElasticStore {
 }
 
 impl Store for ElasticStore {
-    type AppendOp = impl Future<Output = Result<AppendResult, AppendError>>;
-    type FetchOp = impl Future<Output = Result<FetchResult, FetchError>>;
-
-    fn append(&self, options: WriteOptions, request: AppendRecordRequest) -> Append<Self::AppendOp>
-    where
-        <Self as Store>::AppendOp: Future<Output = Result<AppendResult, AppendError>>,
-    {
+    async fn append(
+        &self,
+        options: WriteOptions,
+        request: AppendRecordRequest,
+    ) -> Result<AppendResult, AppendError> {
         let (sender, receiver) = oneshot::channel();
 
         self.do_append(request, sender);
 
-        let inner = async {
-            match receiver.await.map_err(|_e| AppendError::ChannelRecv) {
-                Ok(res) => res,
-                Err(e) => Err(e),
-            }
-        };
-
-        Append { inner }
+        match receiver.await.map_err(|_e| AppendError::ChannelRecv) {
+            Ok(res) => res,
+            Err(e) => Err(e),
+        }
     }
 
-    fn fetch(&self, options: ReadOptions) -> Fetch<<Self as Store>::FetchOp>
-    where
-        <Self as Store>::FetchOp: Future<Output = Result<FetchResult, FetchError>>,
-    {
+    async fn fetch(&self, options: ReadOptions) -> Result<FetchResult, FetchError> {
         let (index_tx, index_rx) = oneshot::channel();
         self.indexer.scan_record_handles(
             options.stream_id,
@@ -204,77 +196,68 @@ impl Store for ElasticStore {
 
         let io_tx_cp = self.io_tx.clone();
         let logger = self.log.clone();
-        let inner = async move {
-            let scan_res = match index_rx.await.map_err(|_e| FetchError::TranslateIndex) {
-                Ok(res) => res.map_err(|_e| FetchError::TranslateIndex),
-                Err(e) => Err(e),
-            }?;
+        let scan_res = match index_rx.await.map_err(|_e| FetchError::TranslateIndex) {
+            Ok(res) => res.map_err(|_e| FetchError::TranslateIndex),
+            Err(e) => Err(e),
+        }?;
 
-            if let Some(handles) = scan_res {
-                let mut io_receiver = Vec::with_capacity(handles.len());
-                for handle in handles {
-                    let (sender, receiver) = oneshot::channel();
-                    let io_task = ReadTask {
-                        stream_id: options.stream_id,
-                        wal_offset: handle.wal_offset,
-                        len: handle.len,
-                        observer: sender,
-                    };
+        if let Some(handles) = scan_res {
+            let mut io_receiver = Vec::with_capacity(handles.len());
+            for handle in handles {
+                let (sender, receiver) = oneshot::channel();
+                let io_task = ReadTask {
+                    stream_id: options.stream_id,
+                    wal_offset: handle.wal_offset,
+                    len: handle.len,
+                    observer: sender,
+                };
 
-                    if let Err(e) = io_tx_cp.send(Read(io_task)) {
-                        if let Read(io_task) = e.0 {
-                            if let Err(e) = io_task.observer.send(Err(FetchError::SubmissionQueue))
-                            {
-                                error!(logger, "Failed to propagate error: {:?}", e);
-                            }
+                if let Err(e) = io_tx_cp.send(Read(io_task)) {
+                    if let Read(io_task) = e.0 {
+                        if let Err(e) = io_task.observer.send(Err(FetchError::SubmissionQueue)) {
+                            error!(logger, "Failed to propagate error: {:?}", e);
                         }
                     }
-
-                    io_receiver.push(receiver);
                 }
 
-                // Join all IO tasks.
-                let io_result = join_all(io_receiver).await;
-
-                let flattened_result: Vec<_> = io_result
-                    .into_iter()
-                    .map(|res| match res {
-                        Ok(Ok(res)) => Ok(res),
-                        Ok(Err(e)) => Err(e),
-                        Err(_) => Err(FetchError::ChannelRecv), // Channel receive error branch
-                    })
-                    .collect();
-
-                // Take the first error from the flattened result, and return it.
-                let first_error = flattened_result.iter().find(|res| res.is_err());
-                if let Some(Err(e)) = first_error {
-                    return Err(e.clone());
-                }
-
-                // Collect all successful IO results, and sort it by the wal offset
-                let mut result: Vec<_> = flattened_result.into_iter().flatten().collect();
-
-                // Sort the result
-                result.sort_by(|a, b| a.wal_offset.cmp(&b.wal_offset));
-
-                // Extract the payload from the result, and assemble the final result.
-                let final_result: Vec<_> = result.into_iter().flat_map(|res| res.payload).collect();
-
-                return Ok(FetchResult {
-                    stream_id: options.stream_id,
-                    offset: options.offset,
-                    payload: final_result,
-                });
+                io_receiver.push(receiver);
             }
 
-            Err(FetchError::NoRecord)
-        };
+            // Join all IO tasks.
+            let io_result = join_all(io_receiver).await;
 
-        Fetch { inner }
-    }
+            let flattened_result: Vec<_> = io_result
+                .into_iter()
+                .map(|res| match res {
+                    Ok(Ok(res)) => Ok(res),
+                    Ok(Err(e)) => Err(e),
+                    Err(_) => Err(FetchError::ChannelRecv), // Channel receive error branch
+                })
+                .collect();
 
-    fn scan(&self, options: ReadOptions) -> Scan {
-        todo!()
+            // Take the first error from the flattened result, and return it.
+            let first_error = flattened_result.iter().find(|res| res.is_err());
+            if let Some(Err(e)) = first_error {
+                return Err(e.clone());
+            }
+
+            // Collect all successful IO results, and sort it by the wal offset
+            let mut result: Vec<_> = flattened_result.into_iter().flatten().collect();
+
+            // Sort the result
+            result.sort_by(|a, b| a.wal_offset.cmp(&b.wal_offset));
+
+            // Extract the payload from the result, and assemble the final result.
+            let final_result: Vec<_> = result.into_iter().flat_map(|res| res.payload).collect();
+
+            return Ok(FetchResult {
+                stream_id: options.stream_id,
+                offset: options.offset,
+                payload: final_result,
+            });
+        }
+
+        Err(FetchError::NoRecord)
     }
 }
 
@@ -298,8 +281,8 @@ mod tests {
 
     use crate::{
         error::{AppendError, FetchError},
-        ops::{append::AppendResult, fetch::FetchResult},
         option::{ReadOptions, StoreOptions, WalPath, WriteOptions},
+        store::{append_result::AppendResult, fetch_result::FetchResult},
         AppendRecordRequest, ElasticStore, Store,
     };
 

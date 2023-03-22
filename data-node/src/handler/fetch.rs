@@ -8,7 +8,7 @@ use protocol::rpc::header::{
 };
 use slog::{warn, Logger};
 use std::{cell::RefCell, rc::Rc};
-use store::{error::FetchError, ops::fetch::FetchResult, option::ReadOptions, ElasticStore, Store};
+use store::{error::FetchError, option::ReadOptions, ElasticStore, Store, FetchResult};
 
 use crate::workspace::stream_manager::StreamManager;
 
