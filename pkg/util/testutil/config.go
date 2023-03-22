@@ -21,8 +21,10 @@ import (
 	"net/url"
 	"testing"
 
+	"github.com/stretchr/testify/require"
 	"go.etcd.io/etcd/server/v3/embed"
 
+	"github.com/AutoMQ/placement-manager/pkg/server/config"
 	tempurl "github.com/AutoMQ/placement-manager/pkg/util/testutil/url"
 )
 
@@ -47,5 +49,25 @@ func NewEtcdConfig(tb testing.TB) *embed.Config {
 	cfg.ClusterState = embed.ClusterStateFlagNew
 
 	cfg.LogLevel = "error"
+	return cfg
+}
+
+func NewPMConfig(tb testing.TB) *config.Config {
+	re := require.New(tb)
+
+	peerURL := tempurl.Alloc(tb)
+	clientURL := tempurl.Alloc(tb)
+	sbpURL := tempurl.Alloc(tb)
+
+	cfg, err := config.NewConfig([]string{
+		"--peer-urls", peerURL,
+		"--client-urls", clientURL,
+		"--sbp-addr", sbpURL,
+	})
+	re.NoError(err)
+
+	cfg.Name = fmt.Sprintf("test_pm_%s", tb.Name())
+	cfg.DataDir = tb.TempDir()
+
 	return cfg
 }
