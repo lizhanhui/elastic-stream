@@ -2,9 +2,9 @@ use std::collections::HashMap;
 
 use model::{
     range::{Range, StreamRange},
-    stream::{self, Stream},
+    stream::Stream,
 };
-use slog::{error, trace, warn, Logger};
+use slog::{error, trace, Logger};
 use tokio::sync::oneshot;
 
 use crate::{error::ServiceError, workspace::append_window::AppendWindow};
@@ -26,6 +26,10 @@ impl StreamManager {
             windows: HashMap::new(),
             fetcher,
         }
+    }
+
+    pub(crate) fn start(&mut self) {
+        self.fetcher.start();
     }
 
     async fn create_stream_if_missing(&mut self, stream_id: i64) -> Result<(), ServiceError> {

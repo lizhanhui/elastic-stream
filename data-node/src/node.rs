@@ -1,4 +1,4 @@
-use std::{error::Error, rc::Rc};
+use std::{cell::RefCell, error::Error, rc::Rc};
 
 use slog::{debug, error, info, o, trace, warn, Logger};
 use store::ElasticStore;
@@ -16,7 +16,7 @@ pub(crate) struct Node {
     logger: Logger,
     config: NodeConfig,
     store: Rc<ElasticStore>,
-    stream_manager: StreamManager,
+    stream_manager: Rc<RefCell<StreamManager>>,
     channels: Option<Vec<mpsc::UnboundedReceiver<FetchRangeTask>>>,
 }
 
@@ -24,7 +24,7 @@ impl Node {
     pub fn new(
         config: NodeConfig,
         store: ElasticStore,
-        stream_manager: StreamManager,
+        stream_manager: Rc<RefCell<StreamManager>>,
         channels: Option<Vec<mpsc::UnboundedReceiver<FetchRangeTask>>>,
         logger: &Logger,
     ) -> Self {
@@ -60,6 +60,8 @@ impl Node {
                         }
                     };
 
+                self.stream_manager.borrow_mut().start();
+
                 match self.run(listener, self.logger.new(o!())).await {
                     Ok(_) => {}
                     Err(e) => {
@@ -94,9 +96,10 @@ impl Node {
             };
 
             let store = Rc::clone(&self.store);
+            let stream_manager = Rc::clone(&self.stream_manager);
             let peer_address = peer_socket_address.to_string();
             tokio_uring::spawn(async move {
-                Node::process(store, stream, peer_address, logger).await;
+                Node::process(store, stream_manager, stream, peer_address, logger).await;
             });
         }
 
@@ -105,12 +108,13 @@ impl Node {
 
     async fn process(
         store: Rc<ElasticStore>,
+        stream_manager: Rc<RefCell<StreamManager>>,
         stream: TcpStream,
         peer_address: String,
         logger: Logger,
     ) {
         let channel = Rc::new(Channel::new(stream, &peer_address, logger.new(o!())));
-        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let (tx, mut rx) = mpsc::unbounded_channel();
 
         let request_logger = logger.clone();
         let _channel = Rc::clone(&channel);
@@ -123,11 +127,13 @@ impl Node {
                         let log = logger.clone();
                         let sender = tx.clone();
                         let store = Rc::clone(&store);
+                        let stream_manager = Rc::clone(&stream_manager);
                         let mut server_call = ServerCall {
                             request: frame,
                             sender,
                             logger: log,
                             store,
+                            stream_manager,
                         };
                         tokio_uring::spawn(async move {
                             server_call.call().await;

@@ -27,6 +27,12 @@ pub(crate) enum Fetcher {
 }
 
 impl Fetcher {
+    pub(crate) fn start(&mut self) {
+        if let Fetcher::PlacementClient { ref mut client } = self {
+            client.start();
+        }
+    }
+
     /// TODO: filter out ranges that is not hosted in current data node.
     pub(crate) async fn fetch(&mut self, stream_id: i64) -> Result<Vec<StreamRange>, ServiceError> {
         match self {

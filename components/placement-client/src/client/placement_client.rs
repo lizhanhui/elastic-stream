@@ -18,7 +18,7 @@ pub struct PlacementClient {
 }
 
 impl PlacementClient {
-    pub async fn start(&mut self) {
+    pub fn start(&mut self) {
         if let Some(mut session_manager) = self.session_manager.take() {
             tokio_uring::spawn(async move {
                 session_manager.run().await;
@@ -88,7 +88,7 @@ mod tests {
                 .build()
                 .map_err(|_e| ListRangeError::Internal)?;
 
-            client.start().await;
+            client.start();
 
             let timeout = Duration::from_secs(10);
 
