@@ -1,190 +1,21 @@
-use std::{
-    error::Error,
-    os::fd::{AsRawFd, RawFd},
-    rc::Rc,
+use std::{error::Error, os::fd::AsRawFd, rc::Rc, thread};
+
+use crate::{
+    node::Node,
+    node_config::NodeConfig,
+    workspace::stream_manager::{fetcher::Fetcher, StreamManager},
+    ServerConfig,
 };
 
-use crate::{handler::ServerCall, ServerConfig};
-
-use core_affinity::CoreId;
-use slog::{debug, error, info, o, trace, warn, Drain, Logger};
+use placement_client::{notifier::UnsupportedNotifier, ClientConfig, PlacementClientBuilder};
+use slog::{error, o, warn, Drain, Logger};
 use slog_async::Async;
 use slog_term::{CompactFormat, TermDecorator};
 use store::{
     option::{StoreOptions, WalPath},
     ElasticStore,
 };
-use tokio_uring::net::{TcpListener, TcpStream};
-use transport::channel::Channel;
-
-struct NodeConfig {
-    core_id: CoreId,
-    server_config: ServerConfig,
-    sharing_uring: RawFd,
-}
-
-struct Node {
-    config: NodeConfig,
-    store: Rc<ElasticStore>,
-    logger: Logger,
-}
-
-impl Node {
-    pub fn new(config: NodeConfig, store: ElasticStore, logger: &Logger) -> Self {
-        Self {
-            config,
-            store: Rc::new(store),
-            logger: logger.clone(),
-        }
-    }
-
-    pub fn serve(&mut self) {
-        core_affinity::set_for_current(self.config.core_id);
-        tokio_uring::builder()
-            .entries(self.config.server_config.queue_depth)
-            .uring_builder(
-                tokio_uring::uring_builder()
-                    .dontfork()
-                    .setup_attach_wq(self.config.sharing_uring),
-            )
-            .start(async {
-                let bind_address = format!("0.0.0.0:{}", self.config.server_config.port);
-                let listener =
-                    match TcpListener::bind(bind_address.parse().expect("Failed to bind")) {
-                        Ok(listener) => {
-                            info!(self.logger, "Server starts OK, listening {}", bind_address);
-                            listener
-                        }
-                        Err(e) => {
-                            eprintln!("{}", e);
-                            return;
-                        }
-                    };
-
-                match self.run(listener, self.logger.new(o!())).await {
-                    Ok(_) => {}
-                    Err(e) => {
-                        error!(self.logger, "Runtime failed. Cause: {}", e.to_string());
-                    }
-                }
-            });
-    }
-
-    async fn run(&self, listener: TcpListener, logger: Logger) -> Result<(), Box<dyn Error>> {
-        loop {
-            let incoming = listener.accept().await;
-            let logger = logger.new(o!());
-            let (stream, peer_socket_address) = match incoming {
-                Ok((stream, socket_addr)) => {
-                    debug!(logger, "Accepted a new connection from {socket_addr:?}");
-                    stream.set_nodelay(true).unwrap_or_else(|e| {
-                        warn!(logger, "Failed to disable Nagle's algorithm. Cause: {e:?}, PeerAddress: {socket_addr:?}");
-                    });
-                    debug!(logger, "Nagle's algorithm turned off");
-
-                    (stream, socket_addr)
-                }
-                Err(e) => {
-                    error!(
-                        logger,
-                        "Failed to accept a connection. Cause: {}",
-                        e.to_string()
-                    );
-                    break;
-                }
-            };
-
-            let store = Rc::clone(&self.store);
-            let peer_address = peer_socket_address.to_string();
-            tokio_uring::spawn(async move {
-                Node::process(store, stream, peer_address, logger).await;
-            });
-        }
-
-        Ok(())
-    }
-
-    async fn process(
-        store: Rc<ElasticStore>,
-        stream: TcpStream,
-        peer_address: String,
-        logger: Logger,
-    ) {
-        let channel = Rc::new(Channel::new(stream, &peer_address, logger.new(o!())));
-        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
-
-        let request_logger = logger.clone();
-        let _channel = Rc::clone(&channel);
-        tokio_uring::spawn(async move {
-            let channel = _channel;
-            let logger = request_logger;
-            loop {
-                match channel.read_frame().await {
-                    Ok(Some(frame)) => {
-                        let log = logger.clone();
-                        let sender = tx.clone();
-                        let store = Rc::clone(&store);
-                        let mut server_call = ServerCall {
-                            request: frame,
-                            sender,
-                            logger: log,
-                            store,
-                        };
-                        tokio_uring::spawn(async move {
-                            server_call.call().await;
-                        });
-                    }
-                    Ok(None) => {
-                        info!(logger, "Connection to {} is closed", peer_address);
-                        break;
-                    }
-                    Err(e) => {
-                        warn!(
-                            logger,
-                            "Connection reset. Peer address: {}. Cause: {e:?}", peer_address
-                        );
-                        break;
-                    }
-                }
-            }
-        });
-
-        tokio_uring::spawn(async move {
-            let peer_address = channel.peer_address().to_owned();
-            loop {
-                match rx.recv().await {
-                    Some(frame) => match channel.write_frame(&frame).await {
-                        Ok(_) => {
-                            trace!(
-                                logger,
-                                "Response[stream-id={:?}] written to {}",
-                                frame.stream_id,
-                                peer_address
-                            );
-                        }
-                        Err(e) => {
-                            warn!(
-                                logger,
-                                "Failed to write response[stream-id={:?}] to {}. Cause: {}",
-                                frame.stream_id,
-                                peer_address,
-                                e
-                            );
-                            break;
-                        }
-                    },
-                    None => {
-                        info!(
-                            logger,
-                            "Failed to receive response frame from channel. Session to {} will be terminated",
-                            peer_address);
-                        break;
-                    }
-                }
-            }
-        });
-    }
-}
+use tokio::sync::mpsc;
 
 pub fn launch(cfg: &ServerConfig) -> Result<(), Box<dyn Error>> {
     let decorator = TermDecorator::new().build();
@@ -211,26 +42,77 @@ pub fn launch(cfg: &ServerConfig) -> Result<(), Box<dyn Error>> {
         }
     };
 
-    let handles = core_ids
-        .into_iter()
-        .skip(available_core_len - cfg.concurrency)
+    let mut channels = vec![];
+
+    // Build non-primary nodes first
+    let mut handles = core_ids
+        .iter()
+        .skip(available_core_len - cfg.concurrency + 1)
         .map(|core_id| {
             let server_config = cfg.clone();
             let logger = log.new(o!());
             let store = store.clone();
-            std::thread::Builder::new()
-                .name("Server".to_owned())
+            let core_id = core_id.clone();
+            let (tx, rx) = mpsc::unbounded_channel();
+            channels.push(rx);
+
+            thread::Builder::new()
+                .name("DataNode".to_owned())
                 .spawn(move || {
                     let node_config = NodeConfig {
                         core_id,
                         server_config: server_config.clone(),
                         sharing_uring: store.as_raw_fd(),
+                        primary: false,
                     };
-                    let mut node = Node::new(node_config, store, &logger);
+
+                    let fetcher = Fetcher::Channel { sender: tx };
+                    let stream_manager = StreamManager::new(logger.clone(), fetcher);
+
+                    let mut node = Node::new(node_config, store, stream_manager, None, &logger);
                     node.serve()
                 })
         })
         .collect::<Vec<_>>();
+
+    // Build primary node
+    {
+        let core_id = core_ids
+            .get(available_core_len - cfg.concurrency)
+            .expect("At least one core should be reserved for primary node")
+            .clone();
+        let server_config = cfg.clone();
+        let handle = thread::Builder::new()
+            .name("DataNode[Primary]".to_owned())
+            .spawn(move || {
+                let node_config = NodeConfig {
+                    core_id,
+                    server_config,
+                    sharing_uring: store.as_raw_fd(),
+                    primary: true,
+                };
+
+                let client_config = ClientConfig::default();
+
+                let notifier = Rc::new(UnsupportedNotifier {});
+
+                let placement_client =
+                    PlacementClientBuilder::new(&node_config.server_config.placement_manager)
+                        .set_log(log.clone())
+                        .set_config(client_config)
+                        .set_notifier(notifier)
+                        .build()
+                        .expect("Build placement client");
+                let fetcher = Fetcher::PlacementClient {
+                    client: placement_client,
+                };
+                let stream_manager = StreamManager::new(log.clone(), fetcher);
+
+                let mut node = Node::new(node_config, store, stream_manager, Some(channels), &log);
+                node.serve()
+            });
+        handles.push(handle);
+    }
 
     for handle in handles.into_iter() {
         let _result = handle.unwrap().join();

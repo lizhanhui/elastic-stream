@@ -18,7 +18,7 @@ pub struct PlacementClientBuilder {
 }
 
 impl PlacementClientBuilder {
-    pub(crate) fn new(target: &str) -> Self {
+    pub fn new(target: &str) -> Self {
         let drain = Discard;
         let root = Logger::root(drain, o!());
         Self {
@@ -34,29 +34,26 @@ impl PlacementClientBuilder {
         self
     }
 
-    pub(crate) fn set_log(mut self, log: Logger) -> Self {
+    pub fn set_log(mut self, log: Logger) -> Self {
         self.log = log;
         self
     }
 
-    pub(crate) fn set_config(mut self, config: config::ClientConfig) -> Self {
+    pub fn set_config(mut self, config: config::ClientConfig) -> Self {
         self.config = config;
         self
     }
 
-    pub(crate) async fn build(self) -> Result<PlacementClient, ClientError> {
+    pub fn build(self) -> Result<PlacementClient, ClientError> {
         let (tx, rx) = mpsc::unbounded_channel();
 
         let config = Rc::new(self.config);
 
-        let mut session_manager =
+        let session_manager =
             SessionManager::new(&self.target, &config, rx, self.notifier, &self.log)?;
 
-        tokio_uring::spawn(async move {
-            session_manager.run().await;
-        });
-
         Ok(PlacementClient {
+            session_manager: Some(session_manager),
             tx,
             log: self.log,
             config,
@@ -87,8 +84,7 @@ mod tests {
             PlacementClientBuilder::new(&addr)
                 .set_log(log)
                 .set_config(config)
-                .build()
-                .await?;
+                .build()?;
             Ok(())
         })
     }

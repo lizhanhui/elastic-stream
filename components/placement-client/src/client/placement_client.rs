@@ -7,16 +7,25 @@ use tokio::{
     time,
 };
 
-use super::{config::ClientConfig, response};
+use super::{config::ClientConfig, response, session_manager::SessionManager};
 use crate::error::ListRangeError;
 
 pub struct PlacementClient {
+    pub(crate) session_manager: Option<SessionManager>,
     pub(crate) tx: mpsc::UnboundedSender<(Request, oneshot::Sender<response::Response>)>,
     pub(crate) log: Logger,
     pub(crate) config: Rc<ClientConfig>,
 }
 
 impl PlacementClient {
+    pub async fn start(&mut self) {
+        if let Some(mut session_manager) = self.session_manager.take() {
+            tokio_uring::spawn(async move {
+                session_manager.run().await;
+            });
+        }
+    }
+
     pub async fn list_range(
         &self,
         stream_id: Option<i64>,
@@ -74,11 +83,12 @@ mod tests {
             let port = 2378;
             let port = run_listener(log.clone()).await;
             let addr = format!("dns:localhost:{}", port);
-            let client = PlacementClientBuilder::new(&addr)
+            let mut client = PlacementClientBuilder::new(&addr)
                 .set_log(log.clone())
                 .build()
-                .await
                 .map_err(|_e| ListRangeError::Internal)?;
+
+            client.start().await;
 
             let timeout = Duration::from_secs(10);
 
