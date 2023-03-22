@@ -110,15 +110,26 @@ func (e *EtcdAllocator) AllocN(ctx context.Context, n int) ([]uint64, error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
-	if e.end-e.base < uint64(n) {
-		needs := uint64(n) - (e.end - e.base)
-		growth := e.step * (needs/e.step + 1)
-		if err := e.growLocked(ctx, growth); err != nil {
-			return nil, errors.WithMessagef(err, "grow %d", growth)
+	ids := make([]uint64, 0, n)
+	if e.end-e.base >= uint64(n) {
+		for i := 0; i < n; i++ {
+			ids = append(ids, e.base)
+			e.base++
 		}
+		return ids, nil
 	}
 
-	ids := make([]uint64, 0, n)
+	for e.end-e.base > 0 {
+		ids = append(ids, e.base)
+		e.base++
+		n--
+	}
+
+	growth := e.step * (uint64(n)/e.step + 1)
+	if err := e.growLocked(ctx, growth); err != nil {
+		return nil, errors.WithMessagef(err, "grow %d", growth)
+	}
+
 	for i := 0; i < n; i++ {
 		ids = append(ids, e.base)
 		e.base++
@@ -134,19 +145,19 @@ func (e *EtcdAllocator) growLocked(ctx context.Context, growth uint64) error {
 		return errors.WithMessagef(err, "get key %s", e.path)
 	}
 
-	var base uint64
+	var prevEnd uint64
 	var cmp clientv3.Cmp
 	if kv == nil {
-		base = e.start
+		prevEnd = e.base
 		cmp = clientv3.Compare(clientv3.CreateRevision(e.path), "=", 0)
 	} else {
-		base, err = typeutil.BytesToUint64(kv.Value)
+		prevEnd, err = typeutil.BytesToUint64(kv.Value)
 		if err != nil {
 			return errors.WithMessagef(err, "parse value %s", string(kv.Value))
 		}
 		cmp = clientv3.Compare(clientv3.Value(e.path), "=", string(kv.Value))
 	}
-	end := base + growth
+	end := prevEnd + growth
 
 	v := typeutil.Uint64ToBytes(end)
 	txn := e.newTxnFunc(ctx).If(cmp).Then(clientv3.OpPut(e.path, string(v)))
@@ -155,11 +166,15 @@ func (e *EtcdAllocator) growLocked(ctx context.Context, growth uint64) error {
 		return errors.WithMessage(err, "update id")
 	}
 	if !resp.Succeeded {
+		// TODO: add retry mechanism.
+		// Currently, there is only one allocator on each key.
+		// So if the transaction fails, it means the EtcdAllocatorParam.CmpFunc is not satisfied. And there is no need to retry.
+		// If we have multiple allocators on the same key, we need to add a retry mechanism.
 		return ErrTxnFailed
 	}
 
-	e.base = base
-	e.end = base + growth
+	e.end = end
+	e.base = prevEnd
 	return nil
 }
 

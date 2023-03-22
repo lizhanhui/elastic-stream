@@ -145,7 +145,7 @@ func TestEtcd_Put(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			re := require.New(t)
-			_, client, closeFunc := testutil.StartEtcd(re, t)
+			_, client, closeFunc := testutil.StartEtcd(t)
 			defer closeFunc()
 
 			etcd := NewEtcd(client, "/test", zap.NewNop(), nil)
@@ -367,7 +367,7 @@ func TestEtcd_BatchPut(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			re := require.New(t)
-			_, client, closeFunc := testutil.StartEtcd(re, t)
+			_, client, closeFunc := testutil.StartEtcd(t)
 			defer closeFunc()
 
 			etcd := NewEtcd(client, "/test", zap.NewNop(), tt.fields.newCmpFunc)
@@ -471,7 +471,7 @@ func TestEtcd_Delete(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			re := require.New(t)
-			_, client, closeFunc := testutil.StartEtcd(re, t)
+			_, client, closeFunc := testutil.StartEtcd(t)
 			defer closeFunc()
 
 			etcd := NewEtcd(client, "/test", zap.NewNop(), nil)
@@ -598,7 +598,7 @@ func TestEtcd_BatchDelete(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			re := require.New(t)
-			_, client, closeFunc := testutil.StartEtcd(re, t)
+			_, client, closeFunc := testutil.StartEtcd(t)
 			defer closeFunc()
 
 			etcd := NewEtcd(client, "/test", zap.NewNop(), tt.fields.newCmpFunc)
