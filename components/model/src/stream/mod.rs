@@ -24,10 +24,14 @@ impl Stream {
         self.ranges.sort_by(|a, b| a.index().cmp(&b.index()));
     }
 
-    pub fn seal(&mut self, committed: u64) {
+    pub fn seal(&mut self, committed: u64, range_index: i32) {
         self.ranges.last_mut().and_then(|range| {
-            range.set_limit(committed);
-            Some(range.seal())
+            if range.index() == range_index {
+                range.set_limit(committed);
+                Some(range.seal())
+            } else {
+                None
+            }
         });
     }
 

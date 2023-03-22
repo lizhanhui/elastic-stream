@@ -1,8 +1,11 @@
 use std::{cell::RefCell, rc::Rc};
 
+use bytes::Bytes;
 use codec::frame::Frame;
-use protocol::rpc::header::{ErrorCode, SealRangesRequest};
-use slog::{warn, Logger};
+use protocol::rpc::header::{
+    ErrorCode, RangeT, SealRangesRequest, SealRangesResponseT, SealRangesResultT, StatusT,
+};
+use slog::{error, warn, Logger};
 use store::ElasticStore;
 
 use crate::workspace::stream_manager::StreamManager;
@@ -35,9 +38,59 @@ impl<'a> SealRange<'a> {
 
     pub(crate) async fn apply(
         &self,
-        _store: Rc<ElasticStore>,
+        store: Rc<ElasticStore>,
         stream_manager: Rc<RefCell<StreamManager>>,
-        _response: &mut Frame,
+        response: &mut Frame,
     ) {
+        let request = self.request.unpack();
+        let mut manager = stream_manager.borrow_mut();
+
+        let mut builder = flatbuffers::FlatBufferBuilder::new();
+        let mut seal_response = SealRangesResponseT::default();
+        let mut status = StatusT::default();
+        status.code = ErrorCode::OK;
+        status.message = Some(String::from("OK"));
+        seal_response.status = Some(Box::new(status));
+
+        let mut results = vec![];
+
+        if let Some(ranges) = request.ranges {
+            for range in ranges {
+                let mut result = SealRangesResultT::default();
+                let mut status = StatusT::default();
+                match manager.seal(range.stream_id, range.range_index) {
+                    Ok(offset) => {
+                        status.code = ErrorCode::OK;
+                        status.message = Some(String::from("OK"));
+                        let mut range_items = vec![];
+                        let mut item = RangeT::default();
+                        item.stream_id = range.stream_id;
+                        item.range_index = range.range_index;
+                        item.end_offset = offset as i64;
+                        item.next_offset = offset as i64;
+                        range_items.push(item);
+                        result.ranges = Some(range_items);
+                    }
+                    Err(e) => {
+                        error!(
+                            self.log,
+                            "Failed to seal stream-id={}, range_index={}",
+                            range.stream_id,
+                            range.range_index
+                        );
+                        status.code = ErrorCode::DN_INTERNAL_SERVER_ERROR;
+                        status.message = Some(format!("{:?}", e));
+                    }
+                }
+                result.status = Some(Box::new(status));
+                results.push(result);
+            }
+        }
+        seal_response.seal_responses = Some(results);
+
+        let resp = seal_response.pack(&mut builder);
+        builder.finish(resp, None);
+        let data = builder.finished_data();
+        response.header = Some(Bytes::copy_from_slice(data));
     }
 }

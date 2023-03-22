@@ -78,9 +78,9 @@ impl<'a> Append<'a> {
         })
     }
 
-    /// Process message publishment request
+    /// Process message publish request
     ///
-    /// On receiving a message publishment request, it wraps the incoming request to a `Record`.
+    /// On receiving a message publish request, it wraps the incoming request to a `Record`.
     /// The record is then moved to `Store::append`, where persistence, replication and other auxillary
     /// operations are properly performed.
     ///

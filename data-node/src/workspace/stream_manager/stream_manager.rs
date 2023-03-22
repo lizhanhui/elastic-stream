@@ -153,9 +153,13 @@ impl StreamManager {
         Ok(())
     }
 
-    /// TODO: Consider current
-    pub(crate) async fn seal(&mut self, stream_id: i64) -> Result<u64, ServiceError> {
-        self.ensure_mutable(stream_id).await?;
+    pub(crate) fn seal(&mut self, stream_id: i64, range_index: i32) -> Result<u64, ServiceError> {
+        if let Some(stream) = self.streams.get_mut(&stream_id) {
+            if !stream.is_mut() {
+                return Err(ServiceError::AlreadySealed);
+            }
+        }
+
         let committed = match self.windows.remove(&stream_id) {
             Some(window) => window.commit,
             None => {
@@ -165,7 +169,7 @@ impl StreamManager {
         };
 
         if let Some(stream) = self.streams.get_mut(&stream_id) {
-            stream.seal(committed);
+            stream.seal(committed, range_index);
             Ok(committed)
         } else {
             Err(ServiceError::Seal)
@@ -252,7 +256,7 @@ mod tests {
             let mut stream_manager = StreamManager::new(logger, fetcher);
             let offset = stream_manager.alloc_record_slot(stream_id).await.unwrap();
             stream_manager.ack(stream_id, offset)?;
-            let seal_offset = stream_manager.seal(stream_id).await.unwrap();
+            let seal_offset = stream_manager.seal(stream_id, TOTAL - 1).unwrap();
             assert_eq!(offset + 1, seal_offset);
             Ok(())
         })
