@@ -39,6 +39,7 @@ import (
 	"github.com/AutoMQ/placement-manager/pkg/server/cluster"
 	"github.com/AutoMQ/placement-manager/pkg/server/config"
 	"github.com/AutoMQ/placement-manager/pkg/server/handler"
+	"github.com/AutoMQ/placement-manager/pkg/server/id"
 	"github.com/AutoMQ/placement-manager/pkg/server/member"
 	"github.com/AutoMQ/placement-manager/pkg/server/storage"
 	"github.com/AutoMQ/placement-manager/pkg/util/etcdutil"
@@ -389,6 +390,17 @@ func (s *Server) Storage() storage.Storage {
 
 func (s *Server) Member() *member.Member {
 	return s.member
+}
+
+func (s *Server) IDAllocator(key string, start, step uint64) id.Allocator {
+	return id.Logger{LogAble: id.NewEtcdAllocator(&id.EtcdAllocatorParam{
+		Client:   s.client,
+		CmpFunc:  s.leaderCmp,
+		RootPath: s.rootPath,
+		Key:      key,
+		Start:    start,
+		Step:     step,
+	}, s.lg)}
 }
 
 // IsClosed checks whether server is closed or not.

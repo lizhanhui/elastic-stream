@@ -48,7 +48,7 @@ func NewEtcd(client *clientv3.Client, rootPath string, lg *zap.Logger, cmpFunc f
 	e := &Etcd{
 		client:   client,
 		rootPath: []byte(rootPath),
-		lg:       lg,
+		lg:       lg.With(zap.String("etcd-kv-root-path", rootPath)),
 	}
 	if cmpFunc != nil {
 		e.newTxnFunc = func(ctx context.Context) clientv3.Txn {

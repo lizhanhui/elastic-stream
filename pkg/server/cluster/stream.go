@@ -14,12 +14,18 @@ import (
 func (c *RaftCluster) CreateStreams(ctx context.Context, streams []*rpcfb.StreamT) ([]*rpcfb.CreateStreamResultT, error) {
 	logger := c.lg.With(zap.Int("stream-cnt", len(streams)), traceutil.TraceLogField(ctx))
 
+	ids, err := c.streamIDAlloc.AllocN(ctx, len(streams))
+	if err != nil {
+		logger.Error("failed to allocate stream ids", zap.Error(err))
+		return nil, err
+	}
+
 	params := make([]*endpoint.CreateStreamParam, 0, len(streams))
-	for _, stream := range streams {
-		stream.StreamId = c.nextStreamID()
+	for i, stream := range streams {
+		stream.StreamId = int64(ids[i])
 		nodes, err := c.chooseDataNodes(stream.ReplicaNums)
 		if err != nil {
-			c.lg.Error("failed to choose data nodes", zap.Int64("stream-id", stream.StreamId), zap.Error(err))
+			logger.Error("failed to choose data nodes", zap.Int64("stream-id", stream.StreamId), zap.Error(err))
 			return nil, err
 		}
 		params = append(params, &endpoint.CreateStreamParam{
@@ -34,11 +40,7 @@ func (c *RaftCluster) CreateStreams(ctx context.Context, streams []*rpcfb.Stream
 		})
 	}
 
-	streamIDs := make([]int64, 0, len(streams))
-	for _, stream := range streams {
-		streamIDs = append(streamIDs, stream.StreamId)
-	}
-	logger.Info("start to create streams", zap.Int64s("stream-ids", streamIDs))
+	logger.Info("start to create streams", zap.Uint64s("stream-ids", ids))
 	results, err := c.storage.CreateStreams(ctx, params)
 	logger.Info("finish creating streams", zap.Error(err))
 

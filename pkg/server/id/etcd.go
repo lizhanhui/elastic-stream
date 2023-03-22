@@ -67,10 +67,10 @@ func NewEtcdAllocator(param *EtcdAllocatorParam, lg *zap.Logger) *EtcdAllocator 
 	e := &EtcdAllocator{
 		client: param.Client,
 		path:   strings.Join([]string{param.RootPath, param.Key}, _keySeparator),
-		lg:     lg,
 		start:  param.Start,
 		step:   param.Step,
 	}
+	e.lg = lg.With(zap.String("etcd-id-allocator-path", e.path))
 
 	if e.step == 0 {
 		e.step = _defaultStep

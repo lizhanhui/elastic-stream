@@ -24,8 +24,15 @@ import (
 
 	"github.com/AutoMQ/placement-manager/api/rpcfb/rpcfb"
 	"github.com/AutoMQ/placement-manager/pkg/server/cluster/cache"
+	"github.com/AutoMQ/placement-manager/pkg/server/id"
 	"github.com/AutoMQ/placement-manager/pkg/server/member"
 	"github.com/AutoMQ/placement-manager/pkg/server/storage"
+	"github.com/AutoMQ/placement-manager/pkg/server/storage/endpoint"
+)
+
+const (
+	_streamIDAllocKey = "stream"
+	_streamIDStep     = 1000
 )
 
 // RaftCluster is used for metadata management.
@@ -38,12 +45,10 @@ type RaftCluster struct {
 	runningCtx    context.Context
 	runningCancel context.CancelFunc
 
-	storage storage.Storage
-	cache   *cache.Cache
-	member  *member.Member
-
-	// FIXME: use an id generator based on KV
-	streamID atomic.Int64
+	storage       storage.Storage
+	streamIDAlloc id.Allocator
+	cache         *cache.Cache
+	member        *member.Member
 
 	lg *zap.Logger
 }
@@ -52,6 +57,7 @@ type RaftCluster struct {
 type Server interface {
 	Storage() storage.Storage
 	Member() *member.Member
+	IDAllocator(key string, start, step uint64) id.Allocator
 }
 
 // NewRaftCluster creates a new RaftCluster.
@@ -60,7 +66,6 @@ func NewRaftCluster(ctx context.Context, clusterID uint64, logger *zap.Logger) *
 		ctx:       ctx,
 		clusterID: clusterID,
 		cache:     cache.NewCache(),
-		streamID:  atomic.Int64{},
 		lg:        logger.With(zap.Uint64("cluster-id", clusterID)),
 	}
 }
@@ -83,6 +88,7 @@ func (c *RaftCluster) Start(s Server) error {
 	c.storage = s.Storage()
 	c.member = s.Member()
 	c.runningCtx, c.runningCancel = context.WithCancel(c.ctx)
+	c.streamIDAlloc = s.IDAllocator(_streamIDAllocKey, uint64(endpoint.MinStreamID), _streamIDStep)
 
 	err := c.loadInfo()
 	if err != nil {
@@ -158,9 +164,4 @@ func (c *RaftCluster) IsLeader() bool {
 
 func (c *RaftCluster) Leader() *member.Info {
 	return c.member.Leader()
-}
-
-func (c *RaftCluster) nextStreamID() int64 {
-	// TODO batch allocate stream ids
-	return c.streamID.Add(1) - 1
 }
