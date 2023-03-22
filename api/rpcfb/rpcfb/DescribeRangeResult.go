@@ -68,7 +68,7 @@ func (rcv *DescribeRangeResult) StreamId() int64 {
 	if o != 0 {
 		return rcv._tab.GetInt64(o + rcv._tab.Pos)
 	}
-	return 0
+	return -1
 }
 
 func (rcv *DescribeRangeResult) MutateStreamId(n int64) bool {
@@ -105,7 +105,7 @@ func DescribeRangeResultStart(builder *flatbuffers.Builder) {
 	builder.StartObject(3)
 }
 func DescribeRangeResultAddStreamId(builder *flatbuffers.Builder, streamId int64) {
-	builder.PrependInt64Slot(0, streamId, 0)
+	builder.PrependInt64Slot(0, streamId, -1)
 }
 func DescribeRangeResultAddRanges(builder *flatbuffers.Builder, ranges flatbuffers.UOffsetT) {
 	builder.PrependUOffsetTSlot(1, flatbuffers.UOffsetT(ranges), 0)

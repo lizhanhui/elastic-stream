@@ -46,7 +46,7 @@ func (e *Endpoint) CreateStreams(ctx context.Context, params []*CreateStreamPara
 	logger := e.lg.With(traceutil.TraceLogField(ctx))
 
 	results := make([]*rpcfb.CreateStreamResultT, 0, len(params))
-	kvs := make([]kv.KeyValue, 0, len(params)*2)
+	kvs := make([]kv.KeyValue, 0, len(params)*5)
 	for _, param := range params {
 		kvs = append(kvs, kv.KeyValue{
 			Key:   streamPath(param.StreamT.StreamId),
@@ -56,6 +56,12 @@ func (e *Endpoint) CreateStreams(ctx context.Context, params []*CreateStreamPara
 			Key:   rangePathInSteam(param.StreamT.StreamId, param.RangeT.RangeIndex),
 			Value: fbutil.Marshal(param.RangeT),
 		})
+		for _, node := range param.RangeT.ReplicaNodes {
+			kvs = append(kvs, kv.KeyValue{
+				Key:   rangePathOnDataNode(node.DataNode.NodeId, param.StreamT.StreamId, param.RangeT.RangeIndex),
+				Value: nil,
+			})
+		}
 		results = append(results, &rpcfb.CreateStreamResultT{
 			Stream: param.StreamT,
 			Range:  param.RangeT,
@@ -64,7 +70,9 @@ func (e *Endpoint) CreateStreams(ctx context.Context, params []*CreateStreamPara
 
 	prevKvs, err := e.BatchPut(ctx, kvs, true)
 	for _, keyValue := range kvs {
-		mcache.Free(keyValue.Value)
+		if keyValue.Value != nil {
+			mcache.Free(keyValue.Value)
+		}
 	}
 	if err != nil {
 		streamIDs := make([]int64, 0, len(params))

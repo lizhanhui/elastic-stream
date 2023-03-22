@@ -67,7 +67,7 @@ func (rcv *DataNode) NodeId() int32 {
 	if o != 0 {
 		return rcv._tab.GetInt32(o + rcv._tab.Pos)
 	}
-	return 0
+	return -1
 }
 
 func (rcv *DataNode) MutateNodeId(n int32) bool {
@@ -86,7 +86,7 @@ func DataNodeStart(builder *flatbuffers.Builder) {
 	builder.StartObject(2)
 }
 func DataNodeAddNodeId(builder *flatbuffers.Builder, nodeId int32) {
-	builder.PrependInt32Slot(0, nodeId, 0)
+	builder.PrependInt32Slot(0, nodeId, -1)
 }
 func DataNodeAddAdvertiseAddr(builder *flatbuffers.Builder, advertiseAddr flatbuffers.UOffsetT) {
 	builder.PrependUOffsetTSlot(1, flatbuffers.UOffsetT(advertiseAddr), 0)

@@ -66,7 +66,7 @@ func (rcv *Stream) StreamId() int64 {
 	if o != 0 {
 		return rcv._tab.GetInt64(o + rcv._tab.Pos)
 	}
-	return 0
+	return -1
 }
 
 func (rcv *Stream) MutateStreamId(n int64) bool {
@@ -101,7 +101,7 @@ func StreamStart(builder *flatbuffers.Builder) {
 	builder.StartObject(3)
 }
 func StreamAddStreamId(builder *flatbuffers.Builder, streamId int64) {
-	builder.PrependInt64Slot(0, streamId, 0)
+	builder.PrependInt64Slot(0, streamId, -1)
 }
 func StreamAddReplicaNums(builder *flatbuffers.Builder, replicaNums int8) {
 	builder.PrependInt8Slot(1, replicaNums, 0)

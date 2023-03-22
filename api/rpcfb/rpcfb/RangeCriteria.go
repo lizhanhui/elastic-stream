@@ -77,7 +77,7 @@ func (rcv *RangeCriteria) StreamId() int64 {
 	if o != 0 {
 		return rcv._tab.GetInt64(o + rcv._tab.Pos)
 	}
-	return 0
+	return -1
 }
 
 func (rcv *RangeCriteria) MutateStreamId(n int64) bool {
@@ -91,7 +91,7 @@ func RangeCriteriaAddDataNode(builder *flatbuffers.Builder, dataNode flatbuffers
 	builder.PrependUOffsetTSlot(0, flatbuffers.UOffsetT(dataNode), 0)
 }
 func RangeCriteriaAddStreamId(builder *flatbuffers.Builder, streamId int64) {
-	builder.PrependInt64Slot(1, streamId, 0)
+	builder.PrependInt64Slot(1, streamId, -1)
 }
 func RangeCriteriaEnd(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
 	return builder.EndObject()
