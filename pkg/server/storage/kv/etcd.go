@@ -88,7 +88,11 @@ func (e *Etcd) GetByRange(ctx context.Context, r Range, limit int64) ([]KeyValue
 	startKey := e.addPrefix(r.StartKey)
 	endKey := e.addPrefix(r.EndKey)
 
-	resp, err := etcdutil.Get(ctx, e.client, startKey, logger, clientv3.WithRange(string(endKey)), clientv3.WithLimit(limit))
+	opts := []clientv3.OpOption{clientv3.WithRange(string(endKey))}
+	if limit > 0 {
+		opts = append(opts, clientv3.WithLimit(limit))
+	}
+	resp, err := etcdutil.Get(ctx, e.client, startKey, logger, opts...)
 	if err != nil {
 		return nil, errors.WithMessage(err, "kv get by range")
 	}

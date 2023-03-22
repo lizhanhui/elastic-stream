@@ -59,6 +59,25 @@ func TestListRange(t *testing.T) {
 		re.Equal(result.Status.Code, rpcfb.ErrorCodeOK)
 		re.Len(result.Ranges, 3)
 	}
+
+	// test list range by stream id and data node id
+	req = &protocol.ListRangesRequest{ListRangesRequestT: rpcfb.ListRangesRequestT{
+		RangeCriteria: []*rpcfb.RangeCriteriaT{
+			{StreamId: 0, DataNode: &rpcfb.DataNodeT{NodeId: 0}},
+			{StreamId: 1, DataNode: &rpcfb.DataNodeT{NodeId: 1}},
+			{StreamId: 2, DataNode: &rpcfb.DataNodeT{NodeId: 2}},
+		},
+	}}
+	resp = &protocol.ListRangesResponse{}
+	sbp.ListRange(context.Background(), req, resp)
+
+	re.Equal(resp.Status.Code, rpcfb.ErrorCodeOK)
+	re.Len(resp.ListResponses, 3)
+	for i, result := range resp.ListResponses {
+		re.Equal(result.RangeCriteria, req.RangeCriteria[i])
+		re.Equal(result.Status.Code, rpcfb.ErrorCodeOK)
+		re.Len(result.Ranges, 1)
+	}
 }
 
 func preHeartbeat(tb testing.TB, sbp *Sbp, nodeID int32) {
