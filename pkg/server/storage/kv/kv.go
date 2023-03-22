@@ -57,7 +57,6 @@ type KV interface {
 	// If the key already exists, BatchPut overwrites the existing value.
 	// Any empty key will be ignored.
 	// If prevKV is true, the old key-value pairs (if any) will be returned.
-	// Return ErrTxnFailed if transaction failed.
 	BatchPut(ctx context.Context, kvs []KeyValue, prevKV bool) ([]KeyValue, error)
 
 	// Delete removes the key-value pair associated with the given key.
@@ -70,7 +69,6 @@ type KV interface {
 	// If the key does not exist, BatchDelete returns no error.
 	// Any empty key will be ignored.
 	// If prevKV is true, the old key-value pairs (if any) will be returned.
-	// Return ErrTxnFailed if transaction failed.
 	BatchDelete(ctx context.Context, keys [][]byte, prevKV bool) ([]KeyValue, error)
 
 	// GetPrefixRangeEnd returns the end key for a prefix range query.

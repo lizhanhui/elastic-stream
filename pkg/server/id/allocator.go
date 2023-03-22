@@ -14,20 +14,23 @@
 
 package id
 
+import (
+	"context"
+)
+
 const (
-	_defaultStep = 1000
+	_defaultStep  = 1000
+	_defaultStart = 0
 )
 
 // Allocator is the allocator to generate unique ID.
 type Allocator interface {
 	// Alloc allocates a new ID.
-	Alloc() (uint64, error)
+	Alloc(ctx context.Context) (uint64, error)
 
-	// AllocN allocates ordered N IDs.
-	AllocN(n uint) ([]uint64, error)
+	// AllocN allocates N continuous IDs.
+	AllocN(ctx context.Context, n int) ([]uint64, error)
 
-	// Rebase re-bases the allocator to a base value.
-	// If force is true, it will rebase the allocator even if the base value is smaller than the current one.
-	// If force is false, it does nothing and returns nil when the base value is smaller than the current one.
-	Rebase(base uint64, force bool) error
+	// Reset resets the allocator.3
+	Reset(ctx context.Context) error
 }
