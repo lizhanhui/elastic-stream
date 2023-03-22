@@ -67,7 +67,12 @@ impl ServerCall {
         debug!(self.logger, "Receive a command: {:?}", cmd);
 
         // Delegate the request to its dedicated handler.
-        cmd.apply(Rc::clone(&self.store), &mut response).await;
+        cmd.apply(
+            Rc::clone(&self.store),
+            Rc::clone(&self.stream_manager),
+            &mut response,
+        )
+        .await;
 
         // Send response to channel.
         // Note there is a spawned task, in which channel writer is polling the channel.

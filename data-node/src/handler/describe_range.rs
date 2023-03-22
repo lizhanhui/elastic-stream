@@ -1,8 +1,10 @@
 use codec::frame::Frame;
 use protocol::rpc::header::{DescribeRangesRequest, ErrorCode};
 use slog::{warn, Logger};
-use std::rc::Rc;
+use std::{cell::RefCell, rc::Rc};
 use store::ElasticStore;
+
+use crate::workspace::stream_manager::StreamManager;
 
 use super::util::root_as_rpc_request;
 
@@ -48,5 +50,11 @@ impl<'a> DescribeRange<'a> {
         })
     }
 
-    pub(crate) async fn apply(&self, _store: Rc<ElasticStore>, _response: &mut Frame) {}
+    pub(crate) async fn apply(
+        &self,
+        _store: Rc<ElasticStore>,
+        stream_manager: Rc<RefCell<StreamManager>>,
+        _response: &mut Frame,
+    ) {
+    }
 }

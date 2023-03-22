@@ -1,9 +1,11 @@
-use std::rc::Rc;
+use std::{cell::RefCell, rc::Rc};
 
 use codec::frame::{Frame, OperationCode};
 use protocol::rpc::header::ErrorCode;
 use slog::Logger;
 use store::ElasticStore;
+
+use crate::workspace::stream_manager::StreamManager;
 
 use super::{
     append::Append, describe_range::DescribeRange, fetch::Fetch, heartbeat::Heartbeat, ping::Ping,
@@ -61,14 +63,19 @@ impl<'a> Command<'a> {
         }
     }
 
-    pub(crate) async fn apply(&self, store: Rc<ElasticStore>, response: &mut Frame) {
+    pub(crate) async fn apply(
+        &self,
+        store: Rc<ElasticStore>,
+        stream_manager: Rc<RefCell<StreamManager>>,
+        response: &mut Frame,
+    ) {
         match self {
-            Command::Append(cmd) => cmd.apply(store, response).await,
-            Command::DescribeRange(cmd) => cmd.apply(store, response).await,
-            Command::Fetch(cmd) => cmd.apply(store, response).await,
-            Command::Heartbeat(cmd) => cmd.apply(store, response).await,
-            Command::Ping(cmd) => cmd.apply(store, response).await,
-            Command::SealRange(cmd) => cmd.apply(store, response).await,
+            Command::Append(cmd) => cmd.apply(store, stream_manager, response).await,
+            Command::DescribeRange(cmd) => cmd.apply(store, stream_manager, response).await,
+            Command::Fetch(cmd) => cmd.apply(store, stream_manager, response).await,
+            Command::Heartbeat(cmd) => cmd.apply(store, stream_manager, response).await,
+            Command::Ping(cmd) => cmd.apply(store, stream_manager, response).await,
+            Command::SealRange(cmd) => cmd.apply(store, stream_manager, response).await,
         }
     }
 }

@@ -1,8 +1,10 @@
-use std::rc::Rc;
+use std::{cell::RefCell, rc::Rc};
 
 use codec::frame::Frame;
 use slog::{debug, Logger};
 use store::ElasticStore;
+
+use crate::workspace::stream_manager::StreamManager;
 
 /// Process Ping request
 ///
@@ -22,7 +24,12 @@ impl<'a> Ping<'a> {
         }
     }
 
-    pub(crate) async fn apply(&self, _store: Rc<ElasticStore>, response: &mut Frame) {
+    pub(crate) async fn apply(
+        &self,
+        _store: Rc<ElasticStore>,
+        stream_manager: Rc<RefCell<StreamManager>>,
+        response: &mut Frame,
+    ) {
         debug!(
             self.log,
             "Ping[stream-id={}] received", self.request.stream_id

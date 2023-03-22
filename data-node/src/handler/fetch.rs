@@ -7,8 +7,10 @@ use protocol::rpc::header::{
     ErrorCode, FetchRequest, FetchResponseArgs, FetchResultArgs, StatusArgs,
 };
 use slog::{warn, Logger};
-use std::rc::Rc;
+use std::{cell::RefCell, rc::Rc};
 use store::{error::FetchError, ops::fetch::FetchResult, option::ReadOptions, ElasticStore, Store};
+
+use crate::workspace::stream_manager::StreamManager;
 
 use super::util::{finish_response_builder, root_as_rpc_request, MIN_BUFFER_SIZE};
 
@@ -54,7 +56,12 @@ impl<'a> Fetch<'a> {
     }
 
     /// Apply the fetch requests to the store
-    pub(crate) async fn apply(&self, store: Rc<ElasticStore>, response: &mut Frame) {
+    pub(crate) async fn apply(
+        &self,
+        store: Rc<ElasticStore>,
+        stream_manager: Rc<RefCell<StreamManager>>,
+        response: &mut Frame,
+    ) {
         let store_requests = self.build_store_requests();
         let futures: Vec<_> = store_requests
             .into_iter()

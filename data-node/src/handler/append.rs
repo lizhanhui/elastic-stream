@@ -8,11 +8,13 @@ use protocol::rpc::header::{
     AppendRequest, AppendResponseArgs, AppendResultArgs, ErrorCode, StatusArgs,
 };
 use slog::{warn, Logger};
-use std::rc::Rc;
+use std::{rc::Rc, cell::RefCell};
 use store::{
     error::AppendError, ops::append::AppendResult, option::WriteOptions, AppendRecordRequest,
     ElasticStore, Store,
 };
+
+use crate::workspace::stream_manager::StreamManager;
 
 use super::util::{
     finish_response_builder, root_as_rpc_request, system_error_frame_bytes, MIN_BUFFER_SIZE,
@@ -87,7 +89,7 @@ impl<'a> Append<'a> {
     ///
     /// `response` - Mutable response frame reference, into which required business data are filled.
     ///
-    pub(crate) async fn apply(&self, store: Rc<ElasticStore>, response: &mut Frame) {
+    pub(crate) async fn apply(&self, store: Rc<ElasticStore>, stream_manager: Rc<RefCell<StreamManager>>, response: &mut Frame) {
         let to_store_requests = match self.build_store_requests() {
             Ok(requests) => requests,
             Err(err_code) => {
