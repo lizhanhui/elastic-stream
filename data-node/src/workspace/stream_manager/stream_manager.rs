@@ -140,8 +140,13 @@ impl StreamManager {
         unreachable!("Should have an `AppendWindow` for stream[id={}]", stream_id);
     }
 
-    pub(crate) async fn ack(&mut self, stream_id: i64, offset: u64) -> Result<(), ServiceError> {
-        self.ensure_mutable(stream_id).await?;
+    pub(crate) fn ack(&mut self, stream_id: i64, offset: u64) -> Result<(), ServiceError> {
+        if let Some(stream) = self.streams.get_mut(&stream_id) {
+            if !stream.is_mut() {
+                return Err(ServiceError::AlreadySealed);
+            }
+        }
+
         if let Some(window) = self.windows.get_mut(&stream_id) {
             window.ack(offset);
         }
@@ -246,7 +251,7 @@ mod tests {
             let stream_id = 1;
             let mut stream_manager = StreamManager::new(logger, fetcher);
             let offset = stream_manager.alloc_record_slot(stream_id).await.unwrap();
-            stream_manager.ack(stream_id, offset).await?;
+            stream_manager.ack(stream_id, offset)?;
             let seal_offset = stream_manager.seal(stream_id).await.unwrap();
             assert_eq!(offset + 1, seal_offset);
             Ok(())
@@ -261,7 +266,7 @@ mod tests {
             let stream_id = 1;
             let mut stream_manager = StreamManager::new(logger, fetcher);
             let offset = stream_manager.alloc_record_slot(stream_id).await.unwrap();
-            stream_manager.ack(stream_id, offset).await?;
+            stream_manager.ack(stream_id, offset)?;
             let range = stream_manager.describe_range(stream_id, TOTAL - 1).await?;
             assert_eq!(offset + 1, range.limit());
             Ok(())

@@ -129,6 +129,16 @@ impl<'a> Append<'a> {
             .map(|res| {
                 match res {
                     Ok(result) => {
+                        if let Err(e) = stream_manager
+                            .borrow_mut()
+                            .ack(result.stream_id, result.offset as u64)
+                        {
+                            warn!(
+                                self.logger,
+                                "Failed to ack offset on store completion to stream manager: {:?}",
+                                e
+                            );
+                        }
                         let args = AppendResultArgs {
                             stream_id: result.stream_id,
                             // TODO: fill the write request index
@@ -140,6 +150,7 @@ impl<'a> Append<'a> {
                         protocol::rpc::header::AppendResult::create(&mut builder, &args)
                     }
                     Err(e) => {
+                        // TODO: what to do with the offset on failure?
                         warn!(self.logger, "Append failed: {:?}", e);
                         let (err_code, error_message) = self.convert_store_error(e);
 
