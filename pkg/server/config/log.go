@@ -38,6 +38,7 @@ func NewLog() *Log {
 		Zap: zap.NewProductionConfig(),
 	}
 	log.Zap.EncoderConfig.EncodeCaller = encodeCaller
+	log.Zap.EncoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
 	return log
 }
 
