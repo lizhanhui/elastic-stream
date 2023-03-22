@@ -1,5 +1,9 @@
+use bytes::Bytes;
 use codec::frame::Frame;
-use protocol::rpc::header::{DescribeRangesRequest, ErrorCode};
+use protocol::rpc::header::{
+    DescribeRangeResultT, DescribeRangesRequest, DescribeRangesResponseT, ErrorCode, RangeT,
+    StatusT,
+};
 use slog::{warn, Logger};
 use std::{cell::RefCell, rc::Rc};
 use store::ElasticStore;
@@ -52,9 +56,56 @@ impl<'a> DescribeRange<'a> {
 
     pub(crate) async fn apply(
         &self,
-        _store: Rc<ElasticStore>,
+        store: Rc<ElasticStore>,
         stream_manager: Rc<RefCell<StreamManager>>,
-        _response: &mut Frame,
+        response: &mut Frame,
     ) {
+        let request = self.describe_request.unpack();
+        let mut builder = flatbuffers::FlatBufferBuilder::new();
+        let mut describe_range_response = DescribeRangesResponseT::default();
+        let mut status = StatusT::default();
+        status.code = ErrorCode::OK;
+        status.message = Some(String::from("OK"));
+        describe_range_response.status = Some(Box::new(status));
+        let mut manager = stream_manager.borrow_mut();
+
+        if let Some(ranges) = request.ranges {
+            let mut results = vec![];
+            for range in ranges {
+                let mut result = DescribeRangeResultT::default();
+                let mut status = StatusT::default();
+                match manager
+                    .describe_range(range.stream_id, range.range_index)
+                    .await
+                {
+                    Ok(range) => {
+                        status.code = ErrorCode::OK;
+                        status.message = Some(String::from("OK"));
+                        let mut range_t = RangeT::default();
+                        range_t.stream_id = range.stream_id();
+                        range_t.range_index = range.index();
+                        range_t.start_offset = range.start() as i64;
+                        if let Some(end) = range.end() {
+                            range_t.end_offset = end as i64;
+                        } else {
+                            range_t.end_offset = -1;
+                        }
+                        result.range = Some(Box::new(range_t));
+                    }
+                    Err(e) => {
+                        status.code = ErrorCode::PM_INTERNAL_SERVER_ERROR;
+                        status.message = Some(format!("{}", e));
+                    }
+                };
+                result.status = Some(Box::new(status));
+                results.push(result);
+            }
+            describe_range_response.describe_responses = Some(results);
+        }
+
+        let describe_response = describe_range_response.pack(&mut builder);
+        builder.finish(describe_response, None);
+        let data = builder.finished_data();
+        response.header = Some(Bytes::copy_from_slice(data));
     }
 }

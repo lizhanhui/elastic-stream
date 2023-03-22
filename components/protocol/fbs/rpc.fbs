@@ -331,8 +331,7 @@ table DescribeRangesResponse {
 table DescribeRangeResult {
     // The id of the stream
     stream_id: int64 = -1 (id: 0);
-    // The array of ranges, returned by the describe ranges request.
-    ranges: Range (id: 1);
+    range: Range (id: 1);
     status: Status (id: 2);
 }
 
