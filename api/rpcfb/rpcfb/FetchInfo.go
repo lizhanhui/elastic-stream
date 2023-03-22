@@ -69,7 +69,7 @@ func (rcv *FetchInfo) StreamId() int64 {
 	if o != 0 {
 		return rcv._tab.GetInt64(o + rcv._tab.Pos)
 	}
-	return 0
+	return -1
 }
 
 func (rcv *FetchInfo) MutateStreamId(n int64) bool {
@@ -116,7 +116,7 @@ func FetchInfoStart(builder *flatbuffers.Builder) {
 	builder.StartObject(4)
 }
 func FetchInfoAddStreamId(builder *flatbuffers.Builder, streamId int64) {
-	builder.PrependInt64Slot(0, streamId, 0)
+	builder.PrependInt64Slot(0, streamId, -1)
 }
 func FetchInfoAddRequestIndex(builder *flatbuffers.Builder, requestIndex int32) {
 	builder.PrependInt32Slot(1, requestIndex, 0)

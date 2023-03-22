@@ -86,7 +86,7 @@ func (rcv *SealRangesResult) StreamId() int64 {
 	if o != 0 {
 		return rcv._tab.GetInt64(o + rcv._tab.Pos)
 	}
-	return 0
+	return -1
 }
 
 func (rcv *SealRangesResult) MutateStreamId(n int64) bool {
@@ -130,7 +130,7 @@ func SealRangesResultStart(builder *flatbuffers.Builder) {
 	builder.StartObject(3)
 }
 func SealRangesResultAddStreamId(builder *flatbuffers.Builder, streamId int64) {
-	builder.PrependInt64Slot(0, streamId, 0)
+	builder.PrependInt64Slot(0, streamId, -1)
 }
 func SealRangesResultAddRanges(builder *flatbuffers.Builder, ranges flatbuffers.UOffsetT) {
 	builder.PrependUOffsetTSlot(1, flatbuffers.UOffsetT(ranges), 0)

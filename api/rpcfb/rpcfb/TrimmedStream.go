@@ -63,7 +63,7 @@ func (rcv *TrimmedStream) StreamId() int64 {
 	if o != 0 {
 		return rcv._tab.GetInt64(o + rcv._tab.Pos)
 	}
-	return 0
+	return -1
 }
 
 func (rcv *TrimmedStream) MutateStreamId(n int64) bool {
@@ -86,7 +86,7 @@ func TrimmedStreamStart(builder *flatbuffers.Builder) {
 	builder.StartObject(2)
 }
 func TrimmedStreamAddStreamId(builder *flatbuffers.Builder, streamId int64) {
-	builder.PrependInt64Slot(0, streamId, 0)
+	builder.PrependInt64Slot(0, streamId, -1)
 }
 func TrimmedStreamAddTrimOffset(builder *flatbuffers.Builder, trimOffset int64) {
 	builder.PrependInt64Slot(1, trimOffset, 0)
