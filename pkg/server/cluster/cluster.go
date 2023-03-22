@@ -37,8 +37,7 @@ const (
 
 // RaftCluster is used for metadata management.
 type RaftCluster struct {
-	ctx       context.Context
-	clusterID uint64
+	ctx context.Context
 
 	starting      atomic.Bool
 	running       atomic.Bool
@@ -66,12 +65,11 @@ type Server interface {
 }
 
 // NewRaftCluster creates a new RaftCluster.
-func NewRaftCluster(ctx context.Context, clusterID uint64, logger *zap.Logger) *RaftCluster {
+func NewRaftCluster(ctx context.Context, logger *zap.Logger) *RaftCluster {
 	return &RaftCluster{
-		ctx:       ctx,
-		clusterID: clusterID,
-		cache:     cache.NewCache(),
-		lg:        logger.With(zap.Uint64("cluster-id", clusterID)),
+		ctx:   ctx,
+		cache: cache.NewCache(),
+		lg:    logger,
 	}
 }
 
