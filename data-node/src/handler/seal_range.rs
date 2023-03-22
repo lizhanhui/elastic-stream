@@ -43,19 +43,18 @@ impl<'a> SealRange<'a> {
         response: &mut Frame,
     ) {
         let request = self.request.unpack();
-        let mut manager = stream_manager.borrow_mut();
-
         let mut builder = flatbuffers::FlatBufferBuilder::new();
         let mut seal_response = SealRangesResponseT::default();
         let mut status = StatusT::default();
         status.code = ErrorCode::OK;
         status.message = Some(String::from("OK"));
         seal_response.status = Some(Box::new(status));
-
-        let mut results = vec![];
-
-        if let Some(ranges) = request.ranges {
-            for range in ranges {
+        let mut manager = stream_manager.borrow_mut();
+        let results = request
+            .ranges
+            .iter()
+            .flatten()
+            .map(|range| {
                 let mut result = SealRangesResultT::default();
                 let mut status = StatusT::default();
                 match manager.seal(range.stream_id, range.range_index) {
@@ -83,11 +82,10 @@ impl<'a> SealRange<'a> {
                     }
                 }
                 result.status = Some(Box::new(status));
-                results.push(result);
-            }
-        }
+                result
+            })
+            .collect::<Vec<_>>();
         seal_response.seal_responses = Some(results);
-
         let resp = seal_response.pack(&mut builder);
         builder.finish(resp, None);
         let data = builder.finished_data();
