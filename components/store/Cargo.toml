@@ -16,7 +16,6 @@ uuid = { workspace = true }
 slog =  { workspace = true }
 nix = { workspace = true }
 prometheus = { workspace = true }
-pin-project = { workspace = true }
 libc = { workspace = true }
 io-uring = { workspace = true }
 crossbeam = { workspace = true }

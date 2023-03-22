@@ -13,7 +13,6 @@ transport = { path = "../transport" }
 bytes = { workspace = true }
 slog = { workspace = true }
 thiserror = { workspace = true }
-pin-project = { workspace = true }
 futures = { workspace = true }
 flatbuffers = { workspace = true }
 gethostname = { workspace = true }
