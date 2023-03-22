@@ -28,8 +28,36 @@ impl StreamManager {
         }
     }
 
-    pub(crate) fn start(&mut self) {
+    pub(crate) async fn start(&mut self) -> Result<(), ServiceError> {
         self.fetcher.start();
+        let mut bootstrap = false;
+        if let Fetcher::PlacementClient { .. } = &self.fetcher {
+            bootstrap = true;
+        }
+
+        if bootstrap {
+            self.bootstrap().await?;
+        }
+        Ok(())
+    }
+
+    /// Bootstrap all stream ranges that are assigned to current data node.
+    async fn bootstrap(&mut self) -> Result<(), ServiceError> {
+        let ranges = self.fetcher.bootstrap(&self.log).await?;
+
+        for range in ranges {
+            let stream = self
+                .streams
+                .entry(range.stream_id())
+                .or_insert(Stream::with_id(range.stream_id()));
+            stream.push(range);
+        }
+
+        self.streams
+            .iter_mut()
+            .for_each(|(_, stream)| stream.sort());
+
+        Ok(())
     }
 
     async fn create_stream_if_missing(&mut self, stream_id: i64) -> Result<(), ServiceError> {

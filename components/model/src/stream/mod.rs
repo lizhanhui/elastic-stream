@@ -11,8 +11,17 @@ impl Stream {
         Self { id, ranges }
     }
 
-    pub fn open(id: i64) -> Self {
+    pub fn with_id(id: i64) -> Self {
         Self { id, ranges: vec![] }
+    }
+
+    pub fn push(&mut self, range: StreamRange) {
+        self.ranges.push(range);
+    }
+
+    // Sort ranges
+    pub fn sort(&mut self) {
+        self.ranges.sort_by(|a, b| a.index().cmp(&b.index()));
     }
 
     pub fn seal(&mut self, committed: u64) {
@@ -33,7 +42,7 @@ impl Stream {
     pub fn range(&self, index: i32) -> Option<StreamRange> {
         self.ranges
             .iter()
-            .try_find(|&range| Some(range.id() == index))
+            .try_find(|&range| Some(range.index() == index))
             .flatten()
             .map(|range| range.clone())
     }
@@ -41,7 +50,12 @@ impl Stream {
     pub fn refresh(&mut self, ranges: Vec<StreamRange>) {
         let to_append = ranges
             .into_iter()
-            .filter(|range| self.ranges.iter().find(|r| range.id() == r.id()).is_none())
+            .filter(|range| {
+                self.ranges
+                    .iter()
+                    .find(|r| range.index() == r.index())
+                    .is_none()
+            })
             .collect::<Vec<_>>();
         self.ranges.extend(to_append);
     }

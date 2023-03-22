@@ -224,7 +224,7 @@ impl Session {
                     })
                     .map(|result| {
                         let created = result.stream.expect("Stream should be present");
-                        Stream::open(created.stream_id)
+                        Stream::with_id(created.stream_id)
                     })
                     .collect::<Vec<_>>();
                 return Ok(streams);

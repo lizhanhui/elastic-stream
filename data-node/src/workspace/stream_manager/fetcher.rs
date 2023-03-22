@@ -37,6 +37,46 @@ impl Fetcher {
         }
     }
 
+    pub(crate) async fn bootstrap(
+        &mut self,
+        log: &Logger,
+    ) -> Result<Vec<StreamRange>, ServiceError> {
+        match self {
+            Fetcher::PlacementClient { client } => {
+                let response = client
+                    .list_range(None, Duration::from_secs(3))
+                    .await
+                    .map_err(|_e| {
+                        error!(
+                            log,
+                            "Failed to list ranges by data node from placement manager"
+                        );
+                        ServiceError::AcquireRange
+                    })?;
+
+                if let Response::ListRange { status, ranges } = response {
+                    if ErrorCode::OK == status.code {
+                        if let Some(ranges) = ranges {
+                            return Ok(ranges);
+                        } else {
+                            error!(
+                                log,
+                                "Illegal response from placement manager when bootstrap",
+                            );
+                        }
+                    } else {
+                        error!(
+                                log,
+                                "Status of bootstrap ranges from placement manager is not OK. Status={:?}", status
+                            );
+                    }
+                }
+            }
+            Fetcher::Channel { .. } => {}
+        }
+        Err(ServiceError::AcquireRange)
+    }
+
     /// TODO: filter out ranges that is not hosted in current data node.
     pub(crate) async fn fetch(
         &mut self,

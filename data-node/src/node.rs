@@ -60,7 +60,11 @@ impl Node {
                         }
                     };
 
-                self.stream_manager.borrow_mut().start();
+                self.stream_manager
+                    .borrow_mut()
+                    .start()
+                    .await
+                    .expect("Failed to bootstrap stream ranges from placement managers");
 
                 match self.run(listener, self.logger.new(o!())).await {
                     Ok(_) => {}

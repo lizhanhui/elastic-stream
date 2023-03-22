@@ -77,7 +77,11 @@ impl StreamRange {
         self.limit - self.start
     }
 
-    pub fn id(&self) -> i32 {
+    pub fn stream_id(&self) -> i64 {
+        self.stream_id
+    }
+
+    pub fn index(&self) -> i32 {
         self.index
     }
 

@@ -477,7 +477,7 @@ impl super::LocalRangeManager for Indexer {
         let mut key_buf = BytesMut::with_capacity(1 + 8 + 4 + 8);
         key_buf.put_u8(RANGE_PREFIX);
         key_buf.put_i64(stream_id);
-        key_buf.put_i32(range.id());
+        key_buf.put_i32(range.index());
         key_buf.put_u64(range.start());
 
         let mut value_buf = BytesMut::with_capacity(1 + 8);
@@ -500,7 +500,7 @@ impl super::LocalRangeManager for Indexer {
         let mut key_buf = BytesMut::with_capacity(1 + 8 + 4 + 8);
         key_buf.put_u8(RANGE_PREFIX);
         key_buf.put_i64(stream_id);
-        key_buf.put_i32(range.id());
+        key_buf.put_i32(range.index());
         key_buf.put_u64(range.start());
 
         let mut value_buf = BytesMut::with_capacity(1 + 8);
