@@ -30,6 +30,7 @@ import (
 
 const (
 	_keySeparator = "/"
+	_pathPrefix   = "id-alloc"
 )
 
 var (
@@ -67,7 +68,7 @@ func NewEtcdAllocator(param *EtcdAllocatorParam, lg *zap.Logger) *EtcdAllocator 
 	e := &EtcdAllocator{
 		client:  param.Client,
 		cmpFunc: param.CmpFunc,
-		path:    strings.Join([]string{param.RootPath, param.Key}, _keySeparator),
+		path:    strings.Join([]string{param.RootPath, _pathPrefix, param.Key}, _keySeparator),
 		start:   param.Start,
 		step:    param.Step,
 	}
