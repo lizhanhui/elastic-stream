@@ -5,7 +5,6 @@ use model::{
     stream::Stream,
 };
 use slog::{error, trace, Logger};
-use tokio::sync::oneshot;
 
 use crate::{error::ServiceError, workspace::append_window::AppendWindow};
 
@@ -129,16 +128,12 @@ impl StreamManager {
     /// Allocate a record slot for the specified stream.
     ///
     /// If, though unlikely, a mutable range is not available, fetch it from placement manager.
-    pub(crate) async fn alloc_record_slot(
-        &mut self,
-        stream_id: i64,
-        tx: oneshot::Sender<()>,
-    ) -> Result<u64, ServiceError> {
+    pub(crate) async fn alloc_record_slot(&mut self, stream_id: i64) -> Result<u64, ServiceError> {
         self.create_stream_if_missing(stream_id).await?;
         self.ensure_mutable(stream_id).await?;
 
         if let Some(window) = self.windows.get_mut(&stream_id) {
-            let slot = window.alloc_slot(tx);
+            let slot = window.alloc_slot();
             return Ok(slot);
         }
 
@@ -200,7 +195,7 @@ mod tests {
     use std::error::Error;
 
     use model::range::StreamRange;
-    use tokio::sync::{mpsc, oneshot};
+    use tokio::sync::mpsc;
 
     use crate::workspace::stream_manager::{fetcher::Fetcher, StreamManager};
     const TOTAL: i32 = 16;
@@ -250,11 +245,7 @@ mod tests {
             let fetcher = create_fetcher().await;
             let stream_id = 1;
             let mut stream_manager = StreamManager::new(logger, fetcher);
-            let (tx, _rx) = oneshot::channel();
-            let offset = stream_manager
-                .alloc_record_slot(stream_id, tx)
-                .await
-                .unwrap();
+            let offset = stream_manager.alloc_record_slot(stream_id).await.unwrap();
             stream_manager.ack(stream_id, offset).await?;
             let seal_offset = stream_manager.seal(stream_id).await.unwrap();
             assert_eq!(offset + 1, seal_offset);
@@ -269,11 +260,7 @@ mod tests {
             let fetcher = create_fetcher().await;
             let stream_id = 1;
             let mut stream_manager = StreamManager::new(logger, fetcher);
-            let (tx, rx) = oneshot::channel();
-            let offset = stream_manager
-                .alloc_record_slot(stream_id, tx)
-                .await
-                .unwrap();
+            let offset = stream_manager.alloc_record_slot(stream_id).await.unwrap();
             stream_manager.ack(stream_id, offset).await?;
             let range = stream_manager.describe_range(stream_id, TOTAL - 1).await?;
             assert_eq!(offset + 1, range.limit());

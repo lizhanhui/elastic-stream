@@ -8,7 +8,7 @@ use protocol::rpc::header::{
     AppendRequest, AppendResponseArgs, AppendResultArgs, ErrorCode, StatusArgs,
 };
 use slog::{warn, Logger};
-use std::{rc::Rc, cell::RefCell};
+use std::{cell::RefCell, rc::Rc};
 use store::{
     error::AppendError, ops::append::AppendResult, option::WriteOptions, AppendRecordRequest,
     ElasticStore, Store,
@@ -89,8 +89,13 @@ impl<'a> Append<'a> {
     ///
     /// `response` - Mutable response frame reference, into which required business data are filled.
     ///
-    pub(crate) async fn apply(&self, store: Rc<ElasticStore>, stream_manager: Rc<RefCell<StreamManager>>, response: &mut Frame) {
-        let to_store_requests = match self.build_store_requests() {
+    pub(crate) async fn apply(
+        &self,
+        store: Rc<ElasticStore>,
+        stream_manager: Rc<RefCell<StreamManager>>,
+        response: &mut Frame,
+    ) {
+        let to_store_requests = match self.build_store_requests(&stream_manager).await {
             Ok(requests) => requests,
             Err(err_code) => {
                 // The request frame is invalid, return a system error frame directly
@@ -114,7 +119,7 @@ impl<'a> Append<'a> {
         let no_err_status = protocol::rpc::header::Status::create(
             &mut builder,
             &StatusArgs {
-                code: ErrorCode::NONE,
+                code: ErrorCode::OK,
                 message: None,
                 detail: None,
             },
@@ -177,25 +182,38 @@ impl<'a> Append<'a> {
         response.header = Some(res_header);
     }
 
-    fn build_store_requests(&self) -> Result<Vec<AppendRecordRequest>, ErrorCode> {
+    async fn build_store_requests(
+        &self,
+        stream_manager: &Rc<RefCell<StreamManager>>,
+    ) -> Result<Vec<AppendRecordRequest>, ErrorCode> {
         let mut payload = self.payload.clone();
-        let mut err_code = ErrorCode::NONE;
+        let mut err_code = ErrorCode::OK;
+        let mut manager = stream_manager.borrow_mut();
+
+        let mut offsets = vec![];
+        for entry in self.append_request.append_requests().iter().flatten() {
+            let stream_id = entry.stream_id();
+            let offset = manager
+                .alloc_record_slot(stream_id)
+                .await
+                .map_err(|_e| ErrorCode::DN_INTERNAL_SERVER_ERROR)?;
+            offsets.push(offset);
+        }
+
         // Iterate over the append requests and append each record batch
         let to_store_requests: Vec<_> = self
             .append_request
             .append_requests()
             .iter()
             .flatten()
-            .map_while(|record_batch| {
+            .zip(offsets)
+            .map_while(|(record_batch, offset)| {
                 let stream_id = record_batch.stream_id();
                 let _request_index = record_batch.request_index();
                 let batch_len = record_batch.batch_length();
 
                 // TODO: Check if the stream exists and
                 // the current data node owns the newly writable range of the stream
-
-                // TODO: Set the offset and modify the payload
-                let offset = 0i64;
 
                 // Split the current batch payload from the whole payload
                 if payload.len() < batch_len as usize {
@@ -206,7 +224,7 @@ impl<'a> Append<'a> {
 
                 let to_store = AppendRecordRequest {
                     stream_id,
-                    offset,
+                    offset: offset as i64,
                     buffer: payload_b,
                 };
                 Some(to_store)

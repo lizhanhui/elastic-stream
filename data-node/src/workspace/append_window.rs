@@ -1,9 +1,4 @@
-use std::{
-    cmp::Reverse,
-    collections::{BTreeMap, BinaryHeap},
-};
-
-use tokio::sync::oneshot;
+use std::{cmp::Reverse, collections::BinaryHeap};
 
 pub(crate) struct AppendWindow {
     /// Next offset to commit.
@@ -15,7 +10,7 @@ pub(crate) struct AppendWindow {
     /// Next offset to allocate.
     pub(crate) next: u64,
 
-    inflight: BTreeMap<u64, oneshot::Sender<()>>,
+    inflight: BinaryHeap<Reverse<u64>>,
 
     completed: BinaryHeap<Reverse<u64>>,
 }
@@ -25,14 +20,14 @@ impl AppendWindow {
         Self {
             commit: next,
             next,
-            inflight: BTreeMap::new(),
+            inflight: BinaryHeap::new(),
             completed: BinaryHeap::new(),
         }
     }
 
-    pub(crate) fn alloc_slot(&mut self, tx: oneshot::Sender<()>) -> u64 {
+    pub(crate) fn alloc_slot(&mut self) -> u64 {
         let offset = self.next;
-        self.inflight.entry(offset).or_insert(tx);
+        self.inflight.push(Reverse(offset));
         self.next += 1;
         offset
     }
@@ -41,22 +36,21 @@ impl AppendWindow {
         self.completed.push(Reverse(offset));
         loop {
             if let Some(min) = self.completed.peek() {
-                if let Some((offset, _v)) = self.inflight.first_key_value() {
-                    if min.0 > *offset {
+                if let Some(offset) = self.inflight.peek() {
+                    if min.0 > offset.0 {
                         // A prior record write has not yet been acknowledged.
                         break;
                     }
 
-                    debug_assert_eq!(self.commit, *offset);
+                    debug_assert_eq!(self.commit, offset.0);
                 }
             } else {
                 break;
             }
 
             let _ = self.completed.pop();
-            if let Some((offset, v)) = self.inflight.pop_first() {
-                let _ = v.send(());
-                self.commit = offset + 1;
+            if let Some(offset) = self.inflight.pop() {
+                self.commit = offset.0 + 1;
             }
         }
     }
@@ -64,19 +58,15 @@ impl AppendWindow {
 
 #[cfg(test)]
 mod tests {
-    use std::error::Error;
-
-    use tokio::sync::oneshot;
-
     use super::AppendWindow;
+    use std::error::Error;
 
     #[test]
     fn test_alloc_slot() -> Result<(), Box<dyn Error>> {
         let mut window = AppendWindow::new(0);
         const TOTAL: u64 = 16;
         for i in 0..TOTAL {
-            let (tx, _rx) = oneshot::channel();
-            let slot = window.alloc_slot(tx);
+            let slot = window.alloc_slot();
             assert_eq!(i, slot);
         }
 
@@ -89,11 +79,8 @@ mod tests {
     fn test_ack() -> Result<(), Box<dyn Error>> {
         let mut window = AppendWindow::new(0);
         const TOTAL: u64 = 16;
-        let mut v = vec![];
         for i in 0..TOTAL {
-            let (tx, rx) = oneshot::channel();
-            v.push(rx);
-            let slot = window.alloc_slot(tx);
+            let slot = window.alloc_slot();
             assert_eq!(i, slot);
         }
 
@@ -111,11 +98,8 @@ mod tests {
     fn test_ack_out_of_order() -> Result<(), Box<dyn Error>> {
         let mut window = AppendWindow::new(0);
         const TOTAL: u64 = 16;
-        let mut v = vec![];
         for i in 0..TOTAL {
-            let (tx, rx) = oneshot::channel();
-            v.push(rx);
-            let slot = window.alloc_slot(tx);
+            let slot = window.alloc_slot();
             assert_eq!(i, slot);
         }
 
