@@ -41,7 +41,7 @@ impl StreamManager {
                 "About to fetch ranges for stream[id={}]",
                 stream_id
             );
-            let ranges = self.fetcher.fetch(stream_id).await?;
+            let ranges = self.fetcher.fetch(stream_id, &self.log).await?;
 
             debug_assert!(
                 !ranges.is_empty(),
@@ -85,7 +85,7 @@ impl StreamManager {
             }
         }
 
-        let ranges = self.fetcher.fetch(stream_id).await?;
+        let ranges = self.fetcher.fetch(stream_id, &self.log).await?;
         if let Some(range) = ranges.last() {
             if range.is_sealed() {
                 return Err(ServiceError::AlreadySealed);

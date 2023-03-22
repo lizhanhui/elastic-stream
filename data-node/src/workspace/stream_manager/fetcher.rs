@@ -1,5 +1,9 @@
+use std::time::Duration;
+
 use model::range::StreamRange;
-use placement_client::PlacementClient;
+use placement_client::{PlacementClient, Response};
+use protocol::rpc::header::ErrorCode;
+use slog::{error, Logger};
 use tokio::sync::{mpsc, oneshot};
 
 use crate::error::ServiceError;
@@ -34,23 +38,55 @@ impl Fetcher {
     }
 
     /// TODO: filter out ranges that is not hosted in current data node.
-    pub(crate) async fn fetch(&mut self, stream_id: i64) -> Result<Vec<StreamRange>, ServiceError> {
+    pub(crate) async fn fetch(
+        &mut self,
+        stream_id: i64,
+        log: &Logger,
+    ) -> Result<Vec<StreamRange>, ServiceError> {
         match self {
-            Fetcher::Channel { sender } => Self::fetch_from_peer_node(sender, stream_id).await,
-            Fetcher::PlacementClient { client } => Self::fetch_by_client(client, stream_id).await,
+            Fetcher::Channel { sender } => Self::fetch_from_peer_node(sender, stream_id, log).await,
+            Fetcher::PlacementClient { client } => {
+                Self::fetch_by_client(client, stream_id, log).await
+            }
         }
     }
 
     async fn fetch_by_client(
-        _client: &PlacementClient,
-        _stream_id: i64,
+        client: &PlacementClient,
+        stream_id: i64,
+        log: &Logger,
     ) -> Result<Vec<StreamRange>, ServiceError> {
-        todo!()
+        let response = client
+            .list_range(Some(stream_id), Duration::from_secs(3))
+            .await
+            .map_err(|_e| ServiceError::AcquireRange)?;
+
+        if let Response::ListRange { status, ranges } = response {
+            if ErrorCode::OK == status.code {
+                if let Some(ranges) = ranges {
+                    return Ok(ranges);
+                } else {
+                    error!(
+                        log,
+                        "Illegal response from placement manager when list ranges for stream={}",
+                        stream_id
+                    );
+                }
+            } else {
+                error!(
+                    log,
+                    "Status of list range from placement manager is not OK. Status={:?}", status
+                );
+            }
+        }
+
+        Err(ServiceError::AcquireRange)
     }
 
     async fn fetch_from_peer_node(
         sender: &mpsc::UnboundedSender<FetchRangeTask>,
         stream_id: i64,
+        log: &Logger,
     ) -> Result<Vec<StreamRange>, ServiceError> {
         let (tx, rx) = oneshot::channel();
         let task = FetchRangeTask { stream_id, tx };
@@ -58,8 +94,13 @@ impl Fetcher {
             let task = e.0;
             let _ = task.tx.send(Err(ServiceError::AcquireRange));
         }
-        rx.await
-            .map_err(|_e| ServiceError::Internal("Broken oneshot channel".to_owned()))?
+        rx.await.map_err(|_e| {
+            error!(
+                log,
+                "Failed to get ranges from primary node for stream={}", stream_id
+            );
+            ServiceError::Internal("Broken oneshot channel".to_owned())
+        })?
     }
 }
 
@@ -73,6 +114,7 @@ pub(crate) mod tests {
 
     #[test]
     fn test_fetch_from_peer_node() -> Result<(), Box<dyn Error>> {
+        let log = test_util::terminal_logger();
         tokio_uring::start(async {
             let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
 
@@ -110,7 +152,7 @@ pub(crate) mod tests {
                 }
             });
 
-            let res = fetcher.fetch(1).await?;
+            let res = fetcher.fetch(1, &log).await?;
             assert_eq!(res.len(), TOTAL as usize);
             drop(fetcher);
             Ok(())
