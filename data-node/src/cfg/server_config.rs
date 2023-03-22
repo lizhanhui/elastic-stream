@@ -9,13 +9,19 @@ pub const DEFAULT_CONCURRENCY: usize = 1;
 #[derive(Debug, Parser, Clone)]
 #[command(author, version, about, long_about = None)]
 pub struct ServerConfig {
-    /// Number of thread-per-core worker nodes
-    #[arg(short, long, default_value_t = DEFAULT_CONCURRENCY, value_parser = parse_concurrency)]
-    pub concurrency: usize,
+    #[arg(long)]
+    pub node_id: i32,
+
+    #[arg(long)]
+    pub host: String,
 
     /// Listening port
     #[arg(short, long, default_value_t = DEFAULT_PORT)]
     pub port: u16,
+
+    /// Number of thread-per-core worker nodes
+    #[arg(short, long, default_value_t = DEFAULT_CONCURRENCY, value_parser = parse_concurrency)]
+    pub concurrency: usize,
 
     #[arg(short, long, default_value_t = DEFAULT_QUEUE_DEPTH)]
     pub queue_depth: u32,
@@ -57,6 +63,10 @@ mod tests {
     fn test_actor_count() {
         let config = ServerConfig::parse_from([
             "data-node",
+            "--node-id",
+            "0",
+            "--host",
+            "localhost",
             "-p",
             "123",
             "-q",
@@ -74,10 +84,14 @@ mod tests {
     fn test_actor_count_with_excessively_large_num() {
         let config = ServerConfig::parse_from([
             "data-node",
-            "-c",
-            format!("{}", num_cpus::get()).as_str(),
+            "--node-id",
+            "0",
+            "--host",
+            "localhost",
             "-p",
             "123",
+            "-c",
+            format!("{}", num_cpus::get()).as_str(),
             "-q",
             "2048",
             "--placement-manager",

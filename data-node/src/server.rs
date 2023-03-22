@@ -85,14 +85,18 @@ pub fn launch(cfg: &ServerConfig) -> Result<(), Box<dyn Error>> {
         let handle = thread::Builder::new()
             .name("DataNode[Primary]".to_owned())
             .spawn(move || {
+                let mut client_config = ClientConfig::default();
+                client_config.with_data_node(model::data_node::DataNode {
+                    node_id: server_config.node_id,
+                    advertise_address: format!("{}:{}", server_config.host, server_config.port),
+                });
+
                 let node_config = NodeConfig {
                     core_id,
                     server_config,
                     sharing_uring: store.as_raw_fd(),
                     primary: true,
                 };
-
-                let client_config = ClientConfig::default();
 
                 let notifier = Rc::new(UnsupportedNotifier {});
 
