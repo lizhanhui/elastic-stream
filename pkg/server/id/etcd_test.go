@@ -35,7 +35,7 @@ func testEtcdAlloc(t *testing.T, client *clientv3.Client) (start, end uint64) {
 
 	allocator := NewEtcdAllocator(&EtcdAllocatorParam{
 		Client:   client,
-		CmpFunc:  nil,
+		CmpFunc:  func() clientv3.Cmp { return clientv3.Compare(clientv3.CreateRevision("not-exist-key"), "=", 0) },
 		RootPath: "test-root",
 		Key:      "test-key",
 		Step:     2,
@@ -81,7 +81,7 @@ func testEtcdAllocN(t *testing.T, client *clientv3.Client) (start, end uint64) {
 
 	allocator := NewEtcdAllocator(&EtcdAllocatorParam{
 		Client:   client,
-		CmpFunc:  nil,
+		CmpFunc:  func() clientv3.Cmp { return clientv3.Compare(clientv3.CreateRevision("not-exist-key"), "=", 0) },
 		RootPath: "test-root",
 		Key:      "test-key",
 		Step:     42,
@@ -127,7 +127,7 @@ func TestEtcdAllocator_Reset(t *testing.T) {
 
 	allocator := NewEtcdAllocator(&EtcdAllocatorParam{
 		Client:   client,
-		CmpFunc:  nil,
+		CmpFunc:  func() clientv3.Cmp { return clientv3.Compare(clientv3.CreateRevision("not-exist-key"), "=", 0) },
 		RootPath: "test-root",
 		Key:      "test-key",
 		Start:    1234,

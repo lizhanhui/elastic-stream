@@ -35,7 +35,7 @@ var (
 type Etcd struct {
 	client     *clientv3.Client
 	rootPath   []byte
-	newTxnFunc func(ctx context.Context) clientv3.Txn
+	newTxnFunc func(ctx context.Context) clientv3.Txn // WARNING: do not call `If` on the returned txn.
 
 	lg *zap.Logger
 }

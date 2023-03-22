@@ -43,11 +43,11 @@ type EtcdAllocator struct {
 	base uint64
 	end  uint64
 
-	client     *clientv3.Client
-	path       string
-	newTxnFunc func(ctx context.Context) clientv3.Txn
-	start      uint64
-	step       uint64
+	client  *clientv3.Client
+	cmpFunc func() clientv3.Cmp
+	path    string
+	start   uint64
+	step    uint64
 
 	lg *zap.Logger
 }
@@ -65,10 +65,11 @@ type EtcdAllocatorParam struct {
 // NewEtcdAllocator creates a new etcd allocator.
 func NewEtcdAllocator(param *EtcdAllocatorParam, lg *zap.Logger) *EtcdAllocator {
 	e := &EtcdAllocator{
-		client: param.Client,
-		path:   strings.Join([]string{param.RootPath, param.Key}, _keySeparator),
-		start:  param.Start,
-		step:   param.Step,
+		client:  param.Client,
+		cmpFunc: param.CmpFunc,
+		path:    strings.Join([]string{param.RootPath, param.Key}, _keySeparator),
+		start:   param.Start,
+		step:    param.Step,
 	}
 	e.lg = lg.With(zap.String("etcd-id-allocator-path", e.path))
 
@@ -80,17 +81,6 @@ func NewEtcdAllocator(param *EtcdAllocatorParam, lg *zap.Logger) *EtcdAllocator 
 	}
 	e.base = e.start
 	e.end = e.start
-
-	if param.CmpFunc != nil {
-		e.newTxnFunc = func(ctx context.Context) clientv3.Txn {
-			// cmpFunc should be evaluated lazily.
-			return etcdutil.NewTxn(ctx, param.Client, lg.With(traceutil.TraceLogField(ctx))).If(param.CmpFunc())
-		}
-	} else {
-		e.newTxnFunc = func(ctx context.Context) clientv3.Txn {
-			return etcdutil.NewTxn(ctx, param.Client, lg.With(traceutil.TraceLogField(ctx)))
-		}
-	}
 	return e
 }
 
@@ -146,21 +136,24 @@ func (e *EtcdAllocator) growLocked(ctx context.Context, growth uint64) error {
 	}
 
 	var prevEnd uint64
-	var cmp clientv3.Cmp
+	var cmpList []clientv3.Cmp
+	if e.cmpFunc != nil {
+		cmpList = append(cmpList, e.cmpFunc())
+	}
 	if kv == nil {
 		prevEnd = e.base
-		cmp = clientv3.Compare(clientv3.CreateRevision(e.path), "=", 0)
+		cmpList = append(cmpList, clientv3.Compare(clientv3.CreateRevision(e.path), "=", 0))
 	} else {
 		prevEnd, err = typeutil.BytesToUint64(kv.Value)
 		if err != nil {
 			return errors.WithMessagef(err, "parse value %s", string(kv.Value))
 		}
-		cmp = clientv3.Compare(clientv3.Value(e.path), "=", string(kv.Value))
+		cmpList = append(cmpList, clientv3.Compare(clientv3.Value(e.path), "=", string(kv.Value)))
 	}
 	end := prevEnd + growth
 
 	v := typeutil.Uint64ToBytes(end)
-	txn := e.newTxnFunc(ctx).If(cmp).Then(clientv3.OpPut(e.path, string(v)))
+	txn := etcdutil.NewTxn(ctx, e.client, logger).If(cmpList...).Then(clientv3.OpPut(e.path, string(v)))
 	resp, err := txn.Commit()
 	if err != nil {
 		return errors.WithMessage(err, "update id")
@@ -179,12 +172,17 @@ func (e *EtcdAllocator) growLocked(ctx context.Context, growth uint64) error {
 }
 
 func (e *EtcdAllocator) Reset(ctx context.Context) error {
+	logger := e.lg.With(traceutil.TraceLogField(ctx))
+
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
+	txn := etcdutil.NewTxn(ctx, e.client, logger)
 	v := typeutil.Uint64ToBytes(e.start)
-	txn := e.newTxnFunc(ctx).Then(clientv3.OpPut(e.path, string(v)))
-	resp, err := txn.Commit()
+	if e.cmpFunc != nil {
+		txn = txn.If(e.cmpFunc())
+	}
+	resp, err := txn.Then(clientv3.OpPut(e.path, string(v))).Commit()
 	if err != nil {
 		return errors.WithMessage(err, "reset etcd id allocator")
 	}
