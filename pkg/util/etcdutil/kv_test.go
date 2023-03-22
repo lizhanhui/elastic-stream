@@ -81,7 +81,7 @@ func TestGetOne(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			re := require.New(t)
-			_, client, closeFunc := testutil.StartEtcd(re, t)
+			_, client, closeFunc := testutil.StartEtcd(t)
 			defer closeFunc()
 
 			// prepare
@@ -197,7 +197,7 @@ func TestGet(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			re := require.New(t)
-			_, client, closeFunc := testutil.StartEtcd(re, t)
+			_, client, closeFunc := testutil.StartEtcd(t)
 			defer closeFunc()
 
 			// prepare

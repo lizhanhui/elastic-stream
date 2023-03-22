@@ -35,7 +35,7 @@ var (
 type Etcd struct {
 	client     *clientv3.Client
 	rootPath   []byte
-	newTxnFunc func(ctx context.Context) clientv3.Txn
+	newTxnFunc func(ctx context.Context) clientv3.Txn // WARNING: do not call `If` on the returned txn.
 
 	lg *zap.Logger
 }
@@ -48,7 +48,7 @@ func NewEtcd(client *clientv3.Client, rootPath string, lg *zap.Logger, cmpFunc f
 	e := &Etcd{
 		client:   client,
 		rootPath: []byte(rootPath),
-		lg:       lg,
+		lg:       lg.With(zap.String("etcd-kv-root-path", rootPath)),
 	}
 	if cmpFunc != nil {
 		e.newTxnFunc = func(ctx context.Context) clientv3.Txn {
@@ -125,6 +125,7 @@ func (e *Etcd) Put(ctx context.Context, k, v []byte, prevKV bool) ([]byte, error
 	return nil, nil
 }
 
+// BatchPut returns ErrTxnFailed if transaction failed.
 func (e *Etcd) BatchPut(ctx context.Context, kvs []KeyValue, prevKV bool) ([]KeyValue, error) {
 	if len(kvs) == 0 {
 		return nil, nil
@@ -193,6 +194,7 @@ func (e *Etcd) Delete(ctx context.Context, k []byte, prevKV bool) ([]byte, error
 	return nil, nil
 }
 
+// BatchDelete returns ErrTxnFailed if transaction failed.
 func (e *Etcd) BatchDelete(ctx context.Context, keys [][]byte, prevKV bool) ([]KeyValue, error) {
 	if len(keys) == 0 {
 		return nil, nil

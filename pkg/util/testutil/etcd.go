@@ -11,7 +11,9 @@ import (
 	"go.uber.org/zap"
 )
 
-func StartEtcd(re *require.Assertions, tb testing.TB) (*embed.Etcd, *clientv3.Client, func()) {
+func StartEtcd(tb testing.TB) (*embed.Etcd, *clientv3.Client, func()) {
+	re := require.New(tb)
+
 	// start etcd
 	cfg := NewEtcdConfig(tb)
 	etcd, err := embed.StartEtcd(cfg)
