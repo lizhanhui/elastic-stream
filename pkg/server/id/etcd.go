@@ -181,3 +181,7 @@ func (e *EtcdAllocator) Reset(ctx context.Context) error {
 	e.end = e.start
 	return nil
 }
+
+func (e *EtcdAllocator) Logger() *zap.Logger {
+	return e.lg
+}
