@@ -168,54 +168,57 @@ mod tests {
     use std::error::Error;
 
     use model::range::StreamRange;
-    use tokio::sync::oneshot;
+    use tokio::sync::{mpsc, oneshot};
 
     use crate::workspace::stream_manager::{fetcher::Fetcher, StreamManager};
+    const TOTAL: i32 = 16;
+
+    async fn create_fetcher() -> Fetcher {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let fetcher = Fetcher::Channel { sender: tx };
+
+        tokio_uring::spawn(async move {
+            loop {
+                match rx.recv().await {
+                    Some(task) => {
+                        let stream_id = task.stream_id;
+                        let ranges = (0..TOTAL)
+                            .map(|i| {
+                                if i < TOTAL - 1 {
+                                    StreamRange::new(
+                                        stream_id,
+                                        i,
+                                        (i * 100) as u64,
+                                        ((i + 1) * 100) as u64,
+                                        Some(((i + 1) * 100) as u64),
+                                    )
+                                } else {
+                                    StreamRange::new(stream_id, i, (i * 100) as u64, 0, None)
+                                }
+                            })
+                            .collect::<Vec<_>>();
+                        if let Err(e) = task.tx.send(Ok(ranges)) {
+                            panic!("Failed to transfer mocked ranges");
+                        }
+                    }
+                    None => {
+                        break;
+                    }
+                }
+            }
+        });
+
+        fetcher
+    }
 
     #[test]
     fn test_seal() -> Result<(), Box<dyn Error>> {
         let logger = test_util::terminal_logger();
         tokio_uring::start(async {
-            let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
-
-            let fetcher = Fetcher::Channel { sender: tx };
-            const TOTAL: i32 = 16;
-
-            tokio_uring::spawn(async move {
-                loop {
-                    match rx.recv().await {
-                        Some(task) => {
-                            let stream_id = task.stream_id;
-                            let ranges = (0..TOTAL)
-                                .map(|i| {
-                                    if i < TOTAL - 1 {
-                                        StreamRange::new(
-                                            stream_id,
-                                            i,
-                                            (i * 100) as u64,
-                                            ((i + 1) * 100) as u64,
-                                            Some(((i + 1) * 100) as u64),
-                                        )
-                                    } else {
-                                        StreamRange::new(stream_id, i, (i * 100) as u64, 0, None)
-                                    }
-                                })
-                                .collect::<Vec<_>>();
-                            if let Err(e) = task.tx.send(Ok(ranges)) {
-                                panic!("Failed to transfer mocked ranges");
-                            }
-                        }
-                        None => {
-                            break;
-                        }
-                    }
-                }
-            });
-
+            let fetcher = create_fetcher().await;
             let stream_id = 1;
-
             let mut stream_manager = StreamManager::new(logger, fetcher);
-            let (tx, rx) = oneshot::channel();
+            let (tx, _rx) = oneshot::channel();
             let offset = stream_manager
                 .alloc_record_slot(stream_id, tx)
                 .await
@@ -223,13 +226,26 @@ mod tests {
             stream_manager.ack(stream_id, offset).await?;
             let seal_offset = stream_manager.seal(stream_id).await.unwrap();
             assert_eq!(offset + 1, seal_offset);
-
             Ok(())
         })
     }
 
     #[test]
     fn test_describe_range() -> Result<(), Box<dyn Error>> {
-        Ok(())
+        let logger = test_util::terminal_logger();
+        tokio_uring::start(async {
+            let fetcher = create_fetcher().await;
+            let stream_id = 1;
+            let mut stream_manager = StreamManager::new(logger, fetcher);
+            let (tx, rx) = oneshot::channel();
+            let offset = stream_manager
+                .alloc_record_slot(stream_id, tx)
+                .await
+                .unwrap();
+            stream_manager.ack(stream_id, offset).await?;
+            let range = stream_manager.describe_range(stream_id, TOTAL - 1).await?;
+            assert_eq!(offset + 1, range.limit());
+            Ok(())
+        })
     }
 }

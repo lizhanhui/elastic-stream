@@ -89,6 +89,10 @@ impl StreamRange {
         self.end
     }
 
+    pub fn limit(&self) -> u64 {
+        self.limit
+    }
+
     pub fn set_limit(&mut self, limit: u64) {
         self.limit = limit;
     }
