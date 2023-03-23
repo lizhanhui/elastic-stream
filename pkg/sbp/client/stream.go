@@ -4,6 +4,8 @@ import (
 	"context"
 	"sync"
 
+	"github.com/bytedance/gopkg/lang/mcache"
+
 	"github.com/AutoMQ/placement-manager/pkg/sbp/codec"
 	"github.com/AutoMQ/placement-manager/pkg/sbp/protocol"
 )
@@ -85,6 +87,11 @@ func (s *stream) encodeAndWrite(req protocol.OutRequest) error {
 	}
 
 	header, err := req.Marshal(cc.c.format())
+	defer func() {
+		if header == nil {
+			mcache.Free(header)
+		}
+	}()
 	if err != nil {
 		return err
 	}
@@ -95,6 +102,7 @@ func (s *stream) encodeAndWrite(req protocol.OutRequest) error {
 	}
 	f := codec.NewDataFrameReq(fCtx, header, nil)
 	err = cc.fr.WriteFrame(f)
+
 	if err != nil && cc.werr == nil {
 		cc.werr = err
 	}
