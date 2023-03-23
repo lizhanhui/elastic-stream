@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"context"
 	"net"
-	"sync"
 	"time"
 
 	"github.com/pkg/errors"
@@ -89,23 +88,23 @@ func (c *Client) dialConn(ctx context.Context, addr string) (*conn, error) {
 
 func (c *Client) newConn(rwc net.Conn) (*conn, error) {
 	logger := c.lg.With(zap.String("server-addr", rwc.RemoteAddr().String()))
-	conn := &conn{
+	cc := &conn{
 		c:          c,
 		conn:       rwc,
 		readerDone: make(chan struct{}),
-		mu:         sync.Mutex{},
 		streams:    make(map[uint32]*stream),
 		pings:      make(map[[8]byte]chan struct{}),
 		fr:         codec.NewFramer(bufio.NewWriter(rwc), bufio.NewReader(rwc), logger),
+		lg:         logger,
 	}
 	if c.IdleConnTimeout > 0 {
-		conn.idleTimeout = c.IdleConnTimeout
-		conn.idleTimer = time.AfterFunc(c.IdleConnTimeout, conn.onIdleTimeout)
+		cc.idleTimeout = c.IdleConnTimeout
+		cc.idleTimer = time.AfterFunc(c.IdleConnTimeout, cc.onIdleTimeout)
 	}
 
 	logger.Info("connection created")
-	go conn.readLoop()
-	return conn, nil
+	go cc.readLoop()
+	return cc, nil
 }
 
 //nolint:unused
