@@ -1,6 +1,8 @@
 package protocol
 
 import (
+	"context"
+
 	"github.com/pkg/errors"
 
 	"github.com/AutoMQ/placement-manager/api/rpcfb/rpcfb"
@@ -20,6 +22,15 @@ type Request interface {
 	// Timeout returns the timeout of the request in milliseconds.
 	// It returns 0 if the request doesn't have a timeout.
 	Timeout() int32
+
+	// SetContext sets the context of the request.
+	// The provided ctx must be non-nil.
+	SetContext(ctx context.Context)
+
+	// Context returns the context of the request.
+	// For outgoing client requests, the context controls cancellation.
+	// For incoming server requests, the context is canceled when the client's connection closes.
+	Context() context.Context
 }
 
 type unmarshaler interface {
@@ -41,7 +52,9 @@ type jsonUnmarshaler interface {
 }
 
 // baseRequest is a base implementation of Request
-type baseRequest struct{}
+type baseRequest struct {
+	ctx context.Context
+}
 
 func (b *baseRequest) unmarshalFlatBuffer(_ []byte) error {
 	return errors.Errorf(_unsupportedReqErrMsg, format.FlatBuffer())
@@ -57,6 +70,17 @@ func (b *baseRequest) unmarshalJSON(_ []byte) error {
 
 func (b *baseRequest) Timeout() int32 {
 	return 0
+}
+
+func (b *baseRequest) SetContext(ctx context.Context) {
+	b.ctx = ctx
+}
+
+func (b *baseRequest) Context() context.Context {
+	if b.ctx == nil {
+		return context.Background()
+	}
+	return b.ctx
 }
 
 type HeartbeatRequest struct {

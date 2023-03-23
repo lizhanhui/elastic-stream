@@ -399,17 +399,15 @@ func (c *conn) generateAct(f *codec.DataFrame, action *Action) (act func(resp pr
 	id, _ := uuid.NewRandom()
 	ctx := traceutil.SetTraceID(c.ctx, id.String())
 
+	var cancel context.CancelFunc = func() {}
 	if req.Timeout() > 0 {
-		ctx, cancel := context.WithTimeout(ctx, time.Duration(req.Timeout())*time.Millisecond)
-		act = func(resp protocol.Response) {
-			defer cancel()
-			action.act(ctx, c.server.handler, req, resp)
-		}
-		return
+		ctx, cancel = context.WithTimeout(ctx, time.Duration(req.Timeout())*time.Millisecond)
 	}
 
+	req.SetContext(ctx)
 	act = func(resp protocol.Response) {
-		action.act(ctx, c.server.handler, req, resp)
+		defer cancel()
+		action.act(c.server.handler, req, resp)
 	}
 	return
 }

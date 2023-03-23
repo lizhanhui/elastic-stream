@@ -1,13 +1,12 @@
 package handler
 
 import (
-	"context"
-
 	"github.com/AutoMQ/placement-manager/api/rpcfb/rpcfb"
 	"github.com/AutoMQ/placement-manager/pkg/sbp/protocol"
 )
 
-func (s *Sbp) ListRange(ctx context.Context, req *protocol.ListRangesRequest, resp *protocol.ListRangesResponse) {
+func (s *Sbp) ListRange(req *protocol.ListRangesRequest, resp *protocol.ListRangesResponse) {
+	ctx := req.Context()
 	if !s.c.IsLeader() {
 		s.notLeaderError(ctx, resp)
 		return
