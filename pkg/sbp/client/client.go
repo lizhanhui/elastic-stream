@@ -10,6 +10,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/AutoMQ/placement-manager/pkg/sbp/codec"
+	"github.com/AutoMQ/placement-manager/pkg/sbp/codec/format"
 	"github.com/AutoMQ/placement-manager/pkg/sbp/protocol"
 )
 
@@ -36,6 +37,9 @@ type Client struct {
 	// if a response to Heartbeat is not received.
 	// Default to _defaultHeartbeatTimeout
 	HeartbeatTimeout time.Duration
+	// Format is the format of the frames sent to the server.
+	// Default to format.FlatBuffer
+	Format format.Format
 
 	connPool *connPool
 
@@ -113,4 +117,11 @@ func (c *Client) heartbeatTimeout() time.Duration {
 		return c.HeartbeatTimeout
 	}
 	return _defaultHeartbeatTimeout
+}
+
+func (c *Client) format() format.Format {
+	if c.Format.Valid() {
+		return c.Format
+	}
+	return format.FlatBuffer()
 }

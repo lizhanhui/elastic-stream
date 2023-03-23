@@ -44,8 +44,6 @@ type conn struct {
 	reqMu chan struct{}
 
 	// wmu is held while writing.
-	// Acquire BEFORE mu when holding both, to avoid blocking mu on network writes.
-	// Only acquire both at the same time when changing peer settings.
 	wmu  sync.Mutex
 	fr   *codec.Framer
 	werr error // first write error that has occurred

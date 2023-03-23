@@ -387,15 +387,18 @@ type DataFrameContext struct {
 }
 
 // NewDataFrameReq returns a new DataFrame request
-func NewDataFrameReq(context *DataFrameContext, header []byte, payload []byte, flag Flags) *DataFrame {
-	return &DataFrame{baseFrame{
+func NewDataFrameReq(context *DataFrameContext, header []byte, payload []byte, flags ...Flags) *DataFrame {
+	req := &DataFrame{baseFrame{
 		OpCode:    context.OpCode,
-		Flag:      flag,
 		StreamID:  context.StreamID,
 		HeaderFmt: context.HeaderFmt,
 		Header:    header,
 		Payload:   payload,
 	}}
+	for _, flag := range flags {
+		req.Flag |= flag
+	}
+	return req
 }
 
 // NewDataFrameResp returns a new DataFrame response with the given header and payload

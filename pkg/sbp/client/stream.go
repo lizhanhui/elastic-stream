@@ -4,6 +4,7 @@ import (
 	"context"
 	"sync"
 
+	"github.com/AutoMQ/placement-manager/pkg/sbp/codec"
 	"github.com/AutoMQ/placement-manager/pkg/sbp/protocol"
 )
 
@@ -68,9 +69,41 @@ func (s *stream) writeRequest(req protocol.OutRequest) error {
 }
 
 func (s *stream) encodeAndWrite(req protocol.OutRequest) error {
-	// TODO
-	_ = req
-	return nil
+	cc := s.cc
+	ctx := s.ctx
+
+	cc.wmu.Lock()
+	defer cc.wmu.Unlock()
+
+	// If the request was canceled while waiting for cc.wmu, just quit.
+	select {
+	case <-s.abort:
+		return s.abortErr
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
+
+	header, err := req.Marshal(cc.c.format())
+	if err != nil {
+		return err
+	}
+	fCtx := &codec.DataFrameContext{
+		OpCode:    req.Operation(),
+		HeaderFmt: cc.c.format(),
+		StreamID:  s.id,
+	}
+	f := codec.NewDataFrameReq(fCtx, header, nil)
+	err = cc.fr.WriteFrame(f)
+	if err != nil && cc.werr == nil {
+		cc.werr = err
+	}
+	err = cc.fr.Flush()
+	if err != nil && cc.werr == nil {
+		cc.werr = err
+	}
+
+	return cc.werr
 }
 
 // cleanupWriteRequest performs post-request tasks.
