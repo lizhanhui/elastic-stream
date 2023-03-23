@@ -1,23 +1,14 @@
 package protocol
 
 import (
-	"github.com/pkg/errors"
-
 	"github.com/AutoMQ/placement-manager/api/rpcfb/rpcfb"
 	"github.com/AutoMQ/placement-manager/pkg/sbp/codec/format"
 	"github.com/AutoMQ/placement-manager/pkg/util/fbutil"
 )
 
-const (
-	_unsupportedRespErrMsg = "unsupported response format: %s"
-)
-
 // Response is an SBP response
 type Response interface {
-	// Marshal encodes the Response using the specified format.
-	// The returned byte slice is not nil when and only when the error is nil.
-	// The returned byte slice should be freed after use.
-	Marshal(fmt format.Format) ([]byte, error)
+	base
 
 	// Error sets the error status of the response.
 	Error(status *rpcfb.StatusT)
@@ -29,38 +20,8 @@ type Response interface {
 	IsEnd() bool
 }
 
-type marshaller interface {
-	flatBufferMarshaller
-	protoBufferMarshaller
-	jsonMarshaller
-}
-
-type flatBufferMarshaller interface {
-	marshalFlatBuffer() ([]byte, error)
-}
-
-type protoBufferMarshaller interface {
-	marshalProtoBuffer() ([]byte, error)
-}
-
-type jsonMarshaller interface {
-	marshalJSON() ([]byte, error)
-}
-
-// baseResponse is a default implementation of marshaller.
+// baseResponse is a base implementation of Response
 type baseResponse struct{}
-
-func (b *baseResponse) marshalFlatBuffer() ([]byte, error) {
-	return nil, errors.Errorf(_unsupportedRespErrMsg, format.FlatBuffer())
-}
-
-func (b *baseResponse) marshalProtoBuffer() ([]byte, error) {
-	return nil, errors.Errorf(_unsupportedRespErrMsg, format.ProtoBuffer())
-}
-
-func (b *baseResponse) marshalJSON() ([]byte, error) {
-	return nil, errors.Errorf(_unsupportedRespErrMsg, format.JSON())
-}
 
 // singleResponse represents a response that corresponds to a single request.
 // It is used when a request is expected to have only one response.
@@ -235,17 +196,4 @@ func (ds *DescribeStreamsResponse) Error(status *rpcfb.StatusT) {
 
 func (ds *DescribeStreamsResponse) OK() {
 	ds.Status = &rpcfb.StatusT{Code: rpcfb.ErrorCodeOK}
-}
-
-func marshal(response marshaller, fmt format.Format) ([]byte, error) {
-	switch fmt {
-	case format.FlatBuffer():
-		return response.marshalFlatBuffer()
-	case format.ProtoBuffer():
-		return response.marshalProtoBuffer()
-	case format.JSON():
-		return response.marshalJSON()
-	default:
-		return nil, errors.Errorf(_unsupportedRespErrMsg, fmt)
-	}
 }

@@ -3,21 +3,13 @@ package protocol
 import (
 	"context"
 
-	"github.com/pkg/errors"
-
 	"github.com/AutoMQ/placement-manager/api/rpcfb/rpcfb"
 	"github.com/AutoMQ/placement-manager/pkg/sbp/codec/format"
 )
 
-const (
-	_unsupportedReqErrMsg = "unsupported request format: %s"
-)
-
 // Request is an SBP request
 type Request interface {
-	// Unmarshal decodes data into the Request using the specified format.
-	// data is expired after the call, so the implementation should copy the data if needed.
-	Unmarshal(fmt format.Format, data []byte) error
+	base
 
 	// Timeout returns the timeout of the request in milliseconds.
 	// It returns 0 if the request doesn't have a timeout.
@@ -33,54 +25,24 @@ type Request interface {
 	Context() context.Context
 }
 
-type unmarshaler interface {
-	flatBufferUnmarshaler
-	protoBufferUnmarshaler
-	jsonUnmarshaler
-}
-
-type flatBufferUnmarshaler interface {
-	unmarshalFlatBuffer(data []byte) error
-}
-
-type protoBufferUnmarshaler interface {
-	unmarshalProtoBuffer(data []byte) error
-}
-
-type jsonUnmarshaler interface {
-	unmarshalJSON(data []byte) error
-}
-
 // baseRequest is a base implementation of Request
 type baseRequest struct {
 	ctx context.Context
 }
 
-func (b *baseRequest) unmarshalFlatBuffer(_ []byte) error {
-	return errors.Errorf(_unsupportedReqErrMsg, format.FlatBuffer())
-}
-
-func (b *baseRequest) unmarshalProtoBuffer(_ []byte) error {
-	return errors.Errorf(_unsupportedReqErrMsg, format.ProtoBuffer())
-}
-
-func (b *baseRequest) unmarshalJSON(_ []byte) error {
-	return errors.Errorf(_unsupportedReqErrMsg, format.JSON())
-}
-
-func (b *baseRequest) Timeout() int32 {
+func (req *baseRequest) Timeout() int32 {
 	return 0
 }
 
-func (b *baseRequest) SetContext(ctx context.Context) {
-	b.ctx = ctx
+func (req *baseRequest) SetContext(ctx context.Context) {
+	req.ctx = ctx
 }
 
-func (b *baseRequest) Context() context.Context {
-	if b.ctx == nil {
+func (req *baseRequest) Context() context.Context {
+	if req.ctx == nil {
 		return context.Background()
 	}
-	return b.ctx
+	return req.ctx
 }
 
 type HeartbeatRequest struct {
@@ -190,17 +152,4 @@ func (ds *DescribeStreamsRequest) Unmarshal(fmt format.Format, data []byte) erro
 
 func (ds *DescribeStreamsRequest) Timeout() int32 {
 	return ds.TimeoutMs
-}
-
-func unmarshal(request unmarshaler, fmt format.Format, data []byte) error {
-	switch fmt {
-	case format.FlatBuffer():
-		return request.unmarshalFlatBuffer(data)
-	case format.ProtoBuffer():
-		return request.unmarshalProtoBuffer(data)
-	case format.JSON():
-		return request.unmarshalJSON(data)
-	default:
-		return errors.Errorf(_unsupportedReqErrMsg, fmt)
-	}
 }
