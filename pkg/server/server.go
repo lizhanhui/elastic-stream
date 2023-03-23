@@ -54,7 +54,7 @@ const (
 	_leaderTickInterval       = 50 * time.Millisecond // check leader loop interval
 	_shutdownSbpServerTimeout = time.Second * 5       // timeout when shutdown sbp server
 
-	_rootPathPrefix = "/placement-manager"            // prefix of Server.rootPath
+	_rootPathPrefix = "/pm"                           // prefix of Server.rootPath
 	_clusterIDPath  = "/placement-manager/cluster_id" // path of Server.clusterID
 )
 
