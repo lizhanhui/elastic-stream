@@ -27,10 +27,10 @@ func newConnPool(c *Client) *connPool {
 func (p *connPool) getConn(req protocol.OutRequest, addr address) (*conn, error) {
 	for {
 		p.mu.Lock()
-		for _, conn := range p.conns[addr] {
-			if conn.reserveNewRequest() {
+		for _, cc := range p.conns[addr] {
+			if cc.reserveNewRequest() {
 				p.mu.Unlock()
-				return conn, nil
+				return cc, nil
 			}
 		}
 		call := p.getStartDialLocked(req.Context(), addr)

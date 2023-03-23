@@ -3,6 +3,7 @@ package client
 
 import (
 	"context"
+	"math"
 	"net"
 	"sync"
 	"time"
@@ -36,7 +37,6 @@ type conn struct {
 	nextStreamID    uint32
 	pings           map[[8]byte]chan struct{} // in flight ping data to notification channel
 	lastActive      time.Time
-	lastIdle        time.Time // time last idle
 
 	// reqMu is a 1-element semaphore channel controlling access to sending new requests.
 	// Write to reqHeaderMu to lock it, read from it to unlock.
@@ -87,7 +87,14 @@ func (cc *conn) readLoop() {
 }
 
 func (cc *conn) reserveNewRequest() bool {
-	// TODO
+	cc.mu.Lock()
+	defer cc.mu.Unlock()
+
+	canTakeNewRequest := cc.goAway == nil && !cc.closed && !cc.closing && cc.nextStreamID < math.MaxInt32
+	if !canTakeNewRequest {
+		return false
+	}
+	cc.streamsReserved++
 	return true
 }
 
@@ -123,7 +130,6 @@ func (cc *conn) forgetStreamID(id uint32) {
 	cc.lastActive = time.Now()
 	if len(cc.streams) == 0 && cc.idleTimer != nil {
 		cc.idleTimer.Reset(cc.idleTimeout)
-		cc.lastIdle = time.Now()
 	}
 
 	if cc.goAway != nil && cc.streamsReserved == 0 && len(cc.streams) == 0 {
