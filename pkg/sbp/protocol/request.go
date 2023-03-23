@@ -5,6 +5,7 @@ import (
 
 	"github.com/AutoMQ/placement-manager/api/rpcfb/rpcfb"
 	"github.com/AutoMQ/placement-manager/pkg/sbp/codec/format"
+	"github.com/AutoMQ/placement-manager/pkg/util/fbutil"
 )
 
 // Request is an SBP request
@@ -76,6 +77,33 @@ func (lr *ListRangesRequest) Unmarshal(fmt format.Format, data []byte) error {
 
 func (lr *ListRangesRequest) Timeout() int32 {
 	return lr.TimeoutMs
+}
+
+// SealRangesRequest is a request to operation.OpSealRanges
+type SealRangesRequest struct {
+	baseRequest
+	rpcfb.SealRangesRequestT
+}
+
+func (sr *SealRangesRequest) unmarshalFlatBuffer(data []byte) error {
+	sr.SealRangesRequestT = *rpcfb.GetRootAsSealRangesRequest(data, 0).UnPack()
+	return nil
+}
+
+func (sr *SealRangesRequest) Unmarshal(fmt format.Format, data []byte) error {
+	return unmarshal(sr, fmt, data)
+}
+
+func (sr *SealRangesRequest) Timeout() int32 {
+	return sr.TimeoutMs
+}
+
+func (sr *SealRangesRequest) marshalFlatBuffer() ([]byte, error) {
+	return fbutil.Marshal(&sr.SealRangesRequestT), nil
+}
+
+func (sr *SealRangesRequest) Marshal(fmt format.Format) ([]byte, error) {
+	return marshal(sr, fmt)
 }
 
 // CreateStreamsRequest is a request to operation.OpCreateStreams
