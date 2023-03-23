@@ -29,7 +29,8 @@ pub mod error;
 pub mod util;
 
 use self::option::{ReadOptions, WriteOptions};
-use error::{AppendError, FetchError};
+use error::{AppendError, FetchError, StoreError};
+use model::range::StreamRange;
 
 pub mod cursor;
 pub mod option;
@@ -41,10 +42,10 @@ mod request;
 mod store;
 
 pub use crate::io::buf::buf_slice::BufSlice;
-pub use crate::store::ElasticStore;
-pub use request::AppendRecordRequest;
 pub use crate::store::AppendResult;
+pub use crate::store::ElasticStore;
 pub use crate::store::FetchResult;
+pub use request::AppendRecordRequest;
 
 /// Definition of core storage trait.
 pub trait Store {
@@ -61,4 +62,28 @@ pub trait Store {
     /// Retrieve a single existing record at the given stream and offset.
     /// * `options` - Read options, specifying target stream and offset.
     async fn fetch(&self, options: ReadOptions) -> Result<FetchResult, FetchError>;
+
+    /// List all stream ranges in the store
+    ///
+    /// if `filter` returns true, the range is kept in the final result vector; dropped otherwise.
+    async fn list<F>(&self, filter: F) -> Result<Vec<StreamRange>, StoreError>
+    where
+        F: Fn(&StreamRange) -> bool;
+
+    /// List all ranges pertaining to the specified stream in the store
+    ///
+    /// if `filter` returns true, the range is kept in the final result vector; dropped otherwise.
+    async fn list_by_stream<F>(
+        &self,
+        stream_id: i64,
+        filter: F,
+    ) -> Result<Vec<StreamRange>, StoreError>
+    where
+        F: Fn(&StreamRange) -> bool;
+
+    /// Seal stream range in metadata column family after cross check with placement manager.
+    async fn seal(&self, range: StreamRange) -> Result<(), StoreError>;
+
+    /// Create a stream range in metadata.
+    async fn create(&self, range: StreamRange) -> Result<(), StoreError>;
 }

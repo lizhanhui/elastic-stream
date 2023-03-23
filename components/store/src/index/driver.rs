@@ -1,15 +1,14 @@
 use std::{
-    fmt::Error,
     ops::Deref,
-    rc::Rc,
     sync::Arc,
     thread::{sleep, Builder, JoinHandle},
 };
 
-use crate::error::StoreError;
+use crate::{error::StoreError, index::LocalRangeManager};
 use crossbeam::channel::{self, Receiver, Select, Sender, TryRecvError};
+use model::range::StreamRange;
 use slog::{error, info, Logger};
-use tokio::sync::oneshot;
+use tokio::sync::{mpsc, oneshot};
 
 use super::{indexer::Indexer, record_handle::RecordHandle, MinOffset};
 
@@ -34,6 +33,15 @@ pub(crate) enum IndexCommand {
         offset: u64,
         max_bytes: u32,
         observer: oneshot::Sender<Result<Option<Vec<RecordHandle>>, StoreError>>,
+    },
+
+    ListRange {
+        tx: mpsc::UnboundedSender<StreamRange>,
+    },
+
+    ListRangeByStream {
+        stream_id: i64,
+        tx: mpsc::UnboundedSender<StreamRange>,
     },
 }
 
@@ -90,6 +98,25 @@ impl IndexDriver {
                 self.log,
                 "Failed to send scan record handles command to internal indexer"
             );
+        }
+    }
+
+    pub(crate) fn list_ranges(&self, tx: mpsc::UnboundedSender<StreamRange>) {
+        if let Err(_e) = self.tx.send(IndexCommand::ListRange { tx }) {
+            error!(self.log, "Failed to send list range command");
+        }
+    }
+
+    pub(crate) fn list_ranges_by_stream(
+        &self,
+        stream_id: i64,
+        tx: mpsc::UnboundedSender<StreamRange>,
+    ) {
+        if let Err(_e) = self
+            .tx
+            .send(IndexCommand::ListRangeByStream { stream_id, tx })
+        {
+            error!(self.log, "Failed to send list range by stream command");
         }
     }
 
@@ -173,7 +200,7 @@ impl IndexDriverRunner {
                                     .send(self.indexer.scan_record_handles_left_shift(
                                         stream_id, offset, max_bytes,
                                     ))
-                                    .unwrap_or_else(|e| {
+                                    .unwrap_or_else(|_e| {
                                         error!(
                                             self.log,
                                             "Failed to send scan result of {}/{} to observer.",
@@ -181,6 +208,14 @@ impl IndexDriverRunner {
                                             offset
                                         );
                                     });
+                            }
+
+                            IndexCommand::ListRange { tx } => {
+                                self.indexer.list(tx);
+                            }
+
+                            IndexCommand::ListRangeByStream { stream_id, tx } => {
+                                self.indexer.list_by_stream(stream_id, tx);
                             }
                         }
                     }
@@ -204,8 +239,7 @@ impl IndexDriverRunner {
 #[cfg(test)]
 mod tests {
     use crate::index::MinOffset;
-    use crossbeam::channel;
-    use std::{error::Error, rc::Rc, sync::Arc};
+    use std::{error::Error, sync::Arc};
 
     struct TestMinOffset {}
 

@@ -23,14 +23,18 @@ use crate::{
 use core_affinity::CoreId;
 use crossbeam::channel::Sender;
 use futures::future::join_all;
+use model::range::StreamRange;
 use slog::{error, trace, Logger};
-use tokio::sync::oneshot;
+use tokio::sync::{mpsc, oneshot};
 
 use super::{append_result::AppendResult, fetch_result::FetchResult};
 
 #[derive(Clone)]
 pub struct ElasticStore {
     /// The channel for server layer to communicate with io module.
+    ///
+    /// For sending a message from async to sync, you should use the standard library unbounded channel or crossbeam.
+    /// https://docs.rs/tokio/latest/tokio/sync/mpsc/index.html#communicating-between-sync-and-async-code
     io_tx: Sender<IoTask>,
 
     /// The reference to index driver, which is used to communicate with index module.
@@ -258,6 +262,79 @@ impl Store for ElasticStore {
         }
 
         Err(FetchError::NoRecord)
+    }
+
+    /// List ranges of all streams that are served by this data node.
+    ///
+    /// Note this job is delegated to RocksDB threads.
+    ///
+    /// True that RocksDB may internally use asynchronous IO, but its public API is blocking and synchronous.
+    /// Given that we do NOT accept any blocking code in data-node and store crates, we have to delegate these
+    /// tasks to RocksDB threads and asynchronously await in tokio::sync::mpsc::unbounded channel.
+    ///
+    /// This method involves communication between sync and async code, remember to read
+    /// https://docs.rs/tokio/latest/tokio/sync/mpsc/index.html#communicating-between-sync-and-async-code
+    async fn list<F>(&self, filter: F) -> Result<Vec<StreamRange>, StoreError>
+    where
+        F: Fn(&StreamRange) -> bool,
+    {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        self.indexer.list_ranges(tx);
+
+        let mut ranges = vec![];
+        loop {
+            match rx.recv().await {
+                Some(range) => {
+                    if filter(&range) {
+                        ranges.push(range);
+                    }
+                }
+                None => {
+                    break;
+                }
+            }
+        }
+        Ok(ranges)
+    }
+
+    /// List ranges of the specified stream.
+    ///
+    /// Rationale of delegating this job to RocksDB threads is exactly same to `list` ranges of all streams served by
+    /// this data node.
+    async fn list_by_stream<F>(
+        &self,
+        stream_id: i64,
+        filter: F,
+    ) -> Result<Vec<StreamRange>, StoreError>
+    where
+        F: Fn(&StreamRange) -> bool,
+    {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        self.indexer.list_ranges_by_stream(stream_id, tx);
+
+        let mut ranges = vec![];
+        loop {
+            match rx.recv().await {
+                Some(range) => {
+                    debug_assert_eq!(stream_id, range.stream_id());
+                    if filter(&range) {
+                        ranges.push(range);
+                    }
+                }
+                None => {
+                    break;
+                }
+            }
+        }
+        Ok(ranges)
+    }
+
+    async fn seal(&self, range: StreamRange) -> Result<(), StoreError> {
+        todo!()
+    }
+
+    async fn create(&self, range: StreamRange) -> Result<(), StoreError> {
+        todo!()
     }
 }
 

@@ -1,5 +1,6 @@
 use crate::error::StoreError;
 use model::range::StreamRange;
+use tokio::sync::mpsc;
 
 pub(crate) mod compaction;
 pub(crate) mod driver;
@@ -17,9 +18,11 @@ pub trait MinOffset {
 
 /// Trait of local range manger.
 pub trait LocalRangeManager {
-    fn list_by_stream(&self, stream_id: i64) -> Result<Option<Vec<StreamRange>>, StoreError>;
+    // TODO: error propagation
+    fn list_by_stream(&self, stream_id: i64, tx: mpsc::UnboundedSender<StreamRange>);
 
-    fn list(&self) -> Result<Option<Vec<StreamRange>>, StoreError>;
+    // TODO: error propagation
+    fn list(&self, tx: mpsc::UnboundedSender<StreamRange>);
 
     fn seal(&self, stream_id: i64, range: &StreamRange) -> Result<(), StoreError>;
 

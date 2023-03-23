@@ -7,6 +7,7 @@ use rocksdb::{
     ReadOptions, WriteOptions, DB,
 };
 use slog::{error, info, warn, Logger};
+use tokio::sync::mpsc;
 
 use crate::error::StoreError;
 
@@ -373,7 +374,7 @@ impl Indexer {
 }
 
 impl super::LocalRangeManager for Indexer {
-    fn list_by_stream(&self, stream_id: i64) -> Result<Option<Vec<StreamRange>>, StoreError> {
+    fn list_by_stream(&self, stream_id: i64, tx: mpsc::UnboundedSender<StreamRange>) {
         let mut prefix = BytesMut::with_capacity(9);
         prefix.put_u8(RANGE_PREFIX);
         prefix.put_i64(stream_id);
@@ -382,8 +383,7 @@ impl super::LocalRangeManager for Indexer {
             let mut read_opts = ReadOptions::default();
             read_opts.set_iterate_lower_bound(&prefix[..]);
             read_opts.set_prefix_same_as_start(true);
-            let list = self
-                .db
+            self.db
                 .iterator_cf_opt(cf, read_opts, rocksdb::IteratorMode::Start)
                 .flatten()
                 .map_while(|(k, v)| {
@@ -414,14 +414,19 @@ impl super::LocalRangeManager for Indexer {
                         }
                     }
                 })
-                .collect();
-            Ok(Some(list))
-        } else {
-            Ok(None)
+                .for_each(|range| {
+                    if let Err(e) = tx.send(range) {
+                        error!(
+                            self.log,
+                            "Channel to transfer range for stream={} is closed", stream_id
+                        );
+                        return;
+                    }
+                });
         }
     }
 
-    fn list(&self) -> Result<Option<Vec<StreamRange>>, StoreError> {
+    fn list(&self, tx: mpsc::UnboundedSender<StreamRange>) {
         let mut prefix = BytesMut::with_capacity(1);
         prefix.put_u8(RANGE_PREFIX);
 
@@ -429,8 +434,7 @@ impl super::LocalRangeManager for Indexer {
             let mut read_opts = ReadOptions::default();
             read_opts.set_iterate_lower_bound(&prefix[..]);
             read_opts.set_prefix_same_as_start(true);
-            let list = self
-                .db
+            self.db
                 .iterator_cf_opt(cf, read_opts, rocksdb::IteratorMode::Start)
                 .flatten()
                 .map_while(|(k, v)| {
@@ -462,10 +466,12 @@ impl super::LocalRangeManager for Indexer {
                         }
                     }
                 })
-                .collect();
-            Ok(Some(list))
-        } else {
-            Ok(None)
+                .for_each(|range| {
+                    if let Err(e) = tx.send(range) {
+                        warn!(self.log, "Channel to transfer stream ranges is closed");
+                        return;
+                    }
+                });
         }
     }
 
