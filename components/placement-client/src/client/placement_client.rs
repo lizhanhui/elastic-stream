@@ -31,11 +31,16 @@ impl PlacementClient {
         stream_id: Option<i64>,
         timeout: Duration,
     ) -> Result<response::Response, ListRangeError> {
-        trace!(self.log, "list_range"; "stream-id" => stream_id);
         let (tx, rx) = oneshot::channel();
         let criteria = if let Some(stream_id) = stream_id {
+            trace!(self.log, "list_range"; "stream-id" => stream_id);
             RangeCriteria::StreamId(stream_id)
         } else if let Some(ref data_node) = self.config.data_node {
+            trace!(
+                self.log,
+                "List stream ranges from placement manager for {:?}",
+                data_node
+            );
             RangeCriteria::DataNode(data_node.clone())
         } else {
             return Err(ListRangeError::BadArguments(
