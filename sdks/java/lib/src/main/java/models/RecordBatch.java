@@ -1,6 +1,7 @@
 package models;
 
 import client.common.ProtocolUtil;
+import com.google.common.base.Preconditions;
 import com.google.flatbuffers.FlatBufferBuilder;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
@@ -18,13 +19,14 @@ import records.RecordMetaT;
 public class RecordBatch {
     private static final int MIN_LENGTH = 13;
     private static final byte DEFAULT_MAGIC = 0x22;
+    private static final short DEFAULT_FLAG = 0;
     private static final int MAX_OFFSET_DELTA = Integer.MAX_VALUE;
     private final byte magic;
     private final RecordBatchMetaT batchMeta;
     private final List<Record> records;
 
     public RecordBatch(long streamId, short flags, byte magic, List<Record> records) {
-        assert records != null && records.size() > 0;
+        Preconditions.checkArgument(records != null && records.size() > 0, "records should not be empty");
 
         this.magic = magic;
         this.records = records;
@@ -37,7 +39,8 @@ public class RecordBatch {
         batchMeta.setBaseTimestamp(baseTimestamp);
         batchMeta.setFlags(flags);
 
-        assert records.get(records.size() - 1).getOffset() - baseOffset <= MAX_OFFSET_DELTA;
+        Preconditions.checkArgument(records.get(records.size() - 1).getOffset() - baseOffset <= MAX_OFFSET_DELTA,
+            "offset delta should not exceed " + MAX_OFFSET_DELTA);
         batchMeta.setLastOffsetDelta((int) (records.get(records.size() - 1).getOffset() - baseOffset));
     }
 
@@ -45,8 +48,12 @@ public class RecordBatch {
         this(streamId, flags, DEFAULT_MAGIC, records);
     }
 
+    public RecordBatch(long streamId, List<Record> records) {
+        this(streamId, DEFAULT_FLAG, records);
+    }
+
     public RecordBatch(ByteBuffer buffer) {
-        assert buffer != null && buffer.remaining() >= MIN_LENGTH;
+        Preconditions.checkArgument(buffer != null && buffer.remaining() >= MIN_LENGTH, "buffer should contain at least " + MIN_LENGTH + " bytes");
         this.magic = buffer.get();
         long baseOffset = buffer.getLong();
         int metaLength = buffer.getInt();

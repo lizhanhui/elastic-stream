@@ -11,9 +11,9 @@ import static models.HeaderKey.Tag;
 
 public class RecordBatchesGenerator {
 
-    public static RecordBatch generateOneRecordBatch(long streamId, short flags) {
+    public static RecordBatch generateOneRecordBatch(long streamId) {
         List<Record> recordList = generateRecordList(streamId);
-        return new RecordBatch(streamId, flags, recordList);
+        return new RecordBatch(streamId, recordList);
     }
 
     public static List<Record> generateRecordList(long streamId) {

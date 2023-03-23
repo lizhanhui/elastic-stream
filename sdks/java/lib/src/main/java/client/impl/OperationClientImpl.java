@@ -155,7 +155,7 @@ public class OperationClientImpl implements OperationClient {
                         future.completeExceptionally(new ClientException("Get last writableOffset failed with code " + list.get(0).getStatus().getCode() + ", msg: " + list.get(0).getStatus().getMessage()));
                         return future;
                     }
-                    future.complete(list.get(0).getRanges().getNextOffset());
+                    future.complete(list.get(0).getRange().getNextOffset());
                     return future;
                 });
         });

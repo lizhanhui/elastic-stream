@@ -10,8 +10,7 @@ class RecordBatchTest {
     @Test
     public void testEncodeAndDecode() {
         long streamId = 1L;
-        short flags = (short) 11;
-        RecordBatch batch = RecordBatchesGenerator.generateOneRecordBatch(streamId, flags);
+        RecordBatch batch = RecordBatchesGenerator.generateOneRecordBatch(streamId);
         ByteBuffer encode = batch.encode();
         List<RecordBatch> decodeList = RecordBatch.decode(encode, encode.remaining());
 
