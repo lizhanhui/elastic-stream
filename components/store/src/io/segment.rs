@@ -425,11 +425,6 @@ impl LogSegment {
         // Assert the given `written` offset is equal to the current `written` offset.
         debug_assert_eq!(written, self.written);
 
-        // Evict the cached blocks after the given `written` offset.
-        self.block_cache.remove(|buf| {
-            return buf.wal_offset() >= self.wal_offset + written;
-        });
-
         // TODO: Consider use a unified way to provide the IO options.
         let options = Options::default();
         let alignment = options.alignment as u64;
@@ -496,6 +491,11 @@ impl LogSegment {
                         self.block_cache.add_entry(Arc::new(last_buf));
                     }
                 }
+
+                // Evict the cached blocks after the given `written` offset.
+                self.block_cache.remove(|buf| {
+                    return buf.wal_offset() >= self.wal_offset + written;
+                });
 
                 return Ok(());
             }

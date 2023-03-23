@@ -156,7 +156,8 @@ impl Wal {
 
             let ckm = util::crc32::crc32(buf.as_ref());
             if ckm != crc {
-                segment.written = file_pos - 4 - 4;
+                file_pos -= 8;
+                segment.written = file_pos;
                 segment.status = Status::ReadWrite;
                 info!(
                     log,
