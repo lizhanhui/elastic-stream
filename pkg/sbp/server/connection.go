@@ -381,7 +381,7 @@ func (c *conn) processDataFrame(f *codec.DataFrame, st *stream) error {
 	return nil
 }
 
-func (c *conn) generateAct(f *codec.DataFrame, action *Action) (act func(resp protocol.Response), resp protocol.Response) {
+func (c *conn) generateAct(f *codec.DataFrame, action *Action) (act func(resp protocol.OutResponse), resp protocol.OutResponse) {
 	req := action.newReq()
 	resp = action.newResp()
 
@@ -392,7 +392,7 @@ func (c *conn) generateAct(f *codec.DataFrame, action *Action) (act func(resp pr
 			Code:    rpcfb.ErrorCodeBAD_REQUEST,
 			Message: "failed to unmarshal frame header",
 		})
-		act = func(_ protocol.Response) {}
+		act = func(_ protocol.OutResponse) {}
 		return
 	}
 
@@ -405,7 +405,7 @@ func (c *conn) generateAct(f *codec.DataFrame, action *Action) (act func(resp pr
 	}
 
 	req.SetContext(ctx)
-	act = func(resp protocol.Response) {
+	act = func(resp protocol.OutResponse) {
 		defer cancel()
 		action.act(c.server.handler, req, resp)
 	}
@@ -416,7 +416,7 @@ var errChanPool = sync.Pool{
 	New: func() interface{} { return make(chan error, 1) },
 }
 
-func (c *conn) runHandlerAndWrite(frameCtx *codec.DataFrameContext, st *stream, act func(protocol.Response), resp protocol.Response) {
+func (c *conn) runHandlerAndWrite(frameCtx *codec.DataFrameContext, st *stream, act func(protocol.OutResponse), resp protocol.OutResponse) {
 	logger := c.lg
 	c.serveG.CheckNotOn()
 
@@ -468,7 +468,7 @@ func (c *conn) runHandlerAndWrite(frameCtx *codec.DataFrameContext, st *stream, 
 	}
 }
 
-func (c *conn) runHandler(act func(protocol.Response), resp protocol.Response) {
+func (c *conn) runHandler(act func(protocol.OutResponse), resp protocol.OutResponse) {
 	logger := c.lg
 	didPanic := true
 	defer func() {

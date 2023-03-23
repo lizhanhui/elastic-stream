@@ -5,13 +5,12 @@ import (
 
 	"github.com/AutoMQ/placement-manager/api/rpcfb/rpcfb"
 	"github.com/AutoMQ/placement-manager/pkg/sbp/codec/format"
+	"github.com/AutoMQ/placement-manager/pkg/sbp/codec/operation"
 	"github.com/AutoMQ/placement-manager/pkg/util/fbutil"
 )
 
-// Request is an SBP request
-type Request interface {
-	base
-
+// request is an SBP request
+type request interface {
 	// Timeout returns the timeout of the request in milliseconds.
 	// It returns 0 if the request doesn't have a timeout.
 	Timeout() int32
@@ -24,6 +23,19 @@ type Request interface {
 	// For outgoing client requests, the context controls cancellation.
 	// For incoming server requests, the context is canceled when the client's connection closes.
 	Context() context.Context
+}
+
+type InRequest interface {
+	request
+	unmarshaler
+}
+
+type OutRequest interface {
+	request
+	marshaller
+
+	// Operation returns the operation of the request.
+	Operation() operation.Operation
 }
 
 // baseRequest is a base implementation of Request
@@ -48,7 +60,18 @@ func (req *baseRequest) Context() context.Context {
 
 type HeartbeatRequest struct {
 	baseRequest
+	baseMarshaller
+	baseUnmarshaler
+
 	rpcfb.HeartbeatRequestT
+}
+
+func (hr *HeartbeatRequest) marshalFlatBuffer() ([]byte, error) {
+	return fbutil.Marshal(&hr.HeartbeatRequestT), nil
+}
+
+func (hr *HeartbeatRequest) Marshal(fmt format.Format) ([]byte, error) {
+	return marshal(hr, fmt)
 }
 
 func (hr *HeartbeatRequest) unmarshalFlatBuffer(data []byte) error {
@@ -60,9 +83,15 @@ func (hr *HeartbeatRequest) Unmarshal(fmt format.Format, data []byte) error {
 	return unmarshal(hr, fmt, data)
 }
 
+func (hr *HeartbeatRequest) Operation() operation.Operation {
+	return operation.Operation{Code: operation.OpHeartbeat}
+}
+
 // ListRangesRequest is a request to operation.OpListRanges
 type ListRangesRequest struct {
 	baseRequest
+	baseUnmarshaler
+
 	rpcfb.ListRangesRequestT
 }
 
@@ -82,7 +111,18 @@ func (lr *ListRangesRequest) Timeout() int32 {
 // SealRangesRequest is a request to operation.OpSealRanges
 type SealRangesRequest struct {
 	baseRequest
+	baseMarshaller
+	baseUnmarshaler
+
 	rpcfb.SealRangesRequestT
+}
+
+func (sr *SealRangesRequest) marshalFlatBuffer() ([]byte, error) {
+	return fbutil.Marshal(&sr.SealRangesRequestT), nil
+}
+
+func (sr *SealRangesRequest) Marshal(fmt format.Format) ([]byte, error) {
+	return marshal(sr, fmt)
 }
 
 func (sr *SealRangesRequest) unmarshalFlatBuffer(data []byte) error {
@@ -98,17 +138,15 @@ func (sr *SealRangesRequest) Timeout() int32 {
 	return sr.TimeoutMs
 }
 
-func (sr *SealRangesRequest) marshalFlatBuffer() ([]byte, error) {
-	return fbutil.Marshal(&sr.SealRangesRequestT), nil
-}
-
-func (sr *SealRangesRequest) Marshal(fmt format.Format) ([]byte, error) {
-	return marshal(sr, fmt)
+func (sr *SealRangesRequest) Operation() operation.Operation {
+	return operation.Operation{Code: operation.OpSealRanges}
 }
 
 // CreateStreamsRequest is a request to operation.OpCreateStreams
 type CreateStreamsRequest struct {
 	baseRequest
+	baseUnmarshaler
+
 	rpcfb.CreateStreamsRequestT
 }
 
@@ -128,6 +166,8 @@ func (cs *CreateStreamsRequest) Timeout() int32 {
 // DeleteStreamsRequest is a request to operation.OpDeleteStreams
 type DeleteStreamsRequest struct {
 	baseRequest
+	baseUnmarshaler
+
 	rpcfb.DeleteStreamsRequestT
 }
 
@@ -147,6 +187,8 @@ func (ds *DeleteStreamsRequest) Timeout() int32 {
 // UpdateStreamsRequest is a request to operation.OpUpdateStreams
 type UpdateStreamsRequest struct {
 	baseRequest
+	baseUnmarshaler
+
 	rpcfb.UpdateStreamsRequestT
 }
 
@@ -166,6 +208,8 @@ func (us *UpdateStreamsRequest) Timeout() int32 {
 // DescribeStreamsRequest is a request to operation.OpDescribeStreams
 type DescribeStreamsRequest struct {
 	baseRequest
+	baseUnmarshaler
+
 	rpcfb.DescribeStreamsRequestT
 }
 

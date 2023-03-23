@@ -24,7 +24,7 @@ func newConnPool(c *Client) *connPool {
 }
 
 // getConn returns a connection to addr, creating one if necessary.
-func (p *connPool) getConn(req protocol.Request, addr address) (*conn, error) {
+func (p *connPool) getConn(req protocol.OutRequest, addr address) (*conn, error) {
 	for {
 		p.mu.Lock()
 		for _, conn := range p.conns[addr] {

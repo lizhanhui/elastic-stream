@@ -53,7 +53,7 @@ type conn struct {
 	lg *zap.Logger
 }
 
-func (cc *conn) RoundTrip(req protocol.Request) (protocol.Response, error) {
+func (cc *conn) RoundTrip(req protocol.OutRequest) (protocol.InResponse, error) {
 	ctx := req.Context()
 	s := &stream{
 		cc:      cc,

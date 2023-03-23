@@ -22,17 +22,17 @@ type stream struct {
 	respEnd chan struct{} // closed when the peer sends an RESPONSE_END flag
 	donec   chan struct{} // closed after the stream is in the closed state
 
-	respRcv chan struct{}     // closed when response is received
-	res     protocol.Response // set if respRcv is closed
+	respRcv chan struct{}       // closed when response is received
+	res     protocol.InResponse // set if respRcv is closed
 }
 
 // doRequest runs for the duration of the request lifetime.
-func (s *stream) doRequest(req protocol.Request) {
+func (s *stream) doRequest(req protocol.OutRequest) {
 	err := s.writeRequest(req)
 	s.cleanupWriteRequest(err)
 }
 
-func (s *stream) writeRequest(req protocol.Request) error {
+func (s *stream) writeRequest(req protocol.OutRequest) error {
 	cc := s.cc
 	ctx := s.ctx
 
@@ -67,7 +67,7 @@ func (s *stream) writeRequest(req protocol.Request) error {
 	}
 }
 
-func (s *stream) encodeAndWrite(req protocol.Request) error {
+func (s *stream) encodeAndWrite(req protocol.OutRequest) error {
 	// TODO
 	_ = req
 	return nil

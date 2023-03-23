@@ -7,90 +7,18 @@ import (
 )
 
 const (
-	_unsupportedFmtErrMsg     = "unsupported format: %s"
-	_unsupportedRespFmtErrMsg = "unsupported response format: %s"
-	_unsupportedReqFmtErrMsg  = "unsupported request format: %s"
+	_unsupportedFmtErrMsg = "unsupported format: %s"
 )
-
-type base interface {
-	// Unmarshal decodes data into the Request using the specified format.
-	// data is expired after the call, so the implementation should copy the data if needed.
-	Unmarshal(fmt format.Format, data []byte) error
-
-	// Marshal encodes the Response using the specified format.
-	// The returned byte slice is not nil when and only when the error is nil.
-	// The returned byte slice should be freed after use.
-	Marshal(fmt format.Format) ([]byte, error)
-}
-
-func (req *baseRequest) Unmarshal(fmt format.Format, data []byte) error {
-	return unmarshal(req, fmt, data)
-}
-
-func (req *baseRequest) Marshal(fmt format.Format) ([]byte, error) {
-	return marshal(req, fmt)
-}
-
-func (req *baseRequest) marshalFlatBuffer() ([]byte, error) {
-	return nil, errors.Errorf(_unsupportedReqFmtErrMsg, format.FlatBuffer())
-}
-
-func (req *baseRequest) marshalProtoBuffer() ([]byte, error) {
-	return nil, errors.Errorf(_unsupportedReqFmtErrMsg, format.ProtoBuffer())
-}
-
-func (req *baseRequest) marshalJSON() ([]byte, error) {
-	return nil, errors.Errorf(_unsupportedReqFmtErrMsg, format.JSON())
-}
-
-func (req *baseRequest) unmarshalFlatBuffer(_ []byte) error {
-	return errors.Errorf(_unsupportedReqFmtErrMsg, format.FlatBuffer())
-}
-
-func (req *baseRequest) unmarshalProtoBuffer(_ []byte) error {
-	return errors.Errorf(_unsupportedReqFmtErrMsg, format.ProtoBuffer())
-}
-
-func (req *baseRequest) unmarshalJSON(_ []byte) error {
-	return errors.Errorf(_unsupportedReqFmtErrMsg, format.JSON())
-}
-
-func (resp *baseResponse) Unmarshal(fmt format.Format, data []byte) error {
-	return unmarshal(resp, fmt, data)
-}
-
-func (resp *baseResponse) Marshal(fmt format.Format) ([]byte, error) {
-	return marshal(resp, fmt)
-}
-
-func (resp *baseResponse) marshalFlatBuffer() ([]byte, error) {
-	return nil, errors.Errorf(_unsupportedRespFmtErrMsg, format.FlatBuffer())
-}
-
-func (resp *baseResponse) marshalProtoBuffer() ([]byte, error) {
-	return nil, errors.Errorf(_unsupportedRespFmtErrMsg, format.ProtoBuffer())
-}
-
-func (resp *baseResponse) marshalJSON() ([]byte, error) {
-	return nil, errors.Errorf(_unsupportedRespFmtErrMsg, format.JSON())
-}
-
-func (resp *baseResponse) unmarshalFlatBuffer(_ []byte) error {
-	return errors.Errorf(_unsupportedRespFmtErrMsg, format.FlatBuffer())
-}
-
-func (resp *baseResponse) unmarshalProtoBuffer(_ []byte) error {
-	return errors.Errorf(_unsupportedRespFmtErrMsg, format.ProtoBuffer())
-}
-
-func (resp *baseResponse) unmarshalJSON(_ []byte) error {
-	return errors.Errorf(_unsupportedRespFmtErrMsg, format.JSON())
-}
 
 type marshaller interface {
 	flatBufferMarshaller
 	protoBufferMarshaller
 	jsonMarshaller
+
+	// Marshal encodes the Request (or Response) using the specified format.
+	// The returned byte slice is not nil when and only when the error is nil.
+	// The returned byte slice should be freed after use.
+	Marshal(fmt format.Format) ([]byte, error)
 }
 
 type flatBufferMarshaller interface {
@@ -103,6 +31,20 @@ type protoBufferMarshaller interface {
 
 type jsonMarshaller interface {
 	marshalJSON() ([]byte, error)
+}
+
+type baseMarshaller struct{}
+
+func (m *baseMarshaller) marshalFlatBuffer() ([]byte, error) {
+	return nil, errors.Errorf(_unsupportedFmtErrMsg, format.FlatBuffer())
+}
+
+func (m *baseMarshaller) marshalProtoBuffer() ([]byte, error) {
+	return nil, errors.Errorf(_unsupportedFmtErrMsg, format.ProtoBuffer())
+}
+
+func (m *baseMarshaller) marshalJSON() ([]byte, error) {
+	return nil, errors.Errorf(_unsupportedFmtErrMsg, format.JSON())
 }
 
 func marshal(m marshaller, fmt format.Format) ([]byte, error) {
@@ -122,6 +64,10 @@ type unmarshaler interface {
 	flatBufferUnmarshaler
 	protoBufferUnmarshaler
 	jsonUnmarshaler
+
+	// Unmarshal decodes data into the Request (or Response) using the specified format.
+	// data is expired after the call, so the implementation should copy the data if needed.
+	Unmarshal(fmt format.Format, data []byte) error
 }
 
 type flatBufferUnmarshaler interface {
@@ -134,6 +80,20 @@ type protoBufferUnmarshaler interface {
 
 type jsonUnmarshaler interface {
 	unmarshalJSON(data []byte) error
+}
+
+type baseUnmarshaler struct{}
+
+func (u *baseUnmarshaler) unmarshalFlatBuffer(_ []byte) error {
+	return errors.Errorf(_unsupportedFmtErrMsg, format.FlatBuffer())
+}
+
+func (u *baseUnmarshaler) unmarshalProtoBuffer(_ []byte) error {
+	return errors.Errorf(_unsupportedFmtErrMsg, format.ProtoBuffer())
+}
+
+func (u *baseUnmarshaler) unmarshalJSON(_ []byte) error {
+	return errors.Errorf(_unsupportedFmtErrMsg, format.JSON())
 }
 
 func unmarshal(m unmarshaler, fmt format.Format, data []byte) error {

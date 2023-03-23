@@ -43,7 +43,7 @@ func (l SbpLogger) DescribeStreams(req *protocol.DescribeStreamsRequest, resp *p
 	l.LogIt(req, resp)
 }
 
-func (l SbpLogger) LogIt(req protocol.Request, resp protocol.Response) {
+func (l SbpLogger) LogIt(req protocol.InRequest, resp protocol.OutResponse) {
 	logger := l.logger()
 	if logger.Core().Enabled(zap.DebugLevel) {
 		logger = logger.With(traceutil.TraceLogField(req.Context()))

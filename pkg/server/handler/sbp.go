@@ -28,7 +28,7 @@ func NewSbp(cluster *cluster.RaftCluster, lg *zap.Logger) *Sbp {
 }
 
 // notLeaderError sets "PM_NOT_LEADER" error in the response
-func (s *Sbp) notLeaderError(ctx context.Context, response protocol.Response) {
+func (s *Sbp) notLeaderError(ctx context.Context, response protocol.OutResponse) {
 	s.lg.Warn("not leader", traceutil.TraceLogField(ctx))
 	response.Error(&rpcfb.StatusT{Code: rpcfb.ErrorCodePM_NOT_LEADER, Message: "not leader", Detail: s.pmInfo()})
 }

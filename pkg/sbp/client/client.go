@@ -54,7 +54,7 @@ func NewClient(lg *zap.Logger) *Client {
 // Do sends a request to the server and returns the response.
 // The request is sent to the server specified by addr.
 // On success, the response is returned. On error, the response is nil and the error is returned.
-func (c *Client) Do(req protocol.Request, addr address) (protocol.Response, error) {
+func (c *Client) Do(req protocol.OutRequest, addr address) (protocol.InResponse, error) {
 	logger := c.lg.With(zap.String("address", addr))
 	if req.Timeout() > 0 {
 		ctx, cancel := context.WithTimeout(req.Context(), time.Duration(req.Timeout())*time.Millisecond)

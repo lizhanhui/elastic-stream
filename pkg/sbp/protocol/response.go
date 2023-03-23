@@ -6,9 +6,27 @@ import (
 	"github.com/AutoMQ/placement-manager/pkg/util/fbutil"
 )
 
-// Response is an SBP response
-type Response interface {
-	base
+// response is an SBP response
+type response interface{}
+
+type InResponse interface {
+	response
+	unmarshaler
+
+	// ThrottleTime returns the time in milliseconds to throttle the client.
+	// It returns 0 if the response doesn't have a throttle time.
+	ThrottleTime() int32
+}
+
+type noThrottleResponse struct{}
+
+func (n noThrottleResponse) ThrottleTime() int32 {
+	return 0
+}
+
+type OutResponse interface {
+	response
+	marshaller
 
 	// Error sets the error status of the response.
 	Error(status *rpcfb.StatusT)
@@ -20,21 +38,21 @@ type Response interface {
 	IsEnd() bool
 }
 
-// baseResponse is a base implementation of Response
-type baseResponse struct{}
-
 // singleResponse represents a response that corresponds to a single request.
 // It is used when a request is expected to have only one response.
 type singleResponse struct{}
 
-func (s *singleResponse) IsEnd() bool {
+func (s singleResponse) IsEnd() bool {
 	return true
 }
 
 // SystemErrorResponse is used to return the error code and error message if the system error flag of sbp is set.
 type SystemErrorResponse struct {
-	baseResponse
+	baseMarshaller
+	baseUnmarshaler
+	noThrottleResponse
 	singleResponse
+
 	rpcfb.SystemErrorResponseT
 }
 
@@ -44,6 +62,15 @@ func (se *SystemErrorResponse) marshalFlatBuffer() ([]byte, error) {
 
 func (se *SystemErrorResponse) Marshal(fmt format.Format) ([]byte, error) {
 	return marshal(se, fmt)
+}
+
+func (se *SystemErrorResponse) unmarshalFlatBuffer(data []byte) error {
+	se.SystemErrorResponseT = *rpcfb.GetRootAsSystemErrorResponse(data, 0).UnPack()
+	return nil
+}
+
+func (se *SystemErrorResponse) Unmarshal(fmt format.Format, data []byte) error {
+	return unmarshal(se, fmt, data)
 }
 
 func (se *SystemErrorResponse) Error(status *rpcfb.StatusT) {
@@ -56,8 +83,11 @@ func (se *SystemErrorResponse) OK() {
 
 // HeartbeatResponse is a response to operation.OpHeartbeat
 type HeartbeatResponse struct {
-	baseResponse
+	baseMarshaller
+	baseUnmarshaler
+	noThrottleResponse
 	singleResponse
+
 	rpcfb.HeartbeatResponseT
 }
 
@@ -67,6 +97,15 @@ func (hr *HeartbeatResponse) marshalFlatBuffer() ([]byte, error) {
 
 func (hr *HeartbeatResponse) Marshal(fmt format.Format) ([]byte, error) {
 	return marshal(hr, fmt)
+}
+
+func (hr *HeartbeatResponse) unmarshalFlatBuffer(data []byte) error {
+	hr.HeartbeatResponseT = *rpcfb.GetRootAsHeartbeatResponse(data, 0).UnPack()
+	return nil
+}
+
+func (hr *HeartbeatResponse) Unmarshal(fmt format.Format, data []byte) error {
+	return unmarshal(hr, fmt, data)
 }
 
 func (hr *HeartbeatResponse) Error(status *rpcfb.StatusT) {
@@ -79,7 +118,8 @@ func (hr *HeartbeatResponse) OK() {
 
 // ListRangesResponse is a response to operation.OpListRanges
 type ListRangesResponse struct {
-	baseResponse
+	baseMarshaller
+
 	rpcfb.ListRangesResponseT
 
 	// HasNext indicates whether there are more responses after this one.
@@ -108,8 +148,10 @@ func (lr *ListRangesResponse) OK() {
 
 // SealRangesResponse is a response to operation.OpSealRanges
 type SealRangesResponse struct {
-	baseResponse
+	baseMarshaller
+	baseUnmarshaler
 	singleResponse
+
 	rpcfb.SealRangesResponseT
 }
 
@@ -138,10 +180,15 @@ func (sr *SealRangesResponse) OK() {
 	sr.Status = &rpcfb.StatusT{Code: rpcfb.ErrorCodeOK}
 }
 
+func (sr *SealRangesResponse) ThrottleTime() int32 {
+	return sr.ThrottleTimeMs
+}
+
 // CreateStreamsResponse is a response to operation.OpCreateStreams
 type CreateStreamsResponse struct {
-	baseResponse
+	baseMarshaller
 	singleResponse
+
 	rpcfb.CreateStreamsResponseT
 }
 
@@ -163,8 +210,9 @@ func (cs *CreateStreamsResponse) OK() {
 
 // DeleteStreamsResponse is a response to operation.OpDeleteStreams
 type DeleteStreamsResponse struct {
-	baseResponse
+	baseMarshaller
 	singleResponse
+
 	rpcfb.DeleteStreamsResponseT
 }
 
@@ -186,8 +234,9 @@ func (ds *DeleteStreamsResponse) OK() {
 
 // UpdateStreamsResponse is a response to operation.OpUpdateStreams
 type UpdateStreamsResponse struct {
-	baseResponse
+	baseMarshaller
 	singleResponse
+
 	rpcfb.UpdateStreamsResponseT
 }
 
@@ -209,8 +258,9 @@ func (us *UpdateStreamsResponse) OK() {
 
 // DescribeStreamsResponse is a response to operation.OpDescribeStreams
 type DescribeStreamsResponse struct {
-	baseResponse
+	baseMarshaller
 	singleResponse
+
 	rpcfb.DescribeStreamsResponseT
 }
 

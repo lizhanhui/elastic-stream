@@ -26,52 +26,52 @@ type Handler interface {
 var (
 	_actionMap = map[operation.Operation]Action{
 		{Code: operation.OpHeartbeat}: {
-			newReq:  func() protocol.Request { return &protocol.HeartbeatRequest{} },
-			newResp: func() protocol.Response { return &protocol.HeartbeatResponse{} },
-			act: func(handler Handler, req protocol.Request, resp protocol.Response) {
+			newReq:  func() protocol.InRequest { return &protocol.HeartbeatRequest{} },
+			newResp: func() protocol.OutResponse { return &protocol.HeartbeatResponse{} },
+			act: func(handler Handler, req protocol.InRequest, resp protocol.OutResponse) {
 				handler.Heartbeat(req.(*protocol.HeartbeatRequest), resp.(*protocol.HeartbeatResponse))
 			},
 		},
 		{Code: operation.OpListRanges}: {
-			newReq:  func() protocol.Request { return &protocol.ListRangesRequest{} },
-			newResp: func() protocol.Response { return &protocol.ListRangesResponse{} },
-			act: func(handler Handler, req protocol.Request, resp protocol.Response) {
+			newReq:  func() protocol.InRequest { return &protocol.ListRangesRequest{} },
+			newResp: func() protocol.OutResponse { return &protocol.ListRangesResponse{} },
+			act: func(handler Handler, req protocol.InRequest, resp protocol.OutResponse) {
 				handler.ListRange(req.(*protocol.ListRangesRequest), resp.(*protocol.ListRangesResponse))
 			},
 		},
 		{Code: operation.OpCreateStreams}: {
-			newReq:  func() protocol.Request { return &protocol.CreateStreamsRequest{} },
-			newResp: func() protocol.Response { return &protocol.CreateStreamsResponse{} },
-			act: func(handler Handler, req protocol.Request, resp protocol.Response) {
+			newReq:  func() protocol.InRequest { return &protocol.CreateStreamsRequest{} },
+			newResp: func() protocol.OutResponse { return &protocol.CreateStreamsResponse{} },
+			act: func(handler Handler, req protocol.InRequest, resp protocol.OutResponse) {
 				handler.CreateStreams(req.(*protocol.CreateStreamsRequest), resp.(*protocol.CreateStreamsResponse))
 			},
 		},
 		{Code: operation.OpDeleteStreams}: {
-			newReq:  func() protocol.Request { return &protocol.DeleteStreamsRequest{} },
-			newResp: func() protocol.Response { return &protocol.DeleteStreamsResponse{} },
-			act: func(handler Handler, req protocol.Request, resp protocol.Response) {
+			newReq:  func() protocol.InRequest { return &protocol.DeleteStreamsRequest{} },
+			newResp: func() protocol.OutResponse { return &protocol.DeleteStreamsResponse{} },
+			act: func(handler Handler, req protocol.InRequest, resp protocol.OutResponse) {
 				handler.DeleteStreams(req.(*protocol.DeleteStreamsRequest), resp.(*protocol.DeleteStreamsResponse))
 			},
 		},
 		{Code: operation.OpUpdateStreams}: {
-			newReq:  func() protocol.Request { return &protocol.UpdateStreamsRequest{} },
-			newResp: func() protocol.Response { return &protocol.UpdateStreamsResponse{} },
-			act: func(handler Handler, req protocol.Request, resp protocol.Response) {
+			newReq:  func() protocol.InRequest { return &protocol.UpdateStreamsRequest{} },
+			newResp: func() protocol.OutResponse { return &protocol.UpdateStreamsResponse{} },
+			act: func(handler Handler, req protocol.InRequest, resp protocol.OutResponse) {
 				handler.UpdateStreams(req.(*protocol.UpdateStreamsRequest), resp.(*protocol.UpdateStreamsResponse))
 			},
 		},
 		{Code: operation.OpDescribeStreams}: {
-			newReq:  func() protocol.Request { return &protocol.DescribeStreamsRequest{} },
-			newResp: func() protocol.Response { return &protocol.DescribeStreamsResponse{} },
-			act: func(handler Handler, req protocol.Request, resp protocol.Response) {
+			newReq:  func() protocol.InRequest { return &protocol.DescribeStreamsRequest{} },
+			newResp: func() protocol.OutResponse { return &protocol.DescribeStreamsResponse{} },
+			act: func(handler Handler, req protocol.InRequest, resp protocol.OutResponse) {
 				handler.DescribeStreams(req.(*protocol.DescribeStreamsRequest), resp.(*protocol.DescribeStreamsResponse))
 			},
 		},
 	}
 	_unknownAction = Action{
-		newReq:  func() protocol.Request { return nil },
-		newResp: func() protocol.Response { return &protocol.SystemErrorResponse{} },
-		act: func(_ Handler, _ protocol.Request, resp protocol.Response) {
+		newReq:  func() protocol.InRequest { return nil },
+		newResp: func() protocol.OutResponse { return &protocol.SystemErrorResponse{} },
+		act: func(_ Handler, _ protocol.InRequest, resp protocol.OutResponse) {
 			resp.Error(&rpcfb.StatusT{Code: rpcfb.ErrorCodeNOT_FOUND, Message: "unknown operation"})
 		},
 	}
@@ -79,9 +79,9 @@ var (
 
 // Action is an action used to handle a request
 type Action struct {
-	newReq  func() protocol.Request
-	newResp func() protocol.Response
-	act     func(handler Handler, req protocol.Request, resp protocol.Response)
+	newReq  func() protocol.InRequest
+	newResp func() protocol.OutResponse
+	act     func(handler Handler, req protocol.InRequest, resp protocol.OutResponse)
 }
 
 // GetAction returns the action for the specified operation
