@@ -43,6 +43,16 @@ pub(crate) enum IndexCommand {
         stream_id: i64,
         tx: mpsc::UnboundedSender<StreamRange>,
     },
+
+    SealRange {
+        range: StreamRange,
+        tx: oneshot::Sender<Result<(), StoreError>>,
+    },
+
+    CreateRange {
+        range: StreamRange,
+        tx: oneshot::Sender<Result<(), StoreError>>,
+    },
 }
 
 impl IndexDriver {
@@ -117,6 +127,36 @@ impl IndexDriver {
             .send(IndexCommand::ListRangeByStream { stream_id, tx })
         {
             error!(self.log, "Failed to send list range by stream command");
+        }
+    }
+
+    pub(crate) fn create_range(
+        &self,
+        range: StreamRange,
+        tx: oneshot::Sender<Result<(), StoreError>>,
+    ) {
+        if let Err(e) = self.tx.send(IndexCommand::CreateRange { range, tx }) {
+            error!(self.log, "Failed to submit create range command");
+            if let IndexCommand::CreateRange { tx, .. } = e.0 {
+                let _ = tx.send(Err(StoreError::Internal(
+                    "Submit create range failed".to_owned(),
+                )));
+            }
+        }
+    }
+
+    pub(crate) fn seal_range(
+        &self,
+        range: StreamRange,
+        tx: oneshot::Sender<Result<(), StoreError>>,
+    ) {
+        if let Err(e) = self.tx.send(IndexCommand::SealRange { range, tx }) {
+            error!(self.log, "Failed to submit create range command");
+            if let IndexCommand::SealRange { tx, .. } = e.0 {
+                let _ = tx.send(Err(StoreError::Internal(
+                    "Submit seal range failed".to_owned(),
+                )));
+            }
         }
     }
 
@@ -216,6 +256,30 @@ impl IndexDriverRunner {
 
                             IndexCommand::ListRangeByStream { stream_id, tx } => {
                                 self.indexer.list_by_stream(stream_id, tx);
+                            }
+
+                            IndexCommand::CreateRange { range, tx } => {
+                                match self.indexer.add(range.stream_id(), &range) {
+                                    Ok(()) => {
+                                        let _ = tx.send(Ok(()));
+                                    }
+                                    Err(e) => {
+                                        error!(self.log, "Failed to add stream range: {}", range);
+                                        let _ = tx.send(Err(e));
+                                    }
+                                }
+                            }
+
+                            IndexCommand::SealRange { range, tx } => {
+                                match self.indexer.seal(range.stream_id(), &range) {
+                                    Ok(()) => {
+                                        let _ = tx.send(Ok(()));
+                                    }
+                                    Err(e) => {
+                                        error!(self.log, "Failed to seal range: {}", range);
+                                        let _ = tx.send(Err(e));
+                                    }
+                                }
                             }
                         }
                     }

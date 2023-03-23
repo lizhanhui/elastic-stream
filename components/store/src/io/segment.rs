@@ -438,11 +438,14 @@ impl LogSegment {
         last_page_start += self.wal_offset;
 
         // Retrieve the last page from the block cache.
-        let buf_res = self.block_cache.try_get_entries(EntryRange::new(
-            self.wal_offset + written - 1,
-            1,
-            alignment,
-        ));
+        let from_wal_offset = if self.wal_offset + written > 0 {
+            self.wal_offset + written - 1
+        } else {
+            0
+        };
+        let buf_res =
+            self.block_cache
+                .try_get_entries(EntryRange::new(from_wal_offset, 1, alignment));
 
         match buf_res {
             Ok(Some(buf_v)) => {

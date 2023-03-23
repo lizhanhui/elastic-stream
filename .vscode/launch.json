@@ -1,0 +1,18 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "lldb",
+            "name": "Launch Data Node",
+            "request": "launch",
+            "preLaunchTask": "build",
+            "program": "${workspaceFolder}/target/debug/data-node",
+            "args": [
+                "--node-id", "1",
+                "--host", "114.116.40.8",
+                "-q", "1024",
+                "--placement-manager", "dns:localhost:2378",
+            ]
+        }
+    ]
+}

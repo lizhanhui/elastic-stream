@@ -134,7 +134,8 @@ impl ElasticStore {
             Ok(handle)
         } else {
             let closure = move || {
-                if let Err(_e) = task() {
+                if let Err(e) = task() {
+                    eprintln!("{}", e);
                     todo!("Log internal store error");
                 }
             };
@@ -330,11 +331,19 @@ impl Store for ElasticStore {
     }
 
     async fn seal(&self, range: StreamRange) -> Result<(), StoreError> {
-        todo!()
+        let (tx, mut rx) = oneshot::channel();
+        self.indexer.seal_range(range, tx);
+        rx.await
+            .map_err(|_e| StoreError::Internal("Channel error".to_owned()))
+            .flatten()
     }
 
     async fn create(&self, range: StreamRange) -> Result<(), StoreError> {
-        todo!()
+        let (tx, mut rx) = oneshot::channel();
+        self.indexer.create_range(range, tx);
+        rx.await
+            .map_err(|_e| StoreError::Internal("Channel error".to_owned()))
+            .flatten()
     }
 }
 
