@@ -119,7 +119,7 @@ func (s *Server) Serve(l net.Listener) error {
 // future calls to methods such as Serve will return ErrServerClosed.
 func (s *Server) Shutdown(ctx context.Context) error {
 	logger := s.lg
-	if !s.shuttingDown.Swap(true) {
+	if s.shuttingDown.Swap(true) {
 		logger.Warn("server is already shutting down")
 		return nil
 	}
