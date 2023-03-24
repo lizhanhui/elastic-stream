@@ -226,12 +226,12 @@ impl<'a> Append<'a> {
                 }
 
                 // Decode the record batch
-                let decode_batch = FlatRecordBatch::init_from_buf(payload.clone());
+                let payload_b = payload.split_to(batch_len as usize);
+                let decode_batch = FlatRecordBatch::init_from_buf(payload_b.clone());
 
                 match decode_batch {
                     Ok(decode_batch) => {
                         // Fetch the offset for the current stream
-
                         let offset_r =
                             manager.alloc_record_batch_slots(stream_id, decode_batch.records.len());
 
@@ -243,8 +243,6 @@ impl<'a> Append<'a> {
                         }
 
                         let offset = offset_r.unwrap_or_default() as i64;
-
-                        let payload_b = payload.split_to(batch_len as usize);
 
                         // Rewrite the offset in the record batch directly,
                         // since the rust flatbuffers doesn't support update the value so far.
