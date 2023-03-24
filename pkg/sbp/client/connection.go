@@ -24,9 +24,8 @@ var (
 
 // conn is the state of a single client connection to a server.
 type conn struct {
-	c          *Client
-	conn       net.Conn
-	connClosed bool
+	c    *Client
+	conn net.Conn
 
 	// readLoop goroutine fields:
 	readerDone chan struct{} // closed on error
@@ -211,6 +210,8 @@ func (cc *conn) heartbeat(ctx context.Context) error {
 }
 
 // shutdown gracefully closes the connection, waiting for running streams to complete.
+//
+//nolint:unused
 func (cc *conn) shutdown(ctx context.Context) error {
 	// TODO send goAway and wait for all streams to be done
 	_ = ctx
