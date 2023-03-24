@@ -136,7 +136,7 @@ func (c *conn) readFrames() {
 			return
 		}
 		if err != nil {
-			logger.Warn("failed to read frame", zap.Error(err))
+			logger.Debug("failed to read frame", zap.Error(err))
 			// TODO check errors, skip stream errors
 			return
 		}

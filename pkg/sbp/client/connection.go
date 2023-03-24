@@ -322,7 +322,7 @@ func (rl *connReadLoop) run() error {
 			t.Reset(readIdleTimeout)
 		}
 		if err != nil {
-			logger.Warn("read frame failed", zap.Error(err))
+			logger.Debug("read frame failed", zap.Error(err))
 			// TODO Check stream errors and only close the steam
 			return err
 		}
