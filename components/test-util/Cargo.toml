@@ -18,6 +18,7 @@ transport = { path = "../transport" }
 codec = { path = "../codec" }
 model = { path = "../model" }
 protocol = { path = "../protocol" }
+store = { path = "../store" }
 flatbuffers = { workspace = true }
 
 

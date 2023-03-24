@@ -45,6 +45,8 @@ pub fn launch(cfg: &ServerConfig) -> Result<(), Box<dyn Error>> {
         }
     };
 
+    // TODO: wait store recovery completes
+
     let mut channels = vec![];
 
     // Build non-primary nodes first
@@ -69,9 +71,14 @@ pub fn launch(cfg: &ServerConfig) -> Result<(), Box<dyn Error>> {
                         primary: false,
                     };
 
+                    let store = Rc::new(store);
+
                     let fetcher = Fetcher::Channel { sender: tx };
-                    let stream_manager =
-                        Rc::new(RefCell::new(StreamManager::new(logger.clone(), fetcher)));
+                    let stream_manager = Rc::new(RefCell::new(StreamManager::new(
+                        logger.clone(),
+                        fetcher,
+                        Rc::clone(&store),
+                    )));
                     let mut node = Node::new(node_config, store, stream_manager, None, &logger);
                     node.serve()
                 })
@@ -113,8 +120,13 @@ pub fn launch(cfg: &ServerConfig) -> Result<(), Box<dyn Error>> {
                 let fetcher = Fetcher::PlacementClient {
                     client: placement_client,
                 };
-                let stream_manager =
-                    Rc::new(RefCell::new(StreamManager::new(log.clone(), fetcher)));
+                let store = Rc::new(store);
+
+                let stream_manager = Rc::new(RefCell::new(StreamManager::new(
+                    log.clone(),
+                    fetcher,
+                    Rc::clone(&store),
+                )));
 
                 let mut node = Node::new(node_config, store, stream_manager, Some(channels), &log);
                 node.serve()

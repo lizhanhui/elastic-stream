@@ -409,6 +409,7 @@ mod tests {
         };
         store
     }
+    
     /// Test the basic append and fetch operations.
     #[tokio::test]
     async fn test_run_store() {

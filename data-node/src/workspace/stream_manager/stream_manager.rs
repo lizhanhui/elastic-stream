@@ -1,10 +1,11 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, rc::Rc};
 
 use model::{
     range::{Range, StreamRange},
     stream::Stream,
 };
 use slog::{error, trace, Logger};
+use store::{ElasticStore, Store};
 
 use crate::{error::ServiceError, workspace::append_window::AppendWindow};
 
@@ -15,15 +16,17 @@ pub(crate) struct StreamManager {
     streams: HashMap<i64, Stream>,
     windows: HashMap<i64, AppendWindow>,
     fetcher: Fetcher,
+    store: Rc<ElasticStore>,
 }
 
 impl StreamManager {
-    pub(crate) fn new(log: Logger, fetcher: Fetcher) -> Self {
+    pub(crate) fn new(log: Logger, fetcher: Fetcher, store: Rc<ElasticStore>) -> Self {
         Self {
             log,
             streams: HashMap::new(),
             windows: HashMap::new(),
             fetcher,
+            store,
         }
     }
 
@@ -244,9 +247,10 @@ impl StreamManager {
 
 #[cfg(test)]
 mod tests {
-    use std::error::Error;
+    use std::{error::Error, rc::Rc};
 
     use model::range::StreamRange;
+    use slog::trace;
     use tokio::sync::mpsc;
 
     use crate::workspace::stream_manager::{fetcher::Fetcher, StreamManager};
@@ -293,10 +297,18 @@ mod tests {
     #[test]
     fn test_seal() -> Result<(), Box<dyn Error>> {
         let logger = test_util::terminal_logger();
+        let path = test_util::create_random_path()?;
+        trace!(logger, "Test directory: {}", path.to_str().unwrap());
+        let _guard = test_util::DirectoryRemovalGuard::new(logger.clone(), path.as_path());
+        let wal_path = path.join("wal");
+        let index_path = path.join("index");
+        let store =
+            test_util::build_store(wal_path.to_str().unwrap(), index_path.to_str().unwrap());
+        let store = Rc::new(store);
         tokio_uring::start(async {
             let fetcher = create_fetcher().await;
             let stream_id = 1;
-            let mut stream_manager = StreamManager::new(logger, fetcher);
+            let mut stream_manager = StreamManager::new(logger, fetcher, store);
             let offset = stream_manager.alloc_record_slot(stream_id).await.unwrap();
             stream_manager.ack(stream_id, offset)?;
             let seal_offset = stream_manager.seal(stream_id, TOTAL - 1).unwrap();
@@ -308,10 +320,17 @@ mod tests {
     #[test]
     fn test_describe_range() -> Result<(), Box<dyn Error>> {
         let logger = test_util::terminal_logger();
+        let path = test_util::create_random_path()?;
+        let _guard = test_util::DirectoryRemovalGuard::new(logger.clone(), path.as_path());
+        let wal_path = path.join("wal");
+        let index_path = path.join("index");
+        let store =
+            test_util::build_store(wal_path.to_str().unwrap(), index_path.to_str().unwrap());
+        let store = Rc::new(store);
         tokio_uring::start(async {
             let fetcher = create_fetcher().await;
             let stream_id = 1;
-            let mut stream_manager = StreamManager::new(logger, fetcher);
+            let mut stream_manager = StreamManager::new(logger, fetcher, store);
             let offset = stream_manager.alloc_record_slot(stream_id).await.unwrap();
             stream_manager.ack(stream_id, offset)?;
             let range = stream_manager.describe_range(stream_id, TOTAL - 1).await?;

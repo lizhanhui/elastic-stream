@@ -23,14 +23,14 @@ pub(crate) struct Node {
 impl Node {
     pub fn new(
         config: NodeConfig,
-        store: ElasticStore,
+        store: Rc<ElasticStore>,
         stream_manager: Rc<RefCell<StreamManager>>,
         channels: Option<Vec<mpsc::UnboundedReceiver<FetchRangeTask>>>,
         logger: &Logger,
     ) -> Self {
         Self {
             config,
-            store: Rc::new(store),
+            store,
             stream_manager,
             channels,
             logger: logger.clone(),

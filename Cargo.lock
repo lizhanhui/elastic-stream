@@ -2253,6 +2253,7 @@ dependencies = [
  "slog",
  "slog-async",
  "slog-term",
+ "store",
  "tokio",
  "tokio-uring",
  "transport",
