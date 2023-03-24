@@ -161,6 +161,7 @@ func (s *Server) newConn(rwc net.Conn) *conn {
 		readFrameCh:      make(chan frameReadResult),
 		wantWriteFrameCh: make(chan frameWriteRequest, 8),
 		wroteFrameCh:     make(chan frameWriteResult, 1), // buffered; one send in writeFrameAsync
+		serveMsgCh:       make(chan *serverMessage, 8),
 		streams:          make(map[uint32]*stream),
 		wScheduler:       newWriteScheduler(),
 		idleTimeout:      s.HeartbeatInterval * time.Duration(s.HeartbeatMissCount),
