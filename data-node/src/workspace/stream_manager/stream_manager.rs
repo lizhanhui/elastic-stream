@@ -44,6 +44,9 @@ impl StreamManager {
     }
 
     /// Bootstrap all stream ranges that are assigned to current data node.
+    ///
+    /// # Panic
+    /// If failed to access store to acquire max offset of the stream with mutable range.
     async fn bootstrap(&mut self) -> Result<(), ServiceError> {
         let ranges = self.fetcher.bootstrap(&self.log).await?;
 
@@ -57,12 +60,23 @@ impl StreamManager {
 
         self.streams.iter_mut().for_each(|(_, stream)| {
             stream.sort();
-            // TODO: recover last written offset of the range from local `Store`.
-            // For now, just create a new window for test purpose.
             if stream.is_mut() {
                 if let Some(range) = stream.last() {
                     let stream_id = range.stream_id();
-                    let append_window = AppendWindow::new(range.start());
+                    let start = if let Some(offset) = self
+                        .store
+                        .max_record_offset(stream_id)
+                        .expect("Should get max record offset of given stream")
+                    {
+                        if offset > range.start() {
+                            offset
+                        } else {
+                            range.start()
+                        }
+                    } else {
+                        range.start()
+                    };
+                    let append_window = AppendWindow::new(start);
                     self.windows.insert(stream_id, append_window);
                     trace!(
                         self.log,
