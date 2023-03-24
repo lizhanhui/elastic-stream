@@ -75,7 +75,7 @@ impl<'a> Fetch<'a> {
         let no_err_status = protocol::rpc::header::Status::create(
             &mut builder,
             &StatusArgs {
-                code: ErrorCode::NONE,
+                code: ErrorCode::OK,
                 message: None,
                 detail: None,
             },

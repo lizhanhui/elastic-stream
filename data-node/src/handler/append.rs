@@ -284,7 +284,7 @@ impl<'a> Append<'a> {
                 }
             })
             .collect();
-        if err_code != ErrorCode::NONE {
+        if err_code != ErrorCode::OK {
             return Err(err_code);
         }
         Ok(to_store_requests)
