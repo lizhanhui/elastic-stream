@@ -107,14 +107,15 @@ func (c *Client) dialConn(ctx context.Context, addr string) (*conn, error) {
 func (c *Client) newConn(rwc net.Conn) (*conn, error) {
 	logger := c.lg.With(zap.String("remote-server-addr", rwc.RemoteAddr().String()))
 	cc := &conn{
-		c:          c,
-		conn:       rwc,
-		readerDone: make(chan struct{}),
-		streams:    make(map[uint32]*stream),
-		heartbeats: make(map[uint32]chan struct{}),
-		reqMu:      make(chan struct{}, 1),
-		fr:         codec.NewFramer(bufio.NewWriter(rwc), bufio.NewReader(rwc), logger),
-		lg:         logger,
+		c:            c,
+		conn:         rwc,
+		readerDone:   make(chan struct{}),
+		streams:      make(map[uint32]*stream),
+		heartbeats:   make(map[uint32]chan struct{}),
+		nextStreamID: 1,
+		reqMu:        make(chan struct{}, 1),
+		fr:           codec.NewFramer(bufio.NewWriter(rwc), bufio.NewReader(rwc), logger),
+		lg:           logger,
 	}
 	if c.IdleConnTimeout > 0 {
 		cc.idleTimeout = c.IdleConnTimeout
@@ -126,7 +127,6 @@ func (c *Client) newConn(rwc net.Conn) (*conn, error) {
 	return cc, nil
 }
 
-//nolint:unused
 func (c *Client) heartbeatTimeout() time.Duration {
 	if c.HeartbeatTimeout > 0 {
 		return c.HeartbeatTimeout

@@ -22,13 +22,17 @@ func TestMain(m *testing.M) {
 
 func TestClient_Do(t *testing.T) {
 	t.Parallel()
+	var logger *zap.Logger
+	logger, _ = zap.NewDevelopment()
+	//logger = zap.NewNop()
 	re := require.New(t)
 
-	addr, shutdown := startServer(t, &mockHandler{})
+	addr, shutdown := startServer(t, &mockHandler{}, logger)
 	defer shutdown()
 
-	client := NewClient("test", zap.NewNop())
+	client := NewClient("test", logger)
 	defer client.CloseIdleConnections()
+	client.IdleConnTimeout = time.Second
 
 	req := &protocol.SealRangesRequest{
 		SealRangesRequestT: rpcfb.SealRangesRequestT{
@@ -45,14 +49,14 @@ func TestClient_Do(t *testing.T) {
 	_ = resp
 }
 
-func startServer(tb testing.TB, handler server.Handler) (addr string, shutdown func()) {
+func startServer(tb testing.TB, handler server.Handler, lg *zap.Logger) (addr string, shutdown func()) {
 	re := require.New(tb)
 
 	addr = tempurl.AllocAddr(tb)
 	listener, err := net.Listen("tcp", addr)
 	re.NoError(err)
 
-	s := server.NewServer(context.Background(), handler, zap.NewNop())
+	s := server.NewServer(context.Background(), handler, lg)
 	go func() {
 		_ = s.Serve(listener)
 	}()
@@ -63,23 +67,6 @@ func startServer(tb testing.TB, handler server.Handler) (addr string, shutdown f
 		_ = s.Shutdown(ctx)
 	}
 	return
-}
-
-type baseHandler struct{}
-
-func (b *baseHandler) Heartbeat(_ *protocol.HeartbeatRequest, _ *protocol.HeartbeatResponse) {
-}
-func (b *baseHandler) SealRanges(_ *protocol.SealRangesRequest, _ *protocol.SealRangesResponse) {
-}
-func (b *baseHandler) ListRanges(_ *protocol.ListRangesRequest, _ *protocol.ListRangesResponse) {
-}
-func (b *baseHandler) CreateStreams(_ *protocol.CreateStreamsRequest, _ *protocol.CreateStreamsResponse) {
-}
-func (b *baseHandler) DeleteStreams(_ *protocol.DeleteStreamsRequest, _ *protocol.DeleteStreamsResponse) {
-}
-func (b *baseHandler) UpdateStreams(_ *protocol.UpdateStreamsRequest, _ *protocol.UpdateStreamsResponse) {
-}
-func (b *baseHandler) DescribeStreams(_ *protocol.DescribeStreamsRequest, _ *protocol.DescribeStreamsResponse) {
 }
 
 type mockHandler struct {
@@ -103,5 +90,35 @@ func (m *mockHandler) SealRanges(req *protocol.SealRangesRequest, resp *protocol
 	resp.SealRangesResponseT = rpcfb.SealRangesResponseT{
 		SealResponses: results,
 	}
+	resp.OK()
+}
+
+type baseHandler struct{}
+
+func (b *baseHandler) Heartbeat(_ *protocol.HeartbeatRequest, resp *protocol.HeartbeatResponse) {
+	resp.OK()
+}
+
+func (b *baseHandler) SealRanges(_ *protocol.SealRangesRequest, resp *protocol.SealRangesResponse) {
+	resp.OK()
+}
+
+func (b *baseHandler) ListRanges(_ *protocol.ListRangesRequest, resp *protocol.ListRangesResponse) {
+	resp.OK()
+}
+
+func (b *baseHandler) CreateStreams(_ *protocol.CreateStreamsRequest, resp *protocol.CreateStreamsResponse) {
+	resp.OK()
+}
+
+func (b *baseHandler) DeleteStreams(_ *protocol.DeleteStreamsRequest, resp *protocol.DeleteStreamsResponse) {
+	resp.OK()
+}
+
+func (b *baseHandler) UpdateStreams(_ *protocol.UpdateStreamsRequest, resp *protocol.UpdateStreamsResponse) {
+	resp.OK()
+}
+
+func (b *baseHandler) DescribeStreams(_ *protocol.DescribeStreamsRequest, resp *protocol.DescribeStreamsResponse) {
 	resp.OK()
 }
