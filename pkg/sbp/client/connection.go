@@ -15,6 +15,7 @@ import (
 
 	"github.com/AutoMQ/placement-manager/api/rpcfb/rpcfb"
 	"github.com/AutoMQ/placement-manager/pkg/sbp/codec"
+	"github.com/AutoMQ/placement-manager/pkg/sbp/codec/operation"
 	"github.com/AutoMQ/placement-manager/pkg/sbp/protocol"
 )
 
@@ -158,7 +159,7 @@ func (cc *conn) forgetStreamID(id uint32) {
 }
 
 func (cc *conn) heartbeat(ctx context.Context) error {
-	fmt := cc.c.Format
+	fmt := cc.c.format()
 	req := protocol.HeartbeatRequest{
 		HeartbeatRequestT: rpcfb.HeartbeatRequestT{
 			ClientId:   cc.c.name,
@@ -167,7 +168,7 @@ func (cc *conn) heartbeat(ctx context.Context) error {
 	}
 	header, err := req.Marshal(fmt)
 	defer func() {
-		if header == nil {
+		if header != nil {
 			mcache.Free(header)
 		}
 	}()
@@ -331,10 +332,12 @@ func (rl *connReadLoop) run() error {
 			err = rl.processPing(f)
 		case *codec.GoAwayFrame:
 			err = rl.processGoAway(f)
-		case *codec.HeartbeatFrame:
-			err = rl.processHeartbeat(f)
 		case *codec.DataFrame:
-			err = rl.processData(f)
+			if f.OpCode.Code == operation.OpHeartbeat {
+				err = rl.processHeartbeat(f)
+			} else {
+				err = rl.processData(f)
+			}
 		default:
 			logger.Warn("client ignoring unknown type frame", f.Info()...)
 		}
@@ -382,7 +385,7 @@ func (rl *connReadLoop) processGoAway(f *codec.GoAwayFrame) error {
 	return nil
 }
 
-func (rl *connReadLoop) processHeartbeat(f *codec.HeartbeatFrame) error {
+func (rl *connReadLoop) processHeartbeat(f *codec.DataFrame) error {
 	cc := rl.cc
 	logger := cc.lg
 	if f.IsRequest() {

@@ -20,11 +20,9 @@ func TestMain(m *testing.M) {
 	goleak.VerifyTestMain(m)
 }
 
-func TestClient_Do(t *testing.T) {
+func TestClient_SealRanges(t *testing.T) {
 	t.Parallel()
-	var logger *zap.Logger
-	logger, _ = zap.NewDevelopment()
-	//logger = zap.NewNop()
+	logger := zap.NewNop()
 	re := require.New(t)
 
 	addr, shutdown := startServer(t, &mockHandler{}, logger)
@@ -32,7 +30,6 @@ func TestClient_Do(t *testing.T) {
 
 	client := NewClient("test", logger)
 	defer client.CloseIdleConnections()
-	client.IdleConnTimeout = time.Second
 
 	req := &protocol.SealRangesRequest{
 		SealRangesRequestT: rpcfb.SealRangesRequestT{
@@ -44,9 +41,13 @@ func TestClient_Do(t *testing.T) {
 			},
 		},
 	}
-	resp, err := client.Do(req, addr)
+	resp, err := client.SealRanges(req, addr)
 	re.NoError(err)
-	_ = resp
+	re.Equal(rpcfb.ErrorCodeOK, resp.Status.Code)
+	re.Len(resp.SealResponses, 1)
+	re.Equal(rpcfb.ErrorCodeOK, resp.SealResponses[0].Status.Code)
+	re.Equal(int64(1), resp.SealResponses[0].StreamId)
+	re.Equal(int32(2), resp.SealResponses[0].Range.RangeIndex)
 }
 
 func startServer(tb testing.TB, handler server.Handler, lg *zap.Logger) (addr string, shutdown func()) {

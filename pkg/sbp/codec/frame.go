@@ -382,21 +382,6 @@ func NewGoAwayFrame(maxStreamID uint32, isResponse bool) *GoAwayFrame {
 	return f
 }
 
-// HeartbeatFrame is used to check the health of the connection
-type HeartbeatFrame struct {
-	baseFrame
-}
-
-// NewHeartbeatFrameReq creates a new heartbeat request
-func NewHeartbeatFrameReq(streamID uint32, fmt format.Format, header []byte) *HeartbeatFrame {
-	return &HeartbeatFrame{baseFrame{
-		OpCode:    operation.Operation{Code: operation.OpHeartbeat},
-		StreamID:  streamID,
-		HeaderFmt: fmt,
-		Header:    header,
-	}}
-}
-
 // DataFrame is used to handle other user-defined requests and responses
 type DataFrame struct {
 	baseFrame
@@ -407,6 +392,17 @@ type DataFrameContext struct {
 	OpCode    operation.Operation
 	HeaderFmt format.Format
 	StreamID  uint32
+}
+
+// NewHeartbeatFrameReq creates a new heartbeat request
+func NewHeartbeatFrameReq(streamID uint32, fmt format.Format, header []byte) *DataFrame {
+	// treat heartbeat as a special data frame
+	return &DataFrame{baseFrame{
+		OpCode:    operation.Operation{Code: operation.OpHeartbeat},
+		StreamID:  streamID,
+		HeaderFmt: fmt,
+		Header:    header,
+	}}
 }
 
 // NewDataFrameReq returns a new DataFrame request

@@ -92,7 +92,7 @@ func (s *stream) encodeAndWrite(req protocol.OutRequest) error {
 
 	header, err := req.Marshal(cc.c.format())
 	defer func() {
-		if header == nil {
+		if header != nil {
 			mcache.Free(header)
 		}
 	}()
