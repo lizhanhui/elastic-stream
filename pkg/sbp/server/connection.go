@@ -104,6 +104,7 @@ func (c *conn) serve() {
 				c.goAway(false)
 			case shutdownTimerMsg:
 				logger.Info("GOAWAY close timer fired, closing connection")
+				return
 			case gracefulShutdownMsg:
 				logger.Info("start to shut down gracefully")
 				c.goAway(false)
