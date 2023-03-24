@@ -8,42 +8,24 @@ import (
 
 type SealRangesResultT struct {
 	StreamId int64 `json:"stream_id"`
-	Ranges []*RangeT `json:"ranges"`
+	Range *RangeT `json:"range"`
 	Status *StatusT `json:"status"`
 }
 
 func (t *SealRangesResultT) Pack(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
 	if t == nil { return 0 }
-	rangesOffset := flatbuffers.UOffsetT(0)
-	if t.Ranges != nil {
-		rangesLength := len(t.Ranges)
-		rangesOffsets := make([]flatbuffers.UOffsetT, rangesLength)
-		for j := 0; j < rangesLength; j++ {
-			rangesOffsets[j] = t.Ranges[j].Pack(builder)
-		}
-		SealRangesResultStartRangesVector(builder, rangesLength)
-		for j := rangesLength - 1; j >= 0; j-- {
-			builder.PrependUOffsetT(rangesOffsets[j])
-		}
-		rangesOffset = builder.EndVector(rangesLength)
-	}
+	range_Offset := t.Range.Pack(builder)
 	statusOffset := t.Status.Pack(builder)
 	SealRangesResultStart(builder)
 	SealRangesResultAddStreamId(builder, t.StreamId)
-	SealRangesResultAddRanges(builder, rangesOffset)
+	SealRangesResultAddRange(builder, range_Offset)
 	SealRangesResultAddStatus(builder, statusOffset)
 	return SealRangesResultEnd(builder)
 }
 
 func (rcv *SealRangesResult) UnPackTo(t *SealRangesResultT) {
 	t.StreamId = rcv.StreamId()
-	rangesLength := rcv.RangesLength()
-	t.Ranges = make([]*RangeT, rangesLength)
-	for j := 0; j < rangesLength; j++ {
-		x := Range{}
-		rcv.Ranges(&x, j)
-		t.Ranges[j] = x.UnPack()
-	}
+	t.Range = rcv.Range(nil).UnPack()
 	t.Status = rcv.Status(nil).UnPack()
 }
 
@@ -93,24 +75,17 @@ func (rcv *SealRangesResult) MutateStreamId(n int64) bool {
 	return rcv._tab.MutateInt64Slot(4, n)
 }
 
-func (rcv *SealRangesResult) Ranges(obj *Range, j int) bool {
+func (rcv *SealRangesResult) Range(obj *Range) *Range {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(6))
 	if o != 0 {
-		x := rcv._tab.Vector(o)
-		x += flatbuffers.UOffsetT(j) * 4
-		x = rcv._tab.Indirect(x)
+		x := rcv._tab.Indirect(o + rcv._tab.Pos)
+		if obj == nil {
+			obj = new(Range)
+		}
 		obj.Init(rcv._tab.Bytes, x)
-		return true
+		return obj
 	}
-	return false
-}
-
-func (rcv *SealRangesResult) RangesLength() int {
-	o := flatbuffers.UOffsetT(rcv._tab.Offset(6))
-	if o != 0 {
-		return rcv._tab.VectorLen(o)
-	}
-	return 0
+	return nil
 }
 
 func (rcv *SealRangesResult) Status(obj *Status) *Status {
@@ -132,11 +107,8 @@ func SealRangesResultStart(builder *flatbuffers.Builder) {
 func SealRangesResultAddStreamId(builder *flatbuffers.Builder, streamId int64) {
 	builder.PrependInt64Slot(0, streamId, -1)
 }
-func SealRangesResultAddRanges(builder *flatbuffers.Builder, ranges flatbuffers.UOffsetT) {
-	builder.PrependUOffsetTSlot(1, flatbuffers.UOffsetT(ranges), 0)
-}
-func SealRangesResultStartRangesVector(builder *flatbuffers.Builder, numElems int) flatbuffers.UOffsetT {
-	return builder.StartVector(4, numElems, 4)
+func SealRangesResultAddRange(builder *flatbuffers.Builder, range_ flatbuffers.UOffsetT) {
+	builder.PrependUOffsetTSlot(1, flatbuffers.UOffsetT(range_), 0)
 }
 func SealRangesResultAddStatus(builder *flatbuffers.Builder, status flatbuffers.UOffsetT) {
 	builder.PrependUOffsetTSlot(2, flatbuffers.UOffsetT(status), 0)

@@ -8,24 +8,24 @@ import (
 
 type DescribeRangeResultT struct {
 	StreamId int64 `json:"stream_id"`
-	Ranges *RangeT `json:"ranges"`
+	Range *RangeT `json:"range"`
 	Status *StatusT `json:"status"`
 }
 
 func (t *DescribeRangeResultT) Pack(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
 	if t == nil { return 0 }
-	rangesOffset := t.Ranges.Pack(builder)
+	range_Offset := t.Range.Pack(builder)
 	statusOffset := t.Status.Pack(builder)
 	DescribeRangeResultStart(builder)
 	DescribeRangeResultAddStreamId(builder, t.StreamId)
-	DescribeRangeResultAddRanges(builder, rangesOffset)
+	DescribeRangeResultAddRange(builder, range_Offset)
 	DescribeRangeResultAddStatus(builder, statusOffset)
 	return DescribeRangeResultEnd(builder)
 }
 
 func (rcv *DescribeRangeResult) UnPackTo(t *DescribeRangeResultT) {
 	t.StreamId = rcv.StreamId()
-	t.Ranges = rcv.Ranges(nil).UnPack()
+	t.Range = rcv.Range(nil).UnPack()
 	t.Status = rcv.Status(nil).UnPack()
 }
 
@@ -75,7 +75,7 @@ func (rcv *DescribeRangeResult) MutateStreamId(n int64) bool {
 	return rcv._tab.MutateInt64Slot(4, n)
 }
 
-func (rcv *DescribeRangeResult) Ranges(obj *Range) *Range {
+func (rcv *DescribeRangeResult) Range(obj *Range) *Range {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(6))
 	if o != 0 {
 		x := rcv._tab.Indirect(o + rcv._tab.Pos)
@@ -107,8 +107,8 @@ func DescribeRangeResultStart(builder *flatbuffers.Builder) {
 func DescribeRangeResultAddStreamId(builder *flatbuffers.Builder, streamId int64) {
 	builder.PrependInt64Slot(0, streamId, -1)
 }
-func DescribeRangeResultAddRanges(builder *flatbuffers.Builder, ranges flatbuffers.UOffsetT) {
-	builder.PrependUOffsetTSlot(1, flatbuffers.UOffsetT(ranges), 0)
+func DescribeRangeResultAddRange(builder *flatbuffers.Builder, range_ flatbuffers.UOffsetT) {
+	builder.PrependUOffsetTSlot(1, flatbuffers.UOffsetT(range_), 0)
 }
 func DescribeRangeResultAddStatus(builder *flatbuffers.Builder, status flatbuffers.UOffsetT) {
 	builder.PrependUOffsetTSlot(2, flatbuffers.UOffsetT(status), 0)

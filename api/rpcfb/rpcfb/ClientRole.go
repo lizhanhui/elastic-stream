@@ -7,24 +7,24 @@ import "strconv"
 type ClientRole int8
 
 const (
-	ClientRoleCLIENT_ROLE_UNKNOWN   ClientRole = 0
-	ClientRoleCLIENT_ROLE_PM        ClientRole = 1
-	ClientRoleCLIENT_ROLE_DATA_NODE ClientRole = 2
-	ClientRoleCLIENT_ROLE_CUSTOMER  ClientRole = 3
+	ClientRoleCLIENT_ROLE_UNSPECIFIED ClientRole = 0
+	ClientRoleCLIENT_ROLE_PM          ClientRole = 1
+	ClientRoleCLIENT_ROLE_DATA_NODE   ClientRole = 2
+	ClientRoleCLIENT_ROLE_CUSTOMER    ClientRole = 3
 )
 
 var EnumNamesClientRole = map[ClientRole]string{
-	ClientRoleCLIENT_ROLE_UNKNOWN:   "CLIENT_ROLE_UNKNOWN",
-	ClientRoleCLIENT_ROLE_PM:        "CLIENT_ROLE_PM",
-	ClientRoleCLIENT_ROLE_DATA_NODE: "CLIENT_ROLE_DATA_NODE",
-	ClientRoleCLIENT_ROLE_CUSTOMER:  "CLIENT_ROLE_CUSTOMER",
+	ClientRoleCLIENT_ROLE_UNSPECIFIED: "CLIENT_ROLE_UNSPECIFIED",
+	ClientRoleCLIENT_ROLE_PM:          "CLIENT_ROLE_PM",
+	ClientRoleCLIENT_ROLE_DATA_NODE:   "CLIENT_ROLE_DATA_NODE",
+	ClientRoleCLIENT_ROLE_CUSTOMER:    "CLIENT_ROLE_CUSTOMER",
 }
 
 var EnumValuesClientRole = map[string]ClientRole{
-	"CLIENT_ROLE_UNKNOWN":   ClientRoleCLIENT_ROLE_UNKNOWN,
-	"CLIENT_ROLE_PM":        ClientRoleCLIENT_ROLE_PM,
-	"CLIENT_ROLE_DATA_NODE": ClientRoleCLIENT_ROLE_DATA_NODE,
-	"CLIENT_ROLE_CUSTOMER":  ClientRoleCLIENT_ROLE_CUSTOMER,
+	"CLIENT_ROLE_UNSPECIFIED": ClientRoleCLIENT_ROLE_UNSPECIFIED,
+	"CLIENT_ROLE_PM":          ClientRoleCLIENT_ROLE_PM,
+	"CLIENT_ROLE_DATA_NODE":   ClientRoleCLIENT_ROLE_DATA_NODE,
+	"CLIENT_ROLE_CUSTOMER":    ClientRoleCLIENT_ROLE_CUSTOMER,
 }
 
 func (v ClientRole) String() string {
