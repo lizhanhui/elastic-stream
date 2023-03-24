@@ -8,7 +8,7 @@ use model::flat_record::FlatRecordBatch;
 use protocol::rpc::header::{
     AppendRequest, AppendResponseArgs, AppendResultArgs, ErrorCode, StatusArgs,
 };
-use slog::{trace, warn, Logger};
+use slog::{error, trace, warn, Logger};
 use std::{cell::RefCell, rc::Rc};
 use store::{
     error::AppendError, option::WriteOptions, AppendRecordRequest, AppendResult, ElasticStore,
@@ -99,6 +99,7 @@ impl<'a> Append<'a> {
         let to_store_requests = match self.build_store_requests(&stream_manager).await {
             Ok(requests) => requests,
             Err(err_code) => {
+                error!(self.logger, "Failed to build store requests. Ranges of the target streams maybe is already sealed");
                 // The request frame is invalid, return a system error frame directly
                 response.flag_system_err();
                 response.header = Some(system_error_frame_bytes(err_code, "Invalid request"));
@@ -203,6 +204,19 @@ impl<'a> Append<'a> {
         let mut payload = self.payload.clone();
         let mut err_code = ErrorCode::OK;
         let mut manager = stream_manager.borrow_mut();
+
+        // Ensure each stream is
+        for batch in self.append_request.append_requests().iter().flatten() {
+            let stream_id = batch.stream_id();
+            manager
+                .create_stream_if_missing(stream_id)
+                .await
+                .map_err(|_e| ErrorCode::DN_INTERNAL_SERVER_ERROR)?;
+            manager
+                .ensure_mutable(stream_id)
+                .await
+                .map_err(|_e| ErrorCode::DN_INTERNAL_SERVER_ERROR)?;
+        }
 
         // Iterate over the append requests and append each record batch
         let to_store_requests: Vec<_> = self

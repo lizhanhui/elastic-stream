@@ -32,6 +32,15 @@ impl AppendWindow {
         offset
     }
 
+    pub(crate) fn alloc_batch_slots(&mut self, batch_size: usize) -> u64 {
+        let offset = self.next;
+        for i in 0..batch_size {
+            self.inflight.push(Reverse(offset + i as u64));
+            self.next += 1;
+        }
+        offset
+    }
+
     pub(crate) fn ack(&mut self, offset: u64) {
         self.completed.push(Reverse(offset));
         loop {

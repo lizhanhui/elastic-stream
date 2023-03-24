@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use futures::io::Window;
 use model::{
     range::{Range, StreamRange},
     stream::Stream,
@@ -59,7 +60,10 @@ impl StreamManager {
         Ok(())
     }
 
-    async fn create_stream_if_missing(&mut self, stream_id: i64) -> Result<(), ServiceError> {
+    pub(crate) async fn create_stream_if_missing(
+        &mut self,
+        stream_id: i64,
+    ) -> Result<(), ServiceError> {
         // If, though unlikely, the stream is firstly assigned to it.
         // TODO: https://doc.rust-lang.org/std/intrinsics/fn.unlikely.html
         if !self.streams.contains_key(&stream_id) {
@@ -105,7 +109,7 @@ impl StreamManager {
         Ok(())
     }
 
-    async fn ensure_mutable(&mut self, stream_id: i64) -> Result<(), ServiceError> {
+    pub(crate) async fn ensure_mutable(&mut self, stream_id: i64) -> Result<(), ServiceError> {
         if let Some(stream) = self.streams.get_mut(&stream_id) {
             if stream.is_mut() {
                 return Ok(());
@@ -145,7 +149,12 @@ impl StreamManager {
         stream_id: i64,
         batch_size: usize,
     ) -> Result<u64, ServiceError> {
-        todo!()
+        if let Some(window) = self.windows.get_mut(&stream_id) {
+            let start_slot = window.alloc_batch_slots(batch_size);
+            return Ok(start_slot);
+        }
+        // There is not an append window available, the segments of the stream should have been sealed.
+        Err(ServiceError::AlreadySealed)
     }
 
     pub(crate) fn ack(&mut self, stream_id: i64, offset: u64) -> Result<(), ServiceError> {
