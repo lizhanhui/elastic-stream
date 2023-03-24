@@ -5,7 +5,7 @@ import (
 	"github.com/AutoMQ/placement-manager/pkg/sbp/protocol"
 )
 
-func (s *Sbp) ListRange(req *protocol.ListRangesRequest, resp *protocol.ListRangesResponse) {
+func (s *Sbp) ListRanges(req *protocol.ListRangesRequest, resp *protocol.ListRangesResponse) {
 	ctx := req.Context()
 	if !s.c.IsLeader() {
 		s.notLeaderError(ctx, resp)
@@ -30,4 +30,10 @@ func (s *Sbp) ListRange(req *protocol.ListRangesRequest, resp *protocol.ListRang
 	}
 	resp.ListResponses = listResponses
 	resp.OK()
+}
+
+func (s *Sbp) SealRanges(req *protocol.SealRangesRequest, resp *protocol.SealRangesResponse) {
+	// TODO
+	_ = req
+	_ = resp
 }

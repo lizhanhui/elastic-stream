@@ -10,7 +10,7 @@ import (
 	"github.com/AutoMQ/placement-manager/pkg/sbp/protocol"
 )
 
-func TestListRange(t *testing.T) {
+func TestListRanges(t *testing.T) {
 	re := require.New(t)
 
 	sbp, closeFunc := startSbp(t)
@@ -30,7 +30,7 @@ func TestListRange(t *testing.T) {
 		},
 	}}
 	resp := &protocol.ListRangesResponse{}
-	sbp.ListRange(req, resp)
+	sbp.ListRanges(req, resp)
 
 	re.Equal(resp.Status.Code, rpcfb.ErrorCodeOK)
 	re.Len(resp.ListResponses, 3)
@@ -49,7 +49,7 @@ func TestListRange(t *testing.T) {
 		},
 	}}
 	resp = &protocol.ListRangesResponse{}
-	sbp.ListRange(req, resp)
+	sbp.ListRanges(req, resp)
 
 	re.Equal(resp.Status.Code, rpcfb.ErrorCodeOK)
 	re.Len(resp.ListResponses, 3)
@@ -68,7 +68,7 @@ func TestListRange(t *testing.T) {
 		},
 	}}
 	resp = &protocol.ListRangesResponse{}
-	sbp.ListRange(req, resp)
+	sbp.ListRanges(req, resp)
 
 	re.Equal(resp.Status.Code, rpcfb.ErrorCodeOK)
 	re.Len(resp.ListResponses, 3)

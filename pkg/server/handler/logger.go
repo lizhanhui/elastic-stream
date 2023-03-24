@@ -18,8 +18,8 @@ type SbpLogger struct {
 	LogAble
 }
 
-func (l SbpLogger) ListRange(req *protocol.ListRangesRequest, resp *protocol.ListRangesResponse) {
-	l.LogAble.ListRange(req, resp)
+func (l SbpLogger) ListRanges(req *protocol.ListRangesRequest, resp *protocol.ListRangesResponse) {
+	l.LogAble.ListRanges(req, resp)
 	l.LogIt(req, resp)
 }
 

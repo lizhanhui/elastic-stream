@@ -11,8 +11,10 @@ import (
 type Handler interface {
 	// Heartbeat handles heartbeat requests.
 	Heartbeat(req *protocol.HeartbeatRequest, resp *protocol.HeartbeatResponse)
-	// ListRange lists the ranges of a batch of streams. Or it could list the ranges of all the streams in a specific data node.
-	ListRange(req *protocol.ListRangesRequest, resp *protocol.ListRangesResponse)
+	// ListRanges lists the ranges of a batch of streams. Or it could list the ranges of all the streams in a specific data node.
+	ListRanges(req *protocol.ListRangesRequest, resp *protocol.ListRangesResponse)
+	// SealRanges seal ranges of a batch of streams
+	SealRanges(req *protocol.SealRangesRequest, resp *protocol.SealRangesResponse)
 	// CreateStreams creates a batch of streams.
 	CreateStreams(req *protocol.CreateStreamsRequest, resp *protocol.CreateStreamsResponse)
 	// DeleteStreams deletes a batch of streams.
@@ -36,7 +38,14 @@ var (
 			newReq:  func() protocol.InRequest { return &protocol.ListRangesRequest{} },
 			newResp: func() protocol.OutResponse { return &protocol.ListRangesResponse{} },
 			act: func(handler Handler, req protocol.InRequest, resp protocol.OutResponse) {
-				handler.ListRange(req.(*protocol.ListRangesRequest), resp.(*protocol.ListRangesResponse))
+				handler.ListRanges(req.(*protocol.ListRangesRequest), resp.(*protocol.ListRangesResponse))
+			},
+		},
+		{Code: operation.OpSealRanges}: {
+			newReq:  func() protocol.InRequest { return &protocol.SealRangesRequest{} },
+			newResp: func() protocol.OutResponse { return &protocol.SealRangesResponse{} },
+			act: func(handler Handler, req protocol.InRequest, resp protocol.OutResponse) {
+				handler.SealRanges(req.(*protocol.SealRangesRequest), resp.(*protocol.SealRangesResponse))
 			},
 		},
 		{Code: operation.OpCreateStreams}: {
