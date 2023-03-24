@@ -29,6 +29,8 @@ use model::range::StreamRange;
 use slog::{error, trace, Logger};
 use tokio::sync::{mpsc, oneshot};
 
+use super::handle_joiner;
+
 #[derive(Clone)]
 pub struct ElasticStore {
     /// The channel for server layer to communicate with io module.
@@ -47,6 +49,8 @@ pub struct ElasticStore {
     sharing_uring: RawFd,
 
     log: Logger,
+
+    join_handles: Arc<handle_joiner::HandleJoiner>,
 }
 
 impl ElasticStore {
@@ -103,12 +107,16 @@ impl ElasticStore {
             .blocking_recv()
             .map_err(|_e| StoreError::Internal("Start".to_owned()))?;
 
+        let mut handle_joiner = handle_joiner::HandleJoiner::new(logger.clone());
+        handle_joiner.push(_io_thread_handle);
+
         let store = Self {
             io_tx: tx,
             indexer,
             wal_offset_manager,
             sharing_uring,
             log: logger,
+            join_handles: Arc::new(handle_joiner),
         };
         trace!(store.log, "ElasticStore launched");
         Ok(store)
