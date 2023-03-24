@@ -1,7 +1,6 @@
-use std::{cell::RefCell, rc::Rc};
-
 use codec::frame::Frame;
-use slog::{debug, Logger};
+use slog::{trace, Logger};
+use std::{cell::RefCell, rc::Rc};
 use store::ElasticStore;
 
 use crate::workspace::stream_manager::StreamManager;
@@ -30,9 +29,10 @@ impl<'a> Ping<'a> {
         stream_manager: Rc<RefCell<StreamManager>>,
         response: &mut Frame,
     ) {
-        debug!(
+        trace!(
             self.log,
-            "Ping[stream-id={}] received", self.request.stream_id
+            "Ping[stream-id={}] received",
+            self.request.stream_id
         );
         response.header = self.request.header.clone();
         response.payload = self.request.payload.clone();

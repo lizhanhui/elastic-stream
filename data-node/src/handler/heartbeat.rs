@@ -1,8 +1,9 @@
 use std::{cell::RefCell, rc::Rc};
 
+use bytes::Bytes;
 use codec::frame::Frame;
-use protocol::rpc::header::{ErrorCode, HeartbeatRequest};
-use slog::Logger;
+use protocol::rpc::header::{ErrorCode, HeartbeatRequest, HeartbeatResponseT, StatusT};
+use slog::{trace, Logger};
 use store::ElasticStore;
 
 use crate::workspace::stream_manager::StreamManager;
@@ -30,8 +31,31 @@ impl<'a> Heartbeat<'a> {
     pub(crate) async fn apply(
         &self,
         _store: Rc<ElasticStore>,
-        stream_manager: Rc<RefCell<StreamManager>>,
-        _response: &mut Frame,
+        _stream_manager: Rc<RefCell<StreamManager>>,
+        response: &mut Frame,
     ) {
+        trace!(
+            self.log,
+            "Prepare heartbeat response header for {:?}",
+            self.request
+        );
+
+        let mut builder = flatbuffers::FlatBufferBuilder::new();
+        let mut response_header = HeartbeatResponseT::default();
+
+        let mut status = StatusT::default();
+        status.code = ErrorCode::OK;
+        status.message = Some(String::from("OK"));
+        response_header.status = Some(Box::new(status));
+
+        response_header.client_id = self.request.client_id().map(|id| id.to_owned());
+        response_header.client_role = self.request.client_role();
+
+        let header = response_header.pack(&mut builder);
+        builder.finish(header, None);
+        let data = builder.finished_data();
+        response.header = Some(Bytes::copy_from_slice(data));
+
+        trace!(self.log, "Heartbeat response header built");
     }
 }

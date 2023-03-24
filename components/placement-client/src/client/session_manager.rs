@@ -90,11 +90,8 @@ impl SessionManager {
             }
             Err(e) => {
                 error!(log, "Failed to connect to `{:?}`. Cause: `{:?}`", addr, e);
-                match tx.send(false) {
-                    Ok(_) => {}
-                    Err(res) => {
-                        debug!(log, "Failed to notify session creation result: `{}`", res);
-                    }
+                if let Err(res) = tx.send(false) {
+                    debug!(log, "Failed to notify session creation result: `{}`", res);
                 }
             }
         }
@@ -109,6 +106,10 @@ impl SessionManager {
     ) {
         let connect_timeout = config.connect_timeout;
         tokio_uring::spawn(async move {
+            trace!(
+                log,
+                "Spawn task to reconnect to placement manager on network disconnection"
+            );
             while let Some((addr, tx)) = reconnect_rx.recv().await {
                 trace!(log, "Creating a session to {}", addr);
                 let sessions = unsafe { &mut *sessions.get() };
@@ -150,18 +151,18 @@ impl SessionManager {
                         break;
                     }
 
-                    hb = &mut sleep => {
+                    _hb = &mut sleep => {
                         sleep.as_mut().reset(Instant::now() + heartbeat_interval);
 
                         let sessions = unsafe {&mut *sessions.get()};
-                        let mut futs = Vec::with_capacity(sessions.len());
+                        let mut futures = Vec::with_capacity(sessions.len());
                         for (_addr, session) in sessions.iter_mut() {
                             if session.need_heartbeat(&heartbeat_interval) {
                                 trace!(logger, "Heartbeat to {:?}", _addr);
-                                futs.push(timeout(io_timeout, session.heartbeat()));
+                                futures.push(timeout(io_timeout, session.heartbeat()));
                             }
                         }
-                         futures::future::join_all(futs).await
+                         futures::future::join_all(futures).await
                          .into_iter()
                          .for_each(|entry| {
                             match entry {
@@ -221,7 +222,7 @@ impl SessionManager {
     async fn dispatch(
         log: Logger,
         sessions: Rc<UnsafeCell<HashMap<SocketAddr, Session>>>,
-        session_mgr: mpsc::UnboundedSender<(SocketAddr, oneshot::Sender<bool>)>,
+        _session_mgr: mpsc::UnboundedSender<(SocketAddr, oneshot::Sender<bool>)>,
         request: Request,
         mut response_observer: oneshot::Sender<response::Response>,
         max_attempt_times: usize,
@@ -331,6 +332,17 @@ impl SessionManager {
                 tx,
             )
             .await;
+        }
+
+        if sessions.is_empty() {
+            error!(
+                self.log,
+                "Failed to establish connection to {}", self.target
+            );
+            return Err(ClientError::ConnectionRefused(format!(
+                "Connection to {} refused",
+                self.target
+            )));
         }
 
         loop {

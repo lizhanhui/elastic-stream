@@ -8,7 +8,7 @@ use tokio::{
 };
 
 use super::{config::ClientConfig, response, session_manager::SessionManager};
-use crate::error::ListRangeError;
+use crate::error::{ClientError, ListRangeError};
 
 pub struct PlacementClient {
     pub(crate) session_manager: Option<SessionManager>,
@@ -20,9 +20,7 @@ pub struct PlacementClient {
 impl PlacementClient {
     pub fn start(&mut self) {
         if let Some(mut session_manager) = self.session_manager.take() {
-            tokio_uring::spawn(async move {
-                session_manager.run().await;
-            });
+            tokio_uring::spawn(async move { session_manager.run().await });
         }
     }
 
