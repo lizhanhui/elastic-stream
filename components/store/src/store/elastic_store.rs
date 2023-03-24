@@ -19,7 +19,7 @@ use crate::{
     },
     offset_manager::WalOffsetManager,
     option::{ReadOptions, StoreOptions, WriteOptions},
-    AppendRecordRequest, Store,
+    AppendRecordRequest, AppendResult, FetchResult, Store,
 };
 use bytes::Buf;
 use core_affinity::CoreId;
@@ -28,8 +28,6 @@ use futures::future::join_all;
 use model::range::StreamRange;
 use slog::{error, trace, Logger};
 use tokio::sync::{mpsc, oneshot};
-
-use super::{append_result::AppendResult, fetch_result::FetchResult};
 
 #[derive(Clone)]
 pub struct ElasticStore {
@@ -52,7 +50,11 @@ pub struct ElasticStore {
 }
 
 impl ElasticStore {
-    pub fn new(log: Logger, options: StoreOptions) -> Result<Self, StoreError> {
+    pub fn new(
+        log: Logger,
+        options: StoreOptions,
+        recovery_completion_tx: oneshot::Sender<()>,
+    ) -> Result<Self, StoreError> {
         let logger = log.clone();
         let mut opt = io::Options::default();
 
@@ -87,19 +89,19 @@ impl ElasticStore {
                     .ok_or(StoreError::Configuration("IO channel".to_owned()))?;
 
                 let io = RefCell::new(io);
-                if let Err(e) = sender.send((tx, sharing_uring)) {
+                if let Err(_e) = sender.send((tx, sharing_uring)) {
                     error!(
                         log,
                         "Failed to expose sharing_uring and task channel sender"
                     );
                 }
-                io::IO::run(io)
+                io::IO::run(io, recovery_completion_tx)
             },
             None,
         )?;
         let (tx, sharing_uring) = receiver
             .blocking_recv()
-            .map_err(|e| StoreError::Internal("Start".to_owned()))?;
+            .map_err(|_e| StoreError::Internal("Start".to_owned()))?;
 
         let store = Self {
             io_tx: tx,
@@ -401,15 +403,17 @@ mod tests {
         let wal_path = WalPath::new(store_path, size_10g).unwrap();
 
         let options = StoreOptions::new(&wal_path, index_path.to_string());
-        let store = match ElasticStore::new(log.clone(), options) {
+        let (tx, rx) = oneshot::channel();
+        let store = match ElasticStore::new(log.clone(), options, tx) {
             Ok(store) => store,
             Err(e) => {
                 panic!("Failed to launch ElasticStore: {:?}", e);
             }
         };
+        rx.blocking_recv().expect("Await recovery completion");
         store
     }
-    
+
     /// Test the basic append and fetch operations.
     #[tokio::test]
     async fn test_run_store() {

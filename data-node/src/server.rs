@@ -15,7 +15,7 @@ use store::{
     option::{StoreOptions, WalPath},
     ElasticStore,
 };
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 
 pub fn launch(cfg: &ServerConfig) -> Result<(), Box<dyn Error>> {
     let decorator = TermDecorator::new().build();
@@ -37,7 +37,9 @@ pub fn launch(cfg: &ServerConfig) -> Result<(), Box<dyn Error>> {
     let meta_path = "/data/store/meta";
     let store_options = StoreOptions::new(&wal_path, meta_path.to_string());
 
-    let store = match ElasticStore::new(log.clone(), store_options) {
+    let (recovery_completion_tx, recovery_completion_rx) = oneshot::channel();
+
+    let store = match ElasticStore::new(log.clone(), store_options, recovery_completion_tx) {
         Ok(store) => store,
         Err(e) => {
             error!(log, "Failed to launch ElasticStore: {:?}", e);
@@ -45,7 +47,7 @@ pub fn launch(cfg: &ServerConfig) -> Result<(), Box<dyn Error>> {
         }
     };
 
-    // TODO: wait store recovery completes
+    recovery_completion_rx.blocking_recv()?;
 
     let mut channels = vec![];
 

@@ -1,6 +1,7 @@
 use store::option::StoreOptions;
 use store::option::WalPath;
 use store::ElasticStore;
+use tokio::sync::oneshot;
 
 pub fn build_store(wal_path: &str, index_path: &str) -> ElasticStore {
     let log = crate::terminal_logger();
@@ -10,11 +11,17 @@ pub fn build_store(wal_path: &str, index_path: &str) -> ElasticStore {
     let wal_path = WalPath::new(wal_path, size_10g).unwrap();
 
     let options = StoreOptions::new(&wal_path, index_path.to_string());
-    let store = match ElasticStore::new(log.clone(), options) {
+    let (recovery_completion_tx, recovery_completion_rx) = oneshot::channel();
+    let store = match ElasticStore::new(log.clone(), options, recovery_completion_tx) {
         Ok(store) => store,
         Err(e) => {
             panic!("Failed to launch ElasticStore: {:?}", e);
         }
     };
+
+    recovery_completion_rx
+        .blocking_recv()
+        .expect("Await recovery completion");
+
     store
 }

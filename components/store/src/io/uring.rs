@@ -9,7 +9,7 @@ use crate::io::task::IoTask;
 use crate::io::task::WriteTask;
 use crate::io::wal::Wal;
 use crate::io::write_window::WriteWindow;
-use crate::store::AppendResult;
+use crate::AppendResult;
 use crate::BufSlice;
 
 use crossbeam::channel::{Receiver, Sender, TryRecvError};
@@ -23,6 +23,7 @@ use std::{
     collections::{HashMap, VecDeque},
     os::fd::AsRawFd,
 };
+use tokio::sync::oneshot;
 
 use super::block_cache::{EntryRange, MergeRange};
 use super::buf::AlignedBuf;
@@ -926,11 +927,18 @@ impl IO {
         Ok(())
     }
 
-    pub(crate) fn run(io: RefCell<IO>) -> Result<(), StoreError> {
+    pub(crate) fn run(
+        io: RefCell<IO>,
+        recovery_completion_tx: oneshot::Sender<()>,
+    ) -> Result<(), StoreError> {
         let log = io.borrow().log.clone();
         io.borrow_mut().load()?;
         let pos = io.borrow().indexer.get_wal_checkpoint()?;
         io.borrow_mut().recover(pos)?;
+
+        if let Err(_) = recovery_completion_tx.send(()) {
+            error!(log, "Failed to notify completion of recovery");
+        }
 
         let min_preallocated_segment_files = io.borrow().options.min_preallocated_segment_files;
 
@@ -1217,6 +1225,7 @@ mod tests {
         let log = test_util::terminal_logger();
 
         let (tx, rx) = oneshot::channel();
+        let (recovery_completion_tx, recovery_completion_rx) = oneshot::channel();
         let logger = log.clone();
         let handle = std::thread::spawn(move || {
             let store_dir = random_store_dir().unwrap();
@@ -1232,9 +1241,13 @@ mod tests {
             let _ = tx.send(sender);
             let io = RefCell::new(io);
 
-            let _ = super::IO::run(io);
+            let _ = super::IO::run(io, recovery_completion_tx);
             println!("Module io stopped");
         });
+
+        if let Err(_) = recovery_completion_rx.blocking_recv() {
+            panic!("Failed to await recovery completion");
+        }
 
         let sender = rx
             .blocking_recv()
@@ -1331,6 +1344,8 @@ mod tests {
         let _store_dir_guard = test_util::DirectoryRemovalGuard::new(logger, store_dir.as_path());
         let store_path = store_dir.as_os_str().to_os_string();
 
+        let (recovery_completion_tx, recovery_completion_rx) = oneshot::channel();
+
         let handle = std::thread::spawn(move || {
             let store_dir = Path::new(&store_path);
             let mut io = create_io(store_dir).unwrap();
@@ -1342,9 +1357,13 @@ mod tests {
             let _ = tx.send(sender);
             let io = RefCell::new(io);
 
-            let _ = super::IO::run(io);
+            let _ = super::IO::run(io, recovery_completion_tx);
             println!("Module io stopped");
         });
+
+        if let Err(_) = recovery_completion_rx.blocking_recv() {
+            panic!("Failed to wait store recovery completion");
+        }
 
         let sender = rx
             .blocking_recv()

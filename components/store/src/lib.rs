@@ -11,12 +11,8 @@
 //! - [SPDK](https://spdk.io/doc/concurrency.html)
 //!
 //! # Implementation
-//! In production, this crate is supposed to run on Linux with modern kernel, offering full-fledged io-uring feature. It also works for macOS
-//!  and legacy Linux where io-uring is not available through falling back to kqueue and epoll respectively.
-//!
-//! # Rust Note
-//! `TAIT` feature is employed to wrap async methods into Future, which would then be wrapped into `tower`-like service and layers. As a result,
-//! nightly rust-toolchain is required for the moment.
+//! In production, this crate is supposed to run on Linux with modern kernel, offering full-fledged io-uring feature.
+#![allow(incomplete_features)]
 #![feature(type_alias_impl_trait)]
 #![feature(drain_filter)]
 #![feature(hash_drain_filter)]
@@ -43,9 +39,9 @@ mod request;
 mod store;
 
 pub use crate::io::buf::buf_slice::BufSlice;
-pub use crate::store::AppendResult;
-pub use crate::store::ElasticStore;
-pub use crate::store::FetchResult;
+pub use crate::store::append_result::AppendResult;
+pub use crate::store::elastic_store::ElasticStore;
+pub use crate::store::fetch_result::FetchResult;
 pub use request::AppendRecordRequest;
 
 /// Definition of core storage trait.
