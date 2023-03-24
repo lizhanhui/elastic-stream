@@ -288,7 +288,7 @@ func (c *conn) processFrameFromReader(res frameReadResult) bool {
 
 	err := res.err
 	if err != nil {
-		clientGone := errors.As(err, &io.EOF) || errors.As(err, &io.ErrUnexpectedEOF) || strings.Contains(err.Error(), "use of closed network connection")
+		clientGone := errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) || strings.Contains(err.Error(), "use of closed network connection")
 		if clientGone {
 			return false
 		}
