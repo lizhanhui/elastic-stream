@@ -83,6 +83,14 @@ func (c *Client) Do(req protocol.OutRequest, addr address) (protocol.InResponse,
 	return resp, err
 }
 
+func (c *Client) SealRanges(req *protocol.SealRangesRequest, addr address) (*protocol.SealRangesResponse, error) {
+	resp, err := c.Do(req, addr)
+	if err != nil {
+		return nil, err
+	}
+	return resp.(*protocol.SealRangesResponse), nil
+}
+
 func (c *Client) CloseIdleConnections() {
 	c.connPool.closeIdleConnections()
 }
