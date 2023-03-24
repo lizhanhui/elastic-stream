@@ -374,6 +374,21 @@ func NewGoAwayFrame(maxStreamID uint32, isResponse bool) *GoAwayFrame {
 	return f
 }
 
+// HeartbeatFrame is used to check the health of the connection
+type HeartbeatFrame struct {
+	baseFrame
+}
+
+// NewHeartbeatFrameReq creates a new heartbeat request
+func NewHeartbeatFrameReq(streamID uint32, fmt format.Format, header []byte) *HeartbeatFrame {
+	return &HeartbeatFrame{baseFrame{
+		OpCode:    operation.Operation{Code: operation.OpHeartbeat},
+		StreamID:  streamID,
+		HeaderFmt: fmt,
+		Header:    header,
+	}}
+}
+
 // DataFrame is used to handle other user-defined requests and responses
 type DataFrame struct {
 	baseFrame

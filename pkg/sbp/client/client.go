@@ -41,15 +41,17 @@ type Client struct {
 	// Default to format.FlatBuffer
 	Format format.Format
 
+	name     string
 	connPool *connPool
 
 	lg *zap.Logger
 }
 
 // NewClient creates a client
-func NewClient(lg *zap.Logger) *Client {
+func NewClient(name string, lg *zap.Logger) *Client {
 	c := &Client{
-		lg: lg,
+		name: name,
+		lg:   lg,
 	}
 	c.connPool = newConnPool(c)
 	return c
@@ -97,7 +99,7 @@ func (c *Client) newConn(rwc net.Conn) (*conn, error) {
 		conn:       rwc,
 		readerDone: make(chan struct{}),
 		streams:    make(map[uint32]*stream),
-		pings:      make(map[[8]byte]chan struct{}),
+		heartbeats: make(map[uint32]chan struct{}),
 		fr:         codec.NewFramer(bufio.NewWriter(rwc), bufio.NewReader(rwc), logger),
 		lg:         logger,
 	}
