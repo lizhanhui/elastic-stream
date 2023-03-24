@@ -59,7 +59,7 @@ func (p *connPool) getStartDialLocked(ctx context.Context, addr string) *dialCal
 	return call
 }
 
-func (p *connPool) MarkDead(cc *conn) {
+func (p *connPool) markDead(cc *conn) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	for _, addr := range p.addrs[cc] {

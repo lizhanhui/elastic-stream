@@ -24,7 +24,7 @@ import (
 )
 
 func environmentCheck(addr string, tb testing.TB) bool {
-	valid, err := checkAddr(addr[len("http://"):])
+	valid, err := checkAddr(addr)
 	if err != nil {
 		tb.Log("check port status failed", err)
 		return false

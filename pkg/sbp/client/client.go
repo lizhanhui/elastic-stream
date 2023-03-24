@@ -100,6 +100,7 @@ func (c *Client) newConn(rwc net.Conn) (*conn, error) {
 		readerDone: make(chan struct{}),
 		streams:    make(map[uint32]*stream),
 		heartbeats: make(map[uint32]chan struct{}),
+		reqMu:      make(chan struct{}, 1),
 		fr:         codec.NewFramer(bufio.NewWriter(rwc), bufio.NewReader(rwc), logger),
 		lg:         logger,
 	}

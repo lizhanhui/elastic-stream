@@ -60,13 +60,7 @@ type conn struct {
 
 func (cc *conn) roundTrip(req protocol.OutRequest) (protocol.InResponse, error) {
 	ctx := req.Context()
-	s := &stream{
-		cc:      cc,
-		ctx:     ctx,
-		abort:   make(chan struct{}),
-		respEnd: make(chan struct{}),
-		donec:   make(chan struct{}),
-	}
+	s := cc.newSteam(ctx)
 	go s.doRequest(req)
 
 	for {
@@ -86,6 +80,18 @@ func (cc *conn) roundTrip(req protocol.OutRequest) (protocol.InResponse, error) 
 			return nil, err
 		}
 	}
+}
+
+func (cc *conn) newSteam(ctx context.Context) *stream {
+	s := &stream{
+		cc:      cc,
+		ctx:     ctx,
+		abort:   make(chan struct{}),
+		respEnd: make(chan struct{}),
+		donec:   make(chan struct{}),
+		respRcv: make(chan struct{}),
+	}
+	return s
 }
 
 func (cc *conn) reserveNewRequest() bool {
@@ -371,7 +377,7 @@ func (rl *connReadLoop) processGoAway(f *codec.GoAwayFrame) error {
 	}
 
 	logger.Info("client received goaway", zap.Uint32("stream-id", f.StreamID))
-	cc.c.connPool.MarkDead(cc)
+	cc.c.connPool.markDead(cc)
 	cc.setGoAway(f)
 	return nil
 }
@@ -468,7 +474,7 @@ func (rl *connReadLoop) endStreamError(s *stream, err error) {
 func (rl *connReadLoop) cleanup() {
 	cc := rl.cc
 
-	cc.c.connPool.MarkDead(cc)
+	cc.c.connPool.markDead(cc)
 	defer cc.closeConn()
 	defer close(cc.readerDone)
 
