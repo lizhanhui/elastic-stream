@@ -96,7 +96,7 @@ func (c *RaftCluster) Start(s Server) error {
 	err := c.loadInfo()
 	if err != nil {
 		logger.Error("load cluster info failed", zap.Error(err))
-		return errors.WithMessage(err, "load cluster info")
+		return errors.Wrap(err, "load cluster info")
 	}
 
 	// TODO: start raft cluster
@@ -122,7 +122,7 @@ func (c *RaftCluster) loadInfo() error {
 	// 	return nil
 	// })
 	// if err != nil {
-	// 	return errors.WithMessage(err, "load streams")
+	// 	return errors.Wrap(err, "load streams")
 	// }
 	// logger.Info("load streams", zap.Int("count", c.cache.StreamCount()), zap.Duration("cost", time.Since(start)))
 
@@ -133,7 +133,7 @@ func (c *RaftCluster) loadInfo() error {
 		return nil
 	})
 	if err != nil {
-		return errors.WithMessage(err, "load data nodes")
+		return errors.Wrap(err, "load data nodes")
 	}
 	logger.Info("load data nodes", zap.Int("count", c.cache.DataNodeCount()), zap.Duration("cost", time.Since(start)))
 

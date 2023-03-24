@@ -52,7 +52,7 @@ func (l *Log) Adjust() error {
 	if l.EnableRotation {
 		wd, err := os.Getwd()
 		if err != nil {
-			return errors.WithMessage(err, "get current directory")
+			return errors.Wrap(err, "get current directory")
 		}
 		l.Zap.OutputPaths = addRotationSchema(l.Zap.OutputPaths, wd)
 		l.Zap.ErrorOutputPaths = addRotationSchema(l.Zap.ErrorOutputPaths, wd)
@@ -60,7 +60,7 @@ func (l *Log) Adjust() error {
 
 	level, err := zapcore.ParseLevel(l.Level)
 	if err != nil {
-		return errors.WithMessage(err, "parse log level")
+		return errors.Wrap(err, "parse log level")
 	}
 	l.Zap.Level = zap.NewAtomicLevelAt(level)
 
@@ -72,13 +72,13 @@ func (l *Log) Logger() (*zap.Logger, error) {
 	if l.EnableRotation {
 		err := l.setupRotation()
 		if err != nil {
-			return nil, errors.WithMessage(err, "setup rotation")
+			return nil, errors.Wrap(err, "setup rotation")
 		}
 	}
 
 	logger, err := l.Zap.Build()
 	if err != nil {
-		return nil, errors.WithMessage(err, "build logger")
+		return nil, errors.Wrap(err, "build logger")
 	}
 	return logger, nil
 }
@@ -163,7 +163,7 @@ func (l *Log) setupRotation() error {
 		}}, nil
 	})
 	if err != nil {
-		return errors.WithMessage(err, "register sink")
+		return errors.Wrap(err, "register sink")
 	}
 	return nil
 }

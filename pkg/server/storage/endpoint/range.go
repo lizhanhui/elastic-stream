@@ -50,7 +50,7 @@ func (e *Endpoint) GetRange(ctx context.Context, rangeID *rpcfb.RangeIdT) (*rpcf
 	value, err := e.Get(ctx, key)
 	if err != nil {
 		logger.Error("failed to get range", zap.Error(err))
-		return nil, errors.WithMessage(err, "get range")
+		return nil, errors.Wrap(err, "get range")
 	}
 	if value == nil {
 		return nil, nil
@@ -71,7 +71,7 @@ func (e *Endpoint) GetRangesByStream(ctx context.Context, streamID int64) ([]*rp
 	})
 	if err != nil {
 		logger.Error("failed to get ranges", zap.Error(err))
-		return nil, errors.WithMessage(err, "get ranges")
+		return nil, errors.Wrap(err, "get ranges")
 	}
 
 	return ranges, nil
@@ -98,7 +98,7 @@ func (e *Endpoint) forEachRangeInStreamLimited(ctx context.Context, streamID int
 	kvs, err := e.GetByRange(ctx, kv.Range{StartKey: startKey, EndKey: e.endRangePathInStream(streamID)}, limit)
 	if err != nil {
 		logger.Error("failed to get ranges", zap.Int32("start-id", startID), zap.Int64("limit", limit), zap.Error(err))
-		return MinRangeIndex - 1, errors.WithMessage(err, "get ranges")
+		return MinRangeIndex - 1, errors.Wrap(err, "get ranges")
 	}
 
 	for _, rangeKV := range kvs {
@@ -138,7 +138,7 @@ func (e *Endpoint) GetRangeIDsByDataNode(ctx context.Context, dataNodeID int32) 
 	})
 	if err != nil {
 		logger.Error("failed to get range ids by data node", zap.Error(err))
-		return nil, errors.WithMessage(err, "get range ids by data node")
+		return nil, errors.Wrap(err, "get range ids by data node")
 	}
 
 	return rangeIDs, nil
@@ -165,7 +165,7 @@ func (e *Endpoint) forEachRangeIDOnDataNodeLimited(ctx context.Context, dataNode
 	kvs, err := e.GetByRange(ctx, kv.Range{StartKey: startKey, EndKey: e.endRangePathOnDataNode(dataNodeID)}, limit)
 	if err != nil {
 		logger.Error("failed to get range ids by data node", zap.Int64("start-stream-id", startID.StreamId), zap.Int32("start-range-index", startID.RangeIndex), zap.Int64("limit", limit), zap.Error(err))
-		return nil, errors.WithMessage(err, "get range ids by data node")
+		return nil, errors.Wrap(err, "get range ids by data node")
 	}
 
 	nextID = startID
@@ -200,7 +200,7 @@ func (e *Endpoint) GetRangeIDsByDataNodeAndStream(ctx context.Context, streamID 
 	kvs, err := e.GetByRange(ctx, kv.Range{StartKey: startKey, EndKey: e.endRangePathOnDataNodeInStream(dataNodeID, streamID)}, 0)
 	if err != nil {
 		logger.Error("failed to get range ids by data node an stream", zap.Error(err))
-		return nil, errors.WithMessage(err, "get range ids by data node an stream")
+		return nil, errors.Wrap(err, "get range ids by data node an stream")
 	}
 
 	rangeIDs := make([]*rpcfb.RangeIdT, 0, len(kvs))
@@ -228,7 +228,7 @@ func rangePathOnDataNode(dataNodeID int32, streamID int64, rangeIndex int32) []b
 func rangeIDFromPath(path []byte) (dataNodeID int32, streamID int64, rangeIndex int32, err error) {
 	_, err = fmt.Sscanf(string(path), _rangeNodeFormat, &dataNodeID, &streamID, &rangeIndex)
 	if err != nil {
-		err = errors.WithMessagef(err, "parse range path: %s", string(path))
+		err = errors.Wrapf(err, "parse range path: %s", string(path))
 	}
 	return
 }

@@ -121,7 +121,7 @@ func (ls *Leadership) Campaign(ctx context.Context, leaseTimeout int64, leaderDa
 	ls.lease.Store(newLease)
 
 	if err := newLease.Grant(leaseTimeout, ls.lg); err != nil {
-		return false, errors.WithMessage(err, "grant lease")
+		return false, errors.Wrap(err, "grant lease")
 	}
 
 	resp, err := etcdutil.NewTxn(ctx, ls.client, logger).
@@ -135,7 +135,7 @@ func (ls *Leadership) Campaign(ctx context.Context, leaseTimeout int64, leaderDa
 		newLease.Close()
 		logger.Error("failed to set leader info", zap.String("leader-key", ls.leaderKey),
 			zap.String("leader-info", leaderData), zap.Int64("lease-id", int64(newLease.ID)), zap.Error(err))
-		return false, errors.WithMessage(err, "etcd transaction: compare and put leader info")
+		return false, errors.Wrap(err, "etcd transaction: compare and put leader info")
 	}
 	if !resp.Succeeded {
 		newLease.Close()
@@ -166,7 +166,7 @@ func (ls *Leadership) DeleteLeaderKey(ctx context.Context) error {
 	resp, err := etcdutil.NewTxn(ctx, ls.client, logger).Then(clientv3.OpDelete(ls.leaderKey)).Commit()
 	if err != nil {
 		logger.Error("failed to delete leader key", zap.String("leader-key", ls.leaderKey))
-		return errors.WithMessage(err, "delete etcd key")
+		return errors.Wrap(err, "delete etcd key")
 	}
 	if !resp.Succeeded {
 		logger.Error("failed to delete etcd key, transaction failed", zap.String("leader-key", ls.leaderKey))

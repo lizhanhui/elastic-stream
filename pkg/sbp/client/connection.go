@@ -447,7 +447,7 @@ func (rl *connReadLoop) parseResponse(f *codec.DataFrame) (resp protocol.InRespo
 
 	err = resp.Unmarshal(f.HeaderFmt, f.Header)
 	if err != nil {
-		return nil, errors.WithMessage(err, "unmarshal response")
+		return nil, errors.Wrap(err, "unmarshal response")
 	}
 	return
 }

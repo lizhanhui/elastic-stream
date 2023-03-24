@@ -37,7 +37,7 @@ func checkAddr(addr string) (bool, error) {
 		return s.RemoteAddr.String() == addr || s.LocalAddr.String() == addr
 	})
 	if err != nil {
-		return false, errors.WithMessage(err, "TCP socks")
+		return false, errors.Wrap(err, "TCP socks")
 	}
 	return len(tabs) < 1, nil
 }
