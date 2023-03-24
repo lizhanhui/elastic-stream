@@ -28,7 +28,7 @@ func TestClient_Do(t *testing.T) {
 	defer shutdown()
 
 	client := NewClient("test", zap.NewNop())
-	// TODO close client
+	defer client.CloseIdleConnections()
 
 	req := &protocol.SealRangesRequest{
 		SealRangesRequestT: rpcfb.SealRangesRequestT{

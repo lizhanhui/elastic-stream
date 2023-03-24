@@ -83,6 +83,10 @@ func (c *Client) Do(req protocol.OutRequest, addr address) (protocol.InResponse,
 	return resp, err
 }
 
+func (c *Client) CloseIdleConnections() {
+	c.connPool.closeIdleConnections()
+}
+
 func (c *Client) dialConn(ctx context.Context, addr string) (*conn, error) {
 	var d net.Dialer
 	conn, err := d.DialContext(ctx, "tcp", addr)

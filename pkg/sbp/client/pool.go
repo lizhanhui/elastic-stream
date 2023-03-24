@@ -25,6 +25,17 @@ func newConnPool(c *Client) *connPool {
 	}
 }
 
+func (p *connPool) closeIdleConnections() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	for _, vv := range p.conns {
+		for _, cc := range vv {
+			cc.closeIfIdle()
+		}
+	}
+}
+
 // getConn returns a connection to addr, creating one if necessary.
 func (p *connPool) getConn(req protocol.OutRequest, addr address) (*conn, error) {
 	for {
