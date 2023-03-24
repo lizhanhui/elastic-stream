@@ -108,13 +108,13 @@ impl AlignedBuf {
         self.limit.load(Ordering::Relaxed)
     }
 
-    pub(crate) fn write_u32(&self, value: u32) -> bool {
+    pub(crate) fn write_u32(&self, cursor: u64, value: u32) -> bool {
         if self.limit.load(Ordering::Relaxed) + 4 > self.capacity {
             return false;
         }
         let big_endian = value.to_be();
         let data = unsafe { slice::from_raw_parts(ptr::addr_of!(big_endian) as *const u8, 4) };
-        self.write_buf(data)
+        self.write_buf(cursor, data)
     }
 
     /// Get u32 in big-endian byte order.
@@ -127,13 +127,13 @@ impl AlignedBuf {
         Ok(u32::from_be(value))
     }
 
-    pub(crate) fn write_u64(&self, value: u64) -> bool {
+    pub(crate) fn write_u64(&self, cursor: u64, value: u64) -> bool {
         if self.limit.load(Ordering::Relaxed) + 8 > self.capacity {
             return false;
         }
         let big_endian = value.to_be();
         let data = unsafe { slice::from_raw_parts(ptr::addr_of!(big_endian) as *const u8, 8) };
-        self.write_buf(data)
+        self.write_buf(cursor, data)
     }
 
     pub(crate) fn read_u64(&self, pos: usize) -> Result<u64, StoreError> {
@@ -190,8 +190,13 @@ impl AlignedBuf {
         }
     }
 
-    pub(crate) fn write_buf(&self, buf: &[u8]) -> bool {
+    pub(crate) fn write_buf(&self, cursor: u64, buf: &[u8]) -> bool {
         let pos = self.limit.load(Ordering::Relaxed);
+        debug_assert_eq!(
+            cursor,
+            self.wal_offset + pos as u64,
+            "BufWriter#cursor == AlignedBuf#wal_offset + limit"
+        );
         if pos + buf.len() > self.capacity {
             return false;
         }
@@ -250,19 +255,19 @@ mod tests {
         let buf = AlignedBuf::new(log.clone(), 0, 128, alignment)?;
         assert_eq!(alignment, buf.remaining());
         let v = 1;
-        buf.write_u32(1);
+        buf.write_u32(0, 1);
         assert_eq!(buf.remaining(), 4096 - size_of::<u32>());
 
         let value = buf.read_u32(0)?;
         assert_eq!(v, value);
 
         let v = 42;
-        buf.write_u64(v);
+        buf.write_u64(4, v);
 
         assert_eq!(v, buf.read_u64(4)?);
 
         let msg = "hello world";
-        buf.write_buf(msg.as_bytes());
+        buf.write_buf(12, msg.as_bytes());
         assert_eq!(buf.remaining(), 4096 - 4 - 8 - msg.as_bytes().len());
 
         let payload = std::str::from_utf8(buf.slice(12..))?;

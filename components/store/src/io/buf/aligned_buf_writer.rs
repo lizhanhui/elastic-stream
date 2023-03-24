@@ -115,11 +115,11 @@ impl AlignedBufWriter {
             .map_while(|buf| {
                 let r = buf.remaining();
                 if r >= remaining - pos {
-                    buf.write_buf(&data[pos..]);
-                    pos = data.len();
+                    buf.write_buf(self.cursor + pos as u64, &data[pos..]);
+                    pos += &data[pos..].len();
                     None
                 } else {
-                    buf.write_buf(&data[pos..pos + r]);
+                    buf.write_buf(self.cursor + pos as u64, &data[pos..pos + r]);
                     pos += r;
                     Some(())
                 }
@@ -190,7 +190,7 @@ mod tests {
         assert_eq!(0, buf_writer.cursor);
         buf_writer.reset_cursor(4100);
         let aligned_buf = AlignedBuf::new(log.clone(), 4096, 4096, ALIGNMENT)?;
-        aligned_buf.write_u32(100);
+        aligned_buf.write_u32(4096, 100);
         let aligned_buf = Arc::new(aligned_buf);
         buf_writer.rebase_buf(aligned_buf);
 

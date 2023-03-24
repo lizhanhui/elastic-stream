@@ -87,8 +87,8 @@ mod tests {
         let log = test_util::terminal_logger();
         let aligned_buf = Arc::new(AlignedBuf::new(log.clone(), 0, 4096, 4096)?);
         let data = "Hello";
-        aligned_buf.write_u32(data.len() as u32);
-        aligned_buf.write_buf(data.as_bytes());
+        aligned_buf.write_u32(0, data.len() as u32);
+        aligned_buf.write_buf(4, data.as_bytes());
         let slice_buf = super::BufSlice::new(Arc::clone(&aligned_buf), 4, 4 + data.len() as u32);
 
         // Verify `Deref` trait
@@ -155,8 +155,8 @@ mod tests {
 
             let aligned_buf = Arc::new(AlignedBuf::new(log.clone(), 0, 4096, 4096)?);
             let data = "Hello";
-            aligned_buf.write_u32(data.len() as u32);
-            aligned_buf.write_buf(data.as_bytes());
+            aligned_buf.write_u32(0, data.len() as u32);
+            aligned_buf.write_buf(4, data.as_bytes());
 
             let buffers: Vec<_> = (0..16)
                 .map(|_n| super::BufSlice::new(Arc::clone(&aligned_buf), 4, 4 + data.len() as u32))
