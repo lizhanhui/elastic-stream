@@ -99,7 +99,10 @@ impl<'a> Append<'a> {
         let to_store_requests = match self.build_store_requests(&stream_manager).await {
             Ok(requests) => requests,
             Err(err_code) => {
-                error!(self.logger, "Failed to build store requests. Ranges of the target streams maybe is already sealed");
+                error!(
+                    self.logger,
+                    "Failed to build store requests. ErrorCode: {:?}", err_code
+                );
                 // The request frame is invalid, return a system error frame directly
                 response.flag_system_err();
                 response.header = Some(system_error_frame_bytes(err_code, "Invalid request"));

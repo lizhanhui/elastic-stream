@@ -43,6 +43,10 @@ impl Stream {
             .unwrap_or(false)
     }
 
+    pub fn last(&self) -> Option<&StreamRange> {
+        self.ranges.last()
+    }
+
     pub fn range(&self, index: i32) -> Option<StreamRange> {
         self.ranges
             .iter()

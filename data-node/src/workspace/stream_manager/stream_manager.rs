@@ -7,7 +7,10 @@ use model::{
 };
 use slog::{error, trace, Logger};
 
-use crate::{error::ServiceError, workspace::append_window::AppendWindow};
+use crate::{
+    error::ServiceError,
+    workspace::append_window::{self, AppendWindow},
+};
 
 use super::fetcher::Fetcher;
 
@@ -53,9 +56,24 @@ impl StreamManager {
             stream.push(range);
         }
 
-        self.streams
-            .iter_mut()
-            .for_each(|(_, stream)| stream.sort());
+        self.streams.iter_mut().for_each(|(_, stream)| {
+            stream.sort();
+            // TODO: recover last written offset of the range from local `Store`.
+            // For now, just create a new window for test purpose.
+            if stream.is_mut() {
+                if let Some(range) = stream.last() {
+                    let stream_id = range.stream_id();
+                    let append_window = AppendWindow::new(range.start());
+                    self.windows.insert(stream_id, append_window);
+                    trace!(
+                        self.log,
+                        "Create a new AppendWindow for stream={} with next={}",
+                        stream_id,
+                        range.start()
+                    );
+                }
+            }
+        });
 
         Ok(())
     }
@@ -94,7 +112,6 @@ impl StreamManager {
             );
 
             // TODO: verify current node is actually a leader or follower of the last mutable range.
-
             let window = AppendWindow::new(start);
 
             self.windows.insert(stream_id, window);
@@ -149,10 +166,23 @@ impl StreamManager {
         stream_id: i64,
         batch_size: usize,
     ) -> Result<u64, ServiceError> {
+        trace!(
+            self.log,
+            "Allocate record slots in batch for stream={}, batch-size={}",
+            stream_id,
+            batch_size
+        );
         if let Some(window) = self.windows.get_mut(&stream_id) {
             let start_slot = window.alloc_batch_slots(batch_size);
             return Ok(start_slot);
         }
+
+        error!(
+            self.log,
+            "Failed to allocate record slots in batch as there is no append-window available. stream={}, batch-size={}",
+            stream_id,
+            batch_size
+        );
         // There is not an append window available, the segments of the stream should have been sealed.
         Err(ServiceError::AlreadySealed)
     }
