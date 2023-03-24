@@ -140,6 +140,14 @@ impl StreamManager {
         unreachable!("Should have an `AppendWindow` for stream[id={}]", stream_id);
     }
 
+    pub(crate) fn alloc_record_batch_slots(
+        &mut self,
+        stream_id: i64,
+        batch_size: usize,
+    ) -> Result<u64, ServiceError> {
+        todo!()
+    }
+
     pub(crate) fn ack(&mut self, stream_id: i64, offset: u64) -> Result<(), ServiceError> {
         if let Some(stream) = self.streams.get_mut(&stream_id) {
             if !stream.is_mut() {

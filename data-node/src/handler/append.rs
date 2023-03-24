@@ -7,7 +7,7 @@ use futures::future::join_all;
 use protocol::rpc::header::{
     AppendRequest, AppendResponseArgs, AppendResultArgs, ErrorCode, StatusArgs,
 };
-use slog::{warn, Logger};
+use slog::{trace, warn, Logger};
 use std::{cell::RefCell, rc::Rc};
 use store::{
     error::AppendError, option::WriteOptions, AppendRecordRequest, AppendResult, ElasticStore,
@@ -116,7 +116,7 @@ impl<'a> Append<'a> {
         let res_from_store: Vec<Result<AppendResult, AppendError>> = join_all(futures).await;
 
         let mut builder = FlatBufferBuilder::with_capacity(MIN_BUFFER_SIZE);
-        let no_err_status = protocol::rpc::header::Status::create(
+        let ok_status = protocol::rpc::header::Status::create(
             &mut builder,
             &StatusArgs {
                 code: ErrorCode::OK,
@@ -145,7 +145,7 @@ impl<'a> Append<'a> {
                             request_index: 0,
                             base_offset: result.offset,
                             stream_append_time_ms: Utc::now().timestamp(),
-                            status: Some(no_err_status),
+                            status: Some(ok_status),
                         };
                         protocol::rpc::header::AppendResult::create(&mut builder, &args)
                     }
@@ -185,11 +185,13 @@ impl<'a> Append<'a> {
         let res_args = AppendResponseArgs {
             throttle_time_ms: 0,
             append_responses: Some(append_results_fb),
-            status: Some(no_err_status),
+            status: Some(ok_status),
         };
 
-        let res_offset = protocol::rpc::header::AppendResponse::create(&mut builder, &res_args);
-        let res_header = finish_response_builder(&mut builder, res_offset);
+        let response_header =
+            protocol::rpc::header::AppendResponse::create(&mut builder, &res_args);
+        trace!(self.logger, "AppendResponseHeader: {:?}", response_header);
+        let res_header = finish_response_builder(&mut builder, response_header);
         response.header = Some(res_header);
     }
 
