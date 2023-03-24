@@ -3,7 +3,7 @@ use std::time::Duration;
 use model::range::StreamRange;
 use placement_client::{PlacementClient, Response};
 use protocol::rpc::header::ErrorCode;
-use slog::{error, Logger};
+use slog::{error, trace, Logger};
 use tokio::sync::{mpsc, oneshot};
 
 use crate::error::ServiceError;
@@ -53,10 +53,16 @@ impl Fetcher {
                         );
                         ServiceError::AcquireRange
                     })?;
+                trace!(
+                    log,
+                    "Received list ranges response for current data node: {:?}",
+                    response
+                );
 
                 if let Response::ListRange { status, ranges } = response {
                     if ErrorCode::OK == status.code {
                         if let Some(ranges) = ranges {
+                            trace!(log, "Stream ranges on current data node are: {:?}", ranges);
                             return Ok(ranges);
                         } else {
                             error!(
