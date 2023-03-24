@@ -372,7 +372,7 @@ Response Header => throttle_time_ms [seal_responses]
       code => int16
       message => string
       detail => bytes
-    ranges => ...
+    range => ...
   
 Response Payload => Empty
 ```
@@ -390,7 +390,7 @@ Response Payload => Empty
 | code | int16 | The error code, or 0 if there was no error. |
 | message | string | The error message, or null if there was no error. |
 | detail | bytes | Additional information about the error. |
-| ranges | array | The array of ranges, returned by the seal ranges request. Both the PM and the data node will handle the seal ranges request. Only the sealed ranges will be returned from the data node, while the sealed ranges and the newly writable ranges will be returned from the PM. |
+| range | struct | Both the PM and the data node will handle the seal ranges request. The data node returns the sealed range, while the PM returns the newly writable range. |
 
 ### SYNC_RANGES
 The SYNC_RANGES frame(opcode=0x2003) syncs newly writable ranges to accelerate the availability of a newly created writable range.

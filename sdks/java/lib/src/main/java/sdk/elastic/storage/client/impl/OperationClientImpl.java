@@ -126,15 +126,15 @@ public class OperationClientImpl implements OperationClient {
                         return extractResponse(response);
                     }).exceptionally(e -> {
                         log.error("Failed to append a batch for streamId {}. Try to seal it. Exception detail: ", streamId, e);
-//                        RangeIdT rangeIdT = new RangeIdT();
-//                        rangeIdT.setStreamId(streamId);
-//                        rangeIdT.setRangeIndex(0);
-//                        // seal the range now.
-//                        resourceManager.sealRanges(Collections.singletonList(rangeIdT), timeout)
-//                            .thenAccept(sealResultList -> {
-//                                log.info("sealed for streamId {}, result: {}", streamId, sealResultList.get(0));
-//                                handleSealRangesResultList(sealResultList);
-//                            }).join();
+                        RangeIdT rangeIdT = new RangeIdT();
+                        rangeIdT.setStreamId(streamId);
+                        rangeIdT.setRangeIndex(0);
+                        // seal the range now.
+                        resourceManager.sealRanges(Collections.singletonList(rangeIdT), timeout)
+                            .thenAccept(sealResultList -> {
+                                log.info("sealed for streamId {}, result: {}", streamId, sealResultList.get(0));
+                                handleSealRangesResultList(sealResultList);
+                            }).join();
                         return new ArrayList<>();
                     });
             }
@@ -276,7 +276,23 @@ public class OperationClientImpl implements OperationClient {
         sealResultList.forEach(sealResultT -> {
             if (sealResultT.getStatus().getCode() == OK) {
                 // update the ranges.
-                streamRangeCache.put(sealResultT.getStreamId(), sealResultList.get(0).getRanges());
+                streamRangeCache.getLastRange(sealResultT.getStreamId())
+                    .thenAccept(rangeT -> {
+                        // If the same last range is returned, update the last range.
+                        if (rangeT.getRangeIndex() == sealResultT.getRange().getRangeIndex()) {
+                            streamRangeCache.get(sealResultT.getStreamId()).put(sealResultT.getRange().getStartOffset(), sealResultT.getRange());
+                            return;
+                        }
+                        // If the next range is returned, update the last range and put the new range.
+                        if ((rangeT.getRangeIndex() + 1) == sealResultT.getRange().getRangeIndex()) {
+                            rangeT.setEndOffset(sealResultT.getRange().getStartOffset());
+                            rangeT.setNextOffset(sealResultT.getRange().getStartOffset());
+                            streamRangeCache.get(sealResultT.getStreamId()).put(sealResultT.getRange().getStartOffset(), sealResultT.getRange());
+                        }
+                        // In other cases, just erase the cached map.
+                        streamRangeCache.invalidate(sealResultT.getStreamId());
+                    })
+                    .join();
             }
         });
     }

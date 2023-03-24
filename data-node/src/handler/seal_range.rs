@@ -61,14 +61,12 @@ impl<'a> SealRange<'a> {
                     Ok(offset) => {
                         status.code = ErrorCode::OK;
                         status.message = Some(String::from("OK"));
-                        let mut range_items = vec![];
                         let mut item = RangeT::default();
                         item.stream_id = range.stream_id;
                         item.range_index = range.range_index;
                         item.end_offset = offset as i64;
                         item.next_offset = offset as i64;
-                        range_items.push(item);
-                        result.ranges = Some(range_items);
+                        result.range = Some(Box::new(item));
                     }
                     Err(e) => {
                         error!(

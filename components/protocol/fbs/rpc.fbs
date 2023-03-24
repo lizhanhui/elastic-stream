@@ -275,10 +275,9 @@ table SealRangesResponse {
 table SealRangesResult {
     // The id of the stream
     stream_id: int64 = -1 (id: 0);
-    // The array of ranges, returned by the seal ranges request.
     // Both the PM and the data node will handle the seal ranges request.
-    // Only the sealed ranges will be returned from the data node, while the sealed ranges and the newly writable ranges will be returned from the PM.
-    ranges: [Range] (id: 1);
+    // The data node returns the sealed range, while the PM returns the newly writable range.
+    range: Range (id: 1);
     status: Status (id: 2);
 }
 
