@@ -58,6 +58,17 @@ func (req *baseRequest) Context() context.Context {
 	return req.ctx
 }
 
+// EmptyRequest is an empty request, used for unrecognized requests
+type EmptyRequest struct {
+	baseRequest
+	baseUnmarshaler
+}
+
+func (e EmptyRequest) Unmarshal(_ format.Format, _ []byte) error {
+	return nil
+}
+
+// HeartbeatRequest is a request to operation.OpHeartbeat
 type HeartbeatRequest struct {
 	baseRequest
 	baseMarshaller

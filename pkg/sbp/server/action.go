@@ -69,7 +69,7 @@ var (
 		},
 	}
 	_unknownAction = Action{
-		newReq:  func() protocol.InRequest { return nil },
+		newReq:  func() protocol.InRequest { return &protocol.EmptyRequest{} },
 		newResp: func() protocol.OutResponse { return &protocol.SystemErrorResponse{} },
 		act: func(_ Handler, _ protocol.InRequest, resp protocol.OutResponse) {
 			resp.Error(&rpcfb.StatusT{Code: rpcfb.ErrorCodeNOT_FOUND, Message: "unknown operation"})
