@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"context"
 	"fmt"
 	"testing"
 
@@ -11,7 +10,7 @@ import (
 	"github.com/AutoMQ/placement-manager/pkg/sbp/protocol"
 )
 
-func TestListRange(t *testing.T) {
+func TestListRanges(t *testing.T) {
 	re := require.New(t)
 
 	sbp, closeFunc := startSbp(t)
@@ -31,7 +30,7 @@ func TestListRange(t *testing.T) {
 		},
 	}}
 	resp := &protocol.ListRangesResponse{}
-	sbp.ListRange(context.Background(), req, resp)
+	sbp.ListRanges(req, resp)
 
 	re.Equal(resp.Status.Code, rpcfb.ErrorCodeOK)
 	re.Len(resp.ListResponses, 3)
@@ -50,7 +49,7 @@ func TestListRange(t *testing.T) {
 		},
 	}}
 	resp = &protocol.ListRangesResponse{}
-	sbp.ListRange(context.Background(), req, resp)
+	sbp.ListRanges(req, resp)
 
 	re.Equal(resp.Status.Code, rpcfb.ErrorCodeOK)
 	re.Len(resp.ListResponses, 3)
@@ -69,7 +68,7 @@ func TestListRange(t *testing.T) {
 		},
 	}}
 	resp = &protocol.ListRangesResponse{}
-	sbp.ListRange(context.Background(), req, resp)
+	sbp.ListRanges(req, resp)
 
 	re.Equal(resp.Status.Code, rpcfb.ErrorCodeOK)
 	re.Len(resp.ListResponses, 3)
@@ -90,7 +89,7 @@ func preHeartbeat(tb testing.TB, sbp *Sbp, nodeID int32) {
 			AdvertiseAddr: fmt.Sprintf("addr-%d", nodeID),
 		}}}
 	resp := &protocol.HeartbeatResponse{}
-	sbp.Heartbeat(context.Background(), req, resp)
+	sbp.Heartbeat(req, resp)
 
 	re.Equal(resp.Status.Code, rpcfb.ErrorCodeOK)
 }
@@ -105,7 +104,7 @@ func preCreateStreams(tb testing.TB, sbp *Sbp, num int, replicaNum int8) {
 		req.Streams[i] = &rpcfb.StreamT{ReplicaNums: replicaNum}
 	}
 	resp := &protocol.CreateStreamsResponse{}
-	sbp.CreateStreams(context.Background(), req, resp)
+	sbp.CreateStreams(req, resp)
 
 	re.Equal(resp.Status.Code, rpcfb.ErrorCodeOK)
 }

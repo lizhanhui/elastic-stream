@@ -1,8 +1,6 @@
 package handler
 
 import (
-	"context"
-
 	"github.com/pkg/errors"
 
 	"github.com/AutoMQ/placement-manager/api/rpcfb/rpcfb"
@@ -10,7 +8,8 @@ import (
 	"github.com/AutoMQ/placement-manager/pkg/server/cluster"
 )
 
-func (s *Sbp) CreateStreams(ctx context.Context, req *protocol.CreateStreamsRequest, resp *protocol.CreateStreamsResponse) {
+func (s *Sbp) CreateStreams(req *protocol.CreateStreamsRequest, resp *protocol.CreateStreamsResponse) {
+	ctx := req.Context()
 	if !s.c.IsLeader() {
 		s.notLeaderError(ctx, resp)
 		return
@@ -33,7 +32,8 @@ func (s *Sbp) CreateStreams(ctx context.Context, req *protocol.CreateStreamsRequ
 	resp.OK()
 }
 
-func (s *Sbp) DeleteStreams(ctx context.Context, req *protocol.DeleteStreamsRequest, resp *protocol.DeleteStreamsResponse) {
+func (s *Sbp) DeleteStreams(req *protocol.DeleteStreamsRequest, resp *protocol.DeleteStreamsResponse) {
+	ctx := req.Context()
 	if !s.c.IsLeader() {
 		s.notLeaderError(ctx, resp)
 		return
@@ -59,7 +59,8 @@ func (s *Sbp) DeleteStreams(ctx context.Context, req *protocol.DeleteStreamsRequ
 	resp.OK()
 }
 
-func (s *Sbp) UpdateStreams(ctx context.Context, req *protocol.UpdateStreamsRequest, resp *protocol.UpdateStreamsResponse) {
+func (s *Sbp) UpdateStreams(req *protocol.UpdateStreamsRequest, resp *protocol.UpdateStreamsResponse) {
+	ctx := req.Context()
 	if !s.c.IsLeader() {
 		s.notLeaderError(ctx, resp)
 		return
@@ -81,7 +82,8 @@ func (s *Sbp) UpdateStreams(ctx context.Context, req *protocol.UpdateStreamsRequ
 	resp.OK()
 }
 
-func (s *Sbp) DescribeStreams(ctx context.Context, req *protocol.DescribeStreamsRequest, resp *protocol.DescribeStreamsResponse) {
+func (s *Sbp) DescribeStreams(req *protocol.DescribeStreamsRequest, resp *protocol.DescribeStreamsResponse) {
+	ctx := req.Context()
 	if !s.c.IsLeader() {
 		s.notLeaderError(ctx, resp)
 		return

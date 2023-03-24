@@ -130,6 +130,14 @@ func (f baseFrame) IsResponse() bool {
 	return f.Flag.Has(FlagResponse)
 }
 
+func (f baseFrame) IsResponseEnd() bool {
+	return f.Flag.Has(FlagResponseEnd)
+}
+
+func (f baseFrame) IsSystemError() bool {
+	return f.Flag.Has(FlagSystemError)
+}
+
 // Framer reads and writes Frames
 type Framer struct {
 	streamID atomic.Uint32
@@ -161,13 +169,14 @@ func (fr *Framer) NextID() uint32 {
 }
 
 // ReadFrame reads a single frame
-func (fr *Framer) ReadFrame() (Frame, func(), error) {
+// The returned free function is not nil if and only if err is nil. And it should be called after the frame is no longer needed.
+func (fr *Framer) ReadFrame() (frame Frame, free func(), err error) {
 	logger := fr.lg
 
 	buf := fr.fixedBuf[:_fixedHeaderLen]
-	_, err := io.ReadFull(fr.r, buf)
+	_, err = io.ReadFull(fr.r, buf)
 	if err != nil {
-		return &baseFrame{}, nil, errors.WithMessage(err, "read fixed header")
+		return &baseFrame{}, nil, errors.Wrap(err, "read fixed header")
 	}
 	headerBuf := bytes.NewBuffer(buf)
 
@@ -195,11 +204,11 @@ func (fr *Framer) ReadFrame() (Frame, func(), error) {
 	payloadLen := frameLen + 4 - _fixedHeaderLen - headerLen - 4 // add frameLength width, sub payloadChecksum width
 
 	tBuf := mcache.Malloc(int(headerLen + payloadLen))
-	free := func() { mcache.Free(tBuf) }
+	free = func() { mcache.Free(tBuf) }
 	_, err = io.ReadFull(fr.r, tBuf)
 	if err != nil {
 		free()
-		return &baseFrame{}, nil, errors.WithMessage(err, "read extended header and payload")
+		return &baseFrame{}, nil, errors.Wrap(err, "read extended header and payload")
 	}
 
 	header := func() []byte {
@@ -219,7 +228,7 @@ func (fr *Framer) ReadFrame() (Frame, func(), error) {
 	err = binary.Read(fr.r, binary.BigEndian, &checksum)
 	if err != nil {
 		free()
-		return &baseFrame{}, nil, errors.WithMessage(err, "read payload checksum")
+		return &baseFrame{}, nil, errors.Wrap(err, "read payload checksum")
 	}
 	if payloadLen > 0 {
 		if ckm := crc32.ChecksumIEEE(payload); ckm != checksum {
@@ -241,7 +250,6 @@ func (fr *Framer) ReadFrame() (Frame, func(), error) {
 		logger.Debug("read frame", bFrame.Summarize()...)
 	}
 
-	var frame Frame
 	switch bFrame.OpCode.Code {
 	case operation.OpPing:
 		frame = &PingFrame{baseFrame: bFrame}
@@ -326,7 +334,7 @@ func (fr *Framer) endWrite() error {
 	_, err := fr.w.Write(fr.wbuf)
 	if err != nil {
 		logger.Error("failed to write frame", zap.Error(err))
-		return errors.WithMessage(err, "write frame")
+		return errors.Wrap(err, "write frame")
 	}
 	return nil
 }
@@ -386,16 +394,30 @@ type DataFrameContext struct {
 	StreamID  uint32
 }
 
-// NewDataFrameReq returns a new DataFrame request
-func NewDataFrameReq(context *DataFrameContext, header []byte, payload []byte, flag Flags) *DataFrame {
+// NewHeartbeatFrameReq creates a new heartbeat request
+func NewHeartbeatFrameReq(streamID uint32, fmt format.Format, header []byte) *DataFrame {
+	// treat heartbeat as a special data frame
 	return &DataFrame{baseFrame{
+		OpCode:    operation.Operation{Code: operation.OpHeartbeat},
+		StreamID:  streamID,
+		HeaderFmt: fmt,
+		Header:    header,
+	}}
+}
+
+// NewDataFrameReq returns a new DataFrame request
+func NewDataFrameReq(context *DataFrameContext, header []byte, payload []byte, flags ...Flags) *DataFrame {
+	req := &DataFrame{baseFrame{
 		OpCode:    context.OpCode,
-		Flag:      flag,
 		StreamID:  context.StreamID,
 		HeaderFmt: context.HeaderFmt,
 		Header:    header,
 		Payload:   payload,
 	}}
+	for _, flag := range flags {
+		req.Flag |= flag
+	}
+	return req
 }
 
 // NewDataFrameResp returns a new DataFrame response with the given header and payload

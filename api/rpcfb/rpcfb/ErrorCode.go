@@ -7,7 +7,7 @@ import "strconv"
 type ErrorCode int16
 
 const (
-	ErrorCodeNONE                     ErrorCode = 0
+	ErrorCodeERROR_CODE_UNSPECIFIED   ErrorCode = 0
 	ErrorCodeOK                       ErrorCode = 1200
 	ErrorCodeBAD_REQUEST              ErrorCode = 1400
 	ErrorCodeUNAUTHORIZED             ErrorCode = 1401
@@ -29,7 +29,7 @@ const (
 )
 
 var EnumNamesErrorCode = map[ErrorCode]string{
-	ErrorCodeNONE:                     "NONE",
+	ErrorCodeERROR_CODE_UNSPECIFIED:   "ERROR_CODE_UNSPECIFIED",
 	ErrorCodeOK:                       "OK",
 	ErrorCodeBAD_REQUEST:              "BAD_REQUEST",
 	ErrorCodeUNAUTHORIZED:             "UNAUTHORIZED",
@@ -51,7 +51,7 @@ var EnumNamesErrorCode = map[ErrorCode]string{
 }
 
 var EnumValuesErrorCode = map[string]ErrorCode{
-	"NONE":                     ErrorCodeNONE,
+	"ERROR_CODE_UNSPECIFIED":   ErrorCodeERROR_CODE_UNSPECIFIED,
 	"OK":                       ErrorCodeOK,
 	"BAD_REQUEST":              ErrorCodeBAD_REQUEST,
 	"UNAUTHORIZED":             ErrorCodeUNAUTHORIZED,

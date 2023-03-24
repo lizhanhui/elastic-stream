@@ -104,6 +104,7 @@ func (c *conn) serve() {
 				c.goAway(false)
 			case shutdownTimerMsg:
 				logger.Info("GOAWAY close timer fired, closing connection")
+				return
 			case gracefulShutdownMsg:
 				logger.Info("start to shut down gracefully")
 				c.goAway(false)
@@ -126,6 +127,7 @@ func (c *conn) serve() {
 // It runs on its own goroutine.
 func (c *conn) readFrames() {
 	c.serveG.CheckNotOn()
+	logger := c.lg
 	for {
 		f, free, err := c.framer.ReadFrame()
 		select {
@@ -134,6 +136,7 @@ func (c *conn) readFrames() {
 			return
 		}
 		if err != nil {
+			logger.Debug("failed to read frame", zap.Error(err))
 			// TODO check errors, skip stream errors
 			return
 		}
@@ -285,7 +288,7 @@ func (c *conn) processFrameFromReader(res frameReadResult) bool {
 
 	err := res.err
 	if err != nil {
-		clientGone := errors.As(err, &io.EOF) || errors.As(err, &io.ErrUnexpectedEOF) || strings.Contains(err.Error(), "use of closed network connection")
+		clientGone := errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) || strings.Contains(err.Error(), "use of closed network connection")
 		if clientGone {
 			return false
 		}
@@ -349,6 +352,9 @@ func (c *conn) processFrame(f codec.Frame) error {
 
 func (c *conn) processPing(f *codec.PingFrame, st *stream) error {
 	c.serveG.Check()
+	if f.IsResponse() {
+		return nil
+	}
 	outFrame, free := codec.NewPingFrameResp(f)
 	c.writeFrame(frameWriteRequest{
 		f:         outFrame,
@@ -362,13 +368,22 @@ func (c *conn) processPing(f *codec.PingFrame, st *stream) error {
 func (c *conn) processGoAway(f *codec.GoAwayFrame, _ *stream) error {
 	logger := c.lg
 	c.serveG.Check()
+	if f.IsResponse() {
+		// no need to deal with a GOAWAY response
+		return nil
+	}
 	logger.Info("received GOAWAY frame, starting graceful shutdown", zap.Uint32("max-stream-id", f.StreamID))
 	c.goAway(true)
 	return nil
 }
 
 func (c *conn) processDataFrame(f *codec.DataFrame, st *stream) error {
+	logger := c.lg
 	c.serveG.Check()
+	if f.IsResponse() {
+		logger.Warn("server ignoring response data frame", f.Info()...)
+		return nil
+	}
 	if c.idleTimer != nil {
 		c.idleTimer.Stop()
 	}
@@ -381,7 +396,7 @@ func (c *conn) processDataFrame(f *codec.DataFrame, st *stream) error {
 	return nil
 }
 
-func (c *conn) generateAct(f *codec.DataFrame, action *Action) (act func(resp protocol.Response), resp protocol.Response) {
+func (c *conn) generateAct(f *codec.DataFrame, action *Action) (act func(resp protocol.OutResponse), resp protocol.OutResponse) {
 	req := action.newReq()
 	resp = action.newResp()
 
@@ -392,24 +407,22 @@ func (c *conn) generateAct(f *codec.DataFrame, action *Action) (act func(resp pr
 			Code:    rpcfb.ErrorCodeBAD_REQUEST,
 			Message: "failed to unmarshal frame header",
 		})
-		act = func(_ protocol.Response) {}
+		act = func(_ protocol.OutResponse) {}
 		return
 	}
 
 	id, _ := uuid.NewRandom()
 	ctx := traceutil.SetTraceID(c.ctx, id.String())
 
+	var cancel context.CancelFunc = func() {}
 	if req.Timeout() > 0 {
-		ctx, cancel := context.WithTimeout(ctx, time.Duration(req.Timeout())*time.Millisecond)
-		act = func(resp protocol.Response) {
-			defer cancel()
-			action.act(ctx, c.server.handler, req, resp)
-		}
-		return
+		ctx, cancel = context.WithTimeout(ctx, time.Duration(req.Timeout())*time.Millisecond)
 	}
 
-	act = func(resp protocol.Response) {
-		action.act(ctx, c.server.handler, req, resp)
+	req.SetContext(ctx)
+	act = func(resp protocol.OutResponse) {
+		defer cancel()
+		action.act(c.server.handler, req, resp)
 	}
 	return
 }
@@ -418,7 +431,7 @@ var errChanPool = sync.Pool{
 	New: func() interface{} { return make(chan error, 1) },
 }
 
-func (c *conn) runHandlerAndWrite(frameCtx *codec.DataFrameContext, st *stream, act func(protocol.Response), resp protocol.Response) {
+func (c *conn) runHandlerAndWrite(frameCtx *codec.DataFrameContext, st *stream, act func(protocol.OutResponse), resp protocol.OutResponse) {
 	logger := c.lg
 	c.serveG.CheckNotOn()
 
@@ -470,7 +483,7 @@ func (c *conn) runHandlerAndWrite(frameCtx *codec.DataFrameContext, st *stream, 
 	}
 }
 
-func (c *conn) runHandler(act func(protocol.Response), resp protocol.Response) {
+func (c *conn) runHandler(act func(protocol.OutResponse), resp protocol.OutResponse) {
 	logger := c.lg
 	didPanic := true
 	defer func() {

@@ -47,6 +47,11 @@ func (f Format) String() string {
 	}
 }
 
+// Valid returns true if the format is valid
+func (f Format) Valid() bool {
+	return f.code == flatBuffer || f.code == protoBuffer || f.code == json
+}
+
 // Code returns the format code
 func (f Format) Code() uint8 {
 	return f.code

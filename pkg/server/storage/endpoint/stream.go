@@ -80,7 +80,7 @@ func (e *Endpoint) CreateStreams(ctx context.Context, params []*CreateStreamPara
 			streamIDs = append(streamIDs, param.StreamT.StreamId)
 		}
 		logger.Error("failed to save streams", zap.Int64s("stream-ids", streamIDs), zap.Error(err))
-		return nil, errors.WithMessage(err, "save streams")
+		return nil, errors.Wrap(err, "save streams")
 	}
 	if len(prevKvs) != 0 {
 		existedStreamIDs := streamIDsFromPaths(prevKvs)
@@ -101,7 +101,7 @@ func (e *Endpoint) DeleteStreams(ctx context.Context, streamIDs []int64) ([]*rpc
 	prevKvs, err := e.BatchDelete(ctx, streamPaths, true)
 	if err != nil {
 		logger.Error("failed to delete stream", zap.Error(err))
-		return nil, errors.WithMessage(err, "delete stream")
+		return nil, errors.Wrap(err, "delete stream")
 	}
 	if len(prevKvs) < len(streamIDs) {
 		existedStreamIDs := streamIDsFromPaths(prevKvs)
@@ -143,7 +143,7 @@ func (e *Endpoint) UpdateStreams(ctx context.Context, streams []*rpcfb.StreamT) 
 			streamIDs = append(streamIDs, stream.StreamId)
 		}
 		logger.Error("failed to update stream", zap.Int64s("stream-ids", streamIDs), zap.Error(err))
-		return nil, errors.WithMessage(err, "update stream")
+		return nil, errors.Wrap(err, "update stream")
 	}
 	if len(prevKvs) < len(streams) {
 		existedStreamIDs := streamIDsFromPaths(prevKvs)
@@ -165,7 +165,7 @@ func (e *Endpoint) GetStream(ctx context.Context, streamID int64) (*rpcfb.Stream
 	value, err := e.Get(ctx, streamPath(streamID))
 	if err != nil {
 		logger.Error("failed to get stream", zap.Error(err))
-		return nil, errors.WithMessage(err, "get stream")
+		return nil, errors.Wrap(err, "get stream")
 	}
 	if value == nil {
 		return nil, nil
@@ -195,7 +195,7 @@ func (e *Endpoint) forEachStreamLimited(ctx context.Context, f func(stream *rpcf
 	kvs, err := e.GetByRange(ctx, kv.Range{StartKey: startKey, EndKey: e.endStreamPath()}, limit)
 	if err != nil {
 		logger.Error("failed to get streams", zap.Int64("start-id", startID), zap.Int64("limit", limit), zap.Error(err))
-		return MinStreamID - 1, errors.WithMessage(err, "get streams")
+		return MinStreamID - 1, errors.Wrap(err, "get streams")
 	}
 
 	for _, streamKV := range kvs {
@@ -236,7 +236,7 @@ func streamIDsFromPaths(prevKvs []kv.KeyValue) []int64 {
 func streamIDFromPath(path []byte) (streamID int64, err error) {
 	_, err = fmt.Sscanf(string(path), _streamFormat, &streamID)
 	if err != nil {
-		err = errors.WithMessagef(err, "parse stream id from path %s", string(path))
+		err = errors.Wrapf(err, "parse stream id from path %s", string(path))
 	}
 	return
 }

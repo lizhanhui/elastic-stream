@@ -34,7 +34,7 @@ type ModRevision = int64
 func GetOne(ctx context.Context, c *clientv3.Client, key []byte, logger *zap.Logger) (*mvccpb.KeyValue, error) {
 	resp, err := Get(ctx, c, key, logger)
 	if err != nil {
-		return nil, errors.WithMessage(err, "get value from etcd")
+		return nil, errors.Wrap(err, "get value from etcd")
 	}
 
 	if n := len(resp.Kvs); n == 0 {
@@ -61,7 +61,7 @@ func Get(ctx context.Context, c *clientv3.Client, k []byte, logger *zap.Logger, 
 
 	if err != nil {
 		logger.Error("failed to get value", zap.String("key", key), zap.Error(err))
-		return resp, errors.WithMessagef(err, "get value by key %s", key)
+		return resp, errors.Wrapf(err, "get value by key %s", key)
 	}
 
 	return resp, nil

@@ -22,11 +22,11 @@ var (
 // Server is an SBP server
 type Server struct {
 	// TODO move into a config
-	// HeartBeatInterval defines the interval duration between sending heartbeats from client to server.
-	HeartBeatInterval time.Duration
-	// HeartBeatMissCount is the number of consecutive heartbeats that the server can miss
+	// HeartbeatInterval defines the interval duration between sending heartbeats from client to server.
+	HeartbeatInterval time.Duration
+	// HeartbeatMissCount is the number of consecutive heartbeats that the server can miss
 	// before considering the client to be unresponsive and terminating the connection.
-	HeartBeatMissCount int
+	HeartbeatMissCount int
 
 	shuttingDown atomic.Bool
 	handler      Handler
@@ -119,7 +119,7 @@ func (s *Server) Serve(l net.Listener) error {
 // future calls to methods such as Serve will return ErrServerClosed.
 func (s *Server) Shutdown(ctx context.Context) error {
 	logger := s.lg
-	if !s.shuttingDown.Swap(true) {
+	if s.shuttingDown.Swap(true) {
 		logger.Warn("server is already shutting down")
 		return nil
 	}
@@ -152,18 +152,20 @@ func (s *Server) Shutdown(ctx context.Context) error {
 }
 
 func (s *Server) newConn(rwc net.Conn) *conn {
+	logger := s.lg.With(zap.String("remote-client-addr", rwc.RemoteAddr().String()))
 	c := &conn{
 		server:           s,
 		rwc:              rwc,
-		framer:           codec.NewFramer(bufio.NewWriter(rwc), bufio.NewReader(rwc), s.lg),
+		framer:           codec.NewFramer(bufio.NewWriter(rwc), bufio.NewReader(rwc), logger),
 		doneServing:      make(chan struct{}),
 		readFrameCh:      make(chan frameReadResult),
 		wantWriteFrameCh: make(chan frameWriteRequest, 8),
 		wroteFrameCh:     make(chan frameWriteResult, 1), // buffered; one send in writeFrameAsync
+		serveMsgCh:       make(chan *serverMessage, 8),
 		streams:          make(map[uint32]*stream),
 		wScheduler:       newWriteScheduler(),
-		idleTimeout:      s.HeartBeatInterval * time.Duration(s.HeartBeatMissCount),
-		lg:               s.lg.With(zap.String("remote-addr", rwc.RemoteAddr().String())),
+		idleTimeout:      s.HeartbeatInterval * time.Duration(s.HeartbeatMissCount),
+		lg:               logger,
 	}
 	c.ctx, c.cancelCtx = context.WithCancel(s.ctx)
 	return c

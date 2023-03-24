@@ -55,5 +55,5 @@ func (t *Txn) Commit() (*clientv3.TxnResponse, error) {
 	}
 	// TODO add prometheus counters here
 
-	return resp, errors.WithMessage(err, "commit txn")
+	return resp, errors.Wrap(err, "commit txn")
 }

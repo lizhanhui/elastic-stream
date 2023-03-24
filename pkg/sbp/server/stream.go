@@ -12,8 +12,6 @@ type stream struct {
 	cc *conn
 
 	id uint32
-	// rp io.PipeReader
-	// wp io.PipeWriter
 
 	state streamState
 }

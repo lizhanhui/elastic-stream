@@ -4,7 +4,7 @@ namespace header;
 // 5xx is not used as we have two kinds of servers: placement manager and data node. Instead, use
 // 15xx for placement manager errors and 25xx for data node errors.
 enum ErrorCode : int16 {
-    NONE = 0,
+    ERROR_CODE_UNSPECIFIED = 0,
 
     // 12xx means success or partial success.
     OK = 1200,
@@ -78,7 +78,7 @@ table SystemErrorResponse {
 }
 
 enum ClientRole : byte {
-    CLIENT_ROLE_UNKNOWN = 0,
+    CLIENT_ROLE_UNSPECIFIED = 0,
     CLIENT_ROLE_PM = 1,
     CLIENT_ROLE_DATA_NODE = 2,
     CLIENT_ROLE_CUSTOMER = 3,
@@ -275,10 +275,9 @@ table SealRangesResponse {
 table SealRangesResult {
     // The id of the stream
     stream_id: int64 = -1 (id: 0);
-    // The array of ranges, returned by the seal ranges request.
     // Both the PM and the data node will handle the seal ranges request.
-    // Only the sealed ranges will be returned from the data node, while the sealed ranges and the newly writable ranges will be returned from the PM.
-    ranges: [Range] (id: 1);
+    // The data node returns the sealed range, while the PM returns the newly writable range.
+    range: Range (id: 1);
     status: Status (id: 2);
 }
 
@@ -331,8 +330,7 @@ table DescribeRangesResponse {
 table DescribeRangeResult {
     // The id of the stream
     stream_id: int64 = -1 (id: 0);
-    // The array of ranges, returned by the describe ranges request.
-    ranges: Range (id: 1);
+    range: Range (id: 1);
     status: Status (id: 2);
 }
 

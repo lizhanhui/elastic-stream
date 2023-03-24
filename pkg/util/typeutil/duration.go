@@ -35,7 +35,7 @@ func (d *Duration) UnmarshalJSON(text []byte) error {
 	case string:
 		duration, err := time.ParseDuration(value)
 		if err != nil {
-			return errors.WithMessage(err, "parse from string")
+			return errors.Wrap(err, "parse from string")
 		}
 		d.Duration = duration
 		return nil
@@ -53,7 +53,7 @@ func (d *Duration) MarshalText() ([]byte, error) {
 func (d *Duration) UnmarshalText(text []byte) error {
 	duration, err := time.ParseDuration(string(text))
 	if err != nil {
-		return errors.WithMessage(err, "parse duration from text")
+		return errors.Wrap(err, "parse duration from text")
 	}
 	d.Duration = duration
 	return nil

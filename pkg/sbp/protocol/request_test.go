@@ -41,7 +41,7 @@ func TestListRangesRequest_Unmarshal(t *testing.T) {
 				data: []byte{},
 			},
 			wantErr: true,
-			errMsg:  "unsupported request format",
+			errMsg:  "unsupported format",
 		},
 		{
 			name: "JSON",
@@ -50,7 +50,7 @@ func TestListRangesRequest_Unmarshal(t *testing.T) {
 				data: []byte{},
 			},
 			wantErr: true,
-			errMsg:  "unsupported request format",
+			errMsg:  "unsupported format",
 		},
 		{
 			name: "Unknown",
@@ -59,7 +59,7 @@ func TestListRangesRequest_Unmarshal(t *testing.T) {
 				data: []byte{},
 			},
 			wantErr: true,
-			errMsg:  "unsupported request format",
+			errMsg:  "unsupported format",
 		},
 	}
 	for _, tt := range tests {

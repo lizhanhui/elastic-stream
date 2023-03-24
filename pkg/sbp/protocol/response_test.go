@@ -33,21 +33,21 @@ func TestListRangesResponse_Marshal(t *testing.T) {
 			resp:    mockListRangesResponse,
 			fmt:     format.ProtoBuffer(),
 			wantErr: true,
-			errMsg:  "unsupported response format",
+			errMsg:  "unsupported format",
 		},
 		{
 			name:    "JSON",
 			resp:    mockListRangesResponse,
 			fmt:     format.JSON(),
 			wantErr: true,
-			errMsg:  "unsupported response format",
+			errMsg:  "unsupported format",
 		},
 		{
 			name:    "Unknown",
 			resp:    mockListRangesResponse,
 			fmt:     format.NewFormat(0),
 			wantErr: true,
-			errMsg:  "unsupported response format",
+			errMsg:  "unsupported format",
 		},
 	}
 	for _, tt := range tests {

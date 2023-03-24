@@ -29,10 +29,14 @@ var (
 	testAddrMap   = make(map[string]struct{})
 )
 
-// Alloc allocates a local URL for testing.
 func Alloc(tb testing.TB) string {
+	return fmt.Sprintf("http://%s", AllocAddr(tb))
+}
+
+// AllocAddr allocates a local address (like host:port) for testing.
+func AllocAddr(tb testing.TB) string {
 	for i := 0; i < 10; i++ {
-		if u := tryAllocTestURL(tb); u != "" {
+		if u := tryAllocTestAddr(tb); u != "" {
 			return u
 		}
 		time.Sleep(time.Second)
@@ -41,12 +45,12 @@ func Alloc(tb testing.TB) string {
 	return ""
 }
 
-func tryAllocTestURL(tb testing.TB) string {
+func tryAllocTestAddr(tb testing.TB) string {
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		tb.Fatal("listen failed", err)
 	}
-	addr := fmt.Sprintf("http://%s", l.Addr())
+	addr := l.Addr().String()
 	err = l.Close()
 	if err != nil {
 		tb.Fatal("close failed", err)

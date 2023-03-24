@@ -1,23 +1,32 @@
 package protocol
 
 import (
-	"github.com/pkg/errors"
-
 	"github.com/AutoMQ/placement-manager/api/rpcfb/rpcfb"
 	"github.com/AutoMQ/placement-manager/pkg/sbp/codec/format"
 	"github.com/AutoMQ/placement-manager/pkg/util/fbutil"
 )
 
-const (
-	_unsupportedRespErrMsg = "unsupported response format: %s"
-)
+// response is an SBP response
+type response interface{}
 
-// Response is an SBP response
-type Response interface {
-	// Marshal encodes the Response using the specified format.
-	// The returned byte slice is not nil when and only when the error is nil.
-	// The returned byte slice should be freed after use.
-	Marshal(fmt format.Format) ([]byte, error)
+type InResponse interface {
+	response
+	unmarshaler
+
+	// ThrottleTime returns the time in milliseconds to throttle the client.
+	// It returns 0 if the response doesn't have a throttle time.
+	ThrottleTime() int32
+}
+
+type noThrottleResponse struct{}
+
+func (n noThrottleResponse) ThrottleTime() int32 {
+	return 0
+}
+
+type OutResponse interface {
+	response
+	marshaller
 
 	// Error sets the error status of the response.
 	Error(status *rpcfb.StatusT)
@@ -29,51 +38,21 @@ type Response interface {
 	IsEnd() bool
 }
 
-type marshaller interface {
-	flatBufferMarshaller
-	protoBufferMarshaller
-	jsonMarshaller
-}
-
-type flatBufferMarshaller interface {
-	marshalFlatBuffer() ([]byte, error)
-}
-
-type protoBufferMarshaller interface {
-	marshalProtoBuffer() ([]byte, error)
-}
-
-type jsonMarshaller interface {
-	marshalJSON() ([]byte, error)
-}
-
-// baseResponse is a default implementation of marshaller.
-type baseResponse struct{}
-
-func (b *baseResponse) marshalFlatBuffer() ([]byte, error) {
-	return nil, errors.Errorf(_unsupportedRespErrMsg, format.FlatBuffer())
-}
-
-func (b *baseResponse) marshalProtoBuffer() ([]byte, error) {
-	return nil, errors.Errorf(_unsupportedRespErrMsg, format.ProtoBuffer())
-}
-
-func (b *baseResponse) marshalJSON() ([]byte, error) {
-	return nil, errors.Errorf(_unsupportedRespErrMsg, format.JSON())
-}
-
 // singleResponse represents a response that corresponds to a single request.
 // It is used when a request is expected to have only one response.
 type singleResponse struct{}
 
-func (s *singleResponse) IsEnd() bool {
+func (s singleResponse) IsEnd() bool {
 	return true
 }
 
 // SystemErrorResponse is used to return the error code and error message if the system error flag of sbp is set.
 type SystemErrorResponse struct {
-	baseResponse
+	baseMarshaller
+	baseUnmarshaler
+	noThrottleResponse
 	singleResponse
+
 	rpcfb.SystemErrorResponseT
 }
 
@@ -83,6 +62,15 @@ func (se *SystemErrorResponse) marshalFlatBuffer() ([]byte, error) {
 
 func (se *SystemErrorResponse) Marshal(fmt format.Format) ([]byte, error) {
 	return marshal(se, fmt)
+}
+
+func (se *SystemErrorResponse) unmarshalFlatBuffer(data []byte) error {
+	se.SystemErrorResponseT = *rpcfb.GetRootAsSystemErrorResponse(data, 0).UnPack()
+	return nil
+}
+
+func (se *SystemErrorResponse) Unmarshal(fmt format.Format, data []byte) error {
+	return unmarshal(se, fmt, data)
 }
 
 func (se *SystemErrorResponse) Error(status *rpcfb.StatusT) {
@@ -95,8 +83,11 @@ func (se *SystemErrorResponse) OK() {
 
 // HeartbeatResponse is a response to operation.OpHeartbeat
 type HeartbeatResponse struct {
-	baseResponse
+	baseMarshaller
+	baseUnmarshaler
+	noThrottleResponse
 	singleResponse
+
 	rpcfb.HeartbeatResponseT
 }
 
@@ -106,6 +97,15 @@ func (hr *HeartbeatResponse) marshalFlatBuffer() ([]byte, error) {
 
 func (hr *HeartbeatResponse) Marshal(fmt format.Format) ([]byte, error) {
 	return marshal(hr, fmt)
+}
+
+func (hr *HeartbeatResponse) unmarshalFlatBuffer(data []byte) error {
+	hr.HeartbeatResponseT = *rpcfb.GetRootAsHeartbeatResponse(data, 0).UnPack()
+	return nil
+}
+
+func (hr *HeartbeatResponse) Unmarshal(fmt format.Format, data []byte) error {
+	return unmarshal(hr, fmt, data)
 }
 
 func (hr *HeartbeatResponse) Error(status *rpcfb.StatusT) {
@@ -118,7 +118,8 @@ func (hr *HeartbeatResponse) OK() {
 
 // ListRangesResponse is a response to operation.OpListRanges
 type ListRangesResponse struct {
-	baseResponse
+	baseMarshaller
+
 	rpcfb.ListRangesResponseT
 
 	// HasNext indicates whether there are more responses after this one.
@@ -145,10 +146,49 @@ func (lr *ListRangesResponse) OK() {
 	lr.Status = &rpcfb.StatusT{Code: rpcfb.ErrorCodeOK}
 }
 
+// SealRangesResponse is a response to operation.OpSealRanges
+type SealRangesResponse struct {
+	baseMarshaller
+	baseUnmarshaler
+	singleResponse
+
+	rpcfb.SealRangesResponseT
+}
+
+func (sr *SealRangesResponse) marshalFlatBuffer() ([]byte, error) {
+	return fbutil.Marshal(&sr.SealRangesResponseT), nil
+}
+
+func (sr *SealRangesResponse) Marshal(fmt format.Format) ([]byte, error) {
+	return marshal(sr, fmt)
+}
+
+func (sr *SealRangesResponse) unmarshalFlatBuffer(data []byte) error {
+	sr.SealRangesResponseT = *rpcfb.GetRootAsSealRangesResponse(data, 0).UnPack()
+	return nil
+}
+
+func (sr *SealRangesResponse) Unmarshal(fmt format.Format, data []byte) error {
+	return unmarshal(sr, fmt, data)
+}
+
+func (sr *SealRangesResponse) Error(status *rpcfb.StatusT) {
+	sr.Status = status
+}
+
+func (sr *SealRangesResponse) OK() {
+	sr.Status = &rpcfb.StatusT{Code: rpcfb.ErrorCodeOK}
+}
+
+func (sr *SealRangesResponse) ThrottleTime() int32 {
+	return sr.ThrottleTimeMs
+}
+
 // CreateStreamsResponse is a response to operation.OpCreateStreams
 type CreateStreamsResponse struct {
-	baseResponse
+	baseMarshaller
 	singleResponse
+
 	rpcfb.CreateStreamsResponseT
 }
 
@@ -170,8 +210,9 @@ func (cs *CreateStreamsResponse) OK() {
 
 // DeleteStreamsResponse is a response to operation.OpDeleteStreams
 type DeleteStreamsResponse struct {
-	baseResponse
+	baseMarshaller
 	singleResponse
+
 	rpcfb.DeleteStreamsResponseT
 }
 
@@ -193,8 +234,9 @@ func (ds *DeleteStreamsResponse) OK() {
 
 // UpdateStreamsResponse is a response to operation.OpUpdateStreams
 type UpdateStreamsResponse struct {
-	baseResponse
+	baseMarshaller
 	singleResponse
+
 	rpcfb.UpdateStreamsResponseT
 }
 
@@ -216,8 +258,9 @@ func (us *UpdateStreamsResponse) OK() {
 
 // DescribeStreamsResponse is a response to operation.OpDescribeStreams
 type DescribeStreamsResponse struct {
-	baseResponse
+	baseMarshaller
 	singleResponse
+
 	rpcfb.DescribeStreamsResponseT
 }
 
@@ -235,17 +278,4 @@ func (ds *DescribeStreamsResponse) Error(status *rpcfb.StatusT) {
 
 func (ds *DescribeStreamsResponse) OK() {
 	ds.Status = &rpcfb.StatusT{Code: rpcfb.ErrorCodeOK}
-}
-
-func marshal(response marshaller, fmt format.Format) ([]byte, error) {
-	switch fmt {
-	case format.FlatBuffer():
-		return response.marshalFlatBuffer()
-	case format.ProtoBuffer():
-		return response.marshalProtoBuffer()
-	case format.JSON():
-		return response.marshalJSON()
-	default:
-		return nil, errors.Errorf(_unsupportedRespErrMsg, fmt)
-	}
 }
