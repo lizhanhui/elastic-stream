@@ -9,13 +9,13 @@ import org.apache.kafka.common.record.RecordBatch;
 import org.apache.kafka.common.record.TimestampType;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
-
+import sdk.elastic.storage.converter.kafka.KafkaBatchConverter;
 
 class KafkaBatchConverterTest {
     @Test
     public void testConversion() {
         MemoryRecords records = generateMemoryRecords();
-        List<models.RecordBatch> batchList = KafkaBatchConverter.toRecordBatch(records, 1L, true);
+        List<sdk.elastic.storage.models.RecordBatch> batchList = KafkaBatchConverter.toRecordBatch(records, 1L, true);
         MemoryRecords decodedRecords = KafkaBatchConverter.toKafkaMemoryRecords(batchList, true);
         Assertions.assertEquals(records.buffer(), decodedRecords.buffer());
     }

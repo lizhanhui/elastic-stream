@@ -3,6 +3,9 @@ package client.route;
 import java.util.Iterator;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
+import sdk.elastic.storage.client.route.Address;
+import sdk.elastic.storage.client.route.AddressScheme;
+import sdk.elastic.storage.client.route.Endpoints;
 
 public class EndpointsTest {
     @Test

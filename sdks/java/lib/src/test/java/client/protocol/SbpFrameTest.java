@@ -4,6 +4,8 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import java.nio.ByteBuffer;
 import org.junit.jupiter.api.Test;
+import sdk.elastic.storage.client.protocol.SbpFrame;
+import sdk.elastic.storage.client.protocol.SbpFrameBuilder;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;

@@ -38,4 +38,4 @@ out/
 .vscode/
 
 logs/
-lib/src/generated/
+lib/src/main/java/sdk/elastic/storage/flatc/

@@ -4,6 +4,7 @@ import java.nio.ByteBuffer;
 import java.util.List;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
+import sdk.elastic.storage.models.RecordBatch;
 
 class RecordBatchTest {
 

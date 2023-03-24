@@ -1,7 +1,8 @@
 package client.netty;
 
-import client.protocol.SbpFrame;
-import client.protocol.SbpFrameBuilder;
+import sdk.elastic.storage.client.netty.NettyEncoder;
+import sdk.elastic.storage.client.protocol.SbpFrame;
+import sdk.elastic.storage.client.protocol.SbpFrameBuilder;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.embedded.EmbeddedChannel;

@@ -23,6 +23,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.NoSuchAlgorithmException;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
+import sdk.elastic.storage.client.common.Utilities;
 
 public class UtilitiesTest {
     private final String body = "foobar";

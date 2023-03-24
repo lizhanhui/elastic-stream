@@ -1,9 +1,10 @@
 package client.netty;
 
-import apis.ClientConfigurationBuilder;
-import client.protocol.SbpFrame;
-import client.protocol.SbpFrameBuilder;
-import client.route.Address;
+import sdk.elastic.storage.apis.ClientConfigurationBuilder;
+import sdk.elastic.storage.client.netty.NettyClient;
+import sdk.elastic.storage.client.protocol.SbpFrame;
+import sdk.elastic.storage.client.protocol.SbpFrameBuilder;
+import sdk.elastic.storage.client.route.Address;
 import io.netty.util.HashedWheelTimer;
 import java.io.IOException;
 import java.nio.ByteBuffer;

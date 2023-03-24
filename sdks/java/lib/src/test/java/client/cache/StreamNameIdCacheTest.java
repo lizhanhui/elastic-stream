@@ -1,9 +1,8 @@
 package client.cache;
 
 import com.google.common.cache.CacheLoader;
-import header.Range;
-import java.util.List;
 import org.junit.jupiter.api.Test;
+import sdk.elastic.storage.client.cache.StreamNameIdCache;
 
 import static org.junit.jupiter.api.Assertions.*;
 
