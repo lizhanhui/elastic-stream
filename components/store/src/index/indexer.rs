@@ -147,7 +147,7 @@ impl Indexer {
         &self,
         stream_id: i64,
         offset: u64,
-        batch_size: u32,
+        max_bytes: u32,
     ) -> Result<Option<Vec<RecordHandle>>, StoreError> {
         let left_key = self.retrieve_left_key(stream_id, offset)?;
         let left_key = left_key.unwrap_or(self.build_index_key(stream_id, offset));
@@ -155,27 +155,28 @@ impl Indexer {
         read_opts.set_iterate_lower_bound(&left_key[..]);
         read_opts.set_iterate_upper_bound((stream_id + 1).to_be_bytes());
 
-        self.scan_record_handles_from(read_opts, batch_size)
+        self.scan_record_handles_from(read_opts, max_bytes)
     }
 
     pub(crate) fn scan_record_handles(
         &self,
         stream_id: i64,
         offset: u64,
-        batch_size: u32,
+        max_bytes: u32,
     ) -> Result<Option<Vec<RecordHandle>>, StoreError> {
         let mut read_opts = ReadOptions::default();
         let lower = self.build_index_key(stream_id, offset);
         read_opts.set_iterate_lower_bound(&lower[..]);
         read_opts.set_iterate_upper_bound((stream_id + 1).to_be_bytes());
-        self.scan_record_handles_from(read_opts, batch_size)
+        self.scan_record_handles_from(read_opts, max_bytes)
     }
 
     fn scan_record_handles_from(
         &self,
         read_opts: ReadOptions,
-        batch_size: u32,
+        max_bytes: u32,
     ) -> Result<Option<Vec<RecordHandle>>, StoreError> {
+        let mut bytes_c = 0_u32;
         match self.db.cf_handle(INDEX_COLUMN_FAMILY) {
             Some(cf) => {
                 let record_handles: Vec<_> = self
@@ -192,7 +193,10 @@ impl Indexer {
                         }
                         v.len() > 8 /* WAL offset */ + 4 /* length-type */
                     })
-                    .map(|(_k, v)| {
+                    .map_while(|(_k, v)| {
+                        if bytes_c >= max_bytes {
+                            return None;
+                        }
                         let mut rdr = Cursor::new(&v[..]);
                         let offset = rdr.get_u64();
                         let length_type = rdr.get_u32();
@@ -201,13 +205,13 @@ impl Indexer {
                             hash = rdr.get_u64();
                         }
                         let len = length_type >> 8;
-                        RecordHandle {
+                        bytes_c += len;
+                        Some(RecordHandle {
                             wal_offset: offset,
                             len,
                             hash,
-                        }
+                        })
                     })
-                    .take(batch_size as usize)
                     .collect();
 
                 if record_handles.is_empty() {
@@ -696,7 +700,7 @@ mod tests {
         // While the logical offset is 10, 20, 30, ..., which means each record batch contains 10 records.
 
         // Case one: scan from a exist key
-        let handles = indexer.scan_record_handles_left_shift(0, 10, 2)?;
+        let handles = indexer.scan_record_handles_left_shift(0, 10, 128 * 2)?;
         assert_eq!(true, handles.is_some());
         let handles = handles.unwrap();
         assert_eq!(2, handles.len());
@@ -708,7 +712,7 @@ mod tests {
         });
 
         // Case two: scan from a left key
-        let handles = indexer.scan_record_handles_left_shift(0, 12, 2)?;
+        let handles = indexer.scan_record_handles_left_shift(0, 12, 128 * 2)?;
         assert_eq!(true, handles.is_some());
         let handles = handles.unwrap();
         assert_eq!(2, handles.len());
@@ -720,7 +724,7 @@ mod tests {
         });
 
         // Case three: scan from a key smaller than the smallest key
-        let handles = indexer.scan_record_handles_left_shift(0, 1, 2)?;
+        let handles = indexer.scan_record_handles_left_shift(0, 1, 128 * 2)?;
         assert_eq!(true, handles.is_some());
         let handles = handles.unwrap();
         assert_eq!(2, handles.len());
@@ -733,7 +737,7 @@ mod tests {
 
         // Case four: scan from a key bigger than the biggest key
 
-        let handles = indexer.scan_record_handles_left_shift(0, CNT * 11, 2)?;
+        let handles = indexer.scan_record_handles_left_shift(0, CNT * 11, 128 * 2)?;
         assert_eq!(true, handles.is_none());
 
         Ok(())
@@ -756,7 +760,8 @@ mod tests {
             .flatten()
             .count();
 
-        let handles = indexer.scan_record_handles(0, 0, 10)?;
+        // Case one: scan ten records from the indexer
+        let handles = indexer.scan_record_handles(0, 0, 10 * 128)?;
         assert_eq!(true, handles.is_some());
         let handles = handles.unwrap();
         assert_eq!(10, handles.len());
@@ -765,6 +770,16 @@ mod tests {
             assert_eq!(128, handle.len);
             assert_eq!(10, handle.hash);
         });
+
+        // Case two: scan 0 bytes from the indexer
+        let handles = indexer.scan_record_handles(0, 0, 0)?;
+        assert_eq!(true, handles.is_none());
+
+        // Case three: return at least one record even if the bytes is not enough
+        let handles = indexer.scan_record_handles(0, 0, 5)?;
+        assert_eq!(true, handles.is_some());
+        let handles = handles.unwrap();
+        assert_eq!(1, handles.len());
 
         Ok(())
     }

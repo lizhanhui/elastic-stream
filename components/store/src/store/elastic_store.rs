@@ -465,7 +465,6 @@ mod tests {
                     let options = ReadOptions {
                         stream_id: 1,
                         offset: res.offset,
-                        // TODO: Currently, indexer explain the max_bytes as number of records, not bytes.
                         max_bytes: 1,
                         max_wait_ms: 1000,
                     };
