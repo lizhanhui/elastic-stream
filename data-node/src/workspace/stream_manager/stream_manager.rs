@@ -1,16 +1,12 @@
 use std::collections::HashMap;
 
-use futures::io::Window;
 use model::{
     range::{Range, StreamRange},
     stream::Stream,
 };
 use slog::{error, trace, Logger};
 
-use crate::{
-    error::ServiceError,
-    workspace::append_window::{self, AppendWindow},
-};
+use crate::{error::ServiceError, workspace::append_window::AppendWindow};
 
 use super::fetcher::Fetcher;
 

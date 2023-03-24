@@ -1,5 +1,6 @@
 use std::{
     cell::RefCell,
+    io::Cursor,
     os::fd::{AsRawFd, RawFd},
     sync::Arc,
     thread::{Builder, JoinHandle},
@@ -20,6 +21,7 @@ use crate::{
     option::{ReadOptions, StoreOptions, WriteOptions},
     AppendRecordRequest, Store,
 };
+use bytes::Buf;
 use core_affinity::CoreId;
 use crossbeam::channel::Sender;
 use futures::future::join_all;
@@ -331,7 +333,7 @@ impl Store for ElasticStore {
     }
 
     async fn seal(&self, range: StreamRange) -> Result<(), StoreError> {
-        let (tx, mut rx) = oneshot::channel();
+        let (tx, rx) = oneshot::channel();
         self.indexer.seal_range(range, tx);
         rx.await
             .map_err(|_e| StoreError::Internal("Channel error".to_owned()))
@@ -339,11 +341,30 @@ impl Store for ElasticStore {
     }
 
     async fn create(&self, range: StreamRange) -> Result<(), StoreError> {
-        let (tx, mut rx) = oneshot::channel();
+        let (tx, rx) = oneshot::channel();
         self.indexer.create_range(range, tx);
         rx.await
             .map_err(|_e| StoreError::Internal("Channel error".to_owned()))
             .flatten()
+    }
+
+    /// Find max record offset of the specified stream.
+    ///
+    /// # Returns
+    /// `StoreError` - If something is wrong when accessing RocksDB;
+    /// `Some(u64)` - If the max record offset is found;
+    /// `None` - If there is no record of the given stream;
+    fn max_record_offset(&self, stream_id: i64) -> Result<Option<u64>, StoreError> {
+        self.indexer.retrieve_max_key(stream_id).map(|buf| {
+            if let Some(ref buf) = buf {
+                // Layout of the buffer is [stream-id: 8B][offset: 8B]
+                let mut cursor = Cursor::new(&buf[..]);
+                cursor.set_position(8);
+                Some(cursor.get_u64())
+            } else {
+                None
+            }
+        })
     }
 }
 

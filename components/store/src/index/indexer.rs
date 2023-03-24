@@ -275,8 +275,9 @@ impl Indexer {
     /// Flush record index in cache into RocksDB using atomic-flush.
     ///
     /// Normally, we do not have invoke this function as frequently as insertion of entry, mapping stream offset to WAL
-    /// offset. Reason behind this that DB is having `AtomicFlush` enabled. As long as we put mapping entries first and
-    /// then update checkpoint `offset` of WAL.
+    /// offset. The reason behind this is that DB is having `AtomicFlush` enabled. As long as we put mapping entries
+    /// first and then update checkpoint `offset` of WAL, integrity of index entries will be guaranteed after recovery
+    /// from `checkpoint` WAL offset.
     ///
     /// Once a memtable is full and flushed to SST files, we can guarantee that all mapping entries prior to checkpoint
     /// `offset` of WAL are already persisted.
@@ -296,7 +297,7 @@ impl Indexer {
         }
     }
 
-    fn retrieve_max_key(&self, stream_id: i64) -> Result<Option<Bytes>, StoreError> {
+    pub(crate) fn retrieve_max_key(&self, stream_id: i64) -> Result<Option<Bytes>, StoreError> {
         match self.db.cf_handle(INDEX_COLUMN_FAMILY) {
             Some(cf) => {
                 let mut read_opts = ReadOptions::default();
@@ -305,7 +306,6 @@ impl Indexer {
                 let mut iter = self.db.iterator_cf_opt(cf, read_opts, IteratorMode::End);
                 if let Some(result) = iter.next() {
                     let (max, _v) = result.map_err(|e| StoreError::RocksDB(e.into_string()))?;
-
                     Ok(Some(Bytes::from(max)))
                 } else {
                     Ok(None)
