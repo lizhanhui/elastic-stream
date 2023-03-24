@@ -33,14 +33,14 @@ enum RecordMagic {
 ///
 /// The RecordMeta and RecordBatchMeta are complying with the layout of the FlatBuffers schema, other contents are managed by ourselves.
 #[derive(Debug, Default)]
-struct FlatRecordBatch {
-    magic: Option<i8>,
+pub struct FlatRecordBatch {
+    pub magic: Option<i8>,
     // The base offset of the record batch.
     // Note: the meta_buffer already contains the base_offset,
     // but we need to store it here since the rust flatbuffers doesn't support update the value so far.
-    base_offset: Option<i64>,
-    meta_buffer: Bytes,
-    records: Vec<FlatRecord>,
+    pub base_offset: Option<i64>,
+    pub meta_buffer: Bytes,
+    pub records: Vec<FlatRecord>,
 }
 
 impl FlatRecordBatch {
@@ -272,9 +272,9 @@ impl FlatRecordBatch {
 
 /// FlatRecord is a flattened version of Record that is used for serialization and zero deserialization.
 #[derive(Debug, Default)]
-struct FlatRecord {
-    meta_buffer: Bytes,
-    body: Bytes,
+pub struct FlatRecord {
+    pub meta_buffer: Bytes,
+    pub body: Bytes,
 }
 
 /// Verifies that a buffer of bytes contains a `RecordBatchMeta` and returns it.

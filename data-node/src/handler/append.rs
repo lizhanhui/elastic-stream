@@ -4,6 +4,7 @@ use codec::frame::Frame;
 use chrono::prelude::*;
 use flatbuffers::FlatBufferBuilder;
 use futures::future::join_all;
+use model::flat_record::FlatRecordBatch;
 use protocol::rpc::header::{
     AppendRequest, AppendResponseArgs, AppendResultArgs, ErrorCode, StatusArgs,
 };
@@ -203,24 +204,13 @@ impl<'a> Append<'a> {
         let mut err_code = ErrorCode::OK;
         let mut manager = stream_manager.borrow_mut();
 
-        let mut offsets = vec![];
-        for entry in self.append_request.append_requests().iter().flatten() {
-            let stream_id = entry.stream_id();
-            let offset = manager
-                .alloc_record_slot(stream_id)
-                .await
-                .map_err(|_e| ErrorCode::DN_INTERNAL_SERVER_ERROR)?;
-            offsets.push(offset);
-        }
-
         // Iterate over the append requests and append each record batch
         let to_store_requests: Vec<_> = self
             .append_request
             .append_requests()
             .iter()
             .flatten()
-            .zip(offsets)
-            .map_while(|(record_batch, offset)| {
+            .map_while(|record_batch| {
                 let stream_id = record_batch.stream_id();
                 let _request_index = record_batch.request_index();
                 let batch_len = record_batch.batch_length();
@@ -230,17 +220,53 @@ impl<'a> Append<'a> {
 
                 // Split the current batch payload from the whole payload
                 if payload.len() < batch_len as usize {
+                    warn!(self.logger, "Invalid record batch length");
                     err_code = ErrorCode::BAD_REQUEST;
                     return None;
                 }
-                let payload_b = payload.split_to(batch_len as usize);
 
-                let to_store = AppendRecordRequest {
-                    stream_id,
-                    offset: offset as i64,
-                    buffer: payload_b,
-                };
-                Some(to_store)
+                // Decode the record batch
+                let decode_batch = FlatRecordBatch::init_from_buf(payload.clone());
+
+                match decode_batch {
+                    Ok(decode_batch) => {
+                        // Fetch the offset for the current stream
+
+                        let offset_r =
+                            manager.alloc_record_batch_slots(stream_id, decode_batch.records.len());
+
+                        // Set the error code if the offset allocation failed
+                        if let Err(e) = offset_r {
+                            warn!(self.logger, "Failed to allocate offset: {:?}", e);
+                            err_code = ErrorCode::DN_INTERNAL_SERVER_ERROR;
+                            return None;
+                        }
+
+                        let offset = offset_r.unwrap_or_default() as i64;
+
+                        let payload_b = payload.split_to(batch_len as usize);
+
+                        // Rewrite the offset in the record batch directly,
+                        // since the rust flatbuffers doesn't support update the value so far.
+                        unsafe {
+                            let offset_ptr = payload_b.as_ptr().add(8);
+                            let offset_ptr = offset_ptr as *mut i64;
+                            *offset_ptr = offset;
+                        }
+
+                        let to_store = AppendRecordRequest {
+                            stream_id,
+                            offset: offset as i64,
+                            buffer: payload_b,
+                        };
+                        Some(to_store)
+                    }
+                    Err(e) => {
+                        warn!(self.logger, "Failed to decode record batch: {:?}", e);
+                        err_code = ErrorCode::BAD_REQUEST;
+                        return None;
+                    }
+                }
             })
             .collect();
         if err_code != ErrorCode::NONE {
