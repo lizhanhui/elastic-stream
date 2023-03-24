@@ -2,11 +2,6 @@ syntax = "proto3";
 
 package kvpb;
 
-import "gogoproto/gogo.proto";
-
-option (gogoproto.marshaler_all) = true;
-option (gogoproto.unmarshaler_all) = true;
-
 service KV {
   // Store stores kv into etcd by transaction.
   rpc Store(StoreRequest) returns (StoreResponse) {}
