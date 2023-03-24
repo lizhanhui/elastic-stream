@@ -9,8 +9,8 @@ use crate::io::task::IoTask;
 use crate::io::task::WriteTask;
 use crate::io::wal::Wal;
 use crate::io::write_window::WriteWindow;
-use crate::BufSlice;
 use crate::store::AppendResult;
+use crate::BufSlice;
 
 use crossbeam::channel::{Receiver, Sender, TryRecvError};
 use io_uring::register;
@@ -225,7 +225,7 @@ impl IO {
         let pos = self.wal.recover(offset)?;
 
         // Reset offset of write buffer
-        self.buf_writer.get_mut().wal_offset(pos);
+        self.buf_writer.get_mut().reset_cursor(pos);
 
         // Rebase `buf_writer` to include the last partially written buffer `page`.
         {
@@ -574,7 +574,7 @@ impl IO {
                 IoTask::Write(mut task) => {
                     let writer = unsafe { &mut *self.buf_writer.get() };
                     loop {
-                        if let Some(segment) = self.wal.segment_file_of(writer.wal_offset) {
+                        if let Some(segment) = self.wal.segment_file_of(writer.cursor) {
                             if !segment.writable() {
                                 trace!(
                                     log,

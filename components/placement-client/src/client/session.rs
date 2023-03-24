@@ -286,9 +286,8 @@ impl Session {
                         return;
                     }
                 };
-
-                sender.send(res).unwrap_or_else(|_resp| {
-                    warn!(log, "Failed to forward response to Client");
+                sender.send(res).unwrap_or_else(|response| {
+                    warn!(log, "Failed to forward response to client: {:?}", response);
                 });
             }
             None => {

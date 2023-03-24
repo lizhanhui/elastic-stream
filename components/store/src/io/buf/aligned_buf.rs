@@ -17,7 +17,7 @@ use crate::error::StoreError;
 pub(crate) struct AlignedBuf {
     log: Logger,
 
-    /// A aligned WAL offset which is a absolute address in the WAL.
+    /// An aligned WAL offset which is an absolute address in the WAL.
     pub(crate) wal_offset: u64,
 
     /// Pointer to the allocated memory
