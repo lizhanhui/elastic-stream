@@ -351,6 +351,9 @@ func (c *conn) processFrame(f codec.Frame) error {
 
 func (c *conn) processPing(f *codec.PingFrame, st *stream) error {
 	c.serveG.Check()
+	if f.IsResponse() {
+		return nil
+	}
 	outFrame, free := codec.NewPingFrameResp(f)
 	c.writeFrame(frameWriteRequest{
 		f:         outFrame,
@@ -364,13 +367,22 @@ func (c *conn) processPing(f *codec.PingFrame, st *stream) error {
 func (c *conn) processGoAway(f *codec.GoAwayFrame, _ *stream) error {
 	logger := c.lg
 	c.serveG.Check()
+	if f.IsResponse() {
+		// no need to deal with a GOAWAY response
+		return nil
+	}
 	logger.Info("received GOAWAY frame, starting graceful shutdown", zap.Uint32("max-stream-id", f.StreamID))
 	c.goAway(true)
 	return nil
 }
 
 func (c *conn) processDataFrame(f *codec.DataFrame, st *stream) error {
+	logger := c.lg
 	c.serveG.Check()
+	if f.IsResponse() {
+		logger.Warn("server ignoring response data frame", f.Info()...)
+		return nil
+	}
 	if c.idleTimer != nil {
 		c.idleTimer.Stop()
 	}

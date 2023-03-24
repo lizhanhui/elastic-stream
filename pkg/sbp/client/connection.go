@@ -18,6 +18,10 @@ import (
 	"github.com/AutoMQ/placement-manager/pkg/sbp/protocol"
 )
 
+var (
+	errClientConnGotGoAway = errors.New("sbp: received Server's graceful shutdown GOAWAY")
+)
+
 // conn is the state of a single client connection to a server.
 type conn struct {
 	c          *Client
@@ -37,7 +41,7 @@ type conn struct {
 	goAway          *codec.GoAwayFrame       // if non-nil, the GoAwayFrame we received
 	streams         map[uint32]*stream       // client-initiated
 	heartbeats      map[uint32]chan struct{} // in flight heartbeat stream ID to notification channel
-	streamsReserved int                      // incr by reserveNewRequest; decr on RoundTrip
+	streamsReserved int                      // incr by reserveNewRequest; decr on roundTrip
 	nextStreamID    uint32
 	lastActive      time.Time
 
@@ -54,7 +58,7 @@ type conn struct {
 	lg *zap.Logger
 }
 
-func (cc *conn) RoundTrip(req protocol.OutRequest) (protocol.InResponse, error) {
+func (cc *conn) roundTrip(req protocol.OutRequest) (protocol.InResponse, error) {
 	ctx := req.Context()
 	s := &stream{
 		cc:      cc,
@@ -276,6 +280,19 @@ func (cc *conn) closeConn() {
 	_ = cc.conn.Close()
 }
 
+func (cc *conn) setGoAway(f *codec.GoAwayFrame) {
+	cc.mu.Lock()
+	defer cc.mu.Unlock()
+
+	cc.goAway = f
+	last := f.StreamID
+	for streamID, s := range cc.streams {
+		if streamID > last {
+			s.abortStreamLocked(errClientConnGotGoAway)
+		}
+	}
+}
+
 // connReadLoop is the state owned by conn.readLoop.
 type connReadLoop struct {
 	cc *conn
@@ -304,12 +321,14 @@ func (rl *connReadLoop) run() error {
 		}
 
 		switch f := f.(type) {
-		case *codec.DataFrame:
-			err = rl.processData(f)
+		case *codec.PingFrame:
+			err = rl.processPing(f)
 		case *codec.GoAwayFrame:
 			err = rl.processGoAway(f)
 		case *codec.HeartbeatFrame:
 			err = rl.processHeartbeat(f)
+		case *codec.DataFrame:
+			err = rl.processData(f)
 		default:
 			logger.Warn("client ignoring unknown type frame", f.Info()...)
 		}
@@ -325,18 +344,61 @@ func (rl *connReadLoop) run() error {
 	}
 }
 
-func (rl *connReadLoop) processData(f *codec.DataFrame) error {
-	// TODO
-	return nil
+func (rl *connReadLoop) processPing(f *codec.PingFrame) error {
+	if f.IsResponse() {
+		return nil
+	}
+
+	ping, free := codec.NewPingFrameResp(f)
+	defer free()
+
+	cc := rl.cc
+	cc.wmu.Lock()
+	defer cc.wmu.Unlock()
+
+	if err := cc.fr.WriteFrame(ping); err != nil {
+		return err
+	}
+	return cc.fr.Flush()
 }
 
 func (rl *connReadLoop) processGoAway(f *codec.GoAwayFrame) error {
-	// TODO
+	cc := rl.cc
+	logger := cc.lg
+	if f.IsResponse() {
+		// no need to deal with a GOAWAY response
+		return nil
+	}
+
+	logger.Info("client received goaway", zap.Uint32("stream-id", f.StreamID))
+	cc.c.connPool.MarkDead(cc)
+	cc.setGoAway(f)
 	return nil
 }
 
 func (rl *connReadLoop) processHeartbeat(f *codec.HeartbeatFrame) error {
-	// TODO
+	cc := rl.cc
+	logger := cc.lg
+	if f.IsRequest() {
+		logger.Warn("client ignoring heartbeat request", f.Info()...)
+		return nil
+	}
+
+	cc.mu.Lock()
+	defer cc.mu.Unlock()
+	// notify listener if any
+	if c, ok := cc.heartbeats[f.StreamID]; ok {
+		close(c)
+		delete(cc.heartbeats, f.StreamID)
+	}
+	return nil
+}
+
+func (rl *connReadLoop) processData(f *codec.DataFrame) error {
+	if f.IsRequest() {
+		// TODO
+		return nil
+	}
 	return nil
 }
 

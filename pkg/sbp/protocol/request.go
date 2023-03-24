@@ -65,6 +65,7 @@ type EmptyRequest struct {
 }
 
 func (e EmptyRequest) Unmarshal(_ format.Format, _ []byte) error {
+	_ = e.baseUnmarshaler
 	return nil
 }
 

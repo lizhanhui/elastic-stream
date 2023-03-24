@@ -75,7 +75,7 @@ func (c *Client) Do(req protocol.OutRequest, addr address) (protocol.InResponse,
 		return nil, errors.WithMessagef(err, "get connection to %s", addr)
 	}
 
-	resp, err := conn.RoundTrip(req)
+	resp, err := conn.roundTrip(req)
 	if err != nil {
 		logger.Error("round trip failed", zap.Error(err))
 	}
