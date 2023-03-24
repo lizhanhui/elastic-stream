@@ -92,7 +92,9 @@ func (c *Client) SealRanges(req *protocol.SealRangesRequest, addr address) (*pro
 }
 
 func (c *Client) CloseIdleConnections() {
+	logger := c.lg
 	c.connPool.closeIdleConnections()
+	logger.Info("close idle connections")
 }
 
 func (c *Client) dialConn(ctx context.Context, addr string) (*conn, error) {
