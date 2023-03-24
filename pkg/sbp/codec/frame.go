@@ -130,6 +130,14 @@ func (f baseFrame) IsResponse() bool {
 	return f.Flag.Has(FlagResponse)
 }
 
+func (f baseFrame) IsResponseEnd() bool {
+	return f.Flag.Has(FlagResponseEnd)
+}
+
+func (f baseFrame) IsSystemError() bool {
+	return f.Flag.Has(FlagSystemError)
+}
+
 // Framer reads and writes Frames
 type Framer struct {
 	streamID atomic.Uint32

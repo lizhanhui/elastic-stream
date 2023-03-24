@@ -25,6 +25,10 @@ type stream struct {
 	respEnd chan struct{} // closed when the peer sends an RESPONSE_END flag
 	donec   chan struct{} // closed after the stream is in the closed state
 
+	// owned by connReadLoop:
+	readClosed  bool // peer sent an RESPONSE_END flag
+	readAborted bool // read loop reset the stream
+
 	respRcv chan struct{}       // closed when response is received
 	res     protocol.InResponse // set if respRcv is closed
 }

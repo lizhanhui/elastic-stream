@@ -395,11 +395,74 @@ func (rl *connReadLoop) processHeartbeat(f *codec.HeartbeatFrame) error {
 }
 
 func (rl *connReadLoop) processData(f *codec.DataFrame) error {
+	cc := rl.cc
+	logger := cc.lg
 	if f.IsRequest() {
-		// TODO
+		logger.Warn("client ignoring request data frame", f.Info()...)
 		return nil
 	}
+
+	s := rl.streamByID(f.StreamID)
+	if s == nil {
+		// We'd get here if we canceled a request while the server had its response still in flight.
+		// So if this was just something we canceled, ignore it.
+		return nil
+	}
+	if s.readClosed {
+		logger.Warn("client received data after RESPONSE_END", f.Info()...)
+		rl.endStreamError(s, errors.New("sbp: protocol error: response after RESPONSE_END"))
+		return nil
+	}
+
+	res, err := rl.parseResponse(f)
+	if err != nil {
+		logger.Warn("client failed to parse response", f.Info()...)
+		rl.endStreamError(s, err)
+		return nil
+	}
+
+	s.res = res
+	close(s.respRcv)
+	if f.IsResponseEnd() {
+		rl.endStream(s)
+	}
 	return nil
+}
+
+func (rl *connReadLoop) parseResponse(f *codec.DataFrame) (resp protocol.InResponse, err error) {
+	if f.IsSystemError() {
+		resp = &protocol.SystemErrorResponse{}
+	} else {
+		resp = newInResponse(f.OpCode)
+	}
+
+	err = resp.Unmarshal(f.HeaderFmt, f.Header)
+	if err != nil {
+		return nil, errors.WithMessage(err, "unmarshal response")
+	}
+	return
+}
+
+func (rl *connReadLoop) streamByID(id uint32) *stream {
+	rl.cc.mu.Lock()
+	defer rl.cc.mu.Unlock()
+	s := rl.cc.streams[id]
+	if s != nil && !s.readAborted {
+		return s
+	}
+	return nil
+}
+
+func (rl *connReadLoop) endStream(s *stream) {
+	if !s.readClosed {
+		s.readClosed = true
+		close(s.respEnd)
+	}
+}
+
+func (rl *connReadLoop) endStreamError(s *stream, err error) {
+	s.readAborted = true
+	s.abortStream(err)
 }
 
 func (rl *connReadLoop) cleanup() {
