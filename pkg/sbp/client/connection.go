@@ -281,20 +281,67 @@ type connReadLoop struct {
 	cc *conn
 }
 
-func (lr *connReadLoop) run() error {
-	cc := lr.cc
+func (rl *connReadLoop) run() error {
+	logger := rl.cc.lg
+	cc := rl.cc
+
 	readIdleTimeout := cc.c.ReadIdleTimeout
 	var t *time.Timer
 	if readIdleTimeout != 0 {
 		t = time.AfterFunc(readIdleTimeout, cc.healthCheck)
 		defer t.Stop()
 	}
+
+	for {
+		f, free, err := cc.fr.ReadFrame()
+		if t != nil {
+			t.Reset(readIdleTimeout)
+		}
+		if err != nil {
+			logger.Warn("read frame failed", zap.Error(err))
+			// TODO Check stream errors and only close the steam
+			return err
+		}
+
+		switch f := f.(type) {
+		case *codec.DataFrame:
+			err = rl.processData(f)
+		case *codec.GoAwayFrame:
+			err = rl.processGoAway(f)
+		case *codec.HeartbeatFrame:
+			err = rl.processHeartbeat(f)
+		default:
+			logger.Warn("client ignoring unknown type frame", f.Info()...)
+		}
+		if free != nil {
+			free()
+		}
+		if err != nil {
+			info := f.Info()
+			info = append(info, zap.Error(err))
+			logger.Error("process frame failed", info...)
+			return err
+		}
+	}
+}
+
+func (rl *connReadLoop) processData(f *codec.DataFrame) error {
 	// TODO
 	return nil
 }
 
-func (lr *connReadLoop) cleanup() {
-	cc := lr.cc
+func (rl *connReadLoop) processGoAway(f *codec.GoAwayFrame) error {
+	// TODO
+	return nil
+}
+
+func (rl *connReadLoop) processHeartbeat(f *codec.HeartbeatFrame) error {
+	// TODO
+	return nil
+}
+
+func (rl *connReadLoop) cleanup() {
+	cc := rl.cc
 
 	cc.c.connPool.MarkDead(cc)
 	defer cc.closeConn()

@@ -152,7 +152,7 @@ func (s *Server) Shutdown(ctx context.Context) error {
 }
 
 func (s *Server) newConn(rwc net.Conn) *conn {
-	logger := s.lg.With(zap.String("remote-addr", rwc.RemoteAddr().String()))
+	logger := s.lg.With(zap.String("remote-client-addr", rwc.RemoteAddr().String()))
 	c := &conn{
 		server:           s,
 		rwc:              rwc,

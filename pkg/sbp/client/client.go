@@ -93,7 +93,7 @@ func (c *Client) dialConn(ctx context.Context, addr string) (*conn, error) {
 }
 
 func (c *Client) newConn(rwc net.Conn) (*conn, error) {
-	logger := c.lg.With(zap.String("server-addr", rwc.RemoteAddr().String()))
+	logger := c.lg.With(zap.String("remote-server-addr", rwc.RemoteAddr().String()))
 	cc := &conn{
 		c:          c,
 		conn:       rwc,

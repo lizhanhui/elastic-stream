@@ -161,11 +161,12 @@ func (fr *Framer) NextID() uint32 {
 }
 
 // ReadFrame reads a single frame
-func (fr *Framer) ReadFrame() (Frame, func(), error) {
+// The returned free function is not nil if and only if err is nil. And it should be called after the frame is no longer needed.
+func (fr *Framer) ReadFrame() (frame Frame, free func(), err error) {
 	logger := fr.lg
 
 	buf := fr.fixedBuf[:_fixedHeaderLen]
-	_, err := io.ReadFull(fr.r, buf)
+	_, err = io.ReadFull(fr.r, buf)
 	if err != nil {
 		return &baseFrame{}, nil, errors.WithMessage(err, "read fixed header")
 	}
@@ -195,7 +196,7 @@ func (fr *Framer) ReadFrame() (Frame, func(), error) {
 	payloadLen := frameLen + 4 - _fixedHeaderLen - headerLen - 4 // add frameLength width, sub payloadChecksum width
 
 	tBuf := mcache.Malloc(int(headerLen + payloadLen))
-	free := func() { mcache.Free(tBuf) }
+	free = func() { mcache.Free(tBuf) }
 	_, err = io.ReadFull(fr.r, tBuf)
 	if err != nil {
 		free()
@@ -241,7 +242,6 @@ func (fr *Framer) ReadFrame() (Frame, func(), error) {
 		logger.Debug("read frame", bFrame.Summarize()...)
 	}
 
-	var frame Frame
 	switch bFrame.OpCode.Code {
 	case operation.OpPing:
 		frame = &PingFrame{baseFrame: bFrame}

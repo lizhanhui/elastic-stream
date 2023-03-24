@@ -126,6 +126,7 @@ func (c *conn) serve() {
 // It runs on its own goroutine.
 func (c *conn) readFrames() {
 	c.serveG.CheckNotOn()
+	logger := c.lg
 	for {
 		f, free, err := c.framer.ReadFrame()
 		select {
@@ -134,6 +135,7 @@ func (c *conn) readFrames() {
 			return
 		}
 		if err != nil {
+			logger.Warn("failed to read frame", zap.Error(err))
 			// TODO check errors, skip stream errors
 			return
 		}
