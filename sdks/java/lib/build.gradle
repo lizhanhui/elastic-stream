@@ -11,7 +11,12 @@ plugins {
     id 'java-library'
     // Apply the maven-publish plugin to allow publishing to Maven Central.
     id 'maven-publish'
+    id 'com.google.protobuf' version '0.9.1'
 }
+
+group 'sdk.elastic.storage'
+version '0.0.1-SNAPSHOT'
+
 sourceCompatibility = '1.8'
 
 java {
@@ -23,6 +28,11 @@ repositories {
     // Use Maven Central for resolving dependencies.
     mavenCentral()
 }
+
+
+def grpcVersion = '1.53.0' // CURRENT_GRPC_VERSION
+def protobufVersion = '3.21.7'
+def protocVersion = protobufVersion
 
 dependencies {
     // Use JUnit Jupiter for testing.
@@ -49,10 +59,40 @@ dependencies {
     implementation('org.apache.kafka:kafka-clients:3.4.0') {
         exclude group: 'org.slf4j', module: 'slf4j-log4j12'
     }
+
+    // used for grpc
+    implementation "io.grpc:grpc-protobuf:${grpcVersion}"
+    implementation "io.grpc:grpc-stub:${grpcVersion}"
+    runtimeOnly "io.grpc:grpc-netty-shaded:${grpcVersion}"
+    compileOnly 'org.apache.tomcat:annotations-api:6.0.53' // necessary for Java 9+
+    testImplementation "io.grpc:grpc-testing:${grpcVersion}"
+}
+
+protobuf {
+    protoc { artifact = "com.google.protobuf:protoc:${protocVersion}" }
+    plugins {
+        grpc { artifact = "io.grpc:protoc-gen-grpc-java:${grpcVersion}" }
+    }
+    generateProtoTasks {
+        all()*.plugins { grpc {} }
+    }
 }
 
 tasks.named('test') {
     // Use JUnit Platform for unit tests.
     useJUnitPlatform()
 }
-sourceSets.main.java.srcDirs += 'src/generated/java'
+
+tasks.named('sourcesJar') {
+    duplicatesStrategy = DuplicatesStrategy.INCLUDE
+}
+
+// Inform IDEs like IntelliJ IDEA, Eclipse or NetBeans about the generated code.
+sourceSets {
+    main {
+        java {
+            srcDirs 'build/generated/source/proto/main/grpc'
+            srcDirs 'build/generated/source/proto/main/java'
+        }
+    }
+}

@@ -1,4 +1,4 @@
-package converter.kafka;
+package sdk.elastic.storage.converter.kafka;
 
 import java.nio.ByteBuffer;
 import java.util.List;

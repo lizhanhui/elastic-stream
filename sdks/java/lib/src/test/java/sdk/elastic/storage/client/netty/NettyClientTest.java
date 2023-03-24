@@ -1,7 +1,6 @@
-package client.netty;
+package sdk.elastic.storage.client.netty;
 
 import sdk.elastic.storage.apis.ClientConfigurationBuilder;
-import sdk.elastic.storage.client.netty.NettyClient;
 import sdk.elastic.storage.client.protocol.SbpFrame;
 import sdk.elastic.storage.client.protocol.SbpFrameBuilder;
 import sdk.elastic.storage.client.route.Address;

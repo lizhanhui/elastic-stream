@@ -1,4 +1,4 @@
-package client.protocol;
+package sdk.elastic.storage.client.protocol;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;

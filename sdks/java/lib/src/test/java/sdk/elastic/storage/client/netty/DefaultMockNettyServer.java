@@ -1,4 +1,4 @@
-package client.netty;
+package sdk.elastic.storage.client.netty;
 
 import sdk.elastic.storage.client.netty.NettyDecoder;
 import sdk.elastic.storage.client.netty.NettyEncoder;

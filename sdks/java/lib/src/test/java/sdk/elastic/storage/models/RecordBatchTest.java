@@ -1,10 +1,9 @@
-package models;
+package sdk.elastic.storage.models;
 
 import java.nio.ByteBuffer;
 import java.util.List;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
-import sdk.elastic.storage.models.RecordBatch;
 
 class RecordBatchTest {
 

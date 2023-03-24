@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-package client.common;
+package sdk.elastic.storage.client.common;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;

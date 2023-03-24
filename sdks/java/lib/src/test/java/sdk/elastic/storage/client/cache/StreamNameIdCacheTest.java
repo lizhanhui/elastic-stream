@@ -1,4 +1,4 @@
-package client.cache;
+package sdk.elastic.storage.client.cache;
 
 import com.google.common.cache.CacheLoader;
 import org.junit.jupiter.api.Test;

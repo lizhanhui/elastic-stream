@@ -1,4 +1,4 @@
-package client.route;
+package sdk.elastic.storage.client.route;
 
 import java.util.Iterator;
 import org.junit.jupiter.api.Assertions;

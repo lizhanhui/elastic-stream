@@ -1,4 +1,4 @@
-package client.netty;
+package sdk.elastic.storage.client.netty;
 
 import java.io.Closeable;
 import java.io.IOException;

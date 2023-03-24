@@ -1,4 +1,4 @@
-package models;
+package sdk.elastic.storage.models;
 
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
