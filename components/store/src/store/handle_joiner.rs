@@ -1,6 +1,6 @@
 use std::{sync::Mutex, thread::JoinHandle};
 
-use slog::{Logger, info};
+use slog::{info, Logger};
 
 pub(crate) struct HandleJoiner {
     log: Logger,

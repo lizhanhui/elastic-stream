@@ -41,7 +41,6 @@ flatbuffers = { git = "https://github.com/google/flatbuffers.git", tag = "v23.1.
 
 libc = "0.2"
 nix = "0.26"
-prometheus = "0.13"
 
 # Logging
 slog = { version = "2.7", features = ["max_level_trace", "release_max_level_warn"] }
@@ -70,3 +69,6 @@ gethostname = "0.4"
 ordinal = "0.3"
 
 criterion = "0.4"
+
+minitrace = "0.4"
+prometheus = "0.13"
