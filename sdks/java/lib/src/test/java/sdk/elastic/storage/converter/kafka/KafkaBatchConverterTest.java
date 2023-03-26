@@ -9,7 +9,6 @@ import org.apache.kafka.common.record.RecordBatch;
 import org.apache.kafka.common.record.TimestampType;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
-import sdk.elastic.storage.converter.kafka.KafkaBatchConverter;
 
 class KafkaBatchConverterTest {
     @Test

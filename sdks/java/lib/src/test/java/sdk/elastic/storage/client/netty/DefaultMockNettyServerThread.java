@@ -18,7 +18,7 @@ public class DefaultMockNettyServerThread implements Closeable {
         serverThread.interrupt();
     }
 
-    public DefaultMockNettyServerThread (int serverPort, String defaultResponsePrefix) {
+    public DefaultMockNettyServerThread(int serverPort, String defaultResponsePrefix) {
         nettyServer = new DefaultMockNettyServer(1, serverPort, defaultResponsePrefix);
         serverThread = new Thread(() -> {
             try {

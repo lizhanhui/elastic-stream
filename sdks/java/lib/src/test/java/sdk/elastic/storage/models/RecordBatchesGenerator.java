@@ -5,9 +5,6 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import sdk.elastic.storage.models.Headers;
-import sdk.elastic.storage.models.Record;
-import sdk.elastic.storage.models.RecordBatch;
 
 import static sdk.elastic.storage.models.HeaderKey.CreatedAt;
 import static sdk.elastic.storage.models.HeaderKey.Tag;

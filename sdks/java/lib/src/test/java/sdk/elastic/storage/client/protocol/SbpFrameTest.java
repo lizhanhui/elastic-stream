@@ -4,8 +4,6 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import java.nio.ByteBuffer;
 import org.junit.jupiter.api.Test;
-import sdk.elastic.storage.client.protocol.SbpFrame;
-import sdk.elastic.storage.client.protocol.SbpFrameBuilder;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -48,7 +46,7 @@ class SbpFrameTest {
         changeFirst4BytesWithIntValue(encoded, originalLength);
 
         // invalid crc
-        encoded.setByte(encoded.readableBytes()-1, (byte) ~encoded.getByte(encoded.readableBytes()-1));
+        encoded.setByte(encoded.readableBytes() - 1, (byte) ~encoded.getByte(encoded.readableBytes() - 1));
         assertThrows(IllegalArgumentException.class, () -> new SbpFrame(encoded.duplicate()));
     }
 

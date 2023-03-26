@@ -1,10 +1,5 @@
 package sdk.elastic.storage.client.netty;
 
-import sdk.elastic.storage.client.netty.NettyDecoder;
-import sdk.elastic.storage.client.netty.NettyEncoder;
-import sdk.elastic.storage.client.netty.NettyRemotingAbstract;
-import sdk.elastic.storage.client.protocol.SbpFrame;
-import sdk.elastic.storage.client.protocol.SbpFrameBuilder;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelHandlerContext;
@@ -22,6 +17,8 @@ import java.io.Closeable;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
+import sdk.elastic.storage.client.protocol.SbpFrame;
+import sdk.elastic.storage.client.protocol.SbpFrameBuilder;
 import sdk.elastic.storage.models.OperationCode;
 
 public class DefaultMockNettyServer extends NettyRemotingAbstract implements Closeable {

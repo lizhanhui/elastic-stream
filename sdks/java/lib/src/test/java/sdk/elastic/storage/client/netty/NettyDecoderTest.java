@@ -1,8 +1,5 @@
 package sdk.elastic.storage.client.netty;
 
-import sdk.elastic.storage.client.netty.NettyDecoder;
-import sdk.elastic.storage.client.protocol.SbpFrame;
-import sdk.elastic.storage.client.protocol.SbpFrameBuilder;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.embedded.EmbeddedChannel;
@@ -10,6 +7,8 @@ import java.nio.ByteBuffer;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import sdk.elastic.storage.client.protocol.SbpFrame;
+import sdk.elastic.storage.client.protocol.SbpFrameBuilder;
 
 class NettyDecoderTest {
     private static SbpFrameBuilder defaultBuilder;

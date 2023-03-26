@@ -2,9 +2,8 @@ package sdk.elastic.storage.client.cache;
 
 import com.google.common.cache.CacheLoader;
 import org.junit.jupiter.api.Test;
-import sdk.elastic.storage.client.cache.StreamNameIdCache;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class StreamNameIdCacheTest {
 
