@@ -49,7 +49,7 @@ type Endpoint struct {
 // It should be embedded inside a storage backend.
 func NewEndpoint(kv2 kv.LogAble, logger *zap.Logger) *Endpoint {
 	return &Endpoint{
-		KV: kv.Logger{LogAble: kv2},
+		KV: kv.Logger{Kv: kv2},
 		lg: logger,
 	}
 }

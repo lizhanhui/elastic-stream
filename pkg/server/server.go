@@ -206,7 +206,7 @@ func (s *Server) serveSbp(listener net.Listener, c *cluster.RaftCluster) {
 	ctx, cancel := context.WithCancel(s.ctx)
 	defer cancel()
 
-	sbpSvr := sbpServer.NewServer(ctx, handler.SbpLogger{LogAble: handler.NewSbp(c, logger)}, logger)
+	sbpSvr := sbpServer.NewServer(ctx, handler.SbpLogger{Handler: handler.NewSbp(c, logger)}, logger)
 	s.sbpServer = sbpSvr
 
 	logger.Info("sbp server started")
@@ -393,7 +393,7 @@ func (s *Server) Member() cluster.Member {
 }
 
 func (s *Server) IDAllocator(key string, start, step uint64) id.Allocator {
-	return id.Logger{LogAble: id.NewEtcdAllocator(&id.EtcdAllocatorParam{
+	return id.Logger{Allocator: id.NewEtcdAllocator(&id.EtcdAllocatorParam{
 		Client:   s.client,
 		CmpFunc:  s.leaderCmp,
 		RootPath: s.rootPath,
