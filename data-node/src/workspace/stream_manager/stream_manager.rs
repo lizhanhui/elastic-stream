@@ -1,10 +1,11 @@
 use std::{collections::HashMap, rc::Rc};
 
 use model::{
+    data_node::DataNode,
     range::{Range, StreamRange},
     stream::Stream,
 };
-use slog::{error, trace, Logger};
+use slog::{error, info, trace, Logger};
 use store::{ElasticStore, Store};
 
 use crate::{error::ServiceError, workspace::append_window::AppendWindow};
@@ -76,7 +77,7 @@ impl StreamManager {
                     } else {
                         range.start()
                     };
-                    let append_window = AppendWindow::new(start);
+                    let append_window = AppendWindow::new(range.index(), start);
                     self.windows.insert(stream_id, append_window);
                     trace!(
                         self.log,
@@ -91,10 +92,7 @@ impl StreamManager {
         Ok(())
     }
 
-    pub(crate) async fn create_stream_if_missing(
-        &mut self,
-        stream_id: i64,
-    ) -> Result<(), ServiceError> {
+    async fn create_stream_if_missing(&mut self, stream_id: i64) -> Result<(), ServiceError> {
         // If, though unlikely, the stream is firstly assigned to it.
         // TODO: https://doc.rust-lang.org/std/intrinsics/fn.unlikely.html
         if !self.streams.contains_key(&stream_id) {
@@ -125,7 +123,7 @@ impl StreamManager {
             );
 
             // TODO: verify current node is actually a leader or follower of the last mutable range.
-            let window = AppendWindow::new(start);
+            let window = AppendWindow::new(range.index(), start);
 
             self.windows.insert(stream_id, window);
 
@@ -139,7 +137,7 @@ impl StreamManager {
         Ok(())
     }
 
-    pub(crate) async fn ensure_mutable(&mut self, stream_id: i64) -> Result<(), ServiceError> {
+    async fn ensure_mutable(&mut self, stream_id: i64) -> Result<(), ServiceError> {
         if let Some(stream) = self.streams.get_mut(&stream_id) {
             if stream.is_mut() {
                 return Ok(());
@@ -159,45 +157,97 @@ impl StreamManager {
         Ok(())
     }
 
-    /// Allocate a record slot for the specified stream.
-    ///
-    /// If, though unlikely, a mutable range is not available, fetch it from placement manager.
-    pub(crate) async fn alloc_record_slot(&mut self, stream_id: i64) -> Result<u64, ServiceError> {
-        self.create_stream_if_missing(stream_id).await?;
-        self.ensure_mutable(stream_id).await?;
-
-        if let Some(window) = self.windows.get_mut(&stream_id) {
-            let slot = window.alloc_slot();
-            return Ok(slot);
-        }
-
-        unreachable!("Should have an `AppendWindow` for stream[id={}]", stream_id);
-    }
-
     pub(crate) fn alloc_record_batch_slots(
         &mut self,
-        stream_id: i64,
+        range: protocol::rpc::header::Range,
         batch_size: usize,
     ) -> Result<u64, ServiceError> {
         trace!(
             self.log,
-            "Allocate record slots in batch for stream={}, batch-size={}",
-            stream_id,
+            "Allocate record slots in batch for stream={}, range-index={}, batch-size={}",
+            range.stream_id(),
+            range.range_index(),
             batch_size
         );
+
+        let stream_id = range.stream_id();
+        let range_index = range.range_index();
+
         if let Some(window) = self.windows.get_mut(&stream_id) {
+            debug_assert_eq!(range_index, window.range_index);
             let start_slot = window.alloc_batch_slots(batch_size);
             return Ok(start_slot);
         }
 
-        error!(
+        let stream = self
+            .streams
+            .entry(stream_id)
+            .or_insert_with(|| Stream::with_id(stream_id));
+
+        if let Some(range) = stream.last() {
+            if range.index() > range_index {
+                error!(
+                    self.log,
+                    "Target range to append has been sealed. Stream={}, target-range-index={}, last={}",
+                    stream_id,
+                    range_index,
+                    range.index()
+                );
+                return Err(ServiceError::AlreadySealed);
+            }
+
+            if range.index() == range_index && range.is_sealed() {
+                error!(
+                    self.log,
+                    "Target range to append has been sealed. Target range-index={}, stream={}",
+                    range_index,
+                    stream_id
+                );
+                return Err(ServiceError::AlreadySealed);
+            }
+
+            // The last range known should have been sealed.
+            debug_assert!(range.is_sealed());
+            // TODO: if the last range on data-node is not sealed, we need to double-check with placement managers
+        }
+
+        // Target range to append into is a new one. Let us create it, and its `AppendWindow`.
+        info!(
             self.log,
-            "Failed to allocate record slots in batch as there is no append-window available. stream={}, batch-size={}",
+            "Stream={} has a new range=[{}, -1)",
             stream_id,
-            batch_size
+            range.start_offset()
         );
-        // There is not an append window available, the segments of the stream should have been sealed.
-        Err(ServiceError::AlreadySealed)
+        debug_assert_eq!(-1, range.end_offset());
+        let mut stream_range = StreamRange::new(
+            stream_id,
+            range_index,
+            range.start_offset() as u64,
+            range.start_offset() as u64,
+            None,
+        );
+        range
+            .replica_nodes()
+            .iter()
+            .flatten()
+            .for_each(|replica_node| {
+                if let Some(node) = replica_node.data_node() {
+                    let data_node = DataNode {
+                        node_id: node.node_id(),
+                        advertise_address: node
+                            .advertise_addr()
+                            .map(|addr| addr.to_owned())
+                            .unwrap_or_default(),
+                    };
+                    stream_range.replica_mut().push(data_node);
+                }
+            });
+
+        let mut append_window = AppendWindow::new(range_index, range.start_offset() as u64);
+        let offset = append_window.alloc_batch_slots(batch_size);
+        stream.push(stream_range);
+        self.windows.insert(stream_id, append_window);
+        Ok(offset)
     }
 
     pub(crate) fn ack(&mut self, stream_id: i64, offset: u64) -> Result<(), ServiceError> {
@@ -264,6 +314,7 @@ mod tests {
     use std::{error::Error, rc::Rc};
 
     use model::range::StreamRange;
+    use protocol::rpc::header::{Range, RangeT};
     use slog::trace;
     use tokio::sync::mpsc;
 
@@ -323,7 +374,16 @@ mod tests {
             let fetcher = create_fetcher().await;
             let stream_id = 1;
             let mut stream_manager = StreamManager::new(logger, fetcher, store);
-            let offset = stream_manager.alloc_record_slot(stream_id).await.unwrap();
+            let mut range = RangeT::default();
+            range.stream_id = stream_id;
+            range.range_index = TOTAL - 1;
+            range.end_offset = -1;
+            let mut builder = flatbuffers::FlatBufferBuilder::new();
+            let range = range.pack(&mut builder);
+            builder.finish(range, None);
+            let data = builder.finished_data();
+            let range = flatbuffers::root::<Range>(data)?;
+            let offset = stream_manager.alloc_record_batch_slots(range, 1).unwrap();
             stream_manager.ack(stream_id, offset)?;
             let seal_offset = stream_manager.seal(stream_id, TOTAL - 1).unwrap();
             assert_eq!(offset + 1, seal_offset);
@@ -345,7 +405,16 @@ mod tests {
             let fetcher = create_fetcher().await;
             let stream_id = 1;
             let mut stream_manager = StreamManager::new(logger, fetcher, store);
-            let offset = stream_manager.alloc_record_slot(stream_id).await.unwrap();
+            let mut range = RangeT::default();
+            range.stream_id = stream_id;
+            range.range_index = TOTAL - 1;
+            range.end_offset = -1;
+            let mut builder = flatbuffers::FlatBufferBuilder::new();
+            let range = range.pack(&mut builder);
+            builder.finish(range, None);
+            let data = builder.finished_data();
+            let range = flatbuffers::root::<Range>(data)?;
+            let offset = stream_manager.alloc_record_batch_slots(range, 1).unwrap();
             stream_manager.ack(stream_id, offset)?;
             let range = stream_manager.describe_range(stream_id, TOTAL - 1).await?;
             assert_eq!(offset + 1, range.limit());

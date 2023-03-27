@@ -110,8 +110,8 @@ table AppendRequest {
 }
 
 table AppendInfo {
-    // The id of the stream to append records.
-    stream_id: int64 = -1 (id: 0);
+    // The stream range to append records into.
+    range: Range (id: 0);
     // The index of the request in the batch.
     request_index: int32 (id: 1);
     // The payload length of this record batch to append

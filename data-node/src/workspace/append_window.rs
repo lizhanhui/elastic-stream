@@ -1,6 +1,8 @@
 use std::{cmp::Reverse, collections::BinaryHeap};
 
 pub(crate) struct AppendWindow {
+    pub(crate) range_index: i32,
+
     /// Next offset to commit.
     ///
     /// Assume the mutable range of the stream is `[n, -1)`, we are safe to acknowledge records whose
@@ -16,8 +18,9 @@ pub(crate) struct AppendWindow {
 }
 
 impl AppendWindow {
-    pub(crate) fn new(next: u64) -> Self {
+    pub(crate) fn new(range_index: i32, next: u64) -> Self {
         Self {
+            range_index,
             commit: next,
             next,
             inflight: BinaryHeap::new(),
@@ -72,7 +75,7 @@ mod tests {
 
     #[test]
     fn test_alloc_slot() -> Result<(), Box<dyn Error>> {
-        let mut window = AppendWindow::new(0);
+        let mut window = AppendWindow::new(0, 0);
         const TOTAL: u64 = 16;
         for i in 0..TOTAL {
             let slot = window.alloc_slot();
@@ -86,7 +89,7 @@ mod tests {
 
     #[test]
     fn test_ack() -> Result<(), Box<dyn Error>> {
-        let mut window = AppendWindow::new(0);
+        let mut window = AppendWindow::new(0, 0);
         const TOTAL: u64 = 16;
         for i in 0..TOTAL {
             let slot = window.alloc_slot();
@@ -105,7 +108,7 @@ mod tests {
 
     #[test]
     fn test_ack_out_of_order() -> Result<(), Box<dyn Error>> {
-        let mut window = AppendWindow::new(0);
+        let mut window = AppendWindow::new(0, 0);
         const TOTAL: u64 = 16;
         for i in 0..TOTAL {
             let slot = window.alloc_slot();

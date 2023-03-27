@@ -1,17 +1,5 @@
 package sdk.elastic.storage.client.impl;
 
-import sdk.elastic.storage.apis.ClientConfiguration;
-import sdk.elastic.storage.apis.OperationClient;
-import sdk.elastic.storage.apis.exception.ClientException;
-import sdk.elastic.storage.apis.manager.ResourceManager;
-import sdk.elastic.storage.client.cache.StreamRangeCache;
-import sdk.elastic.storage.client.common.PmUtil;
-import sdk.elastic.storage.client.common.ProtocolUtil;
-import sdk.elastic.storage.client.common.RemotingUtil;
-import sdk.elastic.storage.client.impl.manager.ResourceManagerImpl;
-import sdk.elastic.storage.client.netty.NettyClient;
-import sdk.elastic.storage.client.protocol.SbpFrame;
-import sdk.elastic.storage.client.route.Address;
 import com.google.common.base.Preconditions;
 import com.google.common.cache.CacheLoader;
 import com.google.flatbuffers.FlatBufferBuilder;
@@ -25,11 +13,26 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import sdk.elastic.storage.apis.ClientConfiguration;
+import sdk.elastic.storage.apis.OperationClient;
+import sdk.elastic.storage.apis.exception.ClientException;
+import sdk.elastic.storage.apis.manager.ResourceManager;
+import sdk.elastic.storage.client.cache.StreamRangeCache;
+import sdk.elastic.storage.client.common.PmUtil;
+import sdk.elastic.storage.client.common.ProtocolUtil;
+import sdk.elastic.storage.client.common.RemotingUtil;
+import sdk.elastic.storage.client.impl.manager.ResourceManagerImpl;
+import sdk.elastic.storage.client.netty.NettyClient;
+import sdk.elastic.storage.client.protocol.SbpFrame;
+import sdk.elastic.storage.client.route.Address;
 import sdk.elastic.storage.flatc.header.AppendInfoT;
 import sdk.elastic.storage.flatc.header.AppendRequest;
 import sdk.elastic.storage.flatc.header.AppendRequestT;
@@ -53,8 +56,6 @@ import sdk.elastic.storage.flatc.header.SealRangesResultT;
 import sdk.elastic.storage.flatc.header.StreamT;
 import sdk.elastic.storage.models.OperationCode;
 import sdk.elastic.storage.models.RecordBatch;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import static sdk.elastic.storage.flatc.header.ErrorCode.OK;
 
@@ -93,23 +94,24 @@ public class OperationClientImpl implements OperationClient {
     @Override
     public CompletableFuture<AppendResultT> appendBatch(RecordBatch recordBatch, Duration timeout) {
         Preconditions.checkArgument(recordBatch != null && recordBatch.getRecords().size() > 0, "Invalid recordBatch since no records were found.");
-
         long streamId = recordBatch.getBatchMeta().getStreamId();
-        ByteBuffer encodedBuffer = recordBatch.encode();
 
-        AppendInfoT appendInfoT = new AppendInfoT();
-        appendInfoT.setRequestIndex(0);
-        appendInfoT.setStreamId(streamId);
-        appendInfoT.setBatchLength(encodedBuffer.remaining());
-        AppendRequestT appendRequestT = new AppendRequestT();
-        appendRequestT.setTimeoutMs((int) timeout.toMillis());
-        appendRequestT.setAppendRequests(new AppendInfoT[] {appendInfoT});
-        FlatBufferBuilder builder = new FlatBufferBuilder();
-        int appendRequestOffset = AppendRequest.pack(builder, appendRequestT);
-        builder.finish(appendRequestOffset);
-
-        SbpFrame sbpFrame = ProtocolUtil.constructRequestSbpFrame(OperationCode.APPEND, builder.dataBuffer(), new ByteBuffer[] {encodedBuffer});
         return this.streamRangeCache.getLastRange(streamId).thenCompose(rangeT -> {
+                ByteBuffer encodedBuffer = recordBatch.encode();
+
+                AppendInfoT appendInfoT = new AppendInfoT();
+                appendInfoT.setRequestIndex(0);
+                appendInfoT.setBatchLength(encodedBuffer.remaining());
+                appendInfoT.setRange(rangeT);
+                AppendRequestT appendRequestT = new AppendRequestT();
+                appendRequestT.setTimeoutMs((int) timeout.toMillis());
+                appendRequestT.setAppendRequests(new AppendInfoT[] {appendInfoT});
+                FlatBufferBuilder builder = new FlatBufferBuilder();
+                int appendRequestOffset = AppendRequest.pack(builder, appendRequestT);
+                builder.finish(appendRequestOffset);
+
+                SbpFrame sbpFrame = ProtocolUtil.constructRequestSbpFrame(OperationCode.APPEND, builder.dataBuffer(), new ByteBuffer[] {encodedBuffer});
+
                 Address targetDataNode = null;
                 for (ReplicaNodeT node : rangeT.getReplicaNodes()) {
                     if (node.getIsPrimary()) {
@@ -342,6 +344,63 @@ public class OperationClientImpl implements OperationClient {
                 }
             }
         }
+    }
+
+    /**
+     * Generate SbpFrames for Append based on provided recordBatches.
+     * Note that recordBatches with the same streamId are grouped into the same SbpFrame.
+     *
+     * @param recordBatches recordBatches to be sent to server. They may contain different streamId.
+     * @param timeoutMillis timeout for each AppendRequest.
+     * @return Map of streamId to SbpFrame.
+     */
+    private Map<Long, SbpFrame> generateAppendRequest(List<RecordBatch> recordBatches, int timeoutMillis) {
+        // streamId -> List<AppendInfoT>
+        Map<Long, List<AppendInfoT>> appendInfoTMap = new HashMap<>();
+        // streamId -> request_index
+        Map<Long, Integer> appendInfoIndexMap = new HashMap<>();
+        // streamId -> payloadList
+        Map<Long, List<ByteBuffer>> payloadMap = new HashMap<>();
+
+        for (RecordBatch batch : recordBatches) {
+            // no need to send empty batch
+            if (batch.getRecords() == null || batch.getRecords().size() == 0) {
+                continue;
+            }
+            Long streamId = batch.getBatchMeta().getStreamId();
+
+            AppendInfoT appendInfoT = new AppendInfoT();
+            ByteBuffer encodedBuffer = batch.encode();
+            this.streamRangeCache.getLastRange(streamId).thenAccept(appendInfoT::setRange).join();
+            appendInfoT.setBatchLength(encodedBuffer.remaining());
+
+            // find the request index in the appendRequest for this batch
+            int index = appendInfoIndexMap.getOrDefault(streamId, 0);
+            appendInfoT.setRequestIndex(index);
+            appendInfoIndexMap.put(streamId, index + 1);
+
+            // add to the right batch list
+            appendInfoTMap.computeIfAbsent(streamId, key -> new ArrayList<>())
+                .add(appendInfoT);
+            payloadMap.computeIfAbsent(streamId, key -> new ArrayList<>())
+                .add(encodedBuffer);
+        }
+
+        Map<Long, SbpFrame> streamIdToSbpFrameMap = new HashMap<>(appendInfoTMap.size());
+        appendInfoTMap.forEach((streamId, appendInfoTList) -> {
+            AppendRequestT appendRequestT = new AppendRequestT();
+            appendRequestT.setTimeoutMs(timeoutMillis);
+            appendRequestT.setAppendRequests(appendInfoTList.toArray(new AppendInfoT[0]));
+
+            FlatBufferBuilder builder = new FlatBufferBuilder();
+            int pack = AppendRequest.pack(builder, appendRequestT);
+            builder.finish(pack);
+
+            SbpFrame sbpFrame = ProtocolUtil.constructRequestSbpFrame(OperationCode.APPEND, builder.dataBuffer(), payloadMap.get(streamId).toArray(new ByteBuffer[0]));
+            streamIdToSbpFrameMap.put(streamId, sbpFrame);
+        });
+
+        return streamIdToSbpFrameMap;
     }
 
     @Override

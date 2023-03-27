@@ -208,19 +208,6 @@ impl<'a> Append<'a> {
         let mut err_code = ErrorCode::OK;
         let mut manager = stream_manager.borrow_mut();
 
-        // Ensure each stream is
-        for batch in self.append_request.append_requests().iter().flatten() {
-            let stream_id = batch.stream_id();
-            manager
-                .create_stream_if_missing(stream_id)
-                .await
-                .map_err(|_e| ErrorCode::DN_INTERNAL_SERVER_ERROR)?;
-            manager
-                .ensure_mutable(stream_id)
-                .await
-                .map_err(|_e| ErrorCode::DN_INTERNAL_SERVER_ERROR)?;
-        }
-
         // Iterate over the append requests and append each record batch
         let to_store_requests: Vec<_> = self
             .append_request
@@ -228,11 +215,21 @@ impl<'a> Append<'a> {
             .iter()
             .flatten()
             .map_while(|record_batch| {
-                let stream_id = record_batch.stream_id();
+                let range = match record_batch.range() {
+                    Some(range) => range,
+                    None => {
+                        error!(
+                            self.logger,
+                            "Required `range` field is missing from `AppendRequest`"
+                        );
+                        err_code = ErrorCode::BAD_REQUEST;
+                        return None;
+                    }
+                };
+
                 let _request_index = record_batch.request_index();
                 let batch_len = record_batch.batch_length();
 
-                // TODO: Check if the stream exists and
                 // the current data node owns the newly writable range of the stream
 
                 // Split the current batch payload from the whole payload
@@ -250,7 +247,7 @@ impl<'a> Append<'a> {
                     Ok(decode_batch) => {
                         // Fetch the offset for the current stream
                         let offset_r =
-                            manager.alloc_record_batch_slots(stream_id, decode_batch.records.len());
+                            manager.alloc_record_batch_slots(range, decode_batch.records.len());
 
                         // Set the error code if the offset allocation failed
                         if let Err(e) = offset_r {
@@ -270,7 +267,7 @@ impl<'a> Append<'a> {
                         }
 
                         let to_store = AppendRecordRequest {
-                            stream_id,
+                            stream_id: range.stream_id(),
                             offset: offset as i64,
                             buffer: payload_b,
                         };
