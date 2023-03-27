@@ -20,17 +20,25 @@ var (
 // 1. a stream
 // 2. a data node
 // 3. a data node and a stream
-func (c *RaftCluster) ListRanges(ctx context.Context, rangeCriteria *rpcfb.RangeCriteriaT) ([]*rpcfb.RangeT, error) {
-	if rangeCriteria.StreamId >= endpoint.MinStreamID && rangeCriteria.DataNode != nil && rangeCriteria.DataNode.NodeId >= endpoint.MinDataNodeID {
-		return c.listRangesOnDataNodeInStream(ctx, rangeCriteria.StreamId, rangeCriteria.DataNode.NodeId)
+func (c *RaftCluster) ListRanges(ctx context.Context, rangeCriteria *rpcfb.RangeCriteriaT) (ranges []*rpcfb.RangeT, err error) {
+	byStream := rangeCriteria.StreamId >= endpoint.MinStreamID
+	byDataNode := rangeCriteria.DataNode != nil && rangeCriteria.DataNode.NodeId >= endpoint.MinDataNodeID
+	switch {
+	case byStream && byDataNode:
+		ranges, err = c.listRangesOnDataNodeInStream(ctx, rangeCriteria.StreamId, rangeCriteria.DataNode.NodeId)
+	case byStream && !byDataNode:
+		ranges, err = c.listRangesInStream(ctx, rangeCriteria.StreamId)
+	case !byStream && byDataNode:
+		ranges, err = c.listRangesOnDataNode(ctx, rangeCriteria.DataNode.NodeId)
+	default:
 	}
-	if rangeCriteria.StreamId >= endpoint.MinStreamID {
-		return c.listRangesInStream(ctx, rangeCriteria.StreamId)
+
+	for _, r := range ranges {
+		for _, node := range r.ReplicaNodes {
+			c.fillDataNodeInfo(node.DataNode)
+		}
 	}
-	if rangeCriteria.DataNode != nil && rangeCriteria.DataNode.NodeId >= endpoint.MinDataNodeID {
-		return c.listRangesOnDataNode(ctx, rangeCriteria.DataNode.NodeId)
-	}
-	return nil, nil
+	return
 }
 
 // listRangesOnDataNodeInStream lists the ranges on a data node in a stream.
@@ -110,6 +118,9 @@ func (c *RaftCluster) SealRange(ctx context.Context, rangeID *rpcfb.RangeIdT) (*
 		// The stream does not exist.
 		logger.Error("failed to get last range", zap.Error(err))
 		return nil, ErrRangeNotFound
+	}
+	for _, node := range lastRange.ReplicaNodes {
+		c.fillDataNodeInfo(node.DataNode)
 	}
 	writableRange.RangeT = lastRange
 

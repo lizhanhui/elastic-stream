@@ -82,6 +82,17 @@ func (c *Cache) SaveDataNode(nodeT *rpcfb.DataNodeT) (updated bool) {
 	return updated
 }
 
+// DataNode returns the data node by node ID.
+// The returned value is nil if the data node is not found.
+// The returned value should not be modified.
+func (c *Cache) DataNode(nodeID int32) *DataNode {
+	node, ok := c.dataNodes.Get(nodeID)
+	if !ok {
+		return nil
+	}
+	return node
+}
+
 // DataNodes returns all data nodes in the cache.
 func (c *Cache) DataNodes() []*DataNode {
 	nodes := make([]*DataNode, 0, c.dataNodes.Count())

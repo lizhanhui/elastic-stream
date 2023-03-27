@@ -43,8 +43,11 @@ func (c *RaftCluster) CreateStreams(ctx context.Context, streams []*rpcfb.Stream
 	logger.Info("start to create streams", zap.Uint64s("stream-ids", ids))
 	results, err := c.storage.CreateStreams(ctx, params)
 	logger.Info("finish creating streams", zap.Error(err))
-
-	// TODO sync new ranges to data nodes
+	for _, result := range results {
+		for _, node := range result.Range.ReplicaNodes {
+			c.fillDataNodeInfo(node.DataNode)
+		}
+	}
 	return results, err
 }
 

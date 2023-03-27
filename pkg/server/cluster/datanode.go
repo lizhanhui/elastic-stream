@@ -33,6 +33,7 @@ func (c *RaftCluster) Heartbeat(ctx context.Context, node *rpcfb.DataNodeT) erro
 }
 
 // chooseDataNodes selects `cnt` number of data nodes from the available data nodes for a range.
+// Only DataNodeT.NodeId is filled in the returned ReplicaNodeT.
 // It returns ErrNotEnoughDataNodes if there are not enough data nodes to allocate.
 func (c *RaftCluster) chooseDataNodes(cnt int8) ([]*rpcfb.ReplicaNodeT, error) {
 	if int(cnt) > c.cache.DataNodeCount() {
@@ -48,10 +49,25 @@ func (c *RaftCluster) chooseDataNodes(cnt int8) ([]*rpcfb.ReplicaNodeT, error) {
 	replicaNodes := make([]*rpcfb.ReplicaNodeT, 0, cnt)
 	for i := 0; i < int(cnt); i++ {
 		replicaNodes = append(replicaNodes, &rpcfb.ReplicaNodeT{
-			DataNode: nodes[i].DataNodeT,
+			DataNode: &rpcfb.DataNodeT{
+				NodeId: nodes[i].NodeId,
+			},
 		})
 	}
 	replicaNodes[0].IsPrimary = true
 
 	return replicaNodes, nil
+}
+
+func (c *RaftCluster) eraseDataNodeInfo(node *rpcfb.DataNodeT) {
+	node.AdvertiseAddr = ""
+}
+
+func (c *RaftCluster) fillDataNodeInfo(node *rpcfb.DataNodeT) {
+	n := c.cache.DataNode(node.NodeId)
+	if n == nil {
+		c.lg.Warn("data node not found", zap.Int32("node-id", node.NodeId))
+		return
+	}
+	node.AdvertiseAddr = n.AdvertiseAddr
 }
