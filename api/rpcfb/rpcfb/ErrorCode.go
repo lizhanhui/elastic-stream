@@ -23,6 +23,7 @@ const (
 	ErrorCodePM_NOT_IMPLEMENTED       ErrorCode = 1501
 	ErrorCodePM_NO_AVAILABLE_DN       ErrorCode = 1502
 	ErrorCodePM_NOT_LEADER            ErrorCode = 1503
+	ErrorCodePM_RANGE_NOT_FOUND       ErrorCode = 1504
 	ErrorCodeDN_INTERNAL_SERVER_ERROR ErrorCode = 2500
 	ErrorCodeDN_NOT_IMPLEMENTED       ErrorCode = 2501
 	ErrorCodeDN_NOT_LEADER_RANGE      ErrorCode = 2502
@@ -45,6 +46,7 @@ var EnumNamesErrorCode = map[ErrorCode]string{
 	ErrorCodePM_NOT_IMPLEMENTED:       "PM_NOT_IMPLEMENTED",
 	ErrorCodePM_NO_AVAILABLE_DN:       "PM_NO_AVAILABLE_DN",
 	ErrorCodePM_NOT_LEADER:            "PM_NOT_LEADER",
+	ErrorCodePM_RANGE_NOT_FOUND:       "PM_RANGE_NOT_FOUND",
 	ErrorCodeDN_INTERNAL_SERVER_ERROR: "DN_INTERNAL_SERVER_ERROR",
 	ErrorCodeDN_NOT_IMPLEMENTED:       "DN_NOT_IMPLEMENTED",
 	ErrorCodeDN_NOT_LEADER_RANGE:      "DN_NOT_LEADER_RANGE",
@@ -67,6 +69,7 @@ var EnumValuesErrorCode = map[string]ErrorCode{
 	"PM_NOT_IMPLEMENTED":       ErrorCodePM_NOT_IMPLEMENTED,
 	"PM_NO_AVAILABLE_DN":       ErrorCodePM_NO_AVAILABLE_DN,
 	"PM_NOT_LEADER":            ErrorCodePM_NOT_LEADER,
+	"PM_RANGE_NOT_FOUND":       ErrorCodePM_RANGE_NOT_FOUND,
 	"DN_INTERNAL_SERVER_ERROR": ErrorCodeDN_INTERNAL_SERVER_ERROR,
 	"DN_NOT_IMPLEMENTED":       ErrorCodeDN_NOT_IMPLEMENTED,
 	"DN_NOT_LEADER_RANGE":      ErrorCodeDN_NOT_LEADER_RANGE,

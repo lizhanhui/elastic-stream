@@ -38,6 +38,9 @@ enum ErrorCode : int16 {
     // leader nodes. Otherwise, use this code to signal the client to redirect future requests.
     PM_NOT_LEADER = 1503,
 
+    // Use this code if the specified range is not found when sealing a mutable range.
+    PM_RANGE_NOT_FOUND,
+
     // 25xx is reserved for data node errors
     DN_INTERNAL_SERVER_ERROR = 2500,
     DN_NOT_IMPLEMENTED = 2501,

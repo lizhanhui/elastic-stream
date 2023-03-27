@@ -46,7 +46,6 @@ func TestClient_SealRanges(t *testing.T) {
 	re.Equal(rpcfb.ErrorCodeOK, resp.Status.Code)
 	re.Len(resp.SealResponses, 1)
 	re.Equal(rpcfb.ErrorCodeOK, resp.SealResponses[0].Status.Code)
-	re.Equal(int64(1), resp.SealResponses[0].StreamId)
 	re.Equal(int32(2), resp.SealResponses[0].Range.RangeIndex)
 }
 
@@ -78,7 +77,6 @@ func (m *mockHandler) SealRanges(req *protocol.SealRangesRequest, resp *protocol
 	results := make([]*rpcfb.SealRangesResultT, 0, len(req.Ranges))
 	for _, r := range req.Ranges {
 		results = append(results, &rpcfb.SealRangesResultT{
-			StreamId: r.StreamId,
 			Range: &rpcfb.RangeT{
 				StreamId:    r.StreamId,
 				RangeIndex:  r.RangeIndex,
