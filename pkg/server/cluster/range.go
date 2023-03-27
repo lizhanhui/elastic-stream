@@ -113,16 +113,18 @@ func (c *RaftCluster) SealRange(ctx context.Context, rangeID *rpcfb.RangeIdT) (*
 	}
 	writableRange.RangeT = lastRange
 
-	if lastRange.RangeIndex > rangeID.RangeIndex {
+	if writableRange.RangeIndex > rangeID.RangeIndex {
 		// The range is already sealed.
 		return writableRange.RangeT, nil
 	}
-	if lastRange.RangeIndex < rangeID.RangeIndex {
+	if writableRange.RangeIndex < rangeID.RangeIndex {
 		// The range is not found.
 		return writableRange.RangeT, ErrRangeNotFound
 	}
 
-	// Seal the range.
+	// Here, writableRange.RangeIndex == rangeID.RangeIndex.
+	// TODO Query range offset from the data nodes.
+	// TODO Seal the range.
 
 	return nil, nil
 }

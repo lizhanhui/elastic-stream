@@ -61,10 +61,12 @@ func (e *Endpoint) GetRange(ctx context.Context, rangeID *rpcfb.RangeIdT) (*rpcf
 }
 
 func (e *Endpoint) GetLastRange(ctx context.Context, streamID int64) (*rpcfb.RangeT, error) {
-	_ = ctx
-	_ = streamID
-	// TODO
-	return nil, nil
+	kvs, err := e.GetByRange(ctx, kv.Range{StartKey: rangePathInSteam(streamID, MinRangeIndex), EndKey: e.endRangePathInStream(streamID)}, 1, true)
+	if len(kvs) < 1 || err != nil {
+		return nil, err
+	}
+
+	return rpcfb.GetRootAsRange(kvs[0].Value, 0).UnPack(), nil
 }
 
 // GetRangesByStream returns the ranges of the given stream.
