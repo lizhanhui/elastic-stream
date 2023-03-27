@@ -125,7 +125,6 @@ func (c *RaftCluster) loadInfo() error {
 	}
 	logger.Info("load data nodes", zap.Int("count", c.cache.DataNodeCount()), zap.Duration("cost", time.Since(start)))
 
-	// TODO load other info
 	return nil
 }
 

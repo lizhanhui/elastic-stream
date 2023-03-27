@@ -10,20 +10,41 @@ import (
 
 // Cache is the cache for all metadata.
 type Cache struct {
-	dataNodes cmap.ConcurrentMap[int32, *DataNode]
-	// TODO: add more cache
+	writableRanges cmap.ConcurrentMap[int64, *Range]
+	dataNodes      cmap.ConcurrentMap[int32, *DataNode]
 }
 
 // NewCache creates a new Cache.
 func NewCache() *Cache {
 	return &Cache{
-		dataNodes: cmap.NewWithCustomShardingFunction[int32, *DataNode](func(key int32) uint32 { return uint32(key) }),
+		writableRanges: cmap.NewWithCustomShardingFunction[int64, *Range](func(key int64) uint32 { return uint32(key) }),
+		dataNodes:      cmap.NewWithCustomShardingFunction[int32, *DataNode](func(key int32) uint32 { return uint32(key) }),
 	}
 }
 
 // Reset resets the cache.
 func (c *Cache) Reset() {
+	c.writableRanges.Clear()
 	c.dataNodes.Clear()
+}
+
+type Range struct {
+	*rpcfb.RangeT
+	// mu is a 1-element semaphore channel controlling access to seal range.
+	// Write to lock it, and read to unlock.
+	mu chan struct{}
+}
+
+// WritableRange returns the writable range of the stream.
+func (c *Cache) WritableRange(streamID int64) *Range {
+	return c.writableRanges.Upsert(streamID, nil, func(exist bool, valueInMap, _ *Range) *Range {
+		if exist {
+			return valueInMap
+		}
+		return &Range{
+			mu: make(chan struct{}, 1),
+		}
+	})
 }
 
 // DataNode is the cache for DataNodeT and its status.
