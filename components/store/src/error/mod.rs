@@ -74,6 +74,9 @@ pub enum StoreError {
 
     #[error("Unexpected cache error")]
     CacheError,
+
+    #[error("Failed to acquire store lock")]
+    AcquireLock,
 }
 
 #[derive(Debug, Error, Clone)]

@@ -86,4 +86,6 @@ pub trait Store {
 
     /// Max record offset in the store of the specified stream.
     fn max_record_offset(&self, stream_id: i64) -> Result<Option<u64>, StoreError>;
+
+    fn id(&self) -> i32;
 }

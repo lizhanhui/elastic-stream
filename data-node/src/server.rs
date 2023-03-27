@@ -13,7 +13,7 @@ use slog_async::Async;
 use slog_term::{FullFormat, TermDecorator};
 use store::{
     option::{StoreOptions, WalPath},
-    ElasticStore,
+    ElasticStore, Store,
 };
 use tokio::sync::{mpsc, oneshot};
 
@@ -99,7 +99,7 @@ pub fn launch(cfg: &ServerConfig) -> Result<(), Box<dyn Error>> {
             .spawn(move || {
                 let mut client_config = ClientConfig::default();
                 client_config.with_data_node(model::data_node::DataNode {
-                    node_id: server_config.node_id,
+                    node_id: store.id(),
                     advertise_address: format!("{}:{}", server_config.host, server_config.port),
                 });
 

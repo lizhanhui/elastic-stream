@@ -10,9 +10,6 @@ pub const DEFAULT_CONCURRENCY: usize = 1;
 #[command(author, version, about, long_about = None)]
 pub struct ServerConfig {
     #[arg(long)]
-    pub node_id: i32,
-
-    #[arg(long)]
     pub host: String,
 
     /// Listening port
@@ -63,8 +60,6 @@ mod tests {
     fn test_actor_count() {
         let config = ServerConfig::parse_from([
             "data-node",
-            "--node-id",
-            "0",
             "--host",
             "localhost",
             "-p",
@@ -84,8 +79,6 @@ mod tests {
     fn test_actor_count_with_excessively_large_num() {
         let config = ServerConfig::parse_from([
             "data-node",
-            "--node-id",
-            "0",
             "--host",
             "localhost",
             "-p",

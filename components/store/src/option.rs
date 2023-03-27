@@ -41,7 +41,7 @@ impl WalPath {
 #[derive(Debug, Clone, PartialEq)]
 pub struct StoreOptions {
     pub(crate) create_if_missing: bool,
-    pub(crate) store_path: WalPath,
+    pub(crate) wal_path: WalPath,
     pub(crate) metadata_path: String,
     pub(crate) destroy_on_exit: bool,
     pub(crate) command_queue_depth: usize,
@@ -51,7 +51,7 @@ impl StoreOptions {
     pub fn new(store_path: &WalPath, metadata_path: String) -> Self {
         Self {
             create_if_missing: true,
-            store_path: store_path.clone(),
+            wal_path: store_path.clone(),
             destroy_on_exit: false,
             command_queue_depth: 1024,
             metadata_path,

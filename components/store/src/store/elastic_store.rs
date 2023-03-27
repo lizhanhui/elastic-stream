@@ -2,6 +2,7 @@ use std::{
     cell::RefCell,
     io::Cursor,
     os::fd::{AsRawFd, RawFd},
+    path::Path,
     sync::Arc,
     thread::{Builder, JoinHandle},
 };
@@ -29,10 +30,12 @@ use model::range::StreamRange;
 use slog::{error, trace, Logger};
 use tokio::sync::{mpsc, oneshot};
 
-use super::handle_joiner;
+use super::{handle_joiner, lock::Lock};
 
 #[derive(Clone)]
 pub struct ElasticStore {
+    lock: Arc<Lock>,
+
     /// The channel for server layer to communicate with io module.
     ///
     /// For sending a message from async to sync, you should use the standard library unbounded channel or crossbeam.
@@ -62,8 +65,25 @@ impl ElasticStore {
         let logger = log.clone();
         let mut opt = io::Options::default();
 
+        let store_path = match Path::new(&options.metadata_path).parent() {
+            None => {
+                error!(
+                    log,
+                    "Metadata should not be stored at root directory. Metadata Path: `{}`",
+                    options.metadata_path
+                );
+                return Err(StoreError::Configuration(format!(
+                    "Bad metadata path: {}",
+                    options.metadata_path
+                )));
+            }
+            Some(path) => path,
+        };
+
+        let lock = Arc::new(Lock::new(store_path, &log)?);
+
         // Customize IO options from store options.
-        opt.add_wal_path(options.store_path);
+        opt.add_wal_path(options.wal_path);
         opt.metadata_path = options.metadata_path;
 
         // Build wal offset manager
@@ -111,6 +131,7 @@ impl ElasticStore {
         handle_joiner.push(_io_thread_handle);
 
         let store = Self {
+            lock,
             io_tx: tx,
             indexer,
             wal_offset_manager,
@@ -375,6 +396,10 @@ impl Store for ElasticStore {
                 None
             }
         })
+    }
+
+    fn id(&self) -> i32 {
+        self.lock.id()
     }
 }
 
