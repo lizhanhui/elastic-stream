@@ -445,6 +445,10 @@ func (rl *connReadLoop) parseResponse(f *codec.DataFrame) (resp protocol.InRespo
 		resp = newInResponse(f.OpCode)
 	}
 
+	if resp == nil {
+		return nil, errors.Errorf("sbp: unknown response opcode: %s", f.OpCode)
+	}
+
 	err = resp.Unmarshal(f.HeaderFmt, f.Header)
 	if err != nil {
 		return nil, errors.Wrap(err, "unmarshal response")
