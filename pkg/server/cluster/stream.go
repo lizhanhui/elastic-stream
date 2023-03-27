@@ -34,7 +34,7 @@ func (c *RaftCluster) CreateStreams(ctx context.Context, streams []*rpcfb.Stream
 				StreamId:     stream.StreamId,
 				RangeIndex:   0,
 				StartOffset:  0,
-				EndOffset:    -1,
+				EndOffset:    _writableRangeEndOffset,
 				ReplicaNodes: nodes,
 			},
 		})

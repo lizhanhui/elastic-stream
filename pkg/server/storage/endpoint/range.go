@@ -35,13 +35,22 @@ const (
 )
 
 type Range interface {
-	GetRange(ctx context.Context, t *rpcfb.RangeIdT) (*rpcfb.RangeT, error)
+	SealRange(ctx context.Context, sealedRange *rpcfb.RangeT, writableRange *rpcfb.RangeT) (*rpcfb.RangeT, error)
+	GetRange(ctx context.Context, rangeID *rpcfb.RangeIdT) (*rpcfb.RangeT, error)
 	GetLastRange(ctx context.Context, streamID int64) (*rpcfb.RangeT, error)
 	GetRangesByStream(ctx context.Context, streamID int64) ([]*rpcfb.RangeT, error)
 	ForEachRangeInStream(ctx context.Context, streamID int64, f func(r *rpcfb.RangeT) error) error
 	GetRangeIDsByDataNode(ctx context.Context, dataNodeID int32) ([]*rpcfb.RangeIdT, error)
 	ForEachRangeIDOnDataNode(ctx context.Context, dataNodeID int32, f func(rangeID *rpcfb.RangeIdT) error) error
 	GetRangeIDsByDataNodeAndStream(ctx context.Context, streamID int64, dataNodeID int32) ([]*rpcfb.RangeIdT, error)
+}
+
+func (e *Endpoint) SealRange(ctx context.Context, sealedRange *rpcfb.RangeT, writableRange *rpcfb.RangeT) (*rpcfb.RangeT, error) {
+	// TODO
+	_ = ctx
+	_ = sealedRange
+	_ = writableRange
+	return nil, nil
 }
 
 func (e *Endpoint) GetRange(ctx context.Context, rangeID *rpcfb.RangeIdT) (*rpcfb.RangeT, error) {
@@ -61,8 +70,11 @@ func (e *Endpoint) GetRange(ctx context.Context, rangeID *rpcfb.RangeIdT) (*rpcf
 }
 
 func (e *Endpoint) GetLastRange(ctx context.Context, streamID int64) (*rpcfb.RangeT, error) {
+	logger := e.lg.With(zap.Int64("stream-id", streamID), traceutil.TraceLogField(ctx))
+
 	kvs, err := e.GetByRange(ctx, kv.Range{StartKey: rangePathInSteam(streamID, MinRangeIndex), EndKey: e.endRangePathInStream(streamID)}, 1, true)
 	if len(kvs) < 1 || err != nil {
+		logger.Error("failed to get last range", zap.Error(err))
 		return nil, err
 	}
 
