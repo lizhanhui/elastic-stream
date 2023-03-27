@@ -114,18 +114,6 @@ func (c *RaftCluster) loadInfo() error {
 
 	c.cache.Reset()
 
-	// // TODO use cache later
-	// // load streams
-	// start := time.Now()
-	// err := c.storage.ForEachStream(c.ctx, func(stream *rpcfb.StreamT) error {
-	// 	c.cache.SaveStream(stream)
-	// 	return nil
-	// })
-	// if err != nil {
-	// 	return errors.Wrap(err, "load streams")
-	// }
-	// logger.Info("load streams", zap.Int("count", c.cache.StreamCount()), zap.Duration("cost", time.Since(start)))
-
 	// load data nodes
 	start := time.Now()
 	err := c.storage.ForEachDataNode(c.ctx, func(datanode *rpcfb.DataNodeT) error {
