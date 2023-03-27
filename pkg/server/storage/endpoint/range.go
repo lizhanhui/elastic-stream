@@ -36,6 +36,7 @@ const (
 
 type Range interface {
 	GetRange(ctx context.Context, t *rpcfb.RangeIdT) (*rpcfb.RangeT, error)
+	GetLastRange(ctx context.Context, streamID int64) (*rpcfb.RangeT, error)
 	GetRangesByStream(ctx context.Context, streamID int64) ([]*rpcfb.RangeT, error)
 	ForEachRangeInStream(ctx context.Context, streamID int64, f func(r *rpcfb.RangeT) error) error
 	GetRangeIDsByDataNode(ctx context.Context, dataNodeID int32) ([]*rpcfb.RangeIdT, error)
@@ -57,6 +58,13 @@ func (e *Endpoint) GetRange(ctx context.Context, rangeID *rpcfb.RangeIdT) (*rpcf
 	}
 
 	return rpcfb.GetRootAsRange(value, 0).UnPack(), nil
+}
+
+func (e *Endpoint) GetLastRange(ctx context.Context, streamID int64) (*rpcfb.RangeT, error) {
+	_ = ctx
+	_ = streamID
+	// TODO
+	return nil, nil
 }
 
 // GetRangesByStream returns the ranges of the given stream.

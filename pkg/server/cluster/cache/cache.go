@@ -35,6 +35,10 @@ type Range struct {
 	mu chan struct{}
 }
 
+func (r *Range) Mu() chan struct{} {
+	return r.mu
+}
+
 // WritableRange returns the writable range of the stream.
 func (c *Cache) WritableRange(streamID int64) *Range {
 	return c.writableRanges.Upsert(streamID, nil, func(exist bool, valueInMap, _ *Range) *Range {

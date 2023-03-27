@@ -3,6 +3,7 @@ package handler
 import (
 	"github.com/AutoMQ/placement-manager/api/rpcfb/rpcfb"
 	"github.com/AutoMQ/placement-manager/pkg/sbp/protocol"
+	"github.com/AutoMQ/placement-manager/pkg/server/cluster"
 )
 
 func (s *Sbp) ListRanges(req *protocol.ListRangesRequest, resp *protocol.ListRangesResponse) {
@@ -47,7 +48,12 @@ func (s *Sbp) SealRanges(req *protocol.SealRangesRequest, resp *protocol.SealRan
 			Range: r,
 		}
 		if err != nil {
-			result.Status = &rpcfb.StatusT{Code: rpcfb.ErrorCodePM_INTERNAL_SERVER_ERROR, Message: err.Error()}
+			switch err {
+			case cluster.ErrRangeNotFound:
+				result.Status = &rpcfb.StatusT{Code: rpcfb.ErrorCodePM_RANGE_NOT_FOUND, Message: err.Error()}
+			default:
+				result.Status = &rpcfb.StatusT{Code: rpcfb.ErrorCodePM_INTERNAL_SERVER_ERROR, Message: err.Error()}
+			}
 		} else {
 			result.Status = &rpcfb.StatusT{Code: rpcfb.ErrorCodeOK}
 		}

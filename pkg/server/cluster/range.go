@@ -3,11 +3,17 @@ package cluster
 import (
 	"context"
 
+	"github.com/pkg/errors"
 	"go.uber.org/zap"
 
 	"github.com/AutoMQ/placement-manager/api/rpcfb/rpcfb"
 	"github.com/AutoMQ/placement-manager/pkg/server/storage/endpoint"
 	"github.com/AutoMQ/placement-manager/pkg/util/traceutil"
+)
+
+var (
+	// ErrRangeNotFound is returned when the specified range is not found.
+	ErrRangeNotFound = errors.New("range not found")
 )
 
 // ListRanges lists the ranges of
@@ -76,8 +82,48 @@ func (c *RaftCluster) listRangesOnDataNode(ctx context.Context, dataNodeID int32
 	return ranges, nil
 }
 
+// SealRange seals a range.
+// It returns the current writable range and an optional error.
+// It returns a nil range if and only if the ctx is done or the stream does not exist.
+// It returns ErrRangeNotFound if the range does not exist.
 func (c *RaftCluster) SealRange(ctx context.Context, rangeID *rpcfb.RangeIdT) (*rpcfb.RangeT, error) {
-	// TODO
+	logger := c.lg.With(zap.Int64("range-stream-id", rangeID.StreamId), zap.Int32("range-index", rangeID.RangeIndex), traceutil.TraceLogField(ctx))
+
+	writableRange := c.cache.WritableRange(rangeID.StreamId)
+	mu := writableRange.Mu()
+
+	select {
+	case mu <- struct{}{}:
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+	defer func() {
+		<-mu
+	}()
+
+	if writableRange.RangeT != nil && writableRange.RangeIndex > rangeID.RangeIndex {
+		return writableRange.RangeT, nil
+	}
+
+	lastRange, err := c.storage.GetLastRange(ctx, rangeID.StreamId)
+	if lastRange == nil || err != nil {
+		// The stream does not exist.
+		logger.Error("failed to get last range", zap.Error(err))
+		return nil, ErrRangeNotFound
+	}
+	writableRange.RangeT = lastRange
+
+	if lastRange.RangeIndex > rangeID.RangeIndex {
+		// The range is already sealed.
+		return writableRange.RangeT, nil
+	}
+	if lastRange.RangeIndex < rangeID.RangeIndex {
+		// The range is not found.
+		return writableRange.RangeT, ErrRangeNotFound
+	}
+
+	// Seal the range.
+
 	return nil, nil
 }
 
