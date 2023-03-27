@@ -231,7 +231,7 @@ func (c *RaftCluster) sealRangeOnDataNode(ctx context.Context, writableRange *rp
 	return minEndOffset, nil
 }
 
-func (c *RaftCluster) newRange(ctx context.Context, r *rpcfb.RangeT, endOffset int64) (old *rpcfb.RangeT, new *rpcfb.RangeT, err error) {
+func (c *RaftCluster) newRange(ctx context.Context, r *rpcfb.RangeT, endOffset int64) (or *rpcfb.RangeT, nr *rpcfb.RangeT, err error) {
 	logger := c.lg.With(zap.Int64("range-stream-id", r.StreamId), zap.Int32("range-index", r.RangeIndex), traceutil.TraceLogField(ctx))
 
 	oldNodes := make([]*rpcfb.ReplicaNodeT, 0, len(r.ReplicaNodes))
@@ -241,7 +241,7 @@ func (c *RaftCluster) newRange(ctx context.Context, r *rpcfb.RangeT, endOffset i
 			IsPrimary: node.IsPrimary,
 		})
 	}
-	old = &rpcfb.RangeT{
+	or = &rpcfb.RangeT{
 		StreamId:     r.StreamId,
 		RangeIndex:   r.RangeIndex,
 		StartOffset:  r.StartOffset,
@@ -254,7 +254,7 @@ func (c *RaftCluster) newRange(ctx context.Context, r *rpcfb.RangeT, endOffset i
 		logger.Error("failed to choose data nodes", zap.Int64("stream-id", r.StreamId), zap.Error(err))
 		return nil, nil, err
 	}
-	new = &rpcfb.RangeT{
+	nr = &rpcfb.RangeT{
 		StreamId:     r.StreamId,
 		RangeIndex:   r.RangeIndex + 1,
 		StartOffset:  endOffset,
