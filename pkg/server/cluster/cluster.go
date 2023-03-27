@@ -23,6 +23,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/AutoMQ/placement-manager/api/rpcfb/rpcfb"
+	sbp "github.com/AutoMQ/placement-manager/pkg/sbp/client"
 	"github.com/AutoMQ/placement-manager/pkg/server/cluster/cache"
 	"github.com/AutoMQ/placement-manager/pkg/server/id"
 	"github.com/AutoMQ/placement-manager/pkg/server/member"
@@ -48,6 +49,7 @@ type RaftCluster struct {
 	streamIDAlloc id.Allocator
 	member        Member
 	cache         *cache.Cache
+	client        *sbp.Client
 
 	lg *zap.Logger
 }
@@ -67,9 +69,10 @@ type Server interface {
 // NewRaftCluster creates a new RaftCluster.
 func NewRaftCluster(ctx context.Context, logger *zap.Logger) *RaftCluster {
 	return &RaftCluster{
-		ctx:   ctx,
-		cache: cache.NewCache(),
-		lg:    logger,
+		ctx:    ctx,
+		cache:  cache.NewCache(),
+		client: sbp.NewClient(logger),
+		lg:     logger,
 	}
 }
 

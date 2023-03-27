@@ -160,7 +160,7 @@ func (cc *conn) heartbeat(ctx context.Context) error {
 	fmt := cc.c.format()
 	req := protocol.HeartbeatRequest{
 		HeartbeatRequestT: rpcfb.HeartbeatRequestT{
-			ClientId:   cc.c.name,
+			ClientId:   cc.c.id,
 			ClientRole: rpcfb.ClientRoleCLIENT_ROLE_PM,
 		},
 	}

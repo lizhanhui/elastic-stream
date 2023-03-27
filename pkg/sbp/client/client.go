@@ -3,7 +3,10 @@ package client
 import (
 	"bufio"
 	"context"
+	"fmt"
 	"net"
+	"os"
+	"sync/atomic"
 	"time"
 
 	"github.com/pkg/errors"
@@ -19,6 +22,10 @@ type address = string
 
 const (
 	_defaultHeartbeatTimeout = 15 * time.Second
+)
+
+var (
+	clientIDCounter = atomic.Int32{}
 )
 
 // A Client internally caches connections to servers.
@@ -41,18 +48,18 @@ type Client struct {
 	// Default to format.FlatBuffer
 	Format format.Format
 
-	name     string
+	id       string
 	connPool *connPool
 
 	lg *zap.Logger
 }
 
 // NewClient creates a client
-func NewClient(name string, lg *zap.Logger) *Client {
+func NewClient(lg *zap.Logger) *Client {
 	c := &Client{
-		name: name,
-		lg:   lg,
+		lg: lg,
 	}
+	c.id = newClientID()
 	c.connPool = newConnPool(c)
 	return c
 }
@@ -88,7 +95,13 @@ func (c *Client) SealRanges(req *protocol.SealRangesRequest, addr address) (*pro
 	if err != nil {
 		return nil, err
 	}
-	return resp.(*protocol.SealRangesResponse), nil
+	if sealResp, ok := resp.(*protocol.SealRangesResponse); ok {
+		return sealResp, nil
+	}
+	if sysErr, ok := resp.(*protocol.SystemErrorResponse); ok {
+		return nil, errors.Errorf("system error, code: %s, message: %s", sysErr.Status.Code, sysErr.Status.Message)
+	}
+	return nil, errors.Errorf("sbp: unexpected response type %T", resp)
 }
 
 func (c *Client) CloseIdleConnections() {
@@ -141,4 +154,9 @@ func (c *Client) format() format.Format {
 		return c.Format
 	}
 	return format.FlatBuffer()
+}
+
+func newClientID() string {
+	hostname, _ := os.Hostname()
+	return fmt.Sprintf("pm|%s|%d|%d|%d", hostname, os.Getpid(), clientIDCounter.Add(1), time.Now().UnixNano())
 }

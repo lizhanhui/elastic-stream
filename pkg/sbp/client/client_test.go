@@ -28,7 +28,7 @@ func TestClient_SealRanges(t *testing.T) {
 	addr, shutdown := startServer(t, &mockHandler{}, logger)
 	defer shutdown()
 
-	client := NewClient("test", logger)
+	client := NewClient(logger)
 	defer client.CloseIdleConnections()
 
 	req := &protocol.SealRangesRequest{

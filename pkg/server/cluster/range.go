@@ -7,13 +7,23 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/AutoMQ/placement-manager/api/rpcfb/rpcfb"
+	"github.com/AutoMQ/placement-manager/pkg/sbp/protocol"
 	"github.com/AutoMQ/placement-manager/pkg/server/storage/endpoint"
 	"github.com/AutoMQ/placement-manager/pkg/util/traceutil"
+)
+
+const (
+	// TODO: Make it configurable.
+	_sealReqTimeoutMs = 100
+
+	_writableRangeEndOffset int64 = -1
 )
 
 var (
 	// ErrRangeNotFound is returned when the specified range is not found.
 	ErrRangeNotFound = errors.New("range not found")
+	// ErrNoDataNodeResponded is returned when no data node responded to the seal request.
+	ErrNoDataNodeResponded = errors.New("no data node responded")
 )
 
 // ListRanges lists the ranges of
@@ -94,6 +104,7 @@ func (c *RaftCluster) listRangesOnDataNode(ctx context.Context, dataNodeID int32
 // It returns the current writable range and an optional error.
 // It returns a nil range if and only if the ctx is done or the stream does not exist.
 // It returns ErrRangeNotFound if the range does not exist.
+// It returns ErrNoDataNodeResponded if no data node responded to the seal request.
 func (c *RaftCluster) SealRange(ctx context.Context, rangeID *rpcfb.RangeIdT) (*rpcfb.RangeT, error) {
 	logger := c.lg.With(zap.Int64("range-stream-id", rangeID.StreamId), zap.Int32("range-index", rangeID.RangeIndex), traceutil.TraceLogField(ctx))
 
@@ -134,10 +145,80 @@ func (c *RaftCluster) SealRange(ctx context.Context, rangeID *rpcfb.RangeIdT) (*
 	}
 
 	// Here, writableRange.RangeIndex == rangeID.RangeIndex.
-	// TODO Query range offset from the data nodes.
+	endOffset, err := c.sealRangeOnDataNode(ctx, writableRange.RangeT)
+	if err != nil {
+		return writableRange.RangeT, err
+	}
+	_ = endOffset
 	// TODO Seal the range.
 
 	return nil, nil
+}
+
+func (c *RaftCluster) sealRangeOnDataNode(ctx context.Context, writableRange *rpcfb.RangeT) (endOffset int64, err error) {
+	logger := c.lg.With(zap.Int64("range-stream-id", writableRange.StreamId), zap.Int32("range-index", writableRange.RangeIndex), traceutil.TraceLogField(ctx))
+
+	req := &protocol.SealRangesRequest{SealRangesRequestT: rpcfb.SealRangesRequestT{
+		Ranges:    []*rpcfb.RangeIdT{{StreamId: writableRange.StreamId, RangeIndex: writableRange.RangeIndex}},
+		TimeoutMs: _sealReqTimeoutMs,
+	}}
+	ch := make(chan *rpcfb.RangeT)
+	for _, node := range writableRange.ReplicaNodes {
+		go func(node *rpcfb.ReplicaNodeT) {
+			resp, err := c.client.SealRanges(req, node.DataNode.AdvertiseAddr)
+			if resp == nil || err != nil {
+				logger.Error("failed to seal range on data node: request failed", zap.Int32("data-node-id", node.DataNode.NodeId), zap.Error(err))
+				ch <- nil
+				return
+			}
+			if resp.Status.Code != rpcfb.ErrorCodeOK {
+				logger.Error("failed to seal range on data node: error response", zap.Int32("data-node-id", node.DataNode.NodeId),
+					zap.String("status-code", resp.Status.Code.String()), zap.String("status-msg", resp.Status.Message))
+				ch <- nil
+				return
+			}
+			for _, result := range resp.SealResponses {
+				if result.Range.StreamId == writableRange.StreamId && result.Range.RangeIndex == writableRange.RangeIndex {
+					if result.Status.Code != rpcfb.ErrorCodeOK {
+						logger.Error("failed to seal range on data node: error status", zap.Int32("data-node-id", node.DataNode.NodeId),
+							zap.String("status-code", result.Status.Code.String()), zap.String("status-msg", result.Status.Message))
+						ch <- nil
+						return
+					}
+					ch <- result.Range
+					return
+				}
+			}
+			logger.Error("failed to seal range on data node: no response for the range", zap.Int32("data-node-id", node.DataNode.NodeId))
+			ch <- nil
+		}(node)
+	}
+
+	minEndOffset := _writableRangeEndOffset
+	for range writableRange.ReplicaNodes {
+		var r *rpcfb.RangeT
+		select {
+		case <-ctx.Done():
+			return _writableRangeEndOffset, ctx.Err()
+		case r = <-ch:
+		}
+		if r == nil {
+			continue
+		}
+
+		if minEndOffset == _writableRangeEndOffset {
+			minEndOffset = r.EndOffset
+			continue
+		}
+		if r.EndOffset < minEndOffset {
+			minEndOffset = r.EndOffset
+		}
+	}
+	if minEndOffset == _writableRangeEndOffset {
+		return _writableRangeEndOffset, ErrNoDataNodeResponded
+	}
+
+	return minEndOffset, nil
 }
 
 func (c *RaftCluster) getRanges(ctx context.Context, rangeIDs []*rpcfb.RangeIdT, logger *zap.Logger) ([]*rpcfb.RangeT, error) {
