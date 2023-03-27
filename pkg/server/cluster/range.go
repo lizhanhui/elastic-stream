@@ -76,6 +76,11 @@ func (c *RaftCluster) listRangesOnDataNode(ctx context.Context, dataNodeID int32
 	return ranges, nil
 }
 
+func (c *RaftCluster) SealRange(ctx context.Context, rangeID *rpcfb.RangeIdT) (*rpcfb.RangeT, error) {
+	// TODO
+	return nil, nil
+}
+
 func (c *RaftCluster) getRanges(ctx context.Context, rangeIDs []*rpcfb.RangeIdT, logger *zap.Logger) ([]*rpcfb.RangeT, error) {
 	ranges := make([]*rpcfb.RangeT, 0, len(rangeIDs))
 	for _, rangeID := range rangeIDs {

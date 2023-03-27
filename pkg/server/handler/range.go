@@ -18,11 +18,11 @@ func (s *Sbp) ListRanges(req *protocol.ListRangesRequest, resp *protocol.ListRan
 
 		result := &rpcfb.ListRangesResultT{
 			RangeCriteria: owner,
-			Status:        &rpcfb.StatusT{Code: rpcfb.ErrorCodeOK},
 		}
 		if err != nil {
-			resp.Error(&rpcfb.StatusT{Code: rpcfb.ErrorCodePM_INTERNAL_SERVER_ERROR, Message: err.Error()})
+			result.Status = &rpcfb.StatusT{Code: rpcfb.ErrorCodePM_INTERNAL_SERVER_ERROR, Message: err.Error()}
 		} else {
+			result.Status = &rpcfb.StatusT{Code: rpcfb.ErrorCodeOK}
 			result.Ranges = ranges
 		}
 
@@ -33,7 +33,27 @@ func (s *Sbp) ListRanges(req *protocol.ListRangesRequest, resp *protocol.ListRan
 }
 
 func (s *Sbp) SealRanges(req *protocol.SealRangesRequest, resp *protocol.SealRangesResponse) {
-	// TODO
-	_ = req
-	_ = resp
+	ctx := req.Context()
+	if !s.c.IsLeader() {
+		s.notLeaderError(ctx, resp)
+		return
+	}
+
+	sealResponses := make([]*rpcfb.SealRangesResultT, 0, len(req.Ranges))
+	for _, rangeID := range req.Ranges {
+		r, err := s.c.SealRange(ctx, rangeID)
+
+		result := &rpcfb.SealRangesResultT{
+			Range: r,
+		}
+		if err != nil {
+			result.Status = &rpcfb.StatusT{Code: rpcfb.ErrorCodePM_INTERNAL_SERVER_ERROR, Message: err.Error()}
+		} else {
+			result.Status = &rpcfb.StatusT{Code: rpcfb.ErrorCodeOK}
+		}
+
+		sealResponses = append(sealResponses, result)
+	}
+	resp.SealResponses = sealResponses
+	resp.OK()
 }
