@@ -110,8 +110,8 @@ table AppendRequest {
 }
 
 table AppendInfo {
-    // The id of the stream to append records.
-    stream_id: int64 = -1 (id: 0);
+    // The stream range to append records into.
+    range: Range (id: 0);
     // The index of the request in the batch.
     request_index: int32 (id: 1);
     // The payload length of this record batch to append
@@ -273,12 +273,10 @@ table SealRangesResponse {
 }
 
 table SealRangesResult {
-    // The id of the stream
-    stream_id: int64 = -1 (id: 0);
     // Both the PM and the data node will handle the seal ranges request.
     // The data node returns the sealed range, while the PM returns the newly writable range.
-    range: Range (id: 1);
-    status: Status (id: 2);
+    range: Range (id: 0);
+    status: Status (id: 1);
 }
 
 // The sync ranges request is used to sync newly writable ranges to accelerate the availability of a newly created writable range.
