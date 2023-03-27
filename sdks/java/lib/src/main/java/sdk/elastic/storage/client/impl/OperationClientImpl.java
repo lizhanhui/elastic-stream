@@ -277,22 +277,24 @@ public class OperationClientImpl implements OperationClient {
     private void handleSealRangesResultList(List<SealRangesResultT> sealResultList) {
         sealResultList.forEach(sealResultT -> {
             if (sealResultT.getStatus().getCode() == OK) {
+                long streamId = sealResultT.getRange().getStreamId();
                 // update the ranges.
-                streamRangeCache.getLastRange(sealResultT.getStreamId())
+                streamRangeCache.getLastRange(streamId)
                     .thenAccept(rangeT -> {
                         // If the same last range is returned, update the last range.
                         if (rangeT.getRangeIndex() == sealResultT.getRange().getRangeIndex()) {
-                            streamRangeCache.get(sealResultT.getStreamId()).put(sealResultT.getRange().getStartOffset(), sealResultT.getRange());
+                            streamRangeCache.get(streamId).put(sealResultT.getRange().getStartOffset(), sealResultT.getRange());
                             return;
                         }
                         // If the next range is returned, update the last range and put the new range.
                         if ((rangeT.getRangeIndex() + 1) == sealResultT.getRange().getRangeIndex()) {
                             rangeT.setEndOffset(sealResultT.getRange().getStartOffset());
                             rangeT.setNextOffset(sealResultT.getRange().getStartOffset());
-                            streamRangeCache.get(sealResultT.getStreamId()).put(sealResultT.getRange().getStartOffset(), sealResultT.getRange());
+                            streamRangeCache.get(streamId).put(sealResultT.getRange().getStartOffset(), sealResultT.getRange());
+                            return;
                         }
                         // In other cases, just erase the cached map.
-                        streamRangeCache.invalidate(sealResultT.getStreamId());
+                        streamRangeCache.invalidate(streamId);
                     })
                     .join();
             }
