@@ -42,18 +42,18 @@ func NewDataNode(dataNode *rpcfb.DataNodeT) *DataNode {
 // SaveDataNode saves a data node to the cache.
 // It returns true if the data node is updated.
 func (c *Cache) SaveDataNode(nodeT *rpcfb.DataNodeT) (updated bool) {
-	node, ok := c.dataNodes.Get(nodeT.NodeId)
-	if ok {
-		if !isDataNodeEqual(node.DataNodeT, nodeT) {
-			updated = true
-			node.DataNodeT = nodeT
+	_ = c.dataNodes.Upsert(nodeT.NodeId, NewDataNode(nodeT), func(exist bool, valueInMap, newValue *DataNode) *DataNode {
+		if exist {
+			if !isDataNodeEqual(valueInMap.DataNodeT, newValue.DataNodeT) {
+				updated = true
+				valueInMap.DataNodeT = newValue.DataNodeT
+			}
+			valueInMap.LastActiveTime = newValue.LastActiveTime
+			return valueInMap
 		}
-		node.LastActiveTime = time.Now()
-	} else {
-		node = NewDataNode(nodeT)
 		updated = true
-	}
-	c.dataNodes.Set(node.NodeId, node)
+		return newValue
+	})
 	return updated
 }
 
