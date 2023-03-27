@@ -30,8 +30,8 @@ func (l Logger) Get(ctx context.Context, k []byte) (v []byte, err error) {
 	return
 }
 
-func (l Logger) GetByRange(ctx context.Context, r Range, limit int64) (kvs []KeyValue, err error) {
-	kvs, err = l.LogAble.GetByRange(ctx, r, limit)
+func (l Logger) GetByRange(ctx context.Context, r Range, limit int64, desc bool) (kvs []KeyValue, err error) {
+	kvs, err = l.LogAble.GetByRange(ctx, r, limit, desc)
 
 	logger := l.logger()
 	if logger.Core().Enabled(zap.DebugLevel) {

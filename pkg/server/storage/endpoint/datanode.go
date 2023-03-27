@@ -71,7 +71,7 @@ func (e *Endpoint) forEachDataNodeLimited(ctx context.Context, f func(dataNode *
 	logger := e.lg.With(traceutil.TraceLogField(ctx))
 
 	startKey := dataNodePath(startID)
-	kvs, err := e.GetByRange(ctx, kv.Range{StartKey: startKey, EndKey: e.endDataNodePath()}, limit)
+	kvs, err := e.GetByRange(ctx, kv.Range{StartKey: startKey, EndKey: e.endDataNodePath()}, limit, false)
 	if err != nil {
 		logger.Error("failed to get data nodes", zap.Int32("start-id", startID), zap.Int64("limit", limit), zap.Error(err))
 		return MinDataNodeID - 1, errors.Wrap(err, "get data nodes")

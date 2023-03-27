@@ -95,7 +95,7 @@ func (e *Endpoint) forEachRangeInStreamLimited(ctx context.Context, streamID int
 	logger := e.lg.With(zap.Int64("stream-id", streamID), traceutil.TraceLogField(ctx))
 
 	startKey := rangePathInSteam(streamID, startID)
-	kvs, err := e.GetByRange(ctx, kv.Range{StartKey: startKey, EndKey: e.endRangePathInStream(streamID)}, limit)
+	kvs, err := e.GetByRange(ctx, kv.Range{StartKey: startKey, EndKey: e.endRangePathInStream(streamID)}, limit, false)
 	if err != nil {
 		logger.Error("failed to get ranges", zap.Int32("start-id", startID), zap.Int64("limit", limit), zap.Error(err))
 		return MinRangeIndex - 1, errors.Wrap(err, "get ranges")
@@ -162,7 +162,7 @@ func (e *Endpoint) forEachRangeIDOnDataNodeLimited(ctx context.Context, dataNode
 	logger := e.lg.With(zap.Int32("data-node-id", dataNodeID), traceutil.TraceLogField(ctx))
 
 	startKey := rangePathOnDataNode(dataNodeID, startID.StreamId, startID.RangeIndex)
-	kvs, err := e.GetByRange(ctx, kv.Range{StartKey: startKey, EndKey: e.endRangePathOnDataNode(dataNodeID)}, limit)
+	kvs, err := e.GetByRange(ctx, kv.Range{StartKey: startKey, EndKey: e.endRangePathOnDataNode(dataNodeID)}, limit, false)
 	if err != nil {
 		logger.Error("failed to get range ids by data node", zap.Int64("start-stream-id", startID.StreamId), zap.Int32("start-range-index", startID.RangeIndex), zap.Int64("limit", limit), zap.Error(err))
 		return nil, errors.Wrap(err, "get range ids by data node")
@@ -197,7 +197,7 @@ func (e *Endpoint) GetRangeIDsByDataNodeAndStream(ctx context.Context, streamID 
 	logger := e.lg.With(zap.Int64("stream-id", streamID), zap.Int32("data-node-id", dataNodeID), traceutil.TraceLogField(ctx))
 
 	startKey := rangePathOnDataNode(dataNodeID, streamID, MinRangeIndex)
-	kvs, err := e.GetByRange(ctx, kv.Range{StartKey: startKey, EndKey: e.endRangePathOnDataNodeInStream(dataNodeID, streamID)}, 0)
+	kvs, err := e.GetByRange(ctx, kv.Range{StartKey: startKey, EndKey: e.endRangePathOnDataNodeInStream(dataNodeID, streamID)}, 0, false)
 	if err != nil {
 		logger.Error("failed to get range ids by data node an stream", zap.Error(err))
 		return nil, errors.Wrap(err, "get range ids by data node an stream")
