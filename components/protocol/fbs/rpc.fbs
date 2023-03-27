@@ -104,6 +104,17 @@ table HeartbeatResponse {
     status: Status (id: 3);
 }
 
+// Request placement manager to allocate a unique ID. 
+table IdAllocationRequest {
+    host: string (id: 0);
+}
+
+// Unique ID allocation response
+table IdAllocationResponse {
+    id: int32 (id: 0);
+    status: Status (id: 1);
+}
+
 // The append request is used to append records to the data node.
 table AppendRequest {
     // The timeout to await a response in milliseconds.
