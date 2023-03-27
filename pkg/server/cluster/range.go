@@ -126,7 +126,7 @@ func (c *RaftCluster) SealRange(ctx context.Context, rangeID *rpcfb.RangeIdT) (*
 	lastRange, err := c.storage.GetLastRange(ctx, rangeID.StreamId)
 	if lastRange == nil || err != nil {
 		// The stream does not exist.
-		return nil, ErrRangeNotFound
+		return nil, errors.Wrapf(ErrRangeNotFound, "stream %d does not exist", rangeID.StreamId)
 	}
 	for _, node := range lastRange.ReplicaNodes {
 		c.fillDataNodeInfo(node.DataNode)
@@ -139,7 +139,7 @@ func (c *RaftCluster) SealRange(ctx context.Context, rangeID *rpcfb.RangeIdT) (*
 	}
 	if writableRange.RangeIndex < rangeID.RangeIndex {
 		// The range is not found.
-		return writableRange.RangeT, ErrRangeNotFound
+		return writableRange.RangeT, errors.Wrapf(ErrRangeNotFound, "range %d not found in stream %d", rangeID.RangeIndex, rangeID.StreamId)
 	}
 
 	// Here, writableRange.RangeIndex == rangeID.RangeIndex.

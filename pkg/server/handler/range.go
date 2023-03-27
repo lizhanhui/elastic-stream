@@ -1,9 +1,13 @@
 package handler
 
 import (
+	"github.com/pkg/errors"
+	"go.uber.org/zap"
+
 	"github.com/AutoMQ/placement-manager/api/rpcfb/rpcfb"
 	"github.com/AutoMQ/placement-manager/pkg/sbp/protocol"
 	"github.com/AutoMQ/placement-manager/pkg/server/cluster"
+	"github.com/AutoMQ/placement-manager/pkg/util/traceutil"
 )
 
 func (s *Sbp) ListRanges(req *protocol.ListRangesRequest, resp *protocol.ListRangesResponse) {
@@ -39,6 +43,7 @@ func (s *Sbp) SealRanges(req *protocol.SealRangesRequest, resp *protocol.SealRan
 		s.notLeaderError(ctx, resp)
 		return
 	}
+	logger := s.lg.With(traceutil.TraceLogField(ctx))
 
 	sealResponses := make([]*rpcfb.SealRangesResultT, 0, len(req.Ranges))
 	for _, rangeID := range req.Ranges {
@@ -48,9 +53,14 @@ func (s *Sbp) SealRanges(req *protocol.SealRangesRequest, resp *protocol.SealRan
 			Range: r,
 		}
 		if err != nil {
-			switch err {
-			case cluster.ErrRangeNotFound:
-				result.Status = &rpcfb.StatusT{Code: rpcfb.ErrorCodePM_RANGE_NOT_FOUND, Message: err.Error()}
+			logger.Error("failed to seal range", zap.Int64("stream-id", rangeID.StreamId), zap.Int32("range-index", rangeID.RangeIndex), zap.Error(err))
+			switch {
+			case errors.Is(err, cluster.ErrRangeNotFound):
+				result.Status = &rpcfb.StatusT{Code: rpcfb.ErrorCodePM_SEAL_RANGE_NOT_FOUND, Message: err.Error()}
+			case errors.Is(err, cluster.ErrNoDataNodeResponded):
+				result.Status = &rpcfb.StatusT{Code: rpcfb.ErrorCodePM_SEAL_RANGE_NO_DN_RESPONDED, Message: err.Error()}
+			case errors.Is(err, cluster.ErrNotEnoughDataNodes):
+				result.Status = &rpcfb.StatusT{Code: rpcfb.ErrorCodePM_NO_AVAILABLE_DN, Message: err.Error()}
 			default:
 				result.Status = &rpcfb.StatusT{Code: rpcfb.ErrorCodePM_INTERNAL_SERVER_ERROR, Message: err.Error()}
 			}
