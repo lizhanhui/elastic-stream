@@ -389,14 +389,17 @@ func (c *conn) processDataFrame(f *codec.DataFrame, st *stream) error {
 	}
 
 	action := GetAction(f.OpCode)
-	ctx, act, resp := c.generateAct(f, action)
+	ctx, cancel, act, resp := c.generateAct(f, action)
 
 	// TODO if there are too many handlers running, put the request into a priority queue (or put important requests into a priority queue)
-	go c.runHandlerAndWrite(ctx, f.Context(), st, act, resp)
+	go func() {
+		c.runHandlerAndWrite(ctx, f.Context(), st, act, resp)
+		cancel()
+	}()
 	return nil
 }
 
-func (c *conn) generateAct(f *codec.DataFrame, action *Action) (ctx context.Context, act func(resp protocol.OutResponse), resp protocol.OutResponse) {
+func (c *conn) generateAct(f *codec.DataFrame, action *Action) (ctx context.Context, cancel context.CancelFunc, act func(resp protocol.OutResponse), resp protocol.OutResponse) {
 	req := action.newReq()
 	resp = action.newResp()
 
@@ -414,14 +417,13 @@ func (c *conn) generateAct(f *codec.DataFrame, action *Action) (ctx context.Cont
 	id, _ := uuid.NewRandom()
 	ctx = traceutil.SetTraceID(c.ctx, id.String())
 
-	var cancel context.CancelFunc = func() {}
+	cancel = func() {}
 	if req.Timeout() > 0 {
 		ctx, cancel = context.WithTimeout(ctx, time.Duration(req.Timeout())*time.Millisecond)
 	}
 
 	req.SetContext(ctx)
 	act = func(resp protocol.OutResponse) {
-		defer cancel()
 		action.act(c.server.handler, req, resp)
 	}
 	return
