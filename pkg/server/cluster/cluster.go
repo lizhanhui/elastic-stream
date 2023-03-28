@@ -32,8 +32,10 @@ import (
 )
 
 const (
-	_streamIDAllocKey = "stream"
-	_streamIDStep     = 1000
+	_streamIDAllocKey   = "stream"
+	_streamIDStep       = 100
+	_dataNodeIDAllocKey = "data-node"
+	_dataNodeIDStep     = 1
 )
 
 // RaftCluster is used for metadata management.
@@ -45,11 +47,12 @@ type RaftCluster struct {
 	runningCtx    context.Context
 	runningCancel context.CancelFunc
 
-	storage       storage.Storage
-	streamIDAlloc id.Allocator
-	member        Member
-	cache         *cache.Cache
-	client        sbpClient.Client
+	storage storage.Storage
+	sAlloc  id.Allocator
+	dnAlloc id.Allocator
+	member  Member
+	cache   *cache.Cache
+	client  sbpClient.Client
 
 	lg *zap.Logger
 }
@@ -94,7 +97,8 @@ func (c *RaftCluster) Start(s Server) error {
 	c.storage = s.Storage()
 	c.member = s.Member()
 	c.runningCtx, c.runningCancel = context.WithCancel(c.ctx)
-	c.streamIDAlloc = s.IDAllocator(_streamIDAllocKey, uint64(endpoint.MinStreamID), _streamIDStep)
+	c.sAlloc = s.IDAllocator(_streamIDAllocKey, uint64(endpoint.MinStreamID), _streamIDStep)
+	c.dnAlloc = s.IDAllocator(_dataNodeIDAllocKey, uint64(endpoint.MinDataNodeID), _dataNodeIDStep)
 
 	err := c.loadInfo()
 	if err != nil {

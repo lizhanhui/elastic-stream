@@ -11,6 +11,8 @@ import (
 type Handler interface {
 	// Heartbeat handles heartbeat requests.
 	Heartbeat(req *protocol.HeartbeatRequest, resp *protocol.HeartbeatResponse)
+	// AllocateID allocates a unique ID for data nodes.
+	AllocateID(req *protocol.IDAllocationRequest, resp *protocol.IDAllocationResponse)
 	// ListRanges lists the ranges of a batch of streams. Or it could list the ranges of all the streams in a specific data node.
 	ListRanges(req *protocol.ListRangesRequest, resp *protocol.ListRangesResponse)
 	// SealRanges seal ranges of a batch of streams
@@ -32,6 +34,13 @@ var (
 			newResp: func() protocol.OutResponse { return &protocol.HeartbeatResponse{} },
 			act: func(handler Handler, req protocol.InRequest, resp protocol.OutResponse) {
 				handler.Heartbeat(req.(*protocol.HeartbeatRequest), resp.(*protocol.HeartbeatResponse))
+			},
+		},
+		{Code: operation.OpAllocateID}: {
+			newReq:  func() protocol.InRequest { return &protocol.IDAllocationRequest{} },
+			newResp: func() protocol.OutResponse { return &protocol.IDAllocationResponse{} },
+			act: func(handler Handler, req protocol.InRequest, resp protocol.OutResponse) {
+				handler.AllocateID(req.(*protocol.IDAllocationRequest), resp.(*protocol.IDAllocationResponse))
 			},
 		},
 		{Code: operation.OpListRanges}: {

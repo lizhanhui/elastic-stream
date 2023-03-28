@@ -22,6 +22,11 @@ func (l SbpLogger) Heartbeat(req *protocol.HeartbeatRequest, resp *protocol.Hear
 	l.Handler.Heartbeat(req, resp)
 }
 
+func (l SbpLogger) AllocateID(req *protocol.IDAllocationRequest, resp *protocol.IDAllocationResponse) {
+	l.Handler.AllocateID(req, resp)
+	l.LogIt(req, resp)
+}
+
 func (l SbpLogger) ListRanges(req *protocol.ListRangesRequest, resp *protocol.ListRangesResponse) {
 	l.Handler.ListRanges(req, resp)
 	l.LogIt(req, resp)

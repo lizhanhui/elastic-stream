@@ -9,6 +9,8 @@ const (
 	OpGoAway uint16 = 0x0002
 	// OpHeartbeat keep clients alive through periodic heartbeat frames.
 	OpHeartbeat uint16 = 0x0003
+	// OpAllocateID allocates a unique ID for data nodes.
+	OpAllocateID uint16 = 0x0004
 
 	// OpAppend append records to the data node.
 	OpAppend uint16 = 0x1001
@@ -41,9 +43,10 @@ const (
 
 var (
 	_opMap = map[uint16]Operation{
-		OpPing:      {OpPing},
-		OpGoAway:    {OpGoAway},
-		OpHeartbeat: {OpHeartbeat},
+		OpPing:       {OpPing},
+		OpGoAway:     {OpGoAway},
+		OpHeartbeat:  {OpHeartbeat},
+		OpAllocateID: {OpAllocateID},
 
 		OpAppend: {OpAppend},
 		OpFetch:  {OpFetch},
@@ -95,6 +98,8 @@ func (o Operation) String() string {
 		return "GoAway"
 	case OpHeartbeat:
 		return "Heartbeat"
+	case OpAllocateID:
+		return "AllocateID"
 	case OpAppend:
 		return "Append"
 	case OpFetch:

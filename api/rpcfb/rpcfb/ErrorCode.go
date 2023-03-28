@@ -8,6 +8,8 @@ type ErrorCode int16
 
 const (
 	ErrorCodeERROR_CODE_UNSPECIFIED        ErrorCode = 0
+	ErrorCodeENCODE                        ErrorCode = 1
+	ErrorCodeDECODE                        ErrorCode = 2
 	ErrorCodeOK                            ErrorCode = 1200
 	ErrorCodeBAD_REQUEST                   ErrorCode = 1400
 	ErrorCodeUNAUTHORIZED                  ErrorCode = 1401
@@ -32,6 +34,8 @@ const (
 
 var EnumNamesErrorCode = map[ErrorCode]string{
 	ErrorCodeERROR_CODE_UNSPECIFIED:        "ERROR_CODE_UNSPECIFIED",
+	ErrorCodeENCODE:                        "ENCODE",
+	ErrorCodeDECODE:                        "DECODE",
 	ErrorCodeOK:                            "OK",
 	ErrorCodeBAD_REQUEST:                   "BAD_REQUEST",
 	ErrorCodeUNAUTHORIZED:                  "UNAUTHORIZED",
@@ -56,6 +60,8 @@ var EnumNamesErrorCode = map[ErrorCode]string{
 
 var EnumValuesErrorCode = map[string]ErrorCode{
 	"ERROR_CODE_UNSPECIFIED":        ErrorCodeERROR_CODE_UNSPECIFIED,
+	"ENCODE":                        ErrorCodeENCODE,
+	"DECODE":                        ErrorCodeDECODE,
 	"OK":                            ErrorCodeOK,
 	"BAD_REQUEST":                   ErrorCodeBAD_REQUEST,
 	"UNAUTHORIZED":                  ErrorCodeUNAUTHORIZED,

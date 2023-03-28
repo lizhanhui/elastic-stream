@@ -99,6 +99,27 @@ func (hr *HeartbeatRequest) Operation() operation.Operation {
 	return operation.Operation{Code: operation.OpHeartbeat}
 }
 
+// IDAllocationRequest is a request to operation.OpAllocateID
+type IDAllocationRequest struct {
+	baseRequest
+	baseUnmarshaler
+
+	rpcfb.IdAllocationRequestT
+}
+
+func (ia *IDAllocationRequest) unmarshalFlatBuffer(data []byte) error {
+	ia.IdAllocationRequestT = *rpcfb.GetRootAsIdAllocationRequest(data, 0).UnPack()
+	return nil
+}
+
+func (ia *IDAllocationRequest) Unmarshal(fmt format.Format, data []byte) error {
+	return unmarshal(ia, fmt, data)
+}
+
+func (ia *IDAllocationRequest) Timeout() int32 {
+	return ia.TimeoutMs
+}
+
 // ListRangesRequest is a request to operation.OpListRanges
 type ListRangesRequest struct {
 	baseRequest

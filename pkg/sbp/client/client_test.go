@@ -131,6 +131,10 @@ func (b *baseHandler) Heartbeat(_ *protocol.HeartbeatRequest, resp *protocol.Hea
 	resp.OK()
 }
 
+func (b *baseHandler) AllocateID(_ *protocol.IDAllocationRequest, resp *protocol.IDAllocationResponse) {
+	resp.OK()
+}
+
 func (b *baseHandler) SealRanges(_ *protocol.SealRangesRequest, resp *protocol.SealRangesResponse) {
 	resp.OK()
 }
