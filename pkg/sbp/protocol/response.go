@@ -116,6 +116,30 @@ func (hr *HeartbeatResponse) OK() {
 	hr.Status = &rpcfb.StatusT{Code: rpcfb.ErrorCodeOK}
 }
 
+// IDAllocationResponse is a response to operation.OpAllocateID
+type IDAllocationResponse struct {
+	baseMarshaller
+	singleResponse
+
+	rpcfb.IdAllocationResponseT
+}
+
+func (ia *IDAllocationResponse) marshalFlatBuffer() ([]byte, error) {
+	return fbutil.Marshal(&ia.IdAllocationResponseT), nil
+}
+
+func (ia *IDAllocationResponse) Marshal(fmt format.Format) ([]byte, error) {
+	return marshal(ia, fmt)
+}
+
+func (ia *IDAllocationResponse) Error(status *rpcfb.StatusT) {
+	ia.Status = status
+}
+
+func (ia *IDAllocationResponse) OK() {
+	ia.Status = &rpcfb.StatusT{Code: rpcfb.ErrorCodeOK}
+}
+
 // ListRangesResponse is a response to operation.OpListRanges
 type ListRangesResponse struct {
 	baseMarshaller

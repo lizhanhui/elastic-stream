@@ -41,6 +41,14 @@ func TestNewOperation(t *testing.T) {
 			},
 		},
 		{
+			name:   "AllocateID",
+			fields: fields{code: OpAllocateID},
+			wants: wants{
+				s:    "AllocateID",
+				code: OpAllocateID,
+			},
+		},
+		{
 			name:   "Heartbeat",
 			fields: fields{code: OpHeartbeat},
 			wants: wants{

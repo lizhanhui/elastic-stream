@@ -32,6 +32,12 @@ func (c *RaftCluster) Heartbeat(ctx context.Context, node *rpcfb.DataNodeT) erro
 	return nil
 }
 
+func (c *RaftCluster) AllocateID(ctx context.Context) (int32, error) {
+	// TODO
+	_ = ctx
+	return 0, nil
+}
+
 // chooseDataNodes selects `cnt` number of data nodes from the available data nodes for a range.
 // Only DataNodeT.NodeId is filled in the returned ReplicaNodeT.
 // It returns ErrNotEnoughDataNodes if there are not enough data nodes to allocate.
