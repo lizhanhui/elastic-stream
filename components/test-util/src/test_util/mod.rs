@@ -6,8 +6,8 @@ use std::time::Duration;
 use bytes::Bytes;
 use codec::frame::{Frame, OperationCode};
 use protocol::rpc::header::{
-    ErrorCode, HeartbeatRequest, HeartbeatResponseT, ListRangesRequest, ListRangesResponseT,
-    ListRangesResultT, RangeT, StatusT,
+    ErrorCode, HeartbeatRequest, HeartbeatResponseT, IdAllocationRequest, IdAllocationResponseT,
+    ListRangesRequest, ListRangesResponseT, ListRangesResultT, RangeT, StatusT,
 };
 use slog::{debug, error, info, trace, warn, Logger};
 
@@ -139,6 +139,23 @@ pub async fn run_listener(logger: Logger) -> u16 {
                                     }
                                 }
 
+                                OperationCode::AllocateId => {
+                                    response_frame.operation_code = OperationCode::AllocateId;
+                                    if let Some(buf) = frame.header.as_ref() {
+                                        match flatbuffers::root::<IdAllocationRequest>(buf) {
+                                            Ok(request) => {
+                                                allocate_id(&log, &request, &mut response_frame);
+                                            }
+                                            Err(e) => {
+                                                error!(
+                                                    log,
+                                                    "Failed to decode id-allocation-request header"
+                                                );
+                                            }
+                                        }
+                                    }
+                                }
+
                                 _ => {
                                     warn!(
                                         log,
@@ -182,6 +199,32 @@ pub async fn run_listener(logger: Logger) -> u16 {
         info!(logger, "TestServer shut down OK");
     });
     rx.await.unwrap()
+}
+
+fn allocate_id(log: &Logger, request: &IdAllocationRequest, response_frame: &mut Frame) {
+    let request = request.unpack();
+    if let Some(ref host) = request.host {
+        info!(log, "Allocate ID for host={:?}", host);
+    } else {
+        warn!(log, "Host for which to allocate ID is unknown");
+    }
+
+    let mut builder = flatbuffers::FlatBufferBuilder::new();
+    let mut response = IdAllocationResponseT::default();
+    response.id = 1;
+
+    let mut status = StatusT::default();
+    status.code = ErrorCode::OK;
+    status.message = Some(String::from("OK"));
+    status.detail = None;
+    response.status = Some(Box::new(status));
+
+    let resp = response.pack(&mut builder);
+    builder.finish(resp, None);
+    let data = builder.finished_data();
+
+    response_frame.flag_response();
+    response_frame.header = Some(Bytes::copy_from_slice(data));
 }
 
 pub mod fs;

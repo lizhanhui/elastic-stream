@@ -353,9 +353,13 @@ impl Session {
                             match flatbuffers::root::<IdAllocationResponse>(buf) {
                                 Ok(response) => {
                                     let response = response.unpack();
-                                    if let response::Response::AllocateId { ref mut id, .. } = resp
+                                    if let response::Response::AllocateId {
+                                        ref mut id,
+                                        ref mut status,
+                                    } = resp
                                     {
                                         *id = response.id;
+                                        *status = Status::ok();
                                     }
                                 }
                                 Err(e) => {

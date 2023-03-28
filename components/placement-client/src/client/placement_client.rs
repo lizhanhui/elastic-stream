@@ -98,13 +98,37 @@ impl PlacementClient {
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
+    use std::{error::Error, time::Duration};
 
     use protocol::rpc::header::ErrorCode;
     use slog::trace;
     use test_util::{run_listener, terminal_logger};
 
     use crate::{client::response, error::ListRangeError, PlacementClientBuilder};
+
+    #[test]
+    fn test_allocate_id() -> Result<(), Box<dyn Error>> {
+        tokio_uring::start(async {
+            let log = terminal_logger();
+            let port = 2378;
+            let port = run_listener(log.clone()).await;
+            let addr = format!("dns:localhost:{}", port);
+            let mut client = PlacementClientBuilder::new(&addr)
+                .set_log(log.clone())
+                .build()
+                .map_err(|_e| ListRangeError::Internal)?;
+            client.start();
+            let timeout = Duration::from_secs(3);
+            let response = client.allocate_id("localhost", timeout).await?;
+            if let response::Response::AllocateId { status, id } = response {
+                assert_eq!(status.code, ErrorCode::OK);
+                assert_eq!(1, id);
+            } else {
+                panic!("Unexpected response");
+            }
+            Ok(())
+        })
+    }
 
     #[test]
     fn test_list_range() -> Result<(), ListRangeError> {
