@@ -5,6 +5,12 @@ namespace header;
 // 15xx for placement manager errors and 25xx for data node errors.
 enum ErrorCode : int16 {
     ERROR_CODE_UNSPECIFIED = 0,
+    
+    // Error when encoding protocol structs into buffers.
+    ENCODE = 1,
+
+    // Error when decoding buffers into protocol structs
+    DECODE = 2,
 
     // 12xx means success or partial success.
     OK = 1200,
@@ -109,7 +115,8 @@ table HeartbeatResponse {
 
 // Request placement manager to allocate a unique ID. 
 table IdAllocationRequest {
-    host: string (id: 0);
+    timeout_ms: int32 (id: 0);
+    host: string (id: 1);
 }
 
 // Unique ID allocation response
