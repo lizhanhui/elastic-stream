@@ -31,6 +31,6 @@ type Allocator interface {
 	// AllocN allocates N continuous IDs.
 	AllocN(ctx context.Context, n int) ([]uint64, error)
 
-	// Reset resets the allocator.3
+	// Reset resets the allocator to the start ID.
 	Reset(ctx context.Context) error
 }

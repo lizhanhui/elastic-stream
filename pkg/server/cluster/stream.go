@@ -14,7 +14,7 @@ import (
 func (c *RaftCluster) CreateStreams(ctx context.Context, streams []*rpcfb.StreamT) ([]*rpcfb.CreateStreamResultT, error) {
 	logger := c.lg.With(zap.Int("stream-cnt", len(streams)), traceutil.TraceLogField(ctx))
 
-	ids, err := c.streamIDAlloc.AllocN(ctx, len(streams))
+	ids, err := c.sAlloc.AllocN(ctx, len(streams))
 	if err != nil {
 		logger.Error("failed to allocate stream ids", zap.Error(err))
 		return nil, err
