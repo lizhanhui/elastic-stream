@@ -17,7 +17,23 @@ impl Status {
         }
     }
 
-    pub fn internal(message: String) -> Self {
+    pub fn decode() -> Self {
+        Self {
+            code: ErrorCode::DECODE,
+            message: "Decoding frame header failure".to_owned(),
+            details: None,
+        }
+    }
+
+    pub fn pm_internal(message: String) -> Self {
+        Self {
+            code: ErrorCode::PM_INTERNAL_SERVER_ERROR,
+            message,
+            details: None,
+        }
+    }
+
+    pub fn dn_internal(message: String) -> Self {
         Self {
             code: ErrorCode::DN_INTERNAL_SERVER_ERROR,
             message,

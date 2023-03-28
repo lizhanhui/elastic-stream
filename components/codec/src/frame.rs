@@ -359,6 +359,9 @@ pub enum OperationCode {
     // To keep clients alive through periodic heartbeat frames.
     Heartbeat = 0x0003,
 
+    // Allocate a unique ID from placement managers.
+    AllocateId = 0x0004,
+
     // 0x1000 ~ 0x1FFF is reserved for data communication
 
     // Append records to the data node.

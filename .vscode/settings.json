@@ -18,6 +18,7 @@
         "rocksdb",
         "SQPOLL",
         "squeue",
+        "struct",
         "syscall",
         "Uring",
         "writev"

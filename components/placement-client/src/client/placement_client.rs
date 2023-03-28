@@ -24,6 +24,33 @@ impl PlacementClient {
         }
     }
 
+    pub async fn allocate_id(
+        &self,
+        host: &str,
+        timeout: Duration,
+    ) -> Result<response::Response, ClientError> {
+        let (tx, rx) = oneshot::channel();
+        let request = Request::AllocateId {
+            timeout: timeout,
+            host: host.to_owned(),
+        };
+        self.tx.send((request, tx)).map_err(|_e| {
+            error!(self.log, "Failed to forward request to `SessionManager`");
+            ClientError::ServerInternal
+        })?;
+
+        time::timeout(timeout, rx).await.map_err(|e|{
+            warn!(self.log, "Timeout when allocate ID. {}", e);
+            ClientError::ClientInternal
+        })?.map_err(|e|{
+            error!(
+                self.log,
+                "Failed to receive response from broken channel. Cause: {:?}", e; "struct" => "Client"
+            );
+            ClientError::ClientInternal
+        })
+    }
+
     pub async fn list_range(
         &self,
         stream_id: Option<i64>,

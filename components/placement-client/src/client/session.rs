@@ -5,7 +5,9 @@ use codec::frame::{Frame, OperationCode};
 use model::range::StreamRange;
 use model::Status;
 use model::{client_role::ClientRole, request::Request};
-use protocol::rpc::header::{HeartbeatResponse, ListRangesResponse};
+use protocol::rpc::header::{
+    HeartbeatResponse, IdAllocationResponse, ListRangesResponse, SystemErrorResponse,
+};
 use slog::{error, trace, warn, Logger};
 use std::{
     cell::UnsafeCell,
@@ -161,6 +163,31 @@ impl Session {
                     }
                 }
             }
+
+            Request::AllocateId { .. } => {
+                frame.operation_code = OperationCode::AllocateId;
+                let header = request.into();
+                frame.header = Some(header);
+                match self.channel.write_frame(&frame).await {
+                    Ok(_) => {
+                        trace!(
+                            self.log,
+                            "Write `AllocateId` request to {}, stream-id={}",
+                            self.channel.peer_address(),
+                            frame.stream_id
+                        );
+                    }
+                    Err(e) => {
+                        error!(
+                            self.log,
+                            "Failed to write `AllocateId` request to network. Cause: {:?}", e
+                        );
+                        if let Some(observer) = inflight_requests.remove(&frame.stream_id) {
+                            return Err(observer);
+                        }
+                    }
+                }
+            }
         };
 
         Ok(())
@@ -281,10 +308,103 @@ impl Session {
                         }
                         response
                     }
-                    _ => {
-                        warn!(log, "Unsupported operation {}", frame.operation_code);
+                    OperationCode::Unknown => {
+                        warn!(log, "Received an unknown operation code");
                         return;
                     }
+                    OperationCode::Ping => todo!(),
+                    OperationCode::GoAway => todo!(),
+                    OperationCode::AllocateId => {
+                        let mut resp = response::Response::AllocateId {
+                            status: Status::decode(),
+                            id: -1,
+                        };
+
+                        if frame.system_error() {
+                            if let Some(ref buf) = frame.header {
+                                match flatbuffers::root::<SystemErrorResponse>(buf) {
+                                    Ok(error_response) => {
+                                        let err = error_response.unpack();
+                                        if let Some(status) = err.status {
+                                            let st = Status {
+                                                code: status.code,
+                                                message: status.message.unwrap_or_default(),
+                                                details: status.detail.map(|b| b.into()),
+                                            };
+
+                                            // Update status
+                                            if let response::Response::AllocateId {
+                                                ref mut status,
+                                                ..
+                                            } = resp
+                                            {
+                                                *status = st;
+                                            }
+                                        }
+                                    }
+
+                                    Err(e) => {
+                                        // Deserialize error
+                                        warn!(log, "Failed to decode `SystemErrorResponse` using FlatBuffers. Cause: {}", e);
+                                    }
+                                }
+                            }
+                        } else if let Some(ref buf) = frame.header {
+                            match flatbuffers::root::<IdAllocationResponse>(buf) {
+                                Ok(response) => {
+                                    let response = response.unpack();
+                                    if let response::Response::AllocateId { ref mut id, .. } = resp
+                                    {
+                                        *id = response.id;
+                                    }
+                                }
+                                Err(e) => {
+                                    // Deserialize error
+                                    warn!(log, "Failed to decode `IdAllocation` response header using FlatBuffers. Cause: {}", e);
+                                }
+                            }
+                        }
+
+                        resp
+                    }
+                    OperationCode::Append => {
+                        warn!(log, "Received an unexpected `Append` response");
+                        return;
+                    }
+                    OperationCode::Fetch => {
+                        warn!(log, "Received an unexpected `Fetch` response");
+                        return;
+                    }
+                    OperationCode::SealRanges => {
+                        warn!(log, "Received an unexpected `SealRanges` response");
+                        return;
+                    }
+                    OperationCode::SyncRanges => {
+                        warn!(log, "Received an unexpected `SyncRanges` response");
+                        return;
+                    }
+                    OperationCode::DescribeRanges => {
+                        warn!(log, "Received an unexpected `DescribeRanges` response");
+                        return;
+                    }
+                    OperationCode::CreateStreams => {
+                        warn!(log, "Received an unexpected `CreateStreams` response");
+                        return;
+                    }
+                    OperationCode::DeleteStreams => {
+                        warn!(log, "Received an unexpected `DeleteStreams` response");
+                        return;
+                    }
+                    OperationCode::UpdateStreams => {
+                        warn!(log, "Received an unexpected `UpdateStreams` response");
+                        return;
+                    }
+                    OperationCode::DescribeStreams => {
+                        warn!(log, "Received an unexpected `DescribeStreams` response");
+                        return;
+                    }
+                    OperationCode::TrimStreams => todo!(),
+                    OperationCode::ReportMetrics => todo!(),
                 };
                 sender.send(res).unwrap_or_else(|response| {
                     warn!(log, "Failed to forward response to client: {:?}", response);
@@ -305,7 +425,7 @@ impl Drop for Session {
         let requests = unsafe { &mut *self.inflight_requests.get() };
         requests.drain().for_each(|(_stream_id, sender)| {
             let aborted_response = response::Response::ListRange {
-                status: Status::internal("Aborted".to_owned()),
+                status: Status::pm_internal("Aborted".to_owned()),
                 ranges: None,
             };
             sender.send(aborted_response).unwrap_or_else(|_response| {

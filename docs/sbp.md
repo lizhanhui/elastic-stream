@@ -50,6 +50,7 @@ The table below shows all the supported frame types along with a preallocated op
 | 0x0001 | PING | Measure a minimal round-trip time from the sender. |
 | 0x0002 | GOAWAY | Initiate a shutdown of a connection or signal serious error conditions. |
 | 0x0003 | HEARTBEAT | To keep clients alive through periodic heartbeat frames. |
+| 0x0004 | ALLOCATE_ID | Allocate a unique identifier from placement managers. |
 | 0x1001 | APPEND | Append records to the data node. |
 | 0x1002 | FETCH | Fetch records from the data node. |
 | 0x2001 | LIST_RANGES | List ranges from the PM of a batch of streams. |
@@ -121,12 +122,39 @@ The request and response frames of HEARTBEAT have the same format. The table bel
 | message | string | The error message of the response. |
 | detail | bytes | Additional information about the error. |
 
+
+### ALLOCATE_ID
+The ALLOCATE_ID frame(opcode=0x0004) allocates a unique identifier from placement managers.
+
+**Request Frame:**
+```
+Request Header => timeout_ms, host
+
+Request Payload => Empty
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| timeout_ms| int32 | Request would be valid within the duration in milliseconds |
+| host  | String| Host name of the applicant |
+
+** Response Frame:**
+```
+Response Header => id
+  status => code message detail
+    code => int16
+    message => string
+    detail => bytes
+
+Response Payload => Empty
+```
+
 ### APPEND
 The APPEND frame(opcode=0x1001) appends record batches to the data node.
 
 **Request Frame:**
 ```
-Request Header => timeout_ms [append_requets]
+Request Header => timeout_ms [append_request]
   timeout_ms => int32
   append_requests => stream_id request_index batch_length
     stream_id => int64

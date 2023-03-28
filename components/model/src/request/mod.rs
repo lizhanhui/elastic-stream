@@ -1,7 +1,9 @@
 use std::time::Duration;
 
 use bytes::{Bytes, BytesMut};
-use protocol::rpc::header::{HeartbeatRequestT, ListRangesRequestT, RangeCriteriaT};
+use protocol::rpc::header::{
+    HeartbeatRequestT, IdAllocationRequestT, ListRangesRequestT, RangeCriteriaT,
+};
 
 use crate::{client_role::ClientRole, data_node::DataNode, range_criteria::RangeCriteria};
 
@@ -16,6 +18,11 @@ pub enum Request {
     ListRanges {
         timeout: Duration,
         criteria: Vec<RangeCriteria>,
+    },
+
+    AllocateId {
+        timeout: Duration,
+        host: String,
     },
 }
 
@@ -58,6 +65,13 @@ impl From<&Request> for Bytes {
                 request.range_criteria = Some(list);
                 let req = request.pack(&mut builder);
                 builder.finish(req, None);
+            }
+
+            Request::AllocateId { timeout, host } => {
+                let mut request = IdAllocationRequestT::default();
+                request.host = Some(host.clone());
+                let request = request.pack(&mut builder);
+                builder.finish(request, None);
             }
         };
         let buf = builder.finished_data();

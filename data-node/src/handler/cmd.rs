@@ -40,6 +40,8 @@ impl<'a> Command<'a> {
                 frame,
             )?)),
 
+            OperationCode::AllocateId => unreachable!(),
+
             OperationCode::Append => {
                 Ok(Command::Append(Append::parse_frame(logger.clone(), frame)?))
             }

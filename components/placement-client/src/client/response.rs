@@ -11,4 +11,9 @@ pub enum Response {
         status: Status,
         ranges: Option<Vec<StreamRange>>,
     },
+
+    AllocateId {
+        status: Status,
+        id: i32,
+    },
 }

@@ -238,7 +238,7 @@ impl SessionManager {
                     Request::Heartbeat { .. } => {}
                     Request::ListRanges { .. } => {
                         let response = response::Response::ListRange {
-                            status: Status::internal("Connection timeout".to_owned()),
+                            status: Status::pm_internal("Connection timeout".to_owned()),
                             ranges: None,
                         };
                         match response_observer.send(response) {
@@ -248,6 +248,15 @@ impl SessionManager {
                             Err(e) => {
                                 warn!(log, "Failed to propagate error response. Cause: {:?}", e);
                             }
+                        }
+                    }
+                    Request::AllocateId { .. } => {
+                        let response = response::Response::AllocateId {
+                            status: Status::pm_internal("Connection timeout".to_owned()),
+                            id: -1,
+                        };
+                        if let Err(e) = response_observer.send(response) {
+                            warn!(log, "Failed to propagate error response. Cause: {:?}", e);
                         }
                     }
                 }
