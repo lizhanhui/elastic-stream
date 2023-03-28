@@ -227,6 +227,10 @@ func (c *RaftCluster) sealRangeOnDataNode(ctx context.Context, writableRange *rp
 	if minEndOffset == _writableRangeEndOffset {
 		return _writableRangeEndOffset, ErrNoDataNodeResponded
 	}
+	if minEndOffset < writableRange.StartOffset {
+		return _writableRangeEndOffset, errors.Errorf("invalid end offset %d (< start offset %d) for range %d in stream %d",
+			minEndOffset, writableRange.StartOffset, writableRange.RangeIndex, writableRange.StreamId)
+	}
 
 	return minEndOffset, nil
 }
