@@ -48,7 +48,7 @@ func NewEtcd(client *clientv3.Client, rootPath string, lg *zap.Logger, cmpFunc f
 	e := &Etcd{
 		client:   client,
 		rootPath: []byte(rootPath),
-		lg:       lg.With(zap.String("etcd-kv-root-path", rootPath)),
+		lg:       lg,
 	}
 	if cmpFunc != nil {
 		e.newTxnFunc = func(ctx context.Context) clientv3.Txn {
@@ -79,7 +79,7 @@ func (e *Etcd) Get(ctx context.Context, k []byte) ([]byte, error) {
 	return kv.Value, nil
 }
 
-func (e *Etcd) GetByRange(ctx context.Context, r Range, limit int64) ([]KeyValue, error) {
+func (e *Etcd) GetByRange(ctx context.Context, r Range, limit int64, desc bool) ([]KeyValue, error) {
 	if len(r.StartKey) == 0 {
 		return nil, nil
 	}
@@ -91,6 +91,9 @@ func (e *Etcd) GetByRange(ctx context.Context, r Range, limit int64) ([]KeyValue
 	opts := []clientv3.OpOption{clientv3.WithRange(string(endKey))}
 	if limit > 0 {
 		opts = append(opts, clientv3.WithLimit(limit))
+	}
+	if desc {
+		opts = append(opts, clientv3.WithSort(clientv3.SortByKey, clientv3.SortDescend))
 	}
 	resp, err := etcdutil.Get(ctx, e.client, startKey, logger, opts...)
 	if err != nil {

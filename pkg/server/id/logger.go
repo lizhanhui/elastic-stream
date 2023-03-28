@@ -15,11 +15,11 @@ type LogAble interface {
 
 // Logger is a wrapper of Allocator that logs all operations.
 type Logger struct {
-	LogAble
+	Allocator LogAble
 }
 
 func (l Logger) Alloc(ctx context.Context) (id uint64, err error) {
-	id, err = l.LogAble.Alloc(ctx)
+	id, err = l.Allocator.Alloc(ctx)
 
 	logger := l.logger()
 	if logger.Core().Enabled(zap.DebugLevel) {
@@ -30,7 +30,7 @@ func (l Logger) Alloc(ctx context.Context) (id uint64, err error) {
 }
 
 func (l Logger) AllocN(ctx context.Context, n int) (ids []uint64, err error) {
-	ids, err = l.LogAble.AllocN(ctx, n)
+	ids, err = l.Allocator.AllocN(ctx, n)
 
 	logger := l.logger()
 	if logger.Core().Enabled(zap.DebugLevel) {
@@ -41,7 +41,7 @@ func (l Logger) AllocN(ctx context.Context, n int) (ids []uint64, err error) {
 }
 
 func (l Logger) Reset(ctx context.Context) (err error) {
-	err = l.LogAble.Reset(ctx)
+	err = l.Allocator.Reset(ctx)
 
 	logger := l.logger()
 	if logger.Core().Enabled(zap.DebugLevel) {
@@ -52,8 +52,8 @@ func (l Logger) Reset(ctx context.Context) (err error) {
 }
 
 func (l Logger) logger() *zap.Logger {
-	if l.LogAble.Logger() != nil {
-		return l.LogAble.Logger()
+	if l.Allocator.Logger() != nil {
+		return l.Allocator.Logger()
 	}
 	return zap.NewNop()
 }

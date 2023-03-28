@@ -7,69 +7,75 @@ import "strconv"
 type ErrorCode int16
 
 const (
-	ErrorCodeERROR_CODE_UNSPECIFIED   ErrorCode = 0
-	ErrorCodeOK                       ErrorCode = 1200
-	ErrorCodeBAD_REQUEST              ErrorCode = 1400
-	ErrorCodeUNAUTHORIZED             ErrorCode = 1401
-	ErrorCodePAYMENT_REQUIRED         ErrorCode = 1402
-	ErrorCodeFORBIDDEN                ErrorCode = 1403
-	ErrorCodeNOT_FOUND                ErrorCode = 1404
-	ErrorCodeMETHOD_NOT_ALLOWED       ErrorCode = 1405
-	ErrorCodePRECONDITION_FAILED      ErrorCode = 1412
-	ErrorCodePAYLOAD_TOO_LARGE        ErrorCode = 1413
-	ErrorCodeTOO_MANY_REQUESTS        ErrorCode = 1429
-	ErrorCodeHEADER_FIELDS_TOO_LARGE  ErrorCode = 1431
-	ErrorCodePM_INTERNAL_SERVER_ERROR ErrorCode = 1500
-	ErrorCodePM_NOT_IMPLEMENTED       ErrorCode = 1501
-	ErrorCodePM_NO_AVAILABLE_DN       ErrorCode = 1502
-	ErrorCodePM_NOT_LEADER            ErrorCode = 1503
-	ErrorCodeDN_INTERNAL_SERVER_ERROR ErrorCode = 2500
-	ErrorCodeDN_NOT_IMPLEMENTED       ErrorCode = 2501
-	ErrorCodeDN_NOT_LEADER_RANGE      ErrorCode = 2502
+	ErrorCodeERROR_CODE_UNSPECIFIED        ErrorCode = 0
+	ErrorCodeOK                            ErrorCode = 1200
+	ErrorCodeBAD_REQUEST                   ErrorCode = 1400
+	ErrorCodeUNAUTHORIZED                  ErrorCode = 1401
+	ErrorCodePAYMENT_REQUIRED              ErrorCode = 1402
+	ErrorCodeFORBIDDEN                     ErrorCode = 1403
+	ErrorCodeNOT_FOUND                     ErrorCode = 1404
+	ErrorCodeMETHOD_NOT_ALLOWED            ErrorCode = 1405
+	ErrorCodePRECONDITION_FAILED           ErrorCode = 1412
+	ErrorCodePAYLOAD_TOO_LARGE             ErrorCode = 1413
+	ErrorCodeTOO_MANY_REQUESTS             ErrorCode = 1429
+	ErrorCodeHEADER_FIELDS_TOO_LARGE       ErrorCode = 1431
+	ErrorCodePM_INTERNAL_SERVER_ERROR      ErrorCode = 1500
+	ErrorCodePM_NOT_IMPLEMENTED            ErrorCode = 1501
+	ErrorCodePM_NO_AVAILABLE_DN            ErrorCode = 1502
+	ErrorCodePM_NOT_LEADER                 ErrorCode = 1503
+	ErrorCodePM_SEAL_RANGE_NOT_FOUND       ErrorCode = 1510
+	ErrorCodePM_SEAL_RANGE_NO_DN_RESPONDED ErrorCode = 1511
+	ErrorCodeDN_INTERNAL_SERVER_ERROR      ErrorCode = 2500
+	ErrorCodeDN_NOT_IMPLEMENTED            ErrorCode = 2501
+	ErrorCodeDN_NOT_LEADER_RANGE           ErrorCode = 2502
 )
 
 var EnumNamesErrorCode = map[ErrorCode]string{
-	ErrorCodeERROR_CODE_UNSPECIFIED:   "ERROR_CODE_UNSPECIFIED",
-	ErrorCodeOK:                       "OK",
-	ErrorCodeBAD_REQUEST:              "BAD_REQUEST",
-	ErrorCodeUNAUTHORIZED:             "UNAUTHORIZED",
-	ErrorCodePAYMENT_REQUIRED:         "PAYMENT_REQUIRED",
-	ErrorCodeFORBIDDEN:                "FORBIDDEN",
-	ErrorCodeNOT_FOUND:                "NOT_FOUND",
-	ErrorCodeMETHOD_NOT_ALLOWED:       "METHOD_NOT_ALLOWED",
-	ErrorCodePRECONDITION_FAILED:      "PRECONDITION_FAILED",
-	ErrorCodePAYLOAD_TOO_LARGE:        "PAYLOAD_TOO_LARGE",
-	ErrorCodeTOO_MANY_REQUESTS:        "TOO_MANY_REQUESTS",
-	ErrorCodeHEADER_FIELDS_TOO_LARGE:  "HEADER_FIELDS_TOO_LARGE",
-	ErrorCodePM_INTERNAL_SERVER_ERROR: "PM_INTERNAL_SERVER_ERROR",
-	ErrorCodePM_NOT_IMPLEMENTED:       "PM_NOT_IMPLEMENTED",
-	ErrorCodePM_NO_AVAILABLE_DN:       "PM_NO_AVAILABLE_DN",
-	ErrorCodePM_NOT_LEADER:            "PM_NOT_LEADER",
-	ErrorCodeDN_INTERNAL_SERVER_ERROR: "DN_INTERNAL_SERVER_ERROR",
-	ErrorCodeDN_NOT_IMPLEMENTED:       "DN_NOT_IMPLEMENTED",
-	ErrorCodeDN_NOT_LEADER_RANGE:      "DN_NOT_LEADER_RANGE",
+	ErrorCodeERROR_CODE_UNSPECIFIED:        "ERROR_CODE_UNSPECIFIED",
+	ErrorCodeOK:                            "OK",
+	ErrorCodeBAD_REQUEST:                   "BAD_REQUEST",
+	ErrorCodeUNAUTHORIZED:                  "UNAUTHORIZED",
+	ErrorCodePAYMENT_REQUIRED:              "PAYMENT_REQUIRED",
+	ErrorCodeFORBIDDEN:                     "FORBIDDEN",
+	ErrorCodeNOT_FOUND:                     "NOT_FOUND",
+	ErrorCodeMETHOD_NOT_ALLOWED:            "METHOD_NOT_ALLOWED",
+	ErrorCodePRECONDITION_FAILED:           "PRECONDITION_FAILED",
+	ErrorCodePAYLOAD_TOO_LARGE:             "PAYLOAD_TOO_LARGE",
+	ErrorCodeTOO_MANY_REQUESTS:             "TOO_MANY_REQUESTS",
+	ErrorCodeHEADER_FIELDS_TOO_LARGE:       "HEADER_FIELDS_TOO_LARGE",
+	ErrorCodePM_INTERNAL_SERVER_ERROR:      "PM_INTERNAL_SERVER_ERROR",
+	ErrorCodePM_NOT_IMPLEMENTED:            "PM_NOT_IMPLEMENTED",
+	ErrorCodePM_NO_AVAILABLE_DN:            "PM_NO_AVAILABLE_DN",
+	ErrorCodePM_NOT_LEADER:                 "PM_NOT_LEADER",
+	ErrorCodePM_SEAL_RANGE_NOT_FOUND:       "PM_SEAL_RANGE_NOT_FOUND",
+	ErrorCodePM_SEAL_RANGE_NO_DN_RESPONDED: "PM_SEAL_RANGE_NO_DN_RESPONDED",
+	ErrorCodeDN_INTERNAL_SERVER_ERROR:      "DN_INTERNAL_SERVER_ERROR",
+	ErrorCodeDN_NOT_IMPLEMENTED:            "DN_NOT_IMPLEMENTED",
+	ErrorCodeDN_NOT_LEADER_RANGE:           "DN_NOT_LEADER_RANGE",
 }
 
 var EnumValuesErrorCode = map[string]ErrorCode{
-	"ERROR_CODE_UNSPECIFIED":   ErrorCodeERROR_CODE_UNSPECIFIED,
-	"OK":                       ErrorCodeOK,
-	"BAD_REQUEST":              ErrorCodeBAD_REQUEST,
-	"UNAUTHORIZED":             ErrorCodeUNAUTHORIZED,
-	"PAYMENT_REQUIRED":         ErrorCodePAYMENT_REQUIRED,
-	"FORBIDDEN":                ErrorCodeFORBIDDEN,
-	"NOT_FOUND":                ErrorCodeNOT_FOUND,
-	"METHOD_NOT_ALLOWED":       ErrorCodeMETHOD_NOT_ALLOWED,
-	"PRECONDITION_FAILED":      ErrorCodePRECONDITION_FAILED,
-	"PAYLOAD_TOO_LARGE":        ErrorCodePAYLOAD_TOO_LARGE,
-	"TOO_MANY_REQUESTS":        ErrorCodeTOO_MANY_REQUESTS,
-	"HEADER_FIELDS_TOO_LARGE":  ErrorCodeHEADER_FIELDS_TOO_LARGE,
-	"PM_INTERNAL_SERVER_ERROR": ErrorCodePM_INTERNAL_SERVER_ERROR,
-	"PM_NOT_IMPLEMENTED":       ErrorCodePM_NOT_IMPLEMENTED,
-	"PM_NO_AVAILABLE_DN":       ErrorCodePM_NO_AVAILABLE_DN,
-	"PM_NOT_LEADER":            ErrorCodePM_NOT_LEADER,
-	"DN_INTERNAL_SERVER_ERROR": ErrorCodeDN_INTERNAL_SERVER_ERROR,
-	"DN_NOT_IMPLEMENTED":       ErrorCodeDN_NOT_IMPLEMENTED,
-	"DN_NOT_LEADER_RANGE":      ErrorCodeDN_NOT_LEADER_RANGE,
+	"ERROR_CODE_UNSPECIFIED":        ErrorCodeERROR_CODE_UNSPECIFIED,
+	"OK":                            ErrorCodeOK,
+	"BAD_REQUEST":                   ErrorCodeBAD_REQUEST,
+	"UNAUTHORIZED":                  ErrorCodeUNAUTHORIZED,
+	"PAYMENT_REQUIRED":              ErrorCodePAYMENT_REQUIRED,
+	"FORBIDDEN":                     ErrorCodeFORBIDDEN,
+	"NOT_FOUND":                     ErrorCodeNOT_FOUND,
+	"METHOD_NOT_ALLOWED":            ErrorCodeMETHOD_NOT_ALLOWED,
+	"PRECONDITION_FAILED":           ErrorCodePRECONDITION_FAILED,
+	"PAYLOAD_TOO_LARGE":             ErrorCodePAYLOAD_TOO_LARGE,
+	"TOO_MANY_REQUESTS":             ErrorCodeTOO_MANY_REQUESTS,
+	"HEADER_FIELDS_TOO_LARGE":       ErrorCodeHEADER_FIELDS_TOO_LARGE,
+	"PM_INTERNAL_SERVER_ERROR":      ErrorCodePM_INTERNAL_SERVER_ERROR,
+	"PM_NOT_IMPLEMENTED":            ErrorCodePM_NOT_IMPLEMENTED,
+	"PM_NO_AVAILABLE_DN":            ErrorCodePM_NO_AVAILABLE_DN,
+	"PM_NOT_LEADER":                 ErrorCodePM_NOT_LEADER,
+	"PM_SEAL_RANGE_NOT_FOUND":       ErrorCodePM_SEAL_RANGE_NOT_FOUND,
+	"PM_SEAL_RANGE_NO_DN_RESPONDED": ErrorCodePM_SEAL_RANGE_NO_DN_RESPONDED,
+	"DN_INTERNAL_SERVER_ERROR":      ErrorCodeDN_INTERNAL_SERVER_ERROR,
+	"DN_NOT_IMPLEMENTED":            ErrorCodeDN_NOT_IMPLEMENTED,
+	"DN_NOT_LEADER_RANGE":           ErrorCodeDN_NOT_LEADER_RANGE,
 }
 
 func (v ErrorCode) String() string {

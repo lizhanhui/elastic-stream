@@ -7,22 +7,23 @@ import (
 )
 
 type AppendInfoT struct {
-	StreamId int64 `json:"stream_id"`
+	Range *RangeT `json:"range"`
 	RequestIndex int32 `json:"request_index"`
 	BatchLength int32 `json:"batch_length"`
 }
 
 func (t *AppendInfoT) Pack(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
 	if t == nil { return 0 }
+	range_Offset := t.Range.Pack(builder)
 	AppendInfoStart(builder)
-	AppendInfoAddStreamId(builder, t.StreamId)
+	AppendInfoAddRange(builder, range_Offset)
 	AppendInfoAddRequestIndex(builder, t.RequestIndex)
 	AppendInfoAddBatchLength(builder, t.BatchLength)
 	return AppendInfoEnd(builder)
 }
 
 func (rcv *AppendInfo) UnPackTo(t *AppendInfoT) {
-	t.StreamId = rcv.StreamId()
+	t.Range = rcv.Range(nil).UnPack()
 	t.RequestIndex = rcv.RequestIndex()
 	t.BatchLength = rcv.BatchLength()
 }
@@ -61,16 +62,17 @@ func (rcv *AppendInfo) Table() flatbuffers.Table {
 	return rcv._tab
 }
 
-func (rcv *AppendInfo) StreamId() int64 {
+func (rcv *AppendInfo) Range(obj *Range) *Range {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(4))
 	if o != 0 {
-		return rcv._tab.GetInt64(o + rcv._tab.Pos)
+		x := rcv._tab.Indirect(o + rcv._tab.Pos)
+		if obj == nil {
+			obj = new(Range)
+		}
+		obj.Init(rcv._tab.Bytes, x)
+		return obj
 	}
-	return -1
-}
-
-func (rcv *AppendInfo) MutateStreamId(n int64) bool {
-	return rcv._tab.MutateInt64Slot(4, n)
+	return nil
 }
 
 func (rcv *AppendInfo) RequestIndex() int32 {
@@ -100,8 +102,8 @@ func (rcv *AppendInfo) MutateBatchLength(n int32) bool {
 func AppendInfoStart(builder *flatbuffers.Builder) {
 	builder.StartObject(3)
 }
-func AppendInfoAddStreamId(builder *flatbuffers.Builder, streamId int64) {
-	builder.PrependInt64Slot(0, streamId, -1)
+func AppendInfoAddRange(builder *flatbuffers.Builder, range_ flatbuffers.UOffsetT) {
+	builder.PrependUOffsetTSlot(0, flatbuffers.UOffsetT(range_), 0)
 }
 func AppendInfoAddRequestIndex(builder *flatbuffers.Builder, requestIndex int32) {
 	builder.PrependInt32Slot(1, requestIndex, 0)

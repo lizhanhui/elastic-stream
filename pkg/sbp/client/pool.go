@@ -8,20 +8,20 @@ import (
 )
 
 type connPool struct {
-	c *Client
+	c *SbpClient
 
 	mu      sync.Mutex
-	conns   map[address][]*conn
-	addrs   map[*conn][]address
-	dialing map[address]*dialCall // currently in-flight dials
+	conns   map[Address][]*conn
+	addrs   map[*conn][]Address
+	dialing map[Address]*dialCall // currently in-flight dials
 }
 
-func newConnPool(c *Client) *connPool {
+func newConnPool(c *SbpClient) *connPool {
 	return &connPool{
 		c:       c,
-		conns:   make(map[address][]*conn),
-		addrs:   make(map[*conn][]address),
-		dialing: make(map[address]*dialCall),
+		conns:   make(map[Address][]*conn),
+		addrs:   make(map[*conn][]Address),
+		dialing: make(map[Address]*dialCall),
 	}
 }
 
@@ -36,8 +36,29 @@ func (p *connPool) closeIdleConnections() {
 	}
 }
 
+func (p *connPool) closeAllConnections(ctx context.Context) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	var conns []*conn
+	for _, vv := range p.conns {
+		conns = append(conns, vv...)
+	}
+
+	wg := sync.WaitGroup{}
+	wg.Add(len(conns))
+	for _, cc := range conns {
+		cc := cc
+		go func() {
+			_ = cc.shutdown(ctx)
+			wg.Done()
+		}()
+	}
+	wg.Wait()
+}
+
 // getConn returns a connection to addr, creating one if necessary.
-func (p *connPool) getConn(req protocol.OutRequest, addr address) (*conn, error) {
+func (p *connPool) getConn(req protocol.OutRequest, addr Address) (*conn, error) {
 	for {
 		p.mu.Lock()
 		for _, cc := range p.conns[addr] {

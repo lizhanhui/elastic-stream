@@ -10,52 +10,45 @@ import (
 
 // Cache is the cache for all metadata.
 type Cache struct {
-	streams   cmap.ConcurrentMap[int64, *Stream]
-	dataNodes cmap.ConcurrentMap[int32, *DataNode]
-	// TODO: add more cache
+	writableRanges cmap.ConcurrentMap[int64, *Range]
+	dataNodes      cmap.ConcurrentMap[int32, *DataNode]
 }
 
 // NewCache creates a new Cache.
 func NewCache() *Cache {
 	return &Cache{
-		streams:   cmap.NewWithCustomShardingFunction[int64, *Stream](func(key int64) uint32 { return uint32(key) }),
-		dataNodes: cmap.NewWithCustomShardingFunction[int32, *DataNode](func(key int32) uint32 { return uint32(key) }),
+		writableRanges: cmap.NewWithCustomShardingFunction[int64, *Range](func(key int64) uint32 { return uint32(key) }),
+		dataNodes:      cmap.NewWithCustomShardingFunction[int32, *DataNode](func(key int32) uint32 { return uint32(key) }),
 	}
 }
 
 // Reset resets the cache.
 func (c *Cache) Reset() {
-	c.streams.Clear()
+	c.writableRanges.Clear()
 	c.dataNodes.Clear()
 }
 
-// Stream is the cache for StreamT and its ranges.
-type Stream struct {
-	*rpcfb.StreamT
-	ranges cmap.ConcurrentMap[int32, *rpcfb.RangeT]
+type Range struct {
+	*rpcfb.RangeT
+	// mu is a 1-element semaphore channel controlling access to seal range.
+	// Write to lock it, and read to unlock.
+	mu chan struct{}
 }
 
-func NewStream(stream *rpcfb.StreamT) *Stream {
-	return &Stream{
-		StreamT: stream,
-		ranges:  cmap.NewWithCustomShardingFunction[int32, *rpcfb.RangeT](func(key int32) uint32 { return uint32(key) }),
-	}
+func (r *Range) Mu() chan struct{} {
+	return r.mu
 }
 
-// SaveStream saves a stream to the cache.
-func (c *Cache) SaveStream(streamT *rpcfb.StreamT) {
-	stream, ok := c.streams.Get(streamT.StreamId)
-	if ok {
-		stream.StreamT = streamT
-	} else {
-		stream = NewStream(streamT)
-	}
-	c.streams.Set(stream.StreamId, stream)
-}
-
-// StreamCount returns the count of streams in the cache.
-func (c *Cache) StreamCount() int {
-	return c.streams.Count()
+// WritableRange returns the writable range of the stream.
+func (c *Cache) WritableRange(streamID int64) *Range {
+	return c.writableRanges.Upsert(streamID, nil, func(exist bool, valueInMap, _ *Range) *Range {
+		if exist {
+			return valueInMap
+		}
+		return &Range{
+			mu: make(chan struct{}, 1),
+		}
+	})
 }
 
 // DataNode is the cache for DataNodeT and its status.
@@ -74,19 +67,30 @@ func NewDataNode(dataNode *rpcfb.DataNodeT) *DataNode {
 // SaveDataNode saves a data node to the cache.
 // It returns true if the data node is updated.
 func (c *Cache) SaveDataNode(nodeT *rpcfb.DataNodeT) (updated bool) {
-	node, ok := c.dataNodes.Get(nodeT.NodeId)
-	if ok {
-		if !isDataNodeEqual(node.DataNodeT, nodeT) {
-			updated = true
-			node.DataNodeT = nodeT
+	_ = c.dataNodes.Upsert(nodeT.NodeId, NewDataNode(nodeT), func(exist bool, valueInMap, newValue *DataNode) *DataNode {
+		if exist {
+			if !isDataNodeEqual(valueInMap.DataNodeT, newValue.DataNodeT) {
+				updated = true
+				valueInMap.DataNodeT = newValue.DataNodeT
+			}
+			valueInMap.LastActiveTime = newValue.LastActiveTime
+			return valueInMap
 		}
-		node.LastActiveTime = time.Now()
-	} else {
-		node = NewDataNode(nodeT)
 		updated = true
-	}
-	c.dataNodes.Set(node.NodeId, node)
+		return newValue
+	})
 	return updated
+}
+
+// DataNode returns the data node by node ID.
+// The returned value is nil if the data node is not found.
+// The returned value should not be modified.
+func (c *Cache) DataNode(nodeID int32) *DataNode {
+	node, ok := c.dataNodes.Get(nodeID)
+	if !ok {
+		return nil
+	}
+	return node
 }
 
 // DataNodes returns all data nodes in the cache.

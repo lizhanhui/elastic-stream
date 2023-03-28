@@ -38,6 +38,12 @@ enum ErrorCode : int16 {
     // leader nodes. Otherwise, use this code to signal the client to redirect future requests.
     PM_NOT_LEADER = 1503,
 
+    // Use this code if the specified range is not found when sealing a mutable range.
+    PM_SEAL_RANGE_NOT_FOUND = 1510,
+
+    // Use this code if no data node responds to the seal request when sealing a mutable range.
+    PM_SEAL_RANGE_NO_DN_RESPONDED = 1511,
+
     // 25xx is reserved for data node errors
     DN_INTERNAL_SERVER_ERROR = 2500,
     DN_NOT_IMPLEMENTED = 2501,
@@ -101,6 +107,17 @@ table HeartbeatResponse {
     status: Status (id: 3);
 }
 
+// Request placement manager to allocate a unique ID. 
+table IdAllocationRequest {
+    host: string (id: 0);
+}
+
+// Unique ID allocation response
+table IdAllocationResponse {
+    id: int32 (id: 0);
+    status: Status (id: 1);
+}
+
 // The append request is used to append records to the data node.
 table AppendRequest {
     // The timeout to await a response in milliseconds.
@@ -110,8 +127,8 @@ table AppendRequest {
 }
 
 table AppendInfo {
-    // The id of the stream to append records.
-    stream_id: int64 = -1 (id: 0);
+    // The stream range to append records into.
+    range: Range (id: 0);
     // The index of the request in the batch.
     request_index: int32 (id: 1);
     // The payload length of this record batch to append
@@ -273,12 +290,10 @@ table SealRangesResponse {
 }
 
 table SealRangesResult {
-    // The id of the stream
-    stream_id: int64 = -1 (id: 0);
     // Both the PM and the data node will handle the seal ranges request.
     // The data node returns the sealed range, while the PM returns the newly writable range.
-    range: Range (id: 1);
-    status: Status (id: 2);
+    range: Range (id: 0);
+    status: Status (id: 1);
 }
 
 // The sync ranges request is used to sync newly writable ranges to accelerate the availability of a newly created writable range.

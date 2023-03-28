@@ -23,6 +23,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/AutoMQ/placement-manager/api/rpcfb/rpcfb"
+	sbpClient "github.com/AutoMQ/placement-manager/pkg/sbp/client"
 	"github.com/AutoMQ/placement-manager/pkg/server/cluster/cache"
 	"github.com/AutoMQ/placement-manager/pkg/server/id"
 	"github.com/AutoMQ/placement-manager/pkg/server/member"
@@ -48,6 +49,7 @@ type RaftCluster struct {
 	streamIDAlloc id.Allocator
 	member        Member
 	cache         *cache.Cache
+	client        sbpClient.Client
 
 	lg *zap.Logger
 }
@@ -60,16 +62,17 @@ type Member interface {
 // Server is the interface for starting a RaftCluster.
 type Server interface {
 	Storage() storage.Storage
-	Member() Member
 	IDAllocator(key string, start, step uint64) id.Allocator
+	Member() Member
 }
 
 // NewRaftCluster creates a new RaftCluster.
-func NewRaftCluster(ctx context.Context, logger *zap.Logger) *RaftCluster {
+func NewRaftCluster(ctx context.Context, client sbpClient.Client, logger *zap.Logger) *RaftCluster {
 	return &RaftCluster{
-		ctx:   ctx,
-		cache: cache.NewCache(),
-		lg:    logger,
+		ctx:    ctx,
+		cache:  cache.NewCache(),
+		client: client,
+		lg:     logger,
 	}
 }
 
@@ -114,18 +117,6 @@ func (c *RaftCluster) loadInfo() error {
 
 	c.cache.Reset()
 
-	// // TODO use cache later
-	// // load streams
-	// start := time.Now()
-	// err := c.storage.ForEachStream(c.ctx, func(stream *rpcfb.StreamT) error {
-	// 	c.cache.SaveStream(stream)
-	// 	return nil
-	// })
-	// if err != nil {
-	// 	return errors.Wrap(err, "load streams")
-	// }
-	// logger.Info("load streams", zap.Int("count", c.cache.StreamCount()), zap.Duration("cost", time.Since(start)))
-
 	// load data nodes
 	start := time.Now()
 	err := c.storage.ForEachDataNode(c.ctx, func(datanode *rpcfb.DataNodeT) error {
@@ -137,7 +128,6 @@ func (c *RaftCluster) loadInfo() error {
 	}
 	logger.Info("load data nodes", zap.Int("count", c.cache.DataNodeCount()), zap.Duration("cost", time.Since(start)))
 
-	// TODO load other info
 	return nil
 }
 

@@ -3,7 +3,11 @@ package client
 import (
 	"bufio"
 	"context"
+	"fmt"
 	"net"
+	"os"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/pkg/errors"
@@ -14,16 +18,25 @@ import (
 	"github.com/AutoMQ/placement-manager/pkg/sbp/protocol"
 )
 
-// address is the address of a server, in the format of "host:port"
-type address = string
+// Address is the address of a server, in the format of "host:port"
+type Address = string
 
 const (
 	_defaultHeartbeatTimeout = 15 * time.Second
 )
 
-// A Client internally caches connections to servers.
+var (
+	clientIDCounter = atomic.Int32{}
+)
+
+type Client interface {
+	Do(req protocol.OutRequest, addr Address) (protocol.InResponse, error)
+	SealRanges(req *protocol.SealRangesRequest, addr Address) (*protocol.SealRangesResponse, error)
+}
+
+// A SbpClient internally caches connections to servers.
 // It is safe for concurrent use by multiple goroutines.
-type Client struct {
+type SbpClient struct {
 	// TODO move into a config
 	// IdleConnTimeout is the maximum amount of time an idle (keep-alive) connection
 	// will remain idle before closing itself.
@@ -41,18 +54,18 @@ type Client struct {
 	// Default to format.FlatBuffer
 	Format format.Format
 
-	name     string
+	id       string
 	connPool *connPool
 
 	lg *zap.Logger
 }
 
 // NewClient creates a client
-func NewClient(name string, lg *zap.Logger) *Client {
-	c := &Client{
-		name: name,
-		lg:   lg,
+func NewClient(lg *zap.Logger) *SbpClient {
+	c := &SbpClient{
+		lg: lg,
 	}
+	c.id = newClientID()
 	c.connPool = newConnPool(c)
 	return c
 }
@@ -60,7 +73,7 @@ func NewClient(name string, lg *zap.Logger) *Client {
 // Do sends a request to the server and returns the response.
 // The request is sent to the server specified by addr.
 // On success, the response is returned. On error, the response is nil and the error is returned.
-func (c *Client) Do(req protocol.OutRequest, addr address) (protocol.InResponse, error) {
+func (c *SbpClient) Do(req protocol.OutRequest, addr Address) (protocol.InResponse, error) {
 	logger := c.lg.With(zap.String("address", addr))
 	if req.Timeout() > 0 {
 		ctx, cancel := context.WithTimeout(req.Context(), time.Duration(req.Timeout())*time.Millisecond)
@@ -83,21 +96,37 @@ func (c *Client) Do(req protocol.OutRequest, addr address) (protocol.InResponse,
 	return resp, err
 }
 
-func (c *Client) SealRanges(req *protocol.SealRangesRequest, addr address) (*protocol.SealRangesResponse, error) {
+func (c *SbpClient) SealRanges(req *protocol.SealRangesRequest, addr Address) (*protocol.SealRangesResponse, error) {
 	resp, err := c.Do(req, addr)
 	if err != nil {
 		return nil, err
 	}
-	return resp.(*protocol.SealRangesResponse), nil
+	if sealResp, ok := resp.(*protocol.SealRangesResponse); ok {
+		return sealResp, nil
+	}
+	if sysErr, ok := resp.(*protocol.SystemErrorResponse); ok {
+		return nil, errors.Errorf("system error, code: %s, message: %s", sysErr.Status.Code, sysErr.Status.Message)
+	}
+	return nil, errors.Errorf("sbp: unexpected response type %T", resp)
 }
 
-func (c *Client) CloseIdleConnections() {
+// CloseIdleConnections closes any connections which were previously
+// connected from previous requests but are now sitting idle.
+// It does not interrupt any connections currently in use.
+func (c *SbpClient) CloseIdleConnections() {
 	logger := c.lg
 	c.connPool.closeIdleConnections()
 	logger.Info("close idle connections")
 }
 
-func (c *Client) dialConn(ctx context.Context, addr string) (*conn, error) {
+// Shutdown gracefully closes all connections, waits for all pending requests to complete.
+func (c *SbpClient) Shutdown(ctx context.Context) {
+	logger := c.lg
+	c.connPool.closeAllConnections(ctx)
+	logger.Info("close all connections")
+}
+
+func (c *SbpClient) dialConn(ctx context.Context, addr string) (*conn, error) {
 	var d net.Dialer
 	conn, err := d.DialContext(ctx, "tcp", addr)
 	if err != nil {
@@ -106,7 +135,7 @@ func (c *Client) dialConn(ctx context.Context, addr string) (*conn, error) {
 	return c.newConn(conn)
 }
 
-func (c *Client) newConn(rwc net.Conn) (*conn, error) {
+func (c *SbpClient) newConn(rwc net.Conn) (*conn, error) {
 	logger := c.lg.With(zap.String("remote-server-addr", rwc.RemoteAddr().String()))
 	cc := &conn{
 		c:            c,
@@ -119,6 +148,7 @@ func (c *Client) newConn(rwc net.Conn) (*conn, error) {
 		fr:           codec.NewFramer(bufio.NewWriter(rwc), bufio.NewReader(rwc), logger),
 		lg:           logger,
 	}
+	cc.cond = sync.NewCond(&cc.mu)
 	if c.IdleConnTimeout > 0 {
 		cc.idleTimeout = c.IdleConnTimeout
 		cc.idleTimer = time.AfterFunc(c.IdleConnTimeout, cc.onIdleTimeout)
@@ -129,16 +159,25 @@ func (c *Client) newConn(rwc net.Conn) (*conn, error) {
 	return cc, nil
 }
 
-func (c *Client) heartbeatTimeout() time.Duration {
+func (c *SbpClient) Logger() *zap.Logger {
+	return c.lg
+}
+
+func (c *SbpClient) heartbeatTimeout() time.Duration {
 	if c.HeartbeatTimeout > 0 {
 		return c.HeartbeatTimeout
 	}
 	return _defaultHeartbeatTimeout
 }
 
-func (c *Client) format() format.Format {
+func (c *SbpClient) format() format.Format {
 	if c.Format.Valid() {
 		return c.Format
 	}
 	return format.FlatBuffer()
+}
+
+func newClientID() string {
+	hostname, _ := os.Hostname()
+	return fmt.Sprintf("pm|%s|%d|%d|%d", hostname, os.Getpid(), clientIDCounter.Add(1), time.Now().UnixNano())
 }

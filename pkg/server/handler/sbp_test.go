@@ -8,10 +8,14 @@ import (
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"go.uber.org/zap"
 
+	"github.com/AutoMQ/placement-manager/api/rpcfb/rpcfb"
+	sbpClient "github.com/AutoMQ/placement-manager/pkg/sbp/client"
+	"github.com/AutoMQ/placement-manager/pkg/sbp/protocol"
 	"github.com/AutoMQ/placement-manager/pkg/server/cluster"
 	"github.com/AutoMQ/placement-manager/pkg/server/id"
 	"github.com/AutoMQ/placement-manager/pkg/server/member"
 	"github.com/AutoMQ/placement-manager/pkg/server/storage"
+	"github.com/AutoMQ/placement-manager/pkg/util/randutil"
 	"github.com/AutoMQ/placement-manager/pkg/util/testutil"
 )
 
@@ -57,12 +61,65 @@ func (m *mockServer) Leader() *member.Info {
 	}
 }
 
-func startSbp(tb testing.TB) (*Sbp, func()) {
+type mockSbpClient struct {
+	endOffsetF func(rangeIndex int32, addr sbpClient.Address) int64
+}
+
+func (m mockSbpClient) Do(_ protocol.OutRequest, _ sbpClient.Address) (protocol.InResponse, error) {
+	panic("does not mock yet")
+}
+
+func (m mockSbpClient) SealRanges(req *protocol.SealRangesRequest, addr sbpClient.Address) (*protocol.SealRangesResponse, error) {
+	results := make([]*rpcfb.SealRangesResultT, 0, len(req.Ranges))
+	for _, rangeID := range req.Ranges {
+		start := int64(rangeID.RangeIndex * 100)
+		end := start
+		if m.endOffsetF != nil {
+			end = m.endOffsetF(rangeID.RangeIndex, addr)
+		} else {
+			n, _ := randutil.Uint64()
+			end += int64(n % 100)
+		}
+
+		if end == -1 {
+			results = append(results, &rpcfb.SealRangesResultT{
+				Status: &rpcfb.StatusT{
+					Code: rpcfb.ErrorCodeDN_NOT_IMPLEMENTED,
+				},
+			})
+			continue
+		}
+
+		results = append(results, &rpcfb.SealRangesResultT{
+			Range: &rpcfb.RangeT{
+				StreamId:    rangeID.StreamId,
+				RangeIndex:  rangeID.RangeIndex,
+				StartOffset: start,
+				EndOffset:   end,
+			},
+			Status: &rpcfb.StatusT{
+				Code: rpcfb.ErrorCodeOK,
+			},
+		})
+	}
+
+	resp := &protocol.SealRangesResponse{SealRangesResponseT: rpcfb.SealRangesResponseT{
+		SealResponses: results,
+	}}
+	resp.OK()
+	return resp, nil
+}
+
+func startSbp(tb testing.TB, sbpClient sbpClient.Client) (*Sbp, func()) {
 	re := require.New(tb)
+
+	if sbpClient == nil {
+		sbpClient = mockSbpClient{}
+	}
 
 	_, client, closeFunc := testutil.StartEtcd(tb)
 
-	c := cluster.NewRaftCluster(context.Background(), zap.NewNop())
+	c := cluster.NewRaftCluster(context.Background(), sbpClient, zap.NewNop())
 	err := c.Start(&mockServer{c: client})
 	re.NoError(err)
 

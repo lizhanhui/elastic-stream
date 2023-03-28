@@ -389,14 +389,14 @@ func (c *conn) processDataFrame(f *codec.DataFrame, st *stream) error {
 	}
 
 	action := GetAction(f.OpCode)
-	act, resp := c.generateAct(f, action)
+	ctx, act, resp := c.generateAct(f, action)
 
 	// TODO if there are too many handlers running, put the request into a priority queue (or put important requests into a priority queue)
-	go c.runHandlerAndWrite(f.Context(), st, act, resp)
+	go c.runHandlerAndWrite(ctx, f.Context(), st, act, resp)
 	return nil
 }
 
-func (c *conn) generateAct(f *codec.DataFrame, action *Action) (act func(resp protocol.OutResponse), resp protocol.OutResponse) {
+func (c *conn) generateAct(f *codec.DataFrame, action *Action) (ctx context.Context, act func(resp protocol.OutResponse), resp protocol.OutResponse) {
 	req := action.newReq()
 	resp = action.newResp()
 
@@ -412,7 +412,7 @@ func (c *conn) generateAct(f *codec.DataFrame, action *Action) (act func(resp pr
 	}
 
 	id, _ := uuid.NewRandom()
-	ctx := traceutil.SetTraceID(c.ctx, id.String())
+	ctx = traceutil.SetTraceID(c.ctx, id.String())
 
 	var cancel context.CancelFunc = func() {}
 	if req.Timeout() > 0 {
@@ -431,11 +431,19 @@ var errChanPool = sync.Pool{
 	New: func() interface{} { return make(chan error, 1) },
 }
 
-func (c *conn) runHandlerAndWrite(frameCtx *codec.DataFrameContext, st *stream, act func(protocol.OutResponse), resp protocol.OutResponse) {
-	logger := c.lg
+func (c *conn) runHandlerAndWrite(ctx context.Context, frameCtx *codec.DataFrameContext, st *stream, act func(protocol.OutResponse), resp protocol.OutResponse) {
+	logger := c.lg.With(traceutil.TraceLogField(ctx))
 	c.serveG.CheckNotOn()
 
 	c.runHandler(act, resp)
+	select {
+	case <-ctx.Done():
+		// no need to write response if the request timed out
+		logger.Warn("request cancelled", zap.Error(ctx.Err()))
+		return
+	default:
+	}
+
 	header, err := resp.Marshal(frameCtx.HeaderFmt)
 	if err != nil {
 		resp.Error(&rpcfb.StatusT{
