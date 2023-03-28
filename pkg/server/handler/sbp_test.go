@@ -62,38 +62,45 @@ func (m *mockServer) Leader() *member.Info {
 }
 
 type mockSbpClient struct {
-	endOffsetF func(start int64) int64
+	endOffsetF func(rangeIndex int32, addr sbpClient.Address) int64
 }
 
 func (m mockSbpClient) Do(_ protocol.OutRequest, _ sbpClient.Address) (protocol.InResponse, error) {
 	panic("does not mock yet")
 }
 
-func (m mockSbpClient) SealRanges(req *protocol.SealRangesRequest, _ sbpClient.Address) (*protocol.SealRangesResponse, error) {
+func (m mockSbpClient) SealRanges(req *protocol.SealRangesRequest, addr sbpClient.Address) (*protocol.SealRangesResponse, error) {
 	results := make([]*rpcfb.SealRangesResultT, 0, len(req.Ranges))
 	for _, rangeID := range req.Ranges {
 		start := int64(rangeID.RangeIndex * 100)
 		end := start
 		if m.endOffsetF != nil {
-			end = m.endOffsetF(start)
+			end = m.endOffsetF(rangeID.RangeIndex, addr)
 		} else {
 			n, _ := randutil.Uint64()
 			end += int64(n % 100)
 		}
 
-		result := &rpcfb.SealRangesResultT{
+		if end == -1 {
+			results = append(results, &rpcfb.SealRangesResultT{
+				Status: &rpcfb.StatusT{
+					Code: rpcfb.ErrorCodeDN_NOT_IMPLEMENTED,
+				},
+			})
+			continue
+		}
+
+		results = append(results, &rpcfb.SealRangesResultT{
 			Range: &rpcfb.RangeT{
 				StreamId:    rangeID.StreamId,
 				RangeIndex:  rangeID.RangeIndex,
 				StartOffset: start,
 				EndOffset:   end,
-				NextOffset:  end,
 			},
 			Status: &rpcfb.StatusT{
 				Code: rpcfb.ErrorCodeOK,
 			},
-		}
-		results = append(results, result)
+		})
 	}
 
 	resp := &protocol.SealRangesResponse{SealRangesResponseT: rpcfb.SealRangesResponseT{

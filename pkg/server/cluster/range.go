@@ -188,7 +188,7 @@ func (c *RaftCluster) sealRangeOnDataNode(ctx context.Context, writableRange *rp
 				return
 			}
 			for _, result := range resp.SealResponses {
-				if result.Range.StreamId == writableRange.StreamId && result.Range.RangeIndex == writableRange.RangeIndex {
+				if result.Range != nil && result.Range.StreamId == writableRange.StreamId && result.Range.RangeIndex == writableRange.RangeIndex {
 					if result.Status.Code != rpcfb.ErrorCodeOK {
 						logger.Error("failed to seal range on data node: error status", zap.Int32("data-node-id", node.DataNode.NodeId),
 							zap.String("status-code", result.Status.Code.String()), zap.String("status-msg", result.Status.Message))
