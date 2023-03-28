@@ -78,6 +78,22 @@ impl Entry {
         }
     }
 
+    /// Return the occupied size of the cached entry, aka the capacity of the cached entry.
+    pub(crate) fn capacity(&self) -> u32 {
+        if let Some(buf) = &self.buf {
+            buf.capacity as u32
+        } else if let Some(loading_entry_range) = &self.entry_range {
+            loading_entry_range.len
+        } else {
+            0
+        }
+    }
+
+    /// Check the entry whether it is loaded.
+    pub(crate) fn is_loaded(&self) -> bool {
+        self.buf.is_some()
+    }
+
     pub(crate) fn wal_offset(&self) -> u64 {
         if let Some(buf) = &self.buf {
             buf.wal_offset
@@ -98,6 +114,9 @@ pub(crate) struct BlockCache {
 
     // The key of the map is a relative wal_offset from the start wal_offset of the block cache.
     entries: BTreeMap<u32, Rc<UnsafeCell<Entry>>>,
+
+    // The size of the block cache.
+    cache_size: u32,
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -172,6 +191,7 @@ impl BlockCache {
             log,
             wal_offset: offset,
             entries: BTreeMap::new(),
+            cache_size: 0,
         }
     }
 
@@ -194,8 +214,20 @@ impl BlockCache {
         let from = (buf.wal_offset - self.wal_offset) as u32;
         let entry = Rc::new(UnsafeCell::new(Entry::new(buf)));
 
+        // Increase the cached size.
+        self.cache_size += unsafe { (*entry.get()).capacity() };
+
         // The replace occurs when the new entry overlaps with the existing entry.
-        self.entries.insert(from, entry);
+        let pre_entry = self.entries.insert(from, entry);
+
+        // Decrease the cached size if the replaced entry exists and is loaded.
+        if let Some(pre_entry) = pre_entry {
+            let pre_entry = unsafe { &*pre_entry.get() };
+
+            if pre_entry.is_loaded() {
+                self.cache_size -= pre_entry.len();
+            }
+        }
     }
 
     /// Add a loading entry to the cache.
@@ -214,7 +246,16 @@ impl BlockCache {
         let entry = Rc::new(UnsafeCell::new(Entry::new_loading_entry(entry_range)));
 
         // The replace occurs when the new entry overlaps with the existing entry.
-        self.entries.insert(from, entry);
+        let pre_entry = self.entries.insert(from, entry);
+
+        // Decrease the cached size if the replaced entry exists and is loaded.
+        if let Some(pre_entry) = pre_entry {
+            let pre_entry = unsafe { &*pre_entry.get() };
+
+            if pre_entry.is_loaded() {
+                self.cache_size -= pre_entry.len();
+            }
+        }
     }
 
     /// Get cached entries from the cache.
@@ -337,6 +378,9 @@ impl BlockCache {
                     entry.wal_offset(),
                     entry.wal_offset() + entry.len() as u64
                 );
+
+                // Decrease the cache size.
+                self.cache_size -= entry.len();
                 true
             } else {
                 false
@@ -354,6 +398,11 @@ impl BlockCache {
         }
         None
     }
+
+    /// Fetch the current cache size.
+    pub(crate) fn cache_size(&self) -> u32 {
+        self.cache_size
+    }
 }
 
 #[cfg(test)]
@@ -365,7 +414,10 @@ mod tests {
 
     use rand::{seq::SliceRandom, thread_rng};
 
-    use crate::io::{block_cache::MergeRange, buf::AlignedBuf};
+    use crate::io::{
+        block_cache::{Entry, EntryRange, MergeRange},
+        buf::AlignedBuf,
+    };
 
     use super::BlockCache;
 
@@ -501,6 +553,83 @@ mod tests {
         }
 
         assert_eq!(16, block_cache.entries.len());
+    }
+
+    /// Test cached size.
+    #[test]
+    fn test_cache_size() {
+        let log = test_util::terminal_logger();
+        let mut block_cache = super::BlockCache::new(log.clone(), 0);
+        let block_size = 4096;
+        for n in (0..16).into_iter() {
+            let buf = Arc::new(
+                AlignedBuf::new(log.clone(), n * block_size as u64, block_size, block_size)
+                    .unwrap(),
+            );
+            buf.limit.store(block_size, Ordering::Relaxed);
+            block_cache.add_entry(buf);
+        }
+
+        assert_eq!(16 * block_size as u32, block_cache.cache_size());
+
+        // Test cache size after remove.
+        block_cache.remove(|entry| entry.wal_offset() == 0);
+        assert_eq!(15 * block_size as u32, block_cache.cache_size());
+
+        // Add a loading entry and test cache size.
+        block_cache.add_loading_entry(EntryRange {
+            wal_offset: 0,
+            len: block_size as u32,
+        });
+        assert_eq!(15 * block_size as u32, block_cache.cache_size());
+
+        // Replace a loading entry and test cache size.
+        let buf = Arc::new(AlignedBuf::new(log.clone(), 0, block_size, block_size).unwrap());
+        buf.limit.store(block_size, Ordering::Relaxed);
+        block_cache.add_entry(buf);
+
+        assert_eq!(16 * block_size as u32, block_cache.cache_size());
+
+        // Replace a entry with a bigger one
+        {
+            // Remove the second entry.
+            block_cache.remove(|entry| entry.wal_offset() == block_size as u64);
+            // Replace the first entry with a bigger one.
+            let buf =
+                Arc::new(AlignedBuf::new(log.clone(), 0, block_size * 2, block_size * 2).unwrap());
+            buf.limit.store(block_size * 2, Ordering::Relaxed);
+            block_cache.add_entry(buf);
+            assert_eq!(16 * block_size as u32, block_cache.cache_size());
+        }
+
+        // Replace a entry with a smaller one
+        {
+            // Replace the first entry with a smaller one.
+            let buf =
+                Arc::new(AlignedBuf::new(log.clone(), 0, block_size, block_size / 2).unwrap());
+            buf.limit.store(block_size, Ordering::Relaxed);
+            block_cache.add_entry(buf);
+            assert_eq!(15 * block_size as u32, block_cache.cache_size());
+        }
+
+        // Replace a entry with a loading one
+        {
+            // Replace the first entry with a loading one.
+            block_cache.add_loading_entry(EntryRange {
+                wal_offset: 0,
+                len: block_size as u32,
+            });
+            assert_eq!(14 * block_size as u32, block_cache.cache_size());
+        }
+
+        // Record the cache size by capacity rather than the limit size.
+        {
+            let buf =
+                Arc::new(AlignedBuf::new(log.clone(), 0, block_size * 2, block_size / 2).unwrap());
+            buf.limit.store(block_size, Ordering::Relaxed);
+            block_cache.add_entry(buf);
+            assert_eq!(16 * block_size as u32, block_cache.cache_size());
+        }
     }
 
     /// Test get entry.
