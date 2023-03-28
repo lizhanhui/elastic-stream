@@ -8,14 +8,14 @@ import (
 	"github.com/AutoMQ/placement-manager/pkg/server/cluster"
 )
 
-func (s *Sbp) CreateStreams(req *protocol.CreateStreamsRequest, resp *protocol.CreateStreamsResponse) {
+func (h *Handler) CreateStreams(req *protocol.CreateStreamsRequest, resp *protocol.CreateStreamsResponse) {
 	ctx := req.Context()
-	if !s.c.IsLeader() {
-		s.notLeaderError(ctx, resp)
+	if !h.c.IsLeader() {
+		h.notLeaderError(ctx, resp)
 		return
 	}
 
-	results, err := s.c.CreateStreams(ctx, req.Streams)
+	results, err := h.c.CreateStreams(ctx, req.Streams)
 	if err != nil {
 		if errors.Is(err, cluster.ErrNotEnoughDataNodes) {
 			resp.Error(&rpcfb.StatusT{Code: rpcfb.ErrorCodePM_NO_AVAILABLE_DN, Message: err.Error()})
@@ -32,10 +32,10 @@ func (s *Sbp) CreateStreams(req *protocol.CreateStreamsRequest, resp *protocol.C
 	resp.OK()
 }
 
-func (s *Sbp) DeleteStreams(req *protocol.DeleteStreamsRequest, resp *protocol.DeleteStreamsResponse) {
+func (h *Handler) DeleteStreams(req *protocol.DeleteStreamsRequest, resp *protocol.DeleteStreamsResponse) {
 	ctx := req.Context()
-	if !s.c.IsLeader() {
-		s.notLeaderError(ctx, resp)
+	if !h.c.IsLeader() {
+		h.notLeaderError(ctx, resp)
 		return
 	}
 
@@ -43,7 +43,7 @@ func (s *Sbp) DeleteStreams(req *protocol.DeleteStreamsRequest, resp *protocol.D
 	for _, stream := range req.Streams {
 		streamIDs = append(streamIDs, stream.StreamId)
 	}
-	streams, err := s.c.DeleteStreams(ctx, streamIDs)
+	streams, err := h.c.DeleteStreams(ctx, streamIDs)
 	if err != nil {
 		resp.Error(&rpcfb.StatusT{Code: rpcfb.ErrorCodePM_INTERNAL_SERVER_ERROR, Message: err.Error()})
 		return
@@ -59,14 +59,14 @@ func (s *Sbp) DeleteStreams(req *protocol.DeleteStreamsRequest, resp *protocol.D
 	resp.OK()
 }
 
-func (s *Sbp) UpdateStreams(req *protocol.UpdateStreamsRequest, resp *protocol.UpdateStreamsResponse) {
+func (h *Handler) UpdateStreams(req *protocol.UpdateStreamsRequest, resp *protocol.UpdateStreamsResponse) {
 	ctx := req.Context()
-	if !s.c.IsLeader() {
-		s.notLeaderError(ctx, resp)
+	if !h.c.IsLeader() {
+		h.notLeaderError(ctx, resp)
 		return
 	}
 
-	streams, err := s.c.UpdateStreams(ctx, req.Streams)
+	streams, err := h.c.UpdateStreams(ctx, req.Streams)
 	if err != nil {
 		resp.Error(&rpcfb.StatusT{Code: rpcfb.ErrorCodePM_INTERNAL_SERVER_ERROR, Message: err.Error()})
 		return
@@ -82,14 +82,14 @@ func (s *Sbp) UpdateStreams(req *protocol.UpdateStreamsRequest, resp *protocol.U
 	resp.OK()
 }
 
-func (s *Sbp) DescribeStreams(req *protocol.DescribeStreamsRequest, resp *protocol.DescribeStreamsResponse) {
+func (h *Handler) DescribeStreams(req *protocol.DescribeStreamsRequest, resp *protocol.DescribeStreamsResponse) {
 	ctx := req.Context()
-	if !s.c.IsLeader() {
-		s.notLeaderError(ctx, resp)
+	if !h.c.IsLeader() {
+		h.notLeaderError(ctx, resp)
 		return
 	}
 
-	result := s.c.DescribeStreams(ctx, req.StreamIds)
+	result := h.c.DescribeStreams(ctx, req.StreamIds)
 	resp.DescribeResponses = result
 	resp.OK()
 }

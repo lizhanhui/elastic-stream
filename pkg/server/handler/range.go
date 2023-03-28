@@ -10,16 +10,16 @@ import (
 	"github.com/AutoMQ/placement-manager/pkg/util/traceutil"
 )
 
-func (s *Sbp) ListRanges(req *protocol.ListRangesRequest, resp *protocol.ListRangesResponse) {
+func (h *Handler) ListRanges(req *protocol.ListRangesRequest, resp *protocol.ListRangesResponse) {
 	ctx := req.Context()
-	if !s.c.IsLeader() {
-		s.notLeaderError(ctx, resp)
+	if !h.c.IsLeader() {
+		h.notLeaderError(ctx, resp)
 		return
 	}
 
 	listResponses := make([]*rpcfb.ListRangesResultT, 0, len(req.RangeCriteria))
 	for _, owner := range req.RangeCriteria {
-		ranges, err := s.c.ListRanges(ctx, owner)
+		ranges, err := h.c.ListRanges(ctx, owner)
 
 		result := &rpcfb.ListRangesResultT{
 			RangeCriteria: owner,
@@ -37,17 +37,17 @@ func (s *Sbp) ListRanges(req *protocol.ListRangesRequest, resp *protocol.ListRan
 	resp.OK()
 }
 
-func (s *Sbp) SealRanges(req *protocol.SealRangesRequest, resp *protocol.SealRangesResponse) {
+func (h *Handler) SealRanges(req *protocol.SealRangesRequest, resp *protocol.SealRangesResponse) {
 	ctx := req.Context()
-	if !s.c.IsLeader() {
-		s.notLeaderError(ctx, resp)
+	if !h.c.IsLeader() {
+		h.notLeaderError(ctx, resp)
 		return
 	}
-	logger := s.lg.With(traceutil.TraceLogField(ctx))
+	logger := h.lg.With(traceutil.TraceLogField(ctx))
 
 	sealResponses := make([]*rpcfb.SealRangesResultT, 0, len(req.Ranges))
 	for _, rangeID := range req.Ranges {
-		r, err := s.c.SealRange(ctx, rangeID)
+		r, err := h.c.SealRange(ctx, rangeID)
 
 		result := &rpcfb.SealRangesResultT{
 			Range: r,

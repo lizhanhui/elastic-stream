@@ -19,29 +19,29 @@ type Cluster interface {
 	cluster.Member
 }
 
-// Sbp is an sbp handler, implements server.Handler
-type Sbp struct {
+// Handler is an sbp handler, implements server.Handler
+type Handler struct {
 	c  Cluster
 	lg *zap.Logger
 }
 
-// NewSbp creates a sbp handler
-func NewSbp(c Cluster, lg *zap.Logger) *Sbp {
-	return &Sbp{
+// NewHandler creates an sbp handler
+func NewHandler(c Cluster, lg *zap.Logger) *Handler {
+	return &Handler{
 		c:  c,
 		lg: lg,
 	}
 }
 
 // notLeaderError sets "PM_NOT_LEADER" error in the response
-func (s *Sbp) notLeaderError(ctx context.Context, response protocol.OutResponse) {
-	s.lg.Warn("not leader", traceutil.TraceLogField(ctx))
-	response.Error(&rpcfb.StatusT{Code: rpcfb.ErrorCodePM_NOT_LEADER, Message: "not leader", Detail: s.pmInfo()})
+func (h *Handler) notLeaderError(ctx context.Context, response protocol.OutResponse) {
+	h.lg.Warn("not leader", traceutil.TraceLogField(ctx))
+	response.Error(&rpcfb.StatusT{Code: rpcfb.ErrorCodePM_NOT_LEADER, Message: "not leader", Detail: h.pmInfo()})
 }
 
-func (s *Sbp) pmInfo() []byte {
+func (h *Handler) pmInfo() []byte {
 	pm := &rpcfb.PlacementManagerT{Nodes: make([]*rpcfb.PlacementManagerNodeT, 0, 1)}
-	leader := s.c.Leader()
+	leader := h.c.Leader()
 	if leader != nil {
 		pm.Nodes = append(pm.Nodes, &rpcfb.PlacementManagerNodeT{
 			Name:          leader.Name,
@@ -52,6 +52,6 @@ func (s *Sbp) pmInfo() []byte {
 	return fbutil.Marshal(pm)
 }
 
-func (s *Sbp) Logger() *zap.Logger {
-	return s.lg
+func (h *Handler) Logger() *zap.Logger {
+	return h.lg
 }
