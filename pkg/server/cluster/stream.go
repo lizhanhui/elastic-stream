@@ -10,7 +10,14 @@ import (
 	"github.com/AutoMQ/placement-manager/pkg/util/traceutil"
 )
 
-// CreateStreams creates streams in transaction.
+type Stream interface {
+	CreateStreams(ctx context.Context, streams []*rpcfb.StreamT) ([]*rpcfb.CreateStreamResultT, error)
+	DeleteStreams(ctx context.Context, streamIDs []int64) ([]*rpcfb.StreamT, error)
+	UpdateStreams(ctx context.Context, streams []*rpcfb.StreamT) ([]*rpcfb.StreamT, error)
+	DescribeStreams(ctx context.Context, streamIDs []int64) []*rpcfb.DescribeStreamResultT
+}
+
+// CreateStreams creates streams and the first range in each stream in transaction.
 func (c *RaftCluster) CreateStreams(ctx context.Context, streams []*rpcfb.StreamT) ([]*rpcfb.CreateStreamResultT, error) {
 	logger := c.lg.With(zap.Int("stream-cnt", len(streams)), traceutil.TraceLogField(ctx))
 

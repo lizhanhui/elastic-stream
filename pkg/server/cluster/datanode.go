@@ -16,6 +16,11 @@ var (
 	ErrNotEnoughDataNodes = errors.New("not enough data nodes")
 )
 
+type DataNode interface {
+	Heartbeat(ctx context.Context, node *rpcfb.DataNodeT) error
+	AllocateID(ctx context.Context) (int32, error)
+}
+
 // Heartbeat updates DataNode's last active time, and save it to storage if its info changed.
 func (c *RaftCluster) Heartbeat(ctx context.Context, node *rpcfb.DataNodeT) error {
 	logger := c.lg.With(traceutil.TraceLogField(ctx))

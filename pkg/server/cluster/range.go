@@ -26,6 +26,11 @@ var (
 	ErrNoDataNodeResponded = errors.New("no data node responded")
 )
 
+type Range interface {
+	ListRanges(ctx context.Context, rangeCriteria *rpcfb.RangeCriteriaT) (ranges []*rpcfb.RangeT, err error)
+	SealRange(ctx context.Context, rangeID *rpcfb.RangeIdT) (*rpcfb.RangeT, error)
+}
+
 // ListRanges lists the ranges of
 // 1. a stream
 // 2. a data node

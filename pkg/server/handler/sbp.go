@@ -12,17 +12,23 @@ import (
 	"github.com/AutoMQ/placement-manager/pkg/util/traceutil"
 )
 
+type Cluster interface {
+	cluster.DataNode
+	cluster.Range
+	cluster.Stream
+	cluster.Member
+}
+
 // Sbp is an sbp handler, implements server.Handler
 type Sbp struct {
-	// TODO use an interface (or multiple interfaces) instead of *cluster.RaftCluster
-	c  *cluster.RaftCluster
+	c  Cluster
 	lg *zap.Logger
 }
 
 // NewSbp creates a sbp handler
-func NewSbp(cluster *cluster.RaftCluster, lg *zap.Logger) *Sbp {
+func NewSbp(c Cluster, lg *zap.Logger) *Sbp {
 	return &Sbp{
-		c:  cluster,
+		c:  c,
 		lg: lg,
 	}
 }
