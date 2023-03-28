@@ -8,20 +8,20 @@ import (
 )
 
 type connPool struct {
-	c *Client
+	c *SbpClient
 
 	mu      sync.Mutex
-	conns   map[address][]*conn
-	addrs   map[*conn][]address
-	dialing map[address]*dialCall // currently in-flight dials
+	conns   map[Address][]*conn
+	addrs   map[*conn][]Address
+	dialing map[Address]*dialCall // currently in-flight dials
 }
 
-func newConnPool(c *Client) *connPool {
+func newConnPool(c *SbpClient) *connPool {
 	return &connPool{
 		c:       c,
-		conns:   make(map[address][]*conn),
-		addrs:   make(map[*conn][]address),
-		dialing: make(map[address]*dialCall),
+		conns:   make(map[Address][]*conn),
+		addrs:   make(map[*conn][]Address),
+		dialing: make(map[Address]*dialCall),
 	}
 }
 
@@ -37,7 +37,7 @@ func (p *connPool) closeIdleConnections() {
 }
 
 // getConn returns a connection to addr, creating one if necessary.
-func (p *connPool) getConn(req protocol.OutRequest, addr address) (*conn, error) {
+func (p *connPool) getConn(req protocol.OutRequest, addr Address) (*conn, error) {
 	for {
 		p.mu.Lock()
 		for _, cc := range p.conns[addr] {

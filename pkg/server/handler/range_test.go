@@ -13,7 +13,7 @@ import (
 func TestListRanges(t *testing.T) {
 	re := require.New(t)
 
-	sbp, closeFunc := startSbp(t)
+	sbp, closeFunc := startSbp(t, nil)
 	defer closeFunc()
 
 	preHeartbeat(t, sbp, 0)

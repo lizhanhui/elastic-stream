@@ -35,6 +35,7 @@ import (
 	"google.golang.org/grpc"
 
 	"github.com/AutoMQ/placement-manager/api/kvpb"
+	sbpClient "github.com/AutoMQ/placement-manager/pkg/sbp/client"
 	sbpServer "github.com/AutoMQ/placement-manager/pkg/sbp/server"
 	"github.com/AutoMQ/placement-manager/pkg/server/cluster"
 	"github.com/AutoMQ/placement-manager/pkg/server/config"
@@ -176,8 +177,8 @@ func (s *Server) startServer() error {
 		return errors.Wrap(err, "init cluster ID")
 	}
 
-	logger := s.lg
-	logger.Info("init cluster ID", zap.Uint64("cluster-id", s.clusterID))
+	logger := s.lg.With(zap.Uint64("cluster-id", s.clusterID))
+	logger.Info("init cluster ID")
 
 	s.rootPath = path.Join(_rootPathPrefix, strconv.FormatUint(s.clusterID, 10))
 	err := s.member.Init(s.cfg, s.Name(), s.rootPath)
@@ -185,7 +186,9 @@ func (s *Server) startServer() error {
 		return errors.Wrap(err, "init member")
 	}
 	s.storage = storage.NewEtcd(s.client, s.rootPath, logger, s.leaderCmp)
-	s.cluster = cluster.NewRaftCluster(s.ctx, s.lg.With(zap.Uint64("cluster-id", s.clusterID)))
+
+	client := sbpClient.Logger{LogAble: sbpClient.NewClient(logger)}
+	s.cluster = cluster.NewRaftCluster(s.ctx, client, logger)
 
 	sbpAddr := s.cfg.SbpAddr
 	listener, err := net.Listen("tcp", sbpAddr)

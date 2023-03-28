@@ -24,7 +24,7 @@ var (
 
 // conn is the state of a single client connection to a server.
 type conn struct {
-	c    *Client
+	c    *SbpClient
 	conn net.Conn
 
 	// readLoop goroutine fields:
