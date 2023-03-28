@@ -1,25 +1,22 @@
-package sdk.elastic.storage.client.cache;
+package sdk.elastic.storage.client.impl;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import sdk.elastic.storage.apis.exception.ClientException;
-import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.CacheLoader;
-import com.google.common.cache.LoadingCache;
-import sdk.elastic.storage.flatc.header.RangeT;
 import java.util.AbstractMap;
 import java.util.Map;
 import java.util.TreeMap;
 import java.util.concurrent.CompletableFuture;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import sdk.elastic.storage.apis.exception.ClientException;
+import sdk.elastic.storage.client.cache.CommonCache;
+import sdk.elastic.storage.flatc.header.RangeT;
 
 /**
  * StreamRangeCache is a cache for StreamId to StreamRanges mapping.
  */
-public class StreamRangeCache {
+public class StreamRangeCache extends CommonCache<Long, TreeMap<Long, RangeT>> {
     private static final Logger log = LoggerFactory.getLogger(StreamRangeCache.class);
     private static final int DEFAULT_CACHE_SIZE = 100;
-
-    private final LoadingCache<Long, TreeMap<Long, RangeT>> cache;
 
     /**
      * Create a new StreamRangeCache with the specified size and CacheLoader.
@@ -28,9 +25,7 @@ public class StreamRangeCache {
      * @param loader - the CacheLoader used to compute values
      */
     public StreamRangeCache(int size, CacheLoader<Long, TreeMap<Long, RangeT>> loader) {
-        this.cache = CacheBuilder.newBuilder()
-            .maximumSize(size)
-            .build(loader);
+        super(size, loader);
     }
 
     /**
@@ -41,17 +36,6 @@ public class StreamRangeCache {
      */
     public StreamRangeCache(CacheLoader<Long, TreeMap<Long, RangeT>> loader) {
         this(DEFAULT_CACHE_SIZE, loader);
-    }
-
-    /**
-     * Get stream ranges by stream id.
-     * Returns the value associated with the key in this cache, obtaining that value from CacheLoader.load(Object) if necessary.
-     *
-     * @param streamId with which the specified ranges is to be associated
-     * @return stream ranges, the current (existing or computed) ranges associated with the specified streamId, or null if the computed value is null
-     */
-    public TreeMap<Long, RangeT> get(Long streamId) {
-        return cache.getUnchecked(streamId);
     }
 
     /**
@@ -67,35 +51,8 @@ public class StreamRangeCache {
             for (RangeT range : ranges) {
                 rangesMap.put(range.getStartOffset(), range);
             }
-            cache.put(streamId, rangesMap);
+            super.put(streamId, rangesMap);
         }
-    }
-
-    /**
-     * Refresh stream ranges by stream id.
-     *
-     * @param streamId - with which the specified ranges is to be associated
-     */
-    public void refresh(Long streamId) {
-        cache.refresh(streamId);
-    }
-
-    /**
-     * Invalidate stream ranges by stream id.
-     *
-     * @param streamId - with which the specified ranges is to be associated
-     */
-    public void invalidate(Long streamId) {
-        cache.invalidate(streamId);
-    }
-
-    /**
-     * Returns the approximate number of entries in this cache. The value returned is an estimate.
-     *
-     * @return the estimated size of this cache.
-     */
-    public long getSize() {
-        return cache.size();
     }
 
     /**

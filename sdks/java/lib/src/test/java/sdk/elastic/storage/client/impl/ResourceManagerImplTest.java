@@ -1,14 +1,15 @@
-package sdk.elastic.storage.client.impl.manager;
+package sdk.elastic.storage.client.impl;
 
 import com.google.flatbuffers.FlatBufferBuilder;
-import io.netty.util.HashedWheelTimer;
 import java.time.Duration;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.Mock;
 import sdk.elastic.storage.apis.ClientConfiguration;
 import sdk.elastic.storage.apis.manager.ResourceManager;
 import sdk.elastic.storage.client.netty.NettyClient;
@@ -42,9 +43,14 @@ import sdk.elastic.storage.models.OperationCode;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doReturn;
-import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.mock;
 
 class ResourceManagerImplTest {
+    @Mock
+    private NettyClient nettyClient;
+
+    private ResourceManager resourceManager;
+
     private static final ClientConfiguration clientConfiguration = ClientConfiguration.newBuilder()
         .setChannelMaxIdleTime(Duration.ofSeconds(10))
         .setPmEndpoint("localhost:8080")
@@ -71,10 +77,14 @@ class ResourceManagerImplTest {
         replicaNodeT.setIsPrimary(true);
     }
 
+    @BeforeEach
+    void setUp() {
+        nettyClient = mock(NettyClient.class);
+        resourceManager = new ResourceManagerImpl(nettyClient);
+    }
+
     @Test
     void listRanges() throws ExecutionException, InterruptedException {
-        NettyClient nettyClient = createClient();
-        ResourceManager resourceManager = new ResourceManagerImpl(nettyClient);
         long streamId = 1;
 
         RangeT[] rangeTArray = new RangeT[2];
@@ -133,9 +143,6 @@ class ResourceManagerImplTest {
 
     @Test
     void pingPong() throws ExecutionException, InterruptedException {
-        NettyClient nettyClient = createClient();
-        ResourceManager resourceManager = new ResourceManagerImpl(nettyClient);
-
         byte pongFlag = (byte) (SbpFrame.GENERAL_RESPONSE_FLAG | SbpFrame.ENDING_RESPONSE_FLAG);
         SbpFrame mockResponseFrame = SbpFrame.newBuilder()
             .setFlag(pongFlag)
@@ -150,9 +157,6 @@ class ResourceManagerImplTest {
 
     @Test
     void sealRanges() {
-        NettyClient nettyClient = createClient();
-        ResourceManager resourceManager = new ResourceManagerImpl(nettyClient);
-
         long streamId = 2;
         int sealedRangeIndex = 0;
         int nextRangeIndex = sealedRangeIndex + 1;
@@ -207,9 +211,6 @@ class ResourceManagerImplTest {
 
     @Test
     void describeRanges() throws ExecutionException, InterruptedException {
-        NettyClient nettyClient = createClient();
-        ResourceManager resourceManager = new ResourceManagerImpl(nettyClient);
-
         long streamId = 3;
         RangeT rangeT = new RangeT();
         rangeT.setStreamId(streamId);
@@ -259,9 +260,6 @@ class ResourceManagerImplTest {
 
     @Test
     void describeStreams() throws ExecutionException, InterruptedException {
-        NettyClient nettyClient = createClient();
-        ResourceManager resourceManager = new ResourceManagerImpl(nettyClient);
-
         long streamId = 4;
         StreamT streamT = new StreamT();
         streamT.setStreamId(streamId);
@@ -296,9 +294,6 @@ class ResourceManagerImplTest {
 
     @Test
     void createStreams() throws ExecutionException, InterruptedException {
-        NettyClient nettyClient = createClient();
-        ResourceManager resourceManager = new ResourceManagerImpl(nettyClient);
-
         long streamId = 5;
         byte replicaNum = 1;
         long retentionPeriodMs = Duration.ofDays(21).toMillis();
@@ -351,10 +346,5 @@ class ResourceManagerImplTest {
         assertEquals(replicaNodeT.getDataNode().getNodeId(), result.getRange().getReplicaNodes()[0].getDataNode().getNodeId());
         assertEquals(replicaNodeT.getDataNode().getAdvertiseAddr(), result.getRange().getReplicaNodes()[0].getDataNode().getAdvertiseAddr());
         assertEquals(replicaNodeT.getIsPrimary(), result.getRange().getReplicaNodes()[0].getIsPrimary());
-    }
-
-    private static NettyClient createClient() {
-        HashedWheelTimer hashedWheelTimer = new HashedWheelTimer();
-        return spy(new NettyClient(clientConfiguration, hashedWheelTimer));
     }
 }

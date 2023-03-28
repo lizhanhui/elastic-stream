@@ -25,12 +25,10 @@ import sdk.elastic.storage.apis.ClientConfiguration;
 import sdk.elastic.storage.apis.OperationClient;
 import sdk.elastic.storage.apis.exception.ClientException;
 import sdk.elastic.storage.apis.manager.ResourceManager;
-import sdk.elastic.storage.client.cache.StreamRangeCache;
 import sdk.elastic.storage.client.common.ClientId;
 import sdk.elastic.storage.client.common.PmUtil;
 import sdk.elastic.storage.client.common.ProtocolUtil;
 import sdk.elastic.storage.client.common.RemotingUtil;
-import sdk.elastic.storage.client.impl.manager.ResourceManagerImpl;
 import sdk.elastic.storage.client.netty.NettyClient;
 import sdk.elastic.storage.client.protocol.SbpFrame;
 import sdk.elastic.storage.client.route.Address;
@@ -297,9 +295,9 @@ public class OperationClientImpl implements OperationClient {
                         }
                         // If the next range is returned, update the last range and put the new range.
                         if ((rangeT.getRangeIndex() + 1) == sealResultT.getRange().getRangeIndex()) {
-                            // It means an empty range is sealed.
+                            // It means an empty range is sealed. Just replace it.
                             if (rangeT.getStartOffset() == sealResultT.getRange().getStartOffset()) {
-                                rangeT = sealResultT.getRange();
+                                streamRangeCache.get(streamId).put(sealResultT.getRange().getStartOffset(), sealResultT.getRange());
                                 return;
                             }
                             rangeT.setEndOffset(sealResultT.getRange().getStartOffset());

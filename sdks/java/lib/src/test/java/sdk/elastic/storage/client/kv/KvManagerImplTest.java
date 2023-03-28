@@ -1,4 +1,4 @@
-package sdk.elastic.storage.client.impl.manager;
+package sdk.elastic.storage.client.kv;
 
 import com.google.common.util.concurrent.FutureCallback;
 import com.google.common.util.concurrent.Futures;

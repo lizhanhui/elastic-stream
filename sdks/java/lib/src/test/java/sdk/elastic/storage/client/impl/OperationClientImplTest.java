@@ -1,22 +1,19 @@
 package sdk.elastic.storage.client.impl;
 
-import com.google.common.cache.CacheLoader;
 import com.google.flatbuffers.FlatBufferBuilder;
-import io.netty.util.HashedWheelTimer;
 import java.nio.ByteBuffer;
 import java.time.Duration;
+import java.util.Collections;
 import java.util.List;
-import java.util.TreeMap;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import sdk.elastic.storage.apis.ClientConfiguration;
+import org.mockito.Mock;
 import sdk.elastic.storage.apis.OperationClient;
 import sdk.elastic.storage.apis.manager.ResourceManager;
-import sdk.elastic.storage.client.cache.StreamRangeCache;
 import sdk.elastic.storage.client.common.ClientId;
-import sdk.elastic.storage.client.impl.manager.ResourceManagerImpl;
 import sdk.elastic.storage.client.netty.NettyClient;
 import sdk.elastic.storage.client.protocol.SbpFrame;
 import sdk.elastic.storage.client.route.Address;
@@ -25,7 +22,6 @@ import sdk.elastic.storage.flatc.header.AppendResultT;
 import sdk.elastic.storage.flatc.header.ClientRole;
 import sdk.elastic.storage.flatc.header.DataNodeT;
 import sdk.elastic.storage.flatc.header.DescribeRangeResultT;
-import sdk.elastic.storage.flatc.header.DescribeRangesResponseT;
 import sdk.elastic.storage.flatc.header.ErrorCode;
 import sdk.elastic.storage.flatc.header.FetchResponseT;
 import sdk.elastic.storage.flatc.header.FetchResultT;
@@ -42,17 +38,18 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doReturn;
-import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.mock;
 
 class OperationClientImplTest {
+
+    @Mock
+    private NettyClient nettyClient;
+    @Mock
+    private ResourceManager resourceManager;
+    @Mock
+    private StreamRangeCache streamRangeCache;
+    private OperationClient operationClient;
     private static final Address defaultPmAddress = new Address("localhost", 2080);
-    private static final ClientConfiguration clientConfiguration = ClientConfiguration.newBuilder()
-        .setChannelMaxIdleTime(Duration.ofSeconds(10))
-        .setPmEndpoint("localhost:8080")
-        .setConnectionTimeout(Duration.ofSeconds(5))
-        .setHeartBeatInterval(Duration.ofSeconds(10))
-        .setClientAsyncSemaphoreValue(100)
-        .build();
     private static final Duration DEFAULT_REQUEST_TIMEOUT = Duration.ofSeconds(3);
     private static StatusT okStatus;
     private static ReplicaNodeT replicaNodeT;
@@ -72,18 +69,16 @@ class OperationClientImplTest {
         replicaNodeT.setIsPrimary(true);
     }
 
+    @BeforeEach
+    void setUp() {
+        nettyClient = mock(NettyClient.class);
+        resourceManager = mock(ResourceManager.class);
+        streamRangeCache = mock(StreamRangeCache.class);
+        operationClient = new OperationClientImpl(Duration.ofSeconds(10), nettyClient, resourceManager, streamRangeCache);
+    }
+
     @Test
     void appendBatch() throws ExecutionException, InterruptedException {
-        NettyClient nettyClient = createClient();
-        ResourceManager resourceManager = spy(new ResourceManagerImpl(nettyClient));
-        StreamRangeCache streamRangeCache = spy(new StreamRangeCache(new CacheLoader<Long, TreeMap<Long, RangeT>>() {
-            @Override
-            public TreeMap<Long, RangeT> load(Long key) throws Exception {
-                return new TreeMap<>();
-            }
-        }));
-        OperationClient operationClient = new OperationClientImpl(clientConfiguration.getHeartbeatInterval(), nettyClient, resourceManager, streamRangeCache);
-
         long streamId = 1;
         long batchAppendBaseOffset = 110;
         long lastRangeBaseOffset = batchAppendBaseOffset - 10;
@@ -132,16 +127,6 @@ class OperationClientImplTest {
 
     @Test
     void getLastWritableOffset() throws ExecutionException, InterruptedException {
-        NettyClient nettyClient = createClient();
-        ResourceManager resourceManager = spy(new ResourceManagerImpl(nettyClient));
-        StreamRangeCache streamRangeCache = spy(new StreamRangeCache(new CacheLoader<Long, TreeMap<Long, RangeT>>() {
-            @Override
-            public TreeMap<Long, RangeT> load(Long key) throws Exception {
-                return new TreeMap<>();
-            }
-        }));
-        OperationClient operationClient = new OperationClientImpl(clientConfiguration.getHeartbeatInterval(), nettyClient, resourceManager, streamRangeCache);
-
         long streamId = 2;
         long baseOffset = 110;
         long nextOffset = baseOffset + 15;
@@ -167,20 +152,7 @@ class OperationClientImplTest {
         describeRangeResultT.setStatus(okStatus);
         describeRangeResultT.setStreamId(streamId);
         describeRangeResultT.setRange(realRangeT);
-        DescribeRangesResponseT describeRangesResponseT = new DescribeRangesResponseT();
-        describeRangesResponseT.setStatus(okStatus);
-        describeRangesResponseT.setThrottleTimeMs(0);
-        describeRangesResponseT.setDescribeResponses(new DescribeRangeResultT[] {describeRangeResultT});
-        FlatBufferBuilder builder = new FlatBufferBuilder();
-        int describeRangesResponseOffset = sdk.elastic.storage.flatc.header.DescribeRangesResponse.pack(builder, describeRangesResponseT);
-        builder.finish(describeRangesResponseOffset);
-
-        SbpFrame mockResponseFrame = SbpFrame.newBuilder()
-            .setFlag((byte) (SbpFrame.GENERAL_RESPONSE_FLAG | SbpFrame.ENDING_RESPONSE_FLAG))
-            .setOperationCode(OperationCode.DESCRIBE_RANGES.getCode())
-            .setHeader(builder.dataBuffer())
-            .build();
-        doReturn(CompletableFuture.completedFuture(mockResponseFrame)).when(nettyClient).invokeAsync(any(Address.class), any(SbpFrame.class), any(Duration.class));
+        doReturn(CompletableFuture.completedFuture(Collections.singletonList(describeRangeResultT))).when(resourceManager).describeRanges(any(Address.class), any(), any(Duration.class));
 
         Long aLong = operationClient.getLastWritableOffset(streamId, DEFAULT_REQUEST_TIMEOUT).get();
         assertTrue(aLong >= nextOffset);
@@ -188,16 +160,6 @@ class OperationClientImplTest {
 
     @Test
     void fetchBatches() throws ExecutionException, InterruptedException {
-        NettyClient nettyClient = createClient();
-        ResourceManager resourceManager = spy(new ResourceManagerImpl(nettyClient));
-        StreamRangeCache streamRangeCache = spy(new StreamRangeCache(new CacheLoader<Long, TreeMap<Long, RangeT>>() {
-            @Override
-            public TreeMap<Long, RangeT> load(Long key) throws Exception {
-                return new TreeMap<>();
-            }
-        }));
-        OperationClient operationClient = new OperationClientImpl(clientConfiguration.getHeartbeatInterval(), nettyClient, resourceManager, streamRangeCache);
-
         long streamId = 3;
         long startOffset = 89;
         long baseOffset = 100;
@@ -250,15 +212,7 @@ class OperationClientImplTest {
 
     @Test
     void heartbeat() throws ExecutionException, InterruptedException {
-        NettyClient nettyClient = createClient();
-        ResourceManager resourceManager = spy(new ResourceManagerImpl(nettyClient));
-        StreamRangeCache streamRangeCache = spy(new StreamRangeCache(new CacheLoader<Long, TreeMap<Long, RangeT>>() {
-            @Override
-            public TreeMap<Long, RangeT> load(Long key) throws Exception {
-                return new TreeMap<>();
-            }
-        }));
-        OperationClient operationClient = new OperationClientImpl(clientConfiguration.getHeartbeatInterval(), nettyClient, resourceManager, streamRangeCache);
+        doReturn(new ClientId()).when(nettyClient).getClientId();
 
         ClientId clientId = operationClient.getClientId();
         byte clientRole = ClientRole.CLIENT_ROLE_CUSTOMER;
@@ -283,22 +237,9 @@ class OperationClientImplTest {
 
     @Test
     void getClientId() {
-        NettyClient nettyClient = createClient();
-        ResourceManager resourceManager = spy(new ResourceManagerImpl(nettyClient));
-        StreamRangeCache streamRangeCache = spy(new StreamRangeCache(new CacheLoader<Long, TreeMap<Long, RangeT>>() {
-            @Override
-            public TreeMap<Long, RangeT> load(Long key) throws Exception {
-                return new TreeMap<>();
-            }
-        }));
-        OperationClient operationClient = new OperationClientImpl(clientConfiguration.getHeartbeatInterval(), nettyClient, resourceManager, streamRangeCache);
+        doReturn(new ClientId()).when(nettyClient).getClientId();
 
         ClientId clientId = new ClientId();
         assertTrue(clientId.getIndex() > operationClient.getClientId().getIndex());
-    }
-
-    private static NettyClient createClient() {
-        HashedWheelTimer hashedWheelTimer = new HashedWheelTimer();
-        return spy(new NettyClient(clientConfiguration, hashedWheelTimer));
     }
 }

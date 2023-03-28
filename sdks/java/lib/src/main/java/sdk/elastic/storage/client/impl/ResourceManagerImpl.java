@@ -1,5 +1,13 @@
-package sdk.elastic.storage.client.impl.manager;
+package sdk.elastic.storage.client.impl;
 
+import com.google.common.base.Preconditions;
+import com.google.flatbuffers.FlatBufferBuilder;
+import java.time.Duration;
+import java.util.Arrays;
+import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import sdk.elastic.storage.apis.exception.ClientException;
 import sdk.elastic.storage.apis.manager.ResourceManager;
 import sdk.elastic.storage.client.common.PmUtil;
@@ -7,11 +15,6 @@ import sdk.elastic.storage.client.common.ProtocolUtil;
 import sdk.elastic.storage.client.netty.NettyClient;
 import sdk.elastic.storage.client.protocol.SbpFrame;
 import sdk.elastic.storage.client.route.Address;
-import com.google.common.base.Preconditions;
-import com.google.flatbuffers.FlatBufferBuilder;
-import sdk.elastic.storage.flatc.header.AppendInfoT;
-import sdk.elastic.storage.flatc.header.AppendRequest;
-import sdk.elastic.storage.flatc.header.AppendRequestT;
 import sdk.elastic.storage.flatc.header.CreateStreamResultT;
 import sdk.elastic.storage.flatc.header.CreateStreamsRequest;
 import sdk.elastic.storage.flatc.header.CreateStreamsRequestT;
@@ -35,18 +38,7 @@ import sdk.elastic.storage.flatc.header.SealRangesRequestT;
 import sdk.elastic.storage.flatc.header.SealRangesResponse;
 import sdk.elastic.storage.flatc.header.SealRangesResultT;
 import sdk.elastic.storage.flatc.header.StreamT;
-import java.nio.ByteBuffer;
-import java.time.Duration;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.concurrent.CompletableFuture;
 import sdk.elastic.storage.models.OperationCode;
-import sdk.elastic.storage.models.RecordBatch;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import static sdk.elastic.storage.flatc.header.ErrorCode.OK;
 
@@ -118,7 +110,8 @@ public class ResourceManagerImpl implements ResourceManager {
     }
 
     @Override
-    public CompletableFuture<List<DescribeRangeResultT>> describeRanges(Address dataNodeAddress, List<RangeIdT> rangeIdList, Duration timeout) {
+    public CompletableFuture<List<DescribeRangeResultT>> describeRanges(Address dataNodeAddress,
+        List<RangeIdT> rangeIdList, Duration timeout) {
         Preconditions.checkArgument(rangeIdList != null && rangeIdList.size() > 0, "Invalid range id list since no range id was found.");
 
         DescribeRangesRequestT describeRangesRequestT = new DescribeRangesRequestT();
