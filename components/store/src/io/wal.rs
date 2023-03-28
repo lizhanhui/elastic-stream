@@ -38,7 +38,8 @@ pub(crate) struct Wal {
     /// The container of the log segments.
     segments: VecDeque<LogSegment>,
 
-    file_size: u64,
+    /// The size of each log segment.
+    segment_size: u64,
 
     /// Logger instance.
     log: Logger,
@@ -48,7 +49,7 @@ impl Wal {
     pub(crate) fn new(
         wal_paths: Vec<WalPath>,
         control_ring: io_uring::IoUring,
-        file_size: u64,
+        segment_size: u64,
         log: Logger,
     ) -> Self {
         Self {
@@ -57,7 +58,7 @@ impl Wal {
             block_paths: None,
             log,
             control_ring,
-            file_size,
+            segment_size,
             inflight_control_tasks: HashMap::new(),
         }
     }
@@ -81,7 +82,7 @@ impl Wal {
                         let path = path.as_path();
                         if let Some(offset) = LogSegment::parse_offset(path) {
                             let log_segment_file =
-                                LogSegment::new(self.log.clone(), offset, self.file_size, path);
+                                LogSegment::new(self.log.clone(), offset, self.segment_size, path);
                             Some(log_segment_file)
                         } else {
                             error!(
@@ -303,7 +304,7 @@ impl Wal {
         let offset = if self.segments.is_empty() {
             0
         } else if let Some(last) = self.segments.back() {
-            last.wal_offset + self.file_size
+            last.wal_offset + self.segment_size
         } else {
             unreachable!("Should-not-reach-here")
         };
@@ -311,7 +312,7 @@ impl Wal {
         let path = Path::new(&dir.path);
         let path = path.join(LogSegment::format(offset));
 
-        let segment = LogSegment::new(self.log.clone(), offset, self.file_size, path.as_path())?;
+        let segment = LogSegment::new(self.log.clone(), offset, self.segment_size, path.as_path())?;
 
         Ok(segment)
     }
@@ -524,7 +525,7 @@ mod tests {
 
     use crate::error::StoreError;
     use crate::io::{
-        options::DEFAULT_LOG_SEGMENT_FILE_SIZE,
+        options::DEFAULT_LOG_SEGMENT_SIZE,
         segment::{LogSegment, Status},
         task::{IoTask, WriteTask},
         Options,
@@ -546,7 +547,7 @@ mod tests {
         Ok(Wal::new(
             options.wal_paths,
             control_ring,
-            options.file_size,
+            options.segment_size,
             logger,
         ))
     }
@@ -590,7 +591,7 @@ mod tests {
         wal.segments.push_back(segment);
 
         let segment = wal.alloc_segment()?;
-        assert_eq!(DEFAULT_LOG_SEGMENT_FILE_SIZE, segment.wal_offset);
+        assert_eq!(DEFAULT_LOG_SEGMENT_SIZE, segment.wal_offset);
         Ok(())
     }
 
@@ -619,7 +620,7 @@ mod tests {
         let log = test_util::terminal_logger();
         let _wal_dir_guard = test_util::DirectoryRemovalGuard::new(log, wal_dir.as_path());
         let mut wal = create_wal(super::WalPath::new(wal_dir.to_str().unwrap(), 1234)?)?;
-        let file_size = wal.file_size;
+        let file_size = wal.segment_size;
         let segment = wal.alloc_segment()?;
         wal.segments.push_back(segment);
         let segment = wal.alloc_segment()?;
@@ -628,7 +629,7 @@ mod tests {
 
         // Ensure we can get the right
         let segment = wal
-            .segment_file_of(wal.file_size - 1)
+            .segment_file_of(wal.segment_size - 1)
             .ok_or(StoreError::AllocLogSegment)?;
         assert_eq!(0, segment.wal_offset);
 
@@ -636,7 +637,7 @@ mod tests {
         assert_eq!(0, segment.wal_offset);
 
         let segment = wal
-            .segment_file_of(wal.file_size)
+            .segment_file_of(wal.segment_size)
             .ok_or(StoreError::AllocLogSegment)?;
 
         assert_eq!(file_size, segment.wal_offset);

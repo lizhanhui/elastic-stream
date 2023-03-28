@@ -6,7 +6,7 @@ const DEFAULT_SQPOLL_CPU: u32 = 1;
 const DEFAULT_MAX_BOUNDED_URING_WORKER_COUNT: u32 = 2;
 const DEFAULT_MAX_UNBOUNDED_URING_WORKER_COUNT: u32 = 2;
 
-pub(crate) const DEFAULT_LOG_SEGMENT_FILE_SIZE: u64 = 1024u64 * 1024 * 1024;
+pub(crate) const DEFAULT_LOG_SEGMENT_SIZE: u64 = 1024u64 * 1024 * 1024;
 
 const DEFAULT_READ_BLOCK_SIZE: u32 = 1024 * 128;
 
@@ -34,7 +34,7 @@ pub(crate) struct Options {
 
     pub(crate) max_workers: [u32; 2],
 
-    pub(crate) file_size: u64,
+    pub(crate) segment_size: u64,
 
     pub(crate) alignment: usize,
 
@@ -55,7 +55,7 @@ impl Default for Options {
                 DEFAULT_MAX_BOUNDED_URING_WORKER_COUNT,
                 DEFAULT_MAX_UNBOUNDED_URING_WORKER_COUNT,
             ],
-            file_size: DEFAULT_LOG_SEGMENT_FILE_SIZE,
+            segment_size: DEFAULT_LOG_SEGMENT_SIZE,
             alignment: 4096,
             read_block_size: DEFAULT_READ_BLOCK_SIZE,
             min_preallocated_segment_files: DEFAULT_MIN_PREALLOCATED_SEGMENT_FILES,

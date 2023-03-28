@@ -202,7 +202,7 @@ impl IO {
             wal: Wal::new(
                 options.clone().wal_paths,
                 control_ring,
-                options.file_size,
+                options.segment_size,
                 log.clone(),
             ),
             log,
