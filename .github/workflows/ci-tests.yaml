@@ -27,5 +27,6 @@ jobs:
     - name: Send coverage
       uses: codecov/codecov-action@v3
       with:
-        token: ${{ secrets.CODECOV_TOKEN }}
         files: ./covprofile
+        fail_ci_if_error: true
+        verbose: true
