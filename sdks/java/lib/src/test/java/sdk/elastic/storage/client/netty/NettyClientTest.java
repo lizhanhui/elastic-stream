@@ -1,18 +1,22 @@
 package sdk.elastic.storage.client.netty;
 
-import sdk.elastic.storage.apis.ClientConfigurationBuilder;
-import sdk.elastic.storage.client.protocol.SbpFrame;
-import sdk.elastic.storage.client.protocol.SbpFrameBuilder;
-import sdk.elastic.storage.client.route.Address;
 import io.netty.util.HashedWheelTimer;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.concurrent.ExecutionException;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import sdk.elastic.storage.apis.ClientConfiguration;
+import sdk.elastic.storage.apis.ClientConfigurationBuilder;
+import sdk.elastic.storage.client.protocol.SbpFrame;
+import sdk.elastic.storage.client.protocol.SbpFrameBuilder;
+import sdk.elastic.storage.client.route.Address;
+
+import static sdk.elastic.storage.client.netty.DefaultMockNettyServer.TEST_TIMEOUT_OPERATION_CODE;
 
 class NettyClientTest {
     private static final int serverPort = 8100;
@@ -30,7 +34,7 @@ class NettyClientTest {
     @Test
     void testInvokeAsync() throws Exception {
         String requestMessage = "This is Async test";
-        ClientConfigurationBuilder builder = new ClientConfigurationBuilder()
+        ClientConfigurationBuilder builder = ClientConfiguration.newBuilder()
             .setPmEndpoint(String.format("%s:%d", defaultPmAddress.getHost(), defaultPmAddress.getPort()))
             .setConnectionTimeout(Duration.ofSeconds(3))
             .setChannelMaxIdleTime(Duration.ofSeconds(10));
@@ -57,8 +61,44 @@ class NettyClientTest {
         }
     }
 
+    @Test
+    void testInvokeAsyncError() throws Exception {
+        String requestMessage = "This is ASync Error test";
+        ClientConfigurationBuilder builder = ClientConfiguration.newBuilder()
+            .setPmEndpoint(String.format("%s:%d", defaultPmAddress.getHost(), defaultPmAddress.getPort()))
+            .setConnectionTimeout(Duration.ofSeconds(3))
+            .setChannelMaxIdleTime(Duration.ofSeconds(10));
+        try (NettyClient client = new NettyClient(builder.build(), timer)) {
+            client.start();
+            // no operation code is set.
+            SbpFrame sbpFrame = new SbpFrameBuilder()
+                .setFlag(SbpFrame.GENERAL_RESPONSE_FLAG)
+                .setPayload(new ByteBuffer[] {ByteBuffer.wrap(requestMessage.getBytes(StandardCharsets.ISO_8859_1))})
+                .build();
+            Assertions.assertThrows(ExecutionException.class, () -> client.invokeAsync(sbpFrame, Duration.ofSeconds(3)).get());
+        }
+    }
+
+    @Test
+    void testRequestTimeout() throws Exception {
+        String requestMessage = "This is Timeout test";
+        ClientConfigurationBuilder builder = ClientConfiguration.newBuilder()
+            .setPmEndpoint(String.format("%s:%d", defaultPmAddress.getHost(), defaultPmAddress.getPort()))
+            .setConnectionTimeout(Duration.ofSeconds(3))
+            .setChannelMaxIdleTime(Duration.ofSeconds(10));
+        try (NettyClient client = new NettyClient(builder.build(), timer)) {
+            client.start();
+            SbpFrame sbpFrame = new SbpFrameBuilder()
+                .setFlag(SbpFrame.GENERAL_RESPONSE_FLAG)
+                .setPayload(new ByteBuffer[] {ByteBuffer.wrap(requestMessage.getBytes(StandardCharsets.ISO_8859_1))})
+                .setOperationCode(TEST_TIMEOUT_OPERATION_CODE)
+                .build();
+            Assertions.assertThrows(ExecutionException.class, () -> client.invokeAsync(sbpFrame, Duration.ofSeconds(3)).get());
+        }
+    }
+
     @AfterAll
-    static void tearDown() throws IOException{
+    static void tearDown() throws IOException {
         serverThread.close();
     }
 }

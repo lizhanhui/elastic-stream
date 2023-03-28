@@ -22,6 +22,7 @@ import sdk.elastic.storage.client.protocol.SbpFrameBuilder;
 import sdk.elastic.storage.models.OperationCode;
 
 public class DefaultMockNettyServer extends NettyRemotingAbstract implements Closeable {
+    public final static short TEST_TIMEOUT_OPERATION_CODE = 0x0FFF;
     private final EventLoopGroup bossGroup;
     private final EventLoopGroup workerGroup;
     private final int port;
@@ -76,6 +77,20 @@ public class DefaultMockNettyServer extends NettyRemotingAbstract implements Clo
 
         @Override
         protected void channelRead0(ChannelHandlerContext ctx, SbpFrame frame) throws Exception {
+            // frame must have an operation code
+            if (frame.getOperationCode() == 0) {
+                ctx.writeAndFlush(new SbpFrameBuilder()
+                    .setFlag(SbpFrame.ERROR_RESPONSE_FLAG)
+                    .setStreamId(frame.getStreamId())
+                    .build());
+                return;
+            }
+
+            if (frame.getOperationCode() == TEST_TIMEOUT_OPERATION_CODE) {
+                Thread.sleep(20000);
+                return;
+            }
+
             if (frame.getOperationCode() == OperationCode.PING.getCode()) {
                 ctx.writeAndFlush(handlePing(frame));
                 return;

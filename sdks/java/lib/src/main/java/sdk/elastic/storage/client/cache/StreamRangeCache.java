@@ -1,5 +1,7 @@
 package sdk.elastic.storage.client.cache;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import sdk.elastic.storage.apis.exception.ClientException;
 import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.CacheLoader;
@@ -14,6 +16,7 @@ import java.util.concurrent.CompletableFuture;
  * StreamRangeCache is a cache for StreamId to StreamRanges mapping.
  */
 public class StreamRangeCache {
+    private static final Logger log = LoggerFactory.getLogger(StreamRangeCache.class);
     private static final int DEFAULT_CACHE_SIZE = 100;
 
     private final LoadingCache<Long, TreeMap<Long, RangeT>> cache;
@@ -120,7 +123,7 @@ public class StreamRangeCache {
                 return completableFuture;
             }
 
-            // If the floor range is sealed and the offset is in compaction range, we need to find the next range.
+            // If the floor range is sealed and the offset is in compaction range, we need to find the higher range.
             if (floorEntry.getValue().getEndOffset() > 0 && floorEntry.getValue().getEndOffset() <= startOffset) {
                 Map.Entry<Long, RangeT> entry = rangesMap.higherEntry(startOffset);
                 if (entry == null || entry.getValue() == null) {
@@ -157,6 +160,11 @@ public class StreamRangeCache {
             }
             if (targetRange.getReplicaNodes().length == 0) {
                 completableFuture.completeExceptionally(new ClientException("Failed to get ReplicaNodes of the last range of stream " + streamId));
+                return completableFuture;
+            }
+            if (targetRange.getEndOffset() > 0) {
+                log.error("The last range of stream {} is sealed, rangeId {}, startOffset {}, endOffset {}", streamId, targetRange.getRangeIndex(), targetRange.getStartOffset(), targetRange.getEndOffset());
+                completableFuture.completeExceptionally(new ClientException("Get the invalid last range of stream " + streamId));
                 return completableFuture;
             }
             completableFuture.complete(targetRange);

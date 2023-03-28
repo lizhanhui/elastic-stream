@@ -1,5 +1,6 @@
 package sdk.elastic.storage.apis;
 
+import sdk.elastic.storage.client.common.ClientId;
 import sdk.elastic.storage.client.route.Address;
 import java.io.Closeable;
 import java.time.Duration;
@@ -72,5 +73,5 @@ public interface OperationClient extends Closeable {
      *
      * @return client id.
      */
-    String getClientId();
+    ClientId getClientId();
 }

@@ -12,18 +12,22 @@ import static sdk.elastic.storage.models.HeaderKey.Tag;
 public class RecordBatchesGenerator {
 
     public static RecordBatch generateOneRecordBatch(long streamId) {
-        List<Record> recordList = generateRecordList(streamId);
+        return generateOneRecordBatch(streamId, 0);
+    }
+
+    public static RecordBatch generateOneRecordBatch(long streamId, long baseOffset) {
+        List<Record> recordList = generateRecordList(streamId, baseOffset);
         return new RecordBatch(streamId, recordList);
     }
 
-    public static List<Record> generateRecordList(long streamId) {
+    public static List<Record> generateRecordList(long streamId, long baseOffset) {
         List<Record> recordList = new ArrayList<>(2);
 
         Headers headers = new Headers();
         headers.addHeader(CreatedAt, "someTime");
         Map<String, String> properties = new HashMap<>();
         properties.put("propertyA", "valueA");
-        recordList.add(new Record(streamId, 2L, 13L, headers, properties, ByteBuffer.wrap(new byte[] {0, 1, 3})));
+        recordList.add(new Record(streamId, baseOffset + 2, 13L, headers, properties, ByteBuffer.wrap(new byte[] {0, 1, 3})));
 
         Headers headers2 = new Headers();
         headers2.addHeader(CreatedAt, "someTime2");
@@ -31,7 +35,7 @@ public class RecordBatchesGenerator {
         Map<String, String> properties2 = new HashMap<>();
         properties2.put("propertyB", "valueB");
         properties2.put("propertyC", "valueC");
-        recordList.add(new Record(streamId, 10L, 11L, headers2, properties2, ByteBuffer.wrap(new byte[] {3, 6, 8, 10})));
+        recordList.add(new Record(streamId, baseOffset + 10, 11L, headers2, properties2, ByteBuffer.wrap(new byte[] {3, 6, 8, 10})));
 
         return recordList;
     }

@@ -105,7 +105,12 @@ public abstract class NettyRemotingAbstract {
         // TODO: multiple responses may be received for just one request. Therefore, response flags have to be handled.
         final ResponseFuture responseFuture = responseTable.get(opaque);
         if (responseFuture != null) {
-            responseFuture.getCompletableFuture().complete(frame);
+            if ((frame.getFlag() & SbpFrame.ERROR_RESPONSE_FLAG) != 0) {
+                log.error("receive error response from:{}, requestId {}.", RemotingUtil.parseChannelRemoteAddr(ctx.channel()), opaque);
+                responseFuture.getCompletableFuture().completeExceptionally(new ClientException("response error frame"));
+            } else {
+                responseFuture.getCompletableFuture().complete(frame);
+            }
             responseTable.remove(opaque);
         } else {
             log.warn("receive response, but not matched any request, " + RemotingUtil.parseChannelRemoteAddr(ctx.channel()));

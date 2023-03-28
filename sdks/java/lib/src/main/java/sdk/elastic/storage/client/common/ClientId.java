@@ -53,4 +53,19 @@ public class ClientId {
     public String toString() {
         return id;
     }
+
+    @Override
+    public boolean equals(Object obj) {
+        if (obj == null) {
+            return false;
+        }
+        if (obj == this) {
+            return true;
+        }
+        if (obj instanceof ClientId) {
+            ClientId other = (ClientId) obj;
+            return this.id.equals(other.id) && this.index == other.index;
+        }
+        return false;
+    }
 }

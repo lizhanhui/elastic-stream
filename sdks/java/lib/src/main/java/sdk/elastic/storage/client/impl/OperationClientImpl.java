@@ -26,6 +26,7 @@ import sdk.elastic.storage.apis.OperationClient;
 import sdk.elastic.storage.apis.exception.ClientException;
 import sdk.elastic.storage.apis.manager.ResourceManager;
 import sdk.elastic.storage.client.cache.StreamRangeCache;
+import sdk.elastic.storage.client.common.ClientId;
 import sdk.elastic.storage.client.common.PmUtil;
 import sdk.elastic.storage.client.common.ProtocolUtil;
 import sdk.elastic.storage.client.common.RemotingUtil;
@@ -64,13 +65,21 @@ public class OperationClientImpl implements OperationClient {
     private final NettyClient nettyClient;
     private final ResourceManager resourceManager;
     private final StreamRangeCache streamRangeCache;
-    private final ClientConfiguration clientConfiguration;
+    private final Duration heartbeatInterval;
     private final HashedWheelTimer timer = new HashedWheelTimer(r -> new Thread(r, "HouseKeepingService"));
 
     private static final Duration CACHE_LOAD_TIMEOUT = Duration.ofSeconds(3);
 
+    protected OperationClientImpl(Duration heartbeatInterval, NettyClient nettyClient,
+        ResourceManager resourceManager, StreamRangeCache streamRangeCache) {
+        this.heartbeatInterval = heartbeatInterval;
+        this.nettyClient = nettyClient;
+        this.resourceManager = resourceManager;
+        this.streamRangeCache = streamRangeCache;
+    }
+
     public OperationClientImpl(ClientConfiguration clientConfiguration) {
-        this.clientConfiguration = clientConfiguration;
+        this.heartbeatInterval = clientConfiguration.getHeartbeatInterval();
         this.nettyClient = new NettyClient(clientConfiguration, timer);
         this.resourceManager = new ResourceManagerImpl(this.nettyClient);
         this.streamRangeCache = new StreamRangeCache(
@@ -211,7 +220,7 @@ public class OperationClientImpl implements OperationClient {
     @Override
     public CompletableFuture<Boolean> heartbeat(Address address, Duration timeout) {
         HeartbeatRequestT heartbeatRequestT = new HeartbeatRequestT();
-        heartbeatRequestT.setClientId(getClientId());
+        heartbeatRequestT.setClientId(getClientId().toString());
         heartbeatRequestT.setClientRole(ClientRole.CLIENT_ROLE_CUSTOMER);
         FlatBufferBuilder builder = new FlatBufferBuilder();
         int heartbeatRequestOffset = HeartbeatRequest.pack(builder, heartbeatRequestT);
@@ -233,8 +242,8 @@ public class OperationClientImpl implements OperationClient {
     }
 
     @Override
-    public String getClientId() {
-        return this.nettyClient.getClientId().toString();
+    public ClientId getClientId() {
+        return this.nettyClient.getClientId();
     }
 
     @Override
@@ -249,11 +258,11 @@ public class OperationClientImpl implements OperationClient {
                 } catch (Throwable e) {
                     log.error("heartbeat exception ", e);
                 } finally {
-                    timer.newTimeout(this, OperationClientImpl.this.clientConfiguration.getHeartbeatInterval().getSeconds(), TimeUnit.SECONDS);
+                    timer.newTimeout(this, OperationClientImpl.this.heartbeatInterval.getSeconds(), TimeUnit.SECONDS);
                 }
             }
         };
-        this.timer.newTimeout(timerTaskHeartBeat, this.clientConfiguration.getHeartbeatInterval().getSeconds(), TimeUnit.SECONDS);
+        this.timer.newTimeout(timerTaskHeartBeat, this.heartbeatInterval.getSeconds(), TimeUnit.SECONDS);
     }
 
     private CompletableFuture<List<AppendResultT>> extractResponse(AppendResponse response) {
@@ -288,6 +297,11 @@ public class OperationClientImpl implements OperationClient {
                         }
                         // If the next range is returned, update the last range and put the new range.
                         if ((rangeT.getRangeIndex() + 1) == sealResultT.getRange().getRangeIndex()) {
+                            // It means an empty range is sealed.
+                            if (rangeT.getStartOffset() == sealResultT.getRange().getStartOffset()) {
+                                rangeT = sealResultT.getRange();
+                                return;
+                            }
                             rangeT.setEndOffset(sealResultT.getRange().getStartOffset());
                             rangeT.setNextOffset(sealResultT.getRange().getStartOffset());
                             streamRangeCache.get(streamId).put(sealResultT.getRange().getStartOffset(), sealResultT.getRange());
