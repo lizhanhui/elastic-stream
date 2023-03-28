@@ -4,11 +4,13 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/bytedance/gopkg/lang/mcache"
 	"github.com/pkg/errors"
 	"go.uber.org/zap"
 
 	"github.com/AutoMQ/placement-manager/api/rpcfb/rpcfb"
 	"github.com/AutoMQ/placement-manager/pkg/server/storage/kv"
+	"github.com/AutoMQ/placement-manager/pkg/util/fbutil"
 	"github.com/AutoMQ/placement-manager/pkg/util/traceutil"
 )
 
@@ -46,11 +48,29 @@ type Range interface {
 }
 
 func (e *Endpoint) SealRange(ctx context.Context, sealedRange *rpcfb.RangeT, writableRange *rpcfb.RangeT) (*rpcfb.RangeT, error) {
-	// TODO
-	_ = ctx
-	_ = sealedRange
-	_ = writableRange
-	return nil, nil
+	logger := e.lg.With(zap.Int64("sealed-stream-id", sealedRange.StreamId), zap.Int32("sealed-range-index", sealedRange.RangeIndex),
+		zap.Int64("writable-stream-id", writableRange.StreamId), zap.Int32("writable-range-index", writableRange.RangeIndex), traceutil.TraceLogField(ctx))
+
+	kvs := make([]kv.KeyValue, 2)
+	kvs[0] = kv.KeyValue{Key: rangePathInSteam(sealedRange.StreamId, sealedRange.RangeIndex), Value: fbutil.Marshal(sealedRange)}
+	kvs[1] = kv.KeyValue{Key: rangePathInSteam(writableRange.StreamId, writableRange.RangeIndex), Value: fbutil.Marshal(writableRange)}
+
+	preKvs, err := e.BatchPut(ctx, kvs, true)
+	mcache.Free(kvs[0].Value)
+	mcache.Free(kvs[1].Value)
+	if err != nil {
+		logger.Error("failed to seal range", zap.Error(err))
+		return nil, errors.Wrap(err, "seal range")
+	}
+
+	if len(preKvs) > 1 {
+		logger.Warn("seal range: writable range already exists")
+	}
+	if len(preKvs) < 1 {
+		logger.Warn("seal range: sealed range not exists")
+	}
+
+	return writableRange, nil
 }
 
 func (e *Endpoint) GetRange(ctx context.Context, rangeID *rpcfb.RangeIdT) (*rpcfb.RangeT, error) {
