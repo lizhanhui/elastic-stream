@@ -258,7 +258,8 @@ func (m *Member) MoveEtcdLeader(ctx context.Context, old, new uint64) error {
 
 // IsLeader returns whether current server is the leader
 func (m *Member) IsLeader() bool {
-	return m.leadership.Check() && m.Leader().MemberID == m.info.MemberID
+	leader := m.Leader()
+	return leader != nil && leader.MemberID == m.info.MemberID && m.leadership.Check()
 }
 
 // Leader returns current PM leader of PM cluster.

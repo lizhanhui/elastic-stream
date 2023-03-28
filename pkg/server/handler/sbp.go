@@ -34,15 +34,14 @@ func (s *Sbp) notLeaderError(ctx context.Context, response protocol.OutResponse)
 }
 
 func (s *Sbp) pmInfo() []byte {
+	pm := &rpcfb.PlacementManagerT{Nodes: make([]*rpcfb.PlacementManagerNodeT, 0, 1)}
 	leader := s.c.Leader()
-	pm := &rpcfb.PlacementManagerT{
-		Nodes: []*rpcfb.PlacementManagerNodeT{
-			{
-				Name:          leader.Name,
-				AdvertiseAddr: leader.SbpAddr,
-				IsLeader:      true,
-			},
-		},
+	if leader != nil {
+		pm.Nodes = append(pm.Nodes, &rpcfb.PlacementManagerNodeT{
+			Name:          leader.Name,
+			AdvertiseAddr: leader.SbpAddr,
+			IsLeader:      true,
+		})
 	}
 	return fbutil.Marshal(pm)
 }
