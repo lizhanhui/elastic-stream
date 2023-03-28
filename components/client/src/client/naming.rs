@@ -78,8 +78,7 @@ impl FromStr for Endpoints {
                 .collect();
             return Ok(Self::new(addrs));
         }
-
-        unreachable!()
+        unreachable!("Mal-formed URI")
     }
 }
 

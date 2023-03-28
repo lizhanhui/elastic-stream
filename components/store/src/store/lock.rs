@@ -5,11 +5,11 @@ use std::{
     path::Path,
 };
 
-use byteorder::{BigEndian, ByteOrder, ReadBytesExt};
+use crate::error::StoreError;
+use byteorder::{BigEndian, ReadBytesExt};
+use client::IdGenerator;
 use nix::fcntl::{flock, FlockArg};
 use slog::{error, info, Logger};
-
-use crate::error::StoreError;
 
 pub(crate) struct Lock {
     log: Logger,
@@ -18,7 +18,11 @@ pub(crate) struct Lock {
 }
 
 impl Lock {
-    pub(crate) fn new(store_path: &Path, log: &Logger) -> Result<Self, StoreError> {
+    pub(crate) fn new(
+        store_path: &Path,
+        id_generator: Box<dyn IdGenerator>,
+        log: &Logger,
+    ) -> Result<Self, StoreError> {
         let lock_file_path = store_path.join("LOCK");
         let (fd, id) = if lock_file_path.as_path().exists() {
             let mut file = OpenOptions::new()
@@ -32,8 +36,15 @@ impl Lock {
                 .read(true)
                 .write(true)
                 .open(lock_file_path.as_path())?;
-            // TODO: Allocate data node ID from PM.
-            let id: i32 = 0;
+
+            let id: i32 = match id_generator.generate() {
+                Ok(id) => id,
+                Err(_e) => {
+                    return Err(StoreError::Configuration(String::from(
+                        "Failed to acquire data-node ID",
+                    )));
+                }
+            };
             file.write_all(&id.to_be_bytes())?;
             file.sync_all()?;
             (file.into_raw_fd(), id)
@@ -76,6 +87,9 @@ impl Drop for Lock {
 
 #[cfg(test)]
 mod tests {
+    use client::PlacementManagerIdGenerator;
+    use tokio::sync::oneshot;
+
     use super::Lock;
     use std::error::Error;
 
@@ -84,22 +98,30 @@ mod tests {
         let log = test_util::terminal_logger();
         let path = test_util::create_random_path()?;
         let _guard = test_util::DirectoryRemovalGuard::new(log.clone(), path.as_path());
-        let _lock = Lock::new(path.as_path(), &log)?;
-        Ok(())
-    }
 
-    #[test]
-    fn test_lock_after_release() -> Result<(), Box<dyn Error>> {
-        let log = test_util::terminal_logger();
-        let path = test_util::create_random_path()?;
-        let _guard = test_util::DirectoryRemovalGuard::new(log.clone(), path.as_path());
-        {
-            let _lock = Lock::new(path.as_path(), &log)?;
-        }
-        {
-            let _lock = Lock::new(path.as_path(), &log)?;
-        }
+        let (stop_tx, stop_rx) = oneshot::channel();
+        let (port_tx, port_rx) = oneshot::channel();
 
+        let logger = log.clone();
+        let handle = std::thread::spawn(move || {
+            tokio_uring::start(async {
+                let port = test_util::run_listener(logger).await;
+                let _ = port_tx.send(port);
+                let _ = stop_rx.await;
+            });
+        });
+
+        let port = port_rx.blocking_recv().unwrap();
+        let pm_address = format!("dns:localhost:{}", port);
+        let generator = Box::new(PlacementManagerIdGenerator::new(
+            log.clone(),
+            &pm_address,
+            "dn-host",
+        ));
+
+        let _lock = Lock::new(path.as_path(), generator, &log)?;
+        let _ = stop_tx.send(());
+        let _ = handle.join();
         Ok(())
     }
 }

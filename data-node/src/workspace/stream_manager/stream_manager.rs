@@ -316,7 +316,7 @@ mod tests {
     use model::range::StreamRange;
     use protocol::rpc::header::{Range, RangeT};
     use slog::trace;
-    use tokio::sync::mpsc;
+    use tokio::sync::{mpsc, oneshot};
 
     use crate::workspace::stream_manager::{fetcher::Fetcher, StreamManager};
     const TOTAL: i32 = 16;
@@ -367,9 +367,25 @@ mod tests {
         let _guard = test_util::DirectoryRemovalGuard::new(logger.clone(), path.as_path());
         let wal_path = path.join("wal");
         let index_path = path.join("index");
-        let store =
-            test_util::build_store(wal_path.to_str().unwrap(), index_path.to_str().unwrap());
+
+        let (port_tx, port_rx) = oneshot::channel();
+        let (stop_tx, stop_rx) = oneshot::channel();
+        let log = logger.clone();
+        let handle = std::thread::spawn(move || {
+            tokio_uring::start(async {
+                let port = test_util::run_listener(log).await;
+                let _ = port_tx.send(port);
+                let _ = stop_rx.await;
+            });
+        });
+        let port = port_rx.blocking_recv()?;
+        let store = test_util::build_store(
+            format!("dns:localhost:{}", port),
+            wal_path.to_str().unwrap(),
+            index_path.to_str().unwrap(),
+        );
         let store = Rc::new(store);
+
         tokio_uring::start(async {
             let fetcher = create_fetcher().await;
             let stream_id = 1;
@@ -382,13 +398,17 @@ mod tests {
             let range = range.pack(&mut builder);
             builder.finish(range, None);
             let data = builder.finished_data();
-            let range = flatbuffers::root::<Range>(data)?;
+            let range = flatbuffers::root::<Range>(data).unwrap();
             let offset = stream_manager.alloc_record_batch_slots(range, 1).unwrap();
-            stream_manager.ack(stream_id, offset)?;
+            stream_manager.ack(stream_id, offset).unwrap();
             let seal_offset = stream_manager.seal(stream_id, TOTAL - 1).unwrap();
             assert_eq!(offset + 1, seal_offset);
-            Ok(())
-        })
+        });
+
+        let _ = stop_tx.send(());
+        let _ = handle.join();
+
+        Ok(())
     }
 
     #[test]
@@ -398,9 +418,25 @@ mod tests {
         let _guard = test_util::DirectoryRemovalGuard::new(logger.clone(), path.as_path());
         let wal_path = path.join("wal");
         let index_path = path.join("index");
-        let store =
-            test_util::build_store(wal_path.to_str().unwrap(), index_path.to_str().unwrap());
+
+        let (port_tx, port_rx) = oneshot::channel();
+        let (stop_tx, stop_rx) = oneshot::channel();
+        let log = logger.clone();
+        let handle = std::thread::spawn(move || {
+            tokio_uring::start(async {
+                let port = test_util::run_listener(log).await;
+                let _ = port_tx.send(port);
+                let _ = stop_rx.await;
+            });
+        });
+        let port = port_rx.blocking_recv()?;
+        let store = test_util::build_store(
+            format!("dns:localhost:{}", port),
+            wal_path.to_str().unwrap(),
+            index_path.to_str().unwrap(),
+        );
         let store = Rc::new(store);
+
         tokio_uring::start(async {
             let fetcher = create_fetcher().await;
             let stream_id = 1;
@@ -413,12 +449,17 @@ mod tests {
             let range = range.pack(&mut builder);
             builder.finish(range, None);
             let data = builder.finished_data();
-            let range = flatbuffers::root::<Range>(data)?;
+            let range = flatbuffers::root::<Range>(data).unwrap();
             let offset = stream_manager.alloc_record_batch_slots(range, 1).unwrap();
-            stream_manager.ack(stream_id, offset)?;
-            let range = stream_manager.describe_range(stream_id, TOTAL - 1).await?;
+            stream_manager.ack(stream_id, offset).unwrap();
+            let range = stream_manager
+                .describe_range(stream_id, TOTAL - 1)
+                .await
+                .unwrap();
             assert_eq!(offset + 1, range.limit());
-            Ok(())
-        })
+        });
+        let _ = stop_tx.send(());
+        let _ = handle.join();
+        Ok(())
     }
 }

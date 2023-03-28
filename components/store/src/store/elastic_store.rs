@@ -7,6 +7,7 @@ use std::{
     thread::{Builder, JoinHandle},
 };
 
+use super::{handle_joiner, lock::Lock};
 use crate::{
     error::{AppendError, FetchError, StoreError},
     index::{driver::IndexDriver, MinOffset},
@@ -23,14 +24,13 @@ use crate::{
     AppendRecordRequest, AppendResult, FetchResult, Store,
 };
 use bytes::Buf;
+use client::PlacementManagerIdGenerator;
 use core_affinity::CoreId;
 use crossbeam::channel::Sender;
 use futures::future::join_all;
 use model::range::StreamRange;
 use slog::{error, trace, Logger};
 use tokio::sync::{mpsc, oneshot};
-
-use super::{handle_joiner, lock::Lock};
 
 #[derive(Clone)]
 pub struct ElasticStore {
@@ -80,7 +80,13 @@ impl ElasticStore {
             Some(path) => path,
         };
 
-        let lock = Arc::new(Lock::new(store_path, &log)?);
+        let id_generator = Box::new(PlacementManagerIdGenerator::new(
+            logger.clone(),
+            &options.pm_address,
+            &options.host,
+        ));
+
+        let lock = Arc::new(Lock::new(store_path, id_generator, &log)?);
 
         // Customize IO options from store options.
         opt.add_wal_path(options.wal_path);
@@ -214,9 +220,7 @@ impl Store for ElasticStore {
         request: AppendRecordRequest,
     ) -> Result<AppendResult, AppendError> {
         let (sender, receiver) = oneshot::channel();
-
         self.do_append(request, sender);
-
         match receiver.await.map_err(|_e| AppendError::ChannelRecv) {
             Ok(res) => res,
             Err(e) => Err(e),
@@ -428,14 +432,19 @@ mod tests {
         AppendRecordRequest, ElasticStore, Store,
     };
 
-    fn build_store(store_path: &str, index_path: &str) -> ElasticStore {
+    fn build_store(pm_address: &str, store_path: &str, index_path: &str) -> ElasticStore {
         let log = test_util::terminal_logger();
 
         let size_10g = 10u64 * (1 << 30);
 
         let wal_path = WalPath::new(store_path, size_10g).unwrap();
 
-        let options = StoreOptions::new(&wal_path, index_path.to_string());
+        let options = StoreOptions::new(
+            String::from("dn-host"),
+            String::from(pm_address),
+            &wal_path,
+            index_path.to_string(),
+        );
         let (tx, rx) = oneshot::channel();
         let store = match ElasticStore::new(log.clone(), options, tx) {
             Ok(store) => store,
@@ -466,8 +475,21 @@ mod tests {
 
         let (tx, rx) = oneshot::channel();
 
+        let (stop_tx, stop_rx) = oneshot::channel();
+        let (port_tx, port_rx) = oneshot::channel();
+
+        let logger = log.clone();
+        let handle = std::thread::spawn(move || {
+            tokio_uring::start(async {
+                let port = test_util::run_listener(logger).await;
+                let _ = port_tx.send(port);
+                let _ = stop_rx.await;
+            });
+        });
+        let port = port_rx.await.unwrap();
+        let pm_address = format!("dns:localhost:{}", port);
         let _ = std::thread::spawn(move || {
-            let store = build_store(store_path.as_str(), index_path.as_str());
+            let store = build_store(&pm_address, store_path.as_str(), index_path.as_str());
             let send_r = tx.send(store);
             if let Err(_) = send_r {
                 panic!("Failed to send store");
@@ -536,8 +558,8 @@ mod tests {
                 }
             }
         });
-
+        let _ = stop_tx.send(());
+        let _ = handle.join();
         drop(store);
-        sleep(Duration::from_millis(1000)).await;
     }
 }

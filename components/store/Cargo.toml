@@ -23,6 +23,8 @@ core_affinity = { workspace = true }
 tokio = { workspace = true }
 util = { path = "../util" }
 model = { path = "../model" }
+client = { path = "../client" }
+protocol = { path = "../protocol" }
 num_enum = { workspace = true }
 derivative = { workspace = true }
 rocksdb = { workspace = true }

@@ -45,11 +45,20 @@ pub struct StoreOptions {
     pub(crate) metadata_path: String,
     pub(crate) destroy_on_exit: bool,
     pub(crate) command_queue_depth: usize,
+    pub(crate) pm_address: String,
+    pub(crate) host: String,
 }
 
 impl StoreOptions {
-    pub fn new(store_path: &WalPath, metadata_path: String) -> Self {
+    pub fn new(
+        host: String,
+        pm_address: String,
+        store_path: &WalPath,
+        metadata_path: String,
+    ) -> Self {
         Self {
+            pm_address,
+            host,
             create_if_missing: true,
             wal_path: store_path.clone(),
             destroy_on_exit: false,

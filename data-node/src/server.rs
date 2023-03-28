@@ -33,7 +33,13 @@ pub fn launch(cfg: &ServerConfig) -> Result<(), Box<dyn Error>> {
     let size_10g = 10u64 * (1 << 30);
     let wal_path = WalPath::new("/data/store/wal", size_10g)?;
     let meta_path = "/data/store/meta";
-    let store_options = StoreOptions::new(&wal_path, meta_path.to_string());
+
+    let store_options = StoreOptions::new(
+        cfg.host.clone(),
+        cfg.placement_manager.clone(),
+        &wal_path,
+        meta_path.to_string(),
+    );
 
     let (recovery_completion_tx, recovery_completion_rx) = oneshot::channel();
 
