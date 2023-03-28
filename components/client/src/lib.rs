@@ -10,9 +10,8 @@
 
 pub mod client;
 pub mod error;
-pub mod notifier;
 
+pub use crate::client::client_builder::ClientBuilder;
 pub use crate::client::config::ClientConfig;
-pub use crate::client::placement_client::PlacementClient;
-pub use crate::client::placement_client_builder::PlacementClientBuilder;
+pub use crate::client::client::Client;
 pub use crate::client::response::Response;

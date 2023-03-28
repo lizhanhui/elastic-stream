@@ -25,7 +25,7 @@ model = { path = "../components/model" }
 protocol = {path = "../components/protocol" }
 transport = { path = "../components/transport" }
 store = { path = "../components/store" }
-placement-client = { path = "../components/placement-client" }
+client = { path = "../components/client" }
 io-uring = { workspace = true }
 tokio-uring = { workspace = true }
 tokio = { workspace = true }

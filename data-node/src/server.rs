@@ -1,19 +1,17 @@
-use std::{cell::RefCell, error::Error, os::fd::AsRawFd, rc::Rc, thread};
-
 use crate::{
     node::Node,
     node_config::NodeConfig,
     workspace::stream_manager::{fetcher::Fetcher, StreamManager},
     ServerConfig,
 };
-
-use placement_client::{notifier::UnsupportedNotifier, ClientConfig, PlacementClientBuilder};
+use client::{ClientBuilder, ClientConfig};
 use slog::{error, o, warn, Drain, Logger};
 use slog_async::Async;
 use slog_term::{FullFormat, TermDecorator};
+use std::{cell::RefCell, error::Error, os::fd::AsRawFd, rc::Rc, thread};
 use store::{
     option::{StoreOptions, WalPath},
-    ElasticStore, Store,
+    ElasticStore,
 };
 use tokio::sync::{mpsc, oneshot};
 
@@ -97,12 +95,6 @@ pub fn launch(cfg: &ServerConfig) -> Result<(), Box<dyn Error>> {
         let handle = thread::Builder::new()
             .name("DataNode[Primary]".to_owned())
             .spawn(move || {
-                let mut client_config = ClientConfig::default();
-                client_config.with_data_node(model::data_node::DataNode {
-                    node_id: store.id(),
-                    advertise_address: format!("{}:{}", server_config.host, server_config.port),
-                });
-
                 let node_config = NodeConfig {
                     core_id,
                     server_config,
@@ -110,15 +102,14 @@ pub fn launch(cfg: &ServerConfig) -> Result<(), Box<dyn Error>> {
                     primary: true,
                 };
 
-                let notifier = Rc::new(UnsupportedNotifier {});
-
+                let client_config = ClientConfig::default();
                 let placement_client =
-                    PlacementClientBuilder::new(&node_config.server_config.placement_manager)
+                    ClientBuilder::new(&node_config.server_config.placement_manager)
                         .set_log(log.clone())
                         .set_config(client_config)
-                        .set_notifier(notifier)
                         .build()
                         .expect("Build placement client");
+
                 let fetcher = Fetcher::PlacementClient {
                     client: placement_client,
                 };

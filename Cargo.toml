@@ -7,7 +7,7 @@ members = [
     "components/codec",
     "components/model",
     "components/protocol",
-    "components/placement-client",
+    "components/client",
     "components/transport",
     "components/store",
     "components/util",

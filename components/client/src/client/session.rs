@@ -1,6 +1,5 @@
 use super::session_state::SessionState;
 use super::{config, response};
-use crate::notifier::Notifier;
 use codec::frame::{Frame, OperationCode};
 use model::range::StreamRange;
 use model::Status;
@@ -39,7 +38,6 @@ impl Session {
     fn spawn_read_loop(
         channel: Rc<Channel>,
         inflight_requests: Rc<UnsafeCell<HashMap<u32, oneshot::Sender<response::Response>>>>,
-        notifier: Rc<dyn Notifier>,
         log: Logger,
     ) {
         tokio_uring::spawn(async move {
@@ -55,10 +53,7 @@ impl Session {
                         if frame.is_response() {
                             Session::on_response(inflight, frame, &log);
                         } else {
-                            let response = notifier.on_notification(frame);
-                            channel.write_frame(&response).await.unwrap_or_else(|e| {
-                                warn!(log, "Failed to write response to server. Cause: {:?}", e);
-                            });
+                            warn!(log, "Received an unexpected request frame");
                         }
                     }
                     Ok(None) => {
@@ -74,18 +69,12 @@ impl Session {
         stream: TcpStream,
         endpoint: &str,
         config: &Rc<config::ClientConfig>,
-        notifier: Rc<dyn Notifier>,
         log: &Logger,
     ) -> Self {
         let channel = Rc::new(Channel::new(stream, endpoint, log.clone()));
         let inflight = Rc::new(UnsafeCell::new(HashMap::new()));
 
-        Self::spawn_read_loop(
-            Rc::clone(&channel),
-            Rc::clone(&inflight),
-            notifier,
-            log.clone(),
-        );
+        Self::spawn_read_loop(Rc::clone(&channel), Rc::clone(&inflight), log.clone());
 
         Self {
             config: Rc::clone(config),
@@ -442,16 +431,12 @@ impl Drop for Session {
 #[cfg(test)]
 mod tests {
 
-    use std::{error::Error, time::Duration};
-
+    use super::*;
     use model::data_node::DataNode;
     use protocol::rpc::header::ErrorCode;
+    use std::{error::Error, time::Duration};
     use test_util::{run_listener, terminal_logger};
-    use tokio::time::{sleep, timeout};
-
-    use crate::notifier::UnsupportedNotifier;
-
-    use super::*;
+    use tokio::time::timeout;
 
     /// Verify it's OK to create a new session.
     #[test]
@@ -462,8 +447,7 @@ mod tests {
             let target = format!("127.0.0.1:{}", port);
             let stream = TcpStream::connect(target.parse()?).await?;
             let config = Rc::new(config::ClientConfig::default());
-            let notifier = Rc::new(UnsupportedNotifier {});
-            let session = Session::new(stream, &target, &config, notifier, &logger);
+            let session = Session::new(stream, &target, &config, &logger);
 
             assert_eq!(SessionState::Active, session.state());
 
@@ -488,8 +472,7 @@ mod tests {
             };
             config.with_data_node(data_node);
             let config = Rc::new(config);
-            let notifier = Rc::new(UnsupportedNotifier {});
-            let mut session = Session::new(stream, &target, &config, notifier, &logger);
+            let mut session = Session::new(stream, &target, &config, &logger);
 
             let result = session.heartbeat().await;
             let response = result.unwrap().await?;
@@ -518,8 +501,7 @@ mod tests {
             };
             config.with_data_node(data_node);
             let config = Rc::new(config);
-            let notifier = Rc::new(UnsupportedNotifier {});
-            let mut session = Session::new(stream, &target, &config, notifier, &logger);
+            let mut session = Session::new(stream, &target, &config, &logger);
 
             if let Some(rx) = session.heartbeat().await {
                 let start = Instant::now();

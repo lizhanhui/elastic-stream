@@ -5,7 +5,7 @@ use super::{
     response,
     session::Session,
 };
-use crate::{error::ClientError, notifier::Notifier};
+use crate::error::ClientError;
 use model::request::Request;
 use model::Status;
 use slog::{debug, error, info, trace, warn, Logger};
@@ -41,8 +41,6 @@ pub struct SessionManager {
     /// Session management
     lb_policy: LBPolicy,
     sessions: Rc<UnsafeCell<HashMap<SocketAddr, Session>>>,
-
-    notifier: Rc<dyn Notifier>,
 }
 
 impl SessionManager {
@@ -50,7 +48,6 @@ impl SessionManager {
         target: &str,
         config: &Rc<config::ClientConfig>,
         rx: mpsc::UnboundedReceiver<(Request, oneshot::Sender<response::Response>)>,
-        notifier: Rc<dyn Notifier>,
         log: &Logger,
     ) -> Result<Self, ClientError> {
         let sessions = Rc::new(UnsafeCell::new(HashMap::new()));
@@ -61,7 +58,6 @@ impl SessionManager {
             log: log.clone(),
             lb_policy: LBPolicy::PickFirst,
             sessions,
-            notifier,
         })
     }
 
@@ -70,13 +66,10 @@ impl SessionManager {
         addr: &SocketAddr,
         connect_timeout: Duration,
         config: &Rc<ClientConfig>,
-        notifier: Rc<dyn Notifier>,
         log: &Logger,
         tx: oneshot::Sender<bool>,
     ) {
-        match SessionManager::connect(addr, connect_timeout, config, Rc::clone(&notifier), &log)
-            .await
-        {
+        match SessionManager::connect(addr, connect_timeout, config, &log).await {
             Ok(session) => {
                 sessions.insert(addr.to_owned(), session);
                 match tx.send(true) {
@@ -102,7 +95,6 @@ impl SessionManager {
         sessions: Rc<UnsafeCell<HashMap<SocketAddr, Session>>>,
         config: Rc<ClientConfig>,
         log: Logger,
-        notifier: Rc<dyn Notifier>,
     ) {
         let connect_timeout = config.connect_timeout;
         tokio_uring::spawn(async move {
@@ -113,16 +105,8 @@ impl SessionManager {
             while let Some((addr, tx)) = reconnect_rx.recv().await {
                 trace!(log, "Creating a session to {}", addr);
                 let sessions = unsafe { &mut *sessions.get() };
-                SessionManager::handle_connect(
-                    sessions,
-                    &addr,
-                    connect_timeout,
-                    &config,
-                    Rc::clone(&notifier),
-                    &log,
-                    tx,
-                )
-                .await;
+                SessionManager::handle_connect(sessions, &addr, connect_timeout, &config, &log, tx)
+                    .await;
             }
         });
     }
@@ -314,7 +298,6 @@ impl SessionManager {
             Rc::clone(&self.sessions),
             Rc::clone(&self.config),
             self.log.clone(),
-            Rc::clone(&self.notifier),
         );
 
         // Heartbeat
@@ -336,7 +319,6 @@ impl SessionManager {
                 addr,
                 self.config.connect_timeout,
                 &self.config,
-                Rc::clone(&self.notifier),
                 &self.log,
                 tx,
             )
@@ -370,7 +352,6 @@ impl SessionManager {
         addr: &SocketAddr,
         duration: Duration,
         config: &Rc<config::ClientConfig>,
-        notifier: Rc<dyn Notifier>,
         log: &Logger,
     ) -> Result<Session, ClientError> {
         trace!(log, "Establishing connection to {:?}", addr);
@@ -403,6 +384,6 @@ impl SessionManager {
             }
         };
 
-        Ok(Session::new(stream, &endpoint, config, notifier, log))
+        Ok(Session::new(stream, &endpoint, config, log))
     }
 }

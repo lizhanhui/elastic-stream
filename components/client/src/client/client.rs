@@ -10,14 +10,16 @@ use tokio::{
 use super::{config::ClientConfig, response, session_manager::SessionManager};
 use crate::error::{ClientError, ListRangeError};
 
-pub struct PlacementClient {
+
+/// `Client` is used to send 
+pub struct Client {
     pub(crate) session_manager: Option<SessionManager>,
     pub(crate) tx: mpsc::UnboundedSender<(Request, oneshot::Sender<response::Response>)>,
     pub(crate) log: Logger,
     pub(crate) config: Rc<ClientConfig>,
 }
 
-impl PlacementClient {
+impl Client {
     pub fn start(&mut self) {
         if let Some(mut session_manager) = self.session_manager.take() {
             tokio_uring::spawn(async move { session_manager.run().await });
@@ -104,7 +106,7 @@ mod tests {
     use slog::trace;
     use test_util::{run_listener, terminal_logger};
 
-    use crate::{client::response, error::ListRangeError, PlacementClientBuilder};
+    use crate::{client::response, error::ListRangeError, ClientBuilder};
 
     #[test]
     fn test_allocate_id() -> Result<(), Box<dyn Error>> {
@@ -113,7 +115,7 @@ mod tests {
             let port = 2378;
             let port = run_listener(log.clone()).await;
             let addr = format!("dns:localhost:{}", port);
-            let mut client = PlacementClientBuilder::new(&addr)
+            let mut client = ClientBuilder::new(&addr)
                 .set_log(log.clone())
                 .build()
                 .map_err(|_e| ListRangeError::Internal)?;
@@ -137,7 +139,7 @@ mod tests {
             let port = 2378;
             let port = run_listener(log.clone()).await;
             let addr = format!("dns:localhost:{}", port);
-            let mut client = PlacementClientBuilder::new(&addr)
+            let mut client = ClientBuilder::new(&addr)
                 .set_log(log.clone())
                 .build()
                 .map_err(|_e| ListRangeError::Internal)?;

@@ -1,37 +1,24 @@
-use std::rc::Rc;
-
+use super::{config, client::Client, session_manager::SessionManager};
+use crate::error::ClientError;
 use slog::{o, Discard, Logger};
+use std::rc::Rc;
 use tokio::sync::mpsc;
 
-use crate::{
-    error::ClientError,
-    notifier::{Notifier, UnsupportedNotifier},
-};
-
-use super::{config, placement_client::PlacementClient, session_manager::SessionManager};
-
-pub struct PlacementClientBuilder {
+pub struct ClientBuilder {
     target: String,
     config: config::ClientConfig,
-    notifier: Rc<dyn Notifier>,
     pub(crate) log: Logger,
 }
 
-impl PlacementClientBuilder {
+impl ClientBuilder {
     pub fn new(target: &str) -> Self {
         let drain = Discard;
         let root = Logger::root(drain, o!());
         Self {
             target: target.to_owned(),
             config: config::ClientConfig::default(),
-            notifier: Rc::new(UnsupportedNotifier {}),
             log: root,
         }
-    }
-
-    pub fn set_notifier(mut self, notifier: Rc<dyn Notifier>) -> Self {
-        self.notifier = notifier;
-        self
     }
 
     pub fn set_log(mut self, log: Logger) -> Self {
@@ -44,15 +31,14 @@ impl PlacementClientBuilder {
         self
     }
 
-    pub fn build(self) -> Result<PlacementClient, ClientError> {
+    pub fn build(self) -> Result<Client, ClientError> {
         let (tx, rx) = mpsc::unbounded_channel();
 
         let config = Rc::new(self.config);
 
-        let session_manager =
-            SessionManager::new(&self.target, &config, rx, self.notifier, &self.log)?;
+        let session_manager = SessionManager::new(&self.target, &config, rx, &self.log)?;
 
-        Ok(PlacementClient {
+        Ok(Client {
             session_manager: Some(session_manager),
             tx,
             log: self.log,
@@ -81,7 +67,7 @@ mod tests {
             let addr = format!("dns:localhost:{}", port);
             trace!(log, "Target endpoint: `{}`", addr);
 
-            PlacementClientBuilder::new(&addr)
+            ClientBuilder::new(&addr)
                 .set_log(log)
                 .set_config(config)
                 .build()?;

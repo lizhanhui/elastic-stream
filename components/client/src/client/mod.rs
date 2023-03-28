@@ -1,8 +1,8 @@
 pub mod config;
 pub(crate) mod lb_policy;
 mod naming;
-pub(crate) mod placement_client;
-pub(crate) mod placement_client_builder;
+pub(crate) mod client;
+pub(crate) mod client_builder;
 pub(crate) mod response;
 pub(crate) mod response_observer;
 mod session;

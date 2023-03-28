@@ -1,9 +1,8 @@
-use std::time::Duration;
-
+use client::{Client, Response};
 use model::range::StreamRange;
-use placement_client::{PlacementClient, Response};
 use protocol::rpc::header::ErrorCode;
 use slog::{error, trace, Logger};
+use std::time::Duration;
 use tokio::sync::{mpsc, oneshot};
 
 use crate::error::ServiceError;
@@ -22,7 +21,7 @@ pub(crate) enum Fetcher {
     /// `PlacementManager`.
     ///
     /// Primary `Node` fetches ranges of a stream for itself or on behalf of other `Node`s.
-    PlacementClient { client: PlacementClient },
+    PlacementClient { client: Client },
 
     /// Non-primary `Node`s acquires ranges of a stream through delegating to the primary node.
     Channel {
@@ -98,7 +97,7 @@ impl Fetcher {
     }
 
     async fn fetch_by_client(
-        client: &PlacementClient,
+        client: &Client,
         stream_id: i64,
         log: &Logger,
     ) -> Result<Vec<StreamRange>, ServiceError> {

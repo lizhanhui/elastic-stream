@@ -396,6 +396,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "client"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+ "cargo-llvm-cov",
+ "codec",
+ "crossbeam",
+ "flatbuffers",
+ "futures",
+ "gethostname",
+ "mockall",
+ "model",
+ "ordinal",
+ "protocol",
+ "slog",
+ "slog-async",
+ "slog-term",
+ "test-util",
+ "thiserror",
+ "tokio",
+ "tokio-uring",
+ "transport",
+ "util",
+]
+
+[[package]]
 name = "codec"
 version = "0.1.0"
 dependencies = [
@@ -635,6 +661,7 @@ dependencies = [
  "bytes",
  "chrono",
  "clap 4.1.4",
+ "client",
  "codec",
  "core_affinity",
  "crc",
@@ -646,7 +673,6 @@ dependencies = [
  "model",
  "num_cpus",
  "num_enum",
- "placement-client",
  "pprof",
  "protocol",
  "slog",
@@ -1624,32 +1650,6 @@ name = "pkg-config"
 version = "0.3.26"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6ac9a59f73473f1b8d852421e59e64809f025994837ef743615c6d0c5b305160"
-
-[[package]]
-name = "placement-client"
-version = "0.1.0"
-dependencies = [
- "bytes",
- "cargo-llvm-cov",
- "codec",
- "crossbeam",
- "flatbuffers",
- "futures",
- "gethostname",
- "mockall",
- "model",
- "ordinal",
- "protocol",
- "slog",
- "slog-async",
- "slog-term",
- "test-util",
- "thiserror",
- "tokio",
- "tokio-uring",
- "transport",
- "util",
-]
 
 [[package]]
 name = "plotters"
