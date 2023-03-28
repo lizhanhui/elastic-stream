@@ -94,7 +94,9 @@ func (c *RaftCluster) DescribeStreams(ctx context.Context, streamIDs []int64) []
 			})
 			continue
 		}
-		// TODO stream may be nil
+		if stream == nil {
+			continue
+		}
 		results = append(results, &rpcfb.DescribeStreamResultT{
 			Stream: stream,
 			Status: &rpcfb.StatusT{Code: rpcfb.ErrorCodeOK},

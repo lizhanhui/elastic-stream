@@ -106,7 +106,6 @@ func (e *Endpoint) DeleteStreams(ctx context.Context, streamIDs []int64) ([]*rpc
 	if len(prevKvs) < len(streamIDs) {
 		existedStreamIDs := streamIDsFromPaths(prevKvs)
 		logger.Warn("streams not found when delete streams", zap.Int64s("existed-stream-ids", existedStreamIDs))
-		return nil, nil
 	}
 
 	streams := make([]*rpcfb.StreamT, 0, len(prevKvs))
@@ -152,7 +151,6 @@ func (e *Endpoint) UpdateStreams(ctx context.Context, streams []*rpcfb.StreamT) 
 			streamIDs = append(streamIDs, stream.StreamId)
 		}
 		logger.Warn("streams not found when update streams, will create them", zap.Int64s("existed-stream-ids", existedStreamIDs), zap.Int64s("stream-ids", streamIDs))
-		return nil, nil
 	}
 
 	return streams, nil
