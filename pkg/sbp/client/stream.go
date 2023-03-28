@@ -156,4 +156,5 @@ func (s *stream) abortStreamLocked(err error) {
 		s.abortErr = err
 		close(s.abort)
 	})
+	s.cc.cond.Broadcast()
 }

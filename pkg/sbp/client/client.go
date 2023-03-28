@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -109,10 +110,20 @@ func (c *SbpClient) SealRanges(req *protocol.SealRangesRequest, addr Address) (*
 	return nil, errors.Errorf("sbp: unexpected response type %T", resp)
 }
 
+// CloseIdleConnections closes any connections which were previously
+// connected from previous requests but are now sitting idle.
+// It does not interrupt any connections currently in use.
 func (c *SbpClient) CloseIdleConnections() {
 	logger := c.lg
 	c.connPool.closeIdleConnections()
 	logger.Info("close idle connections")
+}
+
+// Shutdown gracefully closes all connections, waits for all pending requests to complete.
+func (c *SbpClient) Shutdown(ctx context.Context) {
+	logger := c.lg
+	c.connPool.closeAllConnections(ctx)
+	logger.Info("close all connections")
 }
 
 func (c *SbpClient) dialConn(ctx context.Context, addr string) (*conn, error) {
@@ -137,6 +148,7 @@ func (c *SbpClient) newConn(rwc net.Conn) (*conn, error) {
 		fr:           codec.NewFramer(bufio.NewWriter(rwc), bufio.NewReader(rwc), logger),
 		lg:           logger,
 	}
+	cc.cond = sync.NewCond(&cc.mu)
 	if c.IdleConnTimeout > 0 {
 		cc.idleTimeout = c.IdleConnTimeout
 		cc.idleTimer = time.AfterFunc(c.IdleConnTimeout, cc.onIdleTimeout)

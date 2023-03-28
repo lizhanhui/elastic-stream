@@ -30,7 +30,7 @@ func TestClient_SealRanges(t *testing.T) {
 	defer shutdown()
 
 	client := NewClient(logger)
-	defer client.CloseIdleConnections()
+	defer client.Shutdown(context.Background())
 
 	req := &protocol.SealRangesRequest{SealRangesRequestT: rpcfb.SealRangesRequestT{
 		Ranges: []*rpcfb.RangeIdT{
@@ -59,7 +59,7 @@ func TestClientTimeout(t *testing.T) {
 	defer shutdown()
 
 	client := NewClient(logger)
-	defer client.CloseIdleConnections()
+	defer client.Shutdown(context.Background())
 
 	req := &protocol.SealRangesRequest{SealRangesRequestT: rpcfb.SealRangesRequestT{
 		TimeoutMs: 20,

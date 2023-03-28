@@ -36,6 +36,27 @@ func (p *connPool) closeIdleConnections() {
 	}
 }
 
+func (p *connPool) closeAllConnections(ctx context.Context) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	var conns []*conn
+	for _, vv := range p.conns {
+		conns = append(conns, vv...)
+	}
+
+	wg := sync.WaitGroup{}
+	wg.Add(len(conns))
+	for _, cc := range conns {
+		cc := cc
+		go func() {
+			_ = cc.shutdown(ctx)
+			wg.Done()
+		}()
+	}
+	wg.Wait()
+}
+
 // getConn returns a connection to addr, creating one if necessary.
 func (p *connPool) getConn(req protocol.OutRequest, addr Address) (*conn, error) {
 	for {

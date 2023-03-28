@@ -35,6 +35,7 @@ type conn struct {
 	idleTimer   *time.Timer
 
 	mu              sync.Mutex // guards following
+	cond            *sync.Cond // hold mu; broadcast on stream closed
 	closing         bool
 	closed          bool
 	goAway          *codec.GoAwayFrame       // if non-nil, the GoAwayFrame we received
@@ -153,6 +154,7 @@ func (cc *conn) forgetStreamID(id uint32) {
 		defer cc.closeConn()
 	}
 
+	cc.cond.Broadcast()
 	cc.mu.Unlock()
 }
 
@@ -210,11 +212,64 @@ func (cc *conn) heartbeat(ctx context.Context) error {
 }
 
 // shutdown gracefully closes the connection, waiting for running streams to complete.
-//
-//nolint:unused
 func (cc *conn) shutdown(ctx context.Context) error {
-	// TODO send goAway and wait for all streams to be done
-	_ = ctx
+	if err := cc.sendGoAway(); err != nil {
+		return err
+	}
+	// Wait for all in-flight streams to complete or connection to close
+	done := make(chan struct{})
+	cancelled := false // guarded by cc.mu
+	go func() {
+		cc.mu.Lock()
+		defer cc.mu.Unlock()
+		for {
+			if len(cc.streams) == 0 || cc.closed {
+				cc.closed = true
+				close(done)
+				break
+			}
+			if cancelled {
+				break
+			}
+			cc.cond.Wait()
+		}
+	}()
+	select {
+	case <-done:
+		cc.closeConn()
+		return nil
+	case <-ctx.Done():
+		cc.mu.Lock()
+		// Free the goroutine above
+		cancelled = true
+		cc.cond.Broadcast()
+		cc.mu.Unlock()
+		return ctx.Err()
+	}
+}
+
+func (cc *conn) sendGoAway() error {
+	cc.mu.Lock()
+	closing := cc.closing
+	cc.closing = true
+	maxStreamID := cc.nextStreamID
+	cc.mu.Unlock()
+	if closing {
+		// GOAWAY sent already
+		return nil
+	}
+
+	cc.wmu.Lock()
+	defer cc.wmu.Unlock()
+	// Send a graceful shutdown frame to server
+	f := codec.NewGoAwayFrame(maxStreamID, false)
+	if err := cc.fr.WriteFrame(f); err != nil {
+		return err
+	}
+	if err := cc.fr.Flush(); err != nil {
+		return err
+	}
+	// Prevent new requests
 	return nil
 }
 
@@ -279,6 +334,7 @@ func (cc *conn) closeForError(err error) {
 	for _, cs := range cc.streams {
 		cs.abortStreamLocked(err)
 	}
+	cc.cond.Broadcast()
 	cc.mu.Unlock()
 	cc.closeConn()
 }
@@ -508,6 +564,7 @@ func (rl *connReadLoop) cleanup() {
 			s.abortStreamLocked(err)
 		}
 	}
+	cc.cond.Broadcast()
 }
 
 func isEOFOrNetReadError(err error) bool {
