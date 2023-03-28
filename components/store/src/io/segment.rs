@@ -1,7 +1,6 @@
 use bytes::{Buf, BufMut, BytesMut};
 use core::slice;
 use derivative::Derivative;
-use io_uring::cqueue::Entry;
 use nix::fcntl;
 use slog::Logger;
 use std::{
@@ -21,7 +20,6 @@ use std::{
 use crate::{
     error::StoreError,
     io::{buf::AlignedBuf, record::RecordType},
-    BufSlice,
 };
 
 use super::{
