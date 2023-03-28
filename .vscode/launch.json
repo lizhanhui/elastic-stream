@@ -8,8 +8,8 @@
             "preLaunchTask": "build",
             "program": "${workspaceFolder}/target/debug/data-node",
             "args": [
-                "--node-id", "1",
                 "--host", "114.116.40.8",
+                "--store-dir", "/data/store",
                 "-q", "1024",
                 "--placement-manager", "dns:localhost:2378",
             ]

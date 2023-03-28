@@ -5,13 +5,14 @@ use crate::{
     ServerConfig,
 };
 use client::{ClientBuilder, ClientConfig};
+use model::data_node::DataNode;
 use slog::{error, o, warn, Drain, Logger};
 use slog_async::Async;
 use slog_term::{FullFormat, TermDecorator};
 use std::{cell::RefCell, error::Error, os::fd::AsRawFd, rc::Rc, thread};
 use store::{
     option::{StoreOptions, WalPath},
-    ElasticStore,
+    ElasticStore, Store,
 };
 use tokio::sync::{mpsc, oneshot};
 
@@ -31,14 +32,14 @@ pub fn launch(cfg: &ServerConfig) -> Result<(), Box<dyn Error>> {
     let available_core_len = core_ids.len();
 
     let size_10g = 10u64 * (1 << 30);
-    let wal_path = WalPath::new("/data/store/wal", size_10g)?;
-    let meta_path = "/data/store/meta";
-
+    let wal_dir = format!("{}/wal", cfg.store_dir);
+    let wal_path = WalPath::new(&wal_dir, size_10g)?;
+    let meta_path = format!("{}/meta", cfg.store_dir);
     let store_options = StoreOptions::new(
         cfg.host.clone(),
         cfg.placement_manager.clone(),
         &wal_path,
-        meta_path.to_string(),
+        meta_path,
     );
 
     let (recovery_completion_tx, recovery_completion_rx) = oneshot::channel();
@@ -108,7 +109,15 @@ pub fn launch(cfg: &ServerConfig) -> Result<(), Box<dyn Error>> {
                     primary: true,
                 };
 
-                let client_config = ClientConfig::default();
+                let mut client_config = ClientConfig::default();
+                client_config.with_data_node(DataNode {
+                    node_id: store.id(),
+                    advertise_address: format!(
+                        "{}:{}",
+                        node_config.server_config.host, node_config.server_config.port
+                    ),
+                });
+
                 let placement_client =
                     ClientBuilder::new(&node_config.server_config.placement_manager)
                         .set_log(log.clone())

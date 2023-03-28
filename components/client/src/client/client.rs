@@ -10,8 +10,7 @@ use tokio::{
 use super::{config::ClientConfig, response, session_manager::SessionManager};
 use crate::error::{ClientError, ListRangeError};
 
-
-/// `Client` is used to send 
+/// `Client` is used to send
 pub struct Client {
     pub(crate) session_manager: Option<SessionManager>,
     pub(crate) tx: mpsc::UnboundedSender<(Request, oneshot::Sender<response::Response>)>,
@@ -102,11 +101,12 @@ impl Client {
 mod tests {
     use std::{error::Error, time::Duration};
 
+    use model::data_node::DataNode;
     use protocol::rpc::header::ErrorCode;
     use slog::trace;
     use test_util::{run_listener, terminal_logger};
 
-    use crate::{client::response, error::ListRangeError, ClientBuilder};
+    use crate::{client::response, error::ListRangeError, ClientBuilder, ClientConfig};
 
     #[test]
     fn test_allocate_id() -> Result<(), Box<dyn Error>> {
@@ -133,14 +133,20 @@ mod tests {
     }
 
     #[test]
-    fn test_list_range() -> Result<(), ListRangeError> {
+    fn test_list_range_by_stream() -> Result<(), ListRangeError> {
         tokio_uring::start(async {
             let log = terminal_logger();
             let port = 2378;
             let port = run_listener(log.clone()).await;
             let addr = format!("dns:localhost:{}", port);
+            let mut client_config = ClientConfig::default();
+            client_config.with_data_node(DataNode {
+                node_id: 1,
+                advertise_address: format!("{}:{}", "localhost", "10911"),
+            });
             let mut client = ClientBuilder::new(&addr)
                 .set_log(log.clone())
+                .set_config(client_config)
                 .build()
                 .map_err(|_e| ListRangeError::Internal)?;
 
@@ -148,8 +154,59 @@ mod tests {
 
             let timeout = Duration::from_secs(10);
 
-            for i in 0..3 {
+            for i in 1..2 {
                 let result = client.list_range(Some(i as i64), timeout).await.unwrap();
+                if let response::Response::ListRange {
+                    ref ranges,
+                    ref status,
+                    ..
+                } = result
+                {
+                    assert_eq!(ErrorCode::OK, status.code);
+                    assert!(ranges.is_some(), "Should have got some ranges");
+                    if let Some(ranges) = ranges {
+                        assert_eq!(
+                            false,
+                            ranges.is_empty(),
+                            "Test server should have fed some mocking ranges"
+                        );
+                        for range in ranges.iter() {
+                            trace!(log, "{}", range)
+                        }
+                    }
+                } else {
+                    panic!("Incorrect response enum variant");
+                }
+            }
+
+            Ok(())
+        })
+    }
+
+    #[test]
+    fn test_list_range_by_data_node() -> Result<(), ListRangeError> {
+        tokio_uring::start(async {
+            let log = terminal_logger();
+            let port = 2378;
+            let port = run_listener(log.clone()).await;
+            let addr = format!("dns:localhost:{}", port);
+            let mut client_config = ClientConfig::default();
+            client_config.with_data_node(DataNode {
+                node_id: 1,
+                advertise_address: format!("{}:{}", "localhost", "10911"),
+            });
+            let mut client = ClientBuilder::new(&addr)
+                .set_log(log.clone())
+                .set_config(client_config)
+                .build()
+                .map_err(|_e| ListRangeError::Internal)?;
+
+            client.start();
+
+            let timeout = Duration::from_secs(10);
+
+            for _i in 1..2 {
+                let result = client.list_range(None, timeout).await.unwrap();
                 if let response::Response::ListRange {
                     ref ranges,
                     ref status,

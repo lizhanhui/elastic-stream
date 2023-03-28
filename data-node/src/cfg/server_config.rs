@@ -6,6 +6,8 @@ pub const DEFAULT_QUEUE_DEPTH: u32 = 32768;
 
 pub const DEFAULT_CONCURRENCY: usize = 1;
 
+pub const DEFAULT_STORE_DIR: &str = "/data/store";
+
 #[derive(Debug, Parser, Clone)]
 #[command(author, version, about, long_about = None)]
 pub struct ServerConfig {
@@ -15,6 +17,9 @@ pub struct ServerConfig {
     /// Listening port
     #[arg(short, long, default_value_t = DEFAULT_PORT)]
     pub port: u16,
+
+    #[arg(short, long)]
+    pub store_dir: String,
 
     /// Number of thread-per-core worker nodes
     #[arg(short, long, default_value_t = DEFAULT_CONCURRENCY, value_parser = parse_concurrency)]
@@ -57,13 +62,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_actor_count() {
+    fn test_cli_parse() {
         let config = ServerConfig::parse_from([
             "data-node",
             "--host",
             "localhost",
             "-p",
             "123",
+            "-s",
+            DEFAULT_STORE_DIR,
             "-q",
             "2048",
             "--placement-manager",
@@ -73,6 +80,7 @@ mod tests {
         assert_eq!(1, config.concurrency);
         assert_eq!(2048, config.queue_depth);
         assert_eq!("localhost:2378", &config.placement_manager);
+        assert_eq!(DEFAULT_STORE_DIR, &config.store_dir);
     }
 
     #[test]
@@ -83,6 +91,8 @@ mod tests {
             "localhost",
             "-p",
             "123",
+            "--store-dir",
+            DEFAULT_STORE_DIR,
             "-c",
             format!("{}", num_cpus::get()).as_str(),
             "-q",
@@ -93,5 +103,6 @@ mod tests {
         assert_eq!(123, config.port);
         assert_eq!(2048, config.queue_depth);
         assert_eq!(num_cpus::get(), config.concurrency);
+        assert_eq!(DEFAULT_STORE_DIR, &config.store_dir);
     }
 }
