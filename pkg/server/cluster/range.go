@@ -205,6 +205,7 @@ func (c *RaftCluster) sealRangeOnDataNode(ctx context.Context, writableRange *rp
 						ch <- nil
 						return
 					}
+					logger.Info("range sealed on data node", zap.Int32("data-node-id", node.DataNode.NodeId), zap.Int64("range-end-offset", result.Range.EndOffset))
 					ch <- result.Range
 					return
 				}
