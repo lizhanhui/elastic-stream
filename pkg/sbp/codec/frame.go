@@ -270,9 +270,6 @@ func (fr *Framer) ReadFrame() (frame Frame, free func(), err error) {
 // and to not call other Write methods concurrently.
 func (fr *Framer) WriteFrame(f Frame) error {
 	logger := fr.lg
-	if logger.Core().Enabled(zapcore.DebugLevel) {
-		logger.Debug("write frame", f.Summarize()...)
-	}
 
 	frame := f.Base()
 	fr.startWrite(frame)
@@ -288,7 +285,14 @@ func (fr *Framer) WriteFrame(f Frame) error {
 		fr.wbuf = binary.BigEndian.AppendUint32(fr.wbuf, 0)
 	}
 
-	return fr.endWrite()
+	err := fr.endWrite()
+
+	if logger.Core().Enabled(zapcore.DebugLevel) {
+		fields := f.Summarize()
+		fields = append(fields, zap.Error(err))
+		logger.Debug("wrote frame", fields...)
+	}
+	return err
 }
 
 // Flush writes any buffered data to the underlying io.Writer.
