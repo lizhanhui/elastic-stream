@@ -22,10 +22,6 @@ import (
 	tphttp2 "github.com/AutoMQ/placement-manager/third_party/forked/golang/net/http2"
 )
 
-func init() {
-	uuid.EnableRandPool()
-}
-
 // conn is the state of a connection between server and client.
 type conn struct {
 	// Immutable:
@@ -425,14 +421,17 @@ func (c *conn) generateAct(f *codec.DataFrame, action *Action) (ctx context.Cont
 	req.SetContext(ctx)
 	act = func(resp protocol.OutResponse) {
 		logger := c.lg
-		if logger.Core().Enabled(zap.DebugLevel) {
-			logger.Debug("handle request", zap.String("trace-id", id.String()), zap.Any("request", req))
+
+		debug := logger.Core().Enabled(zap.DebugLevel)
+		if debug {
+			logger = logger.With(zap.String("trace-id", id.String()))
+			logger.Debug("handle request", zap.Any("request", req))
 		}
 
 		action.act(c.server.handler, req, resp)
 
-		if logger.Core().Enabled(zap.DebugLevel) {
-			logger.Debug("handle request done", zap.String("trace-id", id.String()), zap.Any("response", resp))
+		if debug {
+			logger.Debug("handle request done", zap.Any("response", resp))
 		}
 	}
 	return
