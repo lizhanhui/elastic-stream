@@ -85,9 +85,7 @@ func startServer(tb testing.TB, handler server.Handler, lg *zap.Logger) (addr st
 	}()
 
 	shutdown = func() {
-		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-		defer cancel()
-		_ = s.Shutdown(ctx)
+		_ = s.Shutdown(context.Background())
 	}
 	return
 }
