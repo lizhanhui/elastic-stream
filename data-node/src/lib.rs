@@ -1,3 +1,5 @@
+#![feature(result_option_inspect)]
+
 pub mod cfg;
 mod delegate_task;
 pub mod error;

@@ -9,14 +9,14 @@ use codec::frame::Frame;
 
 const BUFFER_SIZE: usize = 4 * 1024;
 
-pub struct Channel {
+pub struct Connection {
     stream: TcpStream,
     buffer: UnsafeCell<BytesMut>,
     peer_address: String,
     logger: Logger,
 }
 
-impl Channel {
+impl Connection {
     pub fn new(stream: TcpStream, peer_address: &str, logger: Logger) -> Self {
         Self {
             stream,

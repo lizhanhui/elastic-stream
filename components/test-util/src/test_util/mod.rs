@@ -13,7 +13,7 @@ use slog::{debug, error, info, trace, warn, Logger};
 
 use tokio::sync::oneshot;
 use tokio_uring::net::TcpListener;
-use transport::channel::Channel;
+use transport::connection::Connection;
 
 fn serve_heartbeat(log: &Logger, request: &HeartbeatRequest, frame: &mut Frame) {
     debug!(log, "{:?}", request);
@@ -92,7 +92,7 @@ pub async fn run_listener(logger: Logger) -> u16 {
             tokio_uring::spawn(async move {
                 let logger = log.clone();
                 let addr = sock_addr.to_string();
-                let channel = Channel::new(conn, &addr, logger.clone());
+                let channel = Connection::new(conn, &addr, logger.clone());
 
                 loop {
                     if let Ok(frame) = channel.read_frame().await {

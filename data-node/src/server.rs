@@ -118,15 +118,15 @@ pub fn launch(cfg: &ServerConfig) -> Result<(), Box<dyn Error>> {
                     ),
                 });
 
-                let placement_client =
-                    ClientBuilder::new(&node_config.server_config.placement_manager)
-                        .set_log(log.clone())
-                        .set_config(client_config)
-                        .build()
-                        .expect("Build placement client");
+                let placement_client = ClientBuilder::new()
+                    .set_log(log.clone()) 
+                    .set_config(client_config)
+                    .build()
+                    .expect("Build placement client");
 
                 let fetcher = Fetcher::PlacementClient {
                     client: placement_client,
+                    target: node_config.server_config.placement_manager.clone()
                 };
                 let store = Rc::new(store);
 

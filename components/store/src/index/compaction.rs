@@ -1,7 +1,6 @@
 use std::{
     ffi::{CStr, CString},
     io::Cursor,
-    rc::Rc,
     sync::Arc,
 };
 

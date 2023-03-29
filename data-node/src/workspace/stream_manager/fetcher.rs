@@ -1,6 +1,5 @@
-use client::{Client, Response};
+use client::Client;
 use model::range::StreamRange;
-use protocol::rpc::header::ErrorCode;
 use slog::{error, trace, Logger};
 use std::time::Duration;
 use tokio::sync::{mpsc, oneshot};
@@ -21,7 +20,7 @@ pub(crate) enum Fetcher {
     /// `PlacementManager`.
     ///
     /// Primary `Node` fetches ranges of a stream for itself or on behalf of other `Node`s.
-    PlacementClient { client: Client },
+    PlacementClient { target: String, client: Client },
 
     /// Non-primary `Node`s acquires ranges of a stream through delegating to the primary node.
     Channel {
@@ -31,7 +30,7 @@ pub(crate) enum Fetcher {
 
 impl Fetcher {
     pub(crate) fn start(&mut self) {
-        if let Fetcher::PlacementClient { ref mut client } = self {
+        if let Fetcher::PlacementClient { ref mut client, .. } = self {
             client.start();
         }
     }
@@ -40,44 +39,24 @@ impl Fetcher {
         &mut self,
         log: &Logger,
     ) -> Result<Vec<StreamRange>, ServiceError> {
-        match self {
-            Fetcher::PlacementClient { client } => {
-                let response = client
-                    .list_range(None, Duration::from_secs(3))
-                    .await
-                    .map_err(|_e| {
-                        error!(
-                            log,
-                            "Failed to list ranges by data node from placement manager"
-                        );
-                        ServiceError::AcquireRange
-                    })?;
-                trace!(
-                    log,
-                    "Received list ranges response for current data node: {:?}",
-                    response
-                );
-
-                if let Response::ListRange { status, ranges } = response {
-                    if ErrorCode::OK == status.code {
-                        if let Some(ranges) = ranges {
-                            trace!(log, "Stream ranges on current data node are: {:?}", ranges);
-                            return Ok(ranges);
-                        } else {
-                            error!(
-                                log,
-                                "Illegal response from placement manager when bootstrap",
-                            );
-                        }
-                    } else {
-                        error!(
-                                log,
-                                "Status of bootstrap ranges from placement manager is not OK. Status={:?}", status
-                            );
-                    }
-                }
-            }
-            Fetcher::Channel { .. } => {}
+        if let Fetcher::PlacementClient { client, target } = self {
+            return client
+                .list_range(target, None, Duration::from_secs(3))
+                .await
+                .map_err(|_e| {
+                    error!(
+                        log,
+                        "Failed to list ranges by data node from placement manager"
+                    );
+                    ServiceError::AcquireRange
+                })
+                .inspect(|ranges| {
+                    trace!(
+                        log,
+                        "Received list ranges response for current data node: {:?}",
+                        ranges
+                    );
+                });
         }
         Err(ServiceError::AcquireRange)
     }
@@ -90,42 +69,29 @@ impl Fetcher {
     ) -> Result<Vec<StreamRange>, ServiceError> {
         match self {
             Fetcher::Channel { sender } => Self::fetch_from_peer_node(sender, stream_id, log).await,
-            Fetcher::PlacementClient { client } => {
-                Self::fetch_by_client(client, stream_id, log).await
+            Fetcher::PlacementClient { client, target } => {
+                Self::fetch_by_client(client, target, stream_id, log).await
             }
         }
     }
 
     async fn fetch_by_client(
         client: &Client,
+        target: &str,
         stream_id: i64,
         log: &Logger,
     ) -> Result<Vec<StreamRange>, ServiceError> {
-        let response = client
-            .list_range(Some(stream_id), Duration::from_secs(3))
+        client
+            .list_range(target, Some(stream_id), Duration::from_secs(3))
             .await
-            .map_err(|_e| ServiceError::AcquireRange)?;
-
-        if let Response::ListRange { status, ranges } = response {
-            if ErrorCode::OK == status.code {
-                if let Some(ranges) = ranges {
-                    return Ok(ranges);
-                } else {
-                    error!(
-                        log,
-                        "Illegal response from placement manager when list ranges for stream={}",
-                        stream_id
-                    );
-                }
-            } else {
+            .map_err(|_e| {
                 error!(
                     log,
-                    "Status of list range from placement manager is not OK. Status={:?}", status
+                    "Failed to list ranges for stream={} from placement manager", stream_id
                 );
-            }
-        }
-
-        Err(ServiceError::AcquireRange)
+                ServiceError::AcquireRange
+            })
+            .inspect(|ranges| trace!(log, "Ranges for stream={} is: {:?}", stream_id, ranges))
     }
 
     async fn fetch_from_peer_node(

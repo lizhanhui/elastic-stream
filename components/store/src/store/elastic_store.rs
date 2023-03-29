@@ -320,16 +320,9 @@ impl Store for ElasticStore {
         self.indexer.list_ranges(tx);
 
         let mut ranges = vec![];
-        loop {
-            match rx.recv().await {
-                Some(range) => {
-                    if filter(&range) {
-                        ranges.push(range);
-                    }
-                }
-                None => {
-                    break;
-                }
+        while let Some(range) = rx.recv().await {
+            if filter(&range) {
+                ranges.push(range);
             }
         }
         Ok(ranges)
@@ -349,19 +342,11 @@ impl Store for ElasticStore {
     {
         let (tx, mut rx) = mpsc::unbounded_channel();
         self.indexer.list_ranges_by_stream(stream_id, tx);
-
         let mut ranges = vec![];
-        loop {
-            match rx.recv().await {
-                Some(range) => {
-                    debug_assert_eq!(stream_id, range.stream_id());
-                    if filter(&range) {
-                        ranges.push(range);
-                    }
-                }
-                None => {
-                    break;
-                }
+        while let Some(range) = rx.recv().await {
+            debug_assert_eq!(stream_id, range.stream_id());
+            if filter(&range) {
+                ranges.push(range);
             }
         }
         Ok(ranges)
@@ -487,7 +472,7 @@ mod tests {
             });
         });
         let port = port_rx.await.unwrap();
-        let pm_address = format!("dns:localhost:{}", port);
+        let pm_address = format!("localhost:{}", port);
         let _ = std::thread::spawn(move || {
             let store = build_store(&pm_address, store_path.as_str(), index_path.as_str());
             let send_r = tx.send(store);

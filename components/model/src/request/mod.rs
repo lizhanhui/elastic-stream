@@ -1,11 +1,9 @@
-use std::time::Duration;
-
+use crate::{client_role::ClientRole, data_node::DataNode, range_criteria::RangeCriteria};
 use bytes::{Bytes, BytesMut};
 use protocol::rpc::header::{
     HeartbeatRequestT, IdAllocationRequestT, ListRangesRequestT, RangeCriteriaT,
 };
-
-use crate::{client_role::ClientRole, data_node::DataNode, range_criteria::RangeCriteria};
+use std::time::Duration;
 
 #[derive(Debug)]
 pub enum Request {

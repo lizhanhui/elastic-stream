@@ -1,13 +1,11 @@
 //! This module contains a trait and a simple implementation to generate unique ID for data node.
 
-use std::time::Duration;
-
-use protocol::rpc::header::ErrorCode;
 use slog::{error, trace, Logger};
+use std::time::Duration;
 use tokio::sync::oneshot;
 
 use crate::{
-    client::{client_builder::ClientBuilder, config::ClientConfig, response::Response},
+    client::{client_builder::ClientBuilder, config::ClientConfig},
     error::ClientError,
 };
 
@@ -39,10 +37,7 @@ impl IdGenerator for PlacementManagerIdGenerator {
         let (tx, rx) = oneshot::channel();
         tokio_uring::start(async {
             let client_config = ClientConfig::default();
-            let mut client = match ClientBuilder::new(&self.placement_manager_address)
-                .set_config(client_config)
-                .build()
-            {
+            let client = match ClientBuilder::new().set_config(client_config).build() {
                 Ok(client) => client,
                 Err(_e) => {
                     let _ = tx.send(Err(()));
@@ -52,26 +47,23 @@ impl IdGenerator for PlacementManagerIdGenerator {
 
             client.start();
 
-            match client.allocate_id(&self.host, Duration::from_secs(3)).await {
-                Ok(resp) => {
-                    if let Response::AllocateId { status, id } = resp {
-                        if status.code != ErrorCode::OK {
-                            error!(
-                                self.log,
-                                "Failed to acquire ID for data node. Cause: {}", status.message
-                            );
-                            let _ = tx.send(Err(()));
-                            return;
-                        }
-                        trace!(
-                            self.log,
-                            "Acquired ID={} for data-node[host={}]",
-                            id,
-                            self.host
-                        );
-                        let _ = tx.send(Ok(id));
-                        return;
-                    }
+            match client
+                .allocate_id(
+                    &self.placement_manager_address,
+                    &self.host,
+                    Duration::from_secs(3),
+                )
+                .await
+            {
+                Ok(id) => {
+                    trace!(
+                        self.log,
+                        "Acquired ID={} for data-node[host={}]",
+                        id,
+                        self.host
+                    );
+                    let _ = tx.send(Ok(id));
+                    return;
                 }
                 Err(e) => {
                     error!(
@@ -122,7 +114,7 @@ mod tests {
         });
 
         let port = port_rx.blocking_recv().unwrap();
-        let pm_address = format!("dns:localhost:{}", port);
+        let pm_address = format!("localhost:{}", port);
         let generator = PlacementManagerIdGenerator::new(log, &pm_address, "dn-host");
         let id = generator.generate()?;
         assert_eq!(1, id);

@@ -1,2 +1,2 @@
-pub mod channel;
-pub mod channel_state;
+pub mod connection;
+pub mod connection_state;

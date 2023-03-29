@@ -8,6 +8,8 @@ use protocol::rpc::header::{
     HeartbeatResponse, IdAllocationResponse, ListRangesResponse, SystemErrorResponse,
 };
 use slog::{error, trace, warn, Logger};
+use std::cell::RefCell;
+use std::net::SocketAddr;
 use std::{
     cell::UnsafeCell,
     collections::HashMap,
@@ -16,33 +18,37 @@ use std::{
 };
 use tokio::sync::oneshot;
 use tokio_uring::net::TcpStream;
-use transport::channel::Channel;
+use transport::connection::Connection;
 
 pub(crate) struct Session {
+    target: SocketAddr,
+
     config: Rc<config::ClientConfig>,
 
     log: Logger,
 
     state: SessionState,
 
-    channel: Rc<Channel>,
+    // Unlike {tokio, monoio}::TcpStream where we need to split underlying TcpStream into two owned mutable,
+    // tokio_uring::TcpStream requires immutable references only to perform read/write.
+    connection: Rc<Connection>,
 
     /// In-flight requests.
     inflight_requests: Rc<UnsafeCell<HashMap<u32, oneshot::Sender<response::Response>>>>,
 
-    idle_since: Instant,
+    idle_since: RefCell<Instant>,
 }
 
 impl Session {
     /// Spawn a loop to continuously read responses and server-side requests.
     fn spawn_read_loop(
-        channel: Rc<Channel>,
+        connection: Rc<Connection>,
         inflight_requests: Rc<UnsafeCell<HashMap<u32, oneshot::Sender<response::Response>>>>,
         log: Logger,
     ) {
         tokio_uring::spawn(async move {
             loop {
-                match channel.read_frame().await {
+                match connection.read_frame().await {
                     Err(e) => {
                         // Handle connection reset
                         todo!()
@@ -66,35 +72,37 @@ impl Session {
     }
 
     pub(crate) fn new(
+        target: SocketAddr,
         stream: TcpStream,
         endpoint: &str,
         config: &Rc<config::ClientConfig>,
         log: &Logger,
     ) -> Self {
-        let channel = Rc::new(Channel::new(stream, endpoint, log.clone()));
+        let connection = Rc::new(Connection::new(stream, endpoint, log.clone()));
         let inflight = Rc::new(UnsafeCell::new(HashMap::new()));
 
-        Self::spawn_read_loop(Rc::clone(&channel), Rc::clone(&inflight), log.clone());
+        Self::spawn_read_loop(Rc::clone(&connection), Rc::clone(&inflight), log.clone());
 
         Self {
             config: Rc::clone(config),
+            target,
             log: log.clone(),
             state: SessionState::Active,
-            channel,
+            connection,
             inflight_requests: inflight,
-            idle_since: Instant::now(),
+            idle_since: RefCell::new(Instant::now()),
         }
     }
 
     pub(crate) async fn write(
-        &mut self,
+        &self,
         request: &Request,
         response_observer: oneshot::Sender<response::Response>,
     ) -> Result<(), oneshot::Sender<response::Response>> {
         trace!(self.log, "Sending request {:?}", request);
 
         // Update last read/write instant.
-        self.idle_since = Instant::now();
+        *self.idle_since.borrow_mut() = Instant::now();
         let mut frame = Frame::new(OperationCode::Unknown);
         let inflight_requests = unsafe { &mut *self.inflight_requests.get() };
         inflight_requests.insert(frame.stream_id, response_observer);
@@ -104,12 +112,12 @@ impl Session {
                 frame.operation_code = OperationCode::Heartbeat;
                 let header = request.into();
                 frame.header = Some(header);
-                match self.channel.write_frame(&frame).await {
+                match self.connection.write_frame(&frame).await {
                     Ok(_) => {
                         trace!(
                             self.log,
                             "Write `Heartbeat` request to {}, stream-id={}",
-                            self.channel.peer_address(),
+                            self.connection.peer_address(),
                             frame.stream_id,
                         );
                     }
@@ -130,12 +138,12 @@ impl Session {
                 let header = request.into();
                 frame.header = Some(header);
 
-                match self.channel.write_frame(&frame).await {
+                match self.connection.write_frame(&frame).await {
                     Ok(_) => {
                         trace!(
                             self.log,
                             "Write `ListRange` request to {}, stream-id={}",
-                            self.channel.peer_address(),
+                            self.connection.peer_address(),
                             frame.stream_id,
                         );
                     }
@@ -143,7 +151,7 @@ impl Session {
                         warn!(
                             self.log,
                             "Failed to write `ListRange` request to {}. Cause: {:?}",
-                            self.channel.peer_address(),
+                            self.connection.peer_address(),
                             e
                         );
                         if let Some(observer) = inflight_requests.remove(&frame.stream_id) {
@@ -157,12 +165,12 @@ impl Session {
                 frame.operation_code = OperationCode::AllocateId;
                 let header = request.into();
                 frame.header = Some(header);
-                match self.channel.write_frame(&frame).await {
+                match self.connection.write_frame(&frame).await {
                     Ok(_) => {
                         trace!(
                             self.log,
                             "Write `AllocateId` request to {}, stream-id={}",
-                            self.channel.peer_address(),
+                            self.connection.peer_address(),
                             frame.stream_id
                         );
                     }
@@ -191,7 +199,7 @@ impl Session {
     }
 
     pub(crate) fn need_heartbeat(&self, duration: &Duration) -> bool {
-        self.active() && (Instant::now() - self.idle_since >= *duration)
+        self.active() && (Instant::now() - *self.idle_since.borrow() >= *duration)
     }
 
     pub(crate) async fn heartbeat(&mut self) -> Option<oneshot::Receiver<response::Response>> {
@@ -210,7 +218,7 @@ impl Session {
             trace!(
                 self.log,
                 "Heartbeat sent to {}",
-                self.channel.peer_address()
+                self.connection.peer_address()
             );
         }
         Some(rx)
@@ -447,7 +455,7 @@ mod tests {
             let target = format!("127.0.0.1:{}", port);
             let stream = TcpStream::connect(target.parse()?).await?;
             let config = Rc::new(config::ClientConfig::default());
-            let session = Session::new(stream, &target, &config, &logger);
+            let session = Session::new(target.parse()?, stream, &target, &config, &logger);
 
             assert_eq!(SessionState::Active, session.state());
 
@@ -472,7 +480,7 @@ mod tests {
             };
             config.with_data_node(data_node);
             let config = Rc::new(config);
-            let mut session = Session::new(stream, &target, &config, &logger);
+            let mut session = Session::new(target.parse()?, stream, &target, &config, &logger);
 
             let result = session.heartbeat().await;
             let response = result.unwrap().await?;
@@ -501,7 +509,7 @@ mod tests {
             };
             config.with_data_node(data_node);
             let config = Rc::new(config);
-            let mut session = Session::new(stream, &target, &config, &logger);
+            let mut session = Session::new(target.parse()?, stream, &target, &config, &logger);
 
             if let Some(rx) = session.heartbeat().await {
                 let start = Instant::now();

@@ -11,7 +11,7 @@
                 "--host", "114.116.40.8",
                 "--store-dir", "/data/store",
                 "-q", "1024",
-                "--placement-manager", "dns:localhost:2378",
+                "--placement-manager", "localhost:2378",
             ]
         }
     ]

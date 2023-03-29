@@ -51,7 +51,7 @@ impl Indexer {
         }
 
         let compaction_filter_name = CString::new("index-compaction-filter")
-            .map_err(|e| StoreError::Internal("Failed to create CString".to_owned()))?;
+            .map_err(|_e| StoreError::Internal("Failed to create CString".to_owned()))?;
 
         let index_compaction_filter_factory = super::compaction::IndexCompactionFilterFactory::new(
             log.clone(),
@@ -419,12 +419,11 @@ impl super::LocalRangeManager for Indexer {
                     }
                 })
                 .for_each(|range| {
-                    if let Err(e) = tx.send(range) {
+                    if tx.send(range).is_err() {
                         error!(
                             self.log,
                             "Channel to transfer range for stream={} is closed", stream_id
                         );
-                        return;
                     }
                 });
         }
@@ -471,9 +470,8 @@ impl super::LocalRangeManager for Indexer {
                     }
                 })
                 .for_each(|range| {
-                    if let Err(e) = tx.send(range) {
+                    if tx.send(range).is_err() {
                         warn!(self.log, "Channel to transfer stream ranges is closed");
-                        return;
                     }
                 });
         }

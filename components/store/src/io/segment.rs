@@ -1,5 +1,4 @@
 use bytes::{Buf, BufMut, BytesMut};
-use core::slice;
 use derivative::Derivative;
 use nix::fcntl;
 use slog::Logger;
@@ -350,12 +349,12 @@ impl LogSegment {
 
                         let mut limit = buf_r.limit();
                         let limit_len = (buf_r.wal_offset + buf_r.limit() as u64)
-                            .checked_sub(read_at + read_len as u64);
+                            .checked_sub(read_at + read_len);
                         if let Some(limit_len) = limit_len {
                             limit -= limit_len as usize;
                         }
                         let mut buf = buf_r.slice(start_pos as usize..limit);
-                        let mut dst = vec![0 as u8; buf.len()];
+                        let mut dst = vec![0_u8; buf.len()];
                         buf.copy_to_slice(&mut dst[..]);
                         slice_v.push(dst);
                     });
@@ -381,26 +380,19 @@ impl LogSegment {
                         ) {
                             let file_pos = e.wal_offset - self.wal_offset;
 
-                            let _ = file
-                                .read_exact_at(buf.slice_mut(..), file_pos)
-                                .map_err(|e| StoreError::IO(e))?;
+                            file.read_exact_at(buf.slice_mut(..), file_pos)
+                                .map_err(StoreError::IO)?;
 
                             buf.increase_written(buf.capacity);
 
                             self.block_cache.add_entry(Arc::new(buf));
-
-                            ()
                         }
-
                         Ok(())
                     });
 
                     // leak the fd from file to avoid closing it.
                     let _ = file.into_raw_fd();
-
-                    if let Err(e) = try_r {
-                        return Err(e);
-                    }
+                    try_r?
                 }
             }
         }
@@ -446,7 +438,7 @@ impl LogSegment {
                 debug_assert_eq!(buf_v.len(), 1);
                 let buf = &buf_v[0];
 
-                debug_assert_eq!(true, ((buf.wal_offset + buf.limit() as u64) >= written));
+                debug_assert!((buf.wal_offset + buf.limit() as u64) >= written);
 
                 // Split the last cache entry from `last_page_start`
                 if buf.wal_offset + buf.limit() as u64 > last_page_start {
@@ -482,7 +474,7 @@ impl LogSegment {
 
                         last_buf
                             .slice_mut(..last_len as usize)
-                            .copy_from_slice(&buf.slice(..last_len as usize));
+                            .copy_from_slice(buf.slice(..last_len as usize));
 
                         last_buf.increase_written(last_len as usize);
 
@@ -491,19 +483,17 @@ impl LogSegment {
                 }
 
                 // Evict the cached blocks after the given `written` offset.
-                self.block_cache.remove(|buf| {
-                    return buf.wal_offset() >= self.wal_offset + written;
-                });
-
-                return Ok(());
+                self.block_cache
+                    .remove(|buf| buf.wal_offset() >= self.wal_offset + written);
+                Ok(())
             }
             Ok(None) => {
                 // Impossible, the block cache should always return a result since this is in recovery procedure.
-                return Err(StoreError::CacheError);
+                Err(StoreError::CacheError)
             }
             Err(_) => {
                 // The last page is not cached, it's also impossible.
-                return Err(StoreError::CacheError);
+                Err(StoreError::CacheError)
             }
         }
     }

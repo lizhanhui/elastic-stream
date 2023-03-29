@@ -1,4 +1,4 @@
-pub enum ChannelState {
+pub enum ConnectionState {
     Active,
     Closing,
     Closed,

@@ -17,6 +17,7 @@ members = [
 ]
 
 [workspace.dependencies]
+async-channel = "1.8.0"
 byteorder = "1"
 bytes = "1"
 chrono = "0.4"

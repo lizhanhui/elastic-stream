@@ -3,7 +3,7 @@ use clap::Parser;
 use codec::frame::{Frame, HeaderFormat, OperationCode};
 use slog::{debug, error, info, o, trace, warn, Drain, Logger};
 use tokio_uring::net::TcpStream;
-use transport::channel::Channel;
+use transport::connection::Connection;
 
 fn main() {
     tokio_uring::start(async {
@@ -94,7 +94,7 @@ async fn launch(args: &Args, logger: Logger) {
         .for_each(|ele| bytes_mute.put_slice(&ele));
     let buffer = bytes_mute.freeze();
 
-    let channel = Channel::new(stream, &connect, logger.new(o!()));
+    let channel = Connection::new(stream, &connect, logger.new(o!()));
     channel.write_frame(&frame).await.unwrap();
     let mut cnt = 0;
     trace!(logger, "{cnt} Publish");

@@ -185,9 +185,7 @@ impl AlignedBuf {
             Bound::Unbounded => self.capacity,
         };
         let len = end - start;
-        unsafe {
-            slice::from_raw_parts_mut(self.ptr.as_ptr().offset(start as isize) as *mut u8, len)
-        }
+        unsafe { slice::from_raw_parts_mut(self.ptr.as_ptr().add(start) as *mut u8, len) }
     }
 
     pub(crate) fn write_buf(&self, cursor: u64, buf: &[u8]) -> bool {

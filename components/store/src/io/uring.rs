@@ -936,7 +936,7 @@ impl IO {
         let pos = io.borrow().indexer.get_wal_checkpoint()?;
         io.borrow_mut().recover(pos)?;
 
-        if let Err(_) = recovery_completion_tx.send(()) {
+        if recovery_completion_tx.send(()).is_err() {
             error!(log, "Failed to notify completion of recovery");
         }
 

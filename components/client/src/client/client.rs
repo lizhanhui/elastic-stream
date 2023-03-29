@@ -1,46 +1,34 @@
-use std::{rc::Rc, time::Duration};
-
-use model::{range_criteria::RangeCriteria, request::Request};
+use super::{config::ClientConfig, session_manager::SessionManager};
+use crate::error::ClientError;
+use model::{range::StreamRange, range_criteria::RangeCriteria};
 use slog::{error, trace, warn, Logger};
-use tokio::{
-    sync::{mpsc, oneshot},
-    time,
-};
-
-use super::{config::ClientConfig, response, session_manager::SessionManager};
-use crate::error::{ClientError, ListRangeError};
+use std::{cell::UnsafeCell, rc::Rc, time::Duration};
+use tokio::time;
 
 /// `Client` is used to send
 pub struct Client {
-    pub(crate) session_manager: Option<SessionManager>,
-    pub(crate) tx: mpsc::UnboundedSender<(Request, oneshot::Sender<response::Response>)>,
+    pub(crate) session_manager: Rc<UnsafeCell<SessionManager>>,
     pub(crate) log: Logger,
     pub(crate) config: Rc<ClientConfig>,
 }
 
 impl Client {
-    pub fn start(&mut self) {
-        if let Some(mut session_manager) = self.session_manager.take() {
-            tokio_uring::spawn(async move { session_manager.run().await });
-        }
+    pub fn start(&self) {
+        let session_manager = Rc::clone(&self.session_manager);
+        let session_manager = unsafe { &*session_manager.get() };
+        tokio_uring::spawn(async move { session_manager.start().await });
     }
 
     pub async fn allocate_id(
         &self,
+        target: &str,
         host: &str,
         timeout: Duration,
-    ) -> Result<response::Response, ClientError> {
-        let (tx, rx) = oneshot::channel();
-        let request = Request::AllocateId {
-            timeout: timeout,
-            host: host.to_owned(),
-        };
-        self.tx.send((request, tx)).map_err(|_e| {
-            error!(self.log, "Failed to forward request to `SessionManager`");
-            ClientError::ServerInternal
-        })?;
-
-        time::timeout(timeout, rx).await.map_err(|e|{
+    ) -> Result<i32, ClientError> {
+        let session_manager = unsafe { &mut *self.session_manager.get() };
+        let session = session_manager.get_session(target).await?;
+        let future = session.allocate_id(host, timeout);
+        time::timeout(timeout, future).await.map_err(|e|{
             warn!(self.log, "Timeout when allocate ID. {}", e);
             ClientError::ClientInternal
         })?.map_err(|e|{
@@ -54,12 +42,12 @@ impl Client {
 
     pub async fn list_range(
         &self,
+        target: &str,
         stream_id: Option<i64>,
         timeout: Duration,
-    ) -> Result<response::Response, ListRangeError> {
-        let (tx, rx) = oneshot::channel();
+    ) -> Result<Vec<StreamRange>, ClientError> {
         let criteria = if let Some(stream_id) = stream_id {
-            trace!(self.log, "list_range"; "stream-id" => stream_id);
+            trace!(self.log, "list_range from {}", target; "stream-id" => stream_id);
             RangeCriteria::StreamId(stream_id)
         } else if let Some(ref data_node) = self.config.data_node {
             trace!(
@@ -69,30 +57,21 @@ impl Client {
             );
             RangeCriteria::DataNode(data_node.clone())
         } else {
-            return Err(ListRangeError::BadArguments(
-                "Either stream_id or data-node is required to list range".to_owned(),
-            ));
+            return Err(ClientError::ClientInternal);
         };
 
-        let request = Request::ListRanges {
-            timeout: Duration::from_secs(3),
-            criteria: vec![criteria],
-        };
-        self.tx.send((request, tx)).map_err(|e| {
-            error!(self.log, "Failed to forward request. Cause: {:?}", e; "struct" => "Client");
-            ListRangeError::Internal
-        })?;
-        trace!(self.log, "Request forwarded"; "struct" => "Client");
-
-        time::timeout(timeout, rx).await.map_err(|elapsed| {
+        let session_manager = unsafe { &mut *self.session_manager.get() };
+        let session = session_manager.get_session(target).await?;
+        let future = session.list_range(criteria);
+        time::timeout(timeout, future).await.map_err(|elapsed| {
             warn!(self.log, "Timeout when list range. {}", elapsed);
-            ListRangeError::Timeout
+            ClientError::ClientInternal
         })?.map_err(|e| {
             error!(
                 self.log,
                 "Failed to receive response from broken channel. Cause: {:?}", e; "struct" => "Client"
             );
-            ListRangeError::Internal
+            ClientError::ClientInternal
         })
     }
 }
@@ -102,11 +81,10 @@ mod tests {
     use std::{error::Error, time::Duration};
 
     use model::data_node::DataNode;
-    use protocol::rpc::header::ErrorCode;
     use slog::trace;
     use test_util::{run_listener, terminal_logger};
 
-    use crate::{client::response, error::ListRangeError, ClientBuilder, ClientConfig};
+    use crate::{error::ListRangeError, ClientBuilder, ClientConfig};
 
     #[test]
     fn test_allocate_id() -> Result<(), Box<dyn Error>> {
@@ -114,20 +92,15 @@ mod tests {
             let log = terminal_logger();
             let port = 2378;
             let port = run_listener(log.clone()).await;
-            let addr = format!("dns:localhost:{}", port);
-            let mut client = ClientBuilder::new(&addr)
+            let addr = format!("localhost:{}", port);
+            let client = ClientBuilder::new()
                 .set_log(log.clone())
                 .build()
                 .map_err(|_e| ListRangeError::Internal)?;
             client.start();
             let timeout = Duration::from_secs(3);
-            let response = client.allocate_id("localhost", timeout).await?;
-            if let response::Response::AllocateId { status, id } = response {
-                assert_eq!(status.code, ErrorCode::OK);
-                assert_eq!(1, id);
-            } else {
-                panic!("Unexpected response");
-            }
+            let id = client.allocate_id(&addr, "localhost", timeout).await?;
+            assert_eq!(1, id);
             Ok(())
         })
     }
@@ -138,13 +111,13 @@ mod tests {
             let log = terminal_logger();
             let port = 2378;
             let port = run_listener(log.clone()).await;
-            let addr = format!("dns:localhost:{}", port);
+            let addr = format!("localhost:{}", port);
             let mut client_config = ClientConfig::default();
             client_config.with_data_node(DataNode {
                 node_id: 1,
                 advertise_address: format!("{}:{}", "localhost", "10911"),
             });
-            let mut client = ClientBuilder::new(&addr)
+            let client = ClientBuilder::new()
                 .set_log(log.clone())
                 .set_config(client_config)
                 .build()
@@ -155,27 +128,17 @@ mod tests {
             let timeout = Duration::from_secs(10);
 
             for i in 1..2 {
-                let result = client.list_range(Some(i as i64), timeout).await.unwrap();
-                if let response::Response::ListRange {
-                    ref ranges,
-                    ref status,
-                    ..
-                } = result
-                {
-                    assert_eq!(ErrorCode::OK, status.code);
-                    assert!(ranges.is_some(), "Should have got some ranges");
-                    if let Some(ranges) = ranges {
-                        assert_eq!(
-                            false,
-                            ranges.is_empty(),
-                            "Test server should have fed some mocking ranges"
-                        );
-                        for range in ranges.iter() {
-                            trace!(log, "{}", range)
-                        }
-                    }
-                } else {
-                    panic!("Incorrect response enum variant");
+                let ranges = client
+                    .list_range(&addr, Some(i as i64), timeout)
+                    .await
+                    .unwrap();
+                assert_eq!(
+                    false,
+                    ranges.is_empty(),
+                    "Test server should have fed some mocking ranges"
+                );
+                for range in ranges.iter() {
+                    trace!(log, "{}", range)
                 }
             }
 
@@ -189,13 +152,13 @@ mod tests {
             let log = terminal_logger();
             let port = 2378;
             let port = run_listener(log.clone()).await;
-            let addr = format!("dns:localhost:{}", port);
+            let addr = format!("localhost:{}", port);
             let mut client_config = ClientConfig::default();
             client_config.with_data_node(DataNode {
                 node_id: 1,
                 advertise_address: format!("{}:{}", "localhost", "10911"),
             });
-            let mut client = ClientBuilder::new(&addr)
+            let client = ClientBuilder::new()
                 .set_log(log.clone())
                 .set_config(client_config)
                 .build()
@@ -206,27 +169,14 @@ mod tests {
             let timeout = Duration::from_secs(10);
 
             for _i in 1..2 {
-                let result = client.list_range(None, timeout).await.unwrap();
-                if let response::Response::ListRange {
-                    ref ranges,
-                    ref status,
-                    ..
-                } = result
-                {
-                    assert_eq!(ErrorCode::OK, status.code);
-                    assert!(ranges.is_some(), "Should have got some ranges");
-                    if let Some(ranges) = ranges {
-                        assert_eq!(
-                            false,
-                            ranges.is_empty(),
-                            "Test server should have fed some mocking ranges"
-                        );
-                        for range in ranges.iter() {
-                            trace!(log, "{}", range)
-                        }
-                    }
-                } else {
-                    panic!("Incorrect response enum variant");
+                let ranges = client.list_range(&addr, None, timeout).await.unwrap();
+                assert_eq!(
+                    false,
+                    ranges.is_empty(),
+                    "Test server should have fed some mocking ranges"
+                );
+                for range in ranges.iter() {
+                    trace!(log, "{}", range)
                 }
             }
 

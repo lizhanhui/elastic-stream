@@ -4,7 +4,7 @@ use slog::{debug, error, info, o, trace, warn, Logger};
 use store::ElasticStore;
 use tokio::sync::mpsc;
 use tokio_uring::net::{TcpListener, TcpStream};
-use transport::channel::Channel;
+use transport::connection::Connection;
 
 use crate::{
     handler::ServerCall,
@@ -117,7 +117,7 @@ impl Node {
         peer_address: String,
         logger: Logger,
     ) {
-        let channel = Rc::new(Channel::new(stream, &peer_address, logger.new(o!())));
+        let channel = Rc::new(Connection::new(stream, &peer_address, logger.new(o!())));
         let (tx, mut rx) = mpsc::unbounded_channel();
 
         let request_logger = logger.clone();

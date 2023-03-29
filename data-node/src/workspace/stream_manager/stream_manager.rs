@@ -380,7 +380,7 @@ mod tests {
         });
         let port = port_rx.blocking_recv()?;
         let store = test_util::build_store(
-            format!("dns:localhost:{}", port),
+            format!("localhost:{}", port),
             wal_path.to_str().unwrap(),
             index_path.to_str().unwrap(),
         );
@@ -431,7 +431,7 @@ mod tests {
         });
         let port = port_rx.blocking_recv()?;
         let store = test_util::build_store(
-            format!("dns:localhost:{}", port),
+            format!("localhost:{}", port),
             wal_path.to_str().unwrap(),
             index_path.to_str().unwrap(),
         );

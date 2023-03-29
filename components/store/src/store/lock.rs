@@ -112,7 +112,7 @@ mod tests {
         });
 
         let port = port_rx.blocking_recv().unwrap();
-        let pm_address = format!("dns:localhost:{}", port);
+        let pm_address = format!("localhost:{}", port);
         let generator = Box::new(PlacementManagerIdGenerator::new(
             log.clone(),
             &pm_address,
