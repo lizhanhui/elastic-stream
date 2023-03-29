@@ -12,31 +12,41 @@ pub(crate) struct Context {
 
     /// Original starting WAL offset to read. This field makes sense iff opcode is `Read`.
     /// This field represents the real starting WAL offset of a read operation.
-    pub(crate) wal_offset: Option<u64>,
+    pub(crate) wal_offset: u64,
 
     /// Original read length. This field makes sense iff opcode is `Read`.
     /// This field represents the real read length of a read operation.
-    pub(crate) len: Option<u32>,
+    pub(crate) len: u32,
 }
 
 impl Context {
     /// Create write context
-    pub(crate) fn write_ctx(opcode: u8, buf: Arc<AlignedBuf>) -> *mut Self {
+    pub(crate) fn write_ctx(
+        opcode: u8,
+        buf: Arc<AlignedBuf>,
+        wal_offset: u64,
+        len: u32,
+    ) -> *mut Self {
         Box::into_raw(Box::new(Self {
             opcode,
             buf,
-            wal_offset: None,
-            len: None,
+            wal_offset,
+            len,
         }))
     }
 
     /// Create read context
-    pub(crate) fn read_ctx(opcode: u8, buf: Arc<AlignedBuf>, offset: u64, len: u32) -> *mut Self {
+    pub(crate) fn read_ctx(
+        opcode: u8,
+        buf: Arc<AlignedBuf>,
+        wal_offset: u64,
+        len: u32,
+    ) -> *mut Self {
         Box::into_raw(Box::new(Self {
             opcode,
             buf,
-            wal_offset: Some(offset),
-            len: Some(len),
+            wal_offset,
+            len,
         }))
     }
 }

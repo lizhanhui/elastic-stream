@@ -166,16 +166,18 @@ impl Node {
                         Ok(_) => {
                             trace!(
                                 logger,
-                                "Response[stream-id={:?}] written to {}",
+                                "Response frame[stream-id={}, opcode={}] written to {}",
                                 frame.stream_id,
+                                frame.operation_code,
                                 peer_address
                             );
                         }
                         Err(e) => {
                             warn!(
                                 logger,
-                                "Failed to write response[stream-id={:?}] to {}. Cause: {}",
+                                "Failed to write response frame[stream-id={}, opcode={}] to {}. Cause: {:?}",
                                 frame.stream_id,
+                                frame.operation_code,
                                 peer_address,
                                 e
                             );
@@ -185,7 +187,7 @@ impl Node {
                     None => {
                         info!(
                             logger,
-                            "Failed to receive response frame from channel. Session to {} will be terminated",
+                            "Channel to receive responses from handlers has been closed. Peer[address={}] should have already closed the read-half of the connection",
                             peer_address);
                         break;
                     }

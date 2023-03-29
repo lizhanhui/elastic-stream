@@ -451,9 +451,6 @@ impl IO {
                         );
                         let file_offset = buf.wal_offset - segment.wal_offset;
 
-                        // Track write requests
-                        self.write_window.add(buf.wal_offset, buf.limit() as u32)?;
-
                         let mut io_blocked = false;
                         // Check barrier
                         if self.barrier.contains(&buf.wal_offset) {
@@ -466,21 +463,23 @@ impl IO {
                             }
                         }
 
-                        let buf_offset = buf.wal_offset;
-                        let buf_len = buf.capacity as u32;
+                        let buf_wal_offset = buf.wal_offset;
+                        let buf_capacity = buf.capacity as u32;
+                        let buf_limit = buf.limit() as u32;
 
                         // The pointer will be set into user_data of uring.
                         // When the uring io completes, the pointer will be used to retrieve the `Context`.
-                        let context = Context::write_ctx(opcode::Write::CODE, buf);
+                        let context =
+                            Context::write_ctx(opcode::Write::CODE, buf, buf_wal_offset, buf_limit);
 
                         // Note we have to write the whole page even if the page is partially filled.
-                        let sqe = opcode::Write::new(types::Fd(sd.fd), ptr, buf_len)
+                        let sqe = opcode::Write::new(types::Fd(sd.fd), ptr, buf_capacity)
                             .offset64(file_offset as libc::off_t)
                             .build()
                             .user_data(context as u64);
 
                         if io_blocked {
-                            self.blocked.insert(buf_offset, sqe);
+                            self.blocked.insert(buf_wal_offset, sqe);
                         } else {
                             entries.push(sqe);
                         }
@@ -715,15 +714,8 @@ impl IO {
 
                         // Cache the completed read context
                         if opcode::Read::CODE == context.opcode {
-                            match context.wal_offset {
-                                Some(wal_offset) => {
-                                    if let Some(_segment) = self.wal.segment_file_of(wal_offset) {
-                                        effected_segments.insert(wal_offset);
-                                    }
-                                }
-                                None => {
-                                    error!(self.log, "Read context without wal_offset");
-                                }
+                            if let Some(_segment) = self.wal.segment_file_of(context.wal_offset) {
+                                effected_segments.insert(context.wal_offset);
                             }
                         }
                     }
@@ -1041,8 +1033,29 @@ fn on_complete(
                 return Err(StoreError::System(-result));
             } else {
                 write_window
+                    .add(context.wal_offset, context.len)
+                    .map_err(|e| {
+                        error!(
+                            log,
+                            "Failed to add `write`[{}, {}) into WriteWindow: {:?}",
+                            context.wal_offset,
+                            context.len,
+                            e
+                        );
+                        StoreError::WriteWindow
+                    })?;
+                write_window
                     .commit(context.buf.wal_offset, context.buf.limit() as u32)
-                    .map_err(|_e| StoreError::WriteWindow)?;
+                    .map_err(|e| {
+                        error!(
+                            log,
+                            "Failed to commit `write`[{}, {}) into WriteWindow: {:?}",
+                            context.wal_offset,
+                            context.len,
+                            e
+                        );
+                        StoreError::WriteWindow
+                    })?;
             }
             Ok(())
         }
@@ -1050,30 +1063,24 @@ fn on_complete(
             if result < 0 {
                 error!(
                     log,
-                    "Read from WAL range `[{}, {})` failed",
-                    context.wal_offset.unwrap_or_default(),
-                    context.len.unwrap_or_default()
+                    "Read from WAL range `[{}, {})` failed", context.wal_offset, context.len
                 );
                 return Err(StoreError::System(-result));
-            } else if let (Some(offset), Some(len)) = (context.wal_offset, context.len) {
-                if result != len as i32 {
+            } else {
+                if result != context.len as i32 {
                     error!(
                         log,
                         "Read {} bytes from WAL range `[{}, {})`, but {} bytes expected",
                         result,
-                        offset,
-                        len,
-                        len
+                        context.wal_offset,
+                        context.len,
+                        context.len
                     );
                     return Err(StoreError::InsufficientData);
                 }
-
                 context.buf.increase_written(result as usize);
                 return Ok(());
             }
-
-            // This should never happen, because we have checked the request before.
-            Err(StoreError::Internal("Invalid read request".to_string()))
         }
         _ => Ok(()),
     }
@@ -1099,7 +1106,6 @@ mod tests {
     use crate::index::MinOffset;
     use crate::io::ReadTask;
     use crate::offset_manager::WalOffsetManager;
-    use crate::store;
     use bytes::BytesMut;
     use slog::trace;
     use std::cell::RefCell;

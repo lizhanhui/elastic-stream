@@ -47,6 +47,12 @@ impl ServerCall {
     /// Delegate each incoming request to its dedicated `on_xxx` method according to
     /// operation code.
     pub async fn call(&mut self) {
+        trace!(
+            self.logger,
+            "Receive a request. stream-id={}, opcode={}",
+            self.request.stream_id,
+            self.request.operation_code
+        );
         let mut response = Frame::new(self.request.operation_code);
         response.stream_id = self.request.stream_id;
 
@@ -62,8 +68,13 @@ impl ServerCall {
             }
         };
 
-        // Logs the `cmd` object.
-        debug!(self.logger, "Receive a command: {:?}", cmd);
+        // Log the `cmd` object.
+        trace!(
+            self.logger,
+            "Command of frame[stream-id={}]: {:?}",
+            self.request.stream_id,
+            cmd
+        );
 
         // Delegate the request to its dedicated handler.
         cmd.apply(
@@ -72,6 +83,11 @@ impl ServerCall {
             &mut response,
         )
         .await;
+        trace!(
+            self.logger,
+            "Response frame generated. stream-id={}",
+            response.stream_id
+        );
 
         // Send response to channel.
         // Note there is a spawned task, in which channel writer is polling the channel.

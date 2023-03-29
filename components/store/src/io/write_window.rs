@@ -3,29 +3,19 @@ use std::collections::{btree_map::Entry, BTreeMap};
 use slog::{error, trace, Logger};
 use thiserror::Error;
 
-#[derive(Debug, Error)]
+#[derive(Debug, Error, PartialEq)]
 pub(crate) enum WriteWindowError {
     #[error("A previous entry(offset: {offset:?}, length: {length:?}) exists")]
     Existed { offset: u64, length: u32 },
 
-    #[error("Mismatch length at offset {offset:?}: expected: {expected:?}, actual: {actual:?}")]
-    Length {
-        offset: u64,
-        expected: u32,
-        actual: u32,
-    },
-
     #[error(
-        "Duplicated commit (offset: {offset:?}, length: {length:?}, dup_length: {dup_length:?})"
+        "Invalid commit attempt (offset: {offset:?}, previous_length: {previous_length:?}, attempted_length: {attempted_length:?})"
     )]
-    DuplicatedCommit {
+    InvalidCommit {
         offset: u64,
-        length: u32,
-        dup_length: u32,
+        previous_length: u32,
+        attempted_length: u32,
     },
-
-    #[error("Internal error: {0}")]
-    Internal(String),
 }
 
 /// Window manager that manages concurrent direct IO writes.
@@ -82,7 +72,7 @@ impl WriteWindow {
     pub(crate) fn add(&mut self, offset: u64, length: u32) -> Result<(), WriteWindowError> {
         trace!(
             self.log,
-            "Submitted to flush WAL: [{}, {})",
+            "Add inflight WAL write: [{}, {})",
             offset,
             offset + length as u64
         );
@@ -91,27 +81,36 @@ impl WriteWindow {
                 e.insert(length);
                 Ok(())
             }
-            Entry::Occupied(_e) => Err(WriteWindowError::Existed { offset, length }),
+            Entry::Occupied(e) => Err(WriteWindowError::Existed {
+                offset,
+                length: *e.get(),
+            }),
         }
     }
 
     fn advance(&mut self) -> Result<u64, WriteWindowError> {
-        while let Some((completed_offset, _)) = self.completed.first_key_value() {
-            if *completed_offset != self.committed {
+        while let Some((completed_offset, completed_len)) = self.completed.first_key_value() {
+            if *completed_offset > self.committed {
+                // Some writes, within the gap, are NOT yet completed
                 break;
             }
 
-            if let Some((submitted_offset, _)) = self.submitted.first_key_value() {
+            if let Some((submitted_offset, submitted_len)) = self.submitted.first_key_value() {
                 if completed_offset != submitted_offset {
                     break;
                 }
+                debug_assert_eq!(completed_len, submitted_len, "If wal_offset of submitted range equals to that of the completed, their length must be the same");
             } else {
                 break;
             }
             self.completed.pop_first();
-            if let Some((_, length)) = self.submitted.pop_first() {
-                self.committed += length as u64;
-                trace!(self.log, "Committed position of WAL: {}", self.committed);
+            if let Some((wal_offset, length)) = self.submitted.pop_first() {
+                self.committed = wal_offset + length as u64;
+                trace!(
+                    self.log,
+                    "Advance committed position of WAL to: {}",
+                    self.committed
+                );
             }
         }
         Ok(self.committed)
@@ -128,21 +127,88 @@ impl WriteWindow {
             Entry::Vacant(e) => {
                 e.insert(length);
             }
-            Entry::Occupied(e) => {
-                error!(
-                    self.log,
-                    "Duplicated commit. offset: {}, length: {}, dup_length: {}",
-                    offset,
-                    e.get(),
-                    length
-                );
-                return Err(WriteWindowError::DuplicatedCommit {
-                    offset,
-                    length: *e.get(),
-                    dup_length: length,
-                });
+            Entry::Occupied(mut e) => {
+                let prev_len = e.get_mut();
+                if length >= *prev_len {
+                    trace!(
+                        self.log,
+                        "Completed WAL range expanded from [{}, {}) to [{}, {})",
+                        offset,
+                        offset + *prev_len as u64,
+                        offset,
+                        offset + length as u64
+                    );
+                    *prev_len = length;
+                } else {
+                    // Should not reach here, as [offset, e.get()) truly includes [offset, length). This violates
+                    // barrier mechanism.
+                    error!(
+                        self.log,
+                        "Unexpected invalid commit. Previously completed range[{}, {}), attempted range: [{}, {})",
+                        offset,
+                        offset + *prev_len as u64,
+                        offset,
+                        offset + length as u64
+                    );
+                    return Err(WriteWindowError::InvalidCommit {
+                        offset,
+                        previous_length: *prev_len,
+                        attempted_length: length,
+                    });
+                }
             }
         };
         self.advance()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::WriteWindowError;
+
+    #[test]
+    fn test_write_window() -> Result<(), WriteWindowError> {
+        let log = test_util::terminal_logger();
+        let mut window = super::WriteWindow::new(log, 0);
+        window.add(0, 10)?;
+        window.commit(0, 10)?;
+        assert_eq!(10, window.committed);
+
+        window.add(0, 20)?;
+        window.commit(0, 20)?;
+        assert_eq!(20, window.committed);
+
+        window.add(20, 10)?;
+        window.commit(20, 10)?;
+        assert_eq!(30, window.committed);
+
+        // Gap
+        window.add(40, 10)?;
+        window.commit(40, 10)?;
+        assert_eq!(30, window.committed);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_write_window_add() -> Result<(), WriteWindowError> {
+        let log = test_util::terminal_logger();
+        let mut window = super::WriteWindow::new(log, 0);
+        window.add(0, 10)?;
+        match window.add(0, 20) {
+            Ok(_) => {
+                panic!("Should have raised an error");
+            }
+            Err(e) => {
+                assert_eq!(
+                    e,
+                    WriteWindowError::Existed {
+                        offset: 0,
+                        length: 10
+                    }
+                );
+            }
+        }
+        Ok(())
     }
 }
