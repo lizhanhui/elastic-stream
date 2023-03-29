@@ -9,6 +9,7 @@ import (
 	"github.com/AutoMQ/placement-manager/api/rpcfb/rpcfb"
 	"github.com/AutoMQ/placement-manager/pkg/sbp/protocol"
 	"github.com/AutoMQ/placement-manager/pkg/server/storage/endpoint"
+	"github.com/AutoMQ/placement-manager/pkg/server/storage/kv"
 	"github.com/AutoMQ/placement-manager/pkg/util/traceutil"
 )
 
@@ -35,6 +36,7 @@ type Range interface {
 // 1. a stream
 // 2. a data node
 // 3. a data node and a stream
+// It returns ErrNotLeader if the transaction failed.
 func (c *RaftCluster) ListRanges(ctx context.Context, rangeCriteria *rpcfb.RangeCriteriaT) (ranges []*rpcfb.RangeT, err error) {
 	byStream := rangeCriteria.StreamId >= endpoint.MinStreamID
 	byDataNode := rangeCriteria.DataNode != nil && rangeCriteria.DataNode.NodeId >= endpoint.MinDataNodeID
@@ -46,6 +48,9 @@ func (c *RaftCluster) ListRanges(ctx context.Context, rangeCriteria *rpcfb.Range
 	case !byStream && byDataNode:
 		ranges, err = c.listRangesOnDataNode(ctx, rangeCriteria.DataNode.NodeId)
 	default:
+	}
+	if errors.Is(err, kv.ErrTxnFailed) {
+		err = ErrNotLeader
 	}
 
 	for _, r := range ranges {

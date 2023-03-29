@@ -23,7 +23,12 @@ func (h *Handler) ListRanges(req *protocol.ListRangesRequest, resp *protocol.Lis
 			RangeCriteria: owner,
 		}
 		if err != nil {
-			result.Status = &rpcfb.StatusT{Code: rpcfb.ErrorCodePM_INTERNAL_SERVER_ERROR, Message: err.Error()}
+			switch {
+			case errors.Is(err, cluster.ErrNotLeader):
+				result.Status = &rpcfb.StatusT{Code: rpcfb.ErrorCodePM_NOT_LEADER, Message: "not leader", Detail: h.pmInfo()}
+			default:
+				result.Status = &rpcfb.StatusT{Code: rpcfb.ErrorCodePM_INTERNAL_SERVER_ERROR, Message: err.Error()}
+			}
 		} else {
 			result.Status = &rpcfb.StatusT{Code: rpcfb.ErrorCodeOK}
 			result.Ranges = ranges
@@ -60,6 +65,7 @@ func (h *Handler) SealRanges(req *protocol.SealRangesRequest, resp *protocol.Sea
 				result.Status = &rpcfb.StatusT{Code: rpcfb.ErrorCodePM_INTERNAL_SERVER_ERROR, Message: err.Error()}
 			}
 		} else {
+			logger.Info("range sealed", zap.Int64("stream-id", rangeID.StreamId), zap.Int32("range-index", rangeID.RangeIndex))
 			result.Status = &rpcfb.StatusT{Code: rpcfb.ErrorCodeOK}
 		}
 

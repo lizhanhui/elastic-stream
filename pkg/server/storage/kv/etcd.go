@@ -157,7 +157,7 @@ func (e *Etcd) BatchPut(ctx context.Context, kvs []KeyValue, prevKV bool) ([]Key
 		return nil, errors.Wrap(err, "kv batch put")
 	}
 	if !resp.Succeeded {
-		return nil, ErrTxnFailed
+		return nil, errors.Wrap(ErrTxnFailed, "kv batch put")
 	}
 
 	if !prevKV {
@@ -226,7 +226,7 @@ func (e *Etcd) BatchDelete(ctx context.Context, keys [][]byte, prevKV bool) ([]K
 		return nil, errors.Wrap(err, "kv batch delete")
 	}
 	if !resp.Succeeded {
-		return nil, ErrTxnFailed
+		return nil, errors.Wrap(ErrTxnFailed, "kv batch delete")
 	}
 
 	if !prevKV {

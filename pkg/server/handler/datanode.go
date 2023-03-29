@@ -1,10 +1,12 @@
 package handler
 
 import (
+	"github.com/pkg/errors"
 	"go.uber.org/zap"
 
 	"github.com/AutoMQ/placement-manager/api/rpcfb/rpcfb"
 	"github.com/AutoMQ/placement-manager/pkg/sbp/protocol"
+	"github.com/AutoMQ/placement-manager/pkg/server/cluster"
 	"github.com/AutoMQ/placement-manager/pkg/util/traceutil"
 )
 
@@ -18,7 +20,12 @@ func (h *Handler) Heartbeat(req *protocol.HeartbeatRequest, resp *protocol.Heart
 	if req.ClientRole == rpcfb.ClientRoleCLIENT_ROLE_DATA_NODE && req.DataNode != nil {
 		err := h.c.Heartbeat(ctx, req.DataNode)
 		if err != nil {
-			resp.Error(&rpcfb.StatusT{Code: rpcfb.ErrorCodePM_INTERNAL_SERVER_ERROR, Message: err.Error()})
+			switch {
+			case errors.Is(err, cluster.ErrNotLeader):
+				resp.Error(&rpcfb.StatusT{Code: rpcfb.ErrorCodePM_NOT_LEADER, Message: "not leader", Detail: h.pmInfo()})
+			default:
+				resp.Error(&rpcfb.StatusT{Code: rpcfb.ErrorCodePM_INTERNAL_SERVER_ERROR, Message: err.Error()})
+			}
 			return
 		}
 	}
@@ -31,7 +38,12 @@ func (h *Handler) AllocateID(req *protocol.IDAllocationRequest, resp *protocol.I
 
 	id, err := h.c.AllocateID(ctx)
 	if err != nil {
-		resp.Error(&rpcfb.StatusT{Code: rpcfb.ErrorCodePM_INTERNAL_SERVER_ERROR, Message: err.Error()})
+		switch {
+		case errors.Is(err, cluster.ErrNotLeader):
+			resp.Error(&rpcfb.StatusT{Code: rpcfb.ErrorCodePM_NOT_LEADER, Message: "not leader", Detail: h.pmInfo()})
+		default:
+			resp.Error(&rpcfb.StatusT{Code: rpcfb.ErrorCodePM_INTERNAL_SERVER_ERROR, Message: err.Error()})
+		}
 		return
 	}
 	resp.Id = id
