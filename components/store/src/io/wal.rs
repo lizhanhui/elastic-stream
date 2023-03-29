@@ -11,7 +11,25 @@ use crate::{
 };
 
 use io_uring::{opcode, squeue, types};
+use percentage::Percentage;
 use slog::{debug, error, info, warn, Logger};
+
+/// A WalCache holds the configurations of cache management, and supports count the usage of the memory.
+pub(crate) struct WalCache {
+    /// The maximum size of the cache,
+    /// the reclaim mechanism will ensure that the cache size is less than this value.
+    max_cache_size: u64,
+
+    /// The current size of the cache.
+    /// The cache size is the sum of the size of all the segment block caches.
+    current_cache_size: u64,
+
+    /// When the cache size is greater than the high water mark, a reclaim operation will be triggered.
+    high_water_mark: usize,
+
+    /// Each reclaim operation will try to reclaim the cache size to the low water mark.
+    low_water_mark: usize,
+}
 
 /// A WAL contains a list of log segments, and supports open, close, alloc, and other operations.
 pub(crate) struct Wal {
@@ -41,6 +59,9 @@ pub(crate) struct Wal {
     /// The size of each log segment.
     segment_size: u64,
 
+    /// The cache management of the WAL.
+    wal_cache: WalCache,
+
     /// Logger instance.
     log: Logger,
 }
@@ -50,6 +71,7 @@ impl Wal {
         wal_paths: Vec<WalPath>,
         control_ring: io_uring::IoUring,
         segment_size: u64,
+        max_cache_size: u64,
         log: Logger,
     ) -> Self {
         Self {
@@ -60,6 +82,13 @@ impl Wal {
             control_ring,
             segment_size,
             inflight_control_tasks: HashMap::new(),
+            wal_cache: WalCache {
+                max_cache_size: max_cache_size,
+                current_cache_size: 0,
+                // TODO: make these configurable
+                high_water_mark: 80,
+                low_water_mark: 60,
+            },
         }
     }
 
@@ -300,6 +329,96 @@ impl Wal {
         Ok(())
     }
 
+    /// Try reclaim the cache entries from the segments.
+    ///
+    /// # Arguments
+    /// min_bytes: the minimum free bytes after reclaiming.
+    ///
+    /// # Returns
+    /// The reclaimed bytes and the current cache size.
+    pub(crate) fn try_reclaim(&mut self, min_free_bytes: u32) -> (u64, u64) {
+        // Calculate the current cache size of all the segments.
+        let mut cache_size = 0u64;
+        for segment in self.segments.iter() {
+            cache_size += segment.block_cache.cache_size() as u64;
+        }
+
+        // Calculate the bytes to reclaim, based on the configured `high_water_mark` and `low_water_mark`.
+        let high_percent = Percentage::from(self.wal_cache.high_water_mark);
+        let low_percent = Percentage::from(self.wal_cache.low_water_mark);
+        let mut to_reclaim = 0;
+        if cache_size > high_percent.apply_to(self.wal_cache.max_cache_size) {
+            to_reclaim = cache_size - low_percent.apply_to(self.wal_cache.max_cache_size);
+        }
+
+        // If the available cache size is less than the `min_free_bytes` after reclaiming, increase the reclaim size.
+        let current_free_bytes = self.wal_cache.max_cache_size - cache_size;
+        if current_free_bytes + to_reclaim < min_free_bytes as u64 {
+            to_reclaim = min_free_bytes as u64 - current_free_bytes;
+        }
+
+        if to_reclaim == 0 {
+            return (0, current_free_bytes);
+        }
+
+        // Reclaim the cache entries from the segments.
+        let mut reclaimed = 0u64;
+        let mut cached_entries: Vec<_> = self
+            .segments
+            .iter()
+            .map(|segment| (segment, segment.block_cache.iter()))
+            .flat_map(|(seg, it)| it.map(move |(_, v)| (seg, v)))
+            .filter(|(_, entry)| entry.is_loaded())
+            .collect();
+
+        // Sort the cached entries by the score based on the access frequency and the last access time.
+        cached_entries.sort_by(|(_, a), (_, b)| {
+            let a_score = a.score();
+            let b_score = b.score();
+            a_score.cmp(&b_score)
+        });
+
+        // Key is the wal offset of the segment, value is the wal offset of the entry.
+        let mut to_reclaim_entries: HashMap<u64, Vec<u64>> = HashMap::new();
+
+        let _: Vec<_> = cached_entries
+            .iter()
+            .map_while(|(seg, entry)| {
+                if reclaimed >= to_reclaim {
+                    return None;
+                }
+
+                // The last writable entry should not be reclaimed.
+                if seg.status == Status::ReadWrite {
+                    // Skip the last writable entry.
+                    if entry.wal_offset() == seg.block_cache.wal_offset_of_last_cache_entry() {
+                        return Some(());
+                    }
+                }
+                let size = entry.capacity();
+                to_reclaim_entries
+                    .entry(seg.wal_offset)
+                    .or_default()
+                    .push(entry.wal_offset());
+
+                reclaimed += size as u64;
+                Some(())
+            })
+            .collect();
+
+        // Reclaim the cache entries.
+        for (segment_offset, entry_offsets) in to_reclaim_entries {
+            if let Some(segment) = self.segment_file_of(segment_offset) {
+                for entry_offset in entry_offsets {
+                    segment.block_cache.remove_by(entry_offset);
+                }
+            }
+        }
+
+        self.wal_cache.current_cache_size = cache_size - reclaimed;
+        (reclaimed, current_free_bytes + reclaimed)
+    }
+
     fn alloc_segment(&mut self) -> Result<LogSegment, StoreError> {
         let offset = if self.segments.is_empty() {
             0
@@ -518,12 +637,15 @@ mod tests {
     use std::error::Error;
     use std::fs::File;
     use std::path::PathBuf;
+    use std::sync::Arc;
 
     use bytes::BytesMut;
+    use percentage::Percentage;
     use slog::error;
     use tokio::sync::oneshot;
 
     use crate::error::StoreError;
+    use crate::io::buf::AlignedBuf;
     use crate::io::{
         options::DEFAULT_LOG_SEGMENT_SIZE,
         segment::{LogSegment, Status},
@@ -548,6 +670,7 @@ mod tests {
             options.wal_paths,
             control_ring,
             options.segment_size,
+            options.max_cache_size,
             logger,
         ))
     }
@@ -748,6 +871,64 @@ mod tests {
         assert_eq!(1, buffers.len());
         assert_eq!(Some(&4096), buffers.first());
 
+        Ok(())
+    }
+
+    /// Test try_reclaim_segments
+    #[test]
+    fn test_try_reclaim_segments() -> Result<(), StoreError> {
+        let log = test_util::terminal_logger();
+        let wal_dir = random_wal_dir()?;
+        let _wal_dir_guard = test_util::DirectoryRemovalGuard::new(log.clone(), wal_dir.as_path());
+        let mut wal = create_wal(super::WalPath::new(wal_dir.to_str().unwrap(), 1234)?)?;
+        (0..2)
+            .into_iter()
+            .map(|_| wal.open_segment_directly())
+            .collect::<Result<Vec<()>, StoreError>>()?;
+
+        let block_size = 4096usize;
+
+        let (reclaimed_bytes, free_bytes) = wal.try_reclaim(4096);
+        assert_eq!(0, reclaimed_bytes);
+        assert_eq!(free_bytes, wal.wal_cache.max_cache_size);
+
+        let cache_size_of_single_segment = wal.wal_cache.max_cache_size / 2;
+
+        wal.segments.iter_mut().for_each(|segment| {
+            segment.status = Status::Read;
+            segment.written = segment.size;
+
+            // Fill the block cache of the segment, so that it can be reclaimed
+            // Each segment occupies 50% of the cache, and each cache entry occupies 1/8 of the cache
+            let cache_size_of_single_entry = cache_size_of_single_segment / 8;
+            let num_entries = cache_size_of_single_segment / cache_size_of_single_entry;
+            (0..num_entries).for_each(|index| {
+                let buf = Arc::new(
+                    AlignedBuf::new(
+                        log.clone(),
+                        segment.wal_offset + index * cache_size_of_single_entry,
+                        cache_size_of_single_entry as usize,
+                        block_size,
+                    )
+                    .unwrap(),
+                );
+                buf.increase_written(cache_size_of_single_entry as usize);
+                segment.block_cache.add_entry(buf);
+            });
+
+            assert_eq!(
+                num_entries as u32 * cache_size_of_single_entry as u32,
+                segment.block_cache.cache_size()
+            );
+        });
+
+        let (reclaimed_bytes, free_bytes) = wal.try_reclaim(4096);
+
+        // Assert the current cache size is under the low watermark
+        let low_percent = Percentage::from(wal.wal_cache.low_water_mark);
+        assert!(
+            wal.wal_cache.current_cache_size < low_percent.apply_to(wal.wal_cache.max_cache_size)
+        );
         Ok(())
     }
 }

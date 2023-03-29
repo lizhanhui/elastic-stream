@@ -203,6 +203,7 @@ impl IO {
                 options.clone().wal_paths,
                 control_ring,
                 options.segment_size,
+                options.max_cache_size,
                 log.clone(),
             ),
             log,
@@ -673,6 +674,7 @@ impl IO {
         }
         let committed = self.write_window.committed;
         let mut cache_entries = vec![];
+        let mut cache_bytes = 0u32;
         let mut effected_segments = HashSet::new();
         {
             let mut completion = self.data_ring.completion();
@@ -709,6 +711,7 @@ impl IO {
                     } else {
                         // Add block cache
                         cache_entries.push(Arc::clone(&context.buf));
+                        cache_bytes += context.buf.capacity as u32;
 
                         // Cache the completed read context
                         if opcode::Read::CODE == context.opcode {
@@ -737,6 +740,15 @@ impl IO {
             self.inflight -= count;
             trace!(self.log, "Reaped {} data CQE(s)", count);
         }
+
+        let (reclaimed_bytes, free_bytes) = self.wal.try_reclaim(cache_bytes);
+        trace!(
+            self.log,
+            "Need to reclaim {} bytes, actually {} bytes are reclaimed from WAL, now {} bytes free",
+            cache_bytes,
+            reclaimed_bytes,
+            free_bytes
+        );
 
         // Add to block cache
         for buf in cache_entries {

@@ -103,20 +103,24 @@ impl Entry {
             0
         }
     }
-}
 
-#[derive(Debug)]
-pub(crate) struct BlockCache {
-    log: Logger,
+    /// Score the cache entry, based on the hit count and last hit instant.
+    /// The score is used to determine which cache entry should be dropped,
+    /// a higher score means a lower priority to be dropped.
+    pub(crate) fn score(&self) -> i32 {
+        let hit = self.hit;
+        let last_hit_instant = self.last_hit_instant;
+        let now = Instant::now();
 
-    // The start wal_offset of the block cache, usually it is the start wal_offset of some segment.
-    wal_offset: u64,
+        let elapsed = now.duration_since(last_hit_instant).as_secs();
+        let elapsed = elapsed as u32;
 
-    // The key of the map is a relative wal_offset from the start wal_offset of the block cache.
-    entries: BTreeMap<u32, Rc<UnsafeCell<Entry>>>,
-
-    // The size of the block cache.
-    cache_size: u32,
+        // Use a formula to calculate the score, the hit count will have a positive effect on the score,
+        // while the elapsed time will take a negative effect.
+        // The formula is: score = hit * 1000 - elapsed * 10.
+        // The score will be negative if the elapsed time is greater than the hit count.
+        (hit * 1000) as i32 - (elapsed * 10) as i32
+    }
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -185,6 +189,20 @@ impl MergeRange<EntryRange> for Vec<EntryRange> {
     }
 }
 
+#[derive(Debug)]
+pub(crate) struct BlockCache {
+    log: Logger,
+
+    // The start wal_offset of the block cache, usually it is the start wal_offset of some segment.
+    wal_offset: u64,
+
+    // The key of the map is a relative wal_offset from the start wal_offset of the block cache.
+    entries: BTreeMap<u32, Rc<UnsafeCell<Entry>>>,
+
+    // The size of the block cache.
+    cache_size: u32,
+}
+
 impl BlockCache {
     pub(crate) fn new(log: Logger, offset: u64) -> Self {
         Self {
@@ -225,7 +243,7 @@ impl BlockCache {
             let pre_entry = unsafe { &*pre_entry.get() };
 
             if pre_entry.is_loaded() {
-                self.cache_size -= pre_entry.len();
+                self.cache_size -= pre_entry.capacity();
             }
         }
     }
@@ -253,7 +271,7 @@ impl BlockCache {
             let pre_entry = unsafe { &*pre_entry.get() };
 
             if pre_entry.is_loaded() {
-                self.cache_size -= pre_entry.len();
+                self.cache_size -= pre_entry.capacity();
             }
         }
     }
@@ -361,6 +379,34 @@ impl BlockCache {
         }
     }
 
+    /// Remove a specific entry from the cache.
+    ///
+    /// # Arguments
+    /// * `wal_offset` - The wal_offset of the entry to be removed.
+    ///
+    /// # Returns
+    /// * `Some` - The removed entry.
+    /// * `None` - The entry is not found.
+    pub(crate) fn remove_by(&mut self, wal_offset: u64) -> Option<&Entry> {
+        let from = wal_offset.checked_sub(self.wal_offset);
+
+        if let Some(from) = from {
+            let from = from as u32;
+            let entry = self.entries.remove(&from);
+
+            if let Some(entry) = entry {
+                let entry = unsafe { &*entry.get() };
+
+                if entry.is_loaded() {
+                    self.cache_size -= entry.capacity();
+                }
+                return Some(entry);
+            }
+            return None;
+        }
+        None
+    }
+
     /// Remove cache entries if `Predicate` returns `true`.
     ///
     /// # Arguments
@@ -380,7 +426,7 @@ impl BlockCache {
                 );
 
                 // Decrease the cache size.
-                self.cache_size -= entry.len();
+                self.cache_size -= entry.capacity();
                 true
             } else {
                 false
@@ -399,9 +445,25 @@ impl BlockCache {
         None
     }
 
+    /// Fetch the wal offset of the last entry in the cache.
+    pub(crate) fn wal_offset_of_last_cache_entry(&self) -> u64 {
+        if let Some((k, _)) = self.entries.last_key_value() {
+            return *k as u64 + self.wal_offset;
+        }
+        0u64
+    }
+
     /// Fetch the current cache size.
     pub(crate) fn cache_size(&self) -> u32 {
         self.cache_size
+    }
+
+    /// Return a iterator that reference all the cached entries, with the associated key.
+    pub(crate) fn iter(&self) -> impl Iterator<Item = (&u32, &Entry)> {
+        self.entries.iter().map(|(k, v)| {
+            let entry = unsafe { &*v.get() };
+            (k, entry)
+        })
     }
 }
 
@@ -541,21 +603,64 @@ mod tests {
     #[test]
     fn test_add_entry() {
         let log = test_util::terminal_logger();
-        let mut block_cache = super::BlockCache::new(log.clone(), 0);
+        let start_wal_offset = 1024 * 1024 * 1024;
+        let mut block_cache = super::BlockCache::new(log.clone(), start_wal_offset);
         let block_size = 4096;
         for n in (0..16).into_iter() {
             let buf = Arc::new(
-                AlignedBuf::new(log.clone(), n * block_size as u64, block_size, block_size)
-                    .unwrap(),
+                AlignedBuf::new(
+                    log.clone(),
+                    start_wal_offset + n * block_size as u64,
+                    block_size,
+                    block_size,
+                )
+                .unwrap(),
             );
             buf.limit.store(block_size, Ordering::Relaxed);
             block_cache.add_entry(buf);
         }
 
         assert_eq!(16, block_cache.entries.len());
+
+        // Assert the
+        assert_eq!(
+            start_wal_offset + 15 * block_size as u64,
+            block_cache.wal_offset_of_last_cache_entry()
+        )
     }
 
-    /// Test cached size.
+    /// Test score some cached entries.
+    #[test]
+    fn test_score_cached_entries() {
+        let log = test_util::terminal_logger();
+        let block_size = 4096;
+        let mut entries = vec![];
+        for n in (0..16).into_iter() {
+            let buf = Arc::new(
+                AlignedBuf::new(log.clone(), n * block_size as u64, block_size, block_size)
+                    .unwrap(),
+            );
+            buf.limit.store(block_size, Ordering::Relaxed);
+            let mut entry = Entry::new(buf);
+            entry.hit = n as usize;
+            entries.push(entry);
+        }
+        let mut rng = thread_rng();
+        entries.shuffle(&mut rng);
+
+        entries.sort_by(|a, b| {
+            let a_score = a.score();
+            let b_score = b.score();
+            a_score.cmp(&b_score)
+        });
+
+        // Assert the entries are sorted by score.
+        for n in (0..16).into_iter() {
+            assert_eq!(n, entries[n as usize].hit);
+        }
+    }
+
+    /// Test cache size.
     #[test]
     fn test_cache_size() {
         let log = test_util::terminal_logger();
