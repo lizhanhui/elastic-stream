@@ -13,10 +13,6 @@ import (
 
 func (h *Handler) ListRanges(req *protocol.ListRangesRequest, resp *protocol.ListRangesResponse) {
 	ctx := req.Context()
-	if !h.c.IsLeader() {
-		h.notLeaderError(ctx, resp)
-		return
-	}
 
 	criteriaList := typeutil.FilterZero[*rpcfb.RangeCriteriaT](req.RangeCriteria)
 	listResponses := make([]*rpcfb.ListRangesResultT, 0, len(criteriaList))
@@ -41,10 +37,6 @@ func (h *Handler) ListRanges(req *protocol.ListRangesRequest, resp *protocol.Lis
 
 func (h *Handler) SealRanges(req *protocol.SealRangesRequest, resp *protocol.SealRangesResponse) {
 	ctx := req.Context()
-	if !h.c.IsLeader() {
-		h.notLeaderError(ctx, resp)
-		return
-	}
 	logger := h.lg.With(traceutil.TraceLogField(ctx))
 
 	ranges := typeutil.FilterZero[*rpcfb.RangeIdT](req.Ranges)

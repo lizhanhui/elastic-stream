@@ -16,7 +16,7 @@ type Logger struct {
 }
 
 func (l Logger) Do(req protocol.OutRequest, addr Address) (protocol.InResponse, error) {
-	logger := l.Logger()
+	logger := l.logger()
 
 	debug := logger.Core().Enabled(zap.DebugLevel)
 	if debug {

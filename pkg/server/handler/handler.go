@@ -1,8 +1,6 @@
 package handler
 
 import (
-	"context"
-
 	"go.uber.org/zap"
 
 	"github.com/AutoMQ/placement-manager/api/rpcfb/rpcfb"
@@ -33,10 +31,16 @@ func NewHandler(c Cluster, lg *zap.Logger) *Handler {
 	}
 }
 
-// notLeaderError sets "PM_NOT_LEADER" error in the response
-func (h *Handler) notLeaderError(ctx context.Context, response protocol.OutResponse) {
-	h.lg.Warn("not leader", traceutil.TraceLogField(ctx))
-	response.Error(&rpcfb.StatusT{Code: rpcfb.ErrorCodePM_NOT_LEADER, Message: "not leader", Detail: h.pmInfo()})
+// Check checks if the current node is the leader
+// If not, it sets "PM_NOT_LEADER" error in the response and returns false
+func (h *Handler) Check(req protocol.InRequest, resp protocol.OutResponse) (pass bool) {
+	if h.c.IsLeader() {
+		return true
+	}
+	h.lg.Warn("not leader", traceutil.TraceLogField(req.Context()))
+
+	resp.Error(&rpcfb.StatusT{Code: rpcfb.ErrorCodePM_NOT_LEADER, Message: "not leader", Detail: h.pmInfo()})
+	return false
 }
 
 func (h *Handler) pmInfo() []byte {
@@ -50,8 +54,4 @@ func (h *Handler) pmInfo() []byte {
 		})
 	}
 	return fbutil.Marshal(pm)
-}
-
-func (h *Handler) Logger() *zap.Logger {
-	return h.lg
 }

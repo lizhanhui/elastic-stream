@@ -11,10 +11,6 @@ import (
 
 func (h *Handler) CreateStreams(req *protocol.CreateStreamsRequest, resp *protocol.CreateStreamsResponse) {
 	ctx := req.Context()
-	if !h.c.IsLeader() {
-		h.notLeaderError(ctx, resp)
-		return
-	}
 
 	streams := typeutil.FilterZero[*rpcfb.StreamT](req.Streams)
 	results, err := h.c.CreateStreams(ctx, streams)
@@ -36,10 +32,6 @@ func (h *Handler) CreateStreams(req *protocol.CreateStreamsRequest, resp *protoc
 
 func (h *Handler) DeleteStreams(req *protocol.DeleteStreamsRequest, resp *protocol.DeleteStreamsResponse) {
 	ctx := req.Context()
-	if !h.c.IsLeader() {
-		h.notLeaderError(ctx, resp)
-		return
-	}
 
 	streamIDs := make([]int64, 0, len(req.Streams))
 	for _, stream := range req.Streams {
@@ -66,10 +58,6 @@ func (h *Handler) DeleteStreams(req *protocol.DeleteStreamsRequest, resp *protoc
 
 func (h *Handler) UpdateStreams(req *protocol.UpdateStreamsRequest, resp *protocol.UpdateStreamsResponse) {
 	ctx := req.Context()
-	if !h.c.IsLeader() {
-		h.notLeaderError(ctx, resp)
-		return
-	}
 
 	streams := typeutil.FilterZero[*rpcfb.StreamT](req.Streams)
 	upStreams, err := h.c.UpdateStreams(ctx, streams)
@@ -90,10 +78,6 @@ func (h *Handler) UpdateStreams(req *protocol.UpdateStreamsRequest, resp *protoc
 
 func (h *Handler) DescribeStreams(req *protocol.DescribeStreamsRequest, resp *protocol.DescribeStreamsResponse) {
 	ctx := req.Context()
-	if !h.c.IsLeader() {
-		h.notLeaderError(ctx, resp)
-		return
-	}
 
 	result := h.c.DescribeStreams(ctx, req.StreamIds)
 	resp.DescribeResponses = result

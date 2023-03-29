@@ -14,10 +14,6 @@ func (h *Handler) Heartbeat(req *protocol.HeartbeatRequest, resp *protocol.Heart
 	resp.ClientId = req.ClientId
 	resp.ClientRole = req.ClientRole
 	resp.DataNode = req.DataNode
-	if !h.c.IsLeader() {
-		h.notLeaderError(ctx, resp)
-		return
-	}
 
 	if req.ClientRole == rpcfb.ClientRoleCLIENT_ROLE_DATA_NODE && req.DataNode != nil {
 		err := h.c.Heartbeat(ctx, req.DataNode)
@@ -31,10 +27,6 @@ func (h *Handler) Heartbeat(req *protocol.HeartbeatRequest, resp *protocol.Heart
 
 func (h *Handler) AllocateID(req *protocol.IDAllocationRequest, resp *protocol.IDAllocationResponse) {
 	ctx := req.Context()
-	if !h.c.IsLeader() {
-		h.notLeaderError(ctx, resp)
-		return
-	}
 	logger := h.lg.With(traceutil.TraceLogField(ctx))
 
 	id, err := h.c.AllocateID(ctx)
