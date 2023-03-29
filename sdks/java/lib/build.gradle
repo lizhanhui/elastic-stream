@@ -98,3 +98,13 @@ sourceSets {
         }
     }
 }
+
+publishing {
+    publications {
+        maven(MavenPublication) {
+            artifactId = 'client-java'
+
+            from components.java
+        }
+    }
+}

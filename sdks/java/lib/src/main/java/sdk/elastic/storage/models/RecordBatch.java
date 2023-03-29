@@ -98,8 +98,12 @@ public class RecordBatch {
             RecordMetaT metaT = new RecordMetaT();
             assert record.getTimestamp() - batchMeta.getBaseTimestamp() <= MAX_OFFSET_DELTA && record.getTimestamp() - -batchMeta.getBaseTimestamp() >= Integer.MIN_VALUE;
             metaT.setTimestampDelta((int) (record.getTimestamp() - batchMeta.getBaseTimestamp()));
-            metaT.setHeaders(record.getHeaders().toKeyValueTArray());
-            metaT.setProperties(ProtocolUtil.map2KeyValueTList(record.getProperties()));
+            if (record.getHeaders() != null) {
+                metaT.setHeaders(record.getHeaders().toKeyValueTArray());
+            }
+            if (record.getProperties() != null && !record.getProperties().isEmpty()) {
+                metaT.setProperties(ProtocolUtil.map2KeyValueTList(record.getProperties()));
+            }
             metaT.setOffsetDelta((int) (record.getOffset() - batchMeta.getBaseOffset()));
             FlatBufferBuilder builder = new FlatBufferBuilder();
             int metaOffset = RecordMeta.pack(builder, metaT);
