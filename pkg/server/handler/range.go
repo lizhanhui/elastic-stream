@@ -8,6 +8,7 @@ import (
 	"github.com/AutoMQ/placement-manager/pkg/sbp/protocol"
 	"github.com/AutoMQ/placement-manager/pkg/server/cluster"
 	"github.com/AutoMQ/placement-manager/pkg/util/traceutil"
+	"github.com/AutoMQ/placement-manager/pkg/util/typeutil"
 )
 
 func (h *Handler) ListRanges(req *protocol.ListRangesRequest, resp *protocol.ListRangesResponse) {
@@ -17,8 +18,9 @@ func (h *Handler) ListRanges(req *protocol.ListRangesRequest, resp *protocol.Lis
 		return
 	}
 
-	listResponses := make([]*rpcfb.ListRangesResultT, 0, len(req.RangeCriteria))
-	for _, owner := range req.RangeCriteria {
+	criteriaList := typeutil.FilterZero[*rpcfb.RangeCriteriaT](req.RangeCriteria)
+	listResponses := make([]*rpcfb.ListRangesResultT, 0, len(criteriaList))
+	for _, owner := range criteriaList {
 		ranges, err := h.c.ListRanges(ctx, owner)
 
 		result := &rpcfb.ListRangesResultT{
@@ -45,8 +47,9 @@ func (h *Handler) SealRanges(req *protocol.SealRangesRequest, resp *protocol.Sea
 	}
 	logger := h.lg.With(traceutil.TraceLogField(ctx))
 
-	sealResponses := make([]*rpcfb.SealRangesResultT, 0, len(req.Ranges))
-	for _, rangeID := range req.Ranges {
+	ranges := typeutil.FilterZero[*rpcfb.RangeIdT](req.Ranges)
+	sealResponses := make([]*rpcfb.SealRangesResultT, 0, len(ranges))
+	for _, rangeID := range ranges {
 		r, err := h.c.SealRange(ctx, rangeID)
 
 		result := &rpcfb.SealRangesResultT{

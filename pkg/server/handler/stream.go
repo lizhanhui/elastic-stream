@@ -6,6 +6,7 @@ import (
 	"github.com/AutoMQ/placement-manager/api/rpcfb/rpcfb"
 	"github.com/AutoMQ/placement-manager/pkg/sbp/protocol"
 	"github.com/AutoMQ/placement-manager/pkg/server/cluster"
+	"github.com/AutoMQ/placement-manager/pkg/util/typeutil"
 )
 
 func (h *Handler) CreateStreams(req *protocol.CreateStreamsRequest, resp *protocol.CreateStreamsResponse) {
@@ -15,7 +16,8 @@ func (h *Handler) CreateStreams(req *protocol.CreateStreamsRequest, resp *protoc
 		return
 	}
 
-	results, err := h.c.CreateStreams(ctx, req.Streams)
+	streams := typeutil.FilterZero[*rpcfb.StreamT](req.Streams)
+	results, err := h.c.CreateStreams(ctx, streams)
 	if err != nil {
 		if errors.Is(err, cluster.ErrNotEnoughDataNodes) {
 			resp.Error(&rpcfb.StatusT{Code: rpcfb.ErrorCodePM_NO_AVAILABLE_DN, Message: err.Error()})
@@ -41,6 +43,9 @@ func (h *Handler) DeleteStreams(req *protocol.DeleteStreamsRequest, resp *protoc
 
 	streamIDs := make([]int64, 0, len(req.Streams))
 	for _, stream := range req.Streams {
+		if stream == nil {
+			continue
+		}
 		streamIDs = append(streamIDs, stream.StreamId)
 	}
 	streams, err := h.c.DeleteStreams(ctx, streamIDs)
@@ -66,14 +71,15 @@ func (h *Handler) UpdateStreams(req *protocol.UpdateStreamsRequest, resp *protoc
 		return
 	}
 
-	streams, err := h.c.UpdateStreams(ctx, req.Streams)
+	streams := typeutil.FilterZero[*rpcfb.StreamT](req.Streams)
+	upStreams, err := h.c.UpdateStreams(ctx, streams)
 	if err != nil {
 		resp.Error(&rpcfb.StatusT{Code: rpcfb.ErrorCodePM_INTERNAL_SERVER_ERROR, Message: err.Error()})
 		return
 	}
 
-	resp.UpdateResponses = make([]*rpcfb.UpdateStreamResultT, 0, len(streams))
-	for _, stream := range streams {
+	resp.UpdateResponses = make([]*rpcfb.UpdateStreamResultT, 0, len(upStreams))
+	for _, stream := range upStreams {
 		resp.UpdateResponses = append(resp.UpdateResponses, &rpcfb.UpdateStreamResultT{
 			Stream: stream,
 			Status: &rpcfb.StatusT{Code: rpcfb.ErrorCodeOK},

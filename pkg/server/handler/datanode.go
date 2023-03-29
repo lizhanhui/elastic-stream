@@ -19,7 +19,7 @@ func (h *Handler) Heartbeat(req *protocol.HeartbeatRequest, resp *protocol.Heart
 		return
 	}
 
-	if req.ClientRole == rpcfb.ClientRoleCLIENT_ROLE_DATA_NODE {
+	if req.ClientRole == rpcfb.ClientRoleCLIENT_ROLE_DATA_NODE && req.DataNode != nil {
 		err := h.c.Heartbeat(ctx, req.DataNode)
 		if err != nil {
 			resp.Error(&rpcfb.StatusT{Code: rpcfb.ErrorCodePM_INTERNAL_SERVER_ERROR, Message: err.Error()})

@@ -106,7 +106,7 @@ func (c *RaftCluster) Start(s Server) error {
 		return errors.Wrap(err, "load cluster info")
 	}
 
-	// TODO: start raft cluster
+	// start other background goroutines
 
 	if c.running.Swap(true) {
 		logger.Warn("raft cluster is already running")
@@ -145,7 +145,7 @@ func (c *RaftCluster) Stop() error {
 
 	logger.Info("stopping cluster")
 	c.runningCancel()
-	// TODO: stop raft cluster
+
 	logger.Info("cluster stopped")
 	return nil
 }
