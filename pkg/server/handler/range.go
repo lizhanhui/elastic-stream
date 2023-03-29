@@ -68,7 +68,7 @@ func (h *Handler) SealRanges(req *protocol.SealRangesRequest, resp *protocol.Sea
 					result.Status = &rpcfb.StatusT{Code: rpcfb.ErrorCodePM_INTERNAL_SERVER_ERROR, Message: err.Error()}
 				}
 			} else {
-				logger.Info("range sealed", zap.Int64("stream-id", rangeID.StreamId), zap.Int32("range-index", rangeID.RangeIndex))
+				logger.Info("range sealed", zap.Int64("stream-id", rangeID.StreamId), zap.Int32("range-index", rangeID.RangeIndex), zap.Int64("range-end-offset", r.EndOffset))
 				result.Status = &rpcfb.StatusT{Code: rpcfb.ErrorCodeOK}
 			}
 			ch <- result
