@@ -11,9 +11,8 @@ mod heartbeat;
 mod ping;
 mod seal_range;
 mod util;
-use crate::workspace::stream_manager::StreamManager;
-
 use self::cmd::Command;
+use crate::stream_manager::StreamManager;
 use codec::frame::Frame;
 use slog::{debug, trace, warn, Logger};
 use std::{cell::RefCell, rc::Rc};

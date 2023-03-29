@@ -7,7 +7,7 @@ pub mod handler;
 mod node;
 mod node_config;
 pub mod server;
-mod workspace;
+pub(crate) mod stream_manager;
 
 pub use crate::cfg::server_config::ServerConfig;
 

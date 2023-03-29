@@ -5,7 +5,7 @@ use protocol::rpc::header::ErrorCode;
 use slog::Logger;
 use store::ElasticStore;
 
-use crate::workspace::stream_manager::StreamManager;
+use crate::stream_manager::StreamManager;
 
 use super::{
     append::Append, describe_range::DescribeRange, fetch::Fetch, heartbeat::Heartbeat, ping::Ping,

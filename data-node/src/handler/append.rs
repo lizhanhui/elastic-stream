@@ -15,7 +15,7 @@ use store::{
     Store,
 };
 
-use crate::workspace::stream_manager::StreamManager;
+use crate::stream_manager::StreamManager;
 
 use super::util::{
     finish_response_builder, root_as_rpc_request, system_error_frame_bytes, MIN_BUFFER_SIZE,

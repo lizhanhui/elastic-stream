@@ -1,9 +1,8 @@
+use crate::stream_manager::StreamManager;
 use codec::frame::Frame;
 use slog::{trace, Logger};
 use std::{cell::RefCell, rc::Rc};
 use store::ElasticStore;
-
-use crate::workspace::stream_manager::StreamManager;
 
 /// Process Ping request
 ///

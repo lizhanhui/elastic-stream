@@ -8,7 +8,7 @@ use model::{
 use slog::{error, info, trace, Logger};
 use store::{ElasticStore, Store};
 
-use crate::{error::ServiceError, workspace::append_window::AppendWindow};
+use crate::{error::ServiceError, stream_manager::append_window::AppendWindow};
 
 use super::fetcher::Fetcher;
 
@@ -318,7 +318,7 @@ mod tests {
     use slog::trace;
     use tokio::sync::{mpsc, oneshot};
 
-    use crate::workspace::stream_manager::{fetcher::Fetcher, StreamManager};
+    use crate::stream_manager::{fetcher::Fetcher, StreamManager};
     const TOTAL: i32 = 16;
 
     async fn create_fetcher() -> Fetcher {

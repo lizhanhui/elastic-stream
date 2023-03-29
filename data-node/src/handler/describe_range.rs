@@ -8,7 +8,7 @@ use slog::{warn, Logger};
 use std::{cell::RefCell, rc::Rc};
 use store::ElasticStore;
 
-use crate::workspace::stream_manager::StreamManager;
+use crate::stream_manager::StreamManager;
 
 use super::util::root_as_rpc_request;
 

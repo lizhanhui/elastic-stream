@@ -9,7 +9,7 @@ use transport::connection::Connection;
 use crate::{
     handler::ServerCall,
     node_config::NodeConfig,
-    workspace::stream_manager::{fetcher::FetchRangeTask, StreamManager},
+    stream_manager::{fetcher::FetchRangeTask, StreamManager},
 };
 
 pub(crate) struct Node {
