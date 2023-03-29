@@ -14,13 +14,13 @@ import (
 func TestListRanges(t *testing.T) {
 	re := require.New(t)
 
-	sbp, closeFunc := startSbp(t, nil)
+	h, closeFunc := startSbpHandler(t, nil)
 	defer closeFunc()
 
-	preHeartbeat(t, sbp, 0)
-	preHeartbeat(t, sbp, 1)
-	preHeartbeat(t, sbp, 2)
-	preCreateStreams(t, sbp, 3, 3)
+	preHeartbeat(t, h, 0)
+	preHeartbeat(t, h, 1)
+	preHeartbeat(t, h, 2)
+	preCreateStreams(t, h, 3, 3)
 
 	// test list range by stream id
 	req := &protocol.ListRangesRequest{ListRangesRequestT: rpcfb.ListRangesRequestT{
@@ -31,7 +31,7 @@ func TestListRanges(t *testing.T) {
 		},
 	}}
 	resp := &protocol.ListRangesResponse{}
-	sbp.ListRanges(req, resp)
+	h.ListRanges(req, resp)
 
 	re.Equal(rpcfb.ErrorCodeOK, resp.Status.Code)
 	re.Len(resp.ListResponses, 3)
@@ -50,7 +50,7 @@ func TestListRanges(t *testing.T) {
 		},
 	}}
 	resp = &protocol.ListRangesResponse{}
-	sbp.ListRanges(req, resp)
+	h.ListRanges(req, resp)
 
 	re.Equal(rpcfb.ErrorCodeOK, resp.Status.Code)
 	re.Len(resp.ListResponses, 3)
@@ -69,7 +69,7 @@ func TestListRanges(t *testing.T) {
 		},
 	}}
 	resp = &protocol.ListRangesResponse{}
-	sbp.ListRanges(req, resp)
+	h.ListRanges(req, resp)
 
 	re.Equal(rpcfb.ErrorCodeOK, resp.Status.Code)
 	re.Len(resp.ListResponses, 3)
@@ -137,19 +137,19 @@ func TestSealRanges(t *testing.T) {
 			t.Parallel()
 			re := require.New(t)
 
-			sbp, closeFunc := startSbp(t, mockSbpClient{tt.endOffsetF})
+			h, closeFunc := startSbpHandler(t, mockSbpClient{tt.endOffsetF})
 			defer closeFunc()
 
-			preHeartbeat(t, sbp, 0)
-			preHeartbeat(t, sbp, 1)
-			preHeartbeat(t, sbp, 2)
-			preCreateStreams(t, sbp, 1, 3)
+			preHeartbeat(t, h, 0)
+			preHeartbeat(t, h, 1)
+			preHeartbeat(t, h, 2)
+			preCreateStreams(t, h, 1, 3)
 
 			req := &protocol.SealRangesRequest{SealRangesRequestT: rpcfb.SealRangesRequestT{
 				Ranges: []*rpcfb.RangeIdT{{StreamId: 0, RangeIndex: 0}},
 			}}
 			resp := &protocol.SealRangesResponse{}
-			sbp.SealRanges(req, resp)
+			h.SealRanges(req, resp)
 
 			re.Equal(rpcfb.ErrorCodeOK, resp.Status.Code)
 			re.Len(resp.SealResponses, 1)
@@ -167,7 +167,7 @@ func TestSealRanges(t *testing.T) {
 				},
 			}}
 			lResp := &protocol.ListRangesResponse{}
-			sbp.ListRanges(lReq, lResp)
+			h.ListRanges(lReq, lResp)
 			re.Equal(rpcfb.ErrorCodeOK, lResp.Status.Code)
 			re.Len(lResp.ListResponses, 1)
 			re.Equal(rpcfb.ErrorCodeOK, lResp.ListResponses[0].Status.Code)
@@ -187,7 +187,7 @@ func TestSealRanges(t *testing.T) {
 	}
 }
 
-func preHeartbeat(tb testing.TB, sbp *Sbp, nodeID int32) {
+func preHeartbeat(tb testing.TB, h *Handler, nodeID int32) {
 	re := require.New(tb)
 
 	req := &protocol.HeartbeatRequest{HeartbeatRequestT: rpcfb.HeartbeatRequestT{
@@ -197,12 +197,12 @@ func preHeartbeat(tb testing.TB, sbp *Sbp, nodeID int32) {
 			AdvertiseAddr: fmt.Sprintf("addr-%d", nodeID),
 		}}}
 	resp := &protocol.HeartbeatResponse{}
-	sbp.Heartbeat(req, resp)
+	h.Heartbeat(req, resp)
 
 	re.Equal(resp.Status.Code, rpcfb.ErrorCodeOK)
 }
 
-func preCreateStreams(tb testing.TB, sbp *Sbp, num int, replicaNum int8) {
+func preCreateStreams(tb testing.TB, h *Handler, num int, replicaNum int8) {
 	re := require.New(tb)
 
 	req := &protocol.CreateStreamsRequest{CreateStreamsRequestT: rpcfb.CreateStreamsRequestT{
@@ -212,7 +212,7 @@ func preCreateStreams(tb testing.TB, sbp *Sbp, num int, replicaNum int8) {
 		req.Streams[i] = &rpcfb.StreamT{ReplicaNums: replicaNum}
 	}
 	resp := &protocol.CreateStreamsResponse{}
-	sbp.CreateStreams(req, resp)
+	h.CreateStreams(req, resp)
 
 	re.Equal(resp.Status.Code, rpcfb.ErrorCodeOK)
 }

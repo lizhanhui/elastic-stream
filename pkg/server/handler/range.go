@@ -8,24 +8,27 @@ import (
 	"github.com/AutoMQ/placement-manager/pkg/sbp/protocol"
 	"github.com/AutoMQ/placement-manager/pkg/server/cluster"
 	"github.com/AutoMQ/placement-manager/pkg/util/traceutil"
+	"github.com/AutoMQ/placement-manager/pkg/util/typeutil"
 )
 
-func (s *Sbp) ListRanges(req *protocol.ListRangesRequest, resp *protocol.ListRangesResponse) {
+func (h *Handler) ListRanges(req *protocol.ListRangesRequest, resp *protocol.ListRangesResponse) {
 	ctx := req.Context()
-	if !s.c.IsLeader() {
-		s.notLeaderError(ctx, resp)
-		return
-	}
 
-	listResponses := make([]*rpcfb.ListRangesResultT, 0, len(req.RangeCriteria))
-	for _, owner := range req.RangeCriteria {
-		ranges, err := s.c.ListRanges(ctx, owner)
+	criteriaList := typeutil.FilterZero[*rpcfb.RangeCriteriaT](req.RangeCriteria)
+	listResponses := make([]*rpcfb.ListRangesResultT, 0, len(criteriaList))
+	for _, owner := range criteriaList {
+		ranges, err := h.c.ListRanges(ctx, owner)
 
 		result := &rpcfb.ListRangesResultT{
 			RangeCriteria: owner,
 		}
 		if err != nil {
-			result.Status = &rpcfb.StatusT{Code: rpcfb.ErrorCodePM_INTERNAL_SERVER_ERROR, Message: err.Error()}
+			switch {
+			case errors.Is(err, cluster.ErrNotLeader):
+				result.Status = &rpcfb.StatusT{Code: rpcfb.ErrorCodePM_NOT_LEADER, Message: "not leader", Detail: h.pmInfo()}
+			default:
+				result.Status = &rpcfb.StatusT{Code: rpcfb.ErrorCodePM_INTERNAL_SERVER_ERROR, Message: err.Error()}
+			}
 		} else {
 			result.Status = &rpcfb.StatusT{Code: rpcfb.ErrorCodeOK}
 			result.Ranges = ranges
@@ -37,38 +40,43 @@ func (s *Sbp) ListRanges(req *protocol.ListRangesRequest, resp *protocol.ListRan
 	resp.OK()
 }
 
-func (s *Sbp) SealRanges(req *protocol.SealRangesRequest, resp *protocol.SealRangesResponse) {
+func (h *Handler) SealRanges(req *protocol.SealRangesRequest, resp *protocol.SealRangesResponse) {
 	ctx := req.Context()
-	if !s.c.IsLeader() {
-		s.notLeaderError(ctx, resp)
-		return
-	}
-	logger := s.lg.With(traceutil.TraceLogField(ctx))
+	logger := h.lg.With(traceutil.TraceLogField(ctx))
 
-	sealResponses := make([]*rpcfb.SealRangesResultT, 0, len(req.Ranges))
-	for _, rangeID := range req.Ranges {
-		r, err := s.c.SealRange(ctx, rangeID)
+	ranges := typeutil.FilterZero[*rpcfb.RangeIdT](req.Ranges)
+	sealResponses := make([]*rpcfb.SealRangesResultT, 0, len(ranges))
+	ch := make(chan *rpcfb.SealRangesResultT)
 
-		result := &rpcfb.SealRangesResultT{
-			Range: r,
-		}
-		if err != nil {
-			logger.Error("failed to seal range", zap.Int64("stream-id", rangeID.StreamId), zap.Int32("range-index", rangeID.RangeIndex), zap.Error(err))
-			switch {
-			case errors.Is(err, cluster.ErrRangeNotFound):
-				result.Status = &rpcfb.StatusT{Code: rpcfb.ErrorCodePM_SEAL_RANGE_NOT_FOUND, Message: err.Error()}
-			case errors.Is(err, cluster.ErrNoDataNodeResponded):
-				result.Status = &rpcfb.StatusT{Code: rpcfb.ErrorCodePM_SEAL_RANGE_NO_DN_RESPONDED, Message: err.Error()}
-			case errors.Is(err, cluster.ErrNotEnoughDataNodes):
-				result.Status = &rpcfb.StatusT{Code: rpcfb.ErrorCodePM_NO_AVAILABLE_DN, Message: err.Error()}
-			default:
-				result.Status = &rpcfb.StatusT{Code: rpcfb.ErrorCodePM_INTERNAL_SERVER_ERROR, Message: err.Error()}
+	for _, rangeID := range ranges {
+		go func(rangeID *rpcfb.RangeIdT) {
+			r, err := h.c.SealRange(ctx, rangeID)
+
+			result := &rpcfb.SealRangesResultT{
+				Range: r,
 			}
-		} else {
-			result.Status = &rpcfb.StatusT{Code: rpcfb.ErrorCodeOK}
-		}
+			if err != nil {
+				logger.Error("failed to seal range", zap.Int64("stream-id", rangeID.StreamId), zap.Int32("range-index", rangeID.RangeIndex), zap.Error(err))
+				switch {
+				case errors.Is(err, cluster.ErrRangeNotFound):
+					result.Status = &rpcfb.StatusT{Code: rpcfb.ErrorCodePM_SEAL_RANGE_NOT_FOUND, Message: err.Error()}
+				case errors.Is(err, cluster.ErrNoDataNodeResponded):
+					result.Status = &rpcfb.StatusT{Code: rpcfb.ErrorCodePM_SEAL_RANGE_NO_DN_RESPONDED, Message: err.Error()}
+				case errors.Is(err, cluster.ErrNotEnoughDataNodes):
+					result.Status = &rpcfb.StatusT{Code: rpcfb.ErrorCodePM_NO_AVAILABLE_DN, Message: err.Error()}
+				default:
+					result.Status = &rpcfb.StatusT{Code: rpcfb.ErrorCodePM_INTERNAL_SERVER_ERROR, Message: err.Error()}
+				}
+			} else {
+				logger.Info("range sealed", zap.Int64("stream-id", rangeID.StreamId), zap.Int32("range-index", rangeID.RangeIndex))
+				result.Status = &rpcfb.StatusT{Code: rpcfb.ErrorCodeOK}
+			}
+			ch <- result
+		}(rangeID)
+	}
 
-		sealResponses = append(sealResponses, result)
+	for range ranges {
+		sealResponses = append(sealResponses, <-ch)
 	}
 	resp.SealResponses = sealResponses
 	resp.OK()

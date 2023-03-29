@@ -164,7 +164,7 @@ func (e *EtcdAllocator) growLocked(ctx context.Context, growth uint64) error {
 		// Currently, there is only one allocator on each key.
 		// So if the transaction fails, it means the EtcdAllocatorParam.CmpFunc is not satisfied. And there is no need to retry.
 		// If we have multiple allocators on the same key, we need to add a retry mechanism.
-		return ErrTxnFailed
+		return errors.Wrap(ErrTxnFailed, "update id")
 	}
 
 	e.end = end
@@ -188,7 +188,7 @@ func (e *EtcdAllocator) Reset(ctx context.Context) error {
 		return errors.Wrap(err, "reset etcd id allocator")
 	}
 	if !resp.Succeeded {
-		return ErrTxnFailed
+		return errors.Wrap(ErrTxnFailed, "reset etcd id allocator")
 	}
 
 	e.base = e.start

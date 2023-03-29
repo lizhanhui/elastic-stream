@@ -83,6 +83,8 @@ HTTPS_PROXY ?=
 # Because we store the module cache locally.
 GOFLAGS := $(GOFLAGS) -modcacherw
 
+GO_TEST_FLAGS ?=
+
 # If you want to build all binaries, see the 'all-build' rule.
 # If you want to build all containers, see the 'all-container' rule.
 # If you want to build AND push all containers, see the 'all-push' rule.
@@ -327,6 +329,7 @@ test: | $(BUILD_DIRS)
 	    --env GOPROXY="$(GOPROXY)"                              \
 	    --env HTTP_PROXY="$(HTTP_PROXY)"                        \
 	    --env HTTPS_PROXY="$(HTTPS_PROXY)"                      \
+	    --env GO_TEST_FLAGS="$(GO_TEST_FLAGS)"                  \
 	    $(BUILD_IMAGE)                                          \
 	    ./build/test.sh ./...
 

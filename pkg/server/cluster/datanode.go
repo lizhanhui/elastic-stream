@@ -8,6 +8,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/AutoMQ/placement-manager/api/rpcfb/rpcfb"
+	"github.com/AutoMQ/placement-manager/pkg/server/storage/kv"
 	"github.com/AutoMQ/placement-manager/pkg/util/traceutil"
 )
 
@@ -16,7 +17,13 @@ var (
 	ErrNotEnoughDataNodes = errors.New("not enough data nodes")
 )
 
+type DataNode interface {
+	Heartbeat(ctx context.Context, node *rpcfb.DataNodeT) error
+	AllocateID(ctx context.Context) (int32, error)
+}
+
 // Heartbeat updates DataNode's last active time, and save it to storage if its info changed.
+// It returns ErrNotLeader if the transaction failed.
 func (c *RaftCluster) Heartbeat(ctx context.Context, node *rpcfb.DataNodeT) error {
 	logger := c.lg.With(traceutil.TraceLogField(ctx))
 
@@ -26,18 +33,26 @@ func (c *RaftCluster) Heartbeat(ctx context.Context, node *rpcfb.DataNodeT) erro
 		_, err := c.storage.SaveDataNode(ctx, node)
 		logger.Info("finish saving data node", zap.Int32("node-id", node.NodeId), zap.Error(err))
 		if err != nil {
+			if errors.Is(err, kv.ErrTxnFailed) {
+				return ErrNotLeader
+			}
 			return err
 		}
 	}
 	return nil
 }
 
+// AllocateID allocates a data node id from the id allocator.
+// It returns ErrNotLeader if the transaction failed.
 func (c *RaftCluster) AllocateID(ctx context.Context) (int32, error) {
 	logger := c.lg.With(traceutil.TraceLogField(ctx))
 
 	id, err := c.dnAlloc.Alloc(ctx)
 	if err != nil {
 		logger.Error("failed to allocate data node id", zap.Error(err))
+		if errors.Is(err, kv.ErrTxnFailed) {
+			err = ErrNotLeader
+		}
 		return -1, err
 	}
 
@@ -48,6 +63,9 @@ func (c *RaftCluster) AllocateID(ctx context.Context) (int32, error) {
 // Only DataNodeT.NodeId is filled in the returned ReplicaNodeT.
 // It returns ErrNotEnoughDataNodes if there are not enough data nodes to allocate.
 func (c *RaftCluster) chooseDataNodes(cnt int8) ([]*rpcfb.ReplicaNodeT, error) {
+	if cnt <= 0 {
+		return nil, nil
+	}
 	if int(cnt) > c.cache.DataNodeCount() {
 		return nil, errors.Wrapf(ErrNotEnoughDataNodes, "required %d, available %d", cnt, c.cache.DataNodeCount())
 	}
@@ -72,10 +90,16 @@ func (c *RaftCluster) chooseDataNodes(cnt int8) ([]*rpcfb.ReplicaNodeT, error) {
 }
 
 func (c *RaftCluster) eraseDataNodeInfo(node *rpcfb.DataNodeT) {
+	if node == nil {
+		return
+	}
 	node.AdvertiseAddr = ""
 }
 
 func (c *RaftCluster) fillDataNodeInfo(node *rpcfb.DataNodeT) {
+	if node == nil {
+		return
+	}
 	n := c.cache.DataNode(node.NodeId)
 	if n == nil {
 		c.lg.Warn("data node not found", zap.Int32("node-id", node.NodeId))

@@ -7,7 +7,6 @@ require (
 	github.com/brianvoe/gofakeit/v6 v6.20.2
 	github.com/bytedance/gopkg v0.0.0-20230224073017-0b6876860a2f
 	github.com/cakturk/go-netstat v0.0.0-20200220111822-e5b49efee7a5
-	github.com/gogo/protobuf v1.3.2
 	github.com/golang/protobuf v1.5.2
 	github.com/google/flatbuffers v23.1.21+incompatible
 	github.com/google/uuid v1.3.0
@@ -37,6 +36,7 @@ require (
 	github.com/fsnotify/fsnotify v1.6.0 // indirect
 	github.com/go-logr/logr v1.2.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
+	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang-jwt/jwt/v4 v4.4.3 // indirect
 	github.com/google/btree v1.1.2 // indirect
 	github.com/gorilla/websocket v1.5.0 // indirect

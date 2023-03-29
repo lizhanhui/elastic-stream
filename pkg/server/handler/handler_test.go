@@ -110,7 +110,7 @@ func (m mockSbpClient) SealRanges(req *protocol.SealRangesRequest, addr sbpClien
 	return resp, nil
 }
 
-func startSbp(tb testing.TB, sbpClient sbpClient.Client) (*Sbp, func()) {
+func startSbpHandler(tb testing.TB, sbpClient sbpClient.Client) (*Handler, func()) {
 	re := require.New(tb)
 
 	if sbpClient == nil {
@@ -123,7 +123,7 @@ func startSbp(tb testing.TB, sbpClient sbpClient.Client) (*Sbp, func()) {
 	err := c.Start(&mockServer{c: client})
 	re.NoError(err)
 
-	sbp := NewSbp(c, zap.NewNop())
+	h := NewHandler(c, zap.NewNop())
 
-	return sbp, func() { _ = c.Stop(); closeFunc() }
+	return h, func() { _ = c.Stop(); closeFunc() }
 }

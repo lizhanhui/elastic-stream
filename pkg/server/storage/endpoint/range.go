@@ -241,8 +241,8 @@ func (e *Endpoint) GetRangeIDsByDataNodeAndStream(ctx context.Context, streamID 
 	startKey := rangePathOnDataNode(dataNodeID, streamID, MinRangeIndex)
 	kvs, err := e.GetByRange(ctx, kv.Range{StartKey: startKey, EndKey: e.endRangePathOnDataNodeInStream(dataNodeID, streamID)}, 0, false)
 	if err != nil {
-		logger.Error("failed to get range ids by data node an stream", zap.Error(err))
-		return nil, errors.Wrap(err, "get range ids by data node an stream")
+		logger.Error("failed to get range ids by data node and stream", zap.Error(err))
+		return nil, errors.Wrap(err, "get range ids by data node and stream")
 	}
 
 	rangeIDs := make([]*rpcfb.RangeIdT, 0, len(kvs))
