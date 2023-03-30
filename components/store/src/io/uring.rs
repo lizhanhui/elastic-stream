@@ -453,7 +453,6 @@ impl IO {
             .flat_map(|buf| {
                 let ptr = buf.as_ptr();
                 if let Some(segment) = self.wal.segment_file_of(buf.wal_offset) {
-                    debug_assert_eq!(Status::ReadWrite, segment.status);
                     if let Some(sd) = segment.sd.as_ref() {
                         debug_assert!(buf.wal_offset >= segment.wal_offset);
                         debug_assert!(

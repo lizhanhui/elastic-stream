@@ -277,6 +277,9 @@ impl LogSegment {
         writer.write(&buf[..])?;
 
         self.written = self.size;
+
+        // After the footer is written, the log segment is read-only.
+        self.status = Status::Read;
         Ok(self.wal_offset + self.written)
     }
 
