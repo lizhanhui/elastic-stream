@@ -54,13 +54,15 @@ MAKEFLAGS += --no-builtin-rules
 MAKEFLAGS += --warn-undefined-variables
 .SUFFIXES:
 
+HOST_OS := $(shell go env GOOS)
+HOST_ARCH := $(shell go env GOARCH)
 # Used internally.  Users should pass GOOS and/or GOARCH.
-OS := $(if $(GOOS),$(GOOS),$(shell go env GOOS))
-ARCH := $(if $(GOARCH),$(GOARCH),$(shell go env GOARCH))
+OS := $(if $(GOOS),$(GOOS),$(HOST_OS))
+ARCH := $(if $(GOARCH),$(GOARCH),$(HOST_ARCH))
 
 TAG := $(VERSION)__$(OS)_$(ARCH)
 
-GO_VERSION := 1.19
+GO_VERSION := 1.20
 BUILD_IMAGE := golang:$(GO_VERSION)-alpine
 
 BIN_EXTENSION :=
@@ -217,14 +219,48 @@ shell: | $(BUILD_DIRS)
 LICENSES = .licenses
 
 $(LICENSES): | $(BUILD_DIRS)
-	pushd tool >/dev/null;                       \
-	  unset GOOS; unset GOARCH;                  \
-	  export GOBIN=$$(pwd)/../bin/tool;          \
-	  go install github.com/google/go-licenses;  \
-	  popd >/dev/null
+	# Don't assume that `go` is available locally.
+	docker run                                 \
+	    -i                                     \
+	    --rm                                   \
+	    -u $$(id -u):$$(id -g)                 \
+	    -v $$(pwd)/tool:/src                   \
+	    -w /src                                \
+	    -v $$(pwd)/bin/tool:/go/bin            \
+	    -v $$(pwd)/.go/cache:/.cache           \
+	    --env GOCACHE="/.cache/gocache"        \
+	    --env GOMODCACHE="/.cache/gomodcache"  \
+	    --env CGO_ENABLED=0                    \
+	    --env GOPROXY="$(GOPROXY)"             \
+	    --env HTTP_PROXY="$(HTTP_PROXY)"       \
+	    --env HTTPS_PROXY="$(HTTPS_PROXY)"     \
+	    $(BUILD_IMAGE)                         \
+	    go install github.com/google/go-licenses
+	# The tool runs in a container because it execs `go`, which doesn't
+	# play nicely with CI.  The tool also wants its output dir to not
+	# exist, so we can't just volume mount $(LICENSES).
+	rm -rf $(LICENSES).tmp
+	mkdir $(LICENSES).tmp
+	docker run                                 \
+	    -i                                     \
+	    --rm                                   \
+	    -u $$(id -u):$$(id -g)                 \
+	    -v $$(pwd)/$(LICENSES).tmp:/output     \
+	    -v $$(pwd):/src                        \
+	    -w /src                                \
+	    -v $$(pwd)/bin/tool:/go/bin            \
+	    -v $$(pwd)/.go/cache:/.cache           \
+	    --env GOCACHE="/.cache/gocache"        \
+	    --env GOMODCACHE="/.cache/gomodcache"  \
+	    --env HTTP_PROXY="$(HTTP_PROXY)"       \
+	    --env HTTPS_PROXY="$(HTTPS_PROXY)"     \
+	    $(BUILD_IMAGE)                         \
+	    go-licenses save ./... --save_path=/output/licenses
 	rm -rf $(LICENSES)
-	./bin/tool/go-licenses save ./... --save_path=$(LICENSES)
-	chmod -R a+rx $(LICENSES)
+	mv $(LICENSES).tmp/licenses $(LICENSES)
+	rmdir $(LICENSES).tmp
+	find $(LICENSES) -type d | xargs chmod 0755
+	find $(LICENSES) -type f | xargs chmod 0644
 
 CONTAINER_DOTFILES = $(foreach bin,$(BINS),.container-$(subst /,_,$(REGISTRY)/$(bin))-$(TAG))
 
@@ -291,13 +327,28 @@ push: container
 # This depends on github.com/estesp/manifest-tool.
 manifest-list: # @HELP builds a manifest list of containers for all platforms
 manifest-list: all-push
-	pushd tool >/dev/null;                                              \
-	  export GOBIN=$$(pwd)/../bin/tool;                                 \
-	  go install github.com/estesp/manifest-tool/v2/cmd/manifest-tool;  \
-	  popd >/dev/null
+	# Don't assume that `go` is available locally.
+	docker run                                 \
+	    -i                                     \
+	    --rm                                   \
+	    -u $$(id -u):$$(id -g)                 \
+	    -v $$(pwd)/tool:/src                   \
+	    -w /src                                \
+	    -v $$(pwd)/bin/tool:/go/bin            \
+	    -v $$(pwd)/.go/cache:/.cache           \
+	    --env GOCACHE="/.cache/gocache"        \
+	    --env GOMODCACHE="/.cache/gomodcache"  \
+	    --env GOARCH="$(HOST_ARCH)"            \
+	    --env GOOS="$(HOST_OS)"                \
+	    --env CGO_ENABLED=0                    \
+	    --env GOPROXY="$(GOPROXY)"             \
+	    --env HTTP_PROXY="$(HTTP_PROXY)"       \
+	    --env HTTPS_PROXY="$(HTTPS_PROXY)"     \
+	    $(BUILD_IMAGE)                         \
+	    go install github.com/estesp/manifest-tool/v2/cmd/manifest-tool
 	for bin in $(BINS); do                                                     \
 	    platforms=$$(echo $(ALL_PLATFORMS) | sed 's/ /,/g');                   \
-	    bin/tool/manifest-tool                                                 \
+	    bin/tool/$(HOST_OS)_$(HOST_ARCH)/manifest-tool                         \
 	        push from-args                                                     \
 	        --platforms "$$platforms"                                          \
 	        --template $(REGISTRY)/$$bin:$(VERSION)__OS_ARCH                   \
