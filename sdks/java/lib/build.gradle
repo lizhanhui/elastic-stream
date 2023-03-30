@@ -80,9 +80,28 @@ protobuf {
     }
 }
 
-tasks.named('test') {
+test {
     // Use JUnit Platform for unit tests.
     useJUnitPlatform()
+    // Filter out integration tests.
+    filter {
+        excludeTestsMatching "${project.group}.integration.*"
+    }
+}
+
+task integrationTest(type: Test, dependsOn: compileJava) {
+    description = 'Runs integration tests.'
+    group = 'verification'
+
+    useJUnitPlatform()
+    // Filter in integration tests.
+    filter {
+        includeTestsMatching "${project.group}.integration.*"
+    }
+    // Pass the system Properties to the forked JVM
+    options {
+        systemProperties(System.getProperties())
+    }
 }
 
 tasks.named('sourcesJar') {
