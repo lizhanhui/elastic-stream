@@ -22,4 +22,6 @@ jobs:
     if: ${{ needs.skip_check.outputs.should_skip != 'true' }}
     uses: ./.github/workflows/ci-crossbuild.yaml
   test:
+    needs: skip_check
+    if: ${{ needs.skip_check.outputs.should_skip != 'true' }}
     uses: ./.github/workflows/ci-tests.yaml
