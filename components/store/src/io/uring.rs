@@ -407,6 +407,9 @@ impl IO {
                         }
                     };
 
+                    // Calculate the relative position of the read IO in the segment file.
+                    let read_from = read_offset - segment.wal_offset;
+
                     if let Some(sd) = segment.sd.as_ref() {
                         // The pointer will be set into user_data of uring.
                         // When the uring io completes, the pointer will be used to retrieve the `Context`.
@@ -418,7 +421,7 @@ impl IO {
                         );
 
                         let sqe = opcode::Read::new(types::Fd(sd.fd), ptr, read_len)
-                            .offset(read_offset as i64)
+                            .offset(read_from as i64)
                             .build()
                             .user_data(context as u64);
 
@@ -829,9 +832,10 @@ impl IO {
                     send_back.push(task);
                 }
                 inflight_read_tasks.extend(send_back);
-
-                self.inflight_read_tasks
-                    .insert(wal_offset, inflight_read_tasks);
+                if !inflight_read_tasks.is_empty() {
+                    self.inflight_read_tasks
+                        .insert(wal_offset, inflight_read_tasks);
+                }
             }
         });
     }
