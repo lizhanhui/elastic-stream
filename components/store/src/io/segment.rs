@@ -274,7 +274,7 @@ impl LogSegment {
         let crc: u32 = util::crc32::crc32(&buf[..]);
         writer.write_u32(crc)?;
         writer.write_u32(length_type)?;
-        writer.write(&buf[..=padding_length as usize])?;
+        writer.write(&buf[..])?;
 
         self.written = self.size;
         Ok(self.wal_offset + self.written)
