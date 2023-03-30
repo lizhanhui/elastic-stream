@@ -356,13 +356,14 @@ impl Wal {
         }
 
         // If the available cache size is less than the `min_free_bytes` after reclaiming, increase the reclaim size.
-        let current_free_bytes = self.wal_cache.max_cache_size - cache_size;
-        if current_free_bytes + to_reclaim < min_free_bytes as u64 {
-            to_reclaim = min_free_bytes as u64 - current_free_bytes;
+        let current_free_bytes = self.wal_cache.max_cache_size as i64 - cache_size as i64;
+
+        if current_free_bytes + (to_reclaim as i64) < min_free_bytes as i64 {
+            to_reclaim = (min_free_bytes as i64 - current_free_bytes) as u64;
         }
 
         if to_reclaim == 0 {
-            return (0, current_free_bytes);
+            return (0, current_free_bytes as u64);
         }
 
         // Reclaim the cache entries from the segments.
@@ -420,7 +421,7 @@ impl Wal {
         }
 
         self.wal_cache.current_cache_size = cache_size - reclaimed;
-        (reclaimed, current_free_bytes + reclaimed)
+        (reclaimed, (current_free_bytes + reclaimed as i64) as u64)
     }
 
     fn alloc_segment(&mut self) -> Result<LogSegment, StoreError> {
@@ -906,7 +907,11 @@ mod tests {
             // Fill the block cache of the segment, so that it can be reclaimed
             // Each segment occupies 50% of the cache, and each cache entry occupies 1/8 of the cache
             let cache_size_of_single_entry = cache_size_of_single_segment / 8;
-            let num_entries = cache_size_of_single_segment / cache_size_of_single_entry;
+            let mut num_entries = cache_size_of_single_segment / cache_size_of_single_entry;
+
+            // +1 to make sure the cache is full and the current cache size is over the max cache size,
+            // to cover the edge case
+            num_entries += 1;
             (0..num_entries).for_each(|index| {
                 let buf = Arc::new(
                     AlignedBuf::new(

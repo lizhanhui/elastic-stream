@@ -1,4 +1,5 @@
 use bytes::Bytes;
+use derivative::Derivative;
 use tokio::sync::oneshot;
 
 use crate::{
@@ -30,7 +31,8 @@ pub(crate) struct SingleFetchResult {
     pub(crate) payload: Vec<BufSlice>,
 }
 
-#[derive(Debug)]
+#[derive(Derivative)]
+#[derivative(Debug)]
 pub(crate) struct WriteTask {
     /// Stream ID of the record.
     pub(crate) stream_id: i64,
@@ -41,6 +43,7 @@ pub(crate) struct WriteTask {
     ///
     /// Note: An application `Record` may be splitted into multiple WAL blocks/records,
     /// with enhancing digest/checksum and integrity guarantee.
+    #[derivative(Debug = "ignore")]
     pub(crate) buffer: Bytes,
 
     /// Number of bytes written to the WAL.
