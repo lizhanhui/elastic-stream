@@ -1,6 +1,6 @@
 module github.com/AutoMQ/placement-manager/tools
 
-go 1.19
+go 1.20
 
 require (
 	github.com/estesp/manifest-tool/v2 v2.0.6
