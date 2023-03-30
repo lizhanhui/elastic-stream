@@ -4,7 +4,6 @@ use crate::index::record_handle::RecordHandle;
 use crate::io::buf::{AlignedBufReader, AlignedBufWriter};
 use crate::io::context::Context;
 use crate::io::options::Options;
-use crate::io::segment::Status;
 use crate::io::task::IoTask;
 use crate::io::task::WriteTask;
 use crate::io::wal::Wal;

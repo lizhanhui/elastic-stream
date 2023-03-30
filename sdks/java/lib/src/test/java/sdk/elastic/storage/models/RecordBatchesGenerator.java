@@ -10,14 +10,25 @@ import static sdk.elastic.storage.models.HeaderKey.CreatedAt;
 import static sdk.elastic.storage.models.HeaderKey.Tag;
 
 public class RecordBatchesGenerator {
+    public static RecordBatch generateOneRecordBatchWithNoProperties(long streamId) {
+        List<Record> recordList = generateRecordList(streamId, 0L);
+        return new RecordBatch(streamId, recordList);
+    }
+    public static RecordBatch generateOneRecordBatchWithNoProperties(long streamId, long baseOffset) {
+        List<Record> recordList = generateRecordList(streamId, baseOffset);
+        return new RecordBatch(streamId, recordList);
+    }
 
     public static RecordBatch generateOneRecordBatch(long streamId) {
-        return generateOneRecordBatch(streamId, 0);
+        return generateOneRecordBatch(streamId, 0L);
     }
 
     public static RecordBatch generateOneRecordBatch(long streamId, long baseOffset) {
         List<Record> recordList = generateRecordList(streamId, baseOffset);
-        return new RecordBatch(streamId, recordList);
+        Map<String, String> batchProperties = new HashMap<>();
+        batchProperties.put("batchPropertyA", "batchValueA");
+        batchProperties.put("batchPropertyB", "batchValueB");
+        return new RecordBatch(streamId, batchProperties, recordList);
     }
 
     public static List<Record> generateRecordList(long streamId, long baseOffset) {

@@ -16,6 +16,8 @@ table RecordBatchMeta {
     last_offset_delta: int32 (id: 3);
     /// The create timestap of the first record in this batch.
     base_timestamp: int64 (id: 4);
+    /// Other attributes that may not be corresponding with the storage layer.
+    properties: [KeyValue] (id: 5);
 }
 
 table KeyValue {

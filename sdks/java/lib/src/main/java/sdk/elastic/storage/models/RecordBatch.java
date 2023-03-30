@@ -1,5 +1,6 @@
 package sdk.elastic.storage.models;
 
+import java.util.Map;
 import sdk.elastic.storage.client.common.ProtocolUtil;
 import com.google.common.base.Preconditions;
 import com.google.flatbuffers.FlatBufferBuilder;
@@ -25,7 +26,7 @@ public class RecordBatch {
     private final RecordBatchMetaT batchMeta;
     private final List<Record> records;
 
-    public RecordBatch(long streamId, short flags, byte magic, List<Record> records) {
+    public RecordBatch(long streamId, short flags, byte magic, Map<String, String> batchProperties, List<Record> records) {
         Preconditions.checkArgument(records != null && records.size() > 0, "records should not be empty");
 
         this.magic = magic;
@@ -38,18 +39,25 @@ public class RecordBatch {
         batchMeta.setBaseOffset(baseOffset);
         batchMeta.setBaseTimestamp(baseTimestamp);
         batchMeta.setFlags(flags);
+        if (batchProperties != null && !batchProperties.isEmpty()) {
+            batchMeta.setProperties(ProtocolUtil.map2KeyValueTArray(batchProperties));
+        }
 
         Preconditions.checkArgument(records.get(records.size() - 1).getOffset() - baseOffset <= MAX_OFFSET_DELTA,
             "offset delta should not exceed " + MAX_OFFSET_DELTA);
         batchMeta.setLastOffsetDelta((int) (records.get(records.size() - 1).getOffset() - baseOffset));
     }
 
-    public RecordBatch(long streamId, short flags, List<Record> records) {
-        this(streamId, flags, DEFAULT_MAGIC, records);
+    public RecordBatch(long streamId, short flags, Map<String, String> batchProperties, List<Record> records) {
+        this(streamId, flags, DEFAULT_MAGIC, batchProperties, records);
+    }
+
+    public RecordBatch(long streamId, Map<String, String> batchProperties, List<Record> records) {
+        this(streamId, DEFAULT_FLAG, batchProperties, records);
     }
 
     public RecordBatch(long streamId, List<Record> records) {
-        this(streamId, DEFAULT_FLAG, records);
+        this(streamId, DEFAULT_FLAG, null, records);
     }
 
     public RecordBatch(ByteBuffer buffer) {
@@ -103,7 +111,7 @@ public class RecordBatch {
                 metaT.setHeaders(record.getHeaders().toKeyValueTArray());
             }
             if (record.getProperties() != null && !record.getProperties().isEmpty()) {
-                metaT.setProperties(ProtocolUtil.map2KeyValueTList(record.getProperties()));
+                metaT.setProperties(ProtocolUtil.map2KeyValueTArray(record.getProperties()));
             }
             metaT.setOffsetDelta((int) (record.getOffset() - batchMeta.getBaseOffset()));
             FlatBufferBuilder builder = new FlatBufferBuilder();

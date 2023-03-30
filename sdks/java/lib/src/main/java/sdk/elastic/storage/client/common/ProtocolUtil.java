@@ -1,5 +1,7 @@
 package sdk.elastic.storage.client.common;
 
+import java.util.Arrays;
+import java.util.HashMap;
 import sdk.elastic.storage.client.protocol.SbpFrame;
 import sdk.elastic.storage.client.protocol.SbpFrameBuilder;
 import java.nio.ByteBuffer;
@@ -41,11 +43,21 @@ public class ProtocolUtil {
     }
 
     public static Map<String, String> keyValueTList2Map(List<KeyValueT> list) {
+        if (list == null || list.isEmpty()) {
+            return new HashMap<>();
+        }
         return list.stream()
             .collect(Collectors.toMap(KeyValueT::getKey, KeyValueT::getValue));
     }
 
-    public static KeyValueT[] map2KeyValueTList(Map<String, String> map) {
+    public static Map<String, String> keyValueTArray2Map(KeyValueT[] keyValueTArray) {
+        if (keyValueTArray == null || keyValueTArray.length == 0){
+            return new HashMap<>();
+        }
+        return keyValueTList2Map(Arrays.asList(keyValueTArray));
+    }
+
+    public static KeyValueT[] map2KeyValueTArray(Map<String, String> map) {
         return map.entrySet()
             .stream()
             .map(entry -> {

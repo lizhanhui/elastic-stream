@@ -53,5 +53,6 @@ class RecordBatchTest {
         Assertions.assertEquals(batch.getBatchMeta().getLastOffsetDelta(), decodedBatch.getBatchMeta().getLastOffsetDelta());
 
         Assertions.assertEquals(batch.getRecords(), decodedBatch.getRecords());
+        Assertions.assertEquals(0, decodedBatch.getBatchMeta().getProperties().length);
     }
 }

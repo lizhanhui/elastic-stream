@@ -60,10 +60,11 @@ impl FlatRecordBatch {
             last_offset_delta: record_batch.records().len() as i32,
             base_offset: 0, // The base offset will be set by the storage.
             flags: 0,       // We now only support the default flag.
+            properties: None,
         };
 
         // Serialize the data to the FlatBuffer
-        // The returned value is an offset used to track the location of this serializaed data.
+        // The returned value is an offset used to track the location of this serialized data.
         let record_batch_meta_offset = RecordBatchMeta::create(&mut builder, &args);
 
         // Serialize the root of the object, without providing a file identifier.

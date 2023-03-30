@@ -186,20 +186,20 @@ impl RecordBuilder {
         self
     }
 
-    /// Assoaciate multiple keys with the record.
+    /// Associate multiple keys with the record.
     /// The keys are separated by space.
     pub fn with_keys(mut self, keys: String) -> Self {
         self.keys = Some(keys);
         self
     }
 
-    /// Assoaciate a tag with the record
+    /// Associate a tag with the record
     pub fn with_tag(mut self, tag: String) -> Self {
         self.tag = Some(tag);
         self
     }
 
-    /// Assoaciate a record id with the record
+    /// Associate a record id with the record
     /// The record id acts as primary key of a record, can be used to do a search.
     /// But it is not necessary, since the store uses the stream-id/offset to identify the record in the stream.
     pub fn with_record_id(mut self, record_id: String) -> Self {
