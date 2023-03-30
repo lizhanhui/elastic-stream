@@ -346,13 +346,21 @@ manifest-list: all-push
 	    --env HTTPS_PROXY="$(HTTPS_PROXY)"     \
 	    $(BUILD_IMAGE)                         \
 	    go install github.com/estesp/manifest-tool/v2/cmd/manifest-tool
-	for bin in $(BINS); do                                                     \
-	    platforms=$$(echo $(ALL_PLATFORMS) | sed 's/ /,/g');                   \
-	    bin/tool/$(HOST_OS)_$(HOST_ARCH)/manifest-tool                         \
-	        push from-args                                                     \
-	        --platforms "$$platforms"                                          \
-	        --template $(REGISTRY)/$$bin:$(VERSION)__OS_ARCH                   \
-	        --target $(REGISTRY)/$$bin:$(VERSION);                             \
+	for bin in $(BINS); do                                        \
+	    platforms=$$(echo $(ALL_PLATFORMS) | sed 's/ /,/g');      \
+	    if [ -e bin/tool/manifest-tool ]; then                    \
+	        bin/tool/manifest-tool                                \
+	            push from-args                                    \
+	            --platforms "$$platforms"                         \
+	            --template $(REGISTRY)/$$bin:$(VERSION)__OS_ARCH  \
+	            --target $(REGISTRY)/$$bin:$(VERSION);            \
+	    else                                                      \
+	        bin/tool/$(HOST_OS)_$(HOST_ARCH)/manifest-tool        \
+	           push from-args                                     \
+	           --platforms "$$platforms"                          \
+	           --template $(REGISTRY)/$$bin:$(VERSION)__OS_ARCH   \
+	           --target $(REGISTRY)/$$bin:$(VERSION);             \
+	    fi                                                        \
 	done
 
 version: # @HELP outputs the version string
