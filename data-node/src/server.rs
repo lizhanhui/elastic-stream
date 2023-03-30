@@ -14,9 +14,9 @@ use store::{
     option::{StoreOptions, WalPath},
     ElasticStore, Store,
 };
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{broadcast, mpsc, oneshot};
 
-pub fn launch(cfg: &ServerConfig) -> Result<(), Box<dyn Error>> {
+pub fn launch(cfg: &ServerConfig, shutdown: broadcast::Sender<()>) -> Result<(), Box<dyn Error>> {
     let decorator = TermDecorator::new().build();
     let drain = FullFormat::new(decorator)
         .use_file_location()
@@ -68,6 +68,7 @@ pub fn launch(cfg: &ServerConfig) -> Result<(), Box<dyn Error>> {
             let (tx, rx) = mpsc::unbounded_channel();
             channels.push(rx);
 
+            let shutdown_rx = shutdown.subscribe();
             thread::Builder::new()
                 .name("DataNode".to_owned())
                 .spawn(move || {
@@ -87,7 +88,7 @@ pub fn launch(cfg: &ServerConfig) -> Result<(), Box<dyn Error>> {
                         Rc::clone(&store),
                     )));
                     let mut node = Node::new(node_config, store, stream_manager, None, &logger);
-                    node.serve()
+                    node.serve(shutdown_rx)
                 })
         })
         .collect::<Vec<_>>();
@@ -99,6 +100,7 @@ pub fn launch(cfg: &ServerConfig) -> Result<(), Box<dyn Error>> {
             .expect("At least one core should be reserved for primary node")
             .clone();
         let server_config = cfg.clone();
+        let shutdown_rx = shutdown.subscribe();
         let handle = thread::Builder::new()
             .name("DataNode[Primary]".to_owned())
             .spawn(move || {
@@ -137,7 +139,7 @@ pub fn launch(cfg: &ServerConfig) -> Result<(), Box<dyn Error>> {
                 )));
 
                 let mut node = Node::new(node_config, store, stream_manager, Some(channels), &log);
-                node.serve()
+                node.serve(shutdown_rx)
             });
         handles.push(handle);
     }

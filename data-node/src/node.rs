@@ -2,7 +2,7 @@ use std::{cell::RefCell, error::Error, rc::Rc};
 
 use slog::{debug, error, info, o, trace, warn, Logger};
 use store::ElasticStore;
-use tokio::sync::mpsc;
+use tokio::sync::{broadcast, mpsc};
 use tokio_uring::net::{TcpListener, TcpStream};
 use transport::connection::Connection;
 
@@ -37,7 +37,7 @@ impl Node {
         }
     }
 
-    pub fn serve(&mut self) {
+    pub fn serve(&mut self, shutdown_rx: broadcast::Receiver<()>) {
         core_affinity::set_for_current(self.config.core_id);
         tokio_uring::builder()
             .entries(self.config.server_config.queue_depth)
@@ -66,7 +66,7 @@ impl Node {
                     .await
                     .expect("Failed to bootstrap stream ranges from placement managers");
 
-                match self.run(listener, self.logger.new(o!())).await {
+                match self.run(listener, self.logger.clone(), shutdown_rx).await {
                     Ok(_) => {}
                     Err(e) => {
                         error!(self.logger, "Runtime failed. Cause: {}", e.to_string());
@@ -75,38 +75,51 @@ impl Node {
             });
     }
 
-    async fn run(&self, listener: TcpListener, logger: Logger) -> Result<(), Box<dyn Error>> {
+    async fn run(
+        &self,
+        listener: TcpListener,
+        logger: Logger,
+        mut shutdown_rx: broadcast::Receiver<()>,
+    ) -> Result<(), Box<dyn Error>> {
         loop {
-            let incoming = listener.accept().await;
-            let logger = logger.new(o!());
-            let (stream, peer_socket_address) = match incoming {
-                Ok((stream, socket_addr)) => {
-                    debug!(logger, "Accepted a new connection from {socket_addr:?}");
-                    stream.set_nodelay(true).unwrap_or_else(|e| {
-                        warn!(logger, "Failed to disable Nagle's algorithm. Cause: {e:?}, PeerAddress: {socket_addr:?}");
-                    });
-                    debug!(logger, "Nagle's algorithm turned off");
-
-                    (stream, socket_addr)
-                }
-                Err(e) => {
-                    error!(
-                        logger,
-                        "Failed to accept a connection. Cause: {}",
-                        e.to_string()
-                    );
+            let logger = logger.clone();
+            tokio::select! {
+                _ = shutdown_rx.recv() => {
+                    info!(logger, "Received shutdown signal. Stop accepting new connections.");
                     break;
                 }
-            };
 
-            let store = Rc::clone(&self.store);
-            let stream_manager = Rc::clone(&self.stream_manager);
-            let peer_address = peer_socket_address.to_string();
-            tokio_uring::spawn(async move {
-                Node::process(store, stream_manager, stream, peer_address, logger).await;
-            });
+                incoming = listener.accept() => {
+                    let (stream, peer_socket_address) = match incoming {
+                        Ok((stream, socket_addr)) => {
+                            debug!(logger, "Accepted a new connection from {socket_addr:?}");
+                            stream.set_nodelay(true).unwrap_or_else(|e| {
+                                warn!(logger, "Failed to disable Nagle's algorithm. Cause: {e:?}, PeerAddress: {socket_addr:?}");
+                            });
+                            debug!(logger, "Nagle's algorithm turned off");
+
+                            (stream, socket_addr)
+                        }
+                        Err(e) => {
+                            error!(
+                                logger,
+                                "Failed to accept a connection. Cause: {}",
+                                e.to_string()
+                            );
+                            break;
+                        }
+                    };
+
+                    let store = Rc::clone(&self.store);
+                    let stream_manager = Rc::clone(&self.stream_manager);
+                    let peer_address = peer_socket_address.to_string();
+                    tokio_uring::spawn(async move {
+                        Node::process(store, stream_manager, stream, peer_address, logger).await;
+                    });
+                }
+            }
         }
-
+        info!(logger, "Node#run completed");
         Ok(())
     }
 

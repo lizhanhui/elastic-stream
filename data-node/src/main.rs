@@ -1,17 +1,19 @@
 use clap::Parser;
 use data_node::ServerConfig;
+use tokio::sync::broadcast;
 
 fn main() {
     let server_config = ServerConfig::parse();
-    let (shutdown_tx, _rx) = tokio::sync::broadcast::channel(1);
+    let (shutdown_tx, _rx) = broadcast::channel(1);
+    let tx = shutdown_tx.clone();
     ctrlc::set_handler(move || {
-        if let Err(_) = shutdown_tx.send(()) {
+        if let Err(_) = tx.send(()) {
             eprintln!("Could not send shutdown signal to shutdown channel");
         }
     })
     .expect("Failed to set Ctrl-C");
 
-    if let Err(e) = data_node::server::launch(&server_config) {
+    if let Err(e) = data_node::server::launch(&server_config, shutdown_tx) {
         eprintln!("Failed to start data-node: {:?}", e);
     }
 }
