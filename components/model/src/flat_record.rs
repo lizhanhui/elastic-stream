@@ -14,6 +14,9 @@ enum RecordMagic {
     Magic0 = 0x22, // The first version of the record batch format.
 }
 
+/// Relative offset of `BaseOffset` within `RecordBatch`.
+pub const BASE_OFFSET_POS: usize = 1;
+
 /// FlatRecordBatch is a flattened version of RecordBatch that is used for serialization.
 /// As the storage and network layout, the schema of FlatRecordBatch with magic 0 is given below:
 ///

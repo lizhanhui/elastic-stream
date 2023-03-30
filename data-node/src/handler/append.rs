@@ -261,7 +261,8 @@ impl<'a> Append<'a> {
                         // Rewrite the offset in the record batch directly,
                         // since the rust flatbuffers doesn't support update the value so far.
                         unsafe {
-                            let offset_ptr = payload_b.as_ptr().add(8);
+                            let offset_ptr =
+                                payload_b.as_ptr().add(model::flat_record::BASE_OFFSET_POS);
                             let offset_ptr = offset_ptr as *mut i64;
                             *offset_ptr = offset;
                         }

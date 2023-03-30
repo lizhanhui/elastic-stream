@@ -582,7 +582,7 @@ mod tests {
         assert_eq!(t, RecordType::Full);
         assert_eq!(len as usize, data.len());
 
-        let payload = buf.slice(8..);
+        let payload = buf.slice((crate::RECORD_PREFIX_LENGTH as usize)..);
         assert_eq!(&data, payload);
         Ok(())
     }

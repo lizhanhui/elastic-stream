@@ -15,7 +15,7 @@ use crate::BufSlice;
 use crossbeam::channel::{Receiver, Sender, TryRecvError};
 use io_uring::register;
 use io_uring::{opcode, squeue, types};
-use slog::{error, info, trace, warn, Logger, debug};
+use slog::{debug, error, info, trace, warn, Logger};
 use std::collections::{BTreeMap, HashSet};
 use std::sync::Arc;
 use std::{
@@ -1473,7 +1473,10 @@ mod tests {
                 res_payload.extend_from_slice(&r[..]);
             });
 
-            assert_eq!(buffer, res_payload.freeze()[8..]);
+            assert_eq!(
+                buffer,
+                res_payload.freeze()[(crate::RECORD_PREFIX_LENGTH as usize)..]
+            );
         }
 
         drop(sender);

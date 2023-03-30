@@ -1,7 +1,7 @@
 use crate::{error::RecordError, header::Headers};
 use bytes::Bytes;
 use chrono::prelude::*;
-use std::{collections::HashMap, error::Error};
+use std::collections::HashMap;
 #[derive(Debug, Clone, PartialEq)]
 pub struct Record {
     stream_id: i64,

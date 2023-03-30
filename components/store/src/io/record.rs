@@ -3,7 +3,7 @@ use num_enum::{IntoPrimitive, TryFromPrimitive};
 use crate::error::StoreError;
 
 /// Length of record prefix: CRC(4B) + Size(3B) + Type(1B)
-pub(crate) const RECORD_PREFIX_LENGTH: u64 = 4 + 3 + 1;
+pub const RECORD_PREFIX_LENGTH: u64 = 4 + 3 + 1;
 
 /// Type of the
 ///

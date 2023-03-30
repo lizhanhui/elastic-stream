@@ -72,7 +72,7 @@ impl<'a> Fetch<'a> {
 
         let mut builder = FlatBufferBuilder::with_capacity(MIN_BUFFER_SIZE);
         let mut payloads = Vec::new();
-        let no_err_status = protocol::rpc::header::Status::create(
+        let ok_status = protocol::rpc::header::Status::create(
             &mut builder,
             &StatusArgs {
                 code: ErrorCode::OK,
@@ -90,7 +90,7 @@ impl<'a> Fetch<'a> {
                             batch_length: fetch_result.payload.len() as i32,
                             // TODO: Fill the request index
                             request_index: 0,
-                            status: Some(no_err_status),
+                            status: Some(ok_status),
                         };
                         payloads.push(fetch_result.payload);
                         protocol::rpc::header::FetchResult::create(&mut builder, &fetch_result_args)
@@ -127,7 +127,7 @@ impl<'a> Fetch<'a> {
         let res_args = FetchResponseArgs {
             throttle_time_ms: 0,
             fetch_responses: Some(fetch_results_fb),
-            status: Some(no_err_status),
+            status: Some(ok_status),
         };
         let res_offset = protocol::rpc::header::FetchResponse::create(&mut builder, &res_args);
         let res_header = finish_response_builder(&mut builder, res_offset);
@@ -137,9 +137,11 @@ impl<'a> Fetch<'a> {
         let payloads: Vec<_> = payloads
             .into_iter()
             .flatten()
-            // Skip the 8 bytes of the storage prefix
+            // Strip the first `RECORD_PREFIX_LENGTH` bytes of the storage prefix
             // TODO: Find a efficient way to avoid copying the payload
-            .map(|payload| Bytes::copy_from_slice(&payload[8..]))
+            .map(|payload| {
+                Bytes::copy_from_slice(&payload[(store::RECORD_PREFIX_LENGTH as usize)..])
+            })
             .collect();
         response.payload = Some(payloads);
     }

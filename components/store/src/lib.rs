@@ -39,6 +39,7 @@ mod request;
 mod store;
 
 pub use crate::io::buf::buf_slice::BufSlice;
+pub use crate::io::record::RECORD_PREFIX_LENGTH;
 pub use crate::store::append_result::AppendResult;
 pub use crate::store::elastic_store::ElasticStore;
 pub use crate::store::fetch_result::FetchResult;

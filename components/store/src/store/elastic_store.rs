@@ -534,7 +534,9 @@ mod tests {
                     });
 
                     assert_eq!(
-                        Bytes::copy_from_slice(&res_payload[8..]),
+                        Bytes::copy_from_slice(
+                            &res_payload[(crate::RECORD_PREFIX_LENGTH as usize)..]
+                        ),
                         Bytes::from(format!("{}-{}", "hello, world", res.offset))
                     );
                 }
