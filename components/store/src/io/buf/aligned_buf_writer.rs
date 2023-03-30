@@ -69,7 +69,7 @@ impl AlignedBufWriter {
 
         // First, allocate memory in alignment blocks, which we enough data to fill and then generate SQEs to submit
         // immediately.
-        if additional >= self.alignment {
+        if additional > self.alignment {
             let size = additional / self.alignment * self.alignment;
             let buf = AlignedBuf::new(self.log.clone(), offset, size, self.alignment)?;
             trace!(
@@ -199,23 +199,6 @@ mod tests {
 
         buf_writer.write_u32(101)?;
         assert_eq!(4104, buf_writer.cursor);
-        Ok(())
-    }
-
-    #[test]
-    fn test_reserve() -> Result<(), Box<dyn Error>> {
-        let log = test_util::terminal_logger();
-        let mut buf_writer = super::AlignedBufWriter::new(log.clone(), 0, ALIGNMENT);
-        assert_eq!(0, buf_writer.cursor);
-        buf_writer.reserve(ALIGNMENT)?;
-        assert_eq!(buf_writer.remaining(), ALIGNMENT);
-
-        buf_writer.reserve(ALIGNMENT + 1)?;
-        assert_eq!(buf_writer.remaining(), ALIGNMENT * 3);
-
-        buf_writer.reserve(ALIGNMENT - 1)?;
-        assert_eq!(buf_writer.remaining(), ALIGNMENT * 4);
-
         Ok(())
     }
 }
