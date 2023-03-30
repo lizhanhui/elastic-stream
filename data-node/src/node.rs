@@ -1,4 +1,4 @@
-use std::{cell::RefCell, error::Error, rc::Rc};
+use std::{cell::RefCell, error::Error, net::SocketAddr, rc::Rc, time::Duration};
 
 use slog::{debug, error, info, o, trace, warn, Logger};
 use store::ElasticStore;
@@ -7,6 +7,7 @@ use tokio_uring::net::{TcpListener, TcpStream};
 use transport::connection::Connection;
 
 use crate::{
+    connection_tracker::ConnectionTracker,
     handler::ServerCall,
     node_config::NodeConfig,
     stream_manager::{fetcher::FetchRangeTask, StreamManager},
@@ -81,6 +82,7 @@ impl Node {
         logger: Logger,
         mut shutdown_rx: broadcast::Receiver<()>,
     ) -> Result<(), Box<dyn Error>> {
+        let connection_tracker = Rc::new(RefCell::new(ConnectionTracker::new(logger.clone())));
         loop {
             let logger = logger.clone();
             tokio::select! {
@@ -112,13 +114,31 @@ impl Node {
 
                     let store = Rc::clone(&self.store);
                     let stream_manager = Rc::clone(&self.stream_manager);
-                    let peer_address = peer_socket_address.to_string();
+                    let connection_tracker = Rc::clone(&connection_tracker);
                     tokio_uring::spawn(async move {
-                        Node::process(store, stream_manager, stream, peer_address, logger).await;
+                        Node::process(store, stream_manager, connection_tracker, peer_socket_address, stream, logger).await;
                     });
                 }
             }
         }
+
+        // Send GoAway frame to all existing connections
+        connection_tracker.borrow_mut().go_away();
+
+        // Await till all existing connections disconnect
+        loop {
+            let remaining = connection_tracker.borrow().len();
+            if 0 == remaining {
+                break;
+            }
+
+            info!(
+                logger,
+                "There are {} connections left. Sleep 1 second...", remaining
+            );
+            tokio::time::sleep(Duration::from_secs(1)).await;
+        }
+
         info!(logger, "Node#run completed");
         Ok(())
     }
@@ -126,12 +146,20 @@ impl Node {
     async fn process(
         store: Rc<ElasticStore>,
         stream_manager: Rc<RefCell<StreamManager>>,
+        connection_tracker: Rc<RefCell<ConnectionTracker>>,
+        peer_address: SocketAddr,
         stream: TcpStream,
-        peer_address: String,
         logger: Logger,
     ) {
-        let channel = Rc::new(Connection::new(stream, &peer_address, logger.new(o!())));
         let (tx, mut rx) = mpsc::unbounded_channel();
+        connection_tracker
+            .borrow_mut()
+            .insert(peer_address, tx.clone());
+        let channel = Rc::new(Connection::new(
+            stream,
+            &peer_address.to_string(),
+            logger.new(o!()),
+        ));
 
         let request_logger = logger.clone();
         let _channel = Rc::clone(&channel);
@@ -169,6 +197,8 @@ impl Node {
                     }
                 }
             }
+
+            connection_tracker.borrow_mut().remove(&peer_address);
         });
 
         tokio_uring::spawn(async move {

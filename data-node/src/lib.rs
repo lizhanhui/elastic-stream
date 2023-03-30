@@ -1,6 +1,7 @@
 #![feature(result_option_inspect)]
 
 pub mod cfg;
+pub(crate) mod connection_tracker;
 mod delegate_task;
 pub mod error;
 pub mod handler;
