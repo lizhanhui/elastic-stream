@@ -289,6 +289,7 @@ impl Indexer {
     /// To minimize the amount of WAL data to recover, for example, in case of planned reboot, we shall update checkpoint
     /// offset and invoke this method before stopping.
     pub(crate) fn flush(&self) -> Result<(), StoreError> {
+        info!(self.log, "AtomicFlush RocksDB column families");
         self.db
             .flush()
             .map_err(|e| StoreError::RocksDB(e.into_string()))

@@ -8,6 +8,7 @@ edition = "2021"
 [dependencies]
 byteorder =  { workspace = true }
 bytes =  { workspace = true }
+ctrlc = { workspace = true }
 core_affinity =  { workspace = true }
 crc =  { workspace = true }
 crossbeam = { workspace = true }

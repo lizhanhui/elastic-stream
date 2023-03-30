@@ -161,6 +161,10 @@ impl IndexDriver {
     }
 
     pub(crate) fn shutdown_indexer(&self) {
+        if let Err(e) = self.indexer.flush() {
+            error!(self.log, "Failed to flush primary index. Cause: {:?}", e);
+        }
+
         if self.shutdown_tx.send(()).is_err() {
             error!(self.log, "Failed to send shutdown signal to indexer");
         }
