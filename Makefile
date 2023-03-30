@@ -54,9 +54,11 @@ MAKEFLAGS += --no-builtin-rules
 MAKEFLAGS += --warn-undefined-variables
 .SUFFIXES:
 
+HOST_OS := $(shell go env GOOS)
+HOST_ARCH := $(shell go env GOARCH)
 # Used internally.  Users should pass GOOS and/or GOARCH.
-OS := $(if $(GOOS),$(GOOS),$(shell go env GOOS))
-ARCH := $(if $(GOARCH),$(GOARCH),$(shell go env GOARCH))
+OS := $(if $(GOOS),$(GOOS),$(HOST_OS))
+ARCH := $(if $(GOARCH),$(GOARCH),$(HOST_ARCH))
 
 TAG := $(VERSION)__$(OS)_$(ARCH)
 
@@ -336,6 +338,8 @@ manifest-list: all-push
 	    -v $$(pwd)/.go/cache:/.cache           \
 	    --env GOCACHE="/.cache/gocache"        \
 	    --env GOMODCACHE="/.cache/gomodcache"  \
+	    --env GOARCH="$(HOST_ARCH)"            \
+	    --env GOOS="$(HOST_OS)"                \
 	    --env CGO_ENABLED=0                    \
 	    --env GOPROXY="$(GOPROXY)"             \
 	    --env HTTP_PROXY="$(HTTP_PROXY)"       \
@@ -344,7 +348,7 @@ manifest-list: all-push
 	    go install github.com/estesp/manifest-tool/v2/cmd/manifest-tool
 	for bin in $(BINS); do                                                     \
 	    platforms=$$(echo $(ALL_PLATFORMS) | sed 's/ /,/g');                   \
-	    bin/tool/manifest-tool                                                 \
+	    bin/tool/$(HOST_OS)_$(HOST_ARCH)/manifest-tool                         \
 	        push from-args                                                     \
 	        --platforms "$$platforms"                                          \
 	        --template $(REGISTRY)/$$bin:$(VERSION)__OS_ARCH                   \

@@ -3,7 +3,6 @@ module github.com/AutoMQ/placement-manager
 go 1.20
 
 require (
-	github.com/BurntSushi/toml v1.2.1
 	github.com/brianvoe/gofakeit/v6 v6.20.2
 	github.com/bytedance/gopkg v0.0.0-20230324090325-a00d8057bef9
 	github.com/cakturk/go-netstat v0.0.0-20200220111822-e5b49efee7a5
