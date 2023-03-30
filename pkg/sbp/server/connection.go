@@ -411,7 +411,8 @@ func (c *conn) generateAct(f *codec.DataFrame, action *Action) (ctx context.Cont
 	}
 
 	id, _ := uuid.NewRandom()
-	ctx = traceutil.SetTraceID(c.ctx, id.String())
+	traceID := fmt.Sprintf("%s#%s", c.rwc.RemoteAddr().String(), id.String())
+	ctx = traceutil.SetTraceID(c.ctx, traceID)
 
 	cancel = func() {}
 	if req.Timeout() > 0 {
@@ -424,7 +425,7 @@ func (c *conn) generateAct(f *codec.DataFrame, action *Action) (ctx context.Cont
 
 		debug := logger.Core().Enabled(zap.DebugLevel)
 		if debug {
-			logger = logger.With(zap.String("trace-id", id.String()))
+			logger = logger.With(zap.String("trace-id", traceID))
 			logger.Debug("handle request", zap.Any("request", req))
 		}
 
