@@ -239,19 +239,20 @@ $(LICENSES): | $(BUILD_DIRS)
 	# exist, so we can't just volume mount $(LICENSES).
 	rm -rf $(LICENSES).tmp
 	mkdir $(LICENSES).tmp
-	docker run                              \
-	    -i                                  \
-	    --rm                                \
-	    -u $$(id -u):$$(id -g)              \
-	    -v $$(pwd)/$(LICENSES).tmp:/output  \
-	    -v $$(pwd):/src                     \
-	    -w /src                             \
-	    -v $$(pwd)/bin/tool:/go/bin         \
-	    -v $$(pwd)/.go/cache:/.cache        \
-	    -v $$(pwd)/.go/pkg:/go/pkg          \
-	    --env HTTP_PROXY="$(HTTP_PROXY)"    \
-	    --env HTTPS_PROXY="$(HTTPS_PROXY)"  \
-	    $(BUILD_IMAGE)                      \
+	docker run                                 \
+	    -i                                     \
+	    --rm                                   \
+	    -u $$(id -u):$$(id -g)                 \
+	    -v $$(pwd)/$(LICENSES).tmp:/output     \
+	    -v $$(pwd):/src                        \
+	    -w /src                                \
+	    -v $$(pwd)/bin/tool:/go/bin            \
+	    -v $$(pwd)/.go/cache:/.cache           \
+	    --env GOCACHE="/.cache/gocache"        \
+	    --env GOMODCACHE="/.cache/gomodcache"  \
+	    --env HTTP_PROXY="$(HTTP_PROXY)"       \
+	    --env HTTPS_PROXY="$(HTTPS_PROXY)"     \
+	    $(BUILD_IMAGE)                         \
 	    go-licenses save ./... --save_path=/output/licenses
 	rm -rf $(LICENSES)
 	mv $(LICENSES).tmp/licenses $(LICENSES)
