@@ -92,6 +92,10 @@ impl Wal {
         }
     }
 
+    pub(crate) fn inflight_control_task_num(&self) -> usize {
+        self.inflight_control_tasks.len()
+    }
+
     /// All the segments will be opened after loading from WAL.
     pub(crate) fn load_from_paths(&mut self) -> Result<(), StoreError> {
         let mut segment_files: Vec<_> = self
@@ -610,6 +614,7 @@ impl Wal {
                             StoreError::IoUring
                         })
                     }?;
+                    self.inflight_control_tasks.insert(offset, Status::Close);
                 }
                 Status::UnlinkAt => {
                     info!(log, "LogSegmentFile: `{}` is deleted", segment);

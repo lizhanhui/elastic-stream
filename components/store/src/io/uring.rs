@@ -15,7 +15,7 @@ use crate::BufSlice;
 use crossbeam::channel::{Receiver, Sender, TryRecvError};
 use io_uring::register;
 use io_uring::{opcode, squeue, types};
-use slog::{error, info, trace, warn, Logger};
+use slog::{error, info, trace, warn, Logger, debug};
 use std::collections::{BTreeMap, HashSet};
 use std::sync::Arc;
 use std::{
@@ -304,12 +304,21 @@ impl IO {
                 break received;
             }
 
-            // if the log segment file is full, break loop.
-
-            if self.inflight + received + self.pending_data_tasks.len() == 0 {
+            // if there is not inflight data uring tasks nor inflight control tasks, we
+            if self.inflight
+                + received
+                + self.pending_data_tasks.len()
+                + self.wal.inflight_control_task_num()
+                == 0
+            {
+                debug!(
+                    self.log,
+                    "Block IO thread until IO tasks are received from channel"
+                );
                 // Block the thread until at least one IO task arrives
                 match self.receiver.recv() {
                     Ok(mut io_task) => {
+                        trace!(self.log, "An IO task is received from channel");
                         if !IO::validate_io_task(&mut io_task, &self.log) {
                             IO::on_bad_request(io_task);
                             continue;
@@ -324,6 +333,8 @@ impl IO {
                     }
                 }
             } else {
+                // Poll IO-task channel in non-blocking manner for more tasks given that greater IO depth exploits potential of
+                // modern storage products like NVMe SSD.
                 match self.receiver.try_recv() {
                     Ok(mut io_task) => {
                         if !IO::validate_io_task(&mut io_task, &self.log) {
@@ -980,7 +991,7 @@ impl IO {
             } else {
                 let io_borrow = io.borrow();
                 if !io_borrow.should_quit() {
-                    if !io_borrow.pending_data_tasks.is_empty() {
+                    if io_borrow.wal.inflight_control_task_num() > 0 {
                         io_borrow.wal.await_control_task_completion();
                     }
                 } else {
