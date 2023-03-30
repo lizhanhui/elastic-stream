@@ -1,6 +1,9 @@
 name: CI - Build all platforms
 
-on: workflow_call
+on:
+  workflow_call:
+  schedule:
+    - cron: '0 6 * * 1'
 permissions: read-all
 
 jobs:
