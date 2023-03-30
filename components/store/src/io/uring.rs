@@ -1117,50 +1117,133 @@ mod tests {
     use crate::error::StoreError;
     use crate::index::driver::IndexDriver;
     use crate::index::MinOffset;
+    use crate::io::options::{DEFAULT_LOG_SEGMENT_SIZE, DEFAULT_MAX_CACHE_SIZE};
     use crate::io::ReadTask;
     use crate::offset_manager::WalOffsetManager;
+    use crate::store;
     use bytes::BytesMut;
+    use crossbeam::channel::Sender;
     use slog::trace;
     use std::cell::RefCell;
     use std::error::Error;
     use std::fs;
     use std::path::{Path, PathBuf};
     use std::sync::Arc;
+    use std::thread::JoinHandle;
     use tokio::sync::oneshot;
 
     use crate::option::WalPath;
 
-    fn create_io(store_dir: &Path) -> Result<super::IO, StoreError> {
-        let mut options = super::Options::default();
-        let logger = test_util::terminal_logger();
-        let store_path = store_dir.join("rocksdb");
-        if !store_path.exists() {
-            fs::create_dir_all(store_path.as_path()).map_err(|e| StoreError::IO(e))?;
+    struct IOBuilder {
+        store_dir: PathBuf,
+        segment_size: u64,
+        max_cache_size: u64,
+    }
+
+    impl IOBuilder {
+        fn new(store_dir: PathBuf) -> Self {
+            Self {
+                store_dir,
+                segment_size: DEFAULT_LOG_SEGMENT_SIZE,
+                max_cache_size: DEFAULT_MAX_CACHE_SIZE,
+            }
         }
 
-        options.metadata_path = store_path
-            .into_os_string()
-            .into_string()
-            .map_err(|_e| StoreError::Configuration("Bad path".to_owned()))?;
-
-        let wal_dir = store_dir.join("wal");
-        if !wal_dir.exists() {
-            fs::create_dir_all(wal_dir.as_path()).map_err(|e| StoreError::IO(e))?;
+        fn segment_size(mut self, segment_size: u64) -> Self {
+            self.segment_size = segment_size;
+            self
         }
-        let wal_path = WalPath::new(wal_dir.to_str().unwrap(), 1234)?;
-        options.add_wal_path(wal_path);
 
-        // Build wal offset manager
-        let wal_offset_manager = Arc::new(WalOffsetManager::new());
+        fn max_cache_size(mut self, max_cache_size: u64) -> Self {
+            self.max_cache_size = max_cache_size;
+            self
+        }
 
-        // Build index driver
-        let indexer = Arc::new(IndexDriver::new(
-            logger.clone(),
-            &options.metadata_path,
-            Arc::clone(&wal_offset_manager) as Arc<dyn MinOffset>,
-        )?);
+        fn build(self) -> Result<super::IO, StoreError> {
+            let mut options = super::Options::default();
+            options.segment_size = self.segment_size;
+            options.max_cache_size = self.max_cache_size;
+            let logger = test_util::terminal_logger();
+            let store_path = self.store_dir.join("rocksdb");
+            if !store_path.exists() {
+                fs::create_dir_all(store_path.as_path()).map_err(|e| StoreError::IO(e))?;
+            }
 
-        super::IO::new(&mut options, indexer, logger.clone())
+            options.metadata_path = store_path
+                .into_os_string()
+                .into_string()
+                .map_err(|_e| StoreError::Configuration("Bad path".to_owned()))?;
+
+            let wal_dir = self.store_dir.join("wal");
+            if !wal_dir.exists() {
+                fs::create_dir_all(wal_dir.as_path()).map_err(|e| StoreError::IO(e))?;
+            }
+            let wal_path = WalPath::new(wal_dir.to_str().unwrap(), 1234)?;
+            options.add_wal_path(wal_path);
+
+            // Build wal offset manager
+            let wal_offset_manager = Arc::new(WalOffsetManager::new());
+
+            // Build index driver
+            let indexer = Arc::new(IndexDriver::new(
+                logger.clone(),
+                &options.metadata_path,
+                Arc::clone(&wal_offset_manager) as Arc<dyn MinOffset>,
+            )?);
+
+            super::IO::new(&mut options, indexer, logger.clone())
+        }
+    }
+
+    fn create_default_io(store_dir: &Path) -> Result<super::IO, StoreError> {
+        IOBuilder::new(store_dir.to_path_buf()).build()
+    }
+
+    fn create_small_io(store_dir: &Path) -> Result<super::IO, StoreError> {
+        IOBuilder::new(store_dir.to_path_buf())
+            .segment_size(1024 * 1024)
+            .max_cache_size(1024 * 1024)
+            .build()
+    }
+
+    fn create_and_run_io<IoCreator>(
+        io_creator: IoCreator,
+    ) -> Result<(JoinHandle<()>, Sender<IoTask>), Box<dyn Error>>
+    where
+        IoCreator: Fn(&Path) -> Result<super::IO, StoreError> + Send + 'static,
+    {
+        let log = test_util::terminal_logger();
+
+        let (tx, rx) = oneshot::channel();
+        let (recovery_completion_tx, recovery_completion_rx) = oneshot::channel();
+        let logger = log.clone();
+
+        let handle = std::thread::spawn(move || {
+            let store_dir = random_store_dir().unwrap();
+            let store_dir = store_dir.as_path();
+            let _store_dir_guard = test_util::DirectoryRemovalGuard::new(logger, store_dir);
+            let mut io = io_creator(store_dir).unwrap();
+
+            let sender = io
+                .sender
+                .take()
+                .ok_or(StoreError::Configuration("IO channel".to_owned()))
+                .unwrap();
+            let _ = tx.send(sender);
+            let io = RefCell::new(io);
+
+            let _ = super::IO::run(io, recovery_completion_tx);
+            println!("Module io stopped");
+        });
+
+        if let Err(_) = recovery_completion_rx.blocking_recv() {
+            panic!("Failed to await recovery completion");
+        }
+        let sender: Sender<IoTask> = rx
+            .blocking_recv()
+            .map_err(|_| StoreError::Internal("Internal error".to_owned()))?;
+
+        return Ok((handle, sender));
     }
 
     fn random_store_dir() -> Result<PathBuf, StoreError> {
@@ -1173,7 +1256,7 @@ mod tests {
         let store_dir = random_store_dir()?;
         let store_dir = store_dir.as_path();
         let _store_dir_guard = test_util::DirectoryRemovalGuard::new(log, store_dir);
-        let mut io = create_io(store_dir)?;
+        let mut io = create_default_io(store_dir)?;
         let sender = io.sender.take().unwrap();
         let mut buffer = BytesMut::with_capacity(128);
         buffer.resize(128, 65);
@@ -1218,7 +1301,7 @@ mod tests {
         let store_dir = random_store_dir()?;
         let store_dir = store_dir.as_path();
         let _store_dir_guard = test_util::DirectoryRemovalGuard::new(log, store_dir);
-        let mut io = create_io(store_dir)?;
+        let mut io = create_default_io(store_dir)?;
 
         io.wal.open_segment_directly()?;
 
@@ -1252,45 +1335,28 @@ mod tests {
     }
 
     #[test]
-    fn test_run() -> Result<(), Box<dyn Error>> {
+    fn test_run_basic() -> Result<(), Box<dyn Error>> {
+        let (handle, sender) = create_and_run_io(create_default_io)?;
+
+        send_and_receive(sender, 128, 16)?;
+        handle.join().map_err(|_| StoreError::AllocLogSegment)?;
+        Ok(())
+    }
+
+    fn send_and_receive(
+        sender: Sender<IoTask>,
+        single_size: usize,
+        send_count: usize,
+    ) -> Result<(), Box<dyn Error>> {
         let log = test_util::terminal_logger();
 
-        let (tx, rx) = oneshot::channel();
-        let (recovery_completion_tx, recovery_completion_rx) = oneshot::channel();
-        let logger = log.clone();
-        let handle = std::thread::spawn(move || {
-            let store_dir = random_store_dir().unwrap();
-            let store_dir = store_dir.as_path();
-            let _store_dir_guard = test_util::DirectoryRemovalGuard::new(logger, store_dir);
-            let mut io = create_io(store_dir).unwrap();
-
-            let sender = io
-                .sender
-                .take()
-                .ok_or(StoreError::Configuration("IO channel".to_owned()))
-                .unwrap();
-            let _ = tx.send(sender);
-            let io = RefCell::new(io);
-
-            let _ = super::IO::run(io, recovery_completion_tx);
-            println!("Module io stopped");
-        });
-
-        if let Err(_) = recovery_completion_rx.blocking_recv() {
-            panic!("Failed to await recovery completion");
-        }
-
-        let sender = rx
-            .blocking_recv()
-            .map_err(|_| StoreError::Internal("Internal error".to_owned()))?;
-
-        let mut buffer = BytesMut::with_capacity(4096);
-        buffer.resize(4096, 65);
+        let mut buffer = BytesMut::with_capacity(single_size);
+        buffer.resize(single_size, 65);
         let buffer = buffer.freeze();
 
         let mut receivers = vec![];
 
-        (0..16)
+        (0..send_count)
             .into_iter()
             .map(|i| {
                 let (tx, rx) = oneshot::channel();
@@ -1331,7 +1397,7 @@ mod tests {
                 IoTask::Read(ReadTask {
                     stream_id: res.stream_id,
                     wal_offset: res.wal_offset,
-                    len: 4096 + 8, // 4096 is the write buffer size, 8 is the prefix added by the store
+                    len: single_size as u32 + 8, // 8 is the prefix added by the store
                     observer: tx,
                 })
             })
@@ -1358,9 +1424,8 @@ mod tests {
 
             assert_eq!(buffer, res_payload.freeze()[8..]);
         }
-
         drop(sender);
-        handle.join().map_err(|_| StoreError::AllocLogSegment)?;
+
         Ok(())
     }
 
@@ -1379,7 +1444,7 @@ mod tests {
 
         let handle = std::thread::spawn(move || {
             let store_dir = Path::new(&store_path);
-            let mut io = create_io(store_dir).unwrap();
+            let mut io = create_default_io(store_dir).unwrap();
             let sender = io
                 .sender
                 .take()
@@ -1482,7 +1547,7 @@ mod tests {
         handle.join().map_err(|_| StoreError::AllocLogSegment)?;
 
         {
-            let mut io = create_io(store_dir.as_path()).unwrap();
+            let mut io = create_default_io(store_dir.as_path()).unwrap();
             io.load()?;
             let pos = io.indexer.get_wal_checkpoint()?;
             io.recover(pos)?;
