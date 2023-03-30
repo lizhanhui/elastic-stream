@@ -87,7 +87,7 @@ impl<'a> Fetch<'a> {
                     Ok(fetch_result) => {
                         let fetch_result_args = FetchResultArgs {
                             stream_id: fetch_result.stream_id,
-                            batch_length: fetch_result.payload.len() as i32,
+                            batch_count: fetch_result.payload.len() as i32,
                             // TODO: Fill the request index
                             request_index: 0,
                             status: Some(ok_status),
@@ -113,7 +113,7 @@ impl<'a> Fetch<'a> {
                         );
                         let fetch_result_args = FetchResultArgs {
                             stream_id: 0,
-                            batch_length: 0,
+                            batch_count: 0,
                             request_index: 0,
                             status: Some(status),
                         };

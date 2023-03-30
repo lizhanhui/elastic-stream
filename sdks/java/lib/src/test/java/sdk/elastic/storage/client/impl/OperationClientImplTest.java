@@ -182,7 +182,7 @@ class OperationClientImplTest {
         FetchResultT fetchResultT = new FetchResultT();
         fetchResultT.setStreamId(streamId);
         fetchResultT.setRequestIndex(0);
-        fetchResultT.setBatchLength(encodedBuffer.remaining());
+        fetchResultT.setBatchCount(batch.getRecords().size());
         fetchResultT.setStatus(okStatus);
 
         FetchResponseT fetchResponseT = new FetchResponseT();

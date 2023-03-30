@@ -206,8 +206,8 @@ public class OperationClientImpl implements OperationClient {
                                 future.completeExceptionally(new ClientException("Fetch batches failed with code " + list.get(0).getStatus().getCode() + ", msg: " + list.get(0).getStatus().getMessage()));
                                 return future;
                             }
-                            int length = list.get(0).getBatchLength();
-                            future.complete(RecordBatch.decode(responseFrame.getPayload()[0], length));
+                            int count = list.get(0).getBatchCount();
+                            future.complete(RecordBatch.decode(responseFrame.getPayload()[0], count));
                             return future;
                         });
                     });

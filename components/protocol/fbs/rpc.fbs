@@ -198,8 +198,13 @@ table FetchResult {
     stream_id: int64 = -1 (id: 0);
     // The index of the request that this response is for.
     request_index: int32 (id: 1);
-    // The data length of the returned batch is used to decode the data from the payload.
-    batch_length: int32 (id: 2);
+
+    // The quantity of record batches to be decoded from the payload for current fetch result.
+    //
+    // Note: Recrod batches MUST be decoded sequentially. 
+    // This field defines the quantity of record batches that are belonging to the current FetchResult.
+    batch_count: int32 (id: 2);
+
     status: Status (id: 3);
 }
 

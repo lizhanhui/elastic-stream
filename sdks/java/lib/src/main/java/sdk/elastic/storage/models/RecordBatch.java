@@ -69,18 +69,19 @@ public class RecordBatch {
     }
 
     /**
-     * Decode a list of record batches from a byte buffer. Only the first ${length} bytes will be decoded.
-     * If not enough bytes are available, an empty list will be returned.
+     * Decode a list of record batches from a byte buffer. Only the first ${count} batches will be decoded.
+     * Note that it will decode as many batches as possible if the byte buffer contains less than ${count} batches.
      *
      * @param buffer the byte buffer containing the record batches
-     * @param length the length of bytes in the buffer to be decoded
+     * @param count the count of batches need to be extracted from the byte buffer
      * @return a list of record batches
      */
-    public static List<RecordBatch> decode(ByteBuffer buffer, int length) {
-        assert buffer != null && buffer.remaining() >= length;
-        List<RecordBatch> batchList = new ArrayList<>();
-        int oldRemaining = buffer.remaining();
-        while (buffer.remaining() >= MIN_LENGTH && oldRemaining - buffer.remaining() <= length) {
+    public static List<RecordBatch> decode(ByteBuffer buffer, int count) {
+        if (count <= 0) {
+            return new ArrayList<>();
+        }
+        List<RecordBatch> batchList = new ArrayList<>(count);
+        while (buffer.remaining() >= MIN_LENGTH && batchList.size() < count) {
             batchList.add(new RecordBatch(buffer));
         }
         return batchList;
