@@ -54,8 +54,26 @@ MAKEFLAGS += --no-builtin-rules
 MAKEFLAGS += --warn-undefined-variables
 .SUFFIXES:
 
-HOST_OS := $(shell go env GOOS)
-HOST_ARCH := $(shell go env GOARCH)
+# It's necessary to set this because some environments don't link sh -> bash.
+SHELL := /usr/bin/env bash -o errexit -o pipefail -o nounset
+
+HOST_OS ?= $(shell if which go > /dev/null; then go env GOOS; fi)
+HOST_ARCH ?= $(shell if which go > /dev/null; then go env GOARCH; fi)
+ifeq (,$(HOST_OS))
+  ifeq ($(OS),Windows_NT)
+    HOST_OS := windows
+  else
+    HOST_OS := $(shell uname -s | tr A-Z a-z)
+  endif
+endif
+ifeq (,$(HOST_ARCH))
+  ifeq ($(shell uname -m),x86_64)
+    HOST_ARCH := amd64
+  else
+    HOST_ARCH := $(shell uname -m)
+  endif
+endif
+
 # Used internally.  Users should pass GOOS and/or GOARCH.
 OS := $(if $(GOOS),$(GOOS),$(HOST_OS))
 ARCH := $(if $(GOARCH),$(GOARCH),$(HOST_ARCH))
@@ -70,15 +88,12 @@ ifeq ($(OS), windows)
   BIN_EXTENSION := .exe
 endif
 
-# It's necessary to set this because some environments don't link sh -> bash.
-SHELL := /usr/bin/env bash -o errexit -o pipefail -o nounset
-
 # This is used in docker buildx commands
 BUILDX_NAME := $(shell basename $$(pwd))
 
 # Satisfy --warn-undefined-variables.
 GOFLAGS ?=
-GOPROXY ?= $(shell go env GOPROXY)
+GOPROXY ?= $(shell if which go > /dev/null; then go env GOPROXY; fi)
 HTTP_PROXY ?=
 HTTPS_PROXY ?=
 
