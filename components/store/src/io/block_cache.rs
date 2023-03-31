@@ -2,10 +2,11 @@ use std::{
     cell::UnsafeCell, cmp, collections::BTreeMap, ops::Bound, rc::Rc, sync::Arc, time::Instant,
 };
 
-use slog::{error, info, trace, Logger};
+use crossbeam::channel::internal::SelectHandle;
+use slog::{error, info, trace, warn, Logger};
 use thiserror::Error;
 
-use super::buf::AlignedBuf;
+use super::{buf::AlignedBuf, Options};
 
 #[derive(Error, Debug)]
 enum CacheError {
@@ -17,6 +18,10 @@ enum CacheError {
 pub(crate) struct Entry {
     hit: usize,
     last_hit_instant: Instant,
+
+    /// The number of strong references to the entry.
+    /// The entry shouldn't be dropped if the strong_rc is not zero.
+    strong_rc: usize,
 
     /// Some if the entry is not loaded yet.
     /// None if the entry is loaded that has a valid cached buf.
@@ -31,6 +36,7 @@ impl Entry {
         Self {
             buf: Some(buf),
             hit: 0,
+            strong_rc: 0,
             last_hit_instant: Instant::now(),
             entry_range: None,
         }
@@ -40,6 +46,7 @@ impl Entry {
         Self {
             buf: None,
             hit: 0,
+            strong_rc: 0,
             last_hit_instant: Instant::now(),
             entry_range: Some(entry_range),
         }
@@ -59,6 +66,7 @@ impl Entry {
         if let Some(buf) = &self.buf {
             buf.covers_partial(entry_range.wal_offset, entry_range.len)
         } else if let Some(loading_entry_range) = &self.entry_range {
+            // When comparing with a loading entry, we should consider the aligned length
             loading_entry_range.wal_offset <= entry_range.wal_offset + entry_range.len as u64
                 && entry_range.wal_offset
                     <= loading_entry_range.wal_offset + loading_entry_range.len as u64
@@ -94,6 +102,11 @@ impl Entry {
         self.buf.is_some()
     }
 
+    /// Check the entry whether it is strong referenced.
+    pub(crate) fn is_strong_referenced(&self) -> bool {
+        self.strong_rc > 0
+    }
+
     pub(crate) fn wal_offset(&self) -> u64 {
         if let Some(buf) = &self.buf {
             buf.wal_offset
@@ -125,9 +138,11 @@ impl Entry {
 
 #[derive(Debug, Copy, Clone)]
 pub(crate) struct EntryRange {
-    // The start wal_offset of the entry which is a absolute wal_offset.
-    // It's expected to be aligned to the IO alignment.
+    /// The start wal_offset of the entry which is a absolute wal_offset.
+    /// It's expected to be aligned to the IO alignment.
     pub(crate) wal_offset: u64,
+
+    /// It's expected to be aligned to the IO alignment.
     pub(crate) len: u32,
 }
 
@@ -139,14 +154,13 @@ impl EntryRange {
         // Alignment must be power of 2.
         debug_assert_eq!(0, alignment & (alignment - 1));
         let from = wal_offset / alignment * alignment;
-
-        // We don't align the end offset in the cache query, to avoid loading the last page in read path.
-        // Note: the last page always added in write path.
         let to = wal_offset + len as u64;
+
+        let aligned_to = (to + alignment - 1) / alignment * alignment;
 
         Self {
             wal_offset: from,
-            len: (to - from) as u32,
+            len: (aligned_to - from) as u32,
         }
     }
 }
@@ -201,15 +215,20 @@ pub(crate) struct BlockCache {
 
     // The size of the block cache.
     cache_size: u32,
+
+    alignment: usize,
 }
 
 impl BlockCache {
     pub(crate) fn new(log: Logger, offset: u64) -> Self {
+        // TODO: fetch the alignment from the upper layer.
+        let io_options = Options::default();
         Self {
             log,
             wal_offset: offset,
             entries: BTreeMap::new(),
             cache_size: 0,
+            alignment: io_options.alignment,
         }
     }
 
@@ -230,22 +249,29 @@ impl BlockCache {
         );
         debug_assert!(buf.wal_offset >= self.wal_offset);
         let from = (buf.wal_offset - self.wal_offset) as u32;
-        let entry = Rc::new(UnsafeCell::new(Entry::new(buf)));
 
-        // Increase the cached size.
-        self.cache_size += unsafe { (*entry.get()).capacity() };
+        // Fetch previous entry if exists.
+        let pre_entry = self.entries.get(&from);
 
-        // The replace occurs when the new entry overlaps with the existing entry.
-        let pre_entry = self.entries.insert(from, entry);
+        let mut new_entry = Entry::new(buf);
 
-        // Decrease the cached size if the replaced entry exists and is loaded.
         if let Some(pre_entry) = pre_entry {
+            // The strong reference count of the replaced entry should be inherited by the new entry.
             let pre_entry = unsafe { &*pre_entry.get() };
+            new_entry.strong_rc = pre_entry.strong_rc;
 
+            // Decrease the cached size if the replaced entry exists and is loaded.
             if pre_entry.is_loaded() {
                 self.cache_size -= pre_entry.capacity();
             }
         }
+
+        // Increase the cached size.
+        self.cache_size += new_entry.capacity();
+        let entry = Rc::new(UnsafeCell::new(new_entry));
+
+        // The replace occurs when the new entry overlaps with the existing entry.
+        self.entries.insert(from, Rc::clone(&entry));
     }
 
     /// Add a loading entry to the cache.
@@ -259,6 +285,7 @@ impl BlockCache {
             entry_range.wal_offset,
             entry_range.wal_offset + entry_range.len as u64
         );
+
         debug_assert!(entry_range.wal_offset >= self.wal_offset);
         let from = (entry_range.wal_offset - self.wal_offset) as u32;
         let entry = Rc::new(UnsafeCell::new(Entry::new_loading_entry(entry_range)));
@@ -273,6 +300,40 @@ impl BlockCache {
             if pre_entry.is_loaded() {
                 self.cache_size -= pre_entry.capacity();
             }
+        }
+    }
+
+    /// Strong reference the entries that cover the given range.
+    ///
+    /// # Arguments
+    /// * `entry_range` - The range of the entries to be referenced.
+    /// * `ref_count` - The reference count to be increased or decreased.
+    pub(crate) fn strong_reference_entries(&self, entry_range: EntryRange, ref_count: isize) {
+        let wal_offset = entry_range.wal_offset;
+        let len = entry_range.len;
+
+        let from = wal_offset.checked_sub(self.wal_offset);
+
+        if let Some(from) = from {
+            let from = from as u32;
+            let to = from + len;
+
+            // The start cursor is the first entry whose start wal_offset is less than or equal the query wal_offset.
+            // This behavior is aim to resolve the case that the query wal_offset is in the middle of an entry.
+            let start_cursor = self.entries.upper_bound(Bound::Included(&from));
+            let start_key = start_cursor.key().unwrap_or(&from);
+
+            self.entries.range(start_key..&to).for_each(|(_k, entry)| {
+                let item = unsafe { &mut *entry.get() };
+                if item.covers_partial(&entry_range) {
+                    // Increase the reference count if the ref_count is positive, otherwise decrease it.
+                    if ref_count > 0 {
+                        item.strong_rc += ref_count as usize;
+                    } else {
+                        item.strong_rc -= (-ref_count) as usize;
+                    }
+                }
+            });
         }
     }
 
@@ -337,10 +398,14 @@ impl BlockCache {
             });
 
             if last_end < to {
-                missed_entries.push(EntryRange {
-                    wal_offset: self.wal_offset + last_end as u64,
-                    len: to - last_end,
-                });
+                // The caller may request read only a part of the last entry, if last_end is not aligned to the block size.
+                // In this case, we shouldn't return the missed entry to avoid the last writable entry being dropped by read IO.
+                if last_end % self.alignment as u32 == 0 {
+                    missed_entries.push(EntryRange {
+                        wal_offset: self.wal_offset + last_end as u64,
+                        len: to - last_end,
+                    });
+                }
             }
 
             if !missed_entries.is_empty() {
@@ -400,6 +465,7 @@ impl BlockCache {
                 if entry.is_loaded() {
                     self.cache_size -= entry.capacity();
                 }
+
                 return Some(entry);
             }
             return None;
@@ -818,6 +884,26 @@ mod tests {
         // Hit again, with 5 entries returned
         let hit = block_cache.try_get_entries(target_entry).unwrap().unwrap();
         assert_eq!(5, hit.len());
+    }
+
+    #[test]
+    fn test_get_last_writable_entry() {
+        let log = test_util::terminal_logger();
+        let mut block_cache = super::BlockCache::new(log.clone(), 0);
+        let block_size = 4096;
+
+        let buf = Arc::new(AlignedBuf::new(log.clone(), 0, block_size, block_size).unwrap());
+        buf.increase_written(1024);
+
+        block_cache.add_entry(buf);
+
+        let target_entry = super::EntryRange {
+            wal_offset: 0,
+            len: 512,
+        };
+        let hit = block_cache.try_get_entries(target_entry).unwrap().unwrap();
+        assert_eq!(1, hit.len());
+        assert_eq!(1024, hit[0].limit());
     }
 
     #[test]

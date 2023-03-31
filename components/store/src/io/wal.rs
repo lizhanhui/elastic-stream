@@ -1,6 +1,6 @@
 use std::{
     collections::{HashMap, VecDeque},
-    path::Path,
+    path::Path, cmp,
 };
 
 use crate::{
@@ -373,7 +373,7 @@ impl Wal {
             .iter()
             .map(|segment| (segment, segment.block_cache.iter()))
             .flat_map(|(seg, it)| it.map(move |(_, v)| (seg, v)))
-            .filter(|(_, entry)| entry.is_loaded())
+            .filter(|(_, entry)| entry.is_loaded() && !entry.is_strong_referenced())
             .collect();
 
         // Sort the cached entries by the score based on the access frequency and the last access time.
@@ -421,7 +421,10 @@ impl Wal {
         }
 
         self.wal_cache.current_cache_size = cache_size - reclaimed;
-        (reclaimed, (current_free_bytes + reclaimed as i64) as u64)
+        (
+            reclaimed,
+            cmp::max(0, current_free_bytes + reclaimed as i64) as u64,
+        )
     }
 
     fn alloc_segment(&mut self) -> Result<LogSegment, StoreError> {

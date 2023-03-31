@@ -533,8 +533,13 @@ impl IO {
 
         let mut need_write = false;
 
+        // Try reclaim the cache space for the upcoming entries.
+        let (_, free_bytes) = try_reclaim_from_wal(&mut self.wal, 0, &self.log);
+        let mut free_bytes = free_bytes as i64;
+
         // The missed entries that are not in the cache, group by the start offset of segments.
         let mut missed_entries: HashMap<u64, Vec<EntryRange>> = HashMap::new();
+        let mut strong_referenced_entries: HashMap<u64, Vec<EntryRange>> = HashMap::new();
 
         'task_loop: while let Some(io_task) = self.pending_data_tasks.pop_front() {
             match io_task {
@@ -553,7 +558,8 @@ impl IO {
 
                         // Try to read from the buffer first.
                         let buf_res = segment.block_cache.try_get_entries(range_to_read);
-                        let mut move_to_inflight = false;
+                        let seg_wal_offset = segment.wal_offset;
+
                         match buf_res {
                             Ok(Some(buf_v)) => {
                                 // Complete the task directly.
@@ -562,24 +568,42 @@ impl IO {
                             }
                             Ok(None) => {
                                 // The dependent entries are inflight, move to inflight list directly.
-                                move_to_inflight = true;
                             }
                             Err(mut entries) => {
                                 // Cache miss, there are some entries should be read from disk.
-                                missed_entries
-                                    .entry(segment.wal_offset)
-                                    .or_default()
-                                    .append(&mut entries);
+                                // Calculate the total length of the entries.
+                                let mut total_len = 0;
+                                for entry in entries.iter() {
+                                    total_len += entry.len;
+                                }
 
-                                move_to_inflight = true;
+                                free_bytes -= total_len as i64;
+
+                                if free_bytes >= 0 {
+                                    missed_entries
+                                        .entry(seg_wal_offset)
+                                        .or_default()
+                                        .append(&mut entries);
+                                } else {
+                                    // There is no enough space to read the entries, the task should be blocked.
+                                    // Trace the pending task
+                                    trace!(self.log, "Pending the read task"; "task" => ?task);
+                                    self.pending_data_tasks.push_front(IoTask::Read(task));
+                                    break 'task_loop;
+                                }
                             }
                         }
-                        if move_to_inflight {
-                            self.inflight_read_tasks
-                                .entry(segment.wal_offset)
-                                .or_default()
-                                .push_back(task);
-                        }
+
+                        strong_referenced_entries
+                            .entry(seg_wal_offset)
+                            .or_default()
+                            .push(range_to_read);
+
+                        // Move the task to inflight list.
+                        self.inflight_read_tasks
+                            .entry(seg_wal_offset)
+                            .or_default()
+                            .push_back(task);
                     } else {
                         self.pending_data_tasks.push_front(IoTask::Read(task));
                     }
@@ -587,6 +611,16 @@ impl IO {
                 IoTask::Write(mut task) => {
                     let writer = unsafe { &mut *self.buf_writer.get() };
                     loop {
+                        let payload_length = task.buffer.len();
+
+                        free_bytes -= payload_length as i64;
+
+                        if free_bytes < 0 {
+                            // Pending the task and wait for the cache space to be reclaimed.
+                            self.pending_data_tasks.push_front(IoTask::Write(task));
+                            break 'task_loop;
+                        }
+
                         if let Some(segment) = self.wal.segment_file_of(writer.cursor) {
                             if !segment.writable() {
                                 trace!(
@@ -599,7 +633,6 @@ impl IO {
                             }
 
                             if let Some(_sd) = segment.sd.as_ref() {
-                                let payload_length = task.buffer.len();
                                 if !segment.can_hold(payload_length as u64) {
                                     if let Ok(pos) = segment.append_footer(writer) {
                                         trace!(self.log, "Write position of WAL after padding segment footer: {}", pos);
@@ -608,6 +641,7 @@ impl IO {
                                     // Switch to a new log segment
                                     continue;
                                 }
+
                                 let pre_written = segment.written;
                                 if let Ok(pos) = segment.append_record(writer, &task.buffer[..]) {
                                     trace!(
@@ -635,6 +669,19 @@ impl IO {
         }
 
         self.build_read_sqe(entries, missed_entries);
+
+        // Increase the strong reference count of the entries.
+        // Note: we do this task after the read task is built, because the build step will add loading entries to the cache.
+        for (seg_wal_offset, entries) in strong_referenced_entries.into_iter() {
+            if let Some(segment) = self.wal.segment_file_of(seg_wal_offset) {
+                for range_to_read in entries {
+                    // The read task is blocked by inflight entries, the involved cache entries should be strong referenced.
+                    segment
+                        .block_cache
+                        .strong_reference_entries(range_to_read, 1);
+                }
+            }
+        }
 
         if need_write {
             self.build_write_sqe(entries);
@@ -726,8 +773,9 @@ impl IO {
 
                         // Cache the completed read context
                         if opcode::Read::CODE == context.opcode {
-                            if let Some(_segment) = self.wal.segment_file_of(context.wal_offset) {
-                                effected_segments.insert(context.wal_offset);
+                            if let Some(segment) = self.wal.segment_file_of(context.wal_offset) {
+                                effected_segments.insert(segment.wal_offset);
+                                trace!(self.log, "Effected segment {}", segment.wal_offset);
                             }
                         }
                     }
@@ -745,14 +793,19 @@ impl IO {
             trace!(self.log, "Reaped {} data CQE(s)", count);
         }
 
-        let (reclaimed_bytes, free_bytes) = self.wal.try_reclaim(cache_bytes);
-        trace!(
-            self.log,
-            "Need to reclaim {} bytes, actually {} bytes are reclaimed from WAL, now {} bytes free",
-            cache_bytes,
-            reclaimed_bytes,
-            free_bytes
-        );
+        let (_, free_bytes) = try_reclaim_from_wal(&mut self.wal, cache_bytes, &self.log);
+
+        if free_bytes < cache_bytes as u64 {
+            // There is no enough space to cache the returned blocks.
+            // It's unlikely to happen, because the uring will pend the io task if there is no enough space.
+            // So we just warn this case, and ingest the blocks into the cache.
+            warn!(
+                self.log,
+                "No enough space to cache the returned blocks. Cache size: {}, free space: {}",
+                cache_bytes,
+                free_bytes
+            );
+        }
 
         // Add to block cache
         for buf in cache_entries {
@@ -811,11 +864,20 @@ impl IO {
 
                         match segment.block_cache.try_get_entries(range) {
                             Ok(Some(buf)) => {
+                                // The read task is blocked by inflight entries, the involved cache entries should be dereferenced.
+                                segment.block_cache.strong_reference_entries(range, -1);
                                 self.complete_read_task(task, buf);
                                 continue;
                             }
                             Ok(None) => {
                                 // Wait for the next IO to complete this task
+                                // Trace the detail of uncompleted task
+                                trace!(
+                                    self.log,
+                                    "Inflight read task {{ wal_offset: {}, len: {} }}",
+                                    task.wal_offset,
+                                    task.len
+                                );
                             }
                             Err(_) => {
                                 // The error means we need issue some read IOs for this task,
@@ -837,6 +899,18 @@ impl IO {
                 }
             }
         });
+
+        // Trace the inflight_read_tasks after a round of completion
+        self.inflight_read_tasks
+            .iter()
+            .for_each(|(wal_offset, tasks)| {
+                trace!(
+                    self.log,
+                    "Inflight read tasks for wal offset {}: {}",
+                    wal_offset,
+                    tasks.len()
+                );
+            });
     }
 
     fn complete_read_task(&mut self, read_task: ReadTask, read_buf_v: Vec<Arc<AlignedBuf>>) {
@@ -845,13 +919,6 @@ impl IO {
         // We need narrow the first and the last AlignedBuf to the actual read range
         let mut slice_v = vec![];
         read_buf_v.into_iter().for_each(|buf| {
-            trace!(
-                self.log,
-                "Read buffer: offset: {}, len: {}",
-                buf.wal_offset,
-                buf.limit()
-            );
-
             let mut start_pos = 0;
 
             if buf.wal_offset < read_task.wal_offset {
@@ -1019,6 +1086,22 @@ impl IO {
         info!(log, "Main loop quit");
         Ok(())
     }
+}
+
+/// Try reclaim some bytes from the wal
+///
+fn try_reclaim_from_wal(wal: &mut Wal, reclaim_bytes: u32, log: &Logger) -> (u64, u64) {
+    // Try reclaim the cache space for the upcoming entries.
+    let (reclaimed_bytes, free_bytes) = wal.try_reclaim(reclaim_bytes);
+    trace!(
+        log,
+        "Need to reclaim {} bytes, actually {} bytes are reclaimed from WAL, now {} bytes free",
+        reclaim_bytes,
+        reclaimed_bytes,
+        free_bytes
+    );
+
+    (reclaimed_bytes, free_bytes)
 }
 
 /// Process reaped IO completion.
@@ -1343,6 +1426,26 @@ mod tests {
         Ok(())
     }
 
+    #[test]
+    fn test_run_on_small_io() -> Result<(), Box<dyn Error>> {
+        let (handle, sender) = create_and_run_io(create_small_io)?;
+
+        // Will cost 4K * 1024 = 4M bytes, which means 4 segments will be allocated
+        // And the cache reclaim will be triggered since a small io only has 1M cache
+        send_and_receive(sender, 4096, 1024)?;
+        handle.join().map_err(|_| StoreError::AllocLogSegment)?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_send_and_receive_half_page() -> Result<(), Box<dyn Error>> {
+        let (handle, sender) = create_and_run_io(create_default_io)?;
+
+        send_and_receive(sender, 199, 1)?;
+        handle.join().map_err(|_| StoreError::AllocLogSegment)?;
+        Ok(())
+    }
+
     fn send_and_receive(
         sender: Sender<IoTask>,
         single_size: usize,
@@ -1397,7 +1500,7 @@ mod tests {
                 IoTask::Read(ReadTask {
                     stream_id: res.stream_id,
                     wal_offset: res.wal_offset,
-                    len: single_size as u32 + 8, // 8 is the prefix added by the store
+                    len: single_size as u32 + crate::RECORD_PREFIX_LENGTH as u32,
                     observer: tx,
                 })
             })
@@ -1422,7 +1525,10 @@ mod tests {
                 res_payload.extend_from_slice(&r[..]);
             });
 
-            assert_eq!(buffer, res_payload.freeze()[8..]);
+            assert_eq!(
+                buffer,
+                res_payload.freeze()[(crate::RECORD_PREFIX_LENGTH as usize)..]
+            );
         }
         drop(sender);
 
