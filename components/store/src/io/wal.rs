@@ -2,18 +2,22 @@ use std::{
     cmp,
     collections::{HashMap, VecDeque},
     path::Path,
+    sync::Arc,
 };
 
 use crate::{
     error::StoreError,
+    index::{driver::IndexDriver, record_handle::RecordHandle},
     io::record::RecordType,
     io::segment::{LogSegment, Medium, SegmentDescriptor, Status, FOOTER_LENGTH},
     option::WalPath,
 };
 
 use io_uring::{opcode, squeue, types};
+use model::flat_record::FlatRecordBatch;
 use percentage::Percentage;
-use slog::{debug, error, info, warn, Logger};
+use protocol::flat_model::records::RecordBatchMeta;
+use slog::{debug, error, info, trace, warn, Logger};
 
 /// A WalCache holds the configurations of cache management, and supports count the usage of the memory.
 pub(crate) struct WalCache {
@@ -156,6 +160,7 @@ impl Wal {
         segment: &mut LogSegment,
         pos: &mut u64,
         log: &Logger,
+        indexer: &Arc<IndexDriver>,
     ) -> Result<bool, StoreError> {
         let mut file_pos = *pos - segment.wal_offset;
         let mut meta_buf = [0; 4];
@@ -225,6 +230,36 @@ impl Wal {
                 panic!("Unknown record type: {}", record_type);
             }
 
+            // Index the record group
+            match FlatRecordBatch::init_from_buf(buf.clone().freeze()) {
+                Ok(batch) => {
+                    let offset = batch
+                        .base_offset
+                        .expect("RecordBatch should have valid base_offset")
+                        as u64;
+                    match flatbuffers::root::<RecordBatchMeta>(&batch.meta_buffer[..]) {
+                        Ok(metadata) => {
+                            let stream_id = metadata.stream_id();
+                            let handle = RecordHandle {
+                                wal_offset: segment.wal_offset + file_pos - len as u64 - 8,
+                                len: len as u32 + 8,
+                                hash: 0,
+                            };
+                            trace!(log, "Index RecordBatch[stream-id={}, base-offset={}, wal-offset={}, len={}]", stream_id, offset, handle.wal_offset, handle.len);
+                            indexer.index(stream_id, offset, handle);
+                        }
+                        Err(e) => {
+                            error!(log, "Failed to deserialize RecordBatchMeta. Cause: {:?}", e);
+                            panic!("Failed to deserialize RecordBatchMeta");
+                        }
+                    }
+                }
+                Err(e) => {
+                    error!(log, "Failed to decode FlatRecordBatch. Cause: {}", e);
+                    panic!("Failed to decode FlatRecordBatch");
+                }
+            }
+
             buf.resize(len, 0);
         }
         *pos = segment.wal_offset + file_pos;
@@ -233,7 +268,11 @@ impl Wal {
         Ok(last_found)
     }
 
-    pub(crate) fn recover(&mut self, offset: u64) -> Result<u64, StoreError> {
+    pub(crate) fn recover(
+        &mut self,
+        offset: u64,
+        indexer: Arc<IndexDriver>,
+    ) -> Result<u64, StoreError> {
         let mut pos = offset;
         let log = self.log.clone();
         info!(log, "Start to recover WAL segment files");
@@ -253,7 +292,7 @@ impl Wal {
                 continue;
             }
 
-            if Self::scan_record(segment, &mut pos, &log)? {
+            if Self::scan_record(segment, &mut pos, &log, &indexer)? {
                 need_scan = false;
                 info!(log, "Recovery completed at `{}`", pos);
             }

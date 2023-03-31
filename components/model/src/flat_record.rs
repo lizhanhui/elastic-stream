@@ -5,7 +5,8 @@ use bytes::{Buf, BufMut, Bytes, BytesMut};
 use chrono::Utc;
 use flatbuffers::FlatBufferBuilder;
 use protocol::flat_model::records::{
-    KeyValue, KeyValueArgs, RecordBatchMeta, RecordBatchMetaArgs, RecordMeta, RecordMetaArgs,
+    KeyValue, KeyValueArgs, RecordBatchMeta, RecordBatchMetaArgs, RecordBatchMetaT, RecordMeta,
+    RecordMetaArgs,
 };
 
 use crate::{error::DecodeError, header::Common, Record, RecordBatch};
@@ -271,6 +272,21 @@ impl FlatRecordBatch {
 
     pub fn set_base_offset(&mut self, base_offset: i64) {
         self.base_offset = Some(base_offset);
+    }
+
+    /// For test purpose only.
+    pub fn dummy() -> Self {
+        let meta = RecordBatchMetaT::default();
+        let mut fbb = flatbuffers::FlatBufferBuilder::new();
+        let record_batch_meta = meta.pack(&mut fbb);
+        fbb.finish(record_batch_meta, None);
+        let data = fbb.finished_data();
+        Self {
+            magic: Some(0x22),
+            base_offset: Some(0),
+            meta_buffer: Bytes::copy_from_slice(data),
+            records: vec![],
+        }
     }
 }
 

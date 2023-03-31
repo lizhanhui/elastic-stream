@@ -10,6 +10,7 @@ byteorder = { workspace = true }
 bytes = { workspace = true }
 tokio-uring = { workspace = true }
 futures = { workspace = true }
+flatbuffers = { workspace = true }
 thiserror = { workspace = true }
 rand = { workspace = true }
 uuid = { workspace = true }

@@ -223,7 +223,8 @@ impl IO {
     }
 
     fn recover(&mut self, offset: u64) -> Result<(), StoreError> {
-        let pos = self.wal.recover(offset)?;
+        let indexer = Arc::clone(&self.indexer);
+        let pos = self.wal.recover(offset, indexer)?;
 
         // Reset offset of write buffer
         self.buf_writer.get_mut().reset_cursor(pos);
@@ -1203,9 +1204,9 @@ mod tests {
     use crate::io::options::{DEFAULT_LOG_SEGMENT_SIZE, DEFAULT_MAX_CACHE_SIZE};
     use crate::io::ReadTask;
     use crate::offset_manager::WalOffsetManager;
-    use crate::store;
     use bytes::BytesMut;
     use crossbeam::channel::Sender;
+    use model::flat_record::FlatRecordBatch;
     use slog::trace;
     use std::cell::RefCell;
     use std::error::Error;
@@ -1570,10 +1571,14 @@ mod tests {
         let sender = rx
             .blocking_recv()
             .map_err(|_| StoreError::Internal("Internal error".to_owned()))?;
-
-        let mut buffer = BytesMut::with_capacity(4096);
-        buffer.resize(4096, 65);
+        let record_group = FlatRecordBatch::dummy();
+        let (bufs, total) = record_group.encode();
+        let mut buffer = BytesMut::new();
+        for buf in &bufs {
+            buffer.extend_from_slice(buf);
+        }
         let buffer = buffer.freeze();
+        assert_eq!(buffer.len(), total as usize);
 
         let mut receivers = vec![];
 
@@ -1618,7 +1623,7 @@ mod tests {
                 IoTask::Read(ReadTask {
                     stream_id: res.stream_id,
                     wal_offset: res.wal_offset,
-                    len: 4096 + 8, // 4096 is the write buffer size, 8 is the prefix added by the store
+                    len: total as u32 + 8, // 4096 is the write buffer size, 8 is the prefix added by the store
                     observer: tx,
                 })
             })

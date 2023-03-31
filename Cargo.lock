@@ -839,8 +839,8 @@ dependencies = [
 
 [[package]]
 name = "flatbuffers"
-version = "23.1.4"
-source = "git+https://github.com/google/flatbuffers.git?tag=v23.1.4#af9ceabeef1a10c1004e2741f8c0c090ca59e5af"
+version = "23.3.3"
+source = "git+https://github.com/google/flatbuffers.git?tag=v23.3.3#01834de25e4bf3975a9a00e816292b1ad0fe184b"
 dependencies = [
  "bitflags",
  "rustc_version",
@@ -2282,6 +2282,7 @@ dependencies = [
  "criterion",
  "crossbeam",
  "derivative",
+ "flatbuffers",
  "futures",
  "io-uring",
  "libc",

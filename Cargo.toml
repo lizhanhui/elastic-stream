@@ -39,7 +39,7 @@ thiserror = "1.0"
 clap = { version = "4.0", features = ["derive"] }
 num_enum = "0.5"
 
-flatbuffers = { git = "https://github.com/google/flatbuffers.git", tag = "v23.1.4" }
+flatbuffers = { git = "https://github.com/google/flatbuffers.git", tag = "v23.3.3" }
 
 libc = "0.2"
 nix = "0.26"
