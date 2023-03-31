@@ -8,11 +8,12 @@ The Streaming Batch Protocol (SBP) is a frame base protocol. All frames begin wi
 
 The protocol is big-endian (network byte order).
 
-Each frame contains a fixed-size header followed by a variable-size extended header and payload. The header is described in Section 2. The content of the extended header and payload depends on the header operation code. The list of supported operation codes and the details of the payload are described in Section 4. The frame's payload is opaque to the SBP frame format and is interpreted by the application layer.
+Each frame consists of a fixed-size header, followed by a variable-size extended header and payload. Section 2 describes the header, while the content of the extended header and payload depends on the operation code specified in the header. Section 4 provides details about supported operation codes and their corresponding payloads. The SBP frame format considers the payload as opaque, which means that it is interpreted by the application layer.
 
 The design of SBP follows two principles:
-- Batch: SBP is designed to support batch processing, which means that the client can send multiple requests in one frame, and vice versa. This is useful for reducing the overhead of network communication.
-- Streaming: The server does not need to respond to all the requests in a single batch, which means that the server could respond to the requests in a streaming way to reduce the latency of the response.
+- Batch: SBP is designed to support batch processing to reduce network communication overhead. This allows clients to send multiple requests in one frame or vice versa.
+- Streaming: The server has the capability to respond to requests in a streaming manner, as opposed to responding to all requests at once, which can decrease response latency significantly.
+
 
 ## Frame Header
 The Frame Header is a fixed 12-octet header that appears at the beginning of every frame. It contains fields for the Frame Length, Magic Code, Operation Code, Flags, and Stream Identifier.
