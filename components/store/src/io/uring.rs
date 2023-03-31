@@ -1662,4 +1662,248 @@ mod tests {
 
         Ok(())
     }
+
+    fn create_io_with_segment_size(
+        store_dir: &Path,
+        segment_size: u64,
+    ) -> Result<super::IO, StoreError> {
+        let mut options = super::Options::default();
+        // set the size of segment file
+        options.segment_size = segment_size;
+        let logger = test_util::terminal_logger();
+        let store_path = store_dir.join("rocksdb");
+        if !store_path.exists() {
+            fs::create_dir_all(store_path.as_path()).map_err(|e| StoreError::IO(e))?;
+        }
+
+        options.metadata_path = store_path
+            .into_os_string()
+            .into_string()
+            .map_err(|_e| StoreError::Configuration("Bad path".to_owned()))?;
+
+        let wal_dir = store_dir.join("wal");
+        if !wal_dir.exists() {
+            fs::create_dir_all(wal_dir.as_path()).map_err(|e| StoreError::IO(e))?;
+        }
+        let wal_path = WalPath::new(wal_dir.to_str().unwrap(), 1234)?;
+        options.add_wal_path(wal_path);
+
+        // Build wal offset manager
+        let wal_offset_manager = Arc::new(WalOffsetManager::new());
+
+        // Build index driver
+        let indexer = Arc::new(IndexDriver::new(
+            logger.clone(),
+            &options.metadata_path,
+            Arc::clone(&wal_offset_manager) as Arc<dyn MinOffset>,
+        )?);
+
+        super::IO::new(&mut options, indexer, logger.clone())
+    }
+
+    fn append_fetch_task(
+        log: slog::Logger,
+        sender: crossbeam::channel::Sender<IoTask>,
+        stream_id: i64,
+        offset: i64,
+        records: Vec<bytes::Bytes>,
+    ) {
+        let mut receivers = vec![];
+        records
+            .iter()
+            .enumerate()
+            .map(|(i, buf)| {
+                let (tx, rx) = oneshot::channel();
+                receivers.push(rx);
+                IoTask::Write(WriteTask {
+                    stream_id: stream_id,
+                    offset: offset + i as i64,
+                    buffer: buf.clone(),
+                    observer: tx,
+                    written_len: None,
+                })
+            })
+            .for_each(|task| {
+                sender.send(task).unwrap();
+            });
+
+        let mut results = Vec::new();
+        for receiver in receivers {
+            let res = receiver.blocking_recv().unwrap().unwrap();
+            trace!(
+                log,
+                "{{ stream-id: {}, offset: {} , wal_offset: {}}}",
+                res.stream_id,
+                res.offset,
+                res.wal_offset
+            );
+            results.push(res);
+        }
+
+        // Read the data from store
+        let mut receivers = vec![];
+        let mut res_map = std::collections::HashMap::new();
+        results
+            .iter()
+            .map(|res| {
+                let (tx, rx) = oneshot::channel();
+                receivers.push(rx);
+                let idx = (res.offset - offset) as usize;
+                res_map.insert(res.wal_offset, &records[idx]);
+                IoTask::Read(ReadTask {
+                    stream_id: res.stream_id,
+                    wal_offset: res.wal_offset,
+                    len: (records[idx].len() + 8) as u32,
+                    observer: tx,
+                })
+            })
+            .for_each(|task| {
+                sender.send(task).unwrap();
+            });
+
+        for receiver in receivers {
+            let res = receiver.blocking_recv().unwrap().unwrap();
+            trace!(
+                log,
+                "{{Read result is stream-id: {}, wal_offset: {}, payload length: {}}}",
+                res.stream_id,
+                res.wal_offset,
+                res.payload[0].len()
+            );
+            // Assert the payload is equal to the write buffer
+            // trace the length
+
+            let mut res_payload = BytesMut::new();
+            res.payload.iter().for_each(|r| {
+                res_payload.extend_from_slice(&r[..]);
+            });
+            assert_eq!(
+                *res_map[&(res.wal_offset as u64)],
+                res_payload.freeze()[8..]
+            );
+        }
+    }
+
+    fn create_random_bytes(capacity: usize) -> bytes::Bytes {
+        const CHARSET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ\
+                                abcdefghijklmnopqrstuvwxyz\
+                                0123456789)(*&^%$#@!~";
+        let mut rng = rand::thread_rng();
+
+        let random_string: String = (0..capacity)
+            .map(|_| {
+                let idx = rand::Rng::gen_range(&mut rng, 0..CHARSET.len());
+                CHARSET[idx] as char
+            })
+            .collect();
+        let buffer = random_string.as_bytes();
+        BytesMut::from(buffer).freeze()
+    }
+
+    #[test]
+    fn test_run_2() -> Result<(), Box<dyn Error>> {
+        let log = test_util::terminal_logger();
+
+        let (tx, rx) = oneshot::channel();
+        let (recovery_completion_tx, recovery_completion_rx) = oneshot::channel();
+        let logger = log.clone();
+        let handle = std::thread::spawn(move || {
+            let store_dir = random_store_dir().unwrap();
+            let store_dir = store_dir.as_path();
+            let _store_dir_guard = test_util::DirectoryRemovalGuard::new(logger, store_dir);
+            let mut io = create_io_with_segment_size(store_dir, 4096 * 4).unwrap();
+
+            let sender = io
+                .sender
+                .take()
+                .ok_or(StoreError::Configuration("IO channel".to_owned()))
+                .unwrap();
+            let _ = tx.send(sender);
+            let io = RefCell::new(io);
+
+            let _ = super::IO::run(io, recovery_completion_tx);
+
+            println!("Module io stopped");
+        });
+
+        if let Err(_) = recovery_completion_rx.blocking_recv() {
+            panic!("Failed to await recovery completion");
+        }
+
+        let sender = rx
+            .blocking_recv()
+            .map_err(|_| StoreError::Internal("Internal error".to_owned()))?;
+
+        let mut records: Vec<_> = vec![];
+        records.push(create_random_bytes(4096 - 8));
+        records.push(create_random_bytes(4096 - 8));
+        records.push(create_random_bytes(4096 - 8));
+        records.push(create_random_bytes(4096));
+        records.push(create_random_bytes(4096 - 8 - 8));
+        records.push(create_random_bytes(4096 - 8));
+        records.push(create_random_bytes(4096 - 8 - 24));
+        append_fetch_task(log.clone(), sender.clone(), 0, 0, records);
+        let mut records: Vec<_> = vec![];
+        records.push(create_random_bytes(4096 - 8));
+        append_fetch_task(log.clone(), sender.clone(), 0, 7, records);
+        let mut records: Vec<_> = vec![];
+        records.push(create_random_bytes(4096 - 8));
+        records.push(create_random_bytes(4096 - 8));
+        records.push(create_random_bytes(4096));
+        records.push(create_random_bytes(4096 - 8 - 8));
+        records.push(create_random_bytes(4096 - 8));
+        records.push(create_random_bytes(4096 - 8 - 24));
+        append_fetch_task(log.clone(), sender.clone(), 0, 8, records);
+        drop(sender);
+        handle.join().map_err(|_| StoreError::AllocLogSegment)?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_run_random() -> Result<(), Box<dyn Error>> {
+        let log = test_util::terminal_logger();
+
+        let (tx, rx) = oneshot::channel();
+        let (recovery_completion_tx, recovery_completion_rx) = oneshot::channel();
+        let logger = log.clone();
+        let handle = std::thread::spawn(move || {
+            let store_dir = random_store_dir().unwrap();
+            let store_dir = store_dir.as_path();
+            let _store_dir_guard = test_util::DirectoryRemovalGuard::new(logger, store_dir);
+            let mut io = create_io_with_segment_size(store_dir, 4096 * 4).unwrap();
+
+            let sender = io
+                .sender
+                .take()
+                .ok_or(StoreError::Configuration("IO channel".to_owned()))
+                .unwrap();
+            let _ = tx.send(sender);
+            let io = RefCell::new(io);
+
+            let _ = super::IO::run(io, recovery_completion_tx);
+
+            println!("Module io stopped");
+        });
+
+        if let Err(_) = recovery_completion_rx.blocking_recv() {
+            panic!("Failed to await recovery completion");
+        }
+
+        let sender = rx
+            .blocking_recv()
+            .map_err(|_| StoreError::Internal("Internal error".to_owned()))?;
+
+        let mut records: Vec<_> = vec![];
+        let count = 1000;
+        (0..count).into_iter().for_each(|_| {
+            let mut rng = rand::thread_rng();
+            let random_size = rand::Rng::gen_range(&mut rng, 1000..9000);
+            records.push(create_random_bytes(random_size));
+        });
+        append_fetch_task(log.clone(), sender.clone(), 0, 0, records);
+
+        drop(sender);
+        handle.join().map_err(|_| StoreError::AllocLogSegment)?;
+        Ok(())
+    }
 }

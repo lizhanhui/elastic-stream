@@ -1,6 +1,7 @@
 use std::{
+    cmp,
     collections::{HashMap, VecDeque},
-    path::Path, cmp,
+    path::Path,
 };
 
 use crate::{
