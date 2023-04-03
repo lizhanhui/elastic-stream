@@ -31,24 +31,17 @@ pub(crate) enum WriteWindowError {
 ///
 /// Here is how we manage the concurrent window:
 ///
-/// 1. Once a SQE is generated and prepared to submit, we add the range [offset, offset + len)
-///    into a tree map in form of offset --> len;
-/// 2. On reaping a CQE, we compare the completed IO with the minimum node of submitted tree-map.
-/// 2.1 If the completed range offset != committed, meaning we are not expanding continuous writes,
-///     we insert it to completed tree map directly.
-/// 2.2 If these two ranges are identical, and offset of them equals to the previously committed
-///     , then increase the committed and we are safe to acknowledge all pending requests whose
-///     spans are less than the committed.
-/// 2.3  Once we found an expanding IO completion, we need to loop to advance more.
+/// 1. On reaping a CQE, we add the range [offset, offset + len) into the completed tree map in form of offset --> len;
+/// 1.1 If the completed range offset > committed, meaning the gap exists between the committed and the completed,
+/// we just wait further completed ranges to advance the committed;
+/// 1.2 If the completed range offset == committed, meaning the gap is closed, we advance the committed directly.
+/// 1.3 If the completed range offset < committed, meaning we are expanding continuous writes, advance the committed as well.
 pub(crate) struct WriteWindow {
     log: Logger,
 
     /// An offset in WAL, all data prior to it should have been completely written. All write requests whose
     /// ranges fall into [0, committed) can be safely acknowledged.
     pub(crate) committed: u64,
-
-    /// Writes that have been submitted to IO device.
-    submitted: BTreeMap<u64, u32>,
 
     /// Writes that are completed but disjoint with the prior.
     completed: BTreeMap<u64, u32>,
@@ -59,7 +52,6 @@ impl WriteWindow {
         Self {
             log,
             committed,
-            submitted: BTreeMap::new(),
             completed: BTreeMap::new(),
         }
     }
@@ -69,43 +61,17 @@ impl WriteWindow {
         self.committed = committed;
     }
 
-    pub(crate) fn add(&mut self, offset: u64, length: u32) -> Result<(), WriteWindowError> {
-        trace!(
-            self.log,
-            "Add inflight WAL write: [{}, {})",
-            offset,
-            offset + length as u64
-        );
-        match self.submitted.entry(offset) {
-            Entry::Vacant(e) => {
-                e.insert(length);
-                Ok(())
-            }
-            Entry::Occupied(e) => Err(WriteWindowError::Existed {
-                offset,
-                length: *e.get(),
-            }),
-        }
-    }
-
     fn advance(&mut self) -> Result<u64, WriteWindowError> {
-        while let Some((completed_offset, completed_len)) = self.completed.first_key_value() {
+        while let Some((completed_offset, _completed_len)) = self.completed.first_key_value() {
             if *completed_offset > self.committed {
                 // Some writes, within the gap, are NOT yet completed
                 break;
             }
 
-            if let Some((submitted_offset, submitted_len)) = self.submitted.first_key_value() {
-                if completed_offset != submitted_offset {
-                    break;
-                }
-                debug_assert_eq!(completed_len, submitted_len, "If wal_offset of submitted range equals to that of the completed, their length must be the same");
-            } else {
-                break;
-            }
-            self.completed.pop_first();
-            if let Some((wal_offset, length)) = self.submitted.pop_first() {
-                self.committed = wal_offset + length as u64;
+            // If completed_offset <= self.committed, it means we could move forward without doubt.
+            if let Some((completed_offset, completed_len)) = self.completed.pop_first() {
+                self.committed = completed_offset + completed_len as u64;
+
                 trace!(
                     self.log,
                     "Advance committed position of WAL to: {}",
@@ -170,45 +136,30 @@ mod tests {
     fn test_write_window() -> Result<(), WriteWindowError> {
         let log = test_util::terminal_logger();
         let mut window = super::WriteWindow::new(log, 0);
-        window.add(0, 10)?;
         window.commit(0, 10)?;
         assert_eq!(10, window.committed);
 
-        window.add(0, 20)?;
+        // Test expand
         window.commit(0, 20)?;
         assert_eq!(20, window.committed);
 
-        window.add(20, 10)?;
         window.commit(20, 10)?;
         assert_eq!(30, window.committed);
 
         // Gap
-        window.add(40, 10)?;
         window.commit(40, 10)?;
         assert_eq!(30, window.committed);
 
-        Ok(())
-    }
+        // Shrink commit should be considered as invalid
+        assert_eq!(
+            Err(WriteWindowError::InvalidCommit {
+                offset: 40,
+                previous_length: 10,
+                attempted_length: 5
+            }),
+            window.commit(40, 5)
+        );
 
-    #[test]
-    fn test_write_window_add() -> Result<(), WriteWindowError> {
-        let log = test_util::terminal_logger();
-        let mut window = super::WriteWindow::new(log, 0);
-        window.add(0, 10)?;
-        match window.add(0, 20) {
-            Ok(_) => {
-                panic!("Should have raised an error");
-            }
-            Err(e) => {
-                assert_eq!(
-                    e,
-                    WriteWindowError::Existed {
-                        offset: 0,
-                        length: 10
-                    }
-                );
-            }
-        }
         Ok(())
     }
 }

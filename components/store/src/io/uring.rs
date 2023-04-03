@@ -1130,18 +1130,6 @@ fn on_complete(
                 return Err(StoreError::System(-result));
             } else {
                 write_window
-                    .add(context.wal_offset, context.len)
-                    .map_err(|e| {
-                        error!(
-                            log,
-                            "Failed to add `write`[{}, {}) into WriteWindow: {:?}",
-                            context.wal_offset,
-                            context.len,
-                            e
-                        );
-                        StoreError::WriteWindow
-                    })?;
-                write_window
                     .commit(context.wal_offset, context.len)
                     .map_err(|e| {
                         error!(
