@@ -4,7 +4,7 @@ use protocol::rpc::header::{
     DescribeRangeResultT, DescribeRangesRequest, DescribeRangesResponseT, ErrorCode, RangeT,
     StatusT,
 };
-use slog::{warn, Logger};
+use slog::{trace, warn, Logger};
 use std::{cell::RefCell, rc::Rc};
 use store::ElasticStore;
 
@@ -73,6 +73,7 @@ impl<'a> DescribeRange<'a> {
             let mut results = vec![];
             for range in ranges {
                 let mut result = DescribeRangeResultT::default();
+                result.stream_id = range.stream_id;
                 let mut status = StatusT::default();
                 match manager
                     .describe_range(range.stream_id, range.range_index)
@@ -85,6 +86,7 @@ impl<'a> DescribeRange<'a> {
                         range_t.stream_id = range.stream_id();
                         range_t.range_index = range.index();
                         range_t.start_offset = range.start() as i64;
+                        range_t.next_offset = range.limit() as i64;
                         if let Some(end) = range.end() {
                             range_t.end_offset = end as i64;
                         } else {
@@ -102,6 +104,8 @@ impl<'a> DescribeRange<'a> {
             }
             describe_range_response.describe_responses = Some(results);
         }
+
+        trace!(self.logger, "{:?}", describe_range_response);
 
         let describe_response = describe_range_response.pack(&mut builder);
         builder.finish(describe_response, None);

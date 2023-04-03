@@ -297,7 +297,7 @@ impl StreamManager {
             if let Some(mut range) = stream.range(range_id) {
                 if let None = range.end() {
                     if let Some(window) = self.windows.get(&stream_id) {
-                        range.set_limit(window.commit);
+                        range.set_limit(window.next);
                     }
                 }
                 return Ok(range);

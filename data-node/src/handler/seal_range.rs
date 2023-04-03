@@ -5,7 +5,7 @@ use codec::frame::Frame;
 use protocol::rpc::header::{
     ErrorCode, RangeT, SealRangesRequest, SealRangesResponseT, SealRangesResultT, StatusT,
 };
-use slog::{error, warn, Logger};
+use slog::{error, trace, warn, Logger};
 use store::ElasticStore;
 
 use crate::stream_manager::StreamManager;
@@ -84,6 +84,7 @@ impl<'a> SealRange<'a> {
             })
             .collect::<Vec<_>>();
         seal_response.seal_responses = Some(results);
+        trace!(self.log, "{:?}", seal_response);
         let resp = seal_response.pack(&mut builder);
         builder.finish(resp, None);
         let data = builder.finished_data();
