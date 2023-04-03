@@ -91,6 +91,21 @@ public class Record {
         return properties;
     }
 
+    /**
+     * Check if two records are equivalent, i.e., they have equal components except for offset.
+     * @param other the other record to compare with.
+     * @return true if two records are equivalent, false otherwise.
+     */
+    public boolean equivalent(Record other) {
+        return new org.apache.commons.lang3.builder.EqualsBuilder()
+            .append(this.streamId, other.streamId)
+            .append(this.timestamp, other.timestamp)
+            .append(this.headers, other.headers)
+            .append(this.properties, other.properties)
+            .append(this.body.duplicate(), other.body.duplicate())
+            .isEquals();
+    }
+
     @Override
     public boolean equals(Object obj) {
         if (obj == null) {
@@ -103,13 +118,7 @@ public class Record {
             return false;
         }
         Record rhs = (Record) obj;
-        return new org.apache.commons.lang3.builder.EqualsBuilder()
-            .append(this.streamId, rhs.streamId)
-            .append(this.offset, rhs.offset)
-            .append(this.timestamp, rhs.timestamp)
-            .append(this.headers, rhs.headers)
-            .append(this.properties, rhs.properties)
-            .append(this.body.duplicate(), rhs.body.duplicate())
-            .isEquals();
+        return this.offset == rhs.offset &&
+            equivalent(rhs);
     }
 }

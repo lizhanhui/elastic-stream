@@ -166,6 +166,34 @@ public class RecordBatch {
         return records;
     }
 
+    /**
+     * Check if the records in this batch are equivalent to the records in the other batch.
+     * Note that the records in the two batches may differ in the offset, but the offset delta should be the same.
+     *
+     * @param other the other batch
+     * @return true if the records in this batch are equivalent to the records in the other batch
+     */
+    public boolean recordsEquivalent(RecordBatch other) {
+        if (other == null) {
+            return false;
+        }
+        if (records.size() != other.records.size()) {
+            return false;
+        }
+        for (int i = 0; i < records.size(); i++) {
+            if (!records.get(i).equivalent(other.records.get(i))) {
+                return false;
+            }
+            long offsetDelta = records.get(i).getOffset() - getBaseOffset();
+            long otherOffsetDelta = other.records.get(i).getOffset() - other.getBaseOffset();
+            if (offsetDelta != otherOffsetDelta) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+
     private List<Record> extractRecordList(ByteBuffer buffer) {
         assert buffer != null;
 

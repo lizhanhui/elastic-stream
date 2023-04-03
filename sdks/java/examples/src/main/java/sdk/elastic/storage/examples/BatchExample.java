@@ -48,12 +48,12 @@ public class BatchExample {
         return resultList.get(0).getStream();
     }
 
-    public static long getStartOffset(long streamId) throws ExecutionException, InterruptedException {
+    public static long getLastWritableOffset(long streamId) throws ExecutionException, InterruptedException {
         return operationClient.getLastWritableOffset(streamId, DEFAULT_REQUEST_TIMEOUT).get();
     }
 
-    public static long appendOneSampleBatch(long streamId, long baseOffset) throws ExecutionException, InterruptedException {
-        List<Record> recordList = generateRecordList(streamId, baseOffset);
+    public static long appendOneSampleBatch(long streamId) throws ExecutionException, InterruptedException {
+        List<Record> recordList = generateRecordList(streamId, 0L);
         Map<String, String> batchProperties = new HashMap<>();
         batchProperties.put("batchPropertyA", "batchValueA");
         batchProperties.put("batchPropertyB", "batchValueB");
@@ -70,7 +70,7 @@ public class BatchExample {
         List<RecordBatch> batches = operationClient.fetchBatches(streamId, baseOffset, 1, Integer.MAX_VALUE, DEFAULT_REQUEST_TIMEOUT).get();
 
         for (int i = 0; i < batches.size(); i++) {
-            System.out.println("==== Info for Batch " + (i + 1) + "Stream " + streamId + " ====");
+            System.out.println("==== Info for Batch " + (i + 1) + ", Stream " + streamId + " ====");
             System.out.println("Batch's baseOffset is: " + batches.get(i).getBaseOffset());
             for (int j = 0; j < batches.get(i).getRecords().size(); j++) {
                 System.out.println("====== Info for Record " + (j + 1) + ", Batch "+ (i + 1) + " ======");
@@ -85,16 +85,18 @@ public class BatchExample {
 
     public static void main(String[] args) throws IOException {
         try {
+            // pls input a valid pm address.
             init("localhost:8080");
             // 1. Create one Stream First.
             StreamT resultStream = createOneStream();
             long streamId = resultStream.getStreamId();
 
-            // You may need the startOffset
-            long startOffset = getStartOffset(streamId);
+            // You may need the startOffset.
+            long lastOffset = getLastWritableOffset(streamId);
+            System.out.println("The last writable offset of Stream " + streamId + " is: " + lastOffset);
 
             // 2. Append one Batch to the targeted stream. Note that the storage server may change the batch's baseOffset.
-            long returnedBaseOffset = appendOneSampleBatch(streamId, startOffset);
+            long returnedBaseOffset = appendOneSampleBatch(streamId);
 
             // 3. Fetch batches from some offset.
             // In this example, we fetch the batch that was appended in the last step.
@@ -116,7 +118,7 @@ public class BatchExample {
         headers.addHeader(CreatedAt, "someTime");
         Map<String, String> properties = new HashMap<>();
         properties.put("propertyA", "valueA");
-        recordList.add(new Record(streamId, baseOffset + 2, 13L, headers, properties, ByteBuffer.wrap(new byte[] {0, 1, 3})));
+        recordList.add(new Record(streamId, baseOffset, 13L, headers, properties, ByteBuffer.wrap("Hello World1".getBytes(StandardCharsets.ISO_8859_1))));
 
         Headers headers2 = new Headers();
         headers2.addHeader(CreatedAt, "someTime2");
@@ -124,7 +126,7 @@ public class BatchExample {
         Map<String, String> properties2 = new HashMap<>();
         properties2.put("propertyB", "valueB");
         properties2.put("propertyC", "valueC");
-        recordList.add(new Record(streamId, baseOffset + 10, 11L, headers2, properties2, ByteBuffer.wrap(new byte[] {3, 6, 8, 10})));
+        recordList.add(new Record(streamId, baseOffset + 10, 11L, headers2, properties2, ByteBuffer.wrap("Hello World2".getBytes(StandardCharsets.ISO_8859_1))));
 
         return recordList;
     }

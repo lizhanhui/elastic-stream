@@ -38,7 +38,7 @@ public class RecordBatchesGenerator {
         headers.addHeader(CreatedAt, "someTime");
         Map<String, String> properties = new HashMap<>();
         properties.put("propertyA", "valueA");
-        recordList.add(new Record(streamId, baseOffset + 2, 13L, headers, properties, ByteBuffer.wrap(new byte[] {0, 1, 3})));
+        recordList.add(new Record(streamId, baseOffset, 13L, headers, properties, ByteBuffer.wrap(new byte[] {0, 1, 3})));
 
         Headers headers2 = new Headers();
         headers2.addHeader(CreatedAt, "someTime2");

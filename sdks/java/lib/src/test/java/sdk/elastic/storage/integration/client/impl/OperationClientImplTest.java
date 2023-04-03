@@ -54,7 +54,7 @@ class OperationClientImplTest {
 
         List<RecordBatch> recordBatches = operationClient.fetchBatches(streamId, baseOffset, 1, Integer.MAX_VALUE, DEFAULT_REQUEST_TIMEOUT).get();
         assertEquals(1L, recordBatches.size());
-        assertEquals(batch.getRecords(), recordBatches.get(0).getRecords());
+        assertTrue(batch.recordsEquivalent(recordBatches.get(0)));
 
     }
 
