@@ -37,7 +37,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     {
         let file_name = "/mnt/abc.txt".to_owned();
         let open_at_e =
-            opcode::OpenAt::new(types::Fd(libc::AT_FDCWD), file_name.as_ptr() as *const i8)
+            opcode::OpenAt::new(types::Fd(libc::AT_FDCWD), file_name.as_ptr() as *const libc::c_char)
                 .flags(libc::O_CREAT | libc::O_RDWR | libc::O_DIRECT)
                 .mode(libc::S_IRWXU | libc::S_IRWXG)
                 .build()

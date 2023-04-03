@@ -647,7 +647,7 @@ impl Wal {
                     info!(log, "About to delete LogSegmentFile `{}`", segment);
                     let sqe = opcode::UnlinkAt::new(
                         types::Fd(libc::AT_FDCWD),
-                        segment.path.as_ptr() as *const i8,
+                        segment.path.as_ptr() as *const libc::c_char,
                     )
                     .build()
                     .flags(squeue::Flags::empty())

@@ -3,7 +3,7 @@ use std::{
     alloc::{self, Layout},
     fmt::{self, Display, Formatter},
     ops::{Bound, RangeBounds},
-    ptr::{self, NonNull},
+    ptr::{self, NonNull, read_unaligned},
     slice,
     sync::atomic::{AtomicUsize, Ordering},
 };
@@ -123,7 +123,8 @@ impl AlignedBuf {
         if self.limit.load(Ordering::Relaxed) - pos < std::mem::size_of::<u32>() {
             return Err(StoreError::InsufficientData);
         }
-        let value = unsafe { *(self.ptr.as_ptr().add(pos) as *const u32) };
+        let value =
+            unsafe { read_unaligned::<u32>(self.ptr.as_ptr().add(pos) as *const u32) };
         Ok(u32::from_be(value))
     }
 
@@ -142,7 +143,8 @@ impl AlignedBuf {
             return Err(StoreError::InsufficientData);
         }
 
-        let value = unsafe { *(self.ptr.as_ptr().add(pos) as *const u64) };
+        let value =
+            unsafe { read_unaligned::<u64>(self.ptr.as_ptr().add(pos) as *const u64) };
         Ok(u64::from_be(value))
     }
 

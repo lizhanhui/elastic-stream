@@ -29,7 +29,7 @@ mod tests {
         buf.resize(alignment - 1, 65);
         buf.put_i8(0);
         unsafe { std::ptr::copy_nonoverlapping(buf.as_ptr(), ptr, alignment) };
-        let s = unsafe { CStr::from_ptr(ptr as *mut i8) };
+        let s = unsafe { CStr::from_ptr(ptr as *const libc::c_char) };
         assert_eq!(alignment - 1, s.to_str()?.len());
         unsafe { std::alloc::dealloc(ptr, layout) };
         Ok(())
