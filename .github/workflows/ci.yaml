@@ -1,18 +1,24 @@
 name: Continuous Integration
 
-on: push
+on:
+  push:
+  schedule:
+    - cron: '0 6 * * 1'
 
 jobs:
   skip_check:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
-      should_skip: ${{ steps.skip_check.outputs.should_skip }}
+      should_skip: ${{ steps.check_result.outputs.should_skip }}
     steps:
       - id: skip_check
         uses: fkirc/skip-duplicate-actions@v5
         with:
           skip_after_successful_duplicate: 'true'
+      - id: check_result
+        run: |
+          echo "should_skip=${{ github.event_name != 'schedule' && steps.skip_check.outputs.should_skip == 'true' }}" >> $GITHUB_OUTPUT
   lint:
     needs: skip_check
     if: ${{ needs.skip_check.outputs.should_skip != 'true' }}
