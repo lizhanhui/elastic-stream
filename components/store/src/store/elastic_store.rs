@@ -7,7 +7,7 @@ use std::{
     thread::{Builder, JoinHandle},
 };
 
-use super::{handle_joiner, lock::Lock};
+use super::lock::Lock;
 use crate::{
     error::{AppendError, FetchError, StoreError},
     index::{driver::IndexDriver, MinOffset},
@@ -53,7 +53,7 @@ pub struct ElasticStore {
 
     log: Logger,
 
-    join_handles: Arc<handle_joiner::HandleJoiner>,
+    join_handles: Arc<util::HandleJoiner>,
 }
 
 impl ElasticStore {
@@ -133,7 +133,7 @@ impl ElasticStore {
             .blocking_recv()
             .map_err(|_e| StoreError::Internal("Start".to_owned()))?;
 
-        let mut handle_joiner = handle_joiner::HandleJoiner::new(logger.clone());
+        let mut handle_joiner = util::HandleJoiner::new(logger.clone());
         handle_joiner.push(_io_thread_handle);
 
         let store = Self {

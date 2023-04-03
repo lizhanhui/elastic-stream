@@ -3,6 +3,8 @@ mod channel_writer;
 mod client;
 mod client_builder;
 mod client_error;
+mod command;
+pub(crate) mod io;
 pub mod node;
 mod reader;
 mod session;

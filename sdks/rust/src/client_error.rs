@@ -38,4 +38,10 @@ pub enum ClientError {
 
     #[error("Requested node is not playing leader role any more")]
     LeadershipChanged { nodes: Vec<Node> },
+
+    #[error("Failed to spawn a thread")]
+    Thread,
+
+    #[error("Client internal")]
+    ClientInternal,
 }

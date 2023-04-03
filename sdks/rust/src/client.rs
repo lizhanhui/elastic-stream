@@ -1,12 +1,14 @@
-use crate::session_manager::SessionManager;
+use model::stream::Stream;
+
+use crate::{client_error::ClientError, session_manager::SessionManager};
 
 pub struct Client {
     session_manager: SessionManager,
 }
 
 impl Client {
-    pub fn create_stream(&self) {
-        self.session_manager.create_stream();
+    pub async fn create_stream(&self) -> Result<Option<Stream>, ClientError> {
+        self.session_manager.create_stream().await
     }
 }
 

@@ -2,20 +2,21 @@ use std::{sync::Mutex, thread::JoinHandle};
 
 use slog::{info, Logger};
 
-pub(crate) struct HandleJoiner {
+#[derive(Debug)]
+pub struct HandleJoiner {
     log: Logger,
     handles: Mutex<Vec<JoinHandle<()>>>,
 }
 
 impl HandleJoiner {
-    pub(crate) fn new(log: Logger) -> Self {
+    pub fn new(log: Logger) -> Self {
         Self {
             log,
             handles: Mutex::new(Vec::new()),
         }
     }
 
-    pub(crate) fn push(&mut self, handle: JoinHandle<()>) {
+    pub fn push(&mut self, handle: JoinHandle<()>) {
         if let Ok(mut handles) = self.handles.lock() {
             handles.push(handle);
         }

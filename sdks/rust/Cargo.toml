@@ -17,6 +17,7 @@ futures = { workspace = true }
 thiserror = { workspace = true }
 flatbuffers = { workspace = true }
 protocol = { path = "../../components/protocol" }
+util = { path = "../../components/util" }
 lazy_static = { workspace = true }
 
 [dev-dependencies]
