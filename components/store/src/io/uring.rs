@@ -1142,7 +1142,7 @@ fn on_complete(
                         StoreError::WriteWindow
                     })?;
                 write_window
-                    .commit(context.buf.wal_offset, context.buf.limit() as u32)
+                    .commit(context.wal_offset, context.len)
                     .map_err(|e| {
                         error!(
                             log,
