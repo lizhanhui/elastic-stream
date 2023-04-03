@@ -1,0 +1,14 @@
+plugins {
+    id 'java-library'
+}
+
+dependencies {
+    implementation project(":flatc")
+    implementation project(":lib")
+}
+
+java {
+    toolchain {
+        languageVersion.set(JavaLanguageVersion.of(8))
+    }
+}

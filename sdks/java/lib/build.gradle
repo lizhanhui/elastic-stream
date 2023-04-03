@@ -11,69 +11,47 @@ plugins {
     id 'java-library'
     // Apply the maven-publish plugin to allow publishing to Maven Central.
     id 'maven-publish'
-    id 'com.google.protobuf' version '0.9.1'
+    id 'com.google.protobuf' version libs.versions.google.protobuf
 }
-
-group 'sdk.elastic.storage'
-version '0.0.1-SNAPSHOT'
-
-sourceCompatibility = '1.8'
 
 java {
     withSourcesJar()
 //    withJavadocJar()
+    toolchain {
+        languageVersion.set(JavaLanguageVersion.of(8))
+    }
 }
-
-repositories {
-    // Use Maven Central for resolving dependencies.
-    mavenCentral()
-}
-
-
-def grpcVersion = '1.53.0' // CURRENT_GRPC_VERSION
-def protobufVersion = '3.21.7'
-def protocVersion = protobufVersion
 
 dependencies {
-    // Use JUnit Jupiter for testing.
-    testImplementation 'org.junit.jupiter:junit-jupiter:5.9.1'
-    // for test. Use 4.x since 5.x requires jdk 11+.
-    testImplementation 'org.mockito:mockito-core:4.11.0'
-
-    // This dependency is exported to consumers, that is to say found on their compile classpath.
-    api 'org.apache.commons:commons-math3:3.6.1'
-
-    // This dependency is used internally, and not exposed to consumers on their own compile classpath.
-    implementation 'com.google.guava:guava:31.1-jre'
-
+    implementation project(":flatc")
+    implementation libs.guava
     // Use flatbuffers to decode and encode sbp messages
-    implementation group: 'com.google.flatbuffers', name: 'flatbuffers-java', version: '23.3.3'
-
-    implementation group: 'org.apache.commons', name: 'commons-lang3', version: '3.12.0'
-    implementation group: 'io.netty', name: 'netty-all', version: '4.1.89.Final'
-
+    implementation libs.flatbuffers.java
+    implementation libs.commons.lang3
+    implementation libs.netty.all
     // used for logging
-    implementation 'org.apache.logging.log4j:log4j-api:2.20.0'
-    implementation 'org.apache.logging.log4j:log4j-core:2.20.0'
-    implementation 'org.apache.logging.log4j:log4j-slf4j2-impl:2.20.0'
-
-    // used for conversion of kafka batch to RecordBatch. remove it afterwards.
-    implementation('org.apache.kafka:kafka-clients:3.4.0') {
+    implementation libs.bundles.log4j
+    implementation(libs.kafka.clients) {
         exclude group: 'org.slf4j', module: 'slf4j-log4j12'
     }
 
     // used for grpc
-    implementation "io.grpc:grpc-protobuf:${grpcVersion}"
-    implementation "io.grpc:grpc-stub:${grpcVersion}"
-    runtimeOnly "io.grpc:grpc-netty-shaded:${grpcVersion}"
-    compileOnly 'org.apache.tomcat:annotations-api:6.0.53' // necessary for Java 9+
-    testImplementation "io.grpc:grpc-testing:${grpcVersion}"
+    implementation libs.grpc.protobuf
+    implementation libs.grpc.stub
+    runtimeOnly libs.grpc.netty.shaded
+    // necessary for Java 9+
+    compileOnly libs.tomcat.annotations.api
+    testImplementation libs.grpc.testing
+
+    testImplementation libs.junit.jupiter
+    testImplementation libs.mockito.core
+
 }
 
 protobuf {
-    protoc { artifact = "com.google.protobuf:protoc:${protocVersion}" }
+    protoc { artifact = libs.google.protoc.get() }
     plugins {
-        grpc { artifact = "io.grpc:protoc-gen-grpc-java:${grpcVersion}" }
+        grpc { artifact = libs.plugins.protoc.grpc.get() }
     }
     generateProtoTasks {
         all()*.plugins { grpc {} }
@@ -89,7 +67,8 @@ test {
     }
 }
 
-task integrationTest(type: Test, dependsOn: compileJava) {
+tasks.register('integrationTest', Test) {
+    dependsOn compileJava
     description = 'Runs integration tests.'
     group = 'verification'
 

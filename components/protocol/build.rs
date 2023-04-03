@@ -17,7 +17,7 @@ fn main() {
     .expect("flatc");
 
     println!("cargo:rerun-if-changed=fbs/");
-    let out_dir = Path::new("../../sdks/java/lib/src/main/java");
+    let out_dir = Path::new("../../sdks/java/flatc/src/main/java");
     if !out_dir.exists() {
         std::fs::create_dir_all(out_dir);
     }

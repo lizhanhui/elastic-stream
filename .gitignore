@@ -3,4 +3,3 @@
 ./components/protocol/src/generated/rpc_generated.rs
 .DS_Store
 components/protocol/src/generated/
-sdks/java/lib/src/main/java/sdk/elastic/storage/flatc/

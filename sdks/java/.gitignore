@@ -42,4 +42,4 @@ build/
 .vscode/
 
 logs/
-lib/src/main/java/sdk/elastic/storage/flatc/
+flatc/src/main/java/

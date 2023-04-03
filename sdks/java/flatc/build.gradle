@@ -1,0 +1,13 @@
+plugins {
+    id 'java-library'
+}
+
+dependencies {
+    implementation libs.flatbuffers.java
+}
+
+java {
+    toolchain {
+        languageVersion.set(JavaLanguageVersion.of(8))
+    }
+}

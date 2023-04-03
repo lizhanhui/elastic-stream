@@ -9,3 +9,5 @@
 
 rootProject.name = 'sdk-java'
 include('lib')
+include('flatc')
+include('examples')
