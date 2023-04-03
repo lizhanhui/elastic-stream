@@ -264,7 +264,7 @@ impl<'a> Append<'a> {
                             let offset_ptr =
                                 payload_b.as_ptr().add(model::flat_record::BASE_OFFSET_POS);
                             let offset_ptr = offset_ptr as *mut i64;
-                            *offset_ptr = offset;
+                            std::ptr::write_unaligned(offset_ptr, offset);
                         }
 
                         let to_store = AppendRecordRequest {
