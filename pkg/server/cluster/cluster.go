@@ -67,15 +67,15 @@ type Server interface {
 	Storage() storage.Storage
 	IDAllocator(key string, start, step uint64) id.Allocator
 	Member() Member
+	SbpClient() sbpClient.Client
 }
 
 // NewRaftCluster creates a new RaftCluster.
-func NewRaftCluster(ctx context.Context, client sbpClient.Client, logger *zap.Logger) *RaftCluster {
+func NewRaftCluster(ctx context.Context, logger *zap.Logger) *RaftCluster {
 	return &RaftCluster{
-		ctx:    ctx,
-		cache:  cache.NewCache(),
-		client: client,
-		lg:     logger,
+		ctx:   ctx,
+		cache: cache.NewCache(),
+		lg:    logger,
 	}
 }
 
@@ -99,6 +99,7 @@ func (c *RaftCluster) Start(s Server) error {
 	c.runningCtx, c.runningCancel = context.WithCancel(c.ctx)
 	c.sAlloc = s.IDAllocator(_streamIDAllocKey, uint64(endpoint.MinStreamID), _streamIDStep)
 	c.dnAlloc = s.IDAllocator(_dataNodeIDAllocKey, uint64(endpoint.MinDataNodeID), _dataNodeIDStep)
+	c.client = s.SbpClient()
 
 	err := c.loadInfo()
 	if err != nil {

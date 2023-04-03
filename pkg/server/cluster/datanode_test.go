@@ -20,7 +20,7 @@ func TestRaftCluster_eraseDataNodeInfo(t *testing.T) {
 	var node rpcfb.DataNodeT
 	_ = gofakeit.New(1).Struct(&node)
 
-	cluster := NewRaftCluster(context.Background(), nil, zap.NewNop())
+	cluster := NewRaftCluster(context.Background(), zap.NewNop())
 	cluster.eraseDataNodeInfo(&node)
 
 	bytes := fbutil.Marshal(&node)
@@ -34,7 +34,7 @@ func TestRaftCluster_fillDataNodeInfo(t *testing.T) {
 
 	var node rpcfb.DataNodeT
 	_ = gofakeit.New(1).Struct(&node)
-	cluster := NewRaftCluster(context.Background(), nil, zap.NewNop())
+	cluster := NewRaftCluster(context.Background(), zap.NewNop())
 	cluster.cache.SaveDataNode(&node)
 
 	node2 := rpcfb.DataNodeT{

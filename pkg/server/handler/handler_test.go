@@ -20,7 +20,8 @@ import (
 )
 
 type mockServer struct {
-	c *clientv3.Client
+	c         *clientv3.Client
+	sbpClient sbpClient.Client
 }
 
 func (m *mockServer) Storage() storage.Storage {
@@ -59,6 +60,10 @@ func (m *mockServer) Leader() *member.Info {
 		ClientUrls: []string{"test-member-client-urls"},
 		SbpAddr:    "test-member-sbp-addr",
 	}
+}
+
+func (m *mockServer) SbpClient() sbpClient.Client {
+	return m.sbpClient
 }
 
 type mockSbpClient struct {
@@ -119,8 +124,8 @@ func startSbpHandler(tb testing.TB, sbpClient sbpClient.Client) (*Handler, func(
 
 	_, client, closeFunc := testutil.StartEtcd(tb)
 
-	c := cluster.NewRaftCluster(context.Background(), sbpClient, zap.NewNop())
-	err := c.Start(&mockServer{c: client})
+	c := cluster.NewRaftCluster(context.Background(), zap.NewNop())
+	err := c.Start(&mockServer{c: client, sbpClient: sbpClient})
 	re.NoError(err)
 
 	h := NewHandler(c, zap.NewNop())
