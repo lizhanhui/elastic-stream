@@ -59,6 +59,30 @@ class OperationClientImplTest {
     }
 
     @Test
+    void testAppendAndFetchMultipleBatches() throws ExecutionException, InterruptedException {
+        StreamT resultStream = createOneStream().getStream();
+        long streamId = resultStream.getStreamId();
+
+        // append 3 batches one by one.
+        int batchCount = 3;
+        RecordBatch batch = RecordBatchesGenerator.generateOneRecordBatch(streamId);
+        int recordsPerBatch = batch.getRecords().size();
+
+        for (int i = 0; i < batchCount; i++) {
+            operationClient.appendBatch(batch, DEFAULT_REQUEST_TIMEOUT).get();
+        }
+        int totalRecords = recordsPerBatch * batchCount;
+
+        Long lastOffset = operationClient.getLastWritableOffset(streamId, DEFAULT_REQUEST_TIMEOUT).get();
+        assertEquals(lastOffset, totalRecords);
+
+        // fetch from the second batch.
+        List<RecordBatch> recordBatches = operationClient.fetchBatches(streamId, recordsPerBatch, 1, Integer.MAX_VALUE, DEFAULT_REQUEST_TIMEOUT).get();
+        assertEquals(totalRecords - recordsPerBatch, recordBatches.size());
+        assertTrue(batch.recordsEquivalent(recordBatches.get(recordBatches.size()-1)));
+    }
+
+    @Test
     void heartbeat() throws ExecutionException, InterruptedException {
         Boolean result = operationClient.heartbeat(defaultPmAddress, DEFAULT_REQUEST_TIMEOUT).get();
         assertTrue(result);
