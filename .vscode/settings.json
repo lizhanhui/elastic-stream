@@ -4,6 +4,7 @@
         "byteorder",
         "chrono",
         "Deque",
+        "endianness",
         "errno",
         "fallocate",
         "fcntl",
