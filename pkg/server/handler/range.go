@@ -50,10 +50,10 @@ func (h *Handler) SealRanges(req *protocol.SealRangesRequest, resp *protocol.Sea
 
 	for _, rangeID := range ranges {
 		go func(rangeID *rpcfb.RangeIdT) {
-			r, err := h.c.SealRange(ctx, rangeID)
+			writableRange, err := h.c.SealRange(ctx, rangeID)
 
 			result := &rpcfb.SealRangesResultT{
-				Range: r,
+				Range: writableRange,
 			}
 			if err != nil {
 				logger.Error("failed to seal range", zap.Int64("stream-id", rangeID.StreamId), zap.Int32("range-index", rangeID.RangeIndex), zap.Error(err))
@@ -68,7 +68,8 @@ func (h *Handler) SealRanges(req *protocol.SealRangesRequest, resp *protocol.Sea
 					result.Status = &rpcfb.StatusT{Code: rpcfb.ErrorCodePM_INTERNAL_SERVER_ERROR, Message: err.Error()}
 				}
 			} else {
-				logger.Info("range sealed", zap.Int64("stream-id", rangeID.StreamId), zap.Int32("range-index", rangeID.RangeIndex), zap.Int64("range-end-offset", r.EndOffset))
+				logger.Info("range sealed", zap.Int64("stream-id", rangeID.StreamId), zap.Int32("range-index", rangeID.RangeIndex),
+					zap.Int64("range-end-offset", writableRange.StartOffset)) // writableRange.StartOffset == sealedRange.EndOffset
 				result.Status = &rpcfb.StatusT{Code: rpcfb.ErrorCodeOK}
 			}
 			ch <- result

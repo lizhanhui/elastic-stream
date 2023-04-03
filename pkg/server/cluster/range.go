@@ -15,7 +15,7 @@ import (
 
 const (
 	// TODO: Make it configurable.
-	_sealReqTimeoutMs = 100
+	_sealReqTimeoutMs = 1000
 
 	_writableRangeEndOffset int64 = -1
 )
