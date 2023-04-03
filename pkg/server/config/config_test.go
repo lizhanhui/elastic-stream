@@ -353,7 +353,6 @@ func TestNewConfig(t *testing.T) {
 			re.NoError(err)
 
 			// do not check auxiliary fields
-			config.v = nil
 			config.lg = nil
 
 			equal(re, tt.want.Log.Zap, config.Log.Zap)
@@ -546,7 +545,6 @@ func TestConfig_Adjust(t *testing.T) {
 			re.NoError(err)
 
 			// do not check auxiliary fields
-			config.v = nil
 			config.lg = nil
 
 			equal(re, tt.want.Log.Zap, config.Log.Zap)

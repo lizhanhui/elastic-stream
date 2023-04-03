@@ -51,8 +51,6 @@ const (
 
 // Config is the configuration for [Server]
 type Config struct {
-	v *viper.Viper
-
 	Etcd *embed.Config
 	Log  *Log
 
@@ -84,11 +82,9 @@ func NewConfig(arguments []string, errOutput io.Writer) (*Config, error) {
 	cfg.Etcd = embed.NewConfig()
 	cfg.Log = NewLog()
 
-	v := viper.New()
-	fs := pflag.NewFlagSet("placement-manager", pflag.ContinueOnError)
-	fs.SetOutput(errOutput)
+	v := newViper()
+	fs := NewFlagSet(errOutput)
 	configure(v, fs)
-	cfg.v = v
 
 	// parse from command line
 	fs.String("config", "", "configuration file")
@@ -215,17 +211,25 @@ func (c *Config) Logger() *zap.Logger {
 	return c.lg
 }
 
-func configure(v *viper.Viper, fs *pflag.FlagSet) {
+func newViper() *viper.Viper {
+	v := viper.New()
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_", "-", "_"))
 	v.AllowEmptyEnv(true)
 	v.SetEnvPrefix(_envPrefix)
 	v.AutomaticEnv()
-
-	// Viper settings
 	for _, filePath := range _defaultConfigFilePaths {
 		v.AddConfigPath(filePath)
 	}
+	return v
+}
 
+func NewFlagSet(errOutput io.Writer) *pflag.FlagSet {
+	fs := pflag.NewFlagSet("placement-manager", pflag.ContinueOnError)
+	fs.SetOutput(errOutput)
+	return fs
+}
+
+func configure(v *viper.Viper, fs *pflag.FlagSet) {
 	// etcd urls settings
 	fs.String("peer-urls", _defaultPeerUrls, "urls for peer traffic")
 	fs.String("client-urls", _defaultClientUrls, "urls for client traffic")
@@ -262,30 +266,10 @@ func configure(v *viper.Viper, fs *pflag.FlagSet) {
 	_ = v.BindPFlag("sbpAddr", fs.Lookup("sbp-addr"))
 	_ = v.BindPFlag("advertiseSbpAddr", fs.Lookup("advertise-sbp-addr"))
 
-	// log settings
-	fs.String("log-level", _defaultLogLevel, "the minimum enabled logging level")
-	fs.StringSlice("log-zap-output-paths", _defaultLogZapOutputPaths, "a list of URLs or file paths to write logging output to")
-	fs.StringSlice("log-zap-error-output-paths", []string{}, "a list of URLs to write internal logger errors to (default ${log-zap-output-paths})")
-	fs.String("log-zap-encoding", _defaultLogZapEncoding, "the logger's encoding, \"json\" or \"console\"")
-	fs.Bool("log-enable-rotation", _defaultLogEnableRotation, "whether to enable log rotation")
-	fs.Int("log-rotate-max-size", _defaultLogRotateMaxSize, "maximum size in megabytes of the log file before it gets rotated")
-	fs.Int("log-rotate-max-age", _defaultLogRotateMaxAge, "maximum number of days to retain old log files based on the timestamp encoded in their filename")
-	fs.Int("log-rotate-max-backups", _defaultLogRotateMaxBackups, "maximum number of old log files to retain, default is to retain all old log files (though MaxAge may still cause them to get deleted)")
-	fs.Bool("log-rotate-local-time", _defaultLogRotateLocalTime, "whether the time used for formatting the timestamps in backup files is the computer's local time, default is to use UTC time")
-	fs.Bool("log-rotate-compress", _defaultLogRotateCompress, "whether the rotated log files should be compressed using gzip")
-	_ = v.BindPFlag("log.level", fs.Lookup("log-level"))
-	_ = v.BindPFlag("log.zap.outputPaths", fs.Lookup("log-zap-output-paths"))
-	_ = v.BindPFlag("log.zap.errorOutputPaths", fs.Lookup("log-zap-error-output-paths"))
-	_ = v.BindPFlag("log.zap.encoding", fs.Lookup("log-zap-encoding"))
-	_ = v.BindPFlag("log.enableRotation", fs.Lookup("log-enable-rotation"))
-	_ = v.BindPFlag("log.rotate.maxSize", fs.Lookup("log-rotate-max-size"))
-	_ = v.BindPFlag("log.rotate.maxAge", fs.Lookup("log-rotate-max-age"))
-	_ = v.BindPFlag("log.rotate.maxBackups", fs.Lookup("log-rotate-max-backups"))
-	_ = v.BindPFlag("log.rotate.localTime", fs.Lookup("log-rotate-local-time"))
-	_ = v.BindPFlag("log.rotate.compress", fs.Lookup("log-rotate-compress"))
-
 	// bind env not set before
 	_ = v.BindEnv("etcd.clusterState")
+
+	logConfigure(v, fs)
 }
 
 // parseUrls parse a string into multiple urls.
