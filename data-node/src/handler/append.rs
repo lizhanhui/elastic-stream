@@ -267,6 +267,16 @@ impl<'a> Append<'a> {
                             std::ptr::write_unaligned(offset_ptr, offset);
                         }
 
+                        #[cfg(feature = "paranoid")]
+                        {
+                            let frb = FlatRecordBatch::init_from_buf(payload_b.clone()).unwrap();
+                            debug_assert_eq!(
+                                offset,
+                                frb.base_offset.unwrap(),
+                                "Base-offset written by unsafe modification is incorrect"
+                            );
+                        }
+
                         let to_store = AppendRecordRequest {
                             stream_id: range.stream_id(),
                             offset: offset as i64,

@@ -36,3 +36,6 @@ test-util = { path = "../components/test-util" }
 
 [dev-dependencies]
 mockall = { workspace = true }
+
+[features]
+paranoid = []
