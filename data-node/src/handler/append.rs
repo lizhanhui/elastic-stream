@@ -265,14 +265,15 @@ impl<'a> Append<'a> {
                                 payload_b.as_ptr().add(model::flat_record::BASE_OFFSET_POS);
                             let offset_ptr = offset_ptr as *mut i64;
 
-                            let mut offset_be = offset;
-                            #[cfg(target_endian = "little")]
-                            {
-                                // Serialized buffer uses big-endian for integrals. Reading / writing must respect
-                                // endianness.
-                                offset_be = offset.to_be();
-                            }
-                            std::ptr::write_unaligned(offset_ptr, offset_be);
+                            // Serialized buffer uses big-endian for integrals. Reading / writing must respect
+                            // endianness.
+                            cfg_if::cfg_if! {
+                                 if #[cfg(target_endian = "little")] {
+                                    std::ptr::write_unaligned(offset_ptr, offset.to_be());
+                                } else {
+                                    std::ptr::write_unaligned(offset_ptr, offset);
+                                }
+                            };
                         }
 
                         #[cfg(feature = "paranoid")]
