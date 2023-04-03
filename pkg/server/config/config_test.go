@@ -45,6 +45,11 @@ func TestNewConfig(t *testing.T) {
 					log.Rotate.MaxAge = 180
 					return log
 				}(),
+				Cluster: func() *Cluster {
+					cluster := NewCluster()
+					cluster.SealReqTimeoutMs = 1000
+					return cluster
+				}(),
 				PeerUrls:                    "http://127.0.0.1:2380",
 				ClientUrls:                  "http://127.0.0.1:2379",
 				AdvertisePeerUrls:           "",
@@ -79,6 +84,11 @@ func TestNewConfig(t *testing.T) {
 					log.Rotate.MaxAge = 180
 					return log
 				}(),
+				Cluster: func() *Cluster {
+					cluster := NewCluster()
+					cluster.SealReqTimeoutMs = 1000
+					return cluster
+				}(),
 				PeerUrls:                    "http://127.0.0.1:2380",
 				ClientUrls:                  "http://127.0.0.1:2379",
 				AdvertisePeerUrls:           "http://127.0.0.1:2380",
@@ -112,6 +122,11 @@ func TestNewConfig(t *testing.T) {
 					log.Rotate.MaxSize = 64
 					log.Rotate.MaxAge = 180
 					return log
+				}(),
+				Cluster: func() *Cluster {
+					cluster := NewCluster()
+					cluster.SealReqTimeoutMs = 1000
+					return cluster
 				}(),
 				PeerUrls:                    "http://127.0.0.1:2380",
 				ClientUrls:                  "http://127.0.0.1:2379",
@@ -156,6 +171,7 @@ func TestNewConfig(t *testing.T) {
 				"--log-rotate-max-backups=123456",
 				"--log-rotate-local-time=true",
 				"--log-rotate-compress=true",
+				"--cluster-seal-req-timeout-ms=1234567",
 			}},
 			want: Config{
 				Etcd: func() *embed.Config {
@@ -180,6 +196,11 @@ func TestNewConfig(t *testing.T) {
 					log.Rotate.LocalTime = true
 					log.Rotate.Compress = true
 					return log
+				}(),
+				Cluster: func() *Cluster {
+					cluster := NewCluster()
+					cluster.SealReqTimeoutMs = 1234567
+					return cluster
 				}(),
 				PeerUrls:                    "test-peer-urls",
 				ClientUrls:                  "test-client-urls",
@@ -228,6 +249,11 @@ func TestNewConfig(t *testing.T) {
 					log.Rotate.Compress = true
 					return log
 				}(),
+				Cluster: func() *Cluster {
+					cluster := NewCluster()
+					cluster.SealReqTimeoutMs = 1234567
+					return cluster
+				}(),
 				PeerUrls:                    "test-peer-urls",
 				ClientUrls:                  "test-client-urls",
 				AdvertisePeerUrls:           "test-advertise-peer-urls",
@@ -274,6 +300,11 @@ func TestNewConfig(t *testing.T) {
 					log.Rotate.LocalTime = true
 					log.Rotate.Compress = true
 					return log
+				}(),
+				Cluster: func() *Cluster {
+					cluster := NewCluster()
+					cluster.SealReqTimeoutMs = 1234567
+					return cluster
 				}(),
 				PeerUrls:                    "test-peer-urls",
 				ClientUrls:                  "test-client-urls",
@@ -429,6 +460,11 @@ func TestConfig_Adjust(t *testing.T) {
 					log.Rotate.MaxAge = 180
 					return log
 				}(),
+				Cluster: func() *Cluster {
+					cluster := NewCluster()
+					cluster.SealReqTimeoutMs = 1000
+					return cluster
+				}(),
 				PeerUrls:                    "http://127.0.0.1:2380",
 				ClientUrls:                  "http://127.0.0.1:2379",
 				AdvertisePeerUrls:           "http://127.0.0.1:2380",
@@ -474,6 +510,11 @@ func TestConfig_Adjust(t *testing.T) {
 					log.Rotate.MaxSize = 64
 					log.Rotate.MaxAge = 180
 					return log
+				}(),
+				Cluster: func() *Cluster {
+					cluster := NewCluster()
+					cluster.SealReqTimeoutMs = 1000
+					return cluster
 				}(),
 				PeerUrls:                    "http://example.com:2380,http://10.0.0.1:2380",
 				ClientUrls:                  "http://example.com:2379,http://10.0.0.1:2379",

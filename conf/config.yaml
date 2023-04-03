@@ -69,3 +69,7 @@ log:
     localTime: false
     # whether the rotated log files should be compressed using gzip
     compress: false
+
+cluster:
+  # seal request timeout in milliseconds
+  sealReqTimeoutMs: 1000

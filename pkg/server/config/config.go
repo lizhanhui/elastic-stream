@@ -51,8 +51,9 @@ const (
 
 // Config is the configuration for [Server]
 type Config struct {
-	Etcd *embed.Config
-	Log  *Log
+	Etcd    *embed.Config
+	Log     *Log
+	Cluster *Cluster
 
 	PeerUrls            string
 	ClientUrls          string
@@ -81,6 +82,7 @@ func NewConfig(arguments []string, errOutput io.Writer) (*Config, error) {
 	cfg := &Config{}
 	cfg.Etcd = embed.NewConfig()
 	cfg.Log = NewLog()
+	cfg.Cluster = NewCluster()
 
 	v := newViper()
 	fs := NewFlagSet(errOutput)
@@ -270,6 +272,7 @@ func configure(v *viper.Viper, fs *pflag.FlagSet) {
 	_ = v.BindEnv("etcd.clusterState")
 
 	logConfigure(v, fs)
+	clusterConfigure(v, fs)
 }
 
 // parseUrls parse a string into multiple urls.

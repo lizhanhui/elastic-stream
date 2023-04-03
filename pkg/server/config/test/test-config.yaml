@@ -40,3 +40,6 @@ log:
     maxBackups: 123456
     localTime: true
     compress: true
+
+cluster:
+  sealReqTimeoutMs: 1234567

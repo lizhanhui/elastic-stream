@@ -48,8 +48,8 @@ type RaftCluster struct {
 	runningCancel context.CancelFunc
 
 	storage storage.Storage
-	sAlloc  id.Allocator
-	dnAlloc id.Allocator
+	sAlloc  id.Allocator // stream id allocator
+	dnAlloc id.Allocator // data node id allocator
 	member  Member
 	cache   *cache.Cache
 	client  sbpClient.Client
