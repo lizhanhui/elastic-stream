@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"io"
 	"net/url"
 	"os"
 	"testing"
@@ -343,7 +344,7 @@ func TestNewConfig(t *testing.T) {
 			t.Parallel()
 			re := require.New(t)
 
-			config, err := NewConfig(tt.args.arguments)
+			config, err := NewConfig(tt.args.arguments, io.Discard)
 
 			if tt.wantErr {
 				re.ErrorContains(err, tt.errMsg)
@@ -377,7 +378,7 @@ func TestConfigFromEnv(t *testing.T) {
 	config, err := NewConfig([]string{
 		"--config=./test/test-config.toml",
 		"--advertise-peer-urls=cmd-test-advertise-peer-urls",
-	})
+	}, io.Discard)
 	re.NoError(err)
 
 	// flag > env > config > default
@@ -405,7 +406,7 @@ func TestConfig_Adjust(t *testing.T) {
 	}{
 		{
 			name: "default config",
-			in:   func() *Config { config, _ := NewConfig([]string{}); return config }(),
+			in:   func() *Config { config, _ := NewConfig([]string{}, io.Discard); return config }(),
 			want: &Config{
 				Etcd: func() *embed.Config {
 					config := embed.NewConfig()
@@ -445,7 +446,7 @@ func TestConfig_Adjust(t *testing.T) {
 		{
 			name: "normal adjust config",
 			in: func() *Config {
-				config, _ := NewConfig([]string{})
+				config, _ := NewConfig([]string{}, io.Discard)
 				config.PeerUrls = "http://example.com:2380,http://10.0.0.1:2380"
 				config.ClientUrls = "http://example.com:2379,http://10.0.0.1:2379"
 				config.SbpAddr = "example.com:2378"
@@ -491,7 +492,7 @@ func TestConfig_Adjust(t *testing.T) {
 		{
 			name: "invalid peer url",
 			in: func() *Config {
-				config, _ := NewConfig([]string{})
+				config, _ := NewConfig([]string{}, io.Discard)
 				config.PeerUrls = "http://example.com:2380,://10.0.0.1:2380"
 				return config
 			}(),
@@ -501,7 +502,7 @@ func TestConfig_Adjust(t *testing.T) {
 		{
 			name: "invalid client url",
 			in: func() *Config {
-				config, _ := NewConfig([]string{})
+				config, _ := NewConfig([]string{}, io.Discard)
 				config.ClientUrls = "http://example.com:2379,://10.0.0.1:2379"
 				return config
 			}(),
@@ -511,7 +512,7 @@ func TestConfig_Adjust(t *testing.T) {
 		{
 			name: "invalid advertise peer url",
 			in: func() *Config {
-				config, _ := NewConfig([]string{})
+				config, _ := NewConfig([]string{}, io.Discard)
 				config.AdvertisePeerUrls = "http://example.com:2380,://10.0.0.1:2380"
 				return config
 			}(),
@@ -521,7 +522,7 @@ func TestConfig_Adjust(t *testing.T) {
 		{
 			name: "invalid advertise client url",
 			in: func() *Config {
-				config, _ := NewConfig([]string{})
+				config, _ := NewConfig([]string{}, io.Discard)
 				config.AdvertiseClientUrls = "http://example.com:2379,://10.0.0.1:2379"
 				return config
 			}(),
@@ -577,7 +578,7 @@ func TestConfig_Validate(t *testing.T) {
 		{
 			name: "default config",
 			in: func() *Config {
-				config, _ := NewConfig([]string{})
+				config, _ := NewConfig([]string{}, io.Discard)
 				return config
 			}(),
 		},

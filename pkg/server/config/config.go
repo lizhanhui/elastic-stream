@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"io"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -78,12 +79,15 @@ type Config struct {
 }
 
 // NewConfig creates a new config.
-func NewConfig(arguments []string) (*Config, error) {
+func NewConfig(arguments []string, errOutput io.Writer) (*Config, error) {
 	cfg := &Config{}
 	cfg.Etcd = embed.NewConfig()
 	cfg.Log = NewLog()
 
-	v, fs := configure()
+	v := viper.New()
+	fs := pflag.NewFlagSet("placement-manager", pflag.ContinueOnError)
+	fs.SetOutput(errOutput)
+	configure(v, fs)
 	cfg.v = v
 
 	// parse from command line
@@ -121,7 +125,7 @@ func NewConfig(arguments []string) (*Config, error) {
 	cfg.lg = logger
 
 	if configFile := v.ConfigFileUsed(); configFile != "" {
-		logger.Info("load configuration from file", zap.String("file-name", configFile))
+		logger.Debug("load configuration from file", zap.String("file-name", configFile))
 	}
 
 	return cfg, nil
@@ -211,10 +215,7 @@ func (c *Config) Logger() *zap.Logger {
 	return c.lg
 }
 
-func configure() (*viper.Viper, *pflag.FlagSet) {
-	v := viper.New()
-	fs := pflag.NewFlagSet("placement-manager", pflag.ContinueOnError)
-
+func configure(v *viper.Viper, fs *pflag.FlagSet) {
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_", "-", "_"))
 	v.AllowEmptyEnv(true)
 	v.SetEnvPrefix(_envPrefix)
@@ -285,8 +286,6 @@ func configure() (*viper.Viper, *pflag.FlagSet) {
 
 	// bind env not set before
 	_ = v.BindEnv("etcd.clusterState")
-
-	return v, fs
 }
 
 // parseUrls parse a string into multiple urls.
