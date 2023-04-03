@@ -14,9 +14,6 @@ import (
 )
 
 const (
-	// TODO: Make it configurable.
-	_sealReqTimeoutMs = 1000
-
 	_writableRangeEndOffset int64 = -1
 )
 
@@ -180,7 +177,7 @@ func (c *RaftCluster) sealRangeOnDataNode(ctx context.Context, writableRange *rp
 
 	req := &protocol.SealRangesRequest{SealRangesRequestT: rpcfb.SealRangesRequestT{
 		Ranges:    []*rpcfb.RangeIdT{{StreamId: writableRange.StreamId, RangeIndex: writableRange.RangeIndex}},
-		TimeoutMs: _sealReqTimeoutMs,
+		TimeoutMs: c.cfg.SealReqTimeoutMs,
 	}}
 	ch := make(chan *rpcfb.RangeT)
 	for _, node := range writableRange.ReplicaNodes {

@@ -25,6 +25,7 @@ import (
 	"github.com/AutoMQ/placement-manager/api/rpcfb/rpcfb"
 	sbpClient "github.com/AutoMQ/placement-manager/pkg/sbp/client"
 	"github.com/AutoMQ/placement-manager/pkg/server/cluster/cache"
+	"github.com/AutoMQ/placement-manager/pkg/server/config"
 	"github.com/AutoMQ/placement-manager/pkg/server/id"
 	"github.com/AutoMQ/placement-manager/pkg/server/member"
 	"github.com/AutoMQ/placement-manager/pkg/server/storage"
@@ -41,6 +42,8 @@ const (
 // RaftCluster is used for metadata management.
 type RaftCluster struct {
 	ctx context.Context
+
+	cfg *config.Cluster
 
 	starting      atomic.Bool
 	running       atomic.Bool
@@ -71,9 +74,10 @@ type Server interface {
 }
 
 // NewRaftCluster creates a new RaftCluster.
-func NewRaftCluster(ctx context.Context, logger *zap.Logger) *RaftCluster {
+func NewRaftCluster(ctx context.Context, cfg *config.Cluster, logger *zap.Logger) *RaftCluster {
 	return &RaftCluster{
 		ctx:   ctx,
+		cfg:   cfg,
 		cache: cache.NewCache(),
 		lg:    logger,
 	}

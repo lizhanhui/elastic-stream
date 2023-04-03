@@ -187,7 +187,7 @@ func (s *Server) startServer() error {
 		return errors.Wrap(err, "init member")
 	}
 	s.storage = storage.NewEtcd(s.client, s.rootPath, logger, s.leaderCmp)
-	s.cluster = cluster.NewRaftCluster(s.ctx, logger)
+	s.cluster = cluster.NewRaftCluster(s.ctx, s.cfg.Cluster, logger)
 	s.sbpClient = sbpClient.Logger{LogAble: sbpClient.NewClient(logger)}
 
 	sbpAddr := s.cfg.SbpAddr
