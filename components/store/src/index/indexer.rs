@@ -50,8 +50,11 @@ impl Indexer {
             index_cf_opts.set_block_based_table_factory(&table_opts);
         }
 
-        let compaction_filter_name = CString::new("index-compaction-filter")
-            .map_err(|_e| StoreError::Internal("Failed to create CString".to_owned()))?;
+        let compaction_filter_name = CString::new("index-compaction-filter").map_err(|_e| {
+            StoreError::Internal(
+                "Failed to create index compaction filter name in CString".to_owned(),
+            )
+        })?;
 
         let index_compaction_filter_factory = super::compaction::IndexCompactionFilterFactory::new(
             log.clone(),
@@ -74,13 +77,28 @@ impl Indexer {
             fs::create_dir_all(path)?;
         }
 
-        let index_cf_opts = Self::build_index_column_family_options(log.clone(), min_offset)?;
+        let index_cf_opts =
+            Self::build_index_column_family_options(log.clone(), Arc::clone(&min_offset))?;
         let index_cf = ColumnFamilyDescriptor::new(INDEX_COLUMN_FAMILY, index_cf_opts);
 
         let mut metadata_cf_opts = Options::default();
         metadata_cf_opts.enable_statistics();
         metadata_cf_opts.create_if_missing(true);
         metadata_cf_opts.optimize_for_point_lookup(16 << 20);
+
+        // Set compaction filter for ranges
+        let range_compaction_filter_name =
+            CString::new("range-compaction-filter").map_err(|_e| {
+                StoreError::Internal(
+                    "Failed to create range-compaction filter name in CString".to_owned(),
+                )
+            })?;
+        let range_compaction_filter_factory = super::compaction::IndexCompactionFilterFactory::new(
+            log.clone(),
+            range_compaction_filter_name,
+            Arc::clone(&min_offset),
+        );
+        metadata_cf_opts.set_compaction_filter_factory(range_compaction_filter_factory);
         let metadata_cf = ColumnFamilyDescriptor::new(METADATA_COLUMN_FAMILY, metadata_cf_opts);
 
         let mut db_opts = Options::default();

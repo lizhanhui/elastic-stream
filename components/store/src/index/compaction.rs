@@ -100,3 +100,61 @@ impl CompactionFilterFactory for IndexCompactionFilterFactory {
         &self.name
     }
 }
+
+pub(crate) struct RangeCompactionFilter {
+    log: Logger,
+    name: CString,
+    min_offset: u64,
+}
+
+impl RangeCompactionFilter {
+    pub(crate) fn new(log: Logger, name: CString, min_offset: u64) -> Self {
+        Self {
+            log,
+            name,
+            min_offset,
+        }
+    }
+}
+
+impl CompactionFilter for RangeCompactionFilter {
+    fn filter(&mut self, level: u32, key: &[u8], value: &[u8]) -> CompactionDecision {
+        if value.len() < 9 {
+            return CompactionDecision::Keep;
+        }
+        let mut rdr = Cursor::new(value);
+        let status = rdr.get_u8();
+        debug_assert_eq!(1, status, "Range should have been sealed");
+        let end = rdr.get_u64();
+        if end <= self.min_offset {
+            return CompactionDecision::Remove;
+        }
+        CompactionDecision::Keep
+    }
+
+    fn name(&self) -> &CStr {
+        &self.name
+    }
+}
+
+pub(crate) struct RangeCompactionFilterFactory {
+    log: Logger,
+    name: CString,
+    min_offset: Arc<dyn MinOffset>,
+}
+
+impl CompactionFilterFactory for RangeCompactionFilterFactory {
+    type Filter = RangeCompactionFilter;
+
+    fn create(&mut self, context: CompactionFilterContext) -> Self::Filter {
+        Self::Filter::new(
+            self.log.clone(),
+            self.name.clone(),
+            self.min_offset.min_offset(),
+        )
+    }
+
+    fn name(&self) -> &CStr {
+        &self.name
+    }
+}
