@@ -48,7 +48,7 @@ class StreamRangeCacheTest {
         rangeTArray[1].setStreamId(streamId);
         rangeTArray[1].setReplicaNodes(new ReplicaNodeT[] {replicaNodeT});
         rangeTArray[1].setRangeIndex(1);
-        rangeTArray[1].setStartOffset(120);
+        rangeTArray[1].setStartOffset(100);
         rangeTArray[1].setEndOffset(150);
         rangeTArray[1].setNextOffset(150);
         rangeTArray[2] = new RangeT();

@@ -74,11 +74,11 @@ class OperationClientImplTest {
         int totalRecords = recordsPerBatch * batchCount;
 
         Long lastOffset = operationClient.getLastWritableOffset(streamId, DEFAULT_REQUEST_TIMEOUT).get();
-        assertEquals(lastOffset, totalRecords);
+        assertEquals(totalRecords, lastOffset);
 
         // fetch from the second batch.
         List<RecordBatch> recordBatches = operationClient.fetchBatches(streamId, recordsPerBatch, 1, Integer.MAX_VALUE, DEFAULT_REQUEST_TIMEOUT).get();
-        assertEquals(totalRecords - recordsPerBatch, recordBatches.size());
+        assertEquals(batchCount - 1, recordBatches.size());
         assertTrue(batch.recordsEquivalent(recordBatches.get(recordBatches.size()-1)));
     }
 

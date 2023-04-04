@@ -177,7 +177,7 @@ public class OperationClientImpl implements OperationClient {
     public CompletableFuture<List<RecordBatch>> fetchBatches(long streamId, long startOffset, int minBytes,
         int maxBytes, Duration timeout) {
         return this.streamRangeCache.getFloorRange(streamId, startOffset).thenCompose(rangeT -> {
-                // "floor" range may be the higher range.
+                // make sure the startOffset is in the range.
                 long realStartOffset = Math.max(startOffset, rangeT.getStartOffset());
                 FetchInfoT fetchInfoT = new FetchInfoT();
                 fetchInfoT.setStreamId(streamId);
@@ -196,7 +196,6 @@ public class OperationClientImpl implements OperationClient {
                 // No need to fetch from primary node. Fetch from the first node.
                 Address targetDataNodeAddress = Address.fromAddress(rangeT.getReplicaNodes()[0].getDataNode().getAdvertiseAddr());
                 log.debug("trying to fetch batches from datanode {}", targetDataNodeAddress);
-                // TODO: fully implement the fetch logic. Now we just fetch from the floor range.
                 return nettyClient.invokeAsync(targetDataNodeAddress, sbpFrame, timeout)
                     .thenCompose(responseFrame -> {
                         FetchResponse response = FetchResponse.getRootAsFetchResponse(responseFrame.getHeader());

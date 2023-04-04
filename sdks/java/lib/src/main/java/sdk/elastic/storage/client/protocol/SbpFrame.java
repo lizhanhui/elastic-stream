@@ -72,6 +72,7 @@ public class SbpFrame implements RemotingItem {
         }
         if (buf.readableBytes() > 4) {
             int payloadLength = buf.readableBytes() - 4;
+            // actually there is only one ByteBuffer in payload
             this.payload = new ByteBuffer[] {buf.nioBuffer(buf.readerIndex(), payloadLength)};
             buf.skipBytes(payloadLength);
         } else {

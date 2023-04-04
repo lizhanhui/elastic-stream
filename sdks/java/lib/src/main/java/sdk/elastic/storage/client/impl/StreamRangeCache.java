@@ -57,10 +57,6 @@ public class StreamRangeCache extends CommonCache<Long, TreeMap<Long, RangeT>> {
 
     /**
      * Get the floor range, which contains valid recordBatch based on the given startOffset.
-     * The returned range maybe:
-     * <p>a writable range (endOffset < 0), or</p>
-     * <p>a sealed range where startOffset is in (startOffset <= offset < endOffset), or</p>
-     * <p>the higher range (with the least startOffset > offset).</p>
      * This method is generally used to get the range for fetching.
      *
      * @param streamId    with which the specified ranges is to be associated
@@ -80,17 +76,7 @@ public class StreamRangeCache extends CommonCache<Long, TreeMap<Long, RangeT>> {
                 return completableFuture;
             }
 
-            // If the floor range is sealed and the offset is in compaction range, we need to find the higher range.
-            if (floorEntry.getValue().getEndOffset() > 0 && floorEntry.getValue().getEndOffset() <= startOffset) {
-                Map.Entry<Long, RangeT> entry = rangesMap.higherEntry(startOffset);
-                if (entry == null || entry.getValue() == null) {
-                    completableFuture.completeExceptionally(new ClientException("Floor range is null for stream " + streamId + " with offset " + startOffset));
-                    return completableFuture;
-                }
-                completableFuture.complete(entry.getValue());
-            } else {
-                completableFuture.complete(floorEntry.getValue());
-            }
+            completableFuture.complete(floorEntry.getValue());
         } catch (Throwable ex) {
             completableFuture.completeExceptionally(ex);
         }
