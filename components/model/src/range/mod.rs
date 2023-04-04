@@ -2,12 +2,12 @@ use std::fmt::{self, Display, Formatter};
 
 use derivative::Derivative;
 
-use crate::{data_node::DataNode, error::RangeError};
+use crate::data_node::DataNode;
 
 pub trait Range {
     fn is_sealed(&self) -> bool;
 
-    fn seal(&mut self) -> Result<u64, RangeError>;
+    fn seal(&mut self) -> u64;
 }
 
 /// Representation of a stream range in form of `[start, end)` in which `start` is inclusive and `end` is exclusive.
@@ -71,18 +71,6 @@ impl StreamRange {
         &mut self.replica
     }
 
-    /// Expand the range by one.
-    pub fn take_slot(&mut self) -> Result<u64, RangeError> {
-        match self.end {
-            None => {
-                let index = self.limit;
-                self.limit += 1;
-                Ok(index)
-            }
-            Some(offset) => Err(RangeError::AlreadySealed(offset)),
-        }
-    }
-
     /// Length of the range.
     /// That is, number of records in the stream range.
     pub fn len(&self) -> u64 {
@@ -109,8 +97,13 @@ impl StreamRange {
         self.limit
     }
 
+    /// Update `limit` of the range. Slots within `[start, limit)` shall hold valid records.
+    ///
+    /// if a range is immutable, it's not allowed to change its `limit`.
     pub fn set_limit(&mut self, limit: u64) {
-        self.limit = limit;
+        if self.end().is_none() {
+            self.limit = limit;
+        }
     }
 }
 
@@ -119,13 +112,13 @@ impl Range for StreamRange {
         self.end.is_some()
     }
 
-    fn seal(&mut self) -> Result<u64, RangeError> {
+    fn seal(&mut self) -> u64 {
         match self.end {
             None => {
                 self.end = Some(self.limit);
-                Ok(self.limit)
+                self.limit
             }
-            Some(offset) => Err(RangeError::AlreadySealed(offset)),
+            Some(offset) => offset,
         }
     }
 }
@@ -134,12 +127,8 @@ impl Display for StreamRange {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "{{stream-id={}, index={}}}=[{}, {}, {})",
-            self.stream_id,
-            self.index,
-            self.start,
-            self.limit,
-            self.end.unwrap_or(0)
+            "{{stream-id={}, index={}}}=[{}, {}, {:?})",
+            self.stream_id, self.index, self.start, self.limit, self.end
         )
     }
 }
@@ -153,24 +142,15 @@ mod tests {
         let mut range = StreamRange::new(0, 0, 0, 0, None);
         assert_eq!(range.is_sealed(), false);
         assert_eq!(range.len(), 0);
+        assert_eq!(range.primary(), None);
 
-        assert_eq!(range.take_slot(), Ok(0));
-        assert_eq!(range.len(), 1);
-        assert_eq!(range.is_sealed(), false);
+        range.set_limit(100);
+        assert_eq!(100, range.len());
+        assert_eq!(100, range.seal());
 
-        assert_eq!(range.take_slot(), Ok(1));
-        assert_eq!(range.len(), 2);
-        assert_eq!(range.is_sealed(), false);
+        // Double seal should return the same offset.
+        assert_eq!(100, range.seal());
 
-        assert_eq!(range.take_slot(), Ok(2));
-        assert_eq!(range.len(), 3);
-        assert_eq!(range.is_sealed(), false);
-
-        assert_eq!(range.seal(), Ok(3));
-        assert_eq!(range.is_sealed(), true);
-        assert_eq!(range.seal(), Err(RangeError::AlreadySealed(3)));
-        assert_eq!(range.take_slot(), Err(RangeError::AlreadySealed(3)));
-        assert_eq!(range.len(), 3);
         assert_eq!(range.is_sealed(), true);
     }
 }

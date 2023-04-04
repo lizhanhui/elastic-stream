@@ -4,8 +4,17 @@ use crate::{
 };
 
 /// Stream is the basic storage unit in the system that store records in an append-only fashion.
+/// 
+/// A stream is composed of ranges. Conceptually, only the last range of the stream is mutable while the rest are immutable. Ranges of a
+/// stream are distributed among data-nodes.
+/// 
+/// `Stream` on a specific data-node only cares about ranges that are located on it. 
 pub struct Stream {
+
+    /// Stream ID, unique within the cluster.
     id: i64,
+
+    /// Ranges of the stream that are placed onto current data node. 
     ranges: Vec<StreamRange>,
 }
 
@@ -34,7 +43,7 @@ impl Stream {
                     return Err(StreamError::AlreadySealed);
                 }
                 range.set_limit(committed);
-                Ok(range.seal().map_err(|_e| StreamError::SealBadOffset)?)
+                Ok(range.seal())
             } else {
                 Err(StreamError::RangeIndexMismatch {
                     target: range_index,

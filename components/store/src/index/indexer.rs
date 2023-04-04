@@ -413,7 +413,8 @@ impl super::LocalRangeManager for Indexer {
                     if !k.starts_with(&prefix[..]) {
                         None
                     } else {
-                        debug_assert_eq!(k.len(), 8 + 4 + 8 + 1);
+                        // prefix + stream-id + range-index
+                        debug_assert_eq!(k.len(), 1 + 8 + 4);
 
                         let mut key_reader = Cursor::new(&k[..]);
                         let _prefix = key_reader.get_u8();
@@ -424,15 +425,16 @@ impl super::LocalRangeManager for Indexer {
 
                         let id = key_reader.get_i32();
 
-                        let start = key_reader.get_u64();
-
-                        if v.len() == 1 {
+                        if v.len() == 8 {
+                            let mut value_reader = Cursor::new(&v[..]);
+                            let start = value_reader.get_u64();
                             Some(StreamRange::new(stream_id, id, start, 0, None))
                         } else {
-                            debug_assert_eq!(v.len(), 8 + 1);
+                            debug_assert_eq!(v.len(), 8 + 8);
                             let mut value_reader = Cursor::new(&v[..]);
-                            let _status = value_reader.get_u8();
+                            let start = value_reader.get_u64();
                             let end = value_reader.get_u64();
+                            debug_assert!(start <= end, "Range start <= end should hold");
                             Some(StreamRange::new(stream_id, id, start, end, Some(end)))
                         }
                     }
@@ -463,7 +465,8 @@ impl super::LocalRangeManager for Indexer {
                     if !k.starts_with(&prefix[..]) {
                         None
                     } else {
-                        debug_assert_eq!(k.len(), 8 + 4 + 8 + 1);
+                        // prefix + stream-id + range-index
+                        debug_assert_eq!(k.len(), 1 + 8 + 4);
 
                         let mut key_reader = Cursor::new(&k[..]);
                         let _prefix = key_reader.get_u8();
@@ -473,16 +476,14 @@ impl super::LocalRangeManager for Indexer {
 
                         let id = key_reader.get_i32();
 
-                        let start = key_reader.get_u64();
-
-                        if v.len() == 1 {
-                            debug_assert_eq!(0, v[0]);
+                        if v.len() == 8 {
+                            let mut value_reader = Cursor::new(&v[..]);
+                            let start = value_reader.get_u64();
                             Some(StreamRange::new(_stream_id, id, start, 0, None))
                         } else {
-                            debug_assert_eq!(v.len(), 8 + 1);
+                            debug_assert_eq!(v.len(), 8 + 8);
                             let mut value_reader = Cursor::new(&v[..]);
-                            let _status = value_reader.get_u8();
-                            debug_assert_eq!(1u8, _status);
+                            let start = value_reader.get_u64();
                             let end = value_reader.get_u64();
                             Some(StreamRange::new(_stream_id, id, start, end, Some(end)))
                         }
@@ -500,15 +501,15 @@ impl super::LocalRangeManager for Indexer {
         debug_assert!(range.is_sealed(), "Range is not sealed yet");
         let end = range.end().ok_or(StoreError::Internal("".to_owned()))?;
         debug_assert!(end >= range.start(), "End of range cannot less than start");
-
-        let mut key_buf = BytesMut::with_capacity(1 + 8 + 4 + 8);
+        // prefix + stream-id + range-index
+        let mut key_buf = BytesMut::with_capacity(1 + 8 + 4);
         key_buf.put_u8(RANGE_PREFIX);
         key_buf.put_i64(stream_id);
         key_buf.put_i32(range.index());
-        key_buf.put_u64(range.start());
 
-        let mut value_buf = BytesMut::with_capacity(1 + 8);
-        value_buf.put_u8(1);
+        // start, [end] offset.
+        let mut value_buf = BytesMut::with_capacity(8 + 8);
+        value_buf.put_u64(range.start());
         value_buf.put_u64(end);
 
         if let Some(cf) = self.db.cf_handle(METADATA_COLUMN_FAMILY) {
@@ -524,18 +525,15 @@ impl super::LocalRangeManager for Indexer {
     }
 
     fn add(&self, stream_id: i64, range: &StreamRange) -> Result<(), StoreError> {
-        let mut key_buf = BytesMut::with_capacity(1 + 8 + 4 + 8);
+        let mut key_buf = BytesMut::with_capacity(1 + 8 + 4);
         key_buf.put_u8(RANGE_PREFIX);
         key_buf.put_i64(stream_id);
         key_buf.put_i32(range.index());
-        key_buf.put_u64(range.start());
 
-        let mut value_buf = BytesMut::with_capacity(1 + 8);
+        let mut value_buf = BytesMut::with_capacity(8 + 8);
+        value_buf.put_u64(range.start());
         if let Some(end) = range.end() {
-            value_buf.put_u8(1);
             value_buf.put_u64(end);
-        } else {
-            value_buf.put_u8(0);
         }
 
         if let Some(cf) = self.db.cf_handle(METADATA_COLUMN_FAMILY) {

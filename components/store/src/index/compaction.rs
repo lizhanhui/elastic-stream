@@ -118,17 +118,24 @@ impl RangeCompactionFilter {
 }
 
 impl CompactionFilter for RangeCompactionFilter {
-    fn filter(&mut self, level: u32, key: &[u8], value: &[u8]) -> CompactionDecision {
-        if value.len() < 9 {
+    fn filter(&mut self, _level: u32, _key: &[u8], value: &[u8]) -> CompactionDecision {
+        if value.len() == 8 {
             return CompactionDecision::Keep;
         }
-        let mut rdr = Cursor::new(value);
-        let status = rdr.get_u8();
-        debug_assert_eq!(1, status, "Range should have been sealed");
-        let end = rdr.get_u64();
-        if end <= self.min_offset {
-            return CompactionDecision::Remove;
+
+        if value.len() == 16 {
+            let mut rdr = Cursor::new(value);
+            let start = rdr.get_u64();
+            let end = rdr.get_u64();
+            debug_assert!(
+                end >= start,
+                "Range end offset should be greater or equal to start"
+            );
+            if end <= self.min_offset {
+                return CompactionDecision::Remove;
+            }
         }
+
         CompactionDecision::Keep
     }
 
