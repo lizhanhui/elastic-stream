@@ -303,8 +303,11 @@ impl Session {
                                             .map(|nodes| nodes.iter())
                                             .flatten()
                                             .for_each(|node| {
-                                                // TODO: Store leadership in stream-range
                                                 if let Some(ref n) = node.data_node {
+                                                    if node.is_primary {
+                                                        stream_range.set_primary(n.node_id);
+                                                    }
+
                                                     if let Some(ref addr) = n.advertise_addr {
                                                         let data_node =
                                                             DataNode::new(n.node_id, addr.clone());

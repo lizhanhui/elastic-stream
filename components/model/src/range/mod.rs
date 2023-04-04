@@ -37,6 +37,9 @@ pub struct StreamRange {
     /// List of data nodes, that all have identical records within the range.
     #[derivative(PartialEq = "ignore")]
     replica: Vec<DataNode>,
+
+    /// Node ID of the primary replica
+    primary: Option<i32>,
 }
 
 impl StreamRange {
@@ -48,7 +51,16 @@ impl StreamRange {
             limit,
             end,
             replica: vec![],
+            primary: None,
         }
+    }
+
+    pub fn set_primary(&mut self, node_id: i32) {
+        self.primary = Some(node_id);
+    }
+
+    pub fn primary(&self) -> Option<i32> {
+        self.primary
     }
 
     pub fn replica(&self) -> &Vec<DataNode> {
