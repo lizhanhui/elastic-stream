@@ -7,7 +7,19 @@ pub enum RangeError {
 }
 
 #[derive(Debug, Error)]
-pub enum StreamError {}
+pub enum StreamError {
+    #[error("Last range is already sealed")]
+    AlreadySealed,
+
+    #[error("Range index does not match")]
+    RangeIndexMismatch { target: i32, actual: i32 },
+
+    #[error("Bad offset")]
+    SealBadOffset,
+
+    #[error("Current data-node does not have the stream/range to seal")]
+    SealWrongNode,
+}
 
 #[derive(Debug, Error)]
 pub enum RecordError {

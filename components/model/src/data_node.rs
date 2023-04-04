@@ -7,7 +7,7 @@ pub struct DataNode {
 }
 
 impl DataNode {
-    pub(crate) fn new<Addr>(id: i32, address: Addr) -> Self
+    pub fn new<Addr>(id: i32, address: Addr) -> Self
     where
         Addr: AsRef<str>,
     {

@@ -5,7 +5,7 @@ use model::{
     range::{Range, StreamRange},
     stream::Stream,
 };
-use slog::{error, info, trace, Logger};
+use slog::{error, info, trace, warn, Logger};
 use store::{ElasticStore, Store};
 
 use crate::{error::ServiceError, stream_manager::append_window::AppendWindow};
@@ -14,9 +14,14 @@ use super::fetcher::Fetcher;
 
 pub(crate) struct StreamManager {
     log: Logger,
+
     streams: HashMap<i64, Stream>,
+
+    // TODO: `AppendWindow` should be a nested member of `Stream`.
     windows: HashMap<i64, AppendWindow>,
+
     fetcher: Fetcher,
+
     store: Rc<ElasticStore>,
 }
 
@@ -92,7 +97,55 @@ impl StreamManager {
         Ok(())
     }
 
-    async fn create_stream_if_missing(&mut self, stream_id: i64) -> Result<(), ServiceError> {
+    /// Build and update `AppendWindow` for the specified stream.
+    ///
+    fn build_append_window(&mut self, stream_id: i64) -> Result<(), ServiceError> {
+        if let Some(stream) = self.streams.get_mut(&stream_id) {
+            if stream.is_mut() {
+                let range = stream.last().ok_or_else(|| {
+                    error!(
+                        self.log,
+                        "Last range of a mutable stream shall always be present and mutable"
+                    );
+                    ServiceError::Internal(String::from("Inconsistent internal state"))
+                })?;
+                let window = AppendWindow::new(range.index(), range.start());
+                trace!(
+                    self.log,
+                    "Created AppendWindow {:?} for stream={}",
+                    window,
+                    stream_id
+                );
+                if let Some(prev) = self.windows.insert(stream_id, window) {
+                    if !prev.inflight.is_empty() {
+                        warn!(
+                            self.log,
+                            "Replaced AppendWindow still have {} inflight slots",
+                            prev.inflight.len()
+                        );
+                    }
+                }
+            } else {
+                trace!(
+                    self.log,
+                    "Stream={} is immutable on current data-node",
+                    stream_id
+                );
+            }
+        } else {
+            warn!(
+                self.log,
+                "No stream={} is found on current data-node", stream_id
+            );
+        }
+
+        Ok(())
+    }
+
+    /// Create `Stream` and `AppendWindow` according to metadata from placement manager.
+    ///
+    ///
+    async fn create_stream_if_missing(&mut self, stream_id: i64) -> Result<bool, ServiceError> {
         // If, though unlikely, the stream is firstly assigned to it.
         // TODO: https://doc.rust-lang.org/std/intrinsics/fn.unlikely.html
         if !self.streams.contains_key(&stream_id) {
@@ -101,39 +154,67 @@ impl StreamManager {
                 "About to fetch ranges for stream[id={}]",
                 stream_id
             );
-            let ranges = self.fetcher.fetch(stream_id, &self.log).await?;
-
-            debug_assert!(
-                !ranges.is_empty(),
-                "PlacementManager should not respond with empty range list"
-            );
-            let range = ranges
-                .last()
-                .expect("Stream range list must have at least one range");
-            debug_assert!(
-                !range.is_sealed(),
-                "The last range of a stream should always be mutable"
-            );
-            let start = range.start();
-            trace!(
-                self.log,
-                "Mutable range of stream[id={}] is: [{}, -1)",
-                stream_id,
-                start
-            );
-
-            // TODO: verify current node is actually a leader or follower of the last mutable range.
-            let window = AppendWindow::new(range.index(), start);
-
-            self.windows.insert(stream_id, window);
-
-            let stream = Stream::new(stream_id, ranges);
-
+            let mut stream = Stream::with_id(stream_id);
+            let node_id = self.store.id();
+            self.fetcher
+                .fetch(stream_id, &self.log)
+                .await?
+                .into_iter()
+                .filter(|range| {
+                    // TODO: Enable filter after PM uses correct data-node ID
+                    range
+                        .replica()
+                        .iter()
+                        .map(|data_node| data_node.node_id)
+                        .any(|id| node_id == id || true)
+                })
+                .for_each(|range| {
+                    stream.push(range);
+                });
+            stream.sort();
             self.streams.insert(stream_id, stream);
-            trace!(self.log, "Create Stream[id={}]", stream_id);
-
-            return Ok(());
+            self.build_append_window(stream_id)?;
+            trace!(self.log, "Created Stream[id={}]", stream_id);
+            return Ok(true);
         }
+        Ok(false)
+    }
+
+    /// Refresh stream ranges from placement-manager.
+    ///
+    async fn refresh_stream(&mut self, stream_id: i64) -> Result<(), ServiceError> {
+        let node_id = self.store.id();
+        let mut ranges = self
+            .fetcher
+            .fetch(stream_id, &self.log)
+            .await?
+            .into_iter()
+            .filter(|range| {
+                range
+                    .replica()
+                    .iter()
+                    .map(|data_node| data_node.node_id)
+                    .any(|id| node_id == id)
+            })
+            .collect::<Vec<_>>();
+        ranges.sort_by(|a, b| a.index().cmp(&b.index()));
+
+        if let Some(stream) = self.streams.get_mut(&stream_id) {
+            // Max range index known
+            let start = match stream.last() {
+                Some(range) => range.index(),
+                None => -1,
+            };
+
+            // Filter and push new ranges into stream
+            ranges
+                .into_iter()
+                .filter(|range| range.index() > start)
+                .for_each(|range| {
+                    stream.push(range);
+                });
+        }
+        self.build_append_window(stream_id)?;
         Ok(())
     }
 
@@ -263,26 +344,83 @@ impl StreamManager {
         Ok(())
     }
 
-    pub(crate) fn seal(&mut self, stream_id: i64, range_index: i32) -> Result<u64, ServiceError> {
+    pub(crate) async fn seal(
+        &mut self,
+        stream_id: i64,
+        range_index: i32,
+    ) -> Result<u64, ServiceError> {
+        //
+        let just_created = self.create_stream_if_missing(stream_id).await?;
+
         if let Some(stream) = self.streams.get_mut(&stream_id) {
-            if !stream.is_mut() {
-                return Err(ServiceError::AlreadySealed);
+            if !stream.is_mut() && !just_created {
+                let need_refresh = match stream.last() {
+                    Some(range) => range.index() < range_index,
+                    None => true,
+                };
+                if need_refresh {
+                    self.refresh_stream(stream_id).await?;
+                }
             }
         }
 
-        let committed = match self.windows.remove(&stream_id) {
-            Some(window) => window.commit,
-            None => {
-                error!(self.log, "Expected `AppendWindow` is missing");
-                return Err(ServiceError::Seal);
-            }
-        };
-
         if let Some(stream) = self.streams.get_mut(&stream_id) {
-            stream.seal(committed, range_index);
-            Ok(committed)
+            match stream.range(range_index) {
+                Some(range) => {
+                    // If the range has already been sealed.
+                    if let Some(end) = range.end() {
+                        return Ok(end);
+                    };
+
+                    // Paranoid check
+                    if let Some(window) = self.windows.get(&stream_id) {
+                        if range_index != window.range_index {
+                            error!(self.log, "Inconsistent state: AppendWindow range-index={}, target stream={}, range={}",
+                             window.range_index, stream_id, range_index);
+                            return Err(ServiceError::Seal);
+                        }
+                    }
+
+                    if let Some(range) = stream.last() {
+                        if range_index != range.index() {
+                            error!(self.log, "Inconsistent state of stream={}: Last range-index={}, target range={}",
+                            stream_id, range.index(), range_index);
+                            return Err(ServiceError::Seal);
+                        }
+                    }
+
+                    let committed = self
+                        .windows
+                        .remove(&stream_id)
+                        .ok_or_else(|| {
+                            error!(self.log, "Mutable stream shall always have an AppendWindow");
+                            ServiceError::Internal(String::from(
+                                "Mutable stream without AppendWindow",
+                            ))
+                        })
+                        .map(|window| window.commit)?;
+                    stream
+                        .seal(committed, range_index)
+                        .map_err(|e| ServiceError::Seal)
+                }
+                None => {
+                    error!(
+                        self.log,
+                        "Try to seal non-existing range[stream={}, index={}]",
+                        stream_id,
+                        range_index
+                    );
+                    return Err(ServiceError::Seal);
+                }
+            }
         } else {
-            Err(ServiceError::Seal)
+            error!(
+                self.log,
+                "Try to seal a range[index={}] of a non-existing stream[id={}]",
+                range_index,
+                stream_id
+            );
+            return Err(ServiceError::Seal);
         }
     }
 
@@ -401,7 +539,7 @@ mod tests {
             let range = flatbuffers::root::<Range>(data).unwrap();
             let offset = stream_manager.alloc_record_batch_slots(range, 1).unwrap();
             stream_manager.ack(stream_id, offset).unwrap();
-            let seal_offset = stream_manager.seal(stream_id, TOTAL - 1).unwrap();
+            let seal_offset = stream_manager.seal(stream_id, TOTAL - 1).await.unwrap();
             assert_eq!(offset + 1, seal_offset);
         });
 

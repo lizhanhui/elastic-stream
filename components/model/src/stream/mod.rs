@@ -1,4 +1,7 @@
-use crate::range::{Range, StreamRange};
+use crate::{
+    error::StreamError,
+    range::{Range, StreamRange},
+};
 
 /// Stream is the basic storage unit in the system that store records in an append-only fashion.
 pub struct Stream {
@@ -24,15 +27,23 @@ impl Stream {
         self.ranges.sort_by(|a, b| a.index().cmp(&b.index()));
     }
 
-    pub fn seal(&mut self, committed: u64, range_index: i32) {
-        self.ranges.last_mut().and_then(|range| {
+    pub fn seal(&mut self, committed: u64, range_index: i32) -> Result<u64, StreamError> {
+        if let Some(range) = self.ranges.last_mut() {
             if range.index() == range_index {
+                if range.is_sealed() {
+                    return Err(StreamError::AlreadySealed);
+                }
                 range.set_limit(committed);
-                Some(range.seal())
+                Ok(range.seal().map_err(|_e| StreamError::SealBadOffset)?)
             } else {
-                None
+                Err(StreamError::RangeIndexMismatch {
+                    target: range_index,
+                    actual: range.index(),
+                })
             }
-        });
+        } else {
+            Err(StreamError::SealWrongNode)
+        }
     }
 
     /// A stream is mutable iff its last range is not sealed.

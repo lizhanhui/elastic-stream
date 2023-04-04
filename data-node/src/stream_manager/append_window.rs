@@ -1,5 +1,6 @@
 use std::{cmp::Reverse, collections::BinaryHeap};
 
+#[derive(Debug)]
 pub(crate) struct AppendWindow {
     pub(crate) range_index: i32,
 
@@ -12,7 +13,7 @@ pub(crate) struct AppendWindow {
     /// Next offset to allocate.
     pub(crate) next: u64,
 
-    inflight: BinaryHeap<Reverse<u64>>,
+    pub(crate) inflight: BinaryHeap<Reverse<u64>>,
 
     completed: BinaryHeap<Reverse<u64>>,
 }

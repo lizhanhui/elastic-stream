@@ -1,6 +1,7 @@
 use super::session_state::SessionState;
 use super::{config, response};
 use codec::frame::{Frame, OperationCode};
+use model::data_node::DataNode;
 use model::range::StreamRange;
 use model::Status;
 use model::{client_role::ClientRole, request::Request};
@@ -278,7 +279,7 @@ impl Session {
                                     .flat_map(|res| res.ranges.as_ref())
                                     .flat_map(|e| e.iter())
                                     .map(|range| {
-                                        if range.end_offset >= 0 {
+                                        let mut stream_range = if range.end_offset >= 0 {
                                             StreamRange::new(
                                                 range.stream_id,
                                                 range.range_index,
@@ -294,7 +295,32 @@ impl Session {
                                                 range.next_offset as u64,
                                                 None,
                                             )
-                                        }
+                                        };
+
+                                        range
+                                            .replica_nodes
+                                            .iter()
+                                            .map(|nodes| nodes.iter())
+                                            .flatten()
+                                            .for_each(|node| {
+                                                // TODO: Store leadership in stream-range
+                                                if let Some(ref n) = node.data_node {
+                                                    if let Some(ref addr) = n.advertise_addr {
+                                                        let data_node =
+                                                            DataNode::new(n.node_id, addr.clone());
+                                                        stream_range.replica_mut().push(data_node);
+                                                    } else {
+                                                        warn!(
+                                                            log,
+                                                            "Invalid replica node: {:?}", node
+                                                        )
+                                                    }
+                                                } else {
+                                                    warn!(log, "Invalid replica node: {:?}", node)
+                                                }
+                                            });
+
+                                        stream_range
                                     })
                                     .collect::<Vec<_>>();
                                 if let response::Response::ListRange { ranges, .. } = &mut response
