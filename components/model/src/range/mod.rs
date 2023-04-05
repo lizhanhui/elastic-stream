@@ -71,6 +71,18 @@ impl StreamRange {
         &mut self.replica
     }
 
+    /// Test if the given offset is within the range.
+    pub fn contains(&self, offset: u64) -> bool {
+        if self.start > offset {
+            return false;
+        }
+
+        match self.end {
+            None => true,
+            Some(end) => offset < end,
+        }
+    }
+
     /// Length of the range.
     /// That is, number of records in the stream range.
     pub fn len(&self) -> u64 {
@@ -152,5 +164,20 @@ mod tests {
         assert_eq!(100, range.seal());
 
         assert_eq!(range.is_sealed(), true);
+    }
+
+    #[test]
+    fn test_contains() {
+        // Test a sealed range that contains a given offset.
+        let range = StreamRange::new(0, 0, 0, 10, Some(10));
+        assert_eq!(range.contains(0), true);
+        assert_eq!(range.contains(1), true);
+        assert_eq!(range.contains(11), false);
+
+        // Test a open range that contains a given offset.
+        let range = StreamRange::new(0, 0, 10, 20, None);
+        assert_eq!(range.contains(0), false);
+        assert_eq!(range.contains(11), true);
+        assert_eq!(range.contains(21), true);
     }
 }

@@ -75,6 +75,21 @@ impl Stream {
             .map(|range| range.clone())
     }
 
+    /// Find the range that contains the given offset.
+    ///
+    /// # Arguments
+    /// `offset` - The offset to find.
+    ///
+    /// # Returns
+    /// The range that contains the given offset, or None if not found.
+    pub fn range_of(&self, offset: u64) -> Option<StreamRange> {
+        self.ranges
+            .iter()
+            .try_find(|&range| Some(range.contains(offset)))
+            .flatten()
+            .map(|range| range.clone())
+    }
+
     pub fn refresh(&mut self, ranges: Vec<StreamRange>) {
         let to_append = ranges
             .into_iter()
@@ -86,5 +101,67 @@ impl Stream {
             })
             .collect::<Vec<_>>();
         self.ranges.extend(to_append);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_sort_stream() {
+        // Construct a stream with 3 ranges, and sort it.
+        let mut stream = Stream::with_id(0);
+        stream.push(StreamRange::new(0, 1, 0, 0, None));
+        stream.push(StreamRange::new(0, 0, 0, 0, None));
+        stream.push(StreamRange::new(0, 2, 0, 0, None));
+        stream.sort();
+
+        // Check the ranges are sorted by index.
+        assert_eq!(stream.ranges[0].index(), 0);
+        assert_eq!(stream.ranges[1].index(), 1);
+        assert_eq!(stream.ranges[2].index(), 2);
+    }
+
+    #[test]
+    fn test_seal_stream() {
+        // Construct a stream with 3 ranges, and seal the last range.
+        let mut stream = Stream::with_id(0);
+        stream.push(StreamRange::new(0, 0, 0, 10, None));
+        stream.push(StreamRange::new(0, 1, 10, 20, Some(20)));
+        stream.push(StreamRange::new(0, 2, 20, 30, None));
+        stream.seal(0, 2);
+
+        // Check the last range is sealed.
+        assert_eq!(stream.ranges.last().unwrap().is_sealed(), true);
+    }
+
+    #[test]
+    fn test_query_from_stream() {
+        // Construct a complete stream through a iterator.
+        let mut stream = Stream::with_id(0);
+
+        (0..10)
+            .map(|i| {
+                let mut sr = StreamRange::new(0, i, i as u64 * 10, (i as u64 + 1) * 10, None);
+                // Seal the range if it's not the last one.
+                if i != 9 {
+                    let _ = sr.seal();
+                }
+                sr
+            })
+            .for_each(|range| stream.push(range));
+
+        // Test the range_of method.
+        assert_eq!(stream.range_of(0).unwrap().index(), 0);
+        assert_eq!(stream.range_of(5).unwrap().index(), 0);
+        assert_eq!(stream.range_of(10).unwrap().index(), 1);
+        assert_eq!(stream.range_of(15).unwrap().index(), 1);
+        assert_eq!(stream.range_of(20).unwrap().index(), 2);
+
+        // Test the range method
+        assert_eq!(stream.range(5).unwrap().start(), 50);
+        assert_eq!(stream.range(5).unwrap().limit(), 60);
+        assert_eq!(stream.range(5).unwrap().is_sealed(), true);
     }
 }
