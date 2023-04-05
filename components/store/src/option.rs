@@ -47,6 +47,7 @@ pub struct StoreOptions {
     pub(crate) command_queue_depth: usize,
     pub(crate) pm_address: String,
     pub(crate) host: String,
+    pub(crate) flush_threshold: usize,
 }
 
 impl StoreOptions {
@@ -64,6 +65,7 @@ impl StoreOptions {
             destroy_on_exit: false,
             command_queue_depth: 1024,
             metadata_path,
+            flush_threshold: 1024,
         }
     }
 }

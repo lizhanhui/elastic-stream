@@ -60,10 +60,16 @@ impl IndexDriver {
         log: Logger,
         path: &str,
         min_offset: Arc<dyn MinOffset>,
+        flush_threshold: usize,
     ) -> Result<Self, StoreError> {
         let (tx, rx) = channel::unbounded();
         let (shutdown_tx, shutdown_rx) = channel::bounded(1);
-        let indexer = Arc::new(Indexer::new(log.clone(), path, min_offset)?);
+        let indexer = Arc::new(Indexer::new(
+            log.clone(),
+            path,
+            min_offset,
+            flush_threshold,
+        )?);
         let runner = IndexDriverRunner::new(log.clone(), rx, shutdown_rx, Arc::clone(&indexer));
         let handle = Builder::new()
             .name("IndexDriver".to_owned())
@@ -161,7 +167,7 @@ impl IndexDriver {
     }
 
     pub(crate) fn shutdown_indexer(&self) {
-        if let Err(e) = self.indexer.flush() {
+        if let Err(e) = self.indexer.flush(true) {
             error!(self.log, "Failed to flush primary index. Cause: {:?}", e);
         }
 
@@ -324,7 +330,7 @@ mod tests {
         let _dir_guard = test_util::DirectoryRemovalGuard::new(log.clone(), db_path.as_path());
         let min_offset = Arc::new(TestMinOffset {});
         let index_driver =
-            super::IndexDriver::new(log, db_path.as_os_str().to_str().unwrap(), min_offset)?;
+            super::IndexDriver::new(log, db_path.as_os_str().to_str().unwrap(), min_offset, 128)?;
         assert_eq!(0, index_driver.get_wal_checkpoint()?);
 
         index_driver.shutdown_indexer();

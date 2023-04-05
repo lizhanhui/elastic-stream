@@ -1,12 +1,21 @@
-use std::{ffi::CString, fs, io::Cursor, path::Path, sync::Arc};
+use std::{
+    ffi::CString,
+    fs,
+    io::Cursor,
+    path::Path,
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    },
+};
 
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use model::range::{Range, StreamRange};
 use rocksdb::{
-    BlockBasedOptions, ColumnFamilyDescriptor, DBCompressionType, IteratorMode, Options,
-    ReadOptions, WriteOptions, DB,
+    BlockBasedOptions, ColumnFamilyDescriptor, DBCompressionType, FlushOptions, IteratorMode,
+    Options, ReadOptions, WriteOptions, DB,
 };
-use slog::{error, info, warn, Logger};
+use slog::{error, info, trace, warn, Logger};
 use tokio::sync::mpsc;
 
 use crate::error::StoreError;
@@ -26,11 +35,27 @@ const RANGE_PREFIX: u8 = b'r';
 
 pub(crate) struct Indexer {
     log: Logger,
+
+    /// RocksDB instance
     db: DB,
+
+    /// Write options used when put index and checkpoint WAL metadata.
+    ///
+    /// Note that WAL is disabled to achieve best performance and `Atomic Flush` is used to keep these two consistent.
+    /// It is possible that index records and updates to checkpoint WAL may be lost in case of power failure or OS crash, but
+    /// recovery procedure will rebuild them all on reboot.
     write_opts: WriteOptions,
+
+    /// Number of index records put to RocksDB without manual flush.
+    count: AtomicUsize,
+
+    /// Trigger manual DB flush after `flush_threshold` index records are put.
+    flush_threshold: usize,
 }
 
 impl Indexer {
+    /// Build RocksDB column family options for index.
+    ///
     fn build_index_column_family_options(
         log: Logger,
         min_offset: Arc<dyn MinOffset>,
@@ -66,10 +91,19 @@ impl Indexer {
         Ok(index_cf_opts)
     }
 
+    /// Construct a new `Index`.
+    ///
+    /// # Arguments
+    ///
+    /// * `log` - Logger
+    /// * `path` - Path where RocksDB store shall live
+    /// * `min_offset` - Pointer to struct where current minimum WAL offset can be retrieved
+    /// * `flush_threshold` - Flush index and metadata records every N operations.
     pub(crate) fn new(
         log: Logger,
         path: &str,
         min_offset: Arc<dyn MinOffset>,
+        flush_threshold: usize,
     ) -> Result<Self, StoreError> {
         let path = Path::new(path);
         if !path.exists() {
@@ -123,6 +157,8 @@ impl Indexer {
             log,
             db,
             write_opts,
+            count: AtomicUsize::new(0),
+            flush_threshold,
         })
     }
 
@@ -131,7 +167,7 @@ impl Indexer {
     ///
     /// * `stream_id` - Stream Identifier
     /// * `offset` Logical offset within the stream, similar to row-id within a database table.
-    /// * `handle` - Pointer to record in WAL.
+    /// * `handle` - Pointer to record-batch in WAL.
     ///
     pub(crate) fn index(
         &self,
@@ -152,7 +188,14 @@ impl Indexer {
                 value_buf.put_u64(handle.hash);
                 self.db
                     .put_cf_opt(cf, &key_buf[..], &value_buf[..], &self.write_opts)
-                    .map_err(|e| StoreError::RocksDB(e.into_string()))
+                    .map_err(|e| StoreError::RocksDB(e.into_string()))?;
+                self.advance_wal_checkpoint(handle.wal_offset)?;
+                let prev = self.count.fetch_add(1, Ordering::Relaxed);
+                if prev + 1 >= self.flush_threshold {
+                    self.flush(false)?;
+                    self.count.store(0, Ordering::Relaxed);
+                }
+                Ok(())
             }
             None => Err(StoreError::RocksDB("No column family".to_owned())),
         }
@@ -261,7 +304,9 @@ impl Indexer {
                         return Err(StoreError::DataCorrupted);
                     }
                     let mut cursor = Cursor::new(&value[..]);
-                    Ok(cursor.get_u64())
+                    let wal_offset = cursor.get_u64();
+                    trace!(self.log, "Checkpoint WAL-offset={}", wal_offset);
+                    Ok(wal_offset)
                 }
                 None => {
                     info!(
@@ -280,7 +325,11 @@ impl Indexer {
         }
     }
 
-    pub(crate) fn advance_wal_checkpoint(&mut self, offset: u64) -> Result<(), StoreError> {
+    /// Update checkpoint WAL offset, indicating records prior to it should have been properly indexed.
+    ///
+    /// Note the indexes are possibly stored only in RocksDB memtable. Updated checkpoint WAL is the same.
+    /// We are employing `Atomic Flush` of RocksDB to ensure data consistency without using WAL.
+    pub(crate) fn advance_wal_checkpoint(&self, offset: u64) -> Result<(), StoreError> {
         let cf = self
             .db
             .cf_handle(METADATA_COLUMN_FAMILY)
@@ -306,10 +355,12 @@ impl Indexer {
     ///
     /// To minimize the amount of WAL data to recover, for example, in case of planned reboot, we shall update checkpoint
     /// offset and invoke this method before stopping.
-    pub(crate) fn flush(&self) -> Result<(), StoreError> {
+    pub(crate) fn flush(&self, wait: bool) -> Result<(), StoreError> {
         info!(self.log, "AtomicFlush RocksDB column families");
+        let mut flush_opt = FlushOptions::default();
+        flush_opt.set_wait(wait);
         self.db
-            .flush()
+            .flush_opt(&flush_opt)
             .map_err(|e| StoreError::RocksDB(e.into_string()))
     }
 
@@ -587,13 +638,13 @@ mod tests {
         let min_offset = Arc::new(SampleMinOffset {
             min: AtomicU64::new(0),
         });
-        let indexer = super::Indexer::new(log, path_str, min_offset as Arc<dyn MinOffset>)?;
+        let indexer = super::Indexer::new(log, path_str, min_offset as Arc<dyn MinOffset>, 128)?;
         Ok(indexer)
     }
 
     #[test]
     fn test_wal_checkpoint() -> Result<(), Box<dyn Error>> {
-        let mut indexer = new_indexer()?;
+        let indexer = new_indexer()?;
         assert_eq!(0, indexer.get_wal_checkpoint()?);
         let wal_offset = 100;
         indexer.advance_wal_checkpoint(wal_offset)?;
@@ -808,8 +859,12 @@ mod tests {
         let min_offset = Arc::new(SampleMinOffset {
             min: AtomicU64::new(0),
         });
-        let indexer =
-            super::Indexer::new(log, path_str, Arc::clone(&min_offset) as Arc<dyn MinOffset>)?;
+        let indexer = super::Indexer::new(
+            log,
+            path_str,
+            Arc::clone(&min_offset) as Arc<dyn MinOffset>,
+            128,
+        )?;
 
         const CNT: u64 = 1024;
         (0..CNT)
@@ -825,7 +880,7 @@ mod tests {
             .flatten()
             .count();
 
-        indexer.flush()?;
+        indexer.flush(true)?;
         indexer.compact();
 
         let handles = indexer.scan_record_handles(0, 0, 10)?.unwrap();

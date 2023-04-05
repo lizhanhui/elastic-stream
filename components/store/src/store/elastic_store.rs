@@ -100,6 +100,7 @@ impl ElasticStore {
             log.clone(),
             &opt.metadata_path,
             Arc::clone(&wal_offset_manager) as Arc<dyn MinOffset>,
+            options.flush_threshold,
         )?);
 
         let (sender, receiver) = oneshot::channel();

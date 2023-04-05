@@ -838,6 +838,7 @@ impl IO {
             error!(self.log, "Failed to propagate AppendResult `{:?}`", e);
         }
     }
+
     fn build_read_index(&mut self, wal_offset: u64, written_len: u32, task: &WriteTask) {
         let handle = RecordHandle {
             hash: 0, // TODO: set hash for record handle
@@ -1085,6 +1086,10 @@ impl IO {
             }
         }
         info!(log, "Main loop quit");
+
+        // Flush index and metadata
+        io.borrow().indexer.flush(true)?;
+
         Ok(())
     }
 }
@@ -1261,6 +1266,7 @@ mod tests {
                 logger.clone(),
                 &options.metadata_path,
                 Arc::clone(&wal_offset_manager) as Arc<dyn MinOffset>,
+                128,
             )?);
 
             super::IO::new(&mut options, indexer, logger.clone())
@@ -1689,6 +1695,7 @@ mod tests {
             logger.clone(),
             &options.metadata_path,
             Arc::clone(&wal_offset_manager) as Arc<dyn MinOffset>,
+            128,
         )?);
 
         super::IO::new(&mut options, indexer, logger.clone())

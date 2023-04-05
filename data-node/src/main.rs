@@ -29,7 +29,7 @@ mod tests {
 
     #[test]
     fn test_broadcast() -> Result<(), Box<dyn Error>> {
-        let (tx, rx) = broadcast::channel(1);
+        let (tx, _rx) = broadcast::channel(1);
 
         let handles = (0..3)
             .map(|i| {

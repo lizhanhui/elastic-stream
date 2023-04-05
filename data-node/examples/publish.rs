@@ -92,7 +92,7 @@ async fn launch(args: &Args, logger: Logger) {
         .into_iter()
         .flatten()
         .for_each(|ele| bytes_mute.put_slice(&ele));
-    let buffer = bytes_mute.freeze();
+    let _buffer = bytes_mute.freeze();
 
     let channel = Connection::new(stream, &connect, logger.new(o!()));
     channel.write_frame(&frame).await.unwrap();
