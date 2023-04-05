@@ -1,0 +1,23 @@
+---
+# Server configuration
+server:
+  # Advertise host address
+  host: "114.116.40.8"
+  # Listening port
+  port: 10911
+  # Number of Thread-per-Core Nodes
+  concurrency: 1
+  # Network io_uring queue depth
+  queue-depth: 128
+  # Placement manager address
+  placement-manager: "localhost:2378"
+# Store configuration
+store:
+  # Store directory
+  path:
+    # Directory of WAL segment files
+    wal: "/data/store/wal"
+    # Directory of metadata RocksDB files 
+    metadata: "/data/store/metadata"
+  # IO io_uring queue depth
+  queue-depth: 1024

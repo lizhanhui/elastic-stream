@@ -9,34 +9,36 @@ edition = "2021"
 byteorder =  { workspace = true }
 bytes =  { workspace = true }
 cfg-if = { workspace = true }
-ctrlc = { workspace = true }
+chrono = { workspace = true }
+clap = { workspace = true }
+client = { path = "../components/client" }
+codec = { path = "../components/codec" }
 core_affinity =  { workspace = true }
 crc =  { workspace = true }
 crossbeam = { workspace = true }
+ctrlc = { workspace = true }
+futures = { workspace = true }
 num_cpus =  { workspace = true }
-thiserror =  { workspace = true }
-clap = { workspace = true }
 flatbuffers = { workspace = true }
+io-uring = { workspace = true }
+model = { path = "../components/model" }
 num_enum =  { workspace = true }
 pprof = { workspace = true }
+protocol = {path = "../components/protocol" }
+serde = { workspace = true, features = ["derive"] }
+serde_yaml = { workspace = true }
 slog =  { workspace = true }
 slog-async =  { workspace = true }
 slog-term =  { workspace = true }
-codec = { path = "../components/codec" }
-model = { path = "../components/model" }
-protocol = {path = "../components/protocol" }
-transport = { path = "../components/transport" }
 store = { path = "../components/store" }
-client = { path = "../components/client" }
-io-uring = { workspace = true }
+transport = { path = "../components/transport" }
+thiserror =  { workspace = true }
 tokio-uring = { workspace = true }
 tokio = { workspace = true }
-futures = { workspace = true }
-chrono = "0.4.23"
-test-util = { path = "../components/test-util" }
 
 [dev-dependencies]
 mockall = { workspace = true }
+test-util = { path = "../components/test-util" }
 
 [features]
 paranoid = []

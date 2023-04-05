@@ -75,3 +75,6 @@ criterion = "0.4"
 
 minitrace = "0.4"
 prometheus = "0.13"
+
+serde = "1.0"
+serde_yaml = "0.9"
