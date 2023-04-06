@@ -11,7 +11,6 @@ kafka-clients = "3.4.0"
 grpc = "1.54.0"
 tomcat-annotations-api = "6.0.53"
 google-protoc = "3.22.2"
-google-protobuf = "0.9.1"
 
 [libraries]
 guava = { module = "com.google.guava:guava", version.ref = "guava" }

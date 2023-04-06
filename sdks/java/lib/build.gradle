@@ -11,7 +11,8 @@ plugins {
     id 'java-library'
     // Apply the maven-publish plugin to allow publishing to Maven Central.
     id 'maven-publish'
-    id 'com.google.protobuf' version libs.versions.google.protobuf
+    id 'com.google.protobuf' version '0.9.1'
+    id 'com.github.johnrengelman.shadow' version '8.1.1'
 }
 
 java {
@@ -104,5 +105,12 @@ publishing {
 
             from components.java
         }
+    }
+}
+
+shadowJar {
+    dependencies {
+        // include the flatc dependency in jar
+        include(dependency(':flatc'))
     }
 }
