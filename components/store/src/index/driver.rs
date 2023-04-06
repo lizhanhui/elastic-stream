@@ -31,6 +31,7 @@ pub(crate) enum IndexCommand {
     ScanRecord {
         stream_id: i64,
         offset: u64,
+        max_offset: Option<u64>,
         max_bytes: u32,
         observer: oneshot::Sender<Result<Option<Vec<RecordHandle>>, StoreError>>,
     },
@@ -101,12 +102,14 @@ impl IndexDriver {
         &self,
         stream_id: i64,
         offset: u64,
+        max_offset: Option<u64>,
         max_bytes: u32,
         observer: oneshot::Sender<Result<Option<Vec<RecordHandle>>, StoreError>>,
     ) {
         if let Err(_e) = self.tx.send(IndexCommand::ScanRecord {
             stream_id,
             offset,
+            max_offset,
             max_bytes,
             observer,
         }) {
@@ -243,12 +246,13 @@ impl IndexDriverRunner {
                             IndexCommand::ScanRecord {
                                 stream_id,
                                 offset,
+                                max_offset,
                                 max_bytes,
                                 observer,
                             } => {
                                 observer
                                     .send(self.indexer.scan_record_handles_left_shift(
-                                        stream_id, offset, max_bytes,
+                                        stream_id, offset, max_offset, max_bytes,
                                     ))
                                     .unwrap_or_else(|_e| {
                                         error!(

@@ -208,13 +208,19 @@ impl Indexer {
         &self,
         stream_id: i64,
         offset: u64,
+        max_offset: Option<u64>,
         max_bytes: u32,
     ) -> Result<Option<Vec<RecordHandle>>, StoreError> {
         let left_key = self.retrieve_left_key(stream_id, offset)?;
-        let left_key = left_key.unwrap_or(self.build_index_key(stream_id, offset));
+        let left_key = left_key.unwrap_or(self.construct_index_key(stream_id, offset));
         let mut read_opts = ReadOptions::default();
         read_opts.set_iterate_lower_bound(&left_key[..]);
         read_opts.set_iterate_upper_bound((stream_id + 1).to_be_bytes());
+
+        if let Some(max_offset) = max_offset {
+            let upper_key = self.construct_index_key(stream_id, max_offset);
+            read_opts.set_iterate_upper_bound(&upper_key[..]);
+        }
 
         self.scan_record_handles_from(read_opts, max_bytes)
     }
@@ -226,7 +232,7 @@ impl Indexer {
         max_bytes: u32,
     ) -> Result<Option<Vec<RecordHandle>>, StoreError> {
         let mut read_opts = ReadOptions::default();
-        let lower = self.build_index_key(stream_id, offset);
+        let lower = self.construct_index_key(stream_id, offset);
         read_opts.set_iterate_lower_bound(&lower[..]);
         read_opts.set_iterate_upper_bound((stream_id + 1).to_be_bytes());
         self.scan_record_handles_from(read_opts, max_bytes)
@@ -399,7 +405,7 @@ impl Indexer {
     fn retrieve_left_key(&self, stream_id: i64, offset: u64) -> Result<Option<Bytes>, StoreError> {
         let max_key = self.retrieve_max_key(stream_id)?;
         if let Some(max_key) = max_key {
-            let max_offset = max_key.slice(8..).get_u64();
+            let (_, max_offset) = self.deconstruct_index_key(&max_key[..]);
             if offset > max_offset {
                 return Ok(None);
             }
@@ -416,7 +422,7 @@ impl Indexer {
                 let mut read_opts = ReadOptions::default();
                 // If the current offset has a key, return it.
                 // So we add 1 to the offset to achieve this behavior.
-                let lower = self.build_index_key(stream_id, offset + 1);
+                let lower = self.construct_index_key(stream_id, offset + 1);
                 read_opts.set_iterate_lower_bound(stream_id.to_be_bytes());
                 read_opts.set_iterate_upper_bound(&lower[..]);
 
@@ -439,11 +445,18 @@ impl Indexer {
         }
     }
 
-    fn build_index_key(&self, stream_id: i64, offset: u64) -> Bytes {
+    fn construct_index_key(&self, stream_id: i64, offset: u64) -> Bytes {
         let mut index_key = BytesMut::with_capacity(8 + 8);
         index_key.put_i64(stream_id);
         index_key.put_u64(offset);
         index_key.freeze()
+    }
+
+    fn deconstruct_index_key(&self, index_key: &[u8]) -> (i64, u64) {
+        let mut index_key = index_key;
+        let stream_id = index_key.get_i64();
+        let offset = index_key.get_u64();
+        (stream_id, offset)
     }
 }
 
@@ -766,7 +779,7 @@ mod tests {
         // While the logical offset is 10, 20, 30, ..., which means each record batch contains 10 records.
 
         // Case one: scan from a exist key
-        let handles = indexer.scan_record_handles_left_shift(0, 10, 128 * 2)?;
+        let handles = indexer.scan_record_handles_left_shift(0, 10, None, 128 * 2)?;
         assert_eq!(true, handles.is_some());
         let handles = handles.unwrap();
         assert_eq!(2, handles.len());
@@ -778,7 +791,7 @@ mod tests {
         });
 
         // Case two: scan from a left key
-        let handles = indexer.scan_record_handles_left_shift(0, 12, 128 * 2)?;
+        let handles = indexer.scan_record_handles_left_shift(0, 12, None, 128 * 2)?;
         assert_eq!(true, handles.is_some());
         let handles = handles.unwrap();
         assert_eq!(2, handles.len());
@@ -790,7 +803,7 @@ mod tests {
         });
 
         // Case three: scan from a key smaller than the smallest key
-        let handles = indexer.scan_record_handles_left_shift(0, 1, 128 * 2)?;
+        let handles = indexer.scan_record_handles_left_shift(0, 1, None, 128 * 2)?;
         assert_eq!(true, handles.is_some());
         let handles = handles.unwrap();
         assert_eq!(2, handles.len());
@@ -803,8 +816,18 @@ mod tests {
 
         // Case four: scan from a key bigger than the biggest key
 
-        let handles = indexer.scan_record_handles_left_shift(0, CNT * 11, 128 * 2)?;
+        let handles = indexer.scan_record_handles_left_shift(0, CNT * 11, None, 128 * 2)?;
         assert_eq!(true, handles.is_none());
+
+        // Case five: scan with a max offset
+        let handles = indexer.scan_record_handles_left_shift(0, 10, Some(40), 128 * 10)?;
+        // Three records are scanned
+        assert_eq!(true, handles.is_some());
+        let handles = handles.unwrap();
+        assert_eq!(3, handles.len());
+        assert_eq!(handles[0].wal_offset, 128);
+        assert_eq!(handles[1].wal_offset, 256);
+        assert_eq!(handles[2].wal_offset, 384);
 
         Ok(())
     }

@@ -92,6 +92,12 @@ pub enum FetchError {
 
     #[error("No new records to fetch")]
     NoRecord,
+
+    #[error("Stream is not found")]
+    StreamNotFound,
+
+    #[error("Range is not found")]
+    RangeNotFound,
 }
 
 #[derive(Debug, Error)]

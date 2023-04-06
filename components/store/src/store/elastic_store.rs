@@ -233,6 +233,7 @@ impl Store for ElasticStore {
         self.indexer.scan_record_handles(
             options.stream_id,
             options.offset as u64,
+            options.max_offset.map(|o| o as u64),
             options.max_bytes as u32,
             index_tx,
         );
@@ -509,6 +510,7 @@ mod tests {
                     let options = ReadOptions {
                         stream_id: 1,
                         offset: res.offset,
+                        max_offset: None,
                         max_bytes: 1,
                         max_wait_ms: 1000,
                     };

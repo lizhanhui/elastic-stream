@@ -2,12 +2,12 @@ use bytes::Bytes;
 use codec::frame::Frame;
 
 use flatbuffers::FlatBufferBuilder;
-use futures::future::join_all;
+use futures::Future;
 use protocol::rpc::header::{
     ErrorCode, FetchRequest, FetchResponseArgs, FetchResultArgs, StatusArgs,
 };
 use slog::{warn, Logger};
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, pin::Pin, rc::Rc};
 use store::{error::FetchError, option::ReadOptions, ElasticStore, FetchResult, Store};
 
 use crate::stream_manager::StreamManager;
@@ -62,13 +62,22 @@ impl<'a> Fetch<'a> {
         stream_manager: Rc<RefCell<StreamManager>>,
         response: &mut Frame,
     ) {
-        let store_requests = self.build_store_requests();
-        let futures: Vec<_> = store_requests
+        let store_requests = self.build_store_requests(stream_manager.clone());
+        let futures = store_requests
             .into_iter()
-            .map(|fetch_option| store.fetch(fetch_option))
-            .collect();
+            .map(|fetch_option| match fetch_option {
+                Ok(fetch_option) => Box::pin(store.fetch(fetch_option))
+                    as Pin<Box<dyn Future<Output = Result<store::FetchResult, FetchError>>>>,
+                Err(fetch_err) => {
+                    let res: Result<store::FetchResult, FetchError> = Err(fetch_err);
+                    Box::pin(futures::future::ready(res))
+                        as Pin<Box<dyn Future<Output = Result<store::FetchResult, FetchError>>>>
+                }
+            })
+            .collect::<Vec<_>>();
 
-        let res_from_store: Vec<Result<FetchResult, FetchError>> = join_all(futures).await;
+        let res_from_store: Vec<Result<FetchResult, FetchError>> =
+            futures::future::join_all(futures).await;
 
         let mut builder = FlatBufferBuilder::with_capacity(MIN_BUFFER_SIZE);
         let mut payloads = Vec::new();
@@ -146,16 +155,44 @@ impl<'a> Fetch<'a> {
         response.payload = Some(payloads);
     }
 
-    fn build_store_requests(&self) -> Vec<ReadOptions> {
+    fn build_store_requests(
+        &self,
+        stream_manager: Rc<RefCell<StreamManager>>,
+    ) -> Vec<Result<ReadOptions, FetchError>> {
         self.fetch_request
             .fetch_requests()
             .iter()
             .flatten()
-            .map(|req| ReadOptions {
-                stream_id: req.stream_id(),
-                offset: req.fetch_offset(),
-                max_wait_ms: self.fetch_request.max_wait_ms(),
-                max_bytes: req.batch_max_bytes(),
+            .map(|req| {
+                let stream_id = req.stream_id();
+                let sm = stream_manager.borrow();
+                let stream = sm.get_stream(stream_id);
+
+                // If the stream exists and contains the requested offset,
+                // then we retrieve the range and build the read options
+                if let Some(stream) = stream {
+                    if let Some(range) = stream.range_of(req.fetch_offset() as u64) {
+                        let max_offset = match range.end() {
+                            // For a sealed range, the upper bound is the end offset(exclusive)
+                            Some(end) => Some(end as i64),
+                            // For a non-sealed range, the upper bound is the limit offset(exclusive)
+                            // Please note that the stream manager only updates the limit offset after a successful replication
+                            None => Some(range.limit() as i64),
+                        };
+                        return Ok(ReadOptions {
+                            stream_id: req.stream_id(),
+                            offset: req.fetch_offset(),
+                            max_offset: max_offset,
+                            max_wait_ms: self.fetch_request.max_wait_ms(),
+                            max_bytes: req.batch_max_bytes(),
+                        });
+                    }
+
+                    // Cannot find the matching range for the requested offset
+                    return Err(FetchError::RangeNotFound);
+                }
+                // Cannot find the stream in the current data node
+                return Err(FetchError::StreamNotFound);
             })
             .collect()
     }
