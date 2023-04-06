@@ -25,7 +25,6 @@ use super::{
     block_cache::{BlockCache, EntryRange},
     buf::{AlignedBufReader, AlignedBufWriter},
     record::RECORD_PREFIX_LENGTH,
-    Options,
 };
 
 // CRC(4B) + length(3B) + Type(1B) + earliest_record_time(8B) + latest_record_time(8B)
@@ -53,6 +52,9 @@ impl TimeRange {
 pub(crate) struct LogSegment {
     #[derivative(PartialEq = "ignore")]
     log: Logger,
+
+    #[derivative(PartialEq = "ignore")]
+    config: Arc<config::Configuration>,
 
     /// Log segment offset in bytes, it's the absolute offset in the whole WAL.
     pub(crate) wal_offset: u64,
@@ -168,17 +170,19 @@ pub(crate) enum Medium {
 impl LogSegment {
     pub(crate) fn new(
         log: Logger,
+        config: &Arc<config::Configuration>,
         offset: u64,
         size: u64,
         path: &Path,
     ) -> Result<Self, StoreError> {
         Ok(Self {
             log: log.clone(),
+            config: Arc::clone(config),
             wal_offset: offset,
             size,
             written: 0,
             time_range: None,
-            block_cache: BlockCache::new(log, offset),
+            block_cache: BlockCache::new(log, config, offset),
             sd: None,
             status: Status::OpenAt,
             path: CString::new(path.as_os_str().as_bytes())
@@ -323,12 +327,10 @@ impl LogSegment {
         buf: &mut [u8],
         r_offset: u64,
     ) -> Result<(), StoreError> {
-        // TODO: Consider use a unified way to provide the IO options.
-        let options = Options::default();
         let entry = EntryRange::new(
             self.wal_offset + r_offset,
             buf.len() as u32,
-            options.alignment as u64,
+            self.config.store.alignment,
         );
 
         let read_at = self.wal_offset + r_offset;
@@ -379,7 +381,7 @@ impl LogSegment {
                             self.log.clone(),
                             e.wal_offset,
                             e.len as usize,
-                            options.alignment as u64,
+                            self.config.store.alignment,
                         ) {
                             let file_pos = e.wal_offset - self.wal_offset;
 
@@ -419,9 +421,8 @@ impl LogSegment {
         debug_assert_eq!(written, self.written);
 
         // TODO: Consider use a unified way to provide the IO options.
-        let options = Options::default();
-        let alignment = options.alignment as u64;
-        let mut last_page_start = written / alignment * alignment;
+        let alignment = self.config.store.alignment;
+        let mut last_page_start = written / alignment as u64 * alignment as u64;
         let last_page_len = (written - last_page_start) as u32;
         last_page_start += self.wal_offset;
 
@@ -451,7 +452,7 @@ impl LogSegment {
                             self.log.clone(),
                             last_page_start,
                             last_page_len as usize,
-                            alignment as usize,
+                            alignment,
                         )?;
 
                         let copy_start = (last_page_start - buf.wal_offset) as usize;
@@ -472,7 +473,7 @@ impl LogSegment {
                             self.log.clone(),
                             buf.wal_offset,
                             last_len as usize,
-                            alignment as usize,
+                            alignment,
                         )?;
 
                         last_buf
@@ -534,7 +535,6 @@ mod tests {
         block_cache::EntryRange,
         buf::{AlignedBuf, AlignedBufWriter},
         record::RecordType,
-        Options,
     };
     use bytes::BytesMut;
     use rand::RngCore;
@@ -543,6 +543,7 @@ mod tests {
         fs::File,
         os::{fd::FromRawFd, unix::prelude::FileExt},
         path::{self, Path},
+        sync::Arc,
     };
     use uuid::Uuid;
 
@@ -558,9 +559,14 @@ mod tests {
 
     #[test]
     fn test_append_record() -> Result<(), Box<dyn Error>> {
-        let tmp = std::env::temp_dir();
         let log = test_util::terminal_logger();
-        let mut segment = super::LogSegment::new(log, 0, 1024 * 1024, tmp.as_path())?;
+        let wal_path = test_util::create_random_path()?;
+        let _guard = test_util::DirectoryRemovalGuard::new(log.clone(), wal_path.as_path());
+        let mut cfg = config::Configuration::default();
+        cfg.store.path.set_wal(wal_path.as_path().to_str().unwrap());
+        let config = Arc::new(cfg);
+
+        let mut segment = super::LogSegment::new(log, &config, 0, 1024 * 1024, wal_path.as_path())?;
         segment.status = Status::ReadWrite;
 
         let log = test_util::terminal_logger();
@@ -588,23 +594,21 @@ mod tests {
     }
 
     #[test]
-    fn test_read_exact_at() {
+    fn test_read_exact_at() -> Result<(), Box<dyn Error>> {
         let log = test_util::terminal_logger();
+
+        let cfg = config::Configuration::default();
+        let config = Arc::new(cfg);
+        let alignment = config.store.alignment;
 
         // Start offset of current segment
         let wal_offset = 1024 * 1024;
-        let alignment = Options::default().alignment as u64;
 
         let uuid = Uuid::new_v4();
 
         // Generate some random data
-        let buf_w = AlignedBuf::new(
-            log.clone(),
-            wal_offset,
-            4 * alignment as usize,
-            alignment as usize,
-        )
-        .unwrap();
+        let buf_w =
+            AlignedBuf::new(log.clone(), wal_offset, 4 * alignment as usize, alignment).unwrap();
 
         rand::thread_rng().fill_bytes(buf_w.slice_mut(..));
         buf_w.increase_written(buf_w.capacity);
@@ -617,7 +621,8 @@ mod tests {
         store_dir.push(path::PathBuf::from(uuid.simple().to_string()));
 
         let mut segment =
-            super::LogSegment::new(log, wal_offset, 1024 * 1024, store_dir.as_path()).unwrap();
+            super::LogSegment::new(log, &config, wal_offset, 1024 * 1024, store_dir.as_path())
+                .unwrap();
         segment.open().unwrap();
 
         let sd = segment.sd.as_ref().unwrap();
@@ -628,7 +633,9 @@ mod tests {
 
         // Read some bytes in the second page, and test whether the whole second page is cached.
         let mut buf = [0u8; 5];
-        segment.read_exact_at(&mut buf, alignment + 2).unwrap();
+        segment
+            .read_exact_at(&mut buf, alignment as u64 + 2)
+            .unwrap();
         assert_eq!(
             &buf,
             buf_w.slice((alignment + 2) as usize..(alignment + 2 + 5) as usize)
@@ -637,7 +644,7 @@ mod tests {
         let buf_v = segment
             .block_cache
             .try_get_entries(EntryRange::new(
-                segment.wal_offset + alignment,
+                segment.wal_offset + alignment as u64,
                 alignment as u32,
                 alignment,
             ))
@@ -645,7 +652,7 @@ mod tests {
             .unwrap();
         assert_eq!(buf_v.len(), 1);
         let buf = buf_v.first().unwrap();
-        assert_eq!(buf.wal_offset, segment.wal_offset + alignment);
+        assert_eq!(buf.wal_offset, segment.wal_offset + alignment as u64);
         assert_eq!(buf.limit(), alignment as usize);
         assert_eq!(
             buf.slice(..),
@@ -654,7 +661,9 @@ mod tests {
 
         // Read some bytes cross the page boundary, and test whether the whole two pages is cached.
         let mut buf = [0u8; 5];
-        segment.read_exact_at(&mut buf, alignment * 3 - 2).unwrap();
+        segment
+            .read_exact_at(&mut buf, alignment as u64 * 3 - 2)
+            .unwrap();
         assert_eq!(
             &buf,
             buf_w.slice((alignment * 3 - 2) as usize..(alignment * 3 - 2 + 5) as usize)
@@ -663,7 +672,7 @@ mod tests {
         let buf_v = segment
             .block_cache
             .try_get_entries(EntryRange::new(
-                segment.wal_offset + alignment * 2,
+                segment.wal_offset + alignment as u64 * 2,
                 alignment as u32 * 2,
                 alignment,
             ))
@@ -675,26 +684,25 @@ mod tests {
             buf.slice(..),
             buf_w.slice((alignment * 2) as usize..(alignment * 4) as usize)
         );
+        Ok(())
     }
 
     #[test]
-    fn test_truncate_to() {
+    fn test_truncate_to() -> Result<(), Box<dyn Error>> {
         let log = test_util::terminal_logger();
+
+        let mut cfg = config::Configuration::default();
+        cfg.store.alignment = 4096;
+        let config = Arc::new(cfg);
+        let alignment = config.store.alignment;
 
         // Start offset of current segment
         let wal_offset = 1024 * 1024;
-        let alignment = Options::default().alignment as u64;
 
         let uuid = Uuid::new_v4();
 
         // Generate some random data
-        let buf_w = AlignedBuf::new(
-            log.clone(),
-            wal_offset,
-            4 * alignment as usize,
-            alignment as usize,
-        )
-        .unwrap();
+        let buf_w = AlignedBuf::new(log.clone(), wal_offset, 4 * alignment, alignment).unwrap();
 
         rand::thread_rng().fill_bytes(buf_w.slice_mut(..));
         buf_w.increase_written(buf_w.capacity);
@@ -707,7 +715,8 @@ mod tests {
         store_dir.push(path::PathBuf::from(uuid.simple().to_string()));
 
         let mut segment =
-            super::LogSegment::new(log, wal_offset, 1024 * 1024, store_dir.as_path()).unwrap();
+            super::LogSegment::new(log, &config, wal_offset, 1024 * 1024, store_dir.as_path())
+                .unwrap();
         segment.open().unwrap();
 
         let sd = segment.sd.as_ref().unwrap();
@@ -718,15 +727,17 @@ mod tests {
 
         {
             // Case one: the last page is already cached individually.
-            segment.written = 4 * alignment;
+            segment.written = 4 * alignment as u64;
             // Load the first three pages.
             let mut buf = [0u8; 3 * 4096 as usize];
             segment.read_exact_at(&mut buf, 0).unwrap();
             // Load the last page
             let mut buf = [0u8; 4096 as usize];
-            segment.read_exact_at(&mut buf, 3 * alignment).unwrap();
+            segment
+                .read_exact_at(&mut buf, 3 * alignment as u64)
+                .unwrap();
 
-            segment.truncate_to(4 * alignment).unwrap();
+            segment.truncate_to(4 * alignment as u64).unwrap();
 
             // Assert nothing has been changed for block cache.
             let buf_v = segment
@@ -742,7 +753,7 @@ mod tests {
             let buf_v = segment
                 .block_cache
                 .try_get_entries(EntryRange::new(
-                    wal_offset + 3 * alignment,
+                    wal_offset + 3 * alignment as u64,
                     alignment as u32,
                     alignment,
                 ))
@@ -764,10 +775,12 @@ mod tests {
             segment.read_exact_at(&mut buf, 0).unwrap();
             // Load the last page and a dirty page
             let mut buf = [0u8; 4096 * 2 as usize];
-            segment.read_exact_at(&mut buf, 3 * alignment).unwrap();
+            segment
+                .read_exact_at(&mut buf, 3 * alignment as u64)
+                .unwrap();
 
-            segment.written = 4 * alignment - 1024;
-            segment.truncate_to(4 * alignment - 1024).unwrap();
+            segment.written = 4 * alignment as u64 - 1024;
+            segment.truncate_to(4 * alignment as u64 - 1024).unwrap();
 
             let buf_v = segment
                 .block_cache
@@ -782,7 +795,7 @@ mod tests {
             let buf_v = segment
                 .block_cache
                 .try_get_entries(EntryRange::new(
-                    wal_offset + 3 * alignment,
+                    wal_offset + 3 * alignment as u64,
                     1 as u32,
                     alignment,
                 ))
@@ -790,7 +803,7 @@ mod tests {
                 .unwrap();
             assert_eq!(buf_v.len(), 1);
             let buf = buf_v.first().unwrap();
-            assert_eq!(buf.wal_offset, wal_offset + 3 * alignment);
+            assert_eq!(buf.wal_offset, wal_offset + 3 * alignment as u64);
             assert_eq!(buf.limit(), alignment as usize - 1024);
             assert_eq!(buf.capacity, alignment as usize);
 
@@ -804,8 +817,8 @@ mod tests {
             let mut buf = [0u8; 4 * 4096 as usize];
             segment.read_exact_at(&mut buf, 0).unwrap();
 
-            segment.written = 3 * alignment + 1024;
-            segment.truncate_to(3 * alignment + 1024).unwrap();
+            segment.written = 3 * alignment as u64 + 1024;
+            segment.truncate_to(3 * alignment as u64 + 1024).unwrap();
 
             let buf_v = segment
                 .block_cache
@@ -820,7 +833,7 @@ mod tests {
             let buf_v = segment
                 .block_cache
                 .try_get_entries(EntryRange::new(
-                    wal_offset + 3 * alignment,
+                    wal_offset + 3 * alignment as u64,
                     1024 as u32,
                     alignment,
                 ))
@@ -834,5 +847,7 @@ mod tests {
             // Clear the cache
             segment.block_cache.remove(|t| t.wal_offset() >= wal_offset);
         }
+
+        Ok(())
     }
 }

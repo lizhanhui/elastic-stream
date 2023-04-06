@@ -45,9 +45,9 @@ impl SessionManager {
         };
         match self.tx.send(command) {
             Ok(_) => {}
-            Err(e) => {}
+            Err(_e) => {}
         };
-        receiver.await.map_err(|e| ClientError::ClientInternal)?
+        receiver.await.map_err(|_e| ClientError::ClientInternal)?
     }
 }
 

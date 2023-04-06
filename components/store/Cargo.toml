@@ -26,6 +26,7 @@ tokio = { workspace = true }
 util = { path = "../util" }
 model = { path = "../model" }
 client = { path = "../client" }
+config = { path = "../config" }
 protocol = { path = "../protocol" }
 num_enum = { workspace = true }
 derivative = { workspace = true }

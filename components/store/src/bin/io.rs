@@ -36,12 +36,14 @@ fn main() -> Result<(), Box<dyn Error>> {
     // Create file
     {
         let file_name = "/mnt/abc.txt".to_owned();
-        let open_at_e =
-            opcode::OpenAt::new(types::Fd(libc::AT_FDCWD), file_name.as_ptr() as *const libc::c_char)
-                .flags(libc::O_CREAT | libc::O_RDWR | libc::O_DIRECT)
-                .mode(libc::S_IRWXU | libc::S_IRWXG)
-                .build()
-                .user_data(0);
+        let open_at_e = opcode::OpenAt::new(
+            types::Fd(libc::AT_FDCWD),
+            file_name.as_ptr() as *const libc::c_char,
+        )
+        .flags(libc::O_CREAT | libc::O_RDWR | libc::O_DIRECT)
+        .mode(libc::S_IRWXU | libc::S_IRWXG)
+        .build()
+        .user_data(0);
         unsafe { ring.submission().push(&open_at_e)? };
         ring.submit_and_wait(1)?;
         let mut cq = ring.completion();

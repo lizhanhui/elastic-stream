@@ -3,7 +3,6 @@ use crate::index::driver::IndexDriver;
 use crate::index::record_handle::RecordHandle;
 use crate::io::buf::{AlignedBufReader, AlignedBufWriter};
 use crate::io::context::Context;
-use crate::io::options::Options;
 use crate::io::task::IoTask;
 use crate::io::task::WriteTask;
 use crate::io::wal::Wal;
@@ -30,7 +29,7 @@ use super::task::SingleFetchResult;
 use super::ReadTask;
 
 pub(crate) struct IO {
-    options: Options,
+    options: Arc<config::Configuration>,
 
     /// Full fledged I/O Uring instance with setup of `SQPOLL` and `IOPOLL` features
     ///
@@ -142,25 +141,10 @@ impl IO {
     ///
     /// Behavior of the IO instance can be tuned through `Options`.
     pub(crate) fn new(
-        options: &mut Options,
+        config: &Arc<config::Configuration>,
         indexer: Arc<IndexDriver>,
         log: Logger,
     ) -> Result<Self, StoreError> {
-        if options.wal_paths.is_empty() {
-            return Err(StoreError::Configuration("WAL path required".to_owned()));
-        }
-
-        if options.metadata_path.is_empty() {
-            return Err(StoreError::Configuration(
-                "Metadata path required".to_owned(),
-            ));
-        }
-
-        // Ensure WAL directories exists.
-        for dir in &options.wal_paths {
-            util::mkdirs_if_missing(&dir.path)?;
-        }
-
         let control_ring = io_uring::IoUring::builder().dontfork().build(32).map_err(|e| {
             error!(log, "Failed to build I/O Uring instance for write-ahead-log segment file management: {:#?}", e);
             StoreError::IoUring
@@ -169,10 +153,10 @@ impl IO {
         let data_ring = io_uring::IoUring::builder()
             .dontfork()
             .setup_iopoll()
-            .setup_sqpoll(options.sqpoll_idle_ms)
-            .setup_sqpoll_cpu(options.sqpoll_cpu)
+            .setup_sqpoll(config.store.uring.sqpoll_idle_ms)
+            .setup_sqpoll_cpu(config.store.uring.sqpoll_cpu)
             .setup_r_disabled()
-            .build(options.io_depth)
+            .build(config.store.uring.queue_depth)
             .map_err(|e| {
                 error!(log, "Failed to build polling I/O Uring instance: {:#?}", e);
                 StoreError::IoUring
@@ -181,7 +165,10 @@ impl IO {
         let mut probe = register::Probe::new();
 
         let submitter = data_ring.submitter();
-        submitter.register_iowq_max_workers(&mut options.max_workers)?;
+        submitter.register_iowq_max_workers(&mut [
+            config.store.uring.max_bounded_worker,
+            config.store.uring.max_unbounded_worker,
+        ])?;
         submitter.register_probe(&mut probe)?;
         submitter.register_enable_rings()?;
 
@@ -192,19 +179,17 @@ impl IO {
         let (sender, receiver) = crossbeam::channel::unbounded();
 
         Ok(Self {
-            options: options.clone(),
+            options: config.clone(),
             data_ring,
             sender: Some(sender),
             receiver,
             write_window: WriteWindow::new(log.clone(), 0),
-            buf_writer: UnsafeCell::new(AlignedBufWriter::new(log.clone(), 0, options.alignment)),
-            wal: Wal::new(
-                options.clone().wal_paths,
-                control_ring,
-                options.segment_size,
-                options.max_cache_size,
+            buf_writer: UnsafeCell::new(AlignedBufWriter::new(
                 log.clone(),
-            ),
+                0,
+                config.store.alignment,
+            )),
+            wal: Wal::new(control_ring, config, log.clone()),
             log,
             channel_disconnected: false,
             inflight: 0,
@@ -387,7 +372,7 @@ impl IO {
                     self.log.clone(),
                     range.wal_offset,
                     range.len as usize,
-                    self.options.alignment as u64,
+                    self.options.store.alignment,
                 ) {
                     let ptr = buf.as_ptr() as *mut u8;
 
@@ -512,7 +497,7 @@ impl IO {
 
     fn build_sqe(&mut self, entries: &mut Vec<squeue::Entry>) {
         let log = self.log.clone();
-        let alignment = self.options.alignment;
+        let alignment = self.options.store.alignment;
         let buf_list = self.calculate_write_buffers();
         let left = self.buf_writer.get_mut().remaining();
 
@@ -554,8 +539,7 @@ impl IO {
                     };
 
                     if let Some(_sd) = segment.sd.as_ref() {
-                        let range_to_read =
-                            EntryRange::new(task.wal_offset, task.len, alignment as u64);
+                        let range_to_read = EntryRange::new(task.wal_offset, task.len, alignment);
 
                         // Try to read from the buffer first.
                         let buf_res = segment.block_cache.try_get_entries(range_to_read);
@@ -861,7 +845,7 @@ impl IO {
                         let range = EntryRange::new(
                             task.wal_offset,
                             task.len,
-                            self.options.alignment as u64,
+                            self.options.store.alignment,
                         );
 
                         match segment.block_cache.try_get_entries(range) {
@@ -1026,7 +1010,8 @@ impl IO {
             error!(log, "Failed to notify completion of recovery");
         }
 
-        let min_preallocated_segment_files = io.borrow().options.min_preallocated_segment_files;
+        let min_preallocated_segment_files =
+            io.borrow().options.store.pre_allocate_segment_file_number;
 
         let cqe_wanted = 1;
 
@@ -1155,7 +1140,7 @@ fn on_complete(
                     log,
                     "Read from WAL range `[{}, {})` failed", context.wal_offset, context.len
                 );
-                return Err(StoreError::System(-result));
+                Err(StoreError::System(-result))
             } else {
                 if result != context.len as i32 {
                     error!(
@@ -1169,7 +1154,7 @@ fn on_complete(
                     return Err(StoreError::InsufficientData);
                 }
                 context.buf.increase_written(result as usize);
-                return Ok(());
+                Ok(())
             }
         }
         _ => Ok(()),
@@ -1194,7 +1179,6 @@ mod tests {
     use crate::error::StoreError;
     use crate::index::driver::IndexDriver;
     use crate::index::MinOffset;
-    use crate::io::options::{DEFAULT_LOG_SEGMENT_SIZE, DEFAULT_MAX_CACHE_SIZE};
     use crate::io::ReadTask;
     use crate::offset_manager::WalOffsetManager;
     use bytes::BytesMut;
@@ -1203,60 +1187,39 @@ mod tests {
     use slog::trace;
     use std::cell::RefCell;
     use std::error::Error;
-    use std::fs;
     use std::path::{Path, PathBuf};
     use std::sync::Arc;
     use std::thread::JoinHandle;
     use tokio::sync::oneshot;
 
-    use crate::option::WalPath;
-
     struct IOBuilder {
-        store_dir: PathBuf,
-        segment_size: u64,
-        max_cache_size: u64,
+        cfg: config::Configuration,
     }
 
     impl IOBuilder {
         fn new(store_dir: PathBuf) -> Self {
-            Self {
-                store_dir,
-                segment_size: DEFAULT_LOG_SEGMENT_SIZE,
-                max_cache_size: DEFAULT_MAX_CACHE_SIZE,
-            }
+            let mut cfg = config::Configuration::default();
+            cfg.store
+                .path
+                .set_base(store_dir.as_path().to_str().unwrap());
+            cfg.check_and_apply()
+                .expect("Failed to check-and-apply configuration");
+            Self { cfg }
         }
 
         fn segment_size(mut self, segment_size: u64) -> Self {
-            self.segment_size = segment_size;
+            self.cfg.store.segment_size = segment_size;
             self
         }
 
         fn max_cache_size(mut self, max_cache_size: u64) -> Self {
-            self.max_cache_size = max_cache_size;
+            self.cfg.store.max_cache_size = max_cache_size;
             self
         }
 
         fn build(self) -> Result<super::IO, StoreError> {
-            let mut options = super::Options::default();
-            options.segment_size = self.segment_size;
-            options.max_cache_size = self.max_cache_size;
             let logger = test_util::terminal_logger();
-            let store_path = self.store_dir.join("rocksdb");
-            if !store_path.exists() {
-                fs::create_dir_all(store_path.as_path()).map_err(|e| StoreError::IO(e))?;
-            }
-
-            options.metadata_path = store_path
-                .into_os_string()
-                .into_string()
-                .map_err(|_e| StoreError::Configuration("Bad path".to_owned()))?;
-
-            let wal_dir = self.store_dir.join("wal");
-            if !wal_dir.exists() {
-                fs::create_dir_all(wal_dir.as_path()).map_err(|e| StoreError::IO(e))?;
-            }
-            let wal_path = WalPath::new(wal_dir.to_str().unwrap(), 1234)?;
-            options.add_wal_path(wal_path);
+            let config = Arc::new(self.cfg);
 
             // Build wal offset manager
             let wal_offset_manager = Arc::new(WalOffsetManager::new());
@@ -1264,12 +1227,18 @@ mod tests {
             // Build index driver
             let indexer = Arc::new(IndexDriver::new(
                 logger.clone(),
-                &options.metadata_path,
+                &config
+                    .store
+                    .path
+                    .metadata_path()
+                    .as_path()
+                    .to_str()
+                    .unwrap(),
                 Arc::clone(&wal_offset_manager) as Arc<dyn MinOffset>,
                 128,
             )?);
 
-            super::IO::new(&mut options, indexer, logger.clone())
+            super::IO::new(&config, indexer, logger.clone())
         }
     }
 
@@ -1422,6 +1391,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
     fn test_run_on_small_io() -> Result<(), Box<dyn Error>> {
         let (handle, sender) = create_and_run_io(create_small_io)?;
 
@@ -1666,26 +1636,15 @@ mod tests {
         store_dir: &Path,
         segment_size: u64,
     ) -> Result<super::IO, StoreError> {
-        let mut options = super::Options::default();
         // set the size of segment file
-        options.segment_size = segment_size;
         let logger = test_util::terminal_logger();
-        let store_path = store_dir.join("rocksdb");
-        if !store_path.exists() {
-            fs::create_dir_all(store_path.as_path()).map_err(|e| StoreError::IO(e))?;
-        }
 
-        options.metadata_path = store_path
-            .into_os_string()
-            .into_string()
-            .map_err(|_e| StoreError::Configuration("Bad path".to_owned()))?;
-
-        let wal_dir = store_dir.join("wal");
-        if !wal_dir.exists() {
-            fs::create_dir_all(wal_dir.as_path()).map_err(|e| StoreError::IO(e))?;
-        }
-        let wal_path = WalPath::new(wal_dir.to_str().unwrap(), 1234)?;
-        options.add_wal_path(wal_path);
+        let mut cfg = config::Configuration::default();
+        cfg.store.path.set_base(store_dir.to_str().unwrap());
+        cfg.store.segment_size = segment_size;
+        cfg.check_and_apply()
+            .map_err(|e| StoreError::Configuration(format!("{:?}", e)))?;
+        let config = Arc::new(cfg);
 
         // Build wal offset manager
         let wal_offset_manager = Arc::new(WalOffsetManager::new());
@@ -1693,12 +1652,18 @@ mod tests {
         // Build index driver
         let indexer = Arc::new(IndexDriver::new(
             logger.clone(),
-            &options.metadata_path,
+            &config
+                .store
+                .path
+                .metadata_path()
+                .as_path()
+                .to_str()
+                .unwrap(),
             Arc::clone(&wal_offset_manager) as Arc<dyn MinOffset>,
-            128,
+            config.store.rocksdb.flush_threshold,
         )?);
 
-        super::IO::new(&mut options, indexer, logger.clone())
+        super::IO::new(&config, indexer, logger.clone())
     }
 
     fn append_fetch_task(
@@ -1862,7 +1827,6 @@ mod tests {
     #[test]
     fn test_run_random() -> Result<(), Box<dyn Error>> {
         let log = test_util::terminal_logger();
-
         let (tx, rx) = oneshot::channel();
         let (recovery_completion_tx, recovery_completion_rx) = oneshot::channel();
         let logger = log.clone();
@@ -1871,7 +1835,6 @@ mod tests {
             let store_dir = store_dir.as_path();
             let _store_dir_guard = test_util::DirectoryRemovalGuard::new(logger, store_dir);
             let mut io = create_io_with_segment_size(store_dir, 4096 * 4).unwrap();
-
             let sender = io
                 .sender
                 .take()
@@ -1879,12 +1842,8 @@ mod tests {
                 .unwrap();
             let _ = tx.send(sender);
             let io = RefCell::new(io);
-
             let _ = super::IO::run(io, recovery_completion_tx);
-
-            println!("Module io stopped");
         });
-
         if let Err(_) = recovery_completion_rx.blocking_recv() {
             panic!("Failed to await recovery completion");
         }

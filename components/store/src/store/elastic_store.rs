@@ -2,7 +2,6 @@ use std::{
     cell::RefCell,
     io::Cursor,
     os::fd::{AsRawFd, RawFd},
-    path::Path,
     sync::Arc,
     thread::{Builder, JoinHandle},
 };
@@ -20,7 +19,7 @@ use crate::{
         ReadTask,
     },
     offset_manager::WalOffsetManager,
-    option::{ReadOptions, StoreOptions, WriteOptions},
+    option::{ReadOptions, WriteOptions},
     AppendRecordRequest, AppendResult, FetchResult, Store,
 };
 use bytes::Buf;
@@ -59,38 +58,14 @@ pub struct ElasticStore {
 impl ElasticStore {
     pub fn new(
         log: Logger,
-        options: StoreOptions,
+        config: &Arc<config::Configuration>,
         recovery_completion_tx: oneshot::Sender<()>,
     ) -> Result<Self, StoreError> {
         let logger = log.clone();
-        let mut opt = io::Options::default();
 
-        let store_path = match Path::new(&options.metadata_path).parent() {
-            None => {
-                error!(
-                    log,
-                    "Metadata should not be stored at root directory. Metadata Path: `{}`",
-                    options.metadata_path
-                );
-                return Err(StoreError::Configuration(format!(
-                    "Bad metadata path: {}",
-                    options.metadata_path
-                )));
-            }
-            Some(path) => path,
-        };
+        let id_generator = Box::new(PlacementManagerIdGenerator::new(logger.clone(), config));
 
-        let id_generator = Box::new(PlacementManagerIdGenerator::new(
-            logger.clone(),
-            &options.pm_address,
-            &options.host,
-        ));
-
-        let lock = Arc::new(Lock::new(store_path, id_generator, &log)?);
-
-        // Customize IO options from store options.
-        opt.add_wal_path(options.wal_path);
-        opt.metadata_path = options.metadata_path;
+        let lock = Arc::new(Lock::new(config, id_generator, &log)?);
 
         // Build wal offset manager
         let wal_offset_manager = Arc::new(WalOffsetManager::new());
@@ -98,9 +73,15 @@ impl ElasticStore {
         // Build index driver
         let indexer = Arc::new(IndexDriver::new(
             log.clone(),
-            &opt.metadata_path,
+            config
+                .store
+                .path
+                .metadata_path()
+                .as_path()
+                .to_str()
+                .ok_or(StoreError::Configuration(String::from("Bad store path")))?,
             Arc::clone(&wal_offset_manager) as Arc<dyn MinOffset>,
-            options.flush_threshold,
+            config.store.rocksdb.flush_threshold,
         )?);
 
         let (sender, receiver) = oneshot::channel();
@@ -108,11 +89,12 @@ impl ElasticStore {
         // IO thread will be left in detached state.
         // Copy a indexer
         let indexer_cp = Arc::clone(&indexer);
+        let cfg = Arc::clone(config);
         let _io_thread_handle = Self::with_thread(
             "IO",
             move || {
                 let log = log.clone();
-                let mut io = io::IO::new(&mut opt, indexer_cp, log.clone())?;
+                let mut io = io::IO::new(&cfg, indexer_cp, log.clone())?;
                 let sharing_uring = io.as_raw_fd();
                 let tx = io
                     .sender
@@ -404,7 +386,7 @@ impl AsRawFd for ElasticStore {
 /// Some tests for ElasticStore.
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
+    use std::{error::Error, path::Path, sync::Arc};
 
     use bytes::{Bytes, BytesMut};
     use futures::future::join_all;
@@ -413,26 +395,20 @@ mod tests {
 
     use crate::{
         error::{AppendError, FetchError},
-        option::{ReadOptions, StoreOptions, WalPath, WriteOptions},
+        option::{ReadOptions, WriteOptions},
         store::{append_result::AppendResult, fetch_result::FetchResult},
         AppendRecordRequest, ElasticStore, Store,
     };
 
-    fn build_store(pm_address: &str, store_path: &str, index_path: &str) -> ElasticStore {
+    fn build_store(pm_address: &str, store_path: &str) -> ElasticStore {
         let log = test_util::terminal_logger();
-
-        let size_10g = 10u64 * (1 << 30);
-
-        let wal_path = WalPath::new(store_path, size_10g).unwrap();
-
-        let options = StoreOptions::new(
-            String::from("dn-host"),
-            String::from(pm_address),
-            &wal_path,
-            index_path.to_string(),
-        );
+        let mut cfg = config::Configuration::default();
+        cfg.server.placement_manager = pm_address.to_owned();
+        cfg.store.path.set_base(store_path);
+        cfg.check_and_apply().expect("Configuration is invalid");
+        let config = Arc::new(cfg);
         let (tx, rx) = oneshot::channel();
-        let store = match ElasticStore::new(log.clone(), options, tx) {
+        let store = match ElasticStore::new(log.clone(), &config, tx) {
             Ok(store) => store,
             Err(e) => {
                 panic!("Failed to launch ElasticStore: {:?}", e);
@@ -444,20 +420,14 @@ mod tests {
 
     /// Test the basic append and fetch operations.
     #[tokio::test]
-    async fn test_run_store() {
+    async fn test_run_store() -> Result<(), Box<dyn Error>> {
         let log = test_util::terminal_logger();
 
-        let store_dir = test_util::create_random_path().unwrap();
-        let index_dir = test_util::create_random_path().unwrap();
-        let store_path = String::from(store_dir.as_path().to_str().unwrap());
-        let index_path = String::from(index_dir.as_path().to_str().unwrap());
+        let store_dir = test_util::create_random_path()?;
+        let store_path = store_dir.as_path().to_str().unwrap().to_owned();
 
         let store_path_g = store_path.clone();
-        let index_path_g = index_path.clone();
-        let _store_dir_guard =
-            test_util::DirectoryRemovalGuard::new(log.clone(), &Path::new(store_path_g.as_str()));
-        let _index_dir_guard =
-            test_util::DirectoryRemovalGuard::new(log.clone(), &Path::new(index_path_g.as_str()));
+        let _guard = test_util::DirectoryRemovalGuard::new(log.clone(), &Path::new(&store_path_g));
 
         let (tx, rx) = oneshot::channel();
 
@@ -475,7 +445,7 @@ mod tests {
         let port = port_rx.await.unwrap();
         let pm_address = format!("localhost:{}", port);
         let _ = std::thread::spawn(move || {
-            let store = build_store(&pm_address, store_path.as_str(), index_path.as_str());
+            let store = build_store(&pm_address, store_path.as_str());
             let send_r = tx.send(store);
             if let Err(_) = send_r {
                 panic!("Failed to send store");
@@ -550,5 +520,6 @@ mod tests {
         let _ = stop_tx.send(());
         let _ = handle.join();
         drop(store);
+        Ok(())
     }
 }

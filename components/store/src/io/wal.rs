@@ -1,7 +1,6 @@
 use std::{
     cmp,
     collections::{HashMap, VecDeque},
-    path::Path,
     sync::Arc,
 };
 
@@ -10,7 +9,6 @@ use crate::{
     index::{driver::IndexDriver, record_handle::RecordHandle},
     io::record::RecordType,
     io::segment::{LogSegment, Medium, SegmentDescriptor, Status, FOOTER_LENGTH},
-    option::WalPath,
 };
 
 use io_uring::{opcode, squeue, types};
@@ -38,14 +36,14 @@ pub(crate) struct WalCache {
 
 /// A WAL contains a list of log segments, and supports open, close, alloc, and other operations.
 pub(crate) struct Wal {
-    /// The WAL path if the log segments are on file system.
-    wal_paths: Vec<WalPath>,
-
     /// I/O Uring instance for write-ahead-log segment file management.
     ///
     /// Unlike `data_uring`, this instance is used to open/fallocate/close/delete log segment files because these opcodes are not
     /// properly supported by the instance armed with the `IOPOLL` feature.
     control_ring: io_uring::IoUring,
+
+    /// Global configuration
+    config: Arc<config::Configuration>,
 
     /// Mapping of on-going file operations between segment offset to file operation `Status`.
     ///
@@ -54,15 +52,8 @@ pub(crate) struct Wal {
     /// this mapping should be removed.
     inflight_control_tasks: HashMap<u64, Status>,
 
-    /// The block paths if the log segments are on block devices.
-    /// The block device is not supported yet.
-    block_paths: Option<String>,
-
     /// The container of the log segments.
     segments: VecDeque<LogSegment>,
-
-    /// The size of each log segment.
-    segment_size: u64,
 
     /// The cache management of the WAL.
     wal_cache: WalCache,
@@ -73,22 +64,18 @@ pub(crate) struct Wal {
 
 impl Wal {
     pub(crate) fn new(
-        wal_paths: Vec<WalPath>,
         control_ring: io_uring::IoUring,
-        segment_size: u64,
-        max_cache_size: u64,
+        config: &Arc<config::Configuration>,
         log: Logger,
     ) -> Self {
         Self {
-            segments: VecDeque::new(),
-            wal_paths,
-            block_paths: None,
-            log,
             control_ring,
-            segment_size,
+            config: Arc::clone(config),
+            segments: VecDeque::new(),
+            log,
             inflight_control_tasks: HashMap::new(),
             wal_cache: WalCache {
-                max_cache_size: max_cache_size,
+                max_cache_size: config.store.max_cache_size,
                 current_cache_size: 0,
                 // TODO: make these configurable
                 high_water_mark: 80,
@@ -103,13 +90,10 @@ impl Wal {
 
     /// All the segments will be opened after loading from WAL.
     pub(crate) fn load_from_paths(&mut self) -> Result<(), StoreError> {
-        let mut segment_files: Vec<_> = self
-            .wal_paths
-            .iter()
-            .rev()
-            .flat_map(|wal_path| Path::new(&wal_path.path).read_dir())
+        let wal_path = self.config.store.path.wal_path();
+        let mut segment_files: Vec<_> = wal_path
+            .read_dir()?
             .flatten() // Note Result implements FromIterator trait, so `flatten` applies and potential `Err` will be propagated.
-            .flatten()
             .flat_map(|entry| {
                 if let Ok(metadata) = entry.metadata() {
                     if metadata.file_type().is_dir() {
@@ -119,8 +103,13 @@ impl Wal {
                         let path = entry.path();
                         let path = path.as_path();
                         if let Some(offset) = LogSegment::parse_offset(path) {
-                            let log_segment_file =
-                                LogSegment::new(self.log.clone(), offset, self.segment_size, path);
+                            let log_segment_file = LogSegment::new(
+                                self.log.clone(),
+                                &self.config,
+                                offset,
+                                self.config.store.segment_size,
+                                path,
+                            );
                             Some(log_segment_file)
                         } else {
                             error!(
@@ -471,15 +460,20 @@ impl Wal {
         let offset = if self.segments.is_empty() {
             0
         } else if let Some(last) = self.segments.back() {
-            last.wal_offset + self.segment_size
+            last.wal_offset + self.config.store.segment_size
         } else {
             unreachable!("Should-not-reach-here")
         };
-        let dir = self.wal_paths.first().ok_or(StoreError::AllocLogSegment)?;
-        let path = Path::new(&dir.path);
+        let path = self.config.store.path.wal_path();
         let path = path.join(LogSegment::format(offset));
 
-        let segment = LogSegment::new(self.log.clone(), offset, self.segment_size, path.as_path())?;
+        let segment = LogSegment::new(
+            self.log.clone(),
+            &self.config,
+            offset,
+            self.config.store.segment_size,
+            path.as_path(),
+        )?;
 
         Ok(segment)
     }
@@ -696,32 +690,20 @@ mod tests {
     use crate::error::StoreError;
     use crate::io::buf::AlignedBuf;
     use crate::io::{
-        options::DEFAULT_LOG_SEGMENT_SIZE,
         segment::{LogSegment, Status},
         task::{IoTask, WriteTask},
-        Options,
     };
-    use crate::option::WalPath;
 
     use super::Wal;
 
-    fn create_wal(wal_dir: WalPath) -> Result<Wal, StoreError> {
+    fn create_wal(cfg: &Arc<config::Configuration>) -> Result<Wal, StoreError> {
         let logger = test_util::terminal_logger();
         let control_ring = io_uring::IoUring::builder().dontfork().build(32).map_err(|e| {
             error!(logger, "Failed to build I/O Uring instance for write-ahead-log segment file management: {:#?}", e);
             StoreError::IoUring
         })?;
 
-        let mut options = Options::default();
-        options.add_wal_path(wal_dir);
-
-        Ok(Wal::new(
-            options.wal_paths,
-            control_ring,
-            options.segment_size,
-            options.max_cache_size,
-            logger,
-        ))
+        Ok(Wal::new(control_ring, cfg, logger))
     }
 
     fn random_wal_dir() -> Result<PathBuf, StoreError> {
@@ -730,23 +712,31 @@ mod tests {
 
     #[test]
     fn test_load_wals() -> Result<(), StoreError> {
-        let wal_dir = random_wal_dir()?;
+        let log = test_util::terminal_logger();
+        let store_base = random_wal_dir()?;
+        let _guard = test_util::DirectoryRemovalGuard::new(log, store_base.as_path());
+        let mut cfg = config::Configuration::default();
+        cfg.store
+            .path
+            .set_base(store_base.as_path().to_str().unwrap());
+        cfg.check_and_apply()
+            .expect("Failed to check-and-apply configuration");
+        let config = Arc::new(cfg);
         // Prepare log segment files
         let files: Vec<_> = (0..10)
             .into_iter()
             .map(|i| {
-                let f = wal_dir.join(LogSegment::format(i * 100));
+                let f = config
+                    .store
+                    .path
+                    .wal_path()
+                    .join(LogSegment::format(i * 100));
                 File::create(f.as_path())
             })
-            .flatten()
-            .collect();
+            .try_collect()?;
         assert_eq!(10, files.len());
 
-        let log = test_util::terminal_logger();
-        let _wal_dir_guard = test_util::DirectoryRemovalGuard::new(log, wal_dir.as_path());
-        let wal_dir = super::WalPath::new(wal_dir.to_str().unwrap(), 1234)?;
-
-        let mut wal = create_wal(wal_dir)?;
+        let mut wal = create_wal(&config)?;
         wal.load_from_paths()?;
         assert_eq!(files.len(), wal.segments.len());
         Ok(())
@@ -757,13 +747,18 @@ mod tests {
         let wal_dir = random_wal_dir()?;
         let log = test_util::terminal_logger();
         let _wal_dir_guard = test_util::DirectoryRemovalGuard::new(log, wal_dir.as_path());
-        let mut wal = create_wal(super::WalPath::new(wal_dir.to_str().unwrap(), 1234)?)?;
+
+        let mut cfg = config::Configuration::default();
+        cfg.store.path.set_wal(wal_dir.as_path().to_str().unwrap());
+        let config = Arc::new(cfg);
+        let mut wal = create_wal(&config)?;
+
         let segment = wal.alloc_segment()?;
         assert_eq!(0, segment.wal_offset);
         wal.segments.push_back(segment);
 
         let segment = wal.alloc_segment()?;
-        assert_eq!(DEFAULT_LOG_SEGMENT_SIZE, segment.wal_offset);
+        assert_eq!(config.store.segment_size, segment.wal_offset);
         Ok(())
     }
 
@@ -772,7 +767,12 @@ mod tests {
         let wal_dir = random_wal_dir()?;
         let log = test_util::terminal_logger();
         let _wal_dir_guard = test_util::DirectoryRemovalGuard::new(log, wal_dir.as_path());
-        let mut wal = create_wal(super::WalPath::new(wal_dir.to_str().unwrap(), 1234)?)?;
+
+        let mut cfg = config::Configuration::default();
+        cfg.store.path.set_wal(wal_dir.as_path().to_str().unwrap());
+        let config = Arc::new(cfg);
+        let mut wal = create_wal(&config)?;
+
         let segment = wal.alloc_segment()?;
         wal.segments.push_back(segment);
         assert_eq!(1, wal.writable_segment_count());
@@ -791,8 +791,11 @@ mod tests {
         let wal_dir = random_wal_dir()?;
         let log = test_util::terminal_logger();
         let _wal_dir_guard = test_util::DirectoryRemovalGuard::new(log, wal_dir.as_path());
-        let mut wal = create_wal(super::WalPath::new(wal_dir.to_str().unwrap(), 1234)?)?;
-        let file_size = wal.segment_size;
+        let mut cfg = config::Configuration::default();
+        cfg.store.path.set_wal(wal_dir.as_path().to_str().unwrap());
+        let config = Arc::new(cfg);
+        let mut wal = create_wal(&config)?;
+
         let segment = wal.alloc_segment()?;
         wal.segments.push_back(segment);
         let segment = wal.alloc_segment()?;
@@ -801,7 +804,7 @@ mod tests {
 
         // Ensure we can get the right
         let segment = wal
-            .segment_file_of(wal.segment_size - 1)
+            .segment_file_of(config.store.segment_size - 1)
             .ok_or(StoreError::AllocLogSegment)?;
         assert_eq!(0, segment.wal_offset);
 
@@ -809,10 +812,10 @@ mod tests {
         assert_eq!(0, segment.wal_offset);
 
         let segment = wal
-            .segment_file_of(wal.segment_size)
+            .segment_file_of(config.store.segment_size)
             .ok_or(StoreError::AllocLogSegment)?;
 
-        assert_eq!(file_size, segment.wal_offset);
+        assert_eq!(config.store.segment_size, segment.wal_offset);
 
         Ok(())
     }
@@ -822,7 +825,11 @@ mod tests {
         let wal_dir = random_wal_dir()?;
         let log = test_util::terminal_logger();
         let _wal_dir_guard = test_util::DirectoryRemovalGuard::new(log, wal_dir.as_path());
-        let mut wal = create_wal(super::WalPath::new(wal_dir.to_str().unwrap(), 1234)?)?;
+        let mut cfg = config::Configuration::default();
+        cfg.store.path.set_wal(wal_dir.as_path().to_str().unwrap());
+        let config = Arc::new(cfg);
+        let mut wal = create_wal(&config)?;
+
         let segment = wal.alloc_segment()?;
         wal.segments.push_back(segment);
         assert_eq!(1, wal.segments.len());
@@ -844,7 +851,12 @@ mod tests {
         let log = test_util::terminal_logger();
         let wal_dir = random_wal_dir()?;
         let _wal_dir_guard = test_util::DirectoryRemovalGuard::new(log, wal_dir.as_path());
-        let mut wal = create_wal(super::WalPath::new(wal_dir.to_str().unwrap(), 1234)?)?;
+
+        let mut cfg = config::Configuration::default();
+        cfg.store.path.set_wal(wal_dir.as_path().to_str().unwrap());
+        let config = Arc::new(cfg);
+        let mut wal = create_wal(&config)?;
+
         (0..3)
             .into_iter()
             .map(|_| wal.open_segment_directly())
@@ -929,13 +941,15 @@ mod tests {
         let log = test_util::terminal_logger();
         let wal_dir = random_wal_dir()?;
         let _wal_dir_guard = test_util::DirectoryRemovalGuard::new(log.clone(), wal_dir.as_path());
-        let mut wal = create_wal(super::WalPath::new(wal_dir.to_str().unwrap(), 1234)?)?;
+        let mut cfg = config::Configuration::default();
+        cfg.store.path.set_wal(wal_dir.as_path().to_str().unwrap());
+        let config = Arc::new(cfg);
+        let mut wal = create_wal(&config)?;
+
         (0..2)
             .into_iter()
             .map(|_| wal.open_segment_directly())
             .collect::<Result<Vec<()>, StoreError>>()?;
-
-        let block_size = 4096usize;
 
         let (reclaimed_bytes, free_bytes) = wal.try_reclaim(4096);
         assert_eq!(0, reclaimed_bytes);
@@ -961,7 +975,7 @@ mod tests {
                         log.clone(),
                         segment.wal_offset + index * cache_size_of_single_entry,
                         cache_size_of_single_entry as usize,
-                        block_size,
+                        config.store.alignment,
                     )
                     .unwrap(),
                 );
@@ -975,7 +989,7 @@ mod tests {
             );
         });
 
-        let (reclaimed_bytes, free_bytes) = wal.try_reclaim(4096);
+        let (_reclaimed_bytes, _free_bytes) = wal.try_reclaim(4096);
 
         // Assert the current cache size is under the low watermark
         let low_percent = Percentage::from(wal.wal_cache.low_water_mark);

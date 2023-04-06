@@ -3,7 +3,7 @@ use std::{
     alloc::{self, Layout},
     fmt::{self, Display, Formatter},
     ops::{Bound, RangeBounds},
-    ptr::{self, NonNull, read_unaligned},
+    ptr::{self, read_unaligned, NonNull},
     slice,
     sync::atomic::{AtomicUsize, Ordering},
 };
@@ -123,8 +123,7 @@ impl AlignedBuf {
         if self.limit.load(Ordering::Relaxed) - pos < std::mem::size_of::<u32>() {
             return Err(StoreError::InsufficientData);
         }
-        let value =
-            unsafe { read_unaligned::<u32>(self.ptr.as_ptr().add(pos) as *const u32) };
+        let value = unsafe { read_unaligned::<u32>(self.ptr.as_ptr().add(pos) as *const u32) };
         Ok(u32::from_be(value))
     }
 
@@ -143,8 +142,7 @@ impl AlignedBuf {
             return Err(StoreError::InsufficientData);
         }
 
-        let value =
-            unsafe { read_unaligned::<u64>(self.ptr.as_ptr().add(pos) as *const u64) };
+        let value = unsafe { read_unaligned::<u64>(self.ptr.as_ptr().add(pos) as *const u64) };
         Ok(u64::from_be(value))
     }
 
@@ -253,7 +251,7 @@ mod tests {
         let log = test_util::terminal_logger();
         let alignment = 4096;
         let buf = AlignedBuf::new(log.clone(), 0, 128, alignment)?;
-        assert_eq!(alignment, buf.remaining());
+        assert_eq!(alignment as usize, buf.remaining());
         let v = 1;
         buf.write_u32(0, 1);
         assert_eq!(buf.remaining(), 4096 - size_of::<u32>());

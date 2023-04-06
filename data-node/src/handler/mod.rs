@@ -14,7 +14,7 @@ mod util;
 use self::cmd::Command;
 use crate::stream_manager::StreamManager;
 use codec::frame::Frame;
-use slog::{debug, trace, warn, Logger};
+use slog::{trace, warn, Logger};
 use std::{cell::RefCell, rc::Rc};
 use store::ElasticStore;
 

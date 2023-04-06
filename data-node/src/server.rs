@@ -2,21 +2,21 @@ use crate::{
     node::Node,
     node_config::NodeConfig,
     stream_manager::{fetcher::Fetcher, StreamManager},
-    ServerConfig,
 };
 use client::{ClientBuilder, ClientConfig};
+use config::Configuration;
 use model::data_node::DataNode;
 use slog::{error, o, warn, Drain, Logger};
 use slog_async::Async;
 use slog_term::{FullFormat, TermDecorator};
-use std::{cell::RefCell, error::Error, os::fd::AsRawFd, rc::Rc, thread};
-use store::{
-    option::{StoreOptions, WalPath},
-    ElasticStore, Store,
-};
+use std::{cell::RefCell, error::Error, os::fd::AsRawFd, rc::Rc, sync::Arc, thread};
+use store::{ElasticStore, Store};
 use tokio::sync::{broadcast, mpsc, oneshot};
 
-pub fn launch(cfg: &ServerConfig, shutdown: broadcast::Sender<()>) -> Result<(), Box<dyn Error>> {
+pub fn launch(
+    cfg: Arc<Configuration>,
+    shutdown: broadcast::Sender<()>,
+) -> Result<(), Box<dyn Error>> {
     let decorator = TermDecorator::new().build();
     let drain = FullFormat::new(decorator)
         .use_file_location()
@@ -31,20 +31,9 @@ pub fn launch(cfg: &ServerConfig, shutdown: broadcast::Sender<()>) -> Result<(),
     })?;
     let available_core_len = core_ids.len();
 
-    let size_10g = 10u64 * (1 << 30);
-    let wal_dir = format!("{}/wal", cfg.store_dir);
-    let wal_path = WalPath::new(&wal_dir, size_10g)?;
-    let meta_path = format!("{}/meta", cfg.store_dir);
-    let store_options = StoreOptions::new(
-        cfg.host.clone(),
-        cfg.placement_manager.clone(),
-        &wal_path,
-        meta_path,
-    );
-
     let (recovery_completion_tx, recovery_completion_rx) = oneshot::channel();
 
-    let store = match ElasticStore::new(log.clone(), store_options, recovery_completion_tx) {
+    let store = match ElasticStore::new(log.clone(), &cfg, recovery_completion_tx) {
         Ok(store) => store,
         Err(e) => {
             error!(log, "Failed to launch ElasticStore: {:?}", e);
@@ -59,7 +48,7 @@ pub fn launch(cfg: &ServerConfig, shutdown: broadcast::Sender<()>) -> Result<(),
     // Build non-primary nodes first
     let mut handles = core_ids
         .iter()
-        .skip(available_core_len - cfg.concurrency + 1)
+        .skip(available_core_len - cfg.server.concurrency + 1)
         .map(|core_id| {
             let server_config = cfg.clone();
             let logger = log.new(o!());
@@ -96,7 +85,7 @@ pub fn launch(cfg: &ServerConfig, shutdown: broadcast::Sender<()>) -> Result<(),
     // Build primary node
     {
         let core_id = core_ids
-            .get(available_core_len - cfg.concurrency)
+            .get(available_core_len - cfg.server.concurrency)
             .expect("At least one core should be reserved for primary node")
             .clone();
         let server_config = cfg.clone();
@@ -116,7 +105,8 @@ pub fn launch(cfg: &ServerConfig, shutdown: broadcast::Sender<()>) -> Result<(),
                     node_id: store.id(),
                     advertise_address: format!(
                         "{}:{}",
-                        node_config.server_config.host, node_config.server_config.port
+                        node_config.server_config.server.host,
+                        node_config.server_config.server.port
                     ),
                 });
 
@@ -128,7 +118,7 @@ pub fn launch(cfg: &ServerConfig, shutdown: broadcast::Sender<()>) -> Result<(),
 
                 let fetcher = Fetcher::PlacementClient {
                     client: placement_client,
-                    target: node_config.server_config.placement_manager.clone(),
+                    target: node_config.server_config.server.placement_manager.clone(),
                 };
                 let store = Rc::new(store);
 

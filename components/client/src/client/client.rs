@@ -90,6 +90,7 @@ mod tests {
     fn test_allocate_id() -> Result<(), Box<dyn Error>> {
         tokio_uring::start(async {
             let log = terminal_logger();
+            #[allow(unused_variables)]
             let port = 2378;
             let port = run_listener(log.clone()).await;
             let addr = format!("localhost:{}", port);
@@ -109,7 +110,10 @@ mod tests {
     fn test_list_range_by_stream() -> Result<(), ListRangeError> {
         tokio_uring::start(async {
             let log = terminal_logger();
+
+            #[allow(unused_variables)]
             let port = 2378;
+
             let port = run_listener(log.clone()).await;
             let addr = format!("localhost:{}", port);
             let mut client_config = ClientConfig::default();
@@ -150,7 +154,10 @@ mod tests {
     fn test_list_range_by_data_node() -> Result<(), ListRangeError> {
         tokio_uring::start(async {
             let log = terminal_logger();
+
+            #[allow(unused_variables)]
             let port = 2378;
+
             let port = run_listener(log.clone()).await;
             let addr = format!("localhost:{}", port);
             let mut client_config = ClientConfig::default();

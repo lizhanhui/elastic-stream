@@ -401,7 +401,7 @@ impl StreamManager {
                         .map(|window| window.commit)?;
                     stream
                         .seal(committed, range_index)
-                        .map_err(|e| ServiceError::Seal)
+                        .map_err(|_e| ServiceError::Seal)
                 }
                 None => {
                     error!(
@@ -494,7 +494,7 @@ mod tests {
                                 }
                             })
                             .collect::<Vec<_>>();
-                        if let Err(e) = task.tx.send(Ok(ranges)) {
+                        if let Err(_e) = task.tx.send(Ok(ranges)) {
                             panic!("Failed to transfer mocked ranges");
                         }
                     }
@@ -512,10 +512,8 @@ mod tests {
     fn test_seal() -> Result<(), Box<dyn Error>> {
         let logger = test_util::terminal_logger();
         let path = test_util::create_random_path()?;
-        trace!(logger, "Test directory: {}", path.to_str().unwrap());
+        trace!(logger, "Test store directory: {}", path.to_str().unwrap());
         let _guard = test_util::DirectoryRemovalGuard::new(logger.clone(), path.as_path());
-        let wal_path = path.join("wal");
-        let index_path = path.join("index");
 
         let (port_tx, port_rx) = oneshot::channel();
         let (stop_tx, stop_rx) = oneshot::channel();
@@ -530,8 +528,7 @@ mod tests {
         let port = port_rx.blocking_recv()?;
         let store = test_util::build_store(
             format!("localhost:{}", port),
-            wal_path.to_str().unwrap(),
-            index_path.to_str().unwrap(),
+            path.as_path().to_str().expect("Store-path is invalid"),
         );
         let store = Rc::new(store);
 
@@ -563,11 +560,8 @@ mod tests {
     #[test]
     fn test_describe_range() -> Result<(), Box<dyn Error>> {
         let logger = test_util::terminal_logger();
-        let path = test_util::create_random_path()?;
-        let _guard = test_util::DirectoryRemovalGuard::new(logger.clone(), path.as_path());
-        let wal_path = path.join("wal");
-        let index_path = path.join("index");
-
+        let store_path = test_util::create_random_path()?;
+        let _guard = test_util::DirectoryRemovalGuard::new(logger.clone(), store_path.as_path());
         let (port_tx, port_rx) = oneshot::channel();
         let (stop_tx, stop_rx) = oneshot::channel();
         let log = logger.clone();
@@ -581,8 +575,7 @@ mod tests {
         let port = port_rx.blocking_recv()?;
         let store = test_util::build_store(
             format!("localhost:{}", port),
-            wal_path.to_str().unwrap(),
-            index_path.to_str().unwrap(),
+            store_path.as_path().to_str().unwrap(),
         );
         let store = Rc::new(store);
 

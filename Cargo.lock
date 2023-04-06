@@ -414,6 +414,7 @@ dependencies = [
  "bytes",
  "cargo-llvm-cov",
  "codec",
+ "config",
  "crossbeam",
  "flatbuffers",
  "futures",
@@ -465,6 +466,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c278839b831783b70278b14df4d45e1beb1aad306c07bb796637de9a0e323e8e"
 dependencies = [
  "crossbeam-utils",
+]
+
+[[package]]
+name = "config"
+version = "0.1.0"
+dependencies = [
+ "nix 0.26.2",
+ "num_cpus",
+ "serde",
+ "serde_yaml",
+ "thiserror",
 ]
 
 [[package]]
@@ -695,6 +707,7 @@ dependencies = [
  "clap 4.1.4",
  "client",
  "codec",
+ "config",
  "core_affinity",
  "crc",
  "crossbeam",
@@ -2295,6 +2308,7 @@ dependencies = [
  "bytes",
  "cargo-llvm-cov",
  "client",
+ "config",
  "core_affinity",
  "criterion",
  "crossbeam",
@@ -2439,11 +2453,14 @@ version = "0.1.0"
 dependencies = [
  "bytes",
  "codec",
+ "config",
  "crc",
  "crc32fast",
  "flatbuffers",
  "model",
  "protocol",
+ "serde",
+ "serde_yaml",
  "slog",
  "slog-async",
  "slog-term",

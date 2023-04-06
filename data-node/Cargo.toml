@@ -12,6 +12,7 @@ cfg-if = { workspace = true }
 chrono = { workspace = true }
 clap = { workspace = true }
 client = { path = "../components/client" }
+config = { path = "../components/config" }
 codec = { path = "../components/codec" }
 core_affinity =  { workspace = true }
 crc =  { workspace = true }

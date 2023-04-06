@@ -41,14 +41,14 @@ impl Node {
     pub fn serve(&mut self, shutdown_rx: broadcast::Receiver<()>) {
         core_affinity::set_for_current(self.config.core_id);
         tokio_uring::builder()
-            .entries(self.config.server_config.queue_depth)
+            .entries(self.config.server_config.server.uring.queue_depth)
             .uring_builder(
                 tokio_uring::uring_builder()
                     .dontfork()
                     .setup_attach_wq(self.config.sharing_uring),
             )
             .start(async {
-                let bind_address = format!("0.0.0.0:{}", self.config.server_config.port);
+                let bind_address = format!("0.0.0.0:{}", self.config.server_config.server.port);
                 let listener =
                     match TcpListener::bind(bind_address.parse().expect("Failed to bind")) {
                         Ok(listener) => {

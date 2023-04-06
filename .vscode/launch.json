@@ -8,10 +8,7 @@
             "preLaunchTask": "build",
             "program": "${workspaceFolder}/target/debug/data-node",
             "args": [
-                "--host", "114.116.40.8",
-                "--store-dir", "/data/store",
-                "-q", "1024",
-                "--placement-manager", "localhost:2378",
+                "-c", "/root/projects/elastic-storage/etc/config.yaml",
             ]
         }
     ]

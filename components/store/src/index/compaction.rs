@@ -153,7 +153,7 @@ pub(crate) struct RangeCompactionFilterFactory {
 impl CompactionFilterFactory for RangeCompactionFilterFactory {
     type Filter = RangeCompactionFilter;
 
-    fn create(&mut self, context: CompactionFilterContext) -> Self::Filter {
+    fn create(&mut self, _context: CompactionFilterContext) -> Self::Filter {
         Self::Filter::new(
             self.log.clone(),
             self.name.clone(),

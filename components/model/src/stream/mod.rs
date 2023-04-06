@@ -4,17 +4,16 @@ use crate::{
 };
 
 /// Stream is the basic storage unit in the system that store records in an append-only fashion.
-/// 
+///
 /// A stream is composed of ranges. Conceptually, only the last range of the stream is mutable while the rest are immutable. Ranges of a
 /// stream are distributed among data-nodes.
-/// 
-/// `Stream` on a specific data-node only cares about ranges that are located on it. 
+///
+/// `Stream` on a specific data-node only cares about ranges that are located on it.
 pub struct Stream {
-
     /// Stream ID, unique within the cluster.
     id: i64,
 
-    /// Ranges of the stream that are placed onto current data node. 
+    /// Ranges of the stream that are placed onto current data node.
     ranges: Vec<StreamRange>,
 }
 
@@ -72,7 +71,7 @@ impl Stream {
             .iter()
             .try_find(|&range| Some(range.index() == index))
             .flatten()
-            .map(|range| range.clone())
+            .cloned()
     }
 
     /// Find the range that contains the given offset.
@@ -87,7 +86,7 @@ impl Stream {
             .iter()
             .try_find(|&range| Some(range.contains(offset)))
             .flatten()
-            .map(|range| range.clone())
+            .cloned()
     }
 
     pub fn refresh(&mut self, ranges: Vec<StreamRange>) {
@@ -130,7 +129,7 @@ mod tests {
         stream.push(StreamRange::new(0, 0, 0, 10, None));
         stream.push(StreamRange::new(0, 1, 10, 20, Some(20)));
         stream.push(StreamRange::new(0, 2, 20, 30, None));
-        stream.seal(0, 2);
+        stream.seal(0, 2).unwrap();
 
         // Check the last range is sealed.
         assert_eq!(stream.ranges.last().unwrap().is_sealed(), true);

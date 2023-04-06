@@ -152,7 +152,7 @@ pub(crate) mod tests {
                                     }
                                 })
                                 .collect::<Vec<_>>();
-                            if let Err(e) = task.tx.send(Ok(ranges)) {
+                            if let Err(_e) = task.tx.send(Ok(ranges)) {
                                 panic!("Failed to transfer mocked ranges");
                             }
                         }

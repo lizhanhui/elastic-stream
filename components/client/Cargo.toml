@@ -8,6 +8,7 @@ edition = "2021"
 [dependencies]
 async-channel = { workspace = true }
 codec = { path = "../codec" }
+config = { path = "../config" }
 model = { path = "../model" }
 protocol = { path = "../protocol" }
 transport = { path = "../transport" }

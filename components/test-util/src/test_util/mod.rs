@@ -146,7 +146,7 @@ pub async fn run_listener(logger: Logger) -> u16 {
                                             Ok(request) => {
                                                 allocate_id(&log, &request, &mut response_frame);
                                             }
-                                            Err(e) => {
+                                            Err(_e) => {
                                                 error!(
                                                     log,
                                                     "Failed to decode id-allocation-request header"

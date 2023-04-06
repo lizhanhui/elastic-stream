@@ -16,10 +16,13 @@ uuid = { workspace = true}
 crc32fast = { workspace = true }
 transport = { path = "../transport" }
 codec = { path = "../codec" }
+config = { path = "../config" }
 model = { path = "../model" }
 protocol = { path = "../protocol" }
 store = { path = "../store" }
 flatbuffers = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_yaml = { workspace = true}
 
 
 [dev-dependencies]

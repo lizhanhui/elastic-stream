@@ -1,7 +1,7 @@
 //! This module contains a trait and a simple implementation to generate unique ID for data node.
 
 use slog::{error, trace, Logger};
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 use tokio::sync::oneshot;
 
 use crate::{
@@ -18,16 +18,14 @@ pub trait IdGenerator {
 ///
 pub struct PlacementManagerIdGenerator {
     log: Logger,
-    placement_manager_address: String,
-    host: String,
+    config: Arc<config::Configuration>,
 }
 
 impl PlacementManagerIdGenerator {
-    pub fn new(log: Logger, addr: &str, host: &str) -> Self {
+    pub fn new(log: Logger, config: &Arc<config::Configuration>) -> Self {
         Self {
             log,
-            placement_manager_address: addr.to_owned(),
-            host: host.to_owned(),
+            config: Arc::clone(config),
         }
     }
 }
@@ -49,8 +47,8 @@ impl IdGenerator for PlacementManagerIdGenerator {
 
             match client
                 .allocate_id(
-                    &self.placement_manager_address,
-                    &self.host,
+                    &self.config.server.placement_manager,
+                    &self.config.server.host,
                     Duration::from_secs(3),
                 )
                 .await
@@ -60,10 +58,9 @@ impl IdGenerator for PlacementManagerIdGenerator {
                         self.log,
                         "Acquired ID={} for data-node[host={}]",
                         id,
-                        self.host
+                        self.config.server.host
                     );
                     let _ = tx.send(Ok(id));
-                    return;
                 }
                 Err(e) => {
                     error!(
@@ -77,19 +74,15 @@ impl IdGenerator for PlacementManagerIdGenerator {
 
         match rx.blocking_recv() {
             Ok(Ok(id)) => Ok(id),
-            Ok(Err(_)) => {
-                return Err(ClientError::ClientInternal);
-            }
-            Err(_e) => {
-                return Err(ClientError::ClientInternal);
-            }
+            Ok(Err(_)) => Err(ClientError::ClientInternal),
+            Err(_e) => Err(ClientError::ClientInternal),
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::error::Error;
+    use std::{error::Error, sync::Arc};
 
     use tokio::sync::oneshot;
 
@@ -115,7 +108,11 @@ mod tests {
 
         let port = port_rx.blocking_recv().unwrap();
         let pm_address = format!("localhost:{}", port);
-        let generator = PlacementManagerIdGenerator::new(log, &pm_address, "dn-host");
+
+        let mut cfg = config::Configuration::default();
+        cfg.server.placement_manager = pm_address;
+        let config = Arc::new(cfg);
+        let generator = PlacementManagerIdGenerator::new(log, &config);
         let id = generator.generate()?;
         assert_eq!(1, id);
         let _ = stop_tx.send(());

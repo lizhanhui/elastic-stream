@@ -21,6 +21,7 @@
 #![feature(btree_cursors)]
 #![feature(async_fn_in_trait)]
 #![feature(result_flattening)]
+#![feature(iterator_try_collect)]
 
 pub mod error;
 pub mod util;

@@ -300,8 +300,7 @@ impl Session {
                                         range
                                             .replica_nodes
                                             .iter()
-                                            .map(|nodes| nodes.iter())
-                                            .flatten()
+                                            .flat_map(|nodes| nodes.iter())
                                             .for_each(|node| {
                                                 if let Some(ref n) = node.data_node {
                                                     if node.is_primary {
@@ -498,7 +497,10 @@ mod tests {
     fn test_heartbeat() -> Result<(), Box<dyn Error>> {
         tokio_uring::start(async {
             let logger = terminal_logger();
+
+            #[allow(unused_variables)]
             let port = 2378;
+
             let port = run_listener(logger.clone()).await;
             let target = format!("127.0.0.1:{}", port);
             let stream = TcpStream::connect(target.parse()?).await?;

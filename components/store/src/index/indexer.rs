@@ -911,7 +911,7 @@ mod tests {
         min_offset.set_min(10);
 
         indexer.compact();
-        let handles = indexer.scan_record_handles(0, 0, 10)?.unwrap();
+        let _handles = indexer.scan_record_handles(0, 0, 10)?.unwrap();
         Ok(())
     }
 }

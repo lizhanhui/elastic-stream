@@ -15,6 +15,7 @@ pub(crate) struct AlignedBufWriter {
     pub(crate) cursor: u64,
 
     alignment: usize,
+
     buffers: Vec<Arc<AlignedBuf>>,
 }
 
@@ -207,14 +208,14 @@ mod tests {
         let log = test_util::terminal_logger();
         let mut buf_writer = super::AlignedBufWriter::new(log.clone(), 0, ALIGNMENT);
         assert_eq!(0, buf_writer.cursor);
-        buf_writer.reserve(ALIGNMENT)?;
-        assert_eq!(buf_writer.remaining(), ALIGNMENT);
+        buf_writer.reserve(ALIGNMENT as usize)?;
+        assert_eq!(buf_writer.remaining(), ALIGNMENT as usize);
 
-        buf_writer.reserve(ALIGNMENT + 1)?;
-        assert_eq!(buf_writer.remaining(), ALIGNMENT * 3);
+        buf_writer.reserve((ALIGNMENT + 1) as usize)?;
+        assert_eq!(buf_writer.remaining(), (ALIGNMENT * 3) as usize);
 
-        buf_writer.reserve(ALIGNMENT - 1)?;
-        assert_eq!(buf_writer.remaining(), ALIGNMENT * 4);
+        buf_writer.reserve(ALIGNMENT as usize - 1)?;
+        assert_eq!(buf_writer.remaining(), (ALIGNMENT * 4) as usize);
 
         Ok(())
     }

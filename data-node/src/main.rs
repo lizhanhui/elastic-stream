@@ -1,9 +1,20 @@
 use clap::Parser;
-use data_node::ServerConfig;
+use data_node::Cli;
 use tokio::sync::broadcast;
 
 fn main() {
-    let server_config = ServerConfig::parse();
+    let cli = Cli::parse();
+    let config = match cli.create_config() {
+        Ok(config) => config,
+        Err(e) => {
+            eprintln!(
+                "Failed to create configuration from the specified configuration file. Cause: {:?}",
+                e
+            );
+            return;
+        }
+    };
+
     let (shutdown_tx, _rx) = broadcast::channel(1);
     let tx = shutdown_tx.clone();
     ctrlc::set_handler(move || {
@@ -13,7 +24,7 @@ fn main() {
     })
     .expect("Failed to set Ctrl-C");
 
-    if let Err(e) = data_node::server::launch(&server_config, shutdown_tx) {
+    if let Err(e) = data_node::server::launch(config, shutdown_tx) {
         eprintln!("Failed to start data-node: {:?}", e);
     }
 }

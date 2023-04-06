@@ -1,6 +1,6 @@
 #![feature(result_option_inspect)]
 
-pub mod cfg;
+pub(crate) mod cli;
 pub(crate) mod connection_tracker;
 mod delegate_task;
 pub mod error;
@@ -9,8 +9,7 @@ mod node;
 mod node_config;
 pub mod server;
 pub(crate) mod stream_manager;
-
-pub use crate::cfg::server_config::ServerConfig;
+pub use crate::cli::Cli;
 
 #[cfg(test)]
 mod tests {

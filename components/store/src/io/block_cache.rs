@@ -1,12 +1,10 @@
+use slog::{error, info, trace, Logger};
 use std::{
     cell::UnsafeCell, cmp, collections::BTreeMap, ops::Bound, rc::Rc, sync::Arc, time::Instant,
 };
-
-use crossbeam::channel::internal::SelectHandle;
-use slog::{error, info, trace, warn, Logger};
 use thiserror::Error;
 
-use super::{buf::AlignedBuf, Options};
+use super::buf::AlignedBuf;
 
 #[derive(Error, Debug)]
 enum CacheError {
@@ -148,15 +146,15 @@ pub(crate) struct EntryRange {
 
 impl EntryRange {
     /// The new EntryRange is aligned to the specified alignment.
-    pub(crate) fn new(wal_offset: u64, len: u32, alignment: u64) -> Self {
+    pub(crate) fn new(wal_offset: u64, len: u32, alignment: usize) -> Self {
         // Alignment must be positive
         debug_assert_ne!(0, alignment);
         // Alignment must be power of 2.
         debug_assert_eq!(0, alignment & (alignment - 1));
-        let from = wal_offset / alignment * alignment;
+        let from = wal_offset / alignment as u64 * alignment as u64;
         let to = wal_offset + len as u64;
 
-        let aligned_to = (to + alignment - 1) / alignment * alignment;
+        let aligned_to = (to + alignment as u64 - 1) / alignment as u64 * alignment as u64;
 
         Self {
             wal_offset: from,
@@ -220,15 +218,13 @@ pub(crate) struct BlockCache {
 }
 
 impl BlockCache {
-    pub(crate) fn new(log: Logger, offset: u64) -> Self {
-        // TODO: fetch the alignment from the upper layer.
-        let io_options = Options::default();
+    pub(crate) fn new(log: Logger, config: &Arc<config::Configuration>, offset: u64) -> Self {
         Self {
             log,
             wal_offset: offset,
             entries: BTreeMap::new(),
             cache_size: 0,
-            alignment: io_options.alignment,
+            alignment: config.store.alignment,
         }
     }
 
@@ -670,7 +666,9 @@ mod tests {
     fn test_add_entry() {
         let log = test_util::terminal_logger();
         let start_wal_offset = 1024 * 1024 * 1024;
-        let mut block_cache = super::BlockCache::new(log.clone(), start_wal_offset);
+        let cfg = config::Configuration::default();
+        let config = Arc::new(cfg);
+        let mut block_cache = super::BlockCache::new(log.clone(), &config, start_wal_offset);
         let block_size = 4096;
         for n in (0..16).into_iter() {
             let buf = Arc::new(
@@ -730,9 +728,12 @@ mod tests {
     #[test]
     fn test_cache_size() {
         let log = test_util::terminal_logger();
-        let mut block_cache = super::BlockCache::new(log.clone(), 0);
+        let cfg = config::Configuration::default();
+        let config = Arc::new(cfg);
+        let mut block_cache = super::BlockCache::new(log.clone(), &config, 0);
         let block_size = 4096;
-        for n in (0..16).into_iter() {
+        let total = 16;
+        for n in (0..total).into_iter() {
             let buf = Arc::new(
                 AlignedBuf::new(log.clone(), n * block_size as u64, block_size, block_size)
                     .unwrap(),
@@ -741,7 +742,7 @@ mod tests {
             block_cache.add_entry(buf);
         }
 
-        assert_eq!(16 * block_size as u32, block_cache.cache_size());
+        assert_eq!(total as u32 * block_size as u32, block_cache.cache_size());
 
         // Test cache size after remove.
         block_cache.remove(|entry| entry.wal_offset() == 0);
@@ -808,7 +809,9 @@ mod tests {
     fn test_get_entry() {
         // Case one: total hit in a big cached entry
         let log = test_util::terminal_logger();
-        let mut block_cache = super::BlockCache::new(log.clone(), 0);
+        let cfg = config::Configuration::default();
+        let config = Arc::new(cfg);
+        let mut block_cache = super::BlockCache::new(log.clone(), &config, 0);
         let block_size = 4096;
 
         let buf =
@@ -828,7 +831,7 @@ mod tests {
         assert_eq!(block_size * 1024, hit[0].limit());
 
         // Case two: hit partially in two cached entries
-        let mut block_cache = super::BlockCache::new(log.clone(), 0);
+        let mut block_cache = super::BlockCache::new(log.clone(), &config, 0);
         let target_entry = super::EntryRange {
             wal_offset: 0,
             len: 4096 * 10,
@@ -889,7 +892,9 @@ mod tests {
     #[test]
     fn test_get_last_writable_entry() {
         let log = test_util::terminal_logger();
-        let mut block_cache = super::BlockCache::new(log.clone(), 0);
+        let cfg = config::Configuration::default();
+        let config = Arc::new(cfg);
+        let mut block_cache = super::BlockCache::new(log.clone(), &config, 0);
         let block_size = 4096;
 
         let buf = Arc::new(AlignedBuf::new(log.clone(), 0, block_size, block_size).unwrap());
@@ -909,7 +914,9 @@ mod tests {
     #[test]
     fn test_buf_of_last_cache_entry() -> Result<(), Box<dyn Error>> {
         let log = test_util::terminal_logger();
-        let mut block_cache = BlockCache::new(log.clone(), 0);
+        let cfg = config::Configuration::default();
+        let config = Arc::new(cfg);
+        let mut block_cache = BlockCache::new(log.clone(), &config, 0);
 
         assert!(block_cache.buf_of_last_cache_entry().is_none());
 

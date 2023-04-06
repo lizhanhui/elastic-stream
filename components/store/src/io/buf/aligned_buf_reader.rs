@@ -16,14 +16,15 @@ impl AlignedBufReader {
         log: Logger,
         wal_offset: u64,
         len: usize,
-        alignment: u64,
+        alignment: usize,
     ) -> Result<AlignedBuf, StoreError> {
         // Alignment must be positive
         debug_assert_ne!(0, alignment);
         // Alignment must be power of 2.
         debug_assert_eq!(0, alignment & (alignment - 1));
-        let from = wal_offset / alignment * alignment;
-        let to = (wal_offset + len as u64 + alignment - 1) / alignment * alignment;
-        AlignedBuf::new(log, from, (to - from) as usize, alignment as usize)
+        let from = wal_offset / alignment as u64 * alignment as u64;
+        let to =
+            (wal_offset + len as u64 + alignment as u64 - 1) / alignment as u64 * alignment as u64;
+        AlignedBuf::new(log, from, (to - from) as usize, alignment)
     }
 }

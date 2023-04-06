@@ -3,6 +3,7 @@ use std::{
     io::Write,
     os::fd::{FromRawFd, IntoRawFd, RawFd},
     path::Path,
+    sync::Arc,
 };
 
 use crate::error::StoreError;
@@ -19,11 +20,12 @@ pub(crate) struct Lock {
 
 impl Lock {
     pub(crate) fn new(
-        store_path: &Path,
+        config: &Arc<config::Configuration>,
         id_generator: Box<dyn IdGenerator>,
         log: &Logger,
     ) -> Result<Self, StoreError> {
-        let lock_file_path = store_path.join("LOCK");
+        let store_base_path = config.store.path.base_path();
+        let lock_file_path = store_base_path.join("LOCK");
         let (fd, id) = if lock_file_path.as_path().exists() {
             let mut file = OpenOptions::new()
                 .read(true)
@@ -91,13 +93,13 @@ mod tests {
     use tokio::sync::oneshot;
 
     use super::Lock;
-    use std::error::Error;
+    use std::{error::Error, sync::Arc};
 
     #[test]
     fn test_lock_normal() -> Result<(), Box<dyn Error>> {
         let log = test_util::terminal_logger();
-        let path = test_util::create_random_path()?;
-        let _guard = test_util::DirectoryRemovalGuard::new(log.clone(), path.as_path());
+        let store_base = test_util::create_random_path()?;
+        let _guard = test_util::DirectoryRemovalGuard::new(log.clone(), store_base.as_path());
 
         let (stop_tx, stop_rx) = oneshot::channel();
         let (port_tx, port_rx) = oneshot::channel();
@@ -113,13 +115,14 @@ mod tests {
 
         let port = port_rx.blocking_recv().unwrap();
         let pm_address = format!("localhost:{}", port);
-        let generator = Box::new(PlacementManagerIdGenerator::new(
-            log.clone(),
-            &pm_address,
-            "dn-host",
-        ));
-
-        let _lock = Lock::new(path.as_path(), generator, &log)?;
+        let mut config = config::Configuration::default();
+        config.server.placement_manager = pm_address;
+        config
+            .check_and_apply()
+            .expect("Failed to check-and-apply configuration");
+        let cfg = Arc::new(config);
+        let generator = Box::new(PlacementManagerIdGenerator::new(log.clone(), &cfg));
+        let _lock = Lock::new(&cfg, generator, &log)?;
         let _ = stop_tx.send(());
         let _ = handle.join();
         Ok(())
