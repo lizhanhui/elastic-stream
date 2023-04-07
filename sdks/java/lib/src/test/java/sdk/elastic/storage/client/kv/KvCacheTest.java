@@ -15,6 +15,7 @@ import sdk.elastic.storage.grpc.kv.LoadResponse;
 import sdk.elastic.storage.grpc.kv.StoreResponse;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
@@ -48,6 +49,27 @@ class KvCacheTest {
 
         doReturn(Futures.immediateFuture(loadResponse)).when(kvManager).load(any(), any());
         assertEquals(ByteBuffer.wrap(testValue.getBytes(StandardCharsets.ISO_8859_1)), kvCache.get(testKey));
+    }
+
+    @Test
+    void getNotFound() {
+        String testKey = "testK1";
+        String testValue = "testV1";
+
+        Item item = Item.newBuilder()
+            .setError(Error.newBuilder()
+                .setType(ErrorType.NOT_FOUND)
+                .build())
+            .setName(ByteString.copyFrom(testKey, StandardCharsets.ISO_8859_1))
+            .setPayload(ByteString.copyFrom(testValue, StandardCharsets.ISO_8859_1))
+            .build();
+        LoadResponse loadResponse = LoadResponse.newBuilder()
+            .addItems(item)
+            .build();
+        KvCache kvCache = new KvCache(null, kvManager, CACHE_SIZE);
+
+        doReturn(Futures.immediateFuture(loadResponse)).when(kvManager).load(any(), any());
+        assertNull(kvCache.get(testKey));
     }
 
     @Test

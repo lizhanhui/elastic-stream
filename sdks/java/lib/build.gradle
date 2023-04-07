@@ -12,7 +12,6 @@ plugins {
     // Apply the maven-publish plugin to allow publishing to Maven Central.
     id 'maven-publish'
     id 'com.google.protobuf' version '0.9.1'
-    id 'com.github.johnrengelman.shadow' version '8.1.1'
 }
 
 java {
@@ -32,9 +31,6 @@ dependencies {
     implementation libs.netty.all
     // used for logging
     implementation libs.bundles.log4j
-    implementation(libs.kafka.clients) {
-        exclude group: 'org.slf4j', module: 'slf4j-log4j12'
-    }
 
     // used for grpc
     implementation libs.grpc.protobuf
@@ -105,12 +101,5 @@ publishing {
 
             from components.java
         }
-    }
-}
-
-shadowJar {
-    dependencies {
-        // include the flatc dependency in jar
-        include(dependency(':flatc'))
     }
 }

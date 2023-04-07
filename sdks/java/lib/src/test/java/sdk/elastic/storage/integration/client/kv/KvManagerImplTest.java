@@ -59,6 +59,30 @@ class KvManagerImplTest {
     }
 
     @Test
+    void loadNotFound() {
+        Map<String, ByteBuffer> kvMap = new HashMap<>();
+        kvMap.put("key1", ByteBuffer.wrap("value1".getBytes()));
+        kvMap.put("key2", ByteBuffer.wrap("value2".getBytes()));
+        ByteBuffer prefix = null;
+
+        ListenableFuture<LoadResponse> loadFuture = kvManager.load(kvMap.keySet().iterator(), prefix);
+        Futures.addCallback(loadFuture, new FutureCallback<LoadResponse>() {
+            @Override
+            public void onSuccess(LoadResponse response) {
+                Assertions.assertEquals(response.getItemsCount(), 2);
+                Assertions.assertEquals(response.getItems(0).getError().getType(), ErrorType.NOT_FOUND);
+                Assertions.assertTrue(response.getItems(0).getPayload().isEmpty());
+                Assertions.assertEquals(response.getItems(0).getPayload().toString(), "value2");
+            }
+
+            @Override
+            public void onFailure(Throwable t) {
+                Assertions.fail(t);
+            }
+        }, MoreExecutors.directExecutor());
+    }
+
+    @Test
     void storeAndDelete() {
         Map<String, ByteBuffer> kvMap = new HashMap<>();
         kvMap.put("key1", ByteBuffer.wrap("value1".getBytes()));

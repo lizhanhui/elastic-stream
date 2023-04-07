@@ -10,6 +10,7 @@ import io.grpc.InsecureChannelCredentials;
 import io.grpc.ManagedChannel;
 import java.nio.ByteBuffer;
 import java.util.Collections;
+import java.util.Optional;
 import java.util.concurrent.ExecutionException;
 import org.slf4j.Logger;
 import sdk.elastic.storage.apis.manager.KvManager;
@@ -24,7 +25,7 @@ public class KvCache {
     private static final int DEFAULT_CACHE_SIZE = 200;
     private final ManagedChannel channel;
     private final KvManager kvManager;
-    private final CommonCache<String, ByteString> cache;
+    private final CommonCache<String, Optional<ByteString>> cache;
 
     /**
      * Create a new KvCache with a default CacheLoader offered by KvManager.
@@ -53,10 +54,10 @@ public class KvCache {
     protected KvCache(ManagedChannel channel, KvManager kvManager, int size) {
         this.channel = channel;
         this.kvManager = kvManager;
-        this.cache = new CommonCache<String, ByteString>(size, new CacheLoader<String, ByteString>() {
+        this.cache = new CommonCache<String, Optional<ByteString>>(size, new CacheLoader<String, Optional<ByteString>>() {
             @Override
-            public ByteString load(String key) throws ExecutionException, InterruptedException {
-                return Futures.transform(kvManager.load(Collections.singletonList(key).iterator(), null),
+            public Optional<ByteString> load(String key) throws ExecutionException, InterruptedException {
+                return Optional.ofNullable(Futures.transform(kvManager.load(Collections.singletonList(key).iterator(), null),
                     (LoadResponse response) -> {
                         if (response.getItemsCount() == 0 || response.getItems(0).getError().getType() != ErrorType.OK) {
                             log.error("Failed to load key {}, itemCount {}, errorType {}, errorMessage {}", key,
@@ -65,7 +66,7 @@ public class KvCache {
                             return null;
                         }
                         return response.getItems(0).getPayload();
-                    }, MoreExecutors.directExecutor()).get();
+                    }, MoreExecutors.directExecutor()).get());
             }
         }) {};
     }
@@ -78,12 +79,13 @@ public class KvCache {
 
     /**
      * Get the value of the key.
+     * If the value failed to be loaded, null will be returned.
      *
      * @param key the key to get
      * @return the value of the key
      */
     public ByteBuffer get(String key) {
-        return cache.get(key).asReadOnlyByteBuffer();
+        return cache.get(key).map(ByteString::asReadOnlyByteBuffer).orElse(null);
     }
 
     /**
@@ -101,7 +103,7 @@ public class KvCache {
             new FutureCallback<StoreResponse>() {
                 @Override
                 public void onSuccess(StoreResponse response) {
-                    cache.put(key, ByteString.copyFrom(value.duplicate()));
+                    cache.put(key, Optional.of(ByteString.copyFrom(value.duplicate())));
                 }
 
                 @Override

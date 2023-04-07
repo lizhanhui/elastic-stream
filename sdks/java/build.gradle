@@ -14,4 +14,10 @@ allprojects {
         // Use Maven Central for resolving dependencies.
         mavenCentral()
     }
+
+    configurations.configureEach {
+        resolutionStrategy {
+            force libs.guava
+        }
+    }
 }
