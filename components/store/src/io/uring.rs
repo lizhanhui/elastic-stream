@@ -108,7 +108,7 @@ pub(crate) struct IO {
     /// Block the concurrent write IOs to the same page.
     /// The uring instance doesn't provide the ordering guarantee for the IOs,
     /// so we use this mechanism to avoid memory corruption.
-    blocked: HashMap<u64, squeue::Entry>,
+    blocked: HashMap<u64, (*mut Context, squeue::Entry)>,
 
     /// Provide index service for building read index, shared with the upper store layer.
     indexer: Arc<IndexDriver>,
@@ -426,12 +426,29 @@ impl IO {
         });
     }
 
+    /// Some write SQEs are blocked by barriers. This method checks if any of these barriers is lifted.
+    /// 
+    /// Once the barrier-write task is completed, we shall dispatch the blocked ones immediately.
+    /// 
+    /// For example, the underlying storage device has an alignment of 4KiB and the 6KiB of data is 
+    /// requested to write. IO module would generate two writes to block layer: one is a full-4KiB and the
+    /// other is also 4KiB, yet carrying 2KiB valid data. Given than underying io_uring cannot guarantee 
+    /// ordering of the submitted write tasks, data appended to the partially-filled block-page must NOT 
+    /// submit to io_uring/block-layer untill the prior one is completed.
+    /// 
+    /// In this example, this method tells whether 
+    fn has_write_sqe_unblocked(&self) -> bool {
+        self.blocked.iter().any(|(offset, _entry)| {
+            !self.barrier.contains(offset)
+        })
+    }
+
     fn build_write_sqe(&mut self, entries: &mut Vec<squeue::Entry>) {
         // Add previously blocked entries.
         self.blocked
             .drain_filter(|offset, _entry| !self.barrier.contains(offset))
             .for_each(|(_, entry)| {
-                entries.push(entry);
+                entries.push(entry.1);
             });
 
         let writer = self.buf_writer.get_mut();
@@ -477,7 +494,11 @@ impl IO {
                             .user_data(context as u64);
 
                         if io_blocked {
-                            self.blocked.insert(buf_wal_offset, sqe);
+                            if let Some((ctx, _entry)) = self.blocked.insert(buf_wal_offset, (context, sqe)) {
+                                // Relase context of the dropped squeue::Entry
+                                // See https://github.com/tokio-rs/io-uring/issues/230
+                                unsafe {Box::from_raw(ctx)};
+                            }
                         } else {
                             entries.push(sqe);
                         }
@@ -668,7 +689,7 @@ impl IO {
             }
         }
 
-        if need_write {
+        if self.has_write_sqe_unblocked() || need_write {
             self.build_write_sqe(entries);
         }
     }
