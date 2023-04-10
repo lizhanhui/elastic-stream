@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"io"
 	"net/url"
 	"os"
 	"testing"
@@ -12,6 +13,116 @@ import (
 	"go.etcd.io/etcd/server/v3/embed"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+)
+
+var (
+	_testDefaultLog = func() *Log {
+		log := NewLog()
+		log.Level = "INFO"
+		log.Rotate.MaxSize = 64
+		log.Rotate.MaxAge = 180
+		return log
+	}
+	_testDefaultCluster = func() *Cluster {
+		cluster := NewCluster()
+		cluster.SealReqTimeoutMs = 1000
+		return cluster
+	}
+	_testDefaultSbp = func() *Sbp {
+		sbp := NewSbp()
+		sbp.Server.HeartbeatInterval = 5 * time.Second
+		sbp.Server.HeartbeatMissCount = 3
+		sbp.Client.IdleConnTimeout = 0
+		sbp.Client.ReadIdleTimeout = 5 * time.Second
+		sbp.Client.HeartbeatTimeout = 10 * time.Second
+		return sbp
+	}
+	_testDefaultConfig = func() Config {
+		return Config{
+			Etcd: func() *embed.Config {
+				config := embed.NewConfig()
+				config.InitialClusterToken = "pm-cluster"
+				config.LogLevel = "warn"
+				config.AutoCompactionMode = "periodic"
+				config.AutoCompactionRetention = "1h"
+				return config
+			}(),
+			Log:                         _testDefaultLog(),
+			Cluster:                     _testDefaultCluster(),
+			Sbp:                         _testDefaultSbp(),
+			PeerUrls:                    "http://127.0.0.1:2380",
+			ClientUrls:                  "http://127.0.0.1:2379",
+			AdvertisePeerUrls:           "http://127.0.0.1:2380",
+			AdvertiseClientUrls:         "http://127.0.0.1:2379",
+			Name:                        "pm-hostname",
+			DataDir:                     "default.pm-hostname",
+			InitialCluster:              "pm=http://127.0.0.1:2380",
+			SbpAddr:                     "127.0.0.1:2378",
+			AdvertiseSbpAddr:            "127.0.0.1:2378",
+			LeaderLease:                 3,
+			LeaderPriorityCheckInterval: time.Minute,
+		}
+	}
+
+	_testCluster = func() *Cluster {
+		cluster := NewCluster()
+		cluster.SealReqTimeoutMs = 1234567
+		return cluster
+	}
+	_testSbp = func() *Sbp {
+		sbp := NewSbp()
+		sbp.Server.HeartbeatInterval = 2*time.Hour + 2*time.Minute + 2*time.Second
+		sbp.Server.HeartbeatMissCount = 12345678
+		sbp.Client.IdleConnTimeout = 3*time.Hour + 3*time.Minute + 3*time.Second
+		sbp.Client.ReadIdleTimeout = 4*time.Hour + 4*time.Minute + 4*time.Second
+		sbp.Client.HeartbeatTimeout = 5*time.Hour + 5*time.Minute + 5*time.Second
+		return sbp
+	}
+	_testConfig = func() Config {
+		return Config{
+			Etcd: func() *embed.Config {
+				config := embed.NewConfig()
+				config.InitialClusterToken = "test-initial-cluster-token"
+				config.LogLevel = "test-etcd-log-level"
+				config.AutoCompactionMode = "test-auto-compaction-mode"
+				config.AutoCompactionRetention = "test-auto-compaction-retention"
+				config.TickMs = 123
+				config.ElectionMs = 1234
+				return config
+			}(),
+			Log: func() *Log {
+				log := NewLog()
+				log.Level = "FATAL"
+				log.Zap.Level = zap.NewAtomicLevelAt(zapcore.FatalLevel)
+				log.Zap.Encoding = "console"
+				log.Zap.OutputPaths = []string{"stdout", "stderr"}
+				log.Zap.ErrorOutputPaths = []string{"stdout", "stderr"}
+				log.Zap.DisableCaller = true
+				log.Zap.DisableStacktrace = true
+				log.Zap.EncoderConfig.MessageKey = "test-msg"
+				log.EnableRotation = false
+				log.Rotate.MaxSize = 1234
+				log.Rotate.MaxAge = 12345
+				log.Rotate.MaxBackups = 123456
+				log.Rotate.LocalTime = true
+				log.Rotate.Compress = true
+				return log
+			}(),
+			Cluster:                     _testCluster(),
+			Sbp:                         _testSbp(),
+			PeerUrls:                    "test-peer-urls",
+			ClientUrls:                  "test-client-urls",
+			AdvertisePeerUrls:           "test-advertise-peer-urls",
+			AdvertiseClientUrls:         "test-advertise-client-urls",
+			Name:                        "test-name",
+			DataDir:                     "test-data-dir",
+			InitialCluster:              "test-initial-cluster",
+			SbpAddr:                     "test-sbp-addr",
+			AdvertiseSbpAddr:            "test-advertise-sbp-addr",
+			LeaderLease:                 123,
+			LeaderPriorityCheckInterval: time.Hour + time.Minute + time.Second,
+		}
+	}
 )
 
 func TestNewConfig(t *testing.T) {
@@ -37,13 +148,9 @@ func TestNewConfig(t *testing.T) {
 					config.AutoCompactionRetention = "1h"
 					return config
 				}(),
-				Log: func() *Log {
-					log := NewLog()
-					log.Level = "INFO"
-					log.Rotate.MaxSize = 64
-					log.Rotate.MaxAge = 180
-					return log
-				}(),
+				Log:                         _testDefaultLog(),
+				Cluster:                     _testDefaultCluster(),
+				Sbp:                         _testDefaultSbp(),
 				PeerUrls:                    "http://127.0.0.1:2380",
 				ClientUrls:                  "http://127.0.0.1:2379",
 				AdvertisePeerUrls:           "",
@@ -62,68 +169,14 @@ func TestNewConfig(t *testing.T) {
 			args: args{arguments: []string{
 				"--config=../../../conf/config.toml",
 			}},
-			want: Config{
-				Etcd: func() *embed.Config {
-					config := embed.NewConfig()
-					config.InitialClusterToken = "pm-cluster"
-					config.LogLevel = "warn"
-					config.AutoCompactionMode = "periodic"
-					config.AutoCompactionRetention = "1h"
-					return config
-				}(),
-				Log: func() *Log {
-					log := NewLog()
-					log.Level = "INFO"
-					log.Rotate.MaxSize = 64
-					log.Rotate.MaxAge = 180
-					return log
-				}(),
-				PeerUrls:                    "http://127.0.0.1:2380",
-				ClientUrls:                  "http://127.0.0.1:2379",
-				AdvertisePeerUrls:           "http://127.0.0.1:2380",
-				AdvertiseClientUrls:         "http://127.0.0.1:2379",
-				Name:                        "pm-hostname",
-				DataDir:                     "default.pm-hostname",
-				InitialCluster:              "pm=http://127.0.0.1:2380",
-				SbpAddr:                     "127.0.0.1:2378",
-				AdvertiseSbpAddr:            "127.0.0.1:2378",
-				LeaderLease:                 3,
-				LeaderPriorityCheckInterval: time.Minute,
-			},
+			want: _testDefaultConfig(),
 		},
 		{
 			name: "default config in yaml",
 			args: args{arguments: []string{
 				"--config=../../../conf/config.yaml",
 			}},
-			want: Config{
-				Etcd: func() *embed.Config {
-					config := embed.NewConfig()
-					config.InitialClusterToken = "pm-cluster"
-					config.LogLevel = "warn"
-					config.AutoCompactionMode = "periodic"
-					config.AutoCompactionRetention = "1h"
-					return config
-				}(),
-				Log: func() *Log {
-					log := NewLog()
-					log.Level = "INFO"
-					log.Rotate.MaxSize = 64
-					log.Rotate.MaxAge = 180
-					return log
-				}(),
-				PeerUrls:                    "http://127.0.0.1:2380",
-				ClientUrls:                  "http://127.0.0.1:2379",
-				AdvertisePeerUrls:           "http://127.0.0.1:2380",
-				AdvertiseClientUrls:         "http://127.0.0.1:2379",
-				Name:                        "pm-hostname",
-				DataDir:                     "default.pm-hostname",
-				InitialCluster:              "pm=http://127.0.0.1:2380",
-				SbpAddr:                     "127.0.0.1:2378",
-				AdvertiseSbpAddr:            "127.0.0.1:2378",
-				LeaderLease:                 3,
-				LeaderPriorityCheckInterval: time.Minute,
-			},
+			want: _testDefaultConfig(),
 		},
 		{
 			name: "config from command line (override config in file)",
@@ -155,6 +208,12 @@ func TestNewConfig(t *testing.T) {
 				"--log-rotate-max-backups=123456",
 				"--log-rotate-local-time=true",
 				"--log-rotate-compress=true",
+				"--cluster-seal-req-timeout-ms=1234567",
+				"--sbp-server-heartbeat-interval=2h2m2s",
+				"--sbp-server-heartbeat-miss-count=12345678",
+				"--sbp-client-idle-conn-timeout=3h3m3s",
+				"--sbp-client-read-idle-timeout=4h4m4s",
+				"--sbp-client-heartbeat-timeout=5h5m5s",
 			}},
 			want: Config{
 				Etcd: func() *embed.Config {
@@ -180,6 +239,8 @@ func TestNewConfig(t *testing.T) {
 					log.Rotate.Compress = true
 					return log
 				}(),
+				Cluster:                     _testCluster(),
+				Sbp:                         _testSbp(),
 				PeerUrls:                    "test-peer-urls",
 				ClientUrls:                  "test-client-urls",
 				AdvertisePeerUrls:           "test-advertise-peer-urls",
@@ -198,94 +259,14 @@ func TestNewConfig(t *testing.T) {
 			args: args{arguments: []string{
 				"--config=./test/test-config.toml",
 			}},
-			want: Config{
-				Etcd: func() *embed.Config {
-					config := embed.NewConfig()
-					config.InitialClusterToken = "test-initial-cluster-token"
-					config.LogLevel = "test-etcd-log-level"
-					config.AutoCompactionMode = "test-auto-compaction-mode"
-					config.AutoCompactionRetention = "test-auto-compaction-retention"
-					config.TickMs = 123
-					config.ElectionMs = 1234
-					return config
-				}(),
-				Log: func() *Log {
-					log := NewLog()
-					log.Level = "FATAL"
-					log.Zap.Level = zap.NewAtomicLevelAt(zapcore.FatalLevel)
-					log.Zap.Encoding = "console"
-					log.Zap.OutputPaths = []string{"stdout", "stderr"}
-					log.Zap.ErrorOutputPaths = []string{"stdout", "stderr"}
-					log.Zap.DisableCaller = true
-					log.Zap.DisableStacktrace = true
-					log.Zap.EncoderConfig.MessageKey = "test-msg"
-					log.EnableRotation = false
-					log.Rotate.MaxSize = 1234
-					log.Rotate.MaxAge = 12345
-					log.Rotate.MaxBackups = 123456
-					log.Rotate.LocalTime = true
-					log.Rotate.Compress = true
-					return log
-				}(),
-				PeerUrls:                    "test-peer-urls",
-				ClientUrls:                  "test-client-urls",
-				AdvertisePeerUrls:           "test-advertise-peer-urls",
-				AdvertiseClientUrls:         "test-advertise-client-urls",
-				Name:                        "test-name",
-				DataDir:                     "test-data-dir",
-				InitialCluster:              "test-initial-cluster",
-				SbpAddr:                     "test-sbp-addr",
-				AdvertiseSbpAddr:            "test-advertise-sbp-addr",
-				LeaderLease:                 123,
-				LeaderPriorityCheckInterval: time.Hour + time.Minute + time.Second,
-			},
+			want: _testConfig(),
 		},
 		{
 			name: "config from yaml file",
 			args: args{arguments: []string{
 				"--config=./test/test-config.yaml",
 			}},
-			want: Config{
-				Etcd: func() *embed.Config {
-					config := embed.NewConfig()
-					config.InitialClusterToken = "test-initial-cluster-token"
-					config.LogLevel = "test-etcd-log-level"
-					config.AutoCompactionMode = "test-auto-compaction-mode"
-					config.AutoCompactionRetention = "test-auto-compaction-retention"
-					config.TickMs = 123
-					config.ElectionMs = 1234
-					return config
-				}(),
-				Log: func() *Log {
-					log := NewLog()
-					log.Level = "FATAL"
-					log.Zap.Level = zap.NewAtomicLevelAt(zapcore.FatalLevel)
-					log.Zap.Encoding = "console"
-					log.Zap.OutputPaths = []string{"stdout", "stderr"}
-					log.Zap.ErrorOutputPaths = []string{"stdout", "stderr"}
-					log.Zap.DisableCaller = true
-					log.Zap.DisableStacktrace = true
-					log.Zap.EncoderConfig.MessageKey = "test-msg"
-					log.EnableRotation = false
-					log.Rotate.MaxSize = 1234
-					log.Rotate.MaxAge = 12345
-					log.Rotate.MaxBackups = 123456
-					log.Rotate.LocalTime = true
-					log.Rotate.Compress = true
-					return log
-				}(),
-				PeerUrls:                    "test-peer-urls",
-				ClientUrls:                  "test-client-urls",
-				AdvertisePeerUrls:           "test-advertise-peer-urls",
-				AdvertiseClientUrls:         "test-advertise-client-urls",
-				Name:                        "test-name",
-				DataDir:                     "test-data-dir",
-				InitialCluster:              "test-initial-cluster",
-				SbpAddr:                     "test-sbp-addr",
-				AdvertiseSbpAddr:            "test-advertise-sbp-addr",
-				LeaderLease:                 123,
-				LeaderPriorityCheckInterval: time.Hour + time.Minute + time.Second,
-			},
+			want: _testConfig(),
 		},
 		{
 			name: "help message",
@@ -343,7 +324,7 @@ func TestNewConfig(t *testing.T) {
 			t.Parallel()
 			re := require.New(t)
 
-			config, err := NewConfig(tt.args.arguments)
+			config, err := NewConfig(tt.args.arguments, io.Discard)
 
 			if tt.wantErr {
 				re.ErrorContains(err, tt.errMsg)
@@ -352,7 +333,6 @@ func TestNewConfig(t *testing.T) {
 			re.NoError(err)
 
 			// do not check auxiliary fields
-			config.v = nil
 			config.lg = nil
 
 			equal(re, tt.want.Log.Zap, config.Log.Zap)
@@ -377,7 +357,7 @@ func TestConfigFromEnv(t *testing.T) {
 	config, err := NewConfig([]string{
 		"--config=./test/test-config.toml",
 		"--advertise-peer-urls=cmd-test-advertise-peer-urls",
-	})
+	}, io.Discard)
 	re.NoError(err)
 
 	// flag > env > config > default
@@ -405,7 +385,7 @@ func TestConfig_Adjust(t *testing.T) {
 	}{
 		{
 			name: "default config",
-			in:   func() *Config { config, _ := NewConfig([]string{}); return config }(),
+			in:   func() *Config { config, _ := NewConfig([]string{}, io.Discard); return config }(),
 			want: &Config{
 				Etcd: func() *embed.Config {
 					config := embed.NewConfig()
@@ -422,13 +402,9 @@ func TestConfig_Adjust(t *testing.T) {
 					config.AutoCompactionRetention = "1h"
 					return config
 				}(),
-				Log: func() *Log {
-					log := NewLog()
-					log.Level = "INFO"
-					log.Rotate.MaxSize = 64
-					log.Rotate.MaxAge = 180
-					return log
-				}(),
+				Log:                         _testDefaultLog(),
+				Cluster:                     _testDefaultCluster(),
+				Sbp:                         _testDefaultSbp(),
 				PeerUrls:                    "http://127.0.0.1:2380",
 				ClientUrls:                  "http://127.0.0.1:2379",
 				AdvertisePeerUrls:           "http://127.0.0.1:2380",
@@ -445,7 +421,7 @@ func TestConfig_Adjust(t *testing.T) {
 		{
 			name: "normal adjust config",
 			in: func() *Config {
-				config, _ := NewConfig([]string{})
+				config, _ := NewConfig([]string{}, io.Discard)
 				config.PeerUrls = "http://example.com:2380,http://10.0.0.1:2380"
 				config.ClientUrls = "http://example.com:2379,http://10.0.0.1:2379"
 				config.SbpAddr = "example.com:2378"
@@ -468,13 +444,9 @@ func TestConfig_Adjust(t *testing.T) {
 					config.AutoCompactionRetention = "1h"
 					return config
 				}(),
-				Log: func() *Log {
-					log := NewLog()
-					log.Level = "INFO"
-					log.Rotate.MaxSize = 64
-					log.Rotate.MaxAge = 180
-					return log
-				}(),
+				Log:                         _testDefaultLog(),
+				Cluster:                     _testDefaultCluster(),
+				Sbp:                         _testDefaultSbp(),
 				PeerUrls:                    "http://example.com:2380,http://10.0.0.1:2380",
 				ClientUrls:                  "http://example.com:2379,http://10.0.0.1:2379",
 				AdvertisePeerUrls:           "http://example.com:2380,http://10.0.0.1:2380",
@@ -491,7 +463,7 @@ func TestConfig_Adjust(t *testing.T) {
 		{
 			name: "invalid peer url",
 			in: func() *Config {
-				config, _ := NewConfig([]string{})
+				config, _ := NewConfig([]string{}, io.Discard)
 				config.PeerUrls = "http://example.com:2380,://10.0.0.1:2380"
 				return config
 			}(),
@@ -501,7 +473,7 @@ func TestConfig_Adjust(t *testing.T) {
 		{
 			name: "invalid client url",
 			in: func() *Config {
-				config, _ := NewConfig([]string{})
+				config, _ := NewConfig([]string{}, io.Discard)
 				config.ClientUrls = "http://example.com:2379,://10.0.0.1:2379"
 				return config
 			}(),
@@ -511,7 +483,7 @@ func TestConfig_Adjust(t *testing.T) {
 		{
 			name: "invalid advertise peer url",
 			in: func() *Config {
-				config, _ := NewConfig([]string{})
+				config, _ := NewConfig([]string{}, io.Discard)
 				config.AdvertisePeerUrls = "http://example.com:2380,://10.0.0.1:2380"
 				return config
 			}(),
@@ -521,7 +493,7 @@ func TestConfig_Adjust(t *testing.T) {
 		{
 			name: "invalid advertise client url",
 			in: func() *Config {
-				config, _ := NewConfig([]string{})
+				config, _ := NewConfig([]string{}, io.Discard)
 				config.AdvertiseClientUrls = "http://example.com:2379,://10.0.0.1:2379"
 				return config
 			}(),
@@ -545,7 +517,6 @@ func TestConfig_Adjust(t *testing.T) {
 			re.NoError(err)
 
 			// do not check auxiliary fields
-			config.v = nil
 			config.lg = nil
 
 			equal(re, tt.want.Log.Zap, config.Log.Zap)
@@ -577,9 +548,69 @@ func TestConfig_Validate(t *testing.T) {
 		{
 			name: "default config",
 			in: func() *Config {
-				config, _ := NewConfig([]string{})
+				config, _ := NewConfig([]string{}, io.Discard)
 				return config
 			}(),
+		},
+		{
+			name: "invalid Cluster.SealReqTimeoutMs",
+			in: func() *Config {
+				config, _ := NewConfig([]string{}, io.Discard)
+				config.Cluster.SealReqTimeoutMs = 0
+				return config
+			}(),
+			wantErr: true,
+			errMsg:  "validate cluster config: invalid seal request timeout",
+		},
+		{
+			name: "invalid Sbp.Server.HeartbeatInterval",
+			in: func() *Config {
+				config, _ := NewConfig([]string{}, io.Discard)
+				config.Sbp.Server.HeartbeatInterval = -1
+				return config
+			}(),
+			wantErr: true,
+			errMsg:  "validate sbp config: invalid heartbeat interval",
+		},
+		{
+			name: "invalid Sbp.Server.HeartbeatMissCount",
+			in: func() *Config {
+				config, _ := NewConfig([]string{}, io.Discard)
+				config.Sbp.Server.HeartbeatMissCount = -1
+				return config
+			}(),
+			wantErr: true,
+			errMsg:  "validate sbp config: invalid heartbeat miss count",
+		},
+		{
+			name: "invalid Sbp.Client.IdleConnTimeout",
+			in: func() *Config {
+				config, _ := NewConfig([]string{}, io.Discard)
+				config.Sbp.Client.IdleConnTimeout = -1
+				return config
+			}(),
+			wantErr: true,
+			errMsg:  "validate sbp config: invalid idle connection timeout",
+		},
+		{
+			name: "invalid Sbp.Client.ReadIdleTimeout",
+			in: func() *Config {
+				config, _ := NewConfig([]string{}, io.Discard)
+				config.Sbp.Client.ReadIdleTimeout = -1
+				return config
+			}(),
+			wantErr: true,
+			errMsg:  "validate sbp config: invalid read idle timeout",
+		},
+		{
+			name: "invalid Sbp.Client.HeartbeatTimeout",
+			in: func() *Config {
+				config, _ := NewConfig([]string{}, io.Discard)
+				config.Sbp.Client.HeartbeatTimeout = 0
+				return config
+			}(),
+			wantErr: true,
+			errMsg:  "validate sbp config: invalid heartbeat timeout",
 		},
 	}
 	for _, tt := range tests {

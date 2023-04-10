@@ -78,6 +78,7 @@ type Server struct {
 	storage   storage.Storage
 	cluster   *cluster.RaftCluster
 	sbpServer *sbpServer.Server
+	sbpClient sbpClient.Client
 
 	lg *zap.Logger // logger
 }
@@ -186,9 +187,8 @@ func (s *Server) startServer() error {
 		return errors.Wrap(err, "init member")
 	}
 	s.storage = storage.NewEtcd(s.client, s.rootPath, logger, s.leaderCmp)
-
-	client := sbpClient.Logger{LogAble: sbpClient.NewClient(logger)}
-	s.cluster = cluster.NewRaftCluster(s.ctx, client, logger)
+	s.cluster = cluster.NewRaftCluster(s.ctx, s.cfg.Cluster, logger)
+	s.sbpClient = sbpClient.Logger{LogAble: sbpClient.NewClient(s.cfg.Sbp.Client, logger)}
 
 	sbpAddr := s.cfg.SbpAddr
 	listener, err := net.Listen("tcp", sbpAddr)
@@ -209,7 +209,7 @@ func (s *Server) serveSbp(listener net.Listener, c *cluster.RaftCluster) {
 	ctx, cancel := context.WithCancel(s.ctx)
 	defer cancel()
 
-	sbpSvr := sbpServer.NewServer(ctx, handler.Checker{Handler: handler.NewHandler(c, logger)}, logger)
+	sbpSvr := sbpServer.NewServer(ctx, s.cfg.Sbp.Server, handler.Checker{Handler: handler.NewHandler(c, logger)}, logger)
 	s.sbpServer = sbpSvr
 
 	logger.Info("sbp server started")
@@ -393,6 +393,10 @@ func (s *Server) Storage() storage.Storage {
 
 func (s *Server) Member() cluster.Member {
 	return s.member
+}
+
+func (s *Server) SbpClient() sbpClient.Client {
+	return s.sbpClient
 }
 
 func (s *Server) IDAllocator(key string, start, step uint64) id.Allocator {

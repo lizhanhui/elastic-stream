@@ -18,6 +18,7 @@ package testutil
 
 import (
 	"fmt"
+	"io"
 	"net/url"
 	"testing"
 
@@ -63,7 +64,7 @@ func NewPMConfig(tb testing.TB) *config.Config {
 		"--peer-urls", peerURL,
 		"--client-urls", clientURL,
 		"--sbp-addr", sbpAddr,
-	})
+	}, io.Discard)
 	re.NoError(err)
 
 	cfg.Name = fmt.Sprintf("test_pm_%s", tb.Name())

@@ -25,6 +25,7 @@ import (
 	"github.com/AutoMQ/placement-manager/api/rpcfb/rpcfb"
 	sbpClient "github.com/AutoMQ/placement-manager/pkg/sbp/client"
 	"github.com/AutoMQ/placement-manager/pkg/server/cluster/cache"
+	"github.com/AutoMQ/placement-manager/pkg/server/config"
 	"github.com/AutoMQ/placement-manager/pkg/server/id"
 	"github.com/AutoMQ/placement-manager/pkg/server/member"
 	"github.com/AutoMQ/placement-manager/pkg/server/storage"
@@ -42,14 +43,16 @@ const (
 type RaftCluster struct {
 	ctx context.Context
 
+	cfg *config.Cluster
+
 	starting      atomic.Bool
 	running       atomic.Bool
 	runningCtx    context.Context
 	runningCancel context.CancelFunc
 
 	storage storage.Storage
-	sAlloc  id.Allocator
-	dnAlloc id.Allocator
+	sAlloc  id.Allocator // stream id allocator
+	dnAlloc id.Allocator // data node id allocator
 	member  Member
 	cache   *cache.Cache
 	client  sbpClient.Client
@@ -67,15 +70,16 @@ type Server interface {
 	Storage() storage.Storage
 	IDAllocator(key string, start, step uint64) id.Allocator
 	Member() Member
+	SbpClient() sbpClient.Client
 }
 
 // NewRaftCluster creates a new RaftCluster.
-func NewRaftCluster(ctx context.Context, client sbpClient.Client, logger *zap.Logger) *RaftCluster {
+func NewRaftCluster(ctx context.Context, cfg *config.Cluster, logger *zap.Logger) *RaftCluster {
 	return &RaftCluster{
-		ctx:    ctx,
-		cache:  cache.NewCache(),
-		client: client,
-		lg:     logger,
+		ctx:   ctx,
+		cfg:   cfg,
+		cache: cache.NewCache(),
+		lg:    logger,
 	}
 }
 
@@ -99,6 +103,7 @@ func (c *RaftCluster) Start(s Server) error {
 	c.runningCtx, c.runningCancel = context.WithCancel(c.ctx)
 	c.sAlloc = s.IDAllocator(_streamIDAllocKey, uint64(endpoint.MinStreamID), _streamIDStep)
 	c.dnAlloc = s.IDAllocator(_dataNodeIDAllocKey, uint64(endpoint.MinDataNodeID), _dataNodeIDStep)
+	c.client = s.SbpClient()
 
 	err := c.loadInfo()
 	if err != nil {

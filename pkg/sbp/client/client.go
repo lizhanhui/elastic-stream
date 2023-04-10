@@ -16,6 +16,7 @@ import (
 	"github.com/AutoMQ/placement-manager/pkg/sbp/codec"
 	"github.com/AutoMQ/placement-manager/pkg/sbp/codec/format"
 	"github.com/AutoMQ/placement-manager/pkg/sbp/protocol"
+	"github.com/AutoMQ/placement-manager/pkg/server/config"
 )
 
 // Address is the address of a server, in the format of "host:port"
@@ -37,22 +38,10 @@ type Client interface {
 // A SbpClient internally caches connections to servers.
 // It is safe for concurrent use by multiple goroutines.
 type SbpClient struct {
-	// TODO move into a config
-	// IdleConnTimeout is the maximum amount of time an idle (keep-alive) connection
-	// will remain idle before closing itself.
-	// If zero, no idle connections are closed.
-	IdleConnTimeout time.Duration
-	// ReadIdleTimeout is the timeout after which a health check using Heartbeat
-	// frame will be carried out if no frame is received on the connection.
-	// If zero, no health check is performed.
-	ReadIdleTimeout time.Duration
-	// HeartbeatTimeout is the timeout after which the connection will be closed
-	// if a response to Heartbeat is not received.
-	// Default to _defaultHeartbeatTimeout
-	HeartbeatTimeout time.Duration
 	// Format is the format of the frames sent to the server.
 	// Default to format.FlatBuffer
 	Format format.Format
+	cfg    *config.SbpClient
 
 	id       string
 	connPool *connPool
@@ -61,9 +50,10 @@ type SbpClient struct {
 }
 
 // NewClient creates a client
-func NewClient(lg *zap.Logger) *SbpClient {
+func NewClient(cfg *config.SbpClient, lg *zap.Logger) *SbpClient {
 	c := &SbpClient{
-		lg: lg,
+		cfg: cfg,
+		lg:  lg,
 	}
 	c.id = newClientID()
 	c.connPool = newConnPool(c)
@@ -149,9 +139,9 @@ func (c *SbpClient) newConn(rwc net.Conn) (*conn, error) {
 		lg:           logger,
 	}
 	cc.cond = sync.NewCond(&cc.mu)
-	if c.IdleConnTimeout > 0 {
-		cc.idleTimeout = c.IdleConnTimeout
-		cc.idleTimer = time.AfterFunc(c.IdleConnTimeout, cc.onIdleTimeout)
+	if c.cfg.IdleConnTimeout > 0 {
+		cc.idleTimeout = c.cfg.IdleConnTimeout
+		cc.idleTimer = time.AfterFunc(c.cfg.IdleConnTimeout, cc.onIdleTimeout)
 	}
 
 	logger.Info("connection created")
@@ -164,8 +154,8 @@ func (c *SbpClient) Logger() *zap.Logger {
 }
 
 func (c *SbpClient) heartbeatTimeout() time.Duration {
-	if c.HeartbeatTimeout > 0 {
-		return c.HeartbeatTimeout
+	if c.cfg.HeartbeatTimeout > 0 {
+		return c.cfg.HeartbeatTimeout
 	}
 	return _defaultHeartbeatTimeout
 }

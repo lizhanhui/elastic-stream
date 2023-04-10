@@ -17,8 +17,8 @@ import (
 )
 
 func main() {
-	cfg, err := config.NewConfig(os.Args[1:])
-	if errors.Cause(err) == pflag.ErrHelp {
+	cfg, err := config.NewConfig(os.Args[1:], os.Stderr)
+	if errors.Is(err, pflag.ErrHelp) {
 		os.Exit(0)
 	}
 
