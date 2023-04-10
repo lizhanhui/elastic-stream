@@ -552,6 +552,66 @@ func TestConfig_Validate(t *testing.T) {
 				return config
 			}(),
 		},
+		{
+			name: "invalid Cluster.SealReqTimeoutMs",
+			in: func() *Config {
+				config, _ := NewConfig([]string{}, io.Discard)
+				config.Cluster.SealReqTimeoutMs = 0
+				return config
+			}(),
+			wantErr: true,
+			errMsg:  "validate cluster config: invalid seal request timeout",
+		},
+		{
+			name: "invalid Sbp.Server.HeartbeatInterval",
+			in: func() *Config {
+				config, _ := NewConfig([]string{}, io.Discard)
+				config.Sbp.Server.HeartbeatInterval = -1
+				return config
+			}(),
+			wantErr: true,
+			errMsg:  "validate sbp config: invalid heartbeat interval",
+		},
+		{
+			name: "invalid Sbp.Server.HeartbeatMissCount",
+			in: func() *Config {
+				config, _ := NewConfig([]string{}, io.Discard)
+				config.Sbp.Server.HeartbeatMissCount = -1
+				return config
+			}(),
+			wantErr: true,
+			errMsg:  "validate sbp config: invalid heartbeat miss count",
+		},
+		{
+			name: "invalid Sbp.Client.IdleConnTimeout",
+			in: func() *Config {
+				config, _ := NewConfig([]string{}, io.Discard)
+				config.Sbp.Client.IdleConnTimeout = -1
+				return config
+			}(),
+			wantErr: true,
+			errMsg:  "validate sbp config: invalid idle connection timeout",
+		},
+		{
+			name: "invalid Sbp.Client.ReadIdleTimeout",
+			in: func() *Config {
+				config, _ := NewConfig([]string{}, io.Discard)
+				config.Sbp.Client.ReadIdleTimeout = -1
+				return config
+			}(),
+			wantErr: true,
+			errMsg:  "validate sbp config: invalid read idle timeout",
+		},
+		{
+			name: "invalid Sbp.Client.HeartbeatTimeout",
+			in: func() *Config {
+				config, _ := NewConfig([]string{}, io.Discard)
+				config.Sbp.Client.HeartbeatTimeout = 0
+				return config
+			}(),
+			wantErr: true,
+			errMsg:  "validate sbp config: invalid heartbeat timeout",
+		},
 	}
 	for _, tt := range tests {
 		tt := tt

@@ -33,10 +33,10 @@ func NewSbp() *Sbp {
 }
 
 func (s *Sbp) Validate() error {
-	if s.Server.HeartbeatInterval <= 0 {
+	if s.Server.HeartbeatInterval < 0 {
 		return errors.Errorf("invalid heartbeat interval `%s`", s.Server.HeartbeatInterval)
 	}
-	if s.Server.HeartbeatMissCount <= 0 {
+	if s.Server.HeartbeatMissCount < 0 {
 		return errors.Errorf("invalid heartbeat miss count `%d`", s.Server.HeartbeatMissCount)
 	}
 	if s.Client.IdleConnTimeout < 0 {
