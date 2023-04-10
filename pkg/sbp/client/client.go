@@ -38,7 +38,7 @@ type Client interface {
 // It is safe for concurrent use by multiple goroutines.
 type SbpClient struct {
 	// TODO move into a config
-	// IdleConnTimeout is the maximum amount of time an idle (keep-alive) connection
+	// IdleConnTimeout is the maximum amount of time an idle connection
 	// will remain idle before closing itself.
 	// If zero, no idle connections are closed.
 	IdleConnTimeout time.Duration

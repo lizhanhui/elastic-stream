@@ -22,7 +22,7 @@ var (
 // Server is an SBP server
 type Server struct {
 	// TODO move into a config
-	// HeartbeatInterval defines the interval duration between sending heartbeats from client to server.
+	// HeartbeatInterval defines the time interval between sending heartbeats from client to server.
 	HeartbeatInterval time.Duration
 	// HeartbeatMissCount is the number of consecutive heartbeats that the server can miss
 	// before considering the client to be unresponsive and terminating the connection.

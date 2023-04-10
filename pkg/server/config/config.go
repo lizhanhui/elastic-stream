@@ -54,6 +54,7 @@ type Config struct {
 	Etcd    *embed.Config
 	Log     *Log
 	Cluster *Cluster
+	Sbp     *Sbp
 
 	PeerUrls            string
 	ClientUrls          string
@@ -83,9 +84,10 @@ func NewConfig(arguments []string, errOutput io.Writer) (*Config, error) {
 	cfg.Etcd = embed.NewConfig()
 	cfg.Log = NewLog()
 	cfg.Cluster = NewCluster()
+	cfg.Sbp = NewSbp()
 
 	v := newViper()
-	fs := NewFlagSet(errOutput)
+	fs := newFlagSet(errOutput)
 	configure(v, fs)
 
 	// parse from command line
@@ -202,7 +204,27 @@ func (c *Config) adjustEtcd() error {
 func (c *Config) Validate() error {
 	_, err := filepath.Abs(c.DataDir)
 	if err != nil {
-		return errors.Wrap(err, "invalid data dir path")
+		return errors.Wrapf(err, "invalid data dir path `%s`", c.DataDir)
+	}
+
+	if c.Cluster.SealReqTimeoutMs <= 0 {
+		return errors.Errorf("invalid seal request timeout `%d`", c.Cluster.SealReqTimeoutMs)
+	}
+
+	if c.Sbp.Server.HeartbeatInterval <= 0 {
+		return errors.Errorf("invalid heartbeat interval `%s`", c.Sbp.Server.HeartbeatInterval)
+	}
+	if c.Sbp.Server.HeartbeatMissCount <= 0 {
+		return errors.Errorf("invalid heartbeat miss count `%d`", c.Sbp.Server.HeartbeatMissCount)
+	}
+	if c.Sbp.Client.IdleConnTimeout <= 0 {
+		return errors.Errorf("invalid idle connection timeout `%s`", c.Sbp.Client.IdleConnTimeout)
+	}
+	if c.Sbp.Client.ReadIdleTimeout <= 0 {
+		return errors.Errorf("invalid read idle timeout `%s`", c.Sbp.Client.ReadIdleTimeout)
+	}
+	if c.Sbp.Client.HeartbeatTimeout <= 0 {
+		return errors.Errorf("invalid heartbeat timeout `%s`", c.Sbp.Client.HeartbeatTimeout)
 	}
 	return nil
 }
@@ -225,7 +247,7 @@ func newViper() *viper.Viper {
 	return v
 }
 
-func NewFlagSet(errOutput io.Writer) *pflag.FlagSet {
+func newFlagSet(errOutput io.Writer) *pflag.FlagSet {
 	fs := pflag.NewFlagSet("placement-manager", pflag.ContinueOnError)
 	fs.SetOutput(errOutput)
 	return fs
@@ -273,6 +295,7 @@ func configure(v *viper.Viper, fs *pflag.FlagSet) {
 
 	logConfigure(v, fs)
 	clusterConfigure(v, fs)
+	sbpConfigure(v, fs)
 }
 
 // parseUrls parse a string into multiple urls.
