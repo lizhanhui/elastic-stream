@@ -1,6 +1,7 @@
 package config
 
 import (
+	"github.com/pkg/errors"
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
 )
@@ -16,6 +17,13 @@ type Cluster struct {
 
 func NewCluster() *Cluster {
 	return &Cluster{}
+}
+
+func (c *Cluster) Validate() error {
+	if c.SealReqTimeoutMs <= 0 {
+		return errors.Errorf("invalid seal request timeout `%d`", c.SealReqTimeoutMs)
+	}
+	return nil
 }
 
 func clusterConfigure(v *viper.Viper, fs *pflag.FlagSet) {

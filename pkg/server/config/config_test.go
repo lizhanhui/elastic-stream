@@ -28,6 +28,15 @@ var (
 		cluster.SealReqTimeoutMs = 1000
 		return cluster
 	}
+	_testDefaultSbp = func() *Sbp {
+		sbp := NewSbp()
+		sbp.Server.HeartbeatInterval = 5 * time.Second
+		sbp.Server.HeartbeatMissCount = 3
+		sbp.Client.IdleConnTimeout = 0
+		sbp.Client.ReadIdleTimeout = 5 * time.Second
+		sbp.Client.HeartbeatTimeout = 10 * time.Second
+		return sbp
+	}
 	_testDefaultConfig = func() Config {
 		return Config{
 			Etcd: func() *embed.Config {
@@ -40,6 +49,7 @@ var (
 			}(),
 			Log:                         _testDefaultLog(),
 			Cluster:                     _testDefaultCluster(),
+			Sbp:                         _testDefaultSbp(),
 			PeerUrls:                    "http://127.0.0.1:2380",
 			ClientUrls:                  "http://127.0.0.1:2379",
 			AdvertisePeerUrls:           "http://127.0.0.1:2380",
@@ -58,6 +68,15 @@ var (
 		cluster := NewCluster()
 		cluster.SealReqTimeoutMs = 1234567
 		return cluster
+	}
+	_testSbp = func() *Sbp {
+		sbp := NewSbp()
+		sbp.Server.HeartbeatInterval = 2*time.Hour + 2*time.Minute + 2*time.Second
+		sbp.Server.HeartbeatMissCount = 12345678
+		sbp.Client.IdleConnTimeout = 3*time.Hour + 3*time.Minute + 3*time.Second
+		sbp.Client.ReadIdleTimeout = 4*time.Hour + 4*time.Minute + 4*time.Second
+		sbp.Client.HeartbeatTimeout = 5*time.Hour + 5*time.Minute + 5*time.Second
+		return sbp
 	}
 	_testConfig = func() Config {
 		return Config{
@@ -90,6 +109,7 @@ var (
 				return log
 			}(),
 			Cluster:                     _testCluster(),
+			Sbp:                         _testSbp(),
 			PeerUrls:                    "test-peer-urls",
 			ClientUrls:                  "test-client-urls",
 			AdvertisePeerUrls:           "test-advertise-peer-urls",
@@ -128,18 +148,9 @@ func TestNewConfig(t *testing.T) {
 					config.AutoCompactionRetention = "1h"
 					return config
 				}(),
-				Log: func() *Log {
-					log := NewLog()
-					log.Level = "INFO"
-					log.Rotate.MaxSize = 64
-					log.Rotate.MaxAge = 180
-					return log
-				}(),
-				Cluster: func() *Cluster {
-					cluster := NewCluster()
-					cluster.SealReqTimeoutMs = 1000
-					return cluster
-				}(),
+				Log:                         _testDefaultLog(),
+				Cluster:                     _testDefaultCluster(),
+				Sbp:                         _testDefaultSbp(),
 				PeerUrls:                    "http://127.0.0.1:2380",
 				ClientUrls:                  "http://127.0.0.1:2379",
 				AdvertisePeerUrls:           "",
@@ -198,6 +209,11 @@ func TestNewConfig(t *testing.T) {
 				"--log-rotate-local-time=true",
 				"--log-rotate-compress=true",
 				"--cluster-seal-req-timeout-ms=1234567",
+				"--sbp-server-heartbeat-interval=2h2m2s",
+				"--sbp-server-heartbeat-miss-count=12345678",
+				"--sbp-client-idle-conn-timeout=3h3m3s",
+				"--sbp-client-read-idle-timeout=4h4m4s",
+				"--sbp-client-heartbeat-timeout=5h5m5s",
 			}},
 			want: Config{
 				Etcd: func() *embed.Config {
@@ -224,6 +240,7 @@ func TestNewConfig(t *testing.T) {
 					return log
 				}(),
 				Cluster:                     _testCluster(),
+				Sbp:                         _testSbp(),
 				PeerUrls:                    "test-peer-urls",
 				ClientUrls:                  "test-client-urls",
 				AdvertisePeerUrls:           "test-advertise-peer-urls",
@@ -387,6 +404,7 @@ func TestConfig_Adjust(t *testing.T) {
 				}(),
 				Log:                         _testDefaultLog(),
 				Cluster:                     _testDefaultCluster(),
+				Sbp:                         _testDefaultSbp(),
 				PeerUrls:                    "http://127.0.0.1:2380",
 				ClientUrls:                  "http://127.0.0.1:2379",
 				AdvertisePeerUrls:           "http://127.0.0.1:2380",
@@ -428,6 +446,7 @@ func TestConfig_Adjust(t *testing.T) {
 				}(),
 				Log:                         _testDefaultLog(),
 				Cluster:                     _testDefaultCluster(),
+				Sbp:                         _testDefaultSbp(),
 				PeerUrls:                    "http://example.com:2380,http://10.0.0.1:2380",
 				ClientUrls:                  "http://example.com:2379,http://10.0.0.1:2379",
 				AdvertisePeerUrls:           "http://example.com:2380,http://10.0.0.1:2380",

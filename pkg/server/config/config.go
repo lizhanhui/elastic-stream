@@ -207,25 +207,14 @@ func (c *Config) Validate() error {
 		return errors.Wrapf(err, "invalid data dir path `%s`", c.DataDir)
 	}
 
-	if c.Cluster.SealReqTimeoutMs <= 0 {
-		return errors.Errorf("invalid seal request timeout `%d`", c.Cluster.SealReqTimeoutMs)
+	if err := c.Cluster.Validate(); err != nil {
+		return errors.Wrap(err, "validate cluster config")
 	}
 
-	if c.Sbp.Server.HeartbeatInterval <= 0 {
-		return errors.Errorf("invalid heartbeat interval `%s`", c.Sbp.Server.HeartbeatInterval)
+	if err := c.Sbp.Validate(); err != nil {
+		return errors.Wrap(err, "validate sbp config")
 	}
-	if c.Sbp.Server.HeartbeatMissCount <= 0 {
-		return errors.Errorf("invalid heartbeat miss count `%d`", c.Sbp.Server.HeartbeatMissCount)
-	}
-	if c.Sbp.Client.IdleConnTimeout <= 0 {
-		return errors.Errorf("invalid idle connection timeout `%s`", c.Sbp.Client.IdleConnTimeout)
-	}
-	if c.Sbp.Client.ReadIdleTimeout <= 0 {
-		return errors.Errorf("invalid read idle timeout `%s`", c.Sbp.Client.ReadIdleTimeout)
-	}
-	if c.Sbp.Client.HeartbeatTimeout <= 0 {
-		return errors.Errorf("invalid heartbeat timeout `%s`", c.Sbp.Client.HeartbeatTimeout)
-	}
+
 	return nil
 }
 

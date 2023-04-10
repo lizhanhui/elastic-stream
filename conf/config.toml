@@ -71,3 +71,17 @@ compress = false
 [cluster]
 # seal request timeout in milliseconds
 sealReqTimeoutMs = 1000
+
+[sbp.server]
+# time interval between sending heartbeats from client to server
+heartbeatInterval = "5s"
+# number of consecutive heartbeats that the server can miss before considering the client to be unresponsive and terminating the connection
+heartbeatMissCount = 3
+
+[sbp.client]
+# time after which an idle connection closes itself (zero for no timeout)
+idleConnTimeout = "0"
+# time after which a health check will be carried out (zero for no health checks)
+readIdleTimeout = "5s"
+# time after which the client closes the connection if the server doesn't respond to a heartbeat request
+heartbeatTimeout = "10s"

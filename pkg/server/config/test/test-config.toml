@@ -42,3 +42,12 @@ compress = true
 
 [cluster]
 sealReqTimeoutMs = 1234567
+
+[sbp.server]
+heartbeatInterval = "2h2m2s"
+heartbeatMissCount = 12345678
+
+[sbp.client]
+idleConnTimeout = "3h3m3s"
+readIdleTimeout = "4h4m4s"
+heartbeatTimeout = "5h5m5s"

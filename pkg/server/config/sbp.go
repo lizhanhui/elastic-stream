@@ -3,6 +3,7 @@ package config
 import (
 	"time"
 
+	"github.com/pkg/errors"
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
 )
@@ -29,6 +30,25 @@ func NewSbp() *Sbp {
 		Server: &Server{},
 		Client: &Client{},
 	}
+}
+
+func (s *Sbp) Validate() error {
+	if s.Server.HeartbeatInterval <= 0 {
+		return errors.Errorf("invalid heartbeat interval `%s`", s.Server.HeartbeatInterval)
+	}
+	if s.Server.HeartbeatMissCount <= 0 {
+		return errors.Errorf("invalid heartbeat miss count `%d`", s.Server.HeartbeatMissCount)
+	}
+	if s.Client.IdleConnTimeout < 0 {
+		return errors.Errorf("invalid idle connection timeout `%s`", s.Client.IdleConnTimeout)
+	}
+	if s.Client.ReadIdleTimeout < 0 {
+		return errors.Errorf("invalid read idle timeout `%s`", s.Client.ReadIdleTimeout)
+	}
+	if s.Client.HeartbeatTimeout <= 0 {
+		return errors.Errorf("invalid heartbeat timeout `%s`", s.Client.HeartbeatTimeout)
+	}
+	return nil
 }
 
 func sbpConfigure(v *viper.Viper, fs *pflag.FlagSet) {
