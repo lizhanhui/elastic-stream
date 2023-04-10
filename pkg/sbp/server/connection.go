@@ -426,13 +426,13 @@ func (c *conn) generateAct(f *codec.DataFrame, action *Action) (ctx context.Cont
 		debug := logger.Core().Enabled(zap.DebugLevel)
 		if debug {
 			logger = logger.With(zap.String("trace-id", traceID))
-			logger.Debug("handle request", zap.Any("request", req))
+			logger.Debug("handle request", zap.Any("request", req), zap.String("request-type", fmt.Sprintf("%T", req)))
 		}
 
 		action.act(c.server.handler, req, resp)
 
 		if debug {
-			logger.Debug("handle request done", zap.Any("response", resp))
+			logger.Debug("handle request done", zap.Any("response", resp), zap.String("response-type", fmt.Sprintf("%T", resp)))
 		}
 	}
 	return

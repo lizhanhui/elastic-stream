@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/pkg/errors"
 	"go.uber.org/zap"
 
@@ -65,6 +66,14 @@ func NewClient(cfg *config.SbpClient, lg *zap.Logger) *SbpClient {
 // On success, the response is returned. On error, the response is nil and the error is returned.
 func (c *SbpClient) Do(req protocol.OutRequest, addr Address) (protocol.InResponse, error) {
 	logger := c.lg.With(zap.String("address", addr))
+
+	debug := logger.Core().Enabled(zap.DebugLevel)
+	if debug {
+		traceID, _ := uuid.NewRandom()
+		logger = logger.With(zap.String("trace-id", traceID.String()))
+		logger.Debug("do request", zap.Any("request", req), zap.String("request-type", fmt.Sprintf("%T", req)))
+	}
+
 	if req.Timeout() > 0 {
 		ctx, cancel := context.WithTimeout(req.Context(), time.Duration(req.Timeout())*time.Millisecond)
 		defer cancel()
@@ -72,15 +81,19 @@ func (c *SbpClient) Do(req protocol.OutRequest, addr Address) (protocol.InRespon
 	}
 
 	// TODO retry when error is retryable
-	conn, err := c.connPool.getConn(req, addr)
+	cc, err := c.connPool.getConn(req, addr)
 	if err != nil {
 		logger.Error("failed to get connection", zap.Error(err))
 		return nil, errors.Wrapf(err, "get connection to %s", addr)
 	}
 
-	resp, err := conn.roundTrip(req)
+	resp, err := cc.roundTrip(req)
 	if err != nil {
 		logger.Error("round trip failed", zap.Error(err))
+	}
+
+	if debug {
+		logger.Debug("do request done", zap.Any("response", resp), zap.String("response-type", fmt.Sprintf("%T", resp)), zap.Error(err))
 	}
 
 	return resp, err
