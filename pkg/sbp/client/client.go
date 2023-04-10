@@ -71,7 +71,7 @@ func (c *SbpClient) Do(req protocol.OutRequest, addr Address) (protocol.InRespon
 	if debug {
 		traceID, _ := uuid.NewRandom()
 		logger = logger.With(zap.String("trace-id", traceID.String()))
-		logger.Debug("do request", zap.Any("request", req))
+		logger.Debug("do request", zap.Any("request", req), zap.String("request-type", fmt.Sprintf("%T", req)))
 	}
 
 	if req.Timeout() > 0 {
@@ -93,7 +93,7 @@ func (c *SbpClient) Do(req protocol.OutRequest, addr Address) (protocol.InRespon
 	}
 
 	if debug {
-		logger.Debug("do request done", zap.Any("response", resp), zap.Error(err))
+		logger.Debug("do request done", zap.Any("response", resp), zap.String("response-type", fmt.Sprintf("%T", resp)), zap.Error(err))
 	}
 
 	return resp, err
