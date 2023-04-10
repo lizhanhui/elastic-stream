@@ -12,6 +12,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/AutoMQ/placement-manager/pkg/sbp/codec"
+	"github.com/AutoMQ/placement-manager/pkg/server/config"
 )
 
 var (
@@ -21,18 +22,12 @@ var (
 
 // Server is an SBP server
 type Server struct {
-	// TODO move into a config
-	// HeartbeatInterval defines the time interval between sending heartbeats from client to server.
-	HeartbeatInterval time.Duration
-	// HeartbeatMissCount is the number of consecutive heartbeats that the server can miss
-	// before considering the client to be unresponsive and terminating the connection.
-	HeartbeatMissCount int
-
+	ctx          context.Context
 	shuttingDown atomic.Bool
-	handler      Handler
 
-	ctx context.Context
-	lg  *zap.Logger
+	cfg *config.SbpServer
+
+	handler Handler
 
 	mu          sync.Mutex
 	listeners   map[*net.Listener]struct{}
@@ -41,12 +36,15 @@ type Server struct {
 
 	listenerGroup sync.WaitGroup
 	connGroup     sync.WaitGroup
+
+	lg *zap.Logger
 }
 
 // NewServer creates a server
-func NewServer(ctx context.Context, handler Handler, logger *zap.Logger) *Server {
+func NewServer(ctx context.Context, cfg *config.SbpServer, handler Handler, logger *zap.Logger) *Server {
 	return &Server{
 		ctx:     ctx,
+		cfg:     cfg,
 		handler: handler,
 		lg:      logger,
 	}
@@ -164,7 +162,7 @@ func (s *Server) newConn(rwc net.Conn) *conn {
 		serveMsgCh:       make(chan *serverMessage, 8),
 		streams:          make(map[uint32]*stream),
 		wScheduler:       newWriteScheduler(),
-		idleTimeout:      s.HeartbeatInterval * time.Duration(s.HeartbeatMissCount),
+		idleTimeout:      s.cfg.HeartbeatInterval * time.Duration(s.cfg.HeartbeatMissCount),
 		lg:               logger,
 	}
 	c.ctx, c.cancelCtx = context.WithCancel(s.ctx)

@@ -188,7 +188,7 @@ func (s *Server) startServer() error {
 	}
 	s.storage = storage.NewEtcd(s.client, s.rootPath, logger, s.leaderCmp)
 	s.cluster = cluster.NewRaftCluster(s.ctx, s.cfg.Cluster, logger)
-	s.sbpClient = sbpClient.Logger{LogAble: sbpClient.NewClient(logger)}
+	s.sbpClient = sbpClient.Logger{LogAble: sbpClient.NewClient(s.cfg.Sbp.Client, logger)}
 
 	sbpAddr := s.cfg.SbpAddr
 	listener, err := net.Listen("tcp", sbpAddr)
@@ -209,7 +209,7 @@ func (s *Server) serveSbp(listener net.Listener, c *cluster.RaftCluster) {
 	ctx, cancel := context.WithCancel(s.ctx)
 	defer cancel()
 
-	sbpSvr := sbpServer.NewServer(ctx, handler.Checker{Handler: handler.NewHandler(c, logger)}, logger)
+	sbpSvr := sbpServer.NewServer(ctx, s.cfg.Sbp.Server, handler.Checker{Handler: handler.NewHandler(c, logger)}, logger)
 	s.sbpServer = sbpSvr
 
 	logger.Info("sbp server started")

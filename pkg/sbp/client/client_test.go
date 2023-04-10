@@ -14,6 +14,7 @@ import (
 	"github.com/AutoMQ/placement-manager/api/rpcfb/rpcfb"
 	"github.com/AutoMQ/placement-manager/pkg/sbp/protocol"
 	"github.com/AutoMQ/placement-manager/pkg/sbp/server"
+	"github.com/AutoMQ/placement-manager/pkg/server/config"
 	tempurl "github.com/AutoMQ/placement-manager/pkg/util/testutil/url"
 )
 
@@ -29,7 +30,7 @@ func TestClient_SealRanges(t *testing.T) {
 	addr, shutdown := startServer(t, &mockHandler{}, logger)
 	defer shutdown()
 
-	client := NewClient(logger)
+	client := NewClient(&config.SbpClient{}, logger)
 	defer client.Shutdown(context.Background())
 
 	req := &protocol.SealRangesRequest{SealRangesRequestT: rpcfb.SealRangesRequestT{
@@ -58,7 +59,7 @@ func TestClientTimeout(t *testing.T) {
 	}}, logger)
 	defer shutdown()
 
-	client := NewClient(logger)
+	client := NewClient(&config.SbpClient{}, logger)
 	defer client.Shutdown(context.Background())
 
 	req := &protocol.SealRangesRequest{SealRangesRequestT: rpcfb.SealRangesRequestT{
@@ -79,7 +80,7 @@ func startServer(tb testing.TB, handler server.Handler, lg *zap.Logger) (addr st
 	listener, err := net.Listen("tcp", addr)
 	re.NoError(err)
 
-	s := server.NewServer(context.Background(), handler, lg)
+	s := server.NewServer(context.Background(), &config.SbpServer{}, handler, lg)
 	go func() {
 		_ = s.Serve(listener)
 	}()

@@ -21,14 +21,14 @@ const (
 
 // Sbp is the configuration for the SBP server and client
 type Sbp struct {
-	Server *Server
-	Client *Client
+	Server *SbpServer
+	Client *SbpClient
 }
 
 func NewSbp() *Sbp {
 	return &Sbp{
-		Server: &Server{},
-		Client: &Client{},
+		Server: &SbpServer{},
+		Client: &SbpClient{},
 	}
 }
 
@@ -65,8 +65,8 @@ func sbpConfigure(v *viper.Viper, fs *pflag.FlagSet) {
 	_ = v.BindPFlag("sbp.client.heartbeatTimeout", fs.Lookup("sbp-client-heartbeat-timeout"))
 }
 
-// Server is the configuration for the SBP server
-type Server struct {
+// SbpServer is the configuration for the SBP server
+type SbpServer struct {
 	// HeartbeatInterval defines the interval duration between sending heartbeats from client to server.
 	HeartbeatInterval time.Duration
 	// HeartbeatMissCount is the number of consecutive heartbeats that the server can miss
@@ -74,8 +74,8 @@ type Server struct {
 	HeartbeatMissCount int
 }
 
-// Client is the configuration for the SBP client
-type Client struct {
+// SbpClient is the configuration for the SBP client
+type SbpClient struct {
 	// IdleConnTimeout is the maximum amount of time an idle (keep-alive) connection
 	// will remain idle before closing itself.
 	// If zero, no idle connections are closed.

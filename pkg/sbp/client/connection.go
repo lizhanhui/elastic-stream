@@ -365,7 +365,7 @@ func (rl *connReadLoop) run() error {
 	logger := rl.cc.lg
 	cc := rl.cc
 
-	readIdleTimeout := cc.c.ReadIdleTimeout
+	readIdleTimeout := cc.c.cfg.ReadIdleTimeout
 	var t *time.Timer
 	if readIdleTimeout != 0 {
 		t = time.AfterFunc(readIdleTimeout, cc.healthCheck)
