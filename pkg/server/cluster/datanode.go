@@ -3,11 +3,13 @@ package cluster
 import (
 	"context"
 	"sort"
+	"time"
 
 	"github.com/pkg/errors"
 	"go.uber.org/zap"
 
 	"github.com/AutoMQ/placement-manager/api/rpcfb/rpcfb"
+	"github.com/AutoMQ/placement-manager/pkg/server/cluster/cache"
 	"github.com/AutoMQ/placement-manager/pkg/server/storage/kv"
 	"github.com/AutoMQ/placement-manager/pkg/util/traceutil"
 )
@@ -27,7 +29,10 @@ type DataNode interface {
 func (c *RaftCluster) Heartbeat(ctx context.Context, node *rpcfb.DataNodeT) error {
 	logger := c.lg.With(traceutil.TraceLogField(ctx))
 
-	updated := c.cache.SaveDataNode(node)
+	updated := c.cache.SaveDataNode(&cache.DataNode{
+		DataNodeT:      *node,
+		LastActiveTime: time.Now(),
+	})
 	if updated {
 		logger.Info("data node updated, start to save it", zap.Int32("node-id", node.NodeId), zap.String("advertise-addr", node.AdvertiseAddr))
 		_, err := c.storage.SaveDataNode(ctx, node)

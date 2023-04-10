@@ -53,21 +53,14 @@ func (c *Cache) WritableRange(streamID int64) *Range {
 
 // DataNode is the cache for DataNodeT and its status.
 type DataNode struct {
-	*rpcfb.DataNodeT
+	rpcfb.DataNodeT
 	LastActiveTime time.Time
-}
-
-func NewDataNode(dataNode *rpcfb.DataNodeT) *DataNode {
-	return &DataNode{
-		DataNodeT:      dataNode,
-		LastActiveTime: time.Now(),
-	}
 }
 
 // SaveDataNode saves a data node to the cache.
 // It returns true if the data node is updated.
-func (c *Cache) SaveDataNode(nodeT *rpcfb.DataNodeT) (updated bool) {
-	_ = c.dataNodes.Upsert(nodeT.NodeId, NewDataNode(nodeT), func(exist bool, valueInMap, newValue *DataNode) *DataNode {
+func (c *Cache) SaveDataNode(node *DataNode) (updated bool) {
+	_ = c.dataNodes.Upsert(node.NodeId, node, func(exist bool, valueInMap, newValue *DataNode) *DataNode {
 		if exist {
 			if !isDataNodeEqual(valueInMap.DataNodeT, newValue.DataNodeT) {
 				updated = true
@@ -107,7 +100,7 @@ func (c *Cache) DataNodeCount() int {
 	return c.dataNodes.Count()
 }
 
-func isDataNodeEqual(a, b *rpcfb.DataNodeT) bool {
+func isDataNodeEqual(a, b rpcfb.DataNodeT) bool {
 	return a.NodeId == b.NodeId &&
 		a.AdvertiseAddr == b.AdvertiseAddr
 }
