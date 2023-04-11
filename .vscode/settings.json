@@ -33,5 +33,4 @@
     },
     "terminal.integrated.cursorStyle": "line",
     "terminal.integrated.cursorBlinking": true,
-    "java.compile.nullAnalysis.mode": "disabled",
 }

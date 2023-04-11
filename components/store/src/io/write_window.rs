@@ -63,15 +63,14 @@ impl WriteWindow {
 
     fn advance(&mut self) -> Result<u64, WriteWindowError> {
         while let Some((completed_offset, _completed_len)) = self.completed.first_key_value() {
-            if *completed_offset > self.committed {
+            if self.committed < *completed_offset {
                 // Some writes, within the gap, are NOT yet completed
                 break;
             }
 
             // If completed_offset <= self.committed, it means we could move forward without doubt.
             if let Some((completed_offset, completed_len)) = self.completed.pop_first() {
-                self.committed = completed_offset + completed_len as u64;
-
+                self.committed = u64::max(completed_offset + completed_len as u64, self.committed);
                 trace!(
                     self.log,
                     "Advance committed position of WAL to: {}",
@@ -79,6 +78,7 @@ impl WriteWindow {
                 );
             }
         }
+
         Ok(self.committed)
     }
 

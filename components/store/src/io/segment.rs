@@ -571,7 +571,7 @@ mod tests {
 
         let log = test_util::terminal_logger();
         let mut buf_writer = AlignedBufWriter::new(log, 0, 512);
-        buf_writer.reserve(1024)?;
+        buf_writer.reserve_to(1024, config.store.segment_size as usize)?;
 
         let mut data = BytesMut::with_capacity(256);
         data.resize(256, 65);

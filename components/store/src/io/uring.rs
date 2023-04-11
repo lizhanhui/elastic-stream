@@ -25,6 +25,7 @@ use tokio::sync::oneshot;
 
 use super::block_cache::{EntryRange, MergeRange};
 use super::buf::AlignedBuf;
+use super::segment::FOOTER_LENGTH;
 use super::task::SingleFetchResult;
 use super::ReadTask;
 
@@ -260,6 +261,27 @@ impl IO {
         }
     }
 
+    #[inline]
+    fn add_pending_task(&mut self, mut io_task: IoTask, received: &mut usize) {
+        trace!(self.log, "Received an IO task from channel");
+        if !IO::validate_io_task(&mut io_task, &self.log) {
+            IO::on_bad_request(io_task);
+            return;
+        }
+
+        if let IoTask::Write(ref write_task) = io_task {
+            trace!(
+                self.log,
+                "Received an write-task stream-id={}, offset={}",
+                write_task.stream_id,
+                write_task.offset
+            );
+        }
+
+        self.pending_data_tasks.push_back(io_task);
+        *received += 1;
+    }
+
     fn receive_io_tasks(&mut self) -> usize {
         let mut received = 0;
         let io_depth = self.data_ring.params().sq_entries() as usize;
@@ -302,14 +324,8 @@ impl IO {
                 );
                 // Block the thread until at least one IO task arrives
                 match self.receiver.recv() {
-                    Ok(mut io_task) => {
-                        trace!(self.log, "An IO task is received from channel");
-                        if !IO::validate_io_task(&mut io_task, &self.log) {
-                            IO::on_bad_request(io_task);
-                            continue;
-                        }
-                        self.pending_data_tasks.push_back(io_task);
-                        received += 1;
+                    Ok(io_task) => {
+                        self.add_pending_task(io_task, &mut received);
                     }
                     Err(_e) => {
                         info!(self.log, "Channel for submitting IO task disconnected");
@@ -321,13 +337,8 @@ impl IO {
                 // Poll IO-task channel in non-blocking manner for more tasks given that greater IO depth exploits potential of
                 // modern storage products like NVMe SSD.
                 match self.receiver.try_recv() {
-                    Ok(mut io_task) => {
-                        if !IO::validate_io_task(&mut io_task, &self.log) {
-                            IO::on_bad_request(io_task);
-                            continue;
-                        }
-                        self.pending_data_tasks.push_back(io_task);
-                        received += 1;
+                    Ok(io_task) => {
+                        self.add_pending_task(io_task, &mut received);
                     }
                     Err(TryRecvError::Empty) => {
                         break received;
@@ -342,7 +353,7 @@ impl IO {
         }
     }
 
-    fn calculate_write_buffers(&self) -> Vec<usize> {
+    fn reserve_write_buffers(&self) -> Result<(), StoreError> {
         let mut requirement: VecDeque<_> = self
             .pending_data_tasks
             .iter()
@@ -355,7 +366,106 @@ impl IO {
             })
             .filter(|n| *n > 0)
             .collect();
-        self.wal.calculate_write_buffers(&mut requirement)
+        let buf_writer = unsafe { &mut *self.buf_writer.get() };
+        let requiring = requirement.iter().sum();
+        if buf_writer.remaining() >= requiring {
+            // If the remaining buffer is enough to hold all pending tasks, we don't need to allocate
+            // new buffers.
+            return Ok(());
+        }
+
+        let file_size = self.options.store.segment_size as usize;
+        debug_assert!(
+            file_size % self.options.store.alignment == 0,
+            "Segment file size should be multiple of alignment"
+        );
+        debug_assert!(
+            !requirement
+                .iter()
+                .any(|n| *n + FOOTER_LENGTH as usize > file_size),
+            "A single write task should not exceed the segment file size"
+        );
+        // The previously allocated buffers can be reused.
+        let mut pos = buf_writer.cursor as usize % file_size;
+        let mut max_allocated_wal_offset = buf_writer.max_allocated_wal_offset();
+        let mut to_allocate = 0;
+        {
+            let mut allocated = buf_writer.remaining();
+            while let Some(n) = requirement.front() {
+                if allocated > 0 {
+                    debug_assert!(pos + FOOTER_LENGTH as usize <= file_size);
+                    if pos + *n + FOOTER_LENGTH as usize > file_size {
+                        trace!(
+                            self.log,
+                            "Reach the end of a segment file. Take up {} bytes to append footer",
+                            file_size - pos
+                        );
+                        if allocated >= file_size - pos {
+                            trace!(
+                                self.log,
+                                "Already pre-allocated enough buffer for the footer"
+                            );
+                            allocated -= file_size - pos;
+                        } else {
+                            // Need to allocate a new buffer.
+                            let extra = file_size - pos - allocated;
+                            trace!(self.log, "Need to allocate {} bytes more for the footer", 
+                                extra; "pre-allocated" => allocated);
+                            // All pre-allocated buffers are used up.
+                            allocated = 0;
+                            let to = max_allocated_wal_offset + extra as u64;
+                            buf_writer.reserve_to(to, file_size)?;
+                            max_allocated_wal_offset = buf_writer.max_allocated_wal_offset();
+                        }
+
+                        // Allocate aligned buffers for the next segment.
+                        pos = 0;
+                    } else {
+                        pos += *n;
+                        if allocated >= *n {
+                            allocated -= *n;
+                            requirement.pop_front();
+                        } else {
+                            // Pre-allocated buffers are not large enough to hold the next task.
+                            // Account it to the new allocation.
+                            to_allocate += *n - allocated;
+                            requirement.pop_front();
+                            break;
+                        }
+                    }
+                } else {
+                    break;
+                }
+            }
+        }
+
+        // Allocate new buffers for the remaining tasks.
+        {
+            while let Some(n) = requirement.front() {
+                debug_assert!(pos + FOOTER_LENGTH as usize <= file_size);
+                if pos + *n + FOOTER_LENGTH as usize > file_size {
+                    println!("Reach end-of-segment: pos={}, n={}", pos, n);
+                    debug_assert!(file_size - pos < *n + FOOTER_LENGTH as usize);
+                    to_allocate += file_size - pos;
+                    let to = max_allocated_wal_offset + to_allocate as u64;
+                    buf_writer.reserve_to(to, file_size)?;
+                    max_allocated_wal_offset = buf_writer.max_allocated_wal_offset();
+                    pos = 0;
+                    to_allocate = 0;
+                } else {
+                    to_allocate += *n;
+                    pos += *n;
+                    requirement.pop_front();
+                }
+            }
+
+            if to_allocate > 0 {
+                let to = max_allocated_wal_offset + to_allocate as u64;
+                buf_writer.reserve_to(to, file_size)?;
+            }
+        }
+
+        Ok(())
     }
 
     fn build_read_sqe(
@@ -427,20 +537,20 @@ impl IO {
     }
 
     /// Some write SQEs are blocked by barriers. This method checks if any of these barriers is lifted.
-    /// 
+    ///
     /// Once the barrier-write task is completed, we shall dispatch the blocked ones immediately.
-    /// 
-    /// For example, the underlying storage device has an alignment of 4KiB and the 6KiB of data is 
+    ///
+    /// For example, the underlying storage device has an alignment of 4KiB and the 6KiB of data is
     /// requested to write. IO module would generate two writes to block layer: one is a full-4KiB and the
-    /// other is also 4KiB, yet carrying 2KiB valid data. Given than underying io_uring cannot guarantee 
-    /// ordering of the submitted write tasks, data appended to the partially-filled block-page must NOT 
+    /// other is also 4KiB, yet carrying 2KiB valid data. Given than underying io_uring cannot guarantee
+    /// ordering of the submitted write tasks, data appended to the partially-filled block-page must NOT
     /// submit to io_uring/block-layer untill the prior one is completed.
-    /// 
-    /// In this example, this method tells whether 
+    ///
+    /// In this example, this method tells whether
     fn has_write_sqe_unblocked(&self) -> bool {
-        self.blocked.iter().any(|(offset, _entry)| {
-            !self.barrier.contains(offset)
-        })
+        self.blocked
+            .iter()
+            .any(|(offset, _entry)| !self.barrier.contains(offset))
     }
 
     fn build_write_sqe(&mut self, entries: &mut Vec<squeue::Entry>) {
@@ -462,7 +572,9 @@ impl IO {
                         debug_assert!(buf.wal_offset >= segment.wal_offset);
                         debug_assert!(
                             buf.wal_offset + buf.capacity as u64
-                                <= segment.wal_offset + segment.size
+                                <= segment.wal_offset + segment.size,
+                                "buf.wal_offset: {}, buf.capacity: {}, segment.wal_offset: {}, segment.size: {}",
+                                buf.wal_offset, buf.capacity, segment.wal_offset, segment.size
                         );
                         let file_offset = buf.wal_offset - segment.wal_offset;
 
@@ -494,10 +606,12 @@ impl IO {
                             .user_data(context as u64);
 
                         if io_blocked {
-                            if let Some((ctx, _entry)) = self.blocked.insert(buf_wal_offset, (context, sqe)) {
-                                // Relase context of the dropped squeue::Entry
+                            if let Some((ctx, _entry)) =
+                                self.blocked.insert(buf_wal_offset, (context, sqe))
+                            {
+                                // Release context of the dropped squeue::Entry
                                 // See https://github.com/tokio-rs/io-uring/issues/230
-                                unsafe {Box::from_raw(ctx)};
+                                unsafe { Box::from_raw(ctx) };
                             }
                         } else {
                             entries.push(sqe);
@@ -519,24 +633,10 @@ impl IO {
     fn build_sqe(&mut self, entries: &mut Vec<squeue::Entry>) {
         let log = self.log.clone();
         let alignment = self.options.store.alignment;
-        let buf_list = self.calculate_write_buffers();
-        let left = self.buf_writer.get_mut().remaining();
-
-        buf_list
-            .iter()
-            .enumerate()
-            .flat_map(|(idx, n)| {
-                if 0 == idx {
-                    if *n > left {
-                        self.buf_writer.get_mut().reserve(*n - left)
-                    } else {
-                        Ok(())
-                    }
-                } else {
-                    self.buf_writer.get_mut().reserve(*n)
-                }
-            })
-            .count();
+        if let Err(e) = self.reserve_write_buffers() {
+            error!(log, "Failed to reserve write buffers"; "error" => %e);
+            return;
+        }
 
         let mut need_write = false;
 
@@ -640,8 +740,12 @@ impl IO {
 
                             if let Some(_sd) = segment.sd.as_ref() {
                                 if !segment.can_hold(payload_length as u64) {
-                                    if let Ok(pos) = segment.append_footer(writer) {
-                                        trace!(self.log, "Write position of WAL after padding segment footer: {}", pos);
+                                    if let Ok(cursor) = segment.append_footer(writer) {
+                                        trace!(
+                                            self.log,
+                                            "Write cursor of WAL after padding segment footer is: {}",
+                                            cursor
+                                        );
                                         need_write = true;
                                     }
                                     // Switch to a new log segment
@@ -649,15 +753,16 @@ impl IO {
                                 }
 
                                 let pre_written = segment.written;
-                                if let Ok(pos) = segment.append_record(writer, &task.buffer[..]) {
+                                if let Ok(cursor) = segment.append_record(writer, &task.buffer[..])
+                                {
                                     trace!(
                                         self.log,
-                                        "Write position of WAL after appending record: {}",
-                                        pos
+                                        "Write cursor of WAL after appending record is: {}",
+                                        cursor
                                     );
                                     // Set the written len of the task
                                     task.written_len = Some((segment.written - pre_written) as u32);
-                                    self.inflight_write_tasks.insert(pos, task);
+                                    self.inflight_write_tasks.insert(cursor, task);
                                     need_write = true;
                                 }
                                 break;
@@ -705,7 +810,7 @@ impl IO {
 
         trace!(
             self.log,
-            "Waiting for at least {}/{} CQE(s) to reap",
+            "Waiting for at least {}/{} data CQE(s) to reap",
             wanted,
             self.inflight
         );
@@ -741,10 +846,14 @@ impl IO {
         let mut cache_bytes = 0u32;
         let mut effected_segments = HashSet::new();
         {
-            let mut completion = self.data_ring.completion();
             let mut count = 0;
+            let mut completion = self.data_ring.completion();
             loop {
-                for cqe in completion.by_ref() {
+                if completion.is_empty() {
+                    break;
+                }
+
+                while let Some(cqe) = completion.next() {
                     count += 1;
                     let tag = cqe.user_data();
 
@@ -789,10 +898,6 @@ impl IO {
                 // This will flush any entries consumed in this iterator and will make available new entries in the queue
                 // if the kernel has produced some entries in the meantime.
                 completion.sync();
-
-                if completion.is_empty() {
-                    break;
-                }
             }
             debug_assert!(self.inflight >= count);
             self.inflight -= count;
@@ -1363,6 +1468,94 @@ mod tests {
         Ok(())
     }
 
+    #[inline]
+    fn align_up(n: u64, alignment: u64) -> u64 {
+        (n + alignment - 1) / alignment * alignment
+    }
+
+    #[test]
+    fn test_reserve_write_buffers() -> Result<(), Box<dyn Error>> {
+        let log = test_util::terminal_logger();
+        let store_path = test_util::create_random_path()?;
+        let _guard = test_util::DirectoryRemovalGuard::new(log.clone(), store_path.as_path());
+
+        let file_size = 1024 * 1024;
+        let mut io = IOBuilder::new(store_path.clone())
+            .segment_size(file_size)
+            .max_cache_size(file_size)
+            .build()?;
+
+        let buf_writer = unsafe { &mut *io.buf_writer.get() };
+        let alignment = buf_writer.alignment as u64;
+        buf_writer.reserve_to(4096, file_size as usize)?;
+        assert_eq!(0, buf_writer.cursor);
+
+        let mut bytes = BytesMut::with_capacity(1016);
+        bytes.resize(1016, 0);
+        let bytes = bytes.freeze();
+
+        for _ in 0..4 {
+            let (tx, _rx) = oneshot::channel();
+            let write_task = WriteTask {
+                stream_id: 0,
+                offset: 0,
+                buffer: bytes.clone(),
+                observer: tx,
+                written_len: None,
+            };
+            let task = IoTask::Write(write_task);
+            io.pending_data_tasks.push_back(task);
+        }
+        io.reserve_write_buffers()?;
+        assert_eq!(
+            align_up(4096, alignment),
+            buf_writer.max_allocated_wal_offset()
+        );
+        assert_eq!(0, buf_writer.cursor);
+
+        for _ in 0..4 {
+            let (tx, _rx) = oneshot::channel();
+            let write_task = WriteTask {
+                stream_id: 0,
+                offset: 0,
+                buffer: bytes.clone(),
+                observer: tx,
+                written_len: None,
+            };
+            let task = IoTask::Write(write_task);
+            io.pending_data_tasks.push_back(task);
+        }
+        io.reserve_write_buffers()?;
+        assert_eq!(
+            align_up(8192, alignment),
+            buf_writer.max_allocated_wal_offset()
+        );
+        assert_eq!(0, buf_writer.cursor);
+
+        for _ in 0..1024 {
+            let (tx, _rx) = oneshot::channel();
+            let write_task = WriteTask {
+                stream_id: 0,
+                offset: 0,
+                buffer: bytes.clone(),
+                observer: tx,
+                written_len: None,
+            };
+            let task = IoTask::Write(write_task);
+            io.pending_data_tasks.push_back(task);
+        }
+        io.reserve_write_buffers()?;
+
+        // align((4 + 4 + 1024) * 1024 + padding(1024), 4096)
+        assert_eq!(
+            align_up((4 + 4 + 1024) * 1024 + 1024, alignment),
+            buf_writer.max_allocated_wal_offset()
+        );
+        assert_eq!(0, buf_writer.cursor);
+
+        Ok(())
+    }
+
     #[test]
     fn test_build_sqe() -> Result<(), StoreError> {
         let log = test_util::terminal_logger();
@@ -1412,7 +1605,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
     fn test_run_on_small_io() -> Result<(), Box<dyn Error>> {
         let (handle, sender) = create_and_run_io(create_small_io)?;
 

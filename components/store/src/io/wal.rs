@@ -8,7 +8,7 @@ use crate::{
     error::StoreError,
     index::{driver::IndexDriver, record_handle::RecordHandle},
     io::record::RecordType,
-    io::segment::{LogSegment, Medium, SegmentDescriptor, Status, FOOTER_LENGTH},
+    io::segment::{LogSegment, Medium, SegmentDescriptor, Status},
 };
 
 use io_uring::{opcode, squeue, types};
@@ -520,52 +520,20 @@ impl Wal {
         }
     }
 
-    pub(crate) fn calculate_write_buffers(&self, requirement: &mut VecDeque<usize>) -> Vec<usize> {
-        let mut write_buf_list = vec![];
-        let mut size = 0;
-        self.segments
-            .iter()
-            .rev()
-            .filter(|segment| segment.writable())
-            .rev()
-            .for_each(|segment| {
-                if requirement.is_empty() {
-                    return;
-                }
-
-                let remaining = segment.remaining() as usize;
-                while let Some(n) = requirement.front() {
-                    if size + n + FOOTER_LENGTH as usize > remaining {
-                        write_buf_list.push(remaining);
-                        size = 0;
-                        return;
-                    } else {
-                        size += n;
-                        requirement.pop_front();
-                    }
-                }
-
-                if size > 0 {
-                    write_buf_list.push(size);
-                    size = 0;
-                }
-            });
-        write_buf_list
-    }
-
     pub(crate) fn reap_control_tasks(&mut self) -> Result<(), StoreError> {
         // Map of segment offset to syscall result
         let mut m = HashMap::new();
         {
             let mut cq = self.control_ring.completion();
             loop {
-                for cqe in cq.by_ref() {
-                    m.insert(cqe.user_data(), cqe.result());
-                }
-                cq.sync();
                 if cq.is_empty() {
                     break;
                 }
+
+                while let Some(cqe) = cq.next() {
+                    m.insert(cqe.user_data(), cqe.result());
+                }
+                cq.sync();
             }
         }
 
@@ -676,23 +644,15 @@ impl Wal {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::VecDeque;
+    use crate::error::StoreError;
+    use crate::io::buf::AlignedBuf;
+    use crate::io::segment::{LogSegment, Status};
+    use percentage::Percentage;
+    use slog::error;
     use std::error::Error;
     use std::fs::File;
     use std::path::PathBuf;
     use std::sync::Arc;
-
-    use bytes::BytesMut;
-    use percentage::Percentage;
-    use slog::error;
-    use tokio::sync::oneshot;
-
-    use crate::error::StoreError;
-    use crate::io::buf::AlignedBuf;
-    use crate::io::{
-        segment::{LogSegment, Status},
-        task::{IoTask, WriteTask},
-    };
 
     use super::Wal;
 
@@ -843,95 +803,6 @@ mod tests {
             .collect();
         wal.delete_segments(offsets);
         assert_eq!(0, wal.segments.len());
-        Ok(())
-    }
-
-    #[test]
-    fn test_calculate_write_buffers() -> Result<(), StoreError> {
-        let log = test_util::terminal_logger();
-        let wal_dir = random_wal_dir()?;
-        let _wal_dir_guard = test_util::DirectoryRemovalGuard::new(log, wal_dir.as_path());
-
-        let mut cfg = config::Configuration::default();
-        cfg.store.path.set_wal(wal_dir.as_path().to_str().unwrap());
-        let config = Arc::new(cfg);
-        let mut wal = create_wal(&config)?;
-
-        (0..3)
-            .into_iter()
-            .map(|_| wal.open_segment_directly())
-            // `Result` implements the `FromIterator` trait, which allows an iterator over `Result` values to be collected
-            // into a `Result` of a collection of each contained value of the original `Result` values,
-            // or Err if any of the elements was `Err`.
-            // https://doc.rust-lang.org/std/result/#collecting-into-result
-            .collect::<Result<Vec<()>, StoreError>>()?;
-        wal.segments.iter_mut().for_each(|segment| {
-            segment.status = Status::ReadWrite;
-        });
-
-        let len = 4096;
-        let mut buf = BytesMut::with_capacity(len);
-        buf.resize(len, 65);
-        let buf = buf.freeze();
-
-        let mut pending_data_tasks: VecDeque<IoTask> = VecDeque::new();
-        (0..16).into_iter().for_each(|i| {
-            let (tx, _rx) = oneshot::channel();
-            pending_data_tasks.push_back(IoTask::Write(WriteTask {
-                stream_id: 0,
-                offset: i,
-                buffer: buf.clone(),
-                observer: tx,
-                written_len: None,
-            }));
-        });
-
-        let requirement: VecDeque<_> = pending_data_tasks
-            .iter()
-            .map(|task| match task {
-                IoTask::Write(task) => {
-                    debug_assert!(task.buffer.len() > 0);
-                    task.buffer.len() + 4 /* CRC */ + 3 /* Record Size */ + 1 /* Record Type */
-                }
-                _ => 0,
-            })
-            .filter(|n| *n > 0)
-            .collect();
-
-        // Case when there are multiple writable log segment files
-        let buffers = wal.calculate_write_buffers(&mut requirement.clone());
-        assert_eq!(1, buffers.len());
-        assert_eq!(Some(&65664), buffers.first());
-
-        // Case when the remaining of the first writable segment file can hold a record
-        let segment = wal.segments.front_mut().unwrap();
-        segment.written = segment.size - 4096 - 8 - crate::io::segment::FOOTER_LENGTH;
-        let buffers = wal.calculate_write_buffers(&mut requirement.clone());
-        assert_eq!(2, buffers.len());
-        assert_eq!(Some(&4128), buffers.first());
-        assert_eq!(Some(&61560), buffers.iter().nth(1));
-
-        // Case when the last writable log segment file cannot hold a record
-        let segment = wal.segments.front_mut().unwrap();
-        segment.written = segment.size - 4096 - 4;
-        let buffers = wal.calculate_write_buffers(&mut requirement.clone());
-        assert_eq!(2, buffers.len());
-        assert_eq!(Some(&4100), buffers.first());
-        assert_eq!(Some(&65664), buffers.iter().nth(1));
-
-        // Case when the is only one writable segment file and it cannot hold all records
-        wal.segments.iter_mut().for_each(|segment| {
-            segment.status = Status::Read;
-            segment.written = segment.size;
-        });
-        let segment = wal.segments.back_mut().unwrap();
-        segment.status = Status::ReadWrite;
-        segment.written = segment.size - 4096;
-
-        let buffers = wal.calculate_write_buffers(&mut requirement.clone());
-        assert_eq!(1, buffers.len());
-        assert_eq!(Some(&4096), buffers.first());
-
         Ok(())
     }
 

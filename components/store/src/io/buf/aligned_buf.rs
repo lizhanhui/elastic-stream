@@ -218,6 +218,10 @@ impl AlignedBuf {
     pub(crate) fn partial(&self) -> bool {
         self.limit() > 0 && self.limit() < self.capacity
     }
+
+    pub(crate) fn has_data(&self) -> bool {
+        self.limit() > 0
+    }
 }
 
 /// Return the memory back to allocator.

@@ -230,73 +230,71 @@ impl IndexDriverRunner {
             let index = selector.ready();
             if 0 == index {
                 match self.rx.try_recv() {
-                    Ok(index_command) => {
-                        match index_command {
-                            IndexCommand::Index {
-                                stream_id,
-                                offset,
-                                handle,
-                            } => {
-                                while let Err(e) = self.indexer.index(stream_id, offset, &handle) {
-                                    error!(self.log, "Failed to index: stream_id={}, offset={}, record_handle={:?}, cause: {}", 
+                    Ok(index_command) => match index_command {
+                        IndexCommand::Index {
+                            stream_id,
+                            offset,
+                            handle,
+                        } => {
+                            while let Err(e) = self.indexer.index(stream_id, offset, &handle) {
+                                error!(self.log, "Failed to index: stream_id={}, offset={}, record_handle={:?}, cause: {}", 
                                 stream_id, offset, handle, e);
-                                    sleep(std::time::Duration::from_millis(100));
+                                sleep(std::time::Duration::from_millis(100));
+                            }
+                        }
+                        IndexCommand::ScanRecord {
+                            stream_id,
+                            offset,
+                            max_offset,
+                            max_bytes,
+                            observer,
+                        } => {
+                            observer
+                                .send(self.indexer.scan_record_handles_left_shift(
+                                    stream_id, offset, max_offset, max_bytes,
+                                ))
+                                .unwrap_or_else(|_e| {
+                                    error!(
+                                        self.log,
+                                        "Failed to send scan result of {}/{} to observer.",
+                                        stream_id,
+                                        offset
+                                    );
+                                });
+                        }
+
+                        IndexCommand::ListRange { tx } => {
+                            self.indexer.list(tx);
+                        }
+
+                        IndexCommand::ListRangeByStream { stream_id, tx } => {
+                            self.indexer.list_by_stream(stream_id, tx);
+                        }
+
+                        IndexCommand::CreateRange { range, tx } => {
+                            match self.indexer.add(range.stream_id(), &range) {
+                                Ok(()) => {
+                                    let _ = tx.send(Ok(()));
                                 }
-                            }
-                            IndexCommand::ScanRecord {
-                                stream_id,
-                                offset,
-                                max_offset,
-                                max_bytes,
-                                observer,
-                            } => {
-                                observer
-                                    .send(self.indexer.scan_record_handles_left_shift(
-                                        stream_id, offset, max_offset, max_bytes,
-                                    ))
-                                    .unwrap_or_else(|_e| {
-                                        error!(
-                                            self.log,
-                                            "Failed to send scan result of {}/{} to observer.",
-                                            stream_id,
-                                            offset
-                                        );
-                                    });
-                            }
-
-                            IndexCommand::ListRange { tx } => {
-                                self.indexer.list(tx);
-                            }
-
-                            IndexCommand::ListRangeByStream { stream_id, tx } => {
-                                self.indexer.list_by_stream(stream_id, tx);
-                            }
-
-                            IndexCommand::CreateRange { range, tx } => {
-                                match self.indexer.add(range.stream_id(), &range) {
-                                    Ok(()) => {
-                                        let _ = tx.send(Ok(()));
-                                    }
-                                    Err(e) => {
-                                        error!(self.log, "Failed to add stream range: {}", range);
-                                        let _ = tx.send(Err(e));
-                                    }
-                                }
-                            }
-
-                            IndexCommand::SealRange { range, tx } => {
-                                match self.indexer.seal(range.stream_id(), &range) {
-                                    Ok(()) => {
-                                        let _ = tx.send(Ok(()));
-                                    }
-                                    Err(e) => {
-                                        error!(self.log, "Failed to seal range: {}", range);
-                                        let _ = tx.send(Err(e));
-                                    }
+                                Err(e) => {
+                                    error!(self.log, "Failed to add stream range: {}", range);
+                                    let _ = tx.send(Err(e));
                                 }
                             }
                         }
-                    }
+
+                        IndexCommand::SealRange { range, tx } => {
+                            match self.indexer.seal(range.stream_id(), &range) {
+                                Ok(()) => {
+                                    let _ = tx.send(Ok(()));
+                                }
+                                Err(e) => {
+                                    error!(self.log, "Failed to seal range: {}", range);
+                                    let _ = tx.send(Err(e));
+                                }
+                            }
+                        }
+                    },
                     Err(TryRecvError::Empty) => {
                         continue;
                     }

@@ -447,10 +447,10 @@ impl StreamManager {
     }
 
     /// Get a stream by id.
-    /// 
+    ///
     /// # Arguments
     /// `stream_id` - The id of the stream.
-    /// 
+    ///
     /// # Returns
     /// The stream if it exists, otherwise `None`.
     pub(crate) fn get_stream(&self, stream_id: i64) -> Option<&Stream> {
