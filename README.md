@@ -42,14 +42,9 @@ RUSTFLAGS=-Zsanitizer=address cargo test test_layout -Zbuild-std --target x86_64
 Read the [following link](https://doc.rust-lang.org/beta/unstable-book/compiler-flags/sanitizer.html) for more advanced usage.
 
 
-## Run ping-pong
+## Run
 
-### Launch Ping-Pong Server
+### Launch Data-Node Server
 ```sh
-cargo run --bin data-node
-```
-
-### Run Ping-Pong client
-```sh
-cargo run --bin ping-pong
+cargo run --bin data-node -- -c etc/config.yaml
 ```

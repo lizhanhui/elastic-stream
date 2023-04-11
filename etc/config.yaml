@@ -11,7 +11,7 @@ server:
     # Network io_uring queue depth
     queue-depth: 128
   # Placement manager address
-  placement-manager: "localhost:2378"
+  placement-manager: "114.116.40.8:2378"
 # Store configuration
 store:
   # Whether mkdirs if missing
