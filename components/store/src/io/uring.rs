@@ -1599,7 +1599,18 @@ mod tests {
     fn test_run_basic() -> Result<(), Box<dyn Error>> {
         let (handle, sender) = create_and_run_io(create_default_io)?;
 
-        send_and_receive(sender, 128, 16)?;
+        let records: Vec<_> = (0..16)
+            .into_iter()
+            .map(|_| {
+                let mut rng = rand::thread_rng();
+                let random_size = rand::Rng::gen_range(&mut rng, 2..128);
+                create_random_bytes(random_size)
+            })
+            .collect();
+
+        send_and_receive_with_records(sender.clone(), 0, 0, records);
+
+        drop(sender);
         handle.join().map_err(|_| StoreError::AllocLogSegment)?;
         Ok(())
     }
@@ -1608,9 +1619,19 @@ mod tests {
     fn test_run_on_small_io() -> Result<(), Box<dyn Error>> {
         let (handle, sender) = create_and_run_io(create_small_io)?;
 
-        // Will cost 4K * 1024 = 4M bytes, which means 4 segments will be allocated
+        // Will cost at least 4K * 1024 = 4M bytes, which means at least 4 segments will be allocated
         // And the cache reclaim will be triggered since a small io only has 1M cache
-        send_and_receive(sender, 4096, 1024)?;
+        let records: Vec<_> = (0..1024)
+            .into_iter()
+            .map(|_| {
+                let mut rng = rand::thread_rng();
+                let random_size = rand::Rng::gen_range(&mut rng, 4096..8192);
+                create_random_bytes(random_size)
+            })
+            .collect();
+        send_and_receive_with_records(sender.clone(), 0, 0, records);
+
+        drop(sender);
         handle.join().map_err(|_| StoreError::AllocLogSegment)?;
         Ok(())
     }
@@ -1619,97 +1640,10 @@ mod tests {
     fn test_send_and_receive_half_page() -> Result<(), Box<dyn Error>> {
         let (handle, sender) = create_and_run_io(create_default_io)?;
 
-        send_and_receive(sender, 199, 1)?;
-        handle.join().map_err(|_| StoreError::AllocLogSegment)?;
-        Ok(())
-    }
-
-    fn send_and_receive(
-        sender: Sender<IoTask>,
-        single_size: usize,
-        send_count: usize,
-    ) -> Result<(), Box<dyn Error>> {
-        let log = test_util::terminal_logger();
-
-        let mut buffer = BytesMut::with_capacity(single_size);
-        buffer.resize(single_size, 65);
-        let buffer = buffer.freeze();
-
-        let mut receivers = vec![];
-
-        (0..send_count)
-            .into_iter()
-            .map(|i| {
-                let (tx, rx) = oneshot::channel();
-                receivers.push(rx);
-                IoTask::Write(WriteTask {
-                    stream_id: 0,
-                    offset: i as i64,
-                    buffer: buffer.clone(),
-                    observer: tx,
-                    written_len: None,
-                })
-            })
-            .for_each(|task| {
-                sender.send(task).unwrap();
-            });
-
-        let mut results = Vec::new();
-        for receiver in receivers {
-            let res = receiver.blocking_recv()??;
-            trace!(
-                log,
-                "{{ stream-id: {}, offset: {} , wal_offset: {}}}",
-                res.stream_id,
-                res.offset,
-                res.wal_offset
-            );
-            results.push(res);
-        }
-
-        // Read the data from store
-        let mut receivers = vec![];
-
-        results
-            .iter()
-            .map(|res| {
-                let (tx, rx) = oneshot::channel();
-                receivers.push(rx);
-                IoTask::Read(ReadTask {
-                    stream_id: res.stream_id,
-                    wal_offset: res.wal_offset,
-                    len: single_size as u32 + crate::RECORD_PREFIX_LENGTH as u32,
-                    observer: tx,
-                })
-            })
-            .for_each(|task| {
-                sender.send(task).unwrap();
-            });
-
-        for receiver in receivers {
-            let res = receiver.blocking_recv()??;
-            trace!(
-                log,
-                "{{Read result is stream-id: {}, wal_offset: {}, payload length: {}}}",
-                res.stream_id,
-                res.wal_offset,
-                res.payload[0].len()
-            );
-            // Assert the payload is equal to the write buffer
-            // trace the length
-
-            let mut res_payload = BytesMut::new();
-            res.payload.iter().for_each(|r| {
-                res_payload.extend_from_slice(&r[..]);
-            });
-
-            assert_eq!(
-                buffer,
-                res_payload.freeze()[(crate::RECORD_PREFIX_LENGTH as usize)..]
-            );
-        }
+        send_and_receive_with_records(sender.clone(), 0, 0, vec![create_random_bytes(199)]);
         drop(sender);
 
+        handle.join().map_err(|_| StoreError::AllocLogSegment)?;
         Ok(())
     }
 
@@ -1757,79 +1691,9 @@ mod tests {
         let buffer = buffer.freeze();
         assert_eq!(buffer.len(), total as usize);
 
-        let mut receivers = vec![];
+        let records: Vec<_> = (0..16).into_iter().map(|_| buffer.clone()).collect();
 
-        (0..16)
-            .into_iter()
-            .map(|i| {
-                let (tx, rx) = oneshot::channel();
-                receivers.push(rx);
-                IoTask::Write(WriteTask {
-                    stream_id: 0,
-                    offset: i as i64,
-                    buffer: buffer.clone(),
-                    observer: tx,
-                    written_len: None,
-                })
-            })
-            .for_each(|task| {
-                sender.send(task).unwrap();
-            });
-
-        let mut results = Vec::new();
-        for receiver in receivers {
-            let res = receiver.blocking_recv()??;
-            trace!(
-                log,
-                "{{ stream-id: {}, offset: {} , wal_offset: {}}}",
-                res.stream_id,
-                res.offset,
-                res.wal_offset
-            );
-            results.push(res);
-        }
-
-        // Read the data from store
-        let mut receivers = vec![];
-
-        results
-            .iter()
-            .map(|res| {
-                let (tx, rx) = oneshot::channel();
-                receivers.push(rx);
-                IoTask::Read(ReadTask {
-                    stream_id: res.stream_id,
-                    wal_offset: res.wal_offset,
-                    len: total as u32 + 8, // 4096 is the write buffer size, 8 is the prefix added by the store
-                    observer: tx,
-                })
-            })
-            .for_each(|task| {
-                sender.send(task).unwrap();
-            });
-
-        for receiver in receivers {
-            let res = receiver.blocking_recv()??;
-            trace!(
-                log,
-                "{{Read result is stream-id: {}, wal_offset: {}, payload length: {}}}",
-                res.stream_id,
-                res.wal_offset,
-                res.payload[0].len()
-            );
-            // Assert the payload is equal to the write buffer
-            // trace the length
-
-            let mut res_payload = BytesMut::new();
-            res.payload.iter().for_each(|r| {
-                res_payload.extend_from_slice(&r[..]);
-            });
-
-            assert_eq!(
-                buffer,
-                res_payload.freeze()[(crate::RECORD_PREFIX_LENGTH as usize)..]
-            );
-        }
+        send_and_receive_with_records(sender.clone(), 0, 0, records);
 
         drop(sender);
         handle.join().map_err(|_| StoreError::AllocLogSegment)?;
@@ -1845,47 +1709,63 @@ mod tests {
         Ok(())
     }
 
-    fn create_io_with_segment_size(
-        store_dir: &Path,
-        segment_size: u64,
-    ) -> Result<super::IO, StoreError> {
-        // set the size of segment file
-        let logger = test_util::terminal_logger();
+    #[test]
+    fn test_multiple_run_with_random_bytes() -> Result<(), Box<dyn Error>> {
+        let log = test_util::terminal_logger();
 
-        let mut cfg = config::Configuration::default();
-        cfg.store.path.set_base(store_dir.to_str().unwrap());
-        cfg.store.segment_size = segment_size;
-        cfg.check_and_apply()
-            .map_err(|e| StoreError::Configuration(format!("{:?}", e)))?;
-        let config = Arc::new(cfg);
+        let (handle, sender) = create_and_run_io(create_small_io)?;
 
-        // Build wal offset manager
-        let wal_offset_manager = Arc::new(WalOffsetManager::new());
-
-        // Build index driver
-        let indexer = Arc::new(IndexDriver::new(
-            logger.clone(),
-            &config
-                .store
-                .path
-                .metadata_path()
-                .as_path()
-                .to_str()
-                .unwrap(),
-            Arc::clone(&wal_offset_manager) as Arc<dyn MinOffset>,
-            config.store.rocksdb.flush_threshold,
-        )?);
-
-        super::IO::new(&config, indexer, logger.clone())
+        let mut records: Vec<_> = vec![];
+        records.push(create_random_bytes(4096 - 8));
+        records.push(create_random_bytes(4096 - 8));
+        records.push(create_random_bytes(4096 - 8));
+        records.push(create_random_bytes(4096));
+        records.push(create_random_bytes(4096 - 8 - 8));
+        records.push(create_random_bytes(4096 - 8));
+        records.push(create_random_bytes(4096 - 8 - 24));
+        send_and_receive_with_records(sender.clone(), 0, 0, records);
+        let mut records: Vec<_> = vec![];
+        records.push(create_random_bytes(4096 - 8));
+        send_and_receive_with_records(sender.clone(), 0, 7, records);
+        let mut records: Vec<_> = vec![];
+        records.push(create_random_bytes(4096 - 8));
+        records.push(create_random_bytes(4096 - 8));
+        records.push(create_random_bytes(4096));
+        records.push(create_random_bytes(4096 - 8 - 8));
+        records.push(create_random_bytes(4096 - 8));
+        records.push(create_random_bytes(4096 - 8 - 24));
+        send_and_receive_with_records(sender.clone(), 0, 8, records);
+        drop(sender);
+        handle.join().map_err(|_| StoreError::AllocLogSegment)?;
+        Ok(())
     }
 
-    fn append_fetch_task(
-        log: slog::Logger,
+    #[test]
+    fn test_run_with_random_bytes() -> Result<(), Box<dyn Error>> {
+        let log = test_util::terminal_logger();
+        let (handle, sender) = create_and_run_io(create_small_io)?;
+
+        let mut records: Vec<_> = vec![];
+        let count = 1000;
+        (0..count).into_iter().for_each(|_| {
+            let mut rng = rand::thread_rng();
+            let random_size = rand::Rng::gen_range(&mut rng, 1000..9000);
+            records.push(create_random_bytes(random_size));
+        });
+        send_and_receive_with_records(sender.clone(), 0, 0, records);
+
+        drop(sender);
+        handle.join().map_err(|_| StoreError::AllocLogSegment)?;
+        Ok(())
+    }
+
+    fn send_and_receive_with_records(
         sender: crossbeam::channel::Sender<IoTask>,
         stream_id: i64,
-        offset: i64,
+        start_offset: i64,
         records: Vec<bytes::Bytes>,
     ) {
+        let log = test_util::terminal_logger();
         let mut receivers = vec![];
         records
             .iter()
@@ -1895,7 +1775,7 @@ mod tests {
                 receivers.push(rx);
                 IoTask::Write(WriteTask {
                     stream_id: stream_id,
-                    offset: offset + i as i64,
+                    offset: start_offset + i as i64,
                     buffer: buf.clone(),
                     observer: tx,
                     written_len: None,
@@ -1926,7 +1806,7 @@ mod tests {
             .map(|res| {
                 let (tx, rx) = oneshot::channel();
                 receivers.push(rx);
-                let idx = (res.offset - offset) as usize;
+                let idx = (res.offset - start_offset) as usize;
                 res_map.insert(res.wal_offset, &records[idx]);
                 IoTask::Read(ReadTask {
                     stream_id: res.stream_id,
@@ -1957,7 +1837,7 @@ mod tests {
             });
             assert_eq!(
                 *res_map[&(res.wal_offset as u64)],
-                res_payload.freeze()[8..]
+                res_payload.freeze()[(crate::RECORD_PREFIX_LENGTH as usize)..]
             );
         }
     }
@@ -1976,106 +1856,5 @@ mod tests {
             .collect();
         let buffer = random_string.as_bytes();
         BytesMut::from(buffer).freeze()
-    }
-
-    #[test]
-    fn test_run_2() -> Result<(), Box<dyn Error>> {
-        let log = test_util::terminal_logger();
-
-        let (tx, rx) = oneshot::channel();
-        let (recovery_completion_tx, recovery_completion_rx) = oneshot::channel();
-        let logger = log.clone();
-        let handle = std::thread::spawn(move || {
-            let store_dir = random_store_dir().unwrap();
-            let store_dir = store_dir.as_path();
-            let _store_dir_guard = test_util::DirectoryRemovalGuard::new(logger, store_dir);
-            let mut io = create_io_with_segment_size(store_dir, 4096 * 4).unwrap();
-
-            let sender = io
-                .sender
-                .take()
-                .ok_or(StoreError::Configuration("IO channel".to_owned()))
-                .unwrap();
-            let _ = tx.send(sender);
-            let io = RefCell::new(io);
-
-            let _ = super::IO::run(io, recovery_completion_tx);
-
-            println!("Module io stopped");
-        });
-
-        if let Err(_) = recovery_completion_rx.blocking_recv() {
-            panic!("Failed to await recovery completion");
-        }
-
-        let sender = rx
-            .blocking_recv()
-            .map_err(|_| StoreError::Internal("Internal error".to_owned()))?;
-
-        let mut records: Vec<_> = vec![];
-        records.push(create_random_bytes(4096 - 8));
-        records.push(create_random_bytes(4096 - 8));
-        records.push(create_random_bytes(4096 - 8));
-        records.push(create_random_bytes(4096));
-        records.push(create_random_bytes(4096 - 8 - 8));
-        records.push(create_random_bytes(4096 - 8));
-        records.push(create_random_bytes(4096 - 8 - 24));
-        append_fetch_task(log.clone(), sender.clone(), 0, 0, records);
-        let mut records: Vec<_> = vec![];
-        records.push(create_random_bytes(4096 - 8));
-        append_fetch_task(log.clone(), sender.clone(), 0, 7, records);
-        let mut records: Vec<_> = vec![];
-        records.push(create_random_bytes(4096 - 8));
-        records.push(create_random_bytes(4096 - 8));
-        records.push(create_random_bytes(4096));
-        records.push(create_random_bytes(4096 - 8 - 8));
-        records.push(create_random_bytes(4096 - 8));
-        records.push(create_random_bytes(4096 - 8 - 24));
-        append_fetch_task(log.clone(), sender.clone(), 0, 8, records);
-        drop(sender);
-        handle.join().map_err(|_| StoreError::AllocLogSegment)?;
-        Ok(())
-    }
-
-    #[test]
-    fn test_run_random() -> Result<(), Box<dyn Error>> {
-        let log = test_util::terminal_logger();
-        let (tx, rx) = oneshot::channel();
-        let (recovery_completion_tx, recovery_completion_rx) = oneshot::channel();
-        let logger = log.clone();
-        let handle = std::thread::spawn(move || {
-            let store_dir = random_store_dir().unwrap();
-            let store_dir = store_dir.as_path();
-            let _store_dir_guard = test_util::DirectoryRemovalGuard::new(logger, store_dir);
-            let mut io = create_io_with_segment_size(store_dir, 4096 * 4).unwrap();
-            let sender = io
-                .sender
-                .take()
-                .ok_or(StoreError::Configuration("IO channel".to_owned()))
-                .unwrap();
-            let _ = tx.send(sender);
-            let io = RefCell::new(io);
-            let _ = super::IO::run(io, recovery_completion_tx);
-        });
-        if let Err(_) = recovery_completion_rx.blocking_recv() {
-            panic!("Failed to await recovery completion");
-        }
-
-        let sender = rx
-            .blocking_recv()
-            .map_err(|_| StoreError::Internal("Internal error".to_owned()))?;
-
-        let mut records: Vec<_> = vec![];
-        let count = 1000;
-        (0..count).into_iter().for_each(|_| {
-            let mut rng = rand::thread_rng();
-            let random_size = rand::Rng::gen_range(&mut rng, 1000..9000);
-            records.push(create_random_bytes(random_size));
-        });
-        append_fetch_task(log.clone(), sender.clone(), 0, 0, records);
-
-        drop(sender);
-        handle.join().map_err(|_| StoreError::AllocLogSegment)?;
-        Ok(())
     }
 }
