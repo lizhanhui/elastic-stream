@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	clientv3 "go.etcd.io/etcd/client/v3"
@@ -125,7 +126,7 @@ func startSbpHandler(tb testing.TB, sbpClient sbpClient.Client) (*Handler, func(
 
 	_, client, closeFunc := testutil.StartEtcd(tb)
 
-	c := cluster.NewRaftCluster(context.Background(), &config.Cluster{SealReqTimeoutMs: 1000}, zap.NewNop())
+	c := cluster.NewRaftCluster(context.Background(), &config.Cluster{SealReqTimeoutMs: 1000, DataNodeTimeout: time.Minute}, zap.NewNop())
 	err := c.Start(&mockServer{c: client, sbpClient: sbpClient})
 	re.NoError(err)
 
