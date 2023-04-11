@@ -128,8 +128,10 @@ func (c *RaftCluster) loadInfo() error {
 
 	// load data nodes
 	start := time.Now()
-	err := c.storage.ForEachDataNode(c.ctx, func(datanode *rpcfb.DataNodeT) error {
-		_ = c.cache.SaveDataNode(datanode)
+	err := c.storage.ForEachDataNode(c.ctx, func(nodeT *rpcfb.DataNodeT) error {
+		_ = c.cache.SaveDataNode(&cache.DataNode{
+			DataNodeT: *nodeT,
+		})
 		return nil
 	})
 	if err != nil {

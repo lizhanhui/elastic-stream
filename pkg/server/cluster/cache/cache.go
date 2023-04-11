@@ -53,21 +53,14 @@ func (c *Cache) WritableRange(streamID int64) *Range {
 
 // DataNode is the cache for DataNodeT and its status.
 type DataNode struct {
-	*rpcfb.DataNodeT
+	rpcfb.DataNodeT
 	LastActiveTime time.Time
-}
-
-func NewDataNode(dataNode *rpcfb.DataNodeT) *DataNode {
-	return &DataNode{
-		DataNodeT:      dataNode,
-		LastActiveTime: time.Now(),
-	}
 }
 
 // SaveDataNode saves a data node to the cache.
 // It returns true if the data node is updated.
-func (c *Cache) SaveDataNode(nodeT *rpcfb.DataNodeT) (updated bool) {
-	_ = c.dataNodes.Upsert(nodeT.NodeId, NewDataNode(nodeT), func(exist bool, valueInMap, newValue *DataNode) *DataNode {
+func (c *Cache) SaveDataNode(node *DataNode) (updated bool) {
+	_ = c.dataNodes.Upsert(node.NodeId, node, func(exist bool, valueInMap, newValue *DataNode) *DataNode {
 		if exist {
 			if !isDataNodeEqual(valueInMap.DataNodeT, newValue.DataNodeT) {
 				updated = true
@@ -93,10 +86,13 @@ func (c *Cache) DataNode(nodeID int32) *DataNode {
 	return node
 }
 
-// DataNodes returns all data nodes in the cache.
-func (c *Cache) DataNodes() []*DataNode {
-	nodes := make([]*DataNode, 0, c.dataNodes.Count())
+// ActiveDataNodes returns all active data nodes.
+func (c *Cache) ActiveDataNodes(timeout time.Duration) []*DataNode {
+	nodes := make([]*DataNode, 0)
 	c.dataNodes.IterCb(func(_ int32, node *DataNode) {
+		if node.LastActiveTime.IsZero() || time.Since(node.LastActiveTime) > timeout {
+			return
+		}
 		nodes = append(nodes, node)
 	})
 	return nodes
@@ -107,7 +103,7 @@ func (c *Cache) DataNodeCount() int {
 	return c.dataNodes.Count()
 }
 
-func isDataNodeEqual(a, b *rpcfb.DataNodeT) bool {
+func isDataNodeEqual(a, b rpcfb.DataNodeT) bool {
 	return a.NodeId == b.NodeId &&
 		a.AdvertiseAddr == b.AdvertiseAddr
 }

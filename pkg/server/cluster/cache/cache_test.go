@@ -21,5 +21,5 @@ func Test_isDataNodeEqual(t *testing.T) {
 	node2.NodeId = node1.NodeId
 	node2.AdvertiseAddr = node1.AdvertiseAddr
 
-	re.True(isDataNodeEqual(&node1, &node2))
+	re.True(isDataNodeEqual(node1, node2))
 }

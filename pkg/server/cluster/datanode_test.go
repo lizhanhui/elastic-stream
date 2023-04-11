@@ -9,6 +9,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/AutoMQ/placement-manager/api/rpcfb/rpcfb"
+	"github.com/AutoMQ/placement-manager/pkg/server/cluster/cache"
 	"github.com/AutoMQ/placement-manager/pkg/util/fbutil"
 )
 
@@ -35,7 +36,9 @@ func TestRaftCluster_fillDataNodeInfo(t *testing.T) {
 	var node rpcfb.DataNodeT
 	_ = gofakeit.New(1).Struct(&node)
 	cluster := NewRaftCluster(context.Background(), nil, zap.NewNop())
-	cluster.cache.SaveDataNode(&node)
+	cluster.cache.SaveDataNode(&cache.DataNode{
+		DataNodeT: node,
+	})
 
 	node2 := rpcfb.DataNodeT{
 		NodeId: node.NodeId,
