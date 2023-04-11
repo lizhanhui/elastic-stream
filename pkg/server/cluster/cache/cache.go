@@ -86,10 +86,13 @@ func (c *Cache) DataNode(nodeID int32) *DataNode {
 	return node
 }
 
-// DataNodes returns all data nodes in the cache.
-func (c *Cache) DataNodes() []*DataNode {
-	nodes := make([]*DataNode, 0, c.dataNodes.Count())
+// ActiveDataNodes returns all active data nodes.
+func (c *Cache) ActiveDataNodes(timeout time.Duration) []*DataNode {
+	nodes := make([]*DataNode, 0)
 	c.dataNodes.IterCb(func(_ int32, node *DataNode) {
+		if node.LastActiveTime.IsZero() || time.Since(node.LastActiveTime) > timeout {
+			return
+		}
 		nodes = append(nodes, node)
 	})
 	return nodes

@@ -35,6 +35,7 @@ func (c *RaftCluster) Heartbeat(ctx context.Context, node *rpcfb.DataNodeT) erro
 	})
 	if updated {
 		logger.Info("data node updated, start to save it", zap.Int32("node-id", node.NodeId), zap.String("advertise-addr", node.AdvertiseAddr))
+		// FIXME: lock it when saving
 		_, err := c.storage.SaveDataNode(ctx, node)
 		logger.Info("finish saving data node", zap.Int32("node-id", node.NodeId), zap.Error(err))
 		if err != nil {
@@ -75,7 +76,7 @@ func (c *RaftCluster) chooseDataNodes(cnt int8) ([]*rpcfb.ReplicaNodeT, error) {
 		return nil, errors.Wrapf(ErrNotEnoughDataNodes, "required %d, available %d", cnt, c.cache.DataNodeCount())
 	}
 
-	nodes := c.cache.DataNodes()
+	nodes := c.cache.ActiveDataNodes(1 * time.Hour) // TODO make it configurable
 	// TODO more intelligent selection
 	sort.Slice(nodes, func(i, j int) bool {
 		return !nodes[i].LastActiveTime.Before(nodes[j].LastActiveTime)
