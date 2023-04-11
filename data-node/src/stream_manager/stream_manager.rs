@@ -456,18 +456,48 @@ impl StreamManager {
     pub(crate) fn get_stream(&self, stream_id: i64) -> Option<&Stream> {
         self.streams.get(&stream_id)
     }
+
+    /// Get `StreamRange` of the given stream_id and offset.
+    ///
+    /// # Arguments
+    /// `stream_id` - The ID of the stream.
+    /// `offset` - The logical offset, starting from which to fetch records.
+    ///
+    /// # Returns
+    /// The `StreamRange` if there is one.
+    ///
+    /// # Note
+    /// We need to update `limit` of the returning range if it is mutable.
+    pub fn stream_range_of(&self, stream_id: i64, offset: u64) -> Option<StreamRange> {
+        if let Some(stream) = self.get_stream(stream_id) {
+            return stream.range_of(offset).and_then(|mut range| {
+                if !range.is_sealed() {
+                    if let Some(window) = self.windows.get(&stream_id) {
+                        // TODO: use window.commit when replica is implemented.
+                        // range.set_limit(window.commit)
+                        range.set_limit(window.next);
+                    } else {
+                        error!(self.log, "Window should be present");
+                    }
+                }
+                Some(range)
+            });
+        }
+        None
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::{error::Error, rc::Rc};
+    use std::{error::Error, fs::OpenOptions, io::Write, rc::Rc, sync::Arc};
 
-    use model::range::StreamRange;
+    use model::{range::StreamRange, stream::Stream};
     use protocol::rpc::header::{Range, RangeT};
     use slog::trace;
+    use store::ElasticStore;
     use tokio::sync::{mpsc, oneshot};
 
-    use crate::stream_manager::{fetcher::Fetcher, StreamManager};
+    use crate::stream_manager::{append_window::AppendWindow, fetcher::Fetcher, StreamManager};
     const TOTAL: i32 = 16;
 
     async fn create_fetcher() -> Fetcher {
@@ -602,6 +632,65 @@ mod tests {
         });
         let _ = stop_tx.send(());
         let _ = handle.join();
+        Ok(())
+    }
+
+    #[test]
+    fn test_stream_range_of() -> Result<(), Box<dyn Error>> {
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        let fetcher = Fetcher::Channel { sender: tx };
+        let log = test_util::terminal_logger();
+        let mut config = config::Configuration::default();
+        let store_path = test_util::create_random_path()?;
+        let lock_path = store_path.join("LOCK");
+        let mut lock = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .write(true)
+            .open(lock_path.as_path())?;
+        let id = 0_i32;
+        lock.write_all(&id.to_be_bytes())?;
+        let _guard = test_util::DirectoryRemovalGuard::new(log.clone(), store_path.as_path());
+        config
+            .store
+            .path
+            .set_base(store_path.as_path().to_str().unwrap());
+        config.check_and_apply()?;
+
+        let config = Arc::new(config);
+        let (recovery_completion_tx, _recovery_completion_rx) = tokio::sync::oneshot::channel();
+        let store = Rc::new(ElasticStore::new(
+            log.clone(),
+            &config,
+            recovery_completion_tx,
+        )?);
+        let mut stream_manager = StreamManager::new(log, fetcher, store);
+        let range1 = StreamRange::new(0, 0, 0, 10, Some(10));
+        let range2 = StreamRange::new(0, 1, 10, 0, None);
+        let stream = Stream::new(0, vec![range1, range2]);
+        stream_manager.streams.insert(0, stream);
+        let append_window = AppendWindow::new(0, 100);
+        stream_manager.windows.insert(0, append_window);
+
+        // Verify the sealed one
+        {
+            use model::range::Range;
+            let stream_range = stream_manager
+                .stream_range_of(0, 5)
+                .expect("Stream range should exist");
+            assert!(stream_range.is_sealed());
+            assert_eq!(Some(10), stream_range.end());
+            assert_eq!(10, stream_range.limit());
+            assert_eq!(0, stream_range.start());
+            assert_eq!(0, stream_range.stream_id());
+        }
+
+        let stream_range = stream_manager
+            .stream_range_of(0, 30)
+            .expect("Stream range should exist");
+        assert_eq!(10, stream_range.start());
+        assert_eq!(100, stream_range.limit());
+        assert_eq!(None, stream_range.end());
         Ok(())
     }
 }

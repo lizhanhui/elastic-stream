@@ -165,34 +165,29 @@ impl<'a> Fetch<'a> {
             .flatten()
             .map(|req| {
                 let stream_id = req.stream_id();
-                let sm = stream_manager.borrow();
-                let stream = sm.get_stream(stream_id);
 
-                // If the stream exists and contains the requested offset,
-                // then we retrieve the range and build the read options
-                if let Some(stream) = stream {
-                    if let Some(range) = stream.range_of(req.fetch_offset() as u64) {
-                        let max_offset = match range.end() {
-                            // For a sealed range, the upper bound is the end offset(exclusive)
-                            Some(end) => Some(end as i64),
-                            // For a non-sealed range, the upper bound is the limit offset(exclusive)
-                            // Please note that the stream manager only updates the limit offset after a successful replication
-                            None => Some(range.limit() as i64),
-                        };
-                        return Ok(ReadOptions {
-                            stream_id: req.stream_id(),
-                            offset: req.fetch_offset(),
-                            max_offset: max_offset,
-                            max_wait_ms: self.fetch_request.max_wait_ms(),
-                            max_bytes: req.batch_max_bytes(),
-                        });
-                    }
-
-                    // Cannot find the matching range for the requested offset
-                    return Err(FetchError::RangeNotFound);
+                // If the stream-range exists and contains the requested offset, build the read options
+                if let Some(range) = stream_manager
+                    .borrow()
+                    .stream_range_of(stream_id, req.fetch_offset() as u64)
+                {
+                    let max_offset = match range.end() {
+                        // For a sealed range, the upper bound is the end offset(exclusive)
+                        Some(end) => Some(end as i64),
+                        // For a non-sealed range, the upper bound is the limit offset(exclusive)
+                        // Please note that the stream manager only updates the limit offset after a successful replication
+                        None => Some(range.limit() as i64),
+                    };
+                    return Ok(ReadOptions {
+                        stream_id: req.stream_id(),
+                        offset: req.fetch_offset(),
+                        max_offset: max_offset,
+                        max_wait_ms: self.fetch_request.max_wait_ms(),
+                        max_bytes: req.batch_max_bytes(),
+                    });
                 }
-                // Cannot find the stream in the current data node
-                return Err(FetchError::StreamNotFound);
+                // Cannot find the range in the current data node
+                return Err(FetchError::RangeNotFound);
             })
             .collect()
     }
