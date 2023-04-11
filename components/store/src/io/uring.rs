@@ -263,19 +263,29 @@ impl IO {
 
     #[inline]
     fn add_pending_task(&mut self, mut io_task: IoTask, received: &mut usize) {
-        trace!(self.log, "Received an IO task from channel");
         if !IO::validate_io_task(&mut io_task, &self.log) {
             IO::on_bad_request(io_task);
             return;
         }
-
-        if let IoTask::Write(ref write_task) = io_task {
-            trace!(
-                self.log,
-                "Received an write-task stream-id={}, offset={}",
-                write_task.stream_id,
-                write_task.offset
-            );
+        // Log received IO-task.
+        match &io_task {
+            IoTask::Write(write_task) => {
+                trace!(
+                    self.log,
+                    "Received a write-task from channel: stream-id={}, offset={}",
+                    write_task.stream_id,
+                    write_task.offset
+                );
+            }
+            IoTask::Read(read_task) => {
+                trace!(
+                    self.log,
+                    "Received a read-task from channel: stream-id={}, wal-offset={}, len={}",
+                    read_task.stream_id,
+                    read_task.wal_offset,
+                    read_task.len,
+                );
+            }
         }
 
         self.pending_data_tasks.push_back(io_task);
