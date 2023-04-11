@@ -2,7 +2,6 @@ package sdk.elastic.storage.client.impl;
 
 import com.google.common.cache.CacheLoader;
 import java.util.AbstractMap;
-import java.util.Map;
 import java.util.TreeMap;
 import java.util.concurrent.CompletableFuture;
 import org.slf4j.Logger;

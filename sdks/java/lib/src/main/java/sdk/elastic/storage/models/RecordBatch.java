@@ -1,12 +1,12 @@
 package sdk.elastic.storage.models;
 
-import java.util.Map;
-import sdk.elastic.storage.client.common.ProtocolUtil;
 import com.google.common.base.Preconditions;
 import com.google.flatbuffers.FlatBufferBuilder;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import sdk.elastic.storage.client.common.ProtocolUtil;
 import sdk.elastic.storage.flatc.records.RecordBatchMeta;
 import sdk.elastic.storage.flatc.records.RecordBatchMetaT;
 import sdk.elastic.storage.flatc.records.RecordMeta;
@@ -18,15 +18,28 @@ import sdk.elastic.storage.flatc.records.RecordMetaT;
  * Besides, offsets of records in a record batch are in ascending order. However, timestamps of records in a record batch may be not.
  */
 public class RecordBatch {
+    /**
+     * The minimum length of a record batch.
+     */
     private static final int MIN_LENGTH = 13;
     private static final byte DEFAULT_MAGIC = 0x22;
     private static final short DEFAULT_FLAG = 0;
     private static final int MAX_OFFSET_DELTA = Integer.MAX_VALUE;
+    /**
+     * A fixed value representing the batch version.
+     */
     private final byte magic;
+    /**
+     * The metadata of this record batch.
+     */
     private final RecordBatchMetaT batchMeta;
+    /**
+     * The records in this record batch.
+     */
     private final List<Record> records;
 
-    public RecordBatch(long streamId, short flags, byte magic, Map<String, String> batchProperties, List<Record> records) {
+    public RecordBatch(long streamId, short flags, byte magic, Map<String, String> batchProperties,
+        List<Record> records) {
         Preconditions.checkArgument(records != null && records.size() > 0, "records should not be empty");
 
         this.magic = magic;

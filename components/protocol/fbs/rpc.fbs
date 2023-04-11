@@ -27,7 +27,10 @@ enum ErrorCode : int16 {
     TOO_MANY_REQUESTS = 1429,
     HEADER_FIELDS_TOO_LARGE = 1431,
     UNAVAILABLE_FOR_LEGAL_REASONS = 1451,
+    // Invalid request for a sealed range, such as appending.
     RANGE_ALREADY_SEALED = 1460,
+    // TODO: investigate other error scenes
+    RANGE_NOT_FOUND_FOR_GIVEN_OFFSET = 1461,
 
     // 15xx is reserved for placement manager errors
     // In case placement manager encounters an internal error, normally, this implies 

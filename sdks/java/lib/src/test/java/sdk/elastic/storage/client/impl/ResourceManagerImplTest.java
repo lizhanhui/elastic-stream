@@ -101,7 +101,7 @@ class ResourceManagerImplTest {
         rangeTArray[1].setRangeIndex(1);
         rangeTArray[1].setStartOffset(100);
         rangeTArray[1].setEndOffset(-1);
-        rangeTArray[1].setNextOffset(-1);
+        rangeTArray[1].setNextOffset(100);
 
         ListRangesResultT[] rangeResults = new ListRangesResultT[1];
         rangeResults[0] = new ListRangesResultT();
@@ -167,7 +167,7 @@ class ResourceManagerImplTest {
         rangeT.setRangeIndex(nextRangeIndex);
         rangeT.setStartOffset(100);
         rangeT.setEndOffset(-1);
-        rangeT.setNextOffset(-1);
+        rangeT.setNextOffset(100);
 
         SealRangesResultT[] sealRangesResultTS = new SealRangesResultT[1];
         sealRangesResultTS[0] = new SealRangesResultT();
@@ -218,7 +218,7 @@ class ResourceManagerImplTest {
         rangeT.setRangeIndex(2);
         rangeT.setStartOffset(100);
         rangeT.setEndOffset(-1);
-        rangeT.setNextOffset(-1);
+        rangeT.setNextOffset(100);
 
         DescribeRangeResultT describeRangeResultT = new DescribeRangeResultT();
         describeRangeResultT.setStatus(okStatus);
@@ -304,7 +304,7 @@ class ResourceManagerImplTest {
         rangeT.setRangeIndex(0);
         rangeT.setStartOffset(0);
         rangeT.setEndOffset(-1);
-        rangeT.setNextOffset(-1);
+        rangeT.setNextOffset(0);
         StreamT streamT = new StreamT();
         streamT.setStreamId(streamId);
         streamT.setReplicaNums(replicaNum);
@@ -341,7 +341,7 @@ class ResourceManagerImplTest {
         assertEquals(0, result.getRange().getRangeIndex());
         assertEquals(0, result.getRange().getStartOffset());
         assertEquals(-1, result.getRange().getEndOffset());
-        assertEquals(-1, result.getRange().getNextOffset());
+        assertEquals(0, result.getRange().getNextOffset());
         assertEquals(1, result.getRange().getReplicaNodes().length);
         assertEquals(replicaNodeT.getDataNode().getNodeId(), result.getRange().getReplicaNodes()[0].getDataNode().getNodeId());
         assertEquals(replicaNodeT.getDataNode().getAdvertiseAddr(), result.getRange().getReplicaNodes()[0].getDataNode().getAdvertiseAddr());

@@ -37,9 +37,5 @@ tomcat-annotations-api = { module = "org.apache.tomcat:annotations-api", version
 
 google-protoc = { module = "com.google.protobuf:protoc", version.ref = "google-protoc" }
 
-[bundles]
-#used for logging
-log4j = ["log4j-api", "log4j-core", "log4j-slf4j2-impl"]
-
 [plugins]
 protoc-grpc = { id = "io.grpc:protoc-gen-grpc-java", version.ref = "grpc" }

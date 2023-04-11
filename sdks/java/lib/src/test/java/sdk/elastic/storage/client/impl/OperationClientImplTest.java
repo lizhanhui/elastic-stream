@@ -20,6 +20,7 @@ import sdk.elastic.storage.client.route.Address;
 import sdk.elastic.storage.flatc.header.AppendResponseT;
 import sdk.elastic.storage.flatc.header.AppendResultT;
 import sdk.elastic.storage.flatc.header.ClientRole;
+import sdk.elastic.storage.flatc.header.CreateStreamResultT;
 import sdk.elastic.storage.flatc.header.DataNodeT;
 import sdk.elastic.storage.flatc.header.DescribeRangeResultT;
 import sdk.elastic.storage.flatc.header.ErrorCode;
@@ -30,6 +31,7 @@ import sdk.elastic.storage.flatc.header.HeartbeatResponseT;
 import sdk.elastic.storage.flatc.header.RangeT;
 import sdk.elastic.storage.flatc.header.ReplicaNodeT;
 import sdk.elastic.storage.flatc.header.StatusT;
+import sdk.elastic.storage.flatc.header.StreamT;
 import sdk.elastic.storage.models.OperationCode;
 import sdk.elastic.storage.models.RecordBatch;
 import sdk.elastic.storage.models.RecordBatchesGenerator;
@@ -39,6 +41,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 
 class OperationClientImplTest {
 
@@ -75,6 +78,42 @@ class OperationClientImplTest {
         resourceManager = mock(ResourceManager.class);
         streamRangeCache = mock(StreamRangeCache.class);
         operationClient = new OperationClientImpl(Duration.ofSeconds(10), nettyClient, resourceManager, streamRangeCache);
+    }
+
+    @Test
+    void createStreams() throws ExecutionException, InterruptedException {
+        long streamId = 0;
+        byte replicaNum = 1;
+        long retentionPeriodMs = Duration.ofDays(21).toMillis();
+
+        RangeT rangeT = new RangeT();
+        rangeT.setStreamId(streamId);
+        rangeT.setReplicaNodes(new ReplicaNodeT[] {replicaNodeT});
+        rangeT.setRangeIndex(0);
+        rangeT.setStartOffset(0);
+        rangeT.setEndOffset(-1);
+        rangeT.setNextOffset(0);
+        StreamT streamT = new StreamT();
+        streamT.setStreamId(streamId);
+        streamT.setReplicaNums(replicaNum);
+        streamT.setRetentionPeriodMs(retentionPeriodMs);
+
+        CreateStreamResultT createStreamResultT = new CreateStreamResultT();
+        createStreamResultT.setStatus(okStatus);
+        createStreamResultT.setRange(rangeT);
+        createStreamResultT.setStream(streamT);
+        doReturn(CompletableFuture.completedFuture(Collections.singletonList(createStreamResultT))).when(resourceManager).createStreams(any(), any(Duration.class));
+
+        StreamT toCreatestreamT = new StreamT();
+        toCreatestreamT.setReplicaNums(replicaNum);
+        toCreatestreamT.setRetentionPeriodMs(retentionPeriodMs);
+        operationClient.createStreams(Collections.singletonList(toCreatestreamT), DEFAULT_REQUEST_TIMEOUT).thenAccept(
+            resultTList -> {
+                assertEquals(streamId, resultTList.get(0).getStream().getStreamId());
+                verify(streamRangeCache).put(streamId, new RangeT[] {rangeT});
+            }
+        ).get();
+
     }
 
     @Test

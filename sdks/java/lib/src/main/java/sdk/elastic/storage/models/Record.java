@@ -12,12 +12,33 @@ import sdk.elastic.storage.flatc.records.RecordMeta;
  * Note that data nodes store records with a whole {@link RecordBatch} instead of a single {@link Record}.
  */
 public class Record {
+    /**
+     * The minimum length of an encoded record.
+     */
     public static final int ENCODED_MIN_LENGTH = 8;
+    /**
+     * The id of the stream which this record belongs to.
+     */
     private final long streamId;
+    /**
+     * The offset of this record in the stream.
+     */
     private final long offset;
+    /**
+     * The timestamp of this record.
+     */
     private final long timestamp;
+    /**
+     * The headers of this record. Headers store the commonly used attributes of Record, which are unrelated to any specific message protocol.
+     */
     private final Headers headers;
+    /**
+     * The properties of this record. Properties store the attributes of Record, which may be related to the message protocol.
+     */
     private final Map<String, String> properties;
+    /**
+     * The body of this record. Body stores the message payload.
+     */
     private final ByteBuffer body;
 
     public Record(long streamId, long offset, long timestamp, Headers headers, Map<String, String> properties,
@@ -120,5 +141,17 @@ public class Record {
         Record rhs = (Record) obj;
         return this.offset == rhs.offset &&
             equivalent(rhs);
+    }
+
+    @Override
+    public int hashCode() {
+        return new org.apache.commons.lang3.builder.HashCodeBuilder()
+            .append(this.offset)
+            .append(this.streamId)
+            .append(this.timestamp)
+            .append(this.headers)
+            .append(this.properties)
+            .append(this.body)
+            .toHashCode();
     }
 }
