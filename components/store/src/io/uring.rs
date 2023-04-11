@@ -1251,10 +1251,17 @@ fn on_complete(
                     log,
                     "Write to WAL range `[{}, {})` failed",
                     context.buf.wal_offset,
-                    context.buf.capacity
+                    context.buf.wal_offset + context.buf.capacity as u64
                 );
                 return Err(StoreError::System(-result));
             } else {
+                if result as usize != context.buf.capacity {
+                    error!(
+                        log,
+                        "Only {} of {} bytes are written to disk", result, context.buf.capacity
+                    );
+                    todo!("Implement write_all");
+                }
                 write_window
                     .commit(context.wal_offset, context.len)
                     .map_err(|e| {
@@ -1262,7 +1269,7 @@ fn on_complete(
                             log,
                             "Failed to commit `write`[{}, {}) into WriteWindow: {:?}",
                             context.wal_offset,
-                            context.len,
+                            context.wal_offset + context.len as u64,
                             e
                         );
                         StoreError::WriteWindow
@@ -1284,10 +1291,10 @@ fn on_complete(
                         "Read {} bytes from WAL range `[{}, {})`, but {} bytes expected",
                         result,
                         context.wal_offset,
-                        context.len,
+                        context.wal_offset + context.len as u64,
                         context.len
                     );
-                    return Err(StoreError::InsufficientData);
+                    todo!("Implement read_all");
                 }
                 context.buf.increase_written(result as usize);
                 Ok(())
