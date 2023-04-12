@@ -325,6 +325,7 @@ impl IO {
             if self.inflight
                 + received
                 + self.pending_data_tasks.len()
+                + self.blocked.len()
                 + self.wal.inflight_control_task_num()
                 == 0
             {
