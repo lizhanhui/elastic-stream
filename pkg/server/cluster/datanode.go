@@ -72,11 +72,11 @@ func (c *RaftCluster) chooseDataNodes(cnt int8) ([]*rpcfb.ReplicaNodeT, error) {
 	if cnt <= 0 {
 		return nil, nil
 	}
-	if int(cnt) > c.cache.DataNodeCount() {
-		return nil, errors.Wrapf(ErrNotEnoughDataNodes, "required %d, available %d", cnt, c.cache.DataNodeCount())
-	}
 
 	nodes := c.cache.ActiveDataNodes(c.cfg.DataNodeTimeout)
+	if int(cnt) > len(nodes) {
+		return nil, errors.Wrapf(ErrNotEnoughDataNodes, "required %d, available %d", cnt, len(nodes))
+	}
 	// TODO more intelligent selection
 	sort.Slice(nodes, func(i, j int) bool {
 		return !nodes[i].LastActiveTime.Before(nodes[j].LastActiveTime)

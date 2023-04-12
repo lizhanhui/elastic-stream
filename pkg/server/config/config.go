@@ -221,7 +221,10 @@ func (c *Config) Validate() error {
 // Logger returns logger generated based on the config
 // It can be used after calling NewConfig
 func (c *Config) Logger() *zap.Logger {
-	return c.lg
+	if c != nil {
+		return c.lg
+	}
+	return nil
 }
 
 func newViper() *viper.Viper {
