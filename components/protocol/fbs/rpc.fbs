@@ -14,6 +14,8 @@ enum ErrorCode : int16 {
 
     // 12xx means success or partial success.
     OK = 1200,
+    // Requested offset = next_offset. Note that this code only applies to open ranges.
+    NO_NEW_RECORD = 1204,
 
     // 14xx for client errors
     BAD_REQUEST = 1400,
@@ -29,8 +31,12 @@ enum ErrorCode : int16 {
     UNAVAILABLE_FOR_LEGAL_REASONS = 1451,
     // Invalid request for a sealed range, such as appending.
     RANGE_ALREADY_SEALED = 1460,
-    // TODO: investigate other error scenes
-    RANGE_NOT_FOUND_FOR_GIVEN_OFFSET = 1461,
+    // For an open range, the requested offset > next_offset. 
+    OFFSET_OVERFLOW = 1461,
+    // Requested range not found.
+    RANGE_NOT_FOUND = 1462,
+    // For a sealded range, the requested offset is out of range bounds. For an open range, the requested offset < start_offset.
+    OFFSET_OUT_OF_RANGE_BOUNDS = 1463,
 
     // 15xx is reserved for placement manager errors
     // In case placement manager encounters an internal error, normally, this implies 
@@ -180,8 +186,8 @@ table FetchRequest {
 }
 
 table FetchInfo {
-    // A specfic stream to fetch data from.
-    stream_id: int64 = -1 (id: 0);
+    // The stream range to fetch.
+    range: Range (id: 0);
     // The index of the request in the batch.
     request_index: int32 (id: 1);
     // The offset to fetch from.
