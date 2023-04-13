@@ -6,6 +6,8 @@ use model::{
 use protocol::rpc::header::ErrorCode;
 use slog::{error, info, trace, Logger};
 use std::{
+    cell::RefCell,
+    collections::HashMap,
     io::ErrorKind,
     net::{SocketAddr, ToSocketAddrs},
     rc::Rc,
@@ -18,7 +20,7 @@ pub(crate) struct CompositeSession {
     target: String,
     config: Rc<ClientConfig>,
     lb_policy: LbPolicy,
-    sessions: Vec<Session>,
+    sessions: RefCell<HashMap<SocketAddr, Session>>,
     log: Logger,
 }
 
@@ -32,21 +34,22 @@ impl CompositeSession {
     where
         T: ToSocketAddrs + ToString,
     {
-        let mut sessions = vec![];
+        let mut sessions = RefCell::new(HashMap::new());
         // For now, we just resolve one session out of the target.
         // In the future, we would support multiple internal connection and load balancing among them.
         for socket_addr in target
             .to_socket_addrs()
             .map_err(|_e| ClientError::BadAddress)?
         {
-            let session = Self::connect(socket_addr, config.connect_timeout, &config, &log).await?;
-            sessions.push(session);
+            let session =
+                Self::connect(socket_addr.clone(), config.connect_timeout, &config, &log).await?;
+            sessions.borrow_mut().insert(socket_addr, session);
         }
         info!(
             log,
             "CompositeSession to {} has {} internal session(s)",
             target.to_string(),
-            sessions.len()
+            sessions.borrow().len()
         );
         Ok(Self {
             target: target.to_string(),
@@ -61,8 +64,11 @@ impl CompositeSession {
         true
     }
 
+    /// Broadcast heartbeat requests to all nested sessions.
+    ///
+    ///
     pub(crate) async fn heartbeat(&self) -> Result<(), ClientError> {
-        if let Some(session) = self.sessions.first() {
+        if let Some((_, session)) = self.sessions.borrow().iter().next() {
             let request = Request::Heartbeat {
                 client_id: self.config.client_id.clone(),
                 role: ClientRole::DataNode,
@@ -106,7 +112,7 @@ impl CompositeSession {
         host: &str,
         timeout: Duration,
     ) -> Result<i32, ClientError> {
-        if let Some(session) = self.sessions.first() {
+        if let Some((_, session)) = self.sessions.borrow().iter().next() {
             let request = Request::AllocateId {
                 timeout: self.config.io_timeout,
                 host: host.to_owned(),
@@ -150,7 +156,7 @@ impl CompositeSession {
         criteria: RangeCriteria,
     ) -> Result<Vec<StreamRange>, ClientError> {
         // TODO: apply load-balancing among `self.sessions`.
-        if let Some(session) = self.sessions.first() {
+        if let Some((_, session)) = self.sessions.borrow().iter().next() {
             let request = Request::ListRanges {
                 timeout: self.config.io_timeout,
                 criteria: vec![criteria],
@@ -188,6 +194,71 @@ impl CompositeSession {
             }
         }
         Err(ClientError::ClientInternal)
+    }
+
+    /// Describe current placement manager cluster membership.
+    ///
+    /// There are multiple rationales for this RPC.
+    /// 1. Placement manager is built on top of RAFT consensus algorithm and election happens in case of leader outage. Some RPCs
+    ///    should steer to the leader node and need to refresh the leadership on failure;
+    /// 2. Heartbeat, metrics-reporting RPC requests should broadcast to all placement manager nodes, so that when leader changes,
+    ///    data-node liveness and load evaluation are not impacted.
+    ///
+    /// # Implementation walkthrough
+    /// Step 1: If placement manager access URL uses domain name, resolve it;
+    ///  1.1 If the result `SocketAddress` has an existing `Session`, re-use it and go to step 2;
+    ///  1.2 If the result `SocketAddress` is completely new, connect and build a new `Session`
+    /// Step 2: Send DescribePlacementManagerRequest to the `Session` discovered in step 1;
+    /// Step 3: Once response is received from placement manager server, update the aggregated `Session` table, including leadership
+    async fn describe_placement_manager_cluster(&self) -> Result<(), ClientError> {
+        let addrs = self
+            .target
+            .to_socket_addrs()
+            .map_err(|e| {
+                error!(
+                    self.log,
+                    "Failed to parse {} into SocketAddr: {:?}", self.target, e
+                );
+                ClientError::BadAddress
+            })?
+            .into_iter()
+            .collect::<Vec<_>>();
+
+        let (mut tx, rx) = oneshot::channel();
+        let data_node = self
+            .config
+            .data_node
+            .clone()
+            .ok_or(ClientError::ClientInternal)?;
+        let request = Request::DescribePlacementManager { data_node };
+
+        let mut request_sent = false;
+        for addr in &addrs {
+            if let Some(session) = self.sessions.borrow().get(addr) {
+                if let Err(tx_) = session.write(&request, tx).await {
+                    tx = tx_;
+                    error!(self.log, "Failed to send request to {}", addr);
+                    continue;
+                }
+                request_sent = true;
+                break;
+            }
+        }
+
+        if !request_sent {
+            if let Some(addr) = addrs.first() {
+                let session = Self::connect(
+                    addr.clone(),
+                    self.config.connect_timeout,
+                    &self.config,
+                    &self.log,
+                )
+                .await?;
+                self.sessions.borrow_mut().insert(addr.clone(), session);
+            }
+        }
+
+        Ok(())
     }
 
     async fn connect(
@@ -231,11 +302,11 @@ impl CompositeSession {
 
 #[cfg(test)]
 mod tests {
-    use std::{error::Error, rc::Rc};
-
-    use crate::{client::lb_policy::LbPolicy, ClientConfig};
+    use model::DataNode;
 
     use super::CompositeSession;
+    use crate::{client::lb_policy::LbPolicy, ClientConfig};
+    use std::{error::Error, rc::Rc};
 
     #[test]
     fn test_new() -> Result<(), Box<dyn Error>> {
@@ -248,6 +319,31 @@ mod tests {
                 CompositeSession::new(&target, client_config, LbPolicy::PickFirst, log.clone())
                     .await?;
 
+            Ok(())
+        })
+    }
+
+    #[test]
+    #[ignore]
+    fn test_describe_placement_manager_cluster() -> Result<(), Box<dyn Error>> {
+        let log = test_util::terminal_logger();
+        let mut client_config = ClientConfig::default();
+        let data_node = DataNode {
+            node_id: 1,
+            advertise_address: "localhost:1234".to_owned(),
+        };
+        client_config.with_data_node(data_node);
+        let client_config = Rc::new(client_config);
+        tokio_uring::start(async {
+            let port = test_util::run_listener(log.clone()).await;
+            let target = format!("{}:{}", "localhost", port);
+            let composite_session =
+                CompositeSession::new(&target, client_config, LbPolicy::PickFirst, log.clone())
+                    .await?;
+            composite_session
+                .describe_placement_manager_cluster()
+                .await
+                .unwrap();
             Ok(())
         })
     }
