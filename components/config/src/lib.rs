@@ -1,18 +1,95 @@
+use std::{
+    process,
+    sync::atomic::{AtomicUsize, Ordering},
+    time::Duration,
+};
+
 use error::ConfigurationError;
+use model::DataNode;
 use nix::sys::stat;
 use serde::{Deserialize, Serialize};
 pub mod error;
 
-#[derive(Debug, Serialize, Deserialize)]
+lazy_static::lazy_static! {
+    static ref CLIENT_ID_COUNTER: AtomicUsize = AtomicUsize::new(0);
+}
+
+fn client_id() -> String {
+    let hostname = gethostname::gethostname()
+        .into_string()
+        .unwrap_or(String::from("unknown"));
+    format!(
+        "{}-{}-{}",
+        hostname,
+        process::id(),
+        CLIENT_ID_COUNTER.fetch_add(1, Ordering::Relaxed)
+    )
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Client {
+    /// Establish connection timeout in ticks
+    #[serde(rename = "connect-timeout")]
+    pub connect_timeout: u64,
+
+    /// IO timeout in ticks
+    #[serde(rename = "io-timeout")]
+    pub io_timeout: u64,
+
+    /// Client ID
+    #[serde(rename = "client-id")]
+    pub client_id: String,
+
+    /// Max transparent client retries
+    #[serde(rename = "max-attempt")]
+    pub max_attempt: usize,
+
+    #[serde(rename = "heartbeat-interval")]
+    pub heartbeat_interval: u64,
+
+    #[serde(rename = "refresh-pm-cluster-interval")]
+    pub refresh_pm_cluster_interval: u64,
+}
+
+impl Default for Client {
+    fn default() -> Self {
+        Self {
+            connect_timeout: 20,
+            io_timeout: 10,
+            client_id: "".to_owned(),
+            max_attempt: 3,
+            heartbeat_interval: 30,
+            refresh_pm_cluster_interval: 300,
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Server {
     pub host: String,
     pub port: u16,
+
+    /// Data Node ID
+    pub node_id: i32,
+
     pub concurrency: usize,
 
     pub uring: Uring,
 
     #[serde(rename = "placement-manager")]
     pub placement_manager: String,
+
+    #[serde(rename = "connection-idle-duration")]
+    pub connection_idle_duration: u64,
+}
+
+impl Server {
+    pub fn data_node(&self) -> DataNode {
+        DataNode {
+            node_id: self.node_id,
+            advertise_address: format!("{}:{}", self.host, self.port),
+        }
+    }
 }
 
 impl Default for Server {
@@ -20,14 +97,16 @@ impl Default for Server {
         Self {
             host: "127.0.0.1".to_owned(),
             port: 10911,
+            node_id: 0,
             concurrency: 1,
             uring: Uring::default(),
-            placement_manager: "localhost:2378".to_owned(),
+            placement_manager: "127.0.0.1:2378".to_owned(),
+            connection_idle_duration: 60,
         }
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Path {
     /// Full qualified path to base store directory, which contains lock, immutable properties and other configuration files
     base: String,
@@ -67,15 +146,20 @@ impl Path {
 
 impl Default for Path {
     fn default() -> Self {
+        let tmp_store_path = std::env::temp_dir().join("store");
         Self {
-            base: "/tmp/data".to_owned(),
+            base: tmp_store_path
+                .as_path()
+                .to_str()
+                .unwrap_or_else(|| "/tmp/store")
+                .to_owned(),
             wal: "wal".to_owned(),
             metadata: "metadata".to_owned(),
         }
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Store {
     #[serde(rename = "mkdirs-if-missing")]
     pub mkdirs_if_missing: bool,
@@ -117,7 +201,7 @@ impl Default for Store {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Uring {
     #[serde(rename = "queue-depth")]
     pub queue_depth: u32,
@@ -147,7 +231,7 @@ impl Default for Uring {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct RocksDB {
     #[serde(rename = "create-if-missing")]
     pub create_if_missing: bool,
@@ -165,10 +249,27 @@ impl Default for RocksDB {
     }
 }
 
-#[derive(Debug, Default, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Configuration {
+    /// Unit of time in milliseconds.
+    pub tick: u64,
+
+    pub client: Client,
+
     pub server: Server,
+
     pub store: Store,
+}
+
+impl Default for Configuration {
+    fn default() -> Self {
+        Self {
+            tick: 100,
+            client: Default::default(),
+            server: Default::default(),
+            store: Default::default(),
+        }
+    }
 }
 
 impl Configuration {
@@ -180,6 +281,11 @@ impl Configuration {
         let total_processor_num = num_cpus::get();
         if self.server.concurrency + 1 > total_processor_num {
             return Err(ConfigurationError::ConcurrencyTooLarge);
+        }
+
+        if self.client.client_id.is_empty() {
+            let client_id = client_id();
+            self.client.client_id.push_str(&client_id);
         }
 
         let base = std::path::Path::new(&self.store.path.base);
@@ -219,6 +325,26 @@ impl Configuration {
         }
         Ok(())
     }
+
+    pub fn connection_idle_duration(&self) -> Duration {
+        Duration::from_millis(self.tick * self.server.connection_idle_duration)
+    }
+
+    pub fn client_io_timeout(&self) -> Duration {
+        Duration::from_millis(self.tick * self.client.io_timeout)
+    }
+
+    pub fn client_connect_timeout(&self) -> Duration {
+        Duration::from_millis(self.tick * self.client.connect_timeout)
+    }
+
+    pub fn client_heartbeat_interval(&self) -> Duration {
+        Duration::from_millis(self.tick * self.client.heartbeat_interval)
+    }
+
+    pub fn client_refresh_placement_manager_cluster_interval(&self) -> Duration {
+        Duration::from_millis(self.tick * self.client.refresh_pm_cluster_interval)
+    }
 }
 
 #[cfg(test)]
@@ -245,5 +371,17 @@ mod tests {
         assert_eq!(128, config.server.uring.queue_depth);
         assert_eq!(32768, config.store.rocksdb.flush_threshold);
         Ok(())
+    }
+
+    // Ensure generated client-id are unique.
+    #[test]
+    fn test_client_id() {
+        let mut set = std::collections::HashSet::new();
+        for _ in 0..100 {
+            let client_id = super::client_id();
+            assert_eq!(false, set.contains(&client_id));
+            set.insert(client_id);
+        }
+        assert_eq!(100, set.len());
     }
 }
