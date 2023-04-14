@@ -31,7 +31,8 @@ public interface OperationClient extends Closeable {
     CompletableFuture<AppendResultT> appendBatch(RecordBatch recordBatch, Duration timeout);
 
     /**
-     * Fetch batches from data nodes.
+     * Fetch batches from data nodes. Null will be returned if the request failed.
+     * Note that 'maxBytes' is not a hard limit, it's just a hint to the server.
      *
      * @param streamId    stream id.
      * @param startOffset start offset.
