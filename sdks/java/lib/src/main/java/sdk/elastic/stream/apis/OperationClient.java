@@ -22,7 +22,7 @@ public interface OperationClient extends Closeable {
     CompletableFuture<List<CreateStreamResultT>> createStreams(List<StreamT> streams, Duration timeout);
 
     /**
-     * Append a batch to data nodes.
+     * Append a batch to data nodes. Null will be returned if the request failed.
      *
      * @param recordBatch record batch to be appended.
      * @param timeout     request timeout.
@@ -54,11 +54,11 @@ public interface OperationClient extends Closeable {
     CompletableFuture<Long> getLastWritableOffset(long streamId, Duration timeout);
 
     /**
-     * Send the heartbeat to the server to keep the connection.
+     * Send the heartbeat to the server to keep the connection. False will be returned if the request failed.
      *
      * @param address address of the PM or data nodes.
      * @param timeout request timeout.
-     * @return true if get a valid response.
+     * @return true if get a valid heartbeat response.
      */
     CompletableFuture<Boolean> heartbeat(Address address, Duration timeout);
 
