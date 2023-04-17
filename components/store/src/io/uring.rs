@@ -3,12 +3,17 @@ use crate::index::driver::IndexDriver;
 use crate::index::record_handle::RecordHandle;
 use crate::io::buf::{AlignedBufReader, AlignedBufWriter};
 use crate::io::context::Context;
+use crate::io::metrics::{
+    COMPLETED_READ_IO, COMPLETED_WRITE_IO, INFLIGHT_IO, IO_DEPTH, PENDING_TASK, READ_BYTES_TOTAL,
+    READ_IO_LATENCY, WRITE_BYTES_TOTAL, WRITE_IO_LATENCY,
+};
 use crate::io::task::IoTask;
 use crate::io::task::WriteTask;
 use crate::io::wal::Wal;
 use crate::io::write_window::WriteWindow;
 use crate::AppendResult;
 use crate::BufSlice;
+use std::io;
 
 use crossbeam::channel::{Receiver, Sender, TryRecvError};
 use io_uring::register;
@@ -104,12 +109,15 @@ pub(crate) struct IO {
     inflight_read_tasks: BTreeMap<u64, VecDeque<ReadTask>>,
 
     /// Offsets of blocks that are partially filled with data and are still inflight.
-    barrier: HashSet<u64>,
+    barrier: RefCell<HashSet<u64>>,
 
     /// Block the concurrent write IOs to the same page.
     /// The uring instance doesn't provide the ordering guarantee for the IOs,
     /// so we use this mechanism to avoid memory corruption.
     blocked: HashMap<u64, (*mut Context, squeue::Entry)>,
+
+    /// Collects the SQEs that need to be re-submitted.
+    resubmit_sqes: VecDeque<squeue::Entry>,
 
     /// Provide index service for building read index, shared with the upper store layer.
     indexer: Arc<IndexDriver>,
@@ -197,8 +205,9 @@ impl IO {
             pending_data_tasks: VecDeque::new(),
             inflight_write_tasks: BTreeMap::new(),
             inflight_read_tasks: BTreeMap::new(),
-            barrier: HashSet::new(),
+            barrier: RefCell::new(HashSet::new()),
             blocked: HashMap::new(),
+            resubmit_sqes: VecDeque::new(),
             indexer,
         })
     }
@@ -289,12 +298,14 @@ impl IO {
         }
 
         self.pending_data_tasks.push_back(io_task);
+        PENDING_TASK.set(self.pending_data_tasks.len() as i64);
         *received += 1;
     }
 
     fn receive_io_tasks(&mut self) -> usize {
         let mut received = 0;
         let io_depth = self.data_ring.params().sq_entries() as usize;
+        IO_DEPTH.set(io_depth as i64);
         loop {
             // TODO: Find a better estimation.
             //
@@ -455,7 +466,6 @@ impl IO {
             while let Some(n) = requirement.front() {
                 debug_assert!(pos + FOOTER_LENGTH as usize <= file_size);
                 if pos + *n + FOOTER_LENGTH as usize > file_size {
-                    println!("Reach end-of-segment: pos={}, n={}", pos, n);
                     debug_assert!(file_size - pos < *n + FOOTER_LENGTH as usize);
                     to_allocate += file_size - pos;
                     let to = max_allocated_wal_offset + to_allocate as u64;
@@ -524,10 +534,11 @@ impl IO {
                             Arc::new(buf),
                             read_offset,
                             read_len,
+                            minstant::Instant::now(),
                         );
 
                         let sqe = opcode::Read::new(types::Fd(sd.fd), ptr, read_len)
-                            .offset(read_from as i64)
+                            .offset(read_from as libc::off_t)
                             .build()
                             .user_data(context as u64);
 
@@ -558,17 +569,44 @@ impl IO {
     /// submit to io_uring/block-layer until the prior one is completed.
     ///
     /// In this example, this method tells whether
+    #[inline(always)]
     fn has_write_sqe_unblocked(&self) -> bool {
         self.blocked
             .iter()
-            .any(|(offset, _entry)| !self.barrier.contains(offset))
+            .any(|(offset, _entry)| !self.barrier.borrow().contains(offset))
     }
 
     fn build_write_sqe(&mut self, entries: &mut Vec<squeue::Entry>) {
         // Add previously blocked entries.
+
         self.blocked
-            .drain_filter(|offset, _entry| !self.barrier.contains(offset))
+            .drain_filter(|offset, _entry| !self.barrier.borrow().contains(offset))
             .for_each(|(_, entry)| {
+                // Trace log submit of previously blocked write to WAL.
+                {
+                    // Safety:
+                    // Lifecycle of context is the same with squeue::Entry, since we have NOT yet
+                    // submit the entry, its associated context is valid.
+                    let ctx = unsafe { Box::from_raw(entry.0) };
+                    trace!(
+                        self.log,
+                        "Submit previously blocked write to WAL[{}, {})",
+                        ctx.wal_offset,
+                        ctx.wal_offset + ctx.len as u64
+                    );
+
+                    // Need to insert a barrier if the blocked IO itself is ALSO a partial write.
+                    if ctx.is_partial_write() {
+                        self.barrier.borrow_mut().insert(ctx.wal_offset);
+                        trace!(
+                            self.log,
+                            "Insert a barrier with wal_offset={}",
+                            ctx.wal_offset
+                        );
+                    }
+
+                    Box::into_raw(ctx);
+                }
                 entries.push(entry.1);
             });
 
@@ -576,6 +614,10 @@ impl IO {
         writer
             .take()
             .into_iter()
+            .filter(|buf| {
+                // Accept the last partial buffer only if it contains uncommited data.
+                buf.wal_offset + buf.limit() as u64 > self.write_window.committed
+            })
             .flat_map(|buf| {
                 let ptr = buf.as_ptr();
                 if let Some(segment) = self.wal.segment_file_of(buf.wal_offset) {
@@ -591,13 +633,18 @@ impl IO {
 
                         let mut io_blocked = false;
                         // Check barrier
-                        if self.barrier.contains(&buf.wal_offset) {
+                        if self.barrier.borrow().contains(&buf.wal_offset) {
                             // Submit SQE to io_uring when the blocking IO task completed.
                             io_blocked = true;
                         } else {
                             // Insert barrier, blocking future write to this aligned block issued to `io_uring` until `sqe` is reaped.
                             if buf.partial() {
-                                self.barrier.insert(buf.wal_offset);
+                                self.barrier.borrow_mut().insert(buf.wal_offset);
+                                trace!(
+                                    self.log,
+                                    "Insert a barrier with wal_offset={}",
+                                    buf.wal_offset
+                                );
                             }
                         }
 
@@ -608,7 +655,7 @@ impl IO {
                         // The pointer will be set into user_data of uring.
                         // When the uring io completes, the pointer will be used to retrieve the `Context`.
                         let context =
-                            Context::write_ctx(opcode::Write::CODE, buf, buf_wal_offset, buf_limit);
+                            Context::write_ctx(opcode::Write::CODE, buf, buf_wal_offset, buf_limit, minstant::Instant::now());
 
                         // Note we have to write the whole page even if the page is partially filled.
                         let sqe = opcode::Write::new(types::Fd(sd.fd), ptr, buf_capacity)
@@ -617,12 +664,23 @@ impl IO {
                             .user_data(context as u64);
 
                         if io_blocked {
+                            trace!(self.log, "Write to WAL[{}, {}) is blocked", buf_wal_offset, buf_wal_offset + buf_limit as u64);
                             if let Some((ctx, _entry)) =
                                 self.blocked.insert(buf_wal_offset, (context, sqe))
                             {
                                 // Release context of the dropped squeue::Entry
                                 // See https://github.com/tokio-rs/io-uring/issues/230
-                                unsafe { Box::from_raw(ctx) };
+                                let ctx = unsafe { Box::from_raw(ctx) };
+                                if ctx.len <= buf_limit {
+                                    debug!(self.log, "Blocked write to WAL[{}, {}) is superseded by [{}, {})",
+                                        ctx.wal_offset, ctx.wal_offset + ctx.len as u64,
+                                        buf_wal_offset, buf_wal_offset + buf_limit as u64);
+                                } else {
+                                    error!(self.log, "Blocked write to WAL[{}, {}) is superseded by [{}, {})",
+                                        ctx.wal_offset, ctx.wal_offset + ctx.len as u64,
+                                        buf_wal_offset, buf_wal_offset + buf_limit as u64);
+                                    unreachable!("An extended write is superseded by a previous small one");
+                                }
                             }
                         } else {
                             entries.push(sqe);
@@ -789,7 +847,7 @@ impl IO {
                 }
             }
         }
-
+        PENDING_TASK.set(self.pending_data_tasks.len() as i64);
         self.build_read_sqe(entries, missed_entries);
 
         // Increase the strong reference count of the entries.
@@ -808,6 +866,11 @@ impl IO {
         if self.has_write_sqe_unblocked() || need_write {
             self.build_write_sqe(entries);
         }
+
+        // Drain the SQEs that need to be re-submitted.
+        self.resubmit_sqes.drain(..).for_each(|sqe| {
+            entries.push(sqe);
+        });
     }
 
     fn await_data_task_completion(&self, mut wanted: usize) {
@@ -875,8 +938,35 @@ impl IO {
                     // is allocated by Box itself, hence, there will no alignment issue at all.
                     let mut context = unsafe { Box::from_raw(ptr) };
 
-                    // Remove barrier
-                    self.barrier.remove(&context.buf.wal_offset);
+                    match context.opcode {
+                        opcode::Read::CODE => {
+                            READ_IO_LATENCY
+                                .observe(context.start_time.elapsed().as_micros() as f64);
+                            READ_BYTES_TOTAL.inc_by(context.buf.capacity as u64);
+                            COMPLETED_READ_IO.inc();
+                        }
+                        opcode::Write::CODE => {
+                            WRITE_IO_LATENCY
+                                .observe(context.start_time.elapsed().as_micros() as f64);
+                            WRITE_BYTES_TOTAL.inc_by(context.buf.capacity as u64);
+                            COMPLETED_WRITE_IO.inc();
+                        }
+                        _ => {}
+                    }
+
+                    // Remove write barrier
+                    if context.opcode == opcode::Write::CODE
+                        || context.opcode == opcode::Writev::CODE
+                        || context.opcode == opcode::WriteFixed::CODE
+                    {
+                        if self.barrier.borrow_mut().remove(&context.buf.wal_offset) {
+                            trace!(
+                                self.log,
+                                "Remove the barrier with wal_offset={}",
+                                context.wal_offset
+                            );
+                        }
+                    }
 
                     if let Err(e) = on_complete(
                         &mut self.write_window,
@@ -884,13 +974,111 @@ impl IO {
                         cqe.result(),
                         &self.log,
                     ) {
-                        if let StoreError::System(errno) = e {
-                            error!(
-                                self.log,
-                                "io_uring opcode `{}` failed. errno: `{}`", context.opcode, errno
-                            );
+                        match e {
+                            StoreError::System(errno) => {
+                                error!(
+                                    self.log,
+                                    "io_uring opcode `{}` failed. errno: `{}`",
+                                    context.opcode,
+                                    errno
+                                );
 
-                            // TODO: Check if the errno is recoverable...
+                                let error = io::Error::from_raw_os_error(errno);
+                                // Some errors are not fatal, we should retry the task.
+                                // TODO: Add more error kinds to retry.
+                                if error.kind() == io::ErrorKind::Interrupted
+                                    || error.kind() == io::ErrorKind::WouldBlock
+                                {
+                                    if self.blocked.contains_key(&context.wal_offset) {
+                                        // There is a pending write task for this block, skip this task.
+                                        trace!(
+                                            self.log,
+                                            "Skip retrying the failed write task for wal offset {} as there is a pending write task for this block",
+                                            context.wal_offset
+                                        );
+                                        continue;
+                                    }
+
+                                    let wal_offset = context.wal_offset;
+                                    let buf = context.buf.clone();
+
+                                    if buf.partial() {
+                                        // Partial write, set the barrier.
+                                        self.barrier.borrow_mut().insert(buf.wal_offset);
+                                        trace!(
+                                            self.log,
+                                            "Insert a barrier with wal_offset={}",
+                                            buf.wal_offset
+                                        );
+                                    }
+
+                                    let sg = match self.wal.segment_file_of(wal_offset) {
+                                        Some(sg) => sg,
+                                        None => {
+                                            error!(
+                                                self.log,
+                                                "Log segment not found for wal offset {}",
+                                                wal_offset
+                                            );
+                                            continue;
+                                        }
+                                    };
+
+                                    let sd = match &sg.sd {
+                                        Some(sd) => sd,
+                                        None => {
+                                            error!(
+                                                self.log,
+                                                "Log segment {} does not have a valid descriptor",
+                                                sg.wal_offset
+                                            );
+                                            continue;
+                                        }
+                                    };
+
+                                    let file_offset = wal_offset - sg.wal_offset;
+                                    let buf_ptr = buf.as_ptr() as *mut u8;
+
+                                    match context.opcode {
+                                        opcode::Read::CODE => {
+                                            let sqe = opcode::Read::new(
+                                                types::Fd(sd.fd),
+                                                buf_ptr,
+                                                context.len,
+                                            )
+                                            .offset(file_offset as libc::off_t)
+                                            .build()
+                                            .user_data(context.as_ptr() as u64);
+
+                                            self.resubmit_sqes.push_back(sqe);
+                                        }
+                                        opcode::Write::CODE => {
+                                            let sqe = opcode::Write::new(
+                                                types::Fd(sd.fd),
+                                                buf_ptr,
+                                                buf.capacity as u32,
+                                            )
+                                            .offset64(file_offset as libc::off_t)
+                                            .build()
+                                            .user_data(context.as_ptr() as u64);
+
+                                            self.resubmit_sqes.push_back(sqe);
+                                        }
+                                        _ => (),
+                                    };
+
+                                    continue;
+                                }
+                                // TODO: handle the error that can't be recovered.
+                            }
+
+                            StoreError::WriteWindow => {
+                                panic!("Invalid write is found. Write ordering is compromised");
+                            }
+
+                            _ => {
+                                panic!("Unrecoverable error found when reaping CQEs");
+                            }
                         }
                     } else {
                         // Add block cache
@@ -912,6 +1100,7 @@ impl IO {
             }
             debug_assert!(self.inflight >= count);
             self.inflight -= count;
+            INFLIGHT_IO.sub(count as i64);
             trace!(self.log, "Reaped {} data CQE(s)", count);
         }
 
@@ -1102,6 +1291,7 @@ impl IO {
             && self.pending_data_tasks.is_empty()
             && self.inflight_write_tasks.is_empty()
             && self.inflight_read_tasks.is_empty()
+            && self.blocked.is_empty()
             && self.wal.control_task_num() == 0
             && self.channel_disconnected
     }
@@ -1129,6 +1319,7 @@ impl IO {
                     })?
             };
             self.inflight += cnt;
+            INFLIGHT_IO.add(cnt as i64);
             trace!(self.log, "Pushed {} SQEs into submission queue", cnt);
         }
         Ok(())
@@ -1331,6 +1522,7 @@ mod tests {
     use slog::trace;
     use std::cell::RefCell;
     use std::error::Error;
+    use std::io;
     use std::path::{Path, PathBuf};
     use std::sync::Arc;
     use std::thread::JoinHandle;
@@ -1639,7 +1831,7 @@ mod tests {
 
         // Will cost at least 4K * 1024 = 4M bytes, which means at least 4 segments will be allocated
         // And the cache reclaim will be triggered since a small io only has 1M cache
-        let records: Vec<_> = (0..1024)
+        let records: Vec<_> = (0..4096)
             .into_iter()
             .map(|_| {
                 let mut rng = rand::thread_rng();
@@ -1874,5 +2066,11 @@ mod tests {
             .collect();
         let buffer = random_string.as_bytes();
         BytesMut::from(buffer).freeze()
+    }
+
+    #[test]
+    fn test_err() {
+        let error = io::Error::from_raw_os_error(11);
+        assert_eq!(error.kind(), io::ErrorKind::WouldBlock);
     }
 }
