@@ -1,4 +1,5 @@
 use std::{
+    path::PathBuf,
     process,
     sync::atomic::{AtomicUsize, Ordering},
     time::Duration,
@@ -65,6 +66,37 @@ impl Default for Client {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Profiling {
+    pub enable: bool,
+
+    #[serde(rename = "sampling-frequency")]
+    pub sampling_frequency: i32,
+
+    #[serde(rename = "report-interval")]
+    pub report_interval: u64,
+
+    ///  Path to save flamegraph files: if a relative path is configured, it will be relative to current working directory;
+    ///  If an absolute path is configured, the absolute path is used.
+    #[serde(rename = "report-path")]
+    pub report_path: String,
+
+    #[serde(rename = "max-report-backup")]
+    pub max_report_backup: usize,
+}
+
+impl Default for Profiling {
+    fn default() -> Self {
+        Self {
+            enable: true,
+            sampling_frequency: 1000,
+            report_interval: 300,
+            report_path: "flamegraph".to_owned(),
+            max_report_backup: 3,
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Server {
     pub host: String,
     pub port: u16,
@@ -81,6 +113,8 @@ pub struct Server {
 
     #[serde(rename = "connection-idle-duration")]
     pub connection_idle_duration: u64,
+
+    pub profiling: Profiling,
 }
 
 impl Server {
@@ -102,6 +136,7 @@ impl Default for Server {
             uring: Uring::default(),
             placement_manager: "127.0.0.1:2378".to_owned(),
             connection_idle_duration: 60,
+            profiling: Profiling::default(),
         }
     }
 }
