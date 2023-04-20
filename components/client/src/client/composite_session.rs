@@ -12,6 +12,7 @@ use std::{
     collections::HashMap,
     io::ErrorKind,
     net::{SocketAddr, ToSocketAddrs},
+    rc::Rc,
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -22,7 +23,8 @@ pub(crate) struct CompositeSession {
     target: String,
     config: Arc<config::Configuration>,
     lb_policy: LbPolicy,
-    sessions: RefCell<HashMap<SocketAddr, Session>>,
+    endpoints: RefCell<Vec<SocketAddr>>,
+    sessions: Rc<RefCell<HashMap<SocketAddr, Session>>>,
     log: Logger,
     refresh_cluster_instant: RefCell<Instant>,
     heartbeat_instant: RefCell<Instant>,
@@ -38,7 +40,8 @@ impl CompositeSession {
     where
         T: ToSocketAddrs + ToString,
     {
-        let sessions = RefCell::new(HashMap::new());
+        let endpoints = RefCell::new(Vec::new());
+        let sessions = Rc::new(RefCell::new(HashMap::new()));
         // For now, we just resolve one session out of the target.
         // In the future, we would support multiple internal connection and load balancing among them.
         for socket_addr in target
@@ -49,11 +52,13 @@ impl CompositeSession {
                 socket_addr.clone(),
                 config.client_connect_timeout(),
                 &config,
+                &sessions,
                 &log,
             )
             .await;
             match res {
                 Ok(session) => {
+                    endpoints.borrow_mut().push(socket_addr.clone());
                     sessions.borrow_mut().insert(socket_addr, session);
                     info!(log, "Connection to {} established", target.to_string());
                     break;
@@ -68,6 +73,7 @@ impl CompositeSession {
             target: target.to_string(),
             config,
             lb_policy,
+            endpoints,
             sessions,
             log,
             refresh_cluster_instant: RefCell::new(Instant::now()),
@@ -103,6 +109,8 @@ impl CompositeSession {
             return Ok(());
         }
 
+        self.try_reconnect().await;
+
         if self.need_refresh_cluster() {
             if let Ok(Some(nodes)) = self.describe_placement_manager_cluster().await {
                 if !nodes.is_empty() {
@@ -122,6 +130,9 @@ impl CompositeSession {
                         .borrow_mut()
                         .drain_filter(|k, _v| !addrs.contains(k))
                         .for_each(|(k, _v)| {
+                            self.endpoints.borrow_mut().drain_filter(|e| {
+                                e == &k
+                            });
                             info!(self.log, "Session to {} will be disconnected because latest Placement Manager Cluster does not contain it any more", k);
                         });
 
@@ -140,6 +151,7 @@ impl CompositeSession {
                             addr,
                             self.config.client_connect_timeout(),
                             &self.config,
+                            &self.sessions,
                             &self.log,
                         )
                     });
@@ -155,6 +167,7 @@ impl CompositeSession {
                                     self.target,
                                     session.target
                                 );
+                                self.endpoints.borrow_mut().push(session.target.clone());
                                 self.sessions
                                     .borrow_mut()
                                     .insert(session.target.clone(), session);
@@ -222,6 +235,7 @@ impl CompositeSession {
         host: &str,
         timeout: Duration,
     ) -> Result<i32, ClientError> {
+        self.try_reconnect().await;
         if let Some((_, session)) = self.sessions.borrow().iter().next() {
             let request = Request::AllocateId {
                 timeout: self.config.client_io_timeout(),
@@ -265,6 +279,7 @@ impl CompositeSession {
         &self,
         criteria: RangeCriteria,
     ) -> Result<Vec<StreamRange>, ClientError> {
+        self.try_reconnect().await;
         // TODO: apply load-balancing among `self.sessions`.
         if let Some((_, session)) = self.sessions.borrow().iter().next() {
             let request = Request::ListRanges {
@@ -323,6 +338,7 @@ impl CompositeSession {
     async fn describe_placement_manager_cluster(
         &self,
     ) -> Result<Option<Vec<PlacementManagerNode>>, ClientError> {
+        self.try_reconnect().await;
         let addrs = self
             .target
             .to_socket_addrs()
@@ -359,6 +375,7 @@ impl CompositeSession {
                         addr.clone(),
                         self.config.client_connect_timeout(),
                         &self.config,
+                        &self.sessions,
                         &self.log,
                     )
                     .await?;
@@ -394,10 +411,54 @@ impl CompositeSession {
         }
     }
 
+    /// Try to reconnect to the endpoints that is absent from sessions.
+    ///
+    ///
+    /// # Implementation walkthrough
+    /// 1. filter endpoints that is not found in sessions
+    /// 2. connect to the target and then create a session
+    async fn try_reconnect(&self) {
+        if self.endpoints.borrow().is_empty() {
+            return;
+        }
+
+        if self.endpoints.borrow().len() > self.sessions.borrow().len() {
+            let futures = self
+                .endpoints
+                .borrow()
+                .iter()
+                .filter(|target| !self.sessions.borrow().contains_key(target))
+                .map(|target| {
+                    Self::connect(
+                        target.clone(),
+                        self.config.client_connect_timeout(),
+                        &self.config,
+                        &self.sessions,
+                        &self.log,
+                    )
+                })
+                .collect::<Vec<_>>();
+
+            futures::future::join_all(futures)
+                .await
+                .into_iter()
+                .for_each(|res| match res {
+                    Ok(session) => {
+                        let target = session.target.clone();
+                        self.sessions.borrow_mut().insert(target, session);
+                    }
+                    Err(e) => {
+                        error!(self.log, "Failed to connect. Cause: {:?}", e);
+                    }
+                });
+        }
+    }
+
     async fn connect(
         addr: SocketAddr,
         duration: Duration,
         config: &Arc<config::Configuration>,
+        sessions: &Rc<RefCell<HashMap<SocketAddr, Session>>>,
         log: &Logger,
     ) -> Result<Session, ClientError> {
         trace!(log, "Establishing connection to {:?}", addr);
@@ -429,7 +490,14 @@ impl CompositeSession {
                 return Err(ClientError::ConnectTimeout(description));
             }
         };
-        Ok(Session::new(addr, stream, &endpoint, config, log))
+        Ok(Session::new(
+            addr,
+            stream,
+            &endpoint,
+            config,
+            Rc::downgrade(sessions),
+            log,
+        ))
     }
 }
 
