@@ -172,8 +172,7 @@ impl Connection {
     }
 
     pub async fn write_frame(&self, frame: &Frame) -> Result<(), std::io::Error> {
-        let encode_result = frame.encode();
-        let encode_result = encode_result.map_err(|e| {
+        let mut buffers = frame.encode().map_err(|e| {
             // TODO: handle the encode error
             std::io::Error::new(
                 std::io::ErrorKind::Other,
@@ -181,39 +180,92 @@ impl Connection {
             )
         })?;
 
-        let bytes_to_write = encode_result.iter().map(|b| b.len()).sum::<usize>();
+        let total = buffers.iter().map(|b| b.len()).sum::<usize>();
         trace!(
             self.logger,
-            "{} bytes to write to: {}",
-            bytes_to_write,
+            "Get {} bytes to write to: {}",
+            total,
             self.peer_address
         );
+        let mut remaining = total;
+        loop {
+            let (res, _buffers) = self.stream.writev(buffers).await;
+            buffers = _buffers;
+            match res {
+                Ok(mut n) => {
+                    debug_assert!(n <= remaining, "Data written to socket buffer should be less than or equal to remaining bytes to write");
+                    if n == remaining {
+                        if remaining == total {
+                            // First time to write
+                            trace!(
+                                self.logger,
+                                "Wrote {}/{} bytes to {}",
+                                n,
+                                total,
+                                self.peer_address
+                            );
+                        } else {
+                            // Last time of writing: the remaining are all written.
+                            remaining -= n;
+                            trace!(
+                                self.logger,
+                                "Wrote {}/{} bytes to {}. Overall, {}/{} is written.",
+                                n,
+                                total,
+                                self.peer_address,
+                                total - remaining,
+                                total
+                            );
+                        }
+                        break;
+                    } else {
+                        remaining -= n;
+                        trace!(
+                            self.logger,
+                            "Wrote {} bytes to {}. Overall, {}/{} is written",
+                            n,
+                            self.peer_address,
+                            total - remaining,
+                            total,
+                        );
+                        // Drain/advance buffers that are already written.
+                        buffers.drain_filter(|buffer| {
+                            if buffer.len() <= n {
+                                n -= buffer.len();
+                                // Remove it
+                                true
+                            } else {
+                                if n > 0 {
+                                    buffer.advance(n);
+                                    n = 0;
+                                }
+                                // Keep the buffer slice
+                                false
+                            }
+                        });
+                    }
+                }
+                Err(e) => {
+                    error!(
+                        self.logger,
+                        "Failed to write Frame[stream-id={}]", frame.stream_id
+                    );
+                    return Err(e);
+                }
+            };
+        }
 
-        let (res, _buf) = self.stream.writev(encode_result).await;
-        match res {
-            Ok(_) => {
-                trace!(
-                    self.logger,
-                    "Wrote {} bytes to {}",
-                    bytes_to_write,
-                    self.peer_address
-                );
-            }
-            Err(e) => {
-                error!(
-                    self.logger,
-                    "Failed to write Frame[stream-id={}]", frame.stream_id
-                );
-                return Err(e);
-            }
-        };
         Ok(())
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::{error::Error, thread::JoinHandle};
+
     use bytes::{Buf, BufMut, BytesMut};
+    use slog::{o, Drain};
+    use tokio::{io::AsyncReadExt, net::TcpListener};
 
     #[test]
     fn test_bytes_concept() {
@@ -248,5 +300,85 @@ mod tests {
         assert_eq!(0, buf.len());
         assert_eq!(0, buf.remaining());
         assert_eq!(122, buf.spare_capacity_mut().len());
+    }
+
+    fn run_server(
+        counter: tokio::sync::oneshot::Sender<usize>,
+        port: tokio::sync::oneshot::Sender<u16>,
+    ) -> Result<JoinHandle<()>, Box<dyn Error>> {
+        let handle = std::thread::Builder::new()
+            .name("Test-Server".to_owned())
+            .spawn(move || {
+                let rt = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .unwrap();
+                rt.block_on(async move {
+                    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+                    let local_addr = listener.local_addr().unwrap();
+                    port.send(local_addr.port()).unwrap();
+                    let (mut stream, _addr) = listener.accept().await.unwrap();
+                    let mut read = 0;
+                    let mut buf = BytesMut::with_capacity(1024);
+                    loop {
+                        match stream.read_buf(&mut buf).await {
+                            Ok(n) => {
+                                if 0 == n {
+                                    break;
+                                }
+                                read += n;
+                                buf.clear();
+                            }
+
+                            Err(_e) => {
+                                break;
+                            }
+                        }
+                    }
+                    counter.send(read).unwrap();
+                });
+            })?;
+        Ok(handle)
+    }
+
+    #[test]
+    fn test_write_frame() -> Result<(), Box<dyn Error>> {
+        let (counter_tx, counter_rx) = tokio::sync::oneshot::channel();
+        let (port_tx, port_rx) = tokio::sync::oneshot::channel();
+
+        let handle = run_server(counter_tx, port_tx).unwrap();
+
+        let port = port_rx.blocking_recv()?;
+
+        tokio_uring::start(async {
+            let address = format!("127.0.0.1:{}", port);
+            {
+                let tcp_stream = tokio_uring::net::TcpStream::connect(address.parse().unwrap())
+                    .await
+                    .unwrap();
+                tcp_stream.set_nodelay(true).unwrap();
+                let decorator = slog_term::TermDecorator::new().build();
+                let drain = slog_term::FullFormat::new(decorator).build().fuse();
+                let drain = slog_async::Async::new(drain).build().fuse();
+                let log = slog::Logger::root(drain, o!());
+                let connection = super::Connection::new(tcp_stream, &address, log);
+                let mut frame = codec::frame::Frame::new(codec::frame::OperationCode::AllocateId);
+                let mut payload = vec![];
+                (0..8).into_iter().for_each(|_| {
+                    let mut buf = BytesMut::with_capacity(1024 * 1024);
+                    buf.resize(1024 * 1024, 8u8);
+                    payload.push(buf.freeze());
+                });
+                frame.payload = Some(payload);
+                connection.write_frame(&frame).await.unwrap();
+            }
+
+            let total = counter_rx.await.unwrap();
+            assert_eq!(total, 1024 * 1024 * 8 + 20);
+        });
+
+        let _ = handle.join();
+
+        Ok(())
     }
 }
