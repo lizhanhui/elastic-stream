@@ -111,6 +111,9 @@ pub(crate) enum Status {
     // Given `LogSegmentFile` are fixed in length, it would accelerate IO performance if space is pre-allocated.
     Fallocate64,
 
+    // Register files into io_uring instance
+    FilesUpdate,
+
     // Now the segment file is ready for read/write.
     ReadWrite,
 
@@ -143,6 +146,9 @@ impl Display for Status {
             }
             Self::Fallocate64 => {
                 write!(f, "fallocate")
+            }
+            Self::FilesUpdate => {
+                write!(f, "files_update")
             }
             Self::ReadWrite => {
                 write!(f, "read|write")

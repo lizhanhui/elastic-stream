@@ -132,6 +132,7 @@ fn check_io_uring(probe: &register::Probe) -> Result<(), StoreError> {
     let codes = [
         opcode::OpenAt::CODE,
         opcode::Fallocate64::CODE,
+        opcode::FilesUpdate::CODE,
         opcode::Write::CODE,
         opcode::Read::CODE,
         opcode::Close::CODE,
