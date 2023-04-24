@@ -1,5 +1,4 @@
 use std::{
-    path::PathBuf,
     process,
     sync::atomic::{AtomicUsize, Ordering},
     time::Duration,
@@ -211,7 +210,11 @@ pub struct Store {
     #[serde(rename = "max-cache-size")]
     pub max_cache_size: u64,
 
+    // Device block size
     pub alignment: usize,
+
+    // Total number of blocks of the device that backs store-base.
+    pub blocks: u64,
 
     #[serde(rename = "read-block-size")]
     pub read_block_size: u32,
@@ -232,11 +235,18 @@ impl Default for Store {
             segment_size: 1048576,
             max_cache_size: 1048576,
             alignment: 4096,
+            blocks: 0,
             read_block_size: 131072,
             pre_allocate_segment_file_number: 2,
             uring: Uring::default(),
             rocksdb: RocksDB::default(),
         }
+    }
+}
+
+impl Store {
+    pub fn max_segment_number(&self) -> u64 {
+        (self.blocks * (self.alignment as u64) + self.segment_size - 1) / self.segment_size
     }
 }
 
@@ -351,6 +361,7 @@ impl Configuration {
         let file_stat =
             stat::stat(wal.as_path()).map_err(|e| ConfigurationError::System(e as i32))?;
         self.store.alignment = file_stat.st_blksize as usize;
+        self.store.blocks = file_stat.st_blocks as u64;
 
         let metadata = base.join(&self.store.path.metadata);
         if !metadata.exists() {
