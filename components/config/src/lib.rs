@@ -101,6 +101,7 @@ pub struct Server {
     pub port: u16,
 
     /// Data Node ID
+    #[serde(default)]
     pub node_id: i32,
 
     pub concurrency: usize,
