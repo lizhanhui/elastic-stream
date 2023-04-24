@@ -211,9 +211,11 @@ pub struct Store {
     pub max_cache_size: u64,
 
     // Device block size
+    #[serde(default)]
     pub alignment: usize,
 
     // Total number of blocks of the device that backs store-base.
+    #[serde(default)]
     pub blocks: u64,
 
     #[serde(rename = "read-block-size")]

@@ -29,7 +29,7 @@ server:
     # Network io_uring queue depth
     queue-depth: 128
   # Placement manager address
-  placement-manager: "192.168.123.128:12378"
+  placement-manager: "127.0.0.1:12378"
   # Connection idle duration in ticks
   connection-idle-duration: 60
   # grace period in ticks, after this period of time, disconnect lingering client connections
@@ -61,8 +61,6 @@ store:
   segment-size: 1073741824
   # Max block cache size
   max-cache-size: 1073741824
-  #alignment
-  alignment: 4096
   # Preferred IO read size: 128KiB
   read-block-size: 131072
   # Pre-allocated number of segment files
