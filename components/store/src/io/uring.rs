@@ -549,13 +549,17 @@ impl IO {
                             minstant::Instant::now(),
                         );
                         debug_assert!(
-                            sd.fixed.is_some(),
+                            sd.sparse_offset.is_some(),
                             "Segment file should have registered in data uring"
                         );
-                        let sqe = opcode::Read::new(types::Fixed(sd.fixed.unwrap()), ptr, read_len)
-                            .offset(read_from as libc::off_t)
-                            .build()
-                            .user_data(context as u64);
+                        let sqe = opcode::Read::new(
+                            types::Fixed(sd.sparse_offset.unwrap()),
+                            ptr,
+                            read_len,
+                        )
+                        .offset(read_from as libc::off_t)
+                        .build()
+                        .user_data(context as u64);
 
                         entries.push(sqe);
 
@@ -610,11 +614,12 @@ impl IO {
             .for_each(|(wal_offset, fd)| {
                 self.inflight_register_tasks.insert(wal_offset, fd);
 
+                let sparse_offset = self.get_and_increase_sparse_offset();
                 let ctx = Context::register_ctx(
                     opcode::FilesUpdate::CODE,
                     wal_offset,
                     fd,
-                    self.get_and_increase_sparse_offset(),
+                    sparse_offset,
                     self.options.store.alignment,
                 );
                 let fds = &ctx.fd as *const i32;
@@ -622,14 +627,17 @@ impl IO {
                     .offset(ctx.sparse_offset)
                     .build()
                     .user_data(Box::into_raw(ctx) as u64);
-
                 entries.push(sqe);
+                info!(
+                    "Build FilesUpdate SQE for segment[wal_offset={}]",
+                    wal_offset
+                );
             });
     }
 
-    fn uring_register(&mut self, wal_offset: u64, fixed: u32) {
+    fn uring_register(&mut self, wal_offset: u64, sparse_offset: u32) {
         if let Some(segment) = self.wal.segment_file_of(wal_offset) {
-            segment.uring_register(fixed);
+            segment.uring_register(sparse_offset);
         }
     }
 
@@ -707,9 +715,9 @@ impl IO {
                         // When the uring io completes, the pointer will be used to retrieve the `Context`.
                         let context =
                             Context::write_ctx(opcode::Write::CODE, buf, buf_wal_offset, buf_limit, minstant::Instant::now());
-                        debug_assert!(sd.fixed.is_some(), "Segment file should have registered into data uring");
+                        debug_assert!(sd.sparse_offset.is_some(), "Segment file should have registered into data uring");
                         // Note we have to write the whole page even if the page is partially filled.
-                        let sqe = opcode::Write::new(types::Fixed(sd.fixed.unwrap()), ptr, buf_capacity)
+                        let sqe = opcode::Write::new(types::Fixed(sd.sparse_offset.unwrap()), ptr, buf_capacity)
                             .offset64(file_offset as libc::off_t)
                             .build()
                             .user_data(context as u64);
@@ -852,7 +860,7 @@ impl IO {
                         if let Some(segment) = self.wal.segment_file_of(writer.cursor) {
                             if !segment.writable() {
                                 trace!(
-                                    "WAL Segment {}. Yield dispatching IO to block layer",
+                                    "WAL Segment {} is not writable. Yield dispatching IO to block layer",
                                     segment
                                 );
                                 self.pending_data_tasks.push_front(IoTask::Write(task));
@@ -1108,7 +1116,7 @@ impl IO {
                                     match context.opcode {
                                         opcode::Read::CODE => {
                                             let sqe = opcode::Read::new(
-                                                types::Fixed(sd.fixed.unwrap()),
+                                                types::Fixed(sd.sparse_offset.unwrap()),
                                                 buf_ptr,
                                                 context.len,
                                             )
@@ -1120,7 +1128,7 @@ impl IO {
                                         }
                                         opcode::Write::CODE => {
                                             let sqe = opcode::Write::new(
-                                                types::Fixed(sd.fixed.unwrap()),
+                                                types::Fixed(sd.sparse_offset.unwrap()),
                                                 buf_ptr,
                                                 buf.capacity as u32,
                                             )
@@ -1168,7 +1176,7 @@ impl IO {
                         }
 
                         if opcode::FilesUpdate::CODE == context.opcode {
-                            files_registered.insert(context.wal_offset, context.len);
+                            files_registered.insert(context.wal_offset, context.sparse_offset);
                         }
                     }
                 }
@@ -1184,9 +1192,17 @@ impl IO {
 
         let (_, free_bytes) = try_reclaim_from_wal(&mut self.wal, cache_bytes);
 
-        files_registered.iter().for_each(|(wal_offset, fixed)| {
-            self.uring_register(*wal_offset, *fixed);
-        });
+        if !files_registered.is_empty() {
+            info!(
+                "{} segment files io_uring_register OK",
+                files_registered.len()
+            );
+        }
+        files_registered
+            .iter()
+            .for_each(|(wal_offset, sparse_offset)| {
+                self.uring_register(*wal_offset, *sparse_offset as u32);
+            });
 
         if free_bytes < cache_bytes as u64 {
             // There is no enough space to cache the returned blocks.
@@ -1562,6 +1578,10 @@ fn on_complete(
                 );
                 Err(StoreError::System(-result))
             } else {
+                info!(
+                    "io_uring_register segment[wal_offset={}] OK. fd={}, sparse-offset={}",
+                    context.wal_offset, context.fd, context.sparse_offset
+                );
                 Ok(())
             }
         }

@@ -595,7 +595,7 @@ impl Wal {
                     segment.sd = Some(SegmentDescriptor {
                         medium: Medium::Ssd,
                         fd: result,
-                        fixed: None,
+                        sparse_offset: None,
                         base_ptr: 0,
                     });
                     segment.status = Status::Fallocate64;
@@ -705,7 +705,7 @@ impl Wal {
             .for_each(|segment| {
                 debug_assert_eq!(segment.status, Status::FilesUpdate);
                 if let Some(ref mut sd) = segment.sd {
-                    sd.fixed = Some(*next_register_file_descriptor);
+                    sd.sparse_offset = Some(*next_register_file_descriptor);
                     *next_register_file_descriptor += 1;
                 }
                 if segment.remaining() > 0 {

@@ -1,5 +1,6 @@
 use bytes::{Buf, BufMut, BytesMut};
 use derivative::Derivative;
+use log::info;
 use nix::fcntl;
 use std::{
     cmp::Ordering,
@@ -91,8 +92,8 @@ pub(crate) struct SegmentDescriptor {
     /// It's a file descriptor or a block device descriptor.
     pub(crate) fd: RawFd,
 
-    /// Fixed FD when io_uring_register_files
-    pub(crate) fixed: Option<u32>,
+    /// Sparse offset to use when io_uring_register files.
+    pub(crate) sparse_offset: Option<u32>,
 
     /// The base address of the log segment, always zero if the fd is a file descriptor.
     pub(crate) base_ptr: u64,
@@ -236,7 +237,7 @@ impl LogSegment {
         self.sd = Some(SegmentDescriptor {
             medium: Medium::Ssd,
             fd: file.into_raw_fd(),
-            fixed: None,
+            sparse_offset: None,
             base_ptr: 0,
         });
 
@@ -486,13 +487,21 @@ impl LogSegment {
         }
     }
 
-    pub(crate) fn uring_register(&mut self, fixed: u32) {
+    pub(crate) fn uring_register(&mut self, sparse_offset: u32) {
         debug_assert!(self.sd.is_some());
         if let Some(ref mut sd) = self.sd {
-            debug_assert!(sd.fixed.is_none());
-            sd.fixed = Some(fixed);
+            debug_assert!(sd.sparse_offset.is_none());
+            sd.sparse_offset = Some(sparse_offset);
+            info!(
+                "Sparse-offset of segment[wal_offset={}] changed to {}",
+                self.wal_offset, sparse_offset
+            );
         }
         self.status = Status::ReadWrite;
+        info!(
+            "Status of segment[wal_offset={}] changes to ReadWrite",
+            self.wal_offset
+        );
     }
 }
 
