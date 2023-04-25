@@ -18,6 +18,7 @@ members = [
 ]
 
 [workspace.dependencies]
+anyhow = "1.0"
 async-channel = "1.8.0"
 byteorder = "1"
 bytes = "1"
@@ -47,9 +48,9 @@ libc = "0.2"
 nix = "0.26"
 
 # Logging
-slog = { version = "2.7", features = ["max_level_trace", "release_max_level_warn"] }
-slog-async = "2.7"
-slog-term = "2.9"
+log = "0.4"
+env_logger = "0.10"
+log4rs = "1.2"
 
 # RocksDB
 rocksdb = { version = "0.20", default-features = false, features = ["jemalloc"] }

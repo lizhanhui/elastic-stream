@@ -1,7 +1,6 @@
 use bytes::{Buf, BufMut, BytesMut};
 use derivative::Derivative;
 use nix::fcntl;
-use slog::Logger;
 use std::{
     cmp::Ordering,
     ffi::CString,
@@ -50,9 +49,6 @@ impl TimeRange {
 #[derive(Derivative)]
 #[derivative(PartialEq, Eq, Debug)]
 pub(crate) struct LogSegment {
-    #[derivative(PartialEq = "ignore")]
-    log: Logger,
-
     #[derivative(PartialEq = "ignore")]
     config: Arc<config::Configuration>,
 
@@ -111,6 +107,9 @@ pub(crate) enum Status {
     // Given `LogSegmentFile` are fixed in length, it would accelerate IO performance if space is pre-allocated.
     Fallocate64,
 
+    // Register files into io_uring instance
+    FilesUpdate,
+
     // Now the segment file is ready for read/write.
     ReadWrite,
 
@@ -144,6 +143,9 @@ impl Display for Status {
             Self::Fallocate64 => {
                 write!(f, "fallocate")
             }
+            Self::FilesUpdate => {
+                write!(f, "files_update")
+            }
             Self::ReadWrite => {
                 write!(f, "read|write")
             }
@@ -169,20 +171,18 @@ pub(crate) enum Medium {
 
 impl LogSegment {
     pub(crate) fn new(
-        log: Logger,
         config: &Arc<config::Configuration>,
         offset: u64,
         size: u64,
         path: &Path,
     ) -> Result<Self, StoreError> {
         Ok(Self {
-            log: log.clone(),
             config: Arc::clone(config),
             wal_offset: offset,
             size,
             written: 0,
             time_range: None,
-            block_cache: BlockCache::new(log, config, offset),
+            block_cache: BlockCache::new(config, offset),
             sd: None,
             status: Status::OpenAt,
             path: CString::new(path.as_os_str().as_bytes())
@@ -378,7 +378,6 @@ impl LogSegment {
 
                     let try_r: Result<(), StoreError> = entries.into_iter().try_for_each(|e| {
                         if let Ok(buf) = AlignedBufReader::alloc_read_buf(
-                            self.log.clone(),
                             e.wal_offset,
                             e.len as usize,
                             self.config.store.alignment,
@@ -448,12 +447,8 @@ impl LogSegment {
                 if buf.wal_offset + buf.limit() as u64 > last_page_start {
                     // Split the last page from the returned buf
                     if last_page_len != 0 {
-                        let last_page_buf = AlignedBuf::new(
-                            self.log.clone(),
-                            last_page_start,
-                            last_page_len as usize,
-                            alignment,
-                        )?;
+                        let last_page_buf =
+                            AlignedBuf::new(last_page_start, last_page_len as usize, alignment)?;
 
                         let copy_start = (last_page_start - buf.wal_offset) as usize;
                         let buf_src = buf.slice(copy_start..copy_start + last_page_len as usize);
@@ -469,12 +464,8 @@ impl LogSegment {
                     // Truncate the last buf
                     let last_len = last_page_start - buf.wal_offset;
                     if last_len != 0 {
-                        let last_buf = AlignedBuf::new(
-                            self.log.clone(),
-                            buf.wal_offset,
-                            last_len as usize,
-                            alignment,
-                        )?;
+                        let last_buf =
+                            AlignedBuf::new(buf.wal_offset, last_len as usize, alignment)?;
 
                         last_buf
                             .slice_mut(..last_len as usize)
@@ -559,18 +550,16 @@ mod tests {
 
     #[test]
     fn test_append_record() -> Result<(), Box<dyn Error>> {
-        let log = test_util::terminal_logger();
         let wal_path = test_util::create_random_path()?;
-        let _guard = test_util::DirectoryRemovalGuard::new(log.clone(), wal_path.as_path());
+        let _guard = test_util::DirectoryRemovalGuard::new(wal_path.as_path());
         let mut cfg = config::Configuration::default();
         cfg.store.path.set_wal(wal_path.as_path().to_str().unwrap());
         let config = Arc::new(cfg);
 
-        let mut segment = super::LogSegment::new(log, &config, 0, 1024 * 1024, wal_path.as_path())?;
+        let mut segment = super::LogSegment::new(&config, 0, 1024 * 1024, wal_path.as_path())?;
         segment.status = Status::ReadWrite;
 
-        let log = test_util::terminal_logger();
-        let mut buf_writer = AlignedBufWriter::new(log, 0, 512);
+        let mut buf_writer = AlignedBufWriter::new(0, 512);
         buf_writer.reserve_to(1024, config.store.segment_size as usize)?;
 
         let mut data = BytesMut::with_capacity(256);
@@ -595,8 +584,6 @@ mod tests {
 
     #[test]
     fn test_read_exact_at() -> Result<(), Box<dyn Error>> {
-        let log = test_util::terminal_logger();
-
         let cfg = config::Configuration::default();
         let config = Arc::new(cfg);
         let alignment = config.store.alignment;
@@ -607,8 +594,7 @@ mod tests {
         let uuid = Uuid::new_v4();
 
         // Generate some random data
-        let buf_w =
-            AlignedBuf::new(log.clone(), wal_offset, 4 * alignment as usize, alignment).unwrap();
+        let buf_w = AlignedBuf::new(wal_offset, 4 * alignment as usize, alignment).unwrap();
 
         rand::thread_rng().fill_bytes(buf_w.slice_mut(..));
         buf_w.increase_written(buf_w.capacity);
@@ -616,13 +602,12 @@ mod tests {
         let mut store_dir = test_util::create_random_path().unwrap();
         let store_dir_c = store_dir.clone();
         let _store_dir_guard =
-            test_util::DirectoryRemovalGuard::new(log.clone(), &Path::new(store_dir_c.as_os_str()));
+            test_util::DirectoryRemovalGuard::new(&Path::new(store_dir_c.as_os_str()));
 
         store_dir.push(path::PathBuf::from(uuid.simple().to_string()));
 
         let mut segment =
-            super::LogSegment::new(log, &config, wal_offset, 1024 * 1024, store_dir.as_path())
-                .unwrap();
+            super::LogSegment::new(&config, wal_offset, 1024 * 1024, store_dir.as_path()).unwrap();
         segment.open().unwrap();
 
         let sd = segment.sd.as_ref().unwrap();
@@ -689,8 +674,6 @@ mod tests {
 
     #[test]
     fn test_truncate_to() -> Result<(), Box<dyn Error>> {
-        let log = test_util::terminal_logger();
-
         let mut cfg = config::Configuration::default();
         cfg.store.alignment = 4096;
         let config = Arc::new(cfg);
@@ -702,7 +685,7 @@ mod tests {
         let uuid = Uuid::new_v4();
 
         // Generate some random data
-        let buf_w = AlignedBuf::new(log.clone(), wal_offset, 4 * alignment, alignment).unwrap();
+        let buf_w = AlignedBuf::new(wal_offset, 4 * alignment, alignment).unwrap();
 
         rand::thread_rng().fill_bytes(buf_w.slice_mut(..));
         buf_w.increase_written(buf_w.capacity);
@@ -710,13 +693,12 @@ mod tests {
         let mut store_dir = test_util::create_random_path().unwrap();
         let store_dir_c = store_dir.clone();
         let _store_dir_guard =
-            test_util::DirectoryRemovalGuard::new(log.clone(), &Path::new(store_dir_c.as_os_str()));
+            test_util::DirectoryRemovalGuard::new(&Path::new(store_dir_c.as_os_str()));
 
         store_dir.push(path::PathBuf::from(uuid.simple().to_string()));
 
         let mut segment =
-            super::LogSegment::new(log, &config, wal_offset, 1024 * 1024, store_dir.as_path())
-                .unwrap();
+            super::LogSegment::new(&config, wal_offset, 1024 * 1024, store_dir.as_path()).unwrap();
         segment.open().unwrap();
 
         let sd = segment.sd.as_ref().unwrap();
