@@ -26,8 +26,8 @@ pub(crate) struct Context {
 
     /// For io_uring_register file
     pub(crate) fd: i32,
-
-    
+    ///
+    pub(crate) sparse_offset: i32,
 }
 
 impl Context {
@@ -46,6 +46,7 @@ impl Context {
             len,
             start_time,
             fd: 0,
+            sparse_offset: -1,
         }))
     }
 
@@ -74,6 +75,7 @@ impl Context {
             len,
             start_time,
             fd: 0,
+            sparse_offset: -1,
         }))
     }
 
@@ -81,7 +83,7 @@ impl Context {
         opcode: u8,
         wal_offset: u64,
         fd: i32,
-        register_file_descriptor: u32,
+        sparse_offset: i32,
         alignment: usize,
     ) -> Box<Self> {
         let buf = Arc::new(AlignedBuf::new(0, alignment, alignment).unwrap());
@@ -90,7 +92,8 @@ impl Context {
             buf,
             wal_offset,
             fd,
-            len: register_file_descriptor,
+            sparse_offset,
+            len: alignment as u32,
             start_time: minstant::Instant::now(),
         })
     }

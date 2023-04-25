@@ -129,7 +129,7 @@ pub(crate) struct IO {
     /// This descriptor is expected to be reset to 0 once it reaches to `config::Configuration::store::sparse_register_file_descriptors`.
     ///
     /// By default, `sparse_register_file_descriptors` is configured to `disk-size / segment-file-size * 2`.
-    next_register_file_descriptor: u32,
+    next_sparse_offset: u32,
 }
 
 /// Check if required opcodes are supported by the host operation system.
@@ -192,9 +192,9 @@ impl IO {
 
         check_io_uring(&probe)?;
 
-        let mut sparse = vec![];
-        sparse.resize(config.store.sparse_register_file_descriptors as usize, -1);
-        submitter.register_files(&sparse[..])?;
+        let mut sparse_fds = vec![];
+        sparse_fds.resize(config.store.sparse_fd_number as usize, -1);
+        submitter.register_files(&sparse_fds[..])?;
 
         trace!("Data I/O Uring instance created");
 
@@ -218,7 +218,7 @@ impl IO {
             blocked: HashMap::new(),
             resubmit_sqes: VecDeque::new(),
             indexer,
-            next_register_file_descriptor: 0,
+            next_sparse_offset: 0,
         })
     }
 
@@ -260,8 +260,11 @@ impl IO {
 
     fn register_files(&mut self) -> Result<(), StoreError> {
         let submitter = self.data_ring.submitter();
-        self.wal
-            .register_files(&submitter, &mut self.next_register_file_descriptor, self.options.store.sparse_register_file_descriptors)?;
+        self.wal.register_files(
+            &submitter,
+            &mut self.next_sparse_offset,
+            self.options.store.sparse_fd_number,
+        )?;
         Ok(())
     }
 
@@ -590,15 +593,14 @@ impl IO {
     }
 
     #[inline(always)]
-    fn get_and_increase_next_register_file_descriptor(&mut self) -> u32 {
-        let fixed = self.next_register_file_descriptor;
-        self.next_register_file_descriptor += 1;
-        if self.next_register_file_descriptor >= self.options.store.sparse_register_file_descriptors
-        {
-            self.next_register_file_descriptor = 0;
+    fn get_and_increase_sparse_offset(&mut self) -> i32 {
+        let fixed = self.next_sparse_offset;
+        self.next_sparse_offset += 1;
+        if self.next_sparse_offset >= self.options.store.sparse_fd_number {
+            self.next_sparse_offset = 0;
         }
 
-        fixed
+        fixed as i32
     }
 
     fn build_register_sqe(&mut self, entries: &mut Vec<squeue::Entry>) {
@@ -612,12 +614,12 @@ impl IO {
                     opcode::FilesUpdate::CODE,
                     wal_offset,
                     fd,
-                    self.get_and_increase_next_register_file_descriptor(),
+                    self.get_and_increase_sparse_offset(),
                     self.options.store.alignment,
                 );
                 let fds = &ctx.fd as *const i32;
                 let sqe = opcode::FilesUpdate::new(fds, 1)
-                    .offset(ctx.len as i32)
+                    .offset(ctx.sparse_offset)
                     .build()
                     .user_data(Box::into_raw(ctx) as u64);
 
@@ -1131,7 +1133,7 @@ impl IO {
                                         opcode::FilesUpdate::CODE => {
                                             let fds = &context.fd as *const i32;
                                             let sqe = opcode::FilesUpdate::new(fds, 1)
-                                                .offset(context.len as i32)
+                                                .offset(context.sparse_offset)
                                                 .build()
                                                 .user_data(Box::into_raw(context) as u64);
                                             self.resubmit_sqes.push_back(sqe);
@@ -1161,7 +1163,7 @@ impl IO {
                         if opcode::Read::CODE == context.opcode {
                             if let Some(segment) = self.wal.segment_file_of(context.wal_offset) {
                                 effected_segments.insert(segment.wal_offset);
-                                trace!("Effected segment {}", segment.wal_offset);
+                                trace!("Affected segment[wal_offset={}]", segment.wal_offset);
                             }
                         }
 
