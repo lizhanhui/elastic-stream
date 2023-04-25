@@ -367,16 +367,19 @@ impl Configuration {
                 std::fs::create_dir_all(wal.as_path())?;
             }
         }
-        let file_stat =
-            stat::stat(wal.as_path()).map_err(|e| ConfigurationError::System(e as i32))?;
-        self.store.alignment = file_stat.st_blksize as usize;
-        self.store.blocks = file_stat.st_blocks as u64;
+        let stat_fs = nix::sys::statfs::statfs(wal.as_path())
+            .map_err(|e| ConfigurationError::System(e as i32))?;
+        self.store.alignment = stat_fs.block_size() as usize;
+        self.store.blocks = stat_fs.blocks() as u64;
 
         if 0 == self.store.sparse_fd_number {
-            let nr = (self.store.blocks * self.store.alignment as u64 + self.store.segment_size
-                - 1)
-                / self.store.segment_size
-                * 2;
+            let mut nr =
+                (self.store.blocks * self.store.alignment as u64 + self.store.segment_size - 1)
+                    / self.store.segment_size;
+            // Debug
+            if nr > 1024 {
+                nr = 1024;
+            }
             self.store.sparse_fd_number = nr as u32;
             trace!("io_uring_register sparse-file={}", nr);
         }

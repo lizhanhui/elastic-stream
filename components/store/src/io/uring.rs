@@ -28,7 +28,6 @@ use std::{
     os::fd::AsRawFd,
 };
 use tokio::sync::oneshot;
-use tokio_uring::buf::fixed;
 
 use super::block_cache::{EntryRange, MergeRange};
 use super::buf::AlignedBuf;
@@ -1003,7 +1002,7 @@ impl IO {
         let committed = self.write_window.committed;
         let mut cache_entries = vec![];
         let mut cache_bytes = 0u32;
-        let mut effected_segments = HashSet::new();
+        let mut affected_segments = HashSet::new();
 
         let mut files_registered = HashMap::new();
 
@@ -1163,20 +1162,25 @@ impl IO {
                             }
                         }
                     } else {
+                        if opcode::FilesUpdate::CODE == context.opcode {
+                            files_registered.insert(context.wal_offset, context.sparse_offset);
+                            continue;
+                        }
+
                         // Add block cache
-                        cache_entries.push(Arc::clone(&context.buf));
-                        cache_bytes += context.buf.capacity as u32;
+                        if opcode::Write::CODE == context.opcode
+                            || opcode::Read::CODE == context.opcode
+                        {
+                            cache_entries.push(Arc::clone(&context.buf));
+                            cache_bytes += context.buf.capacity as u32;
+                        }
 
                         // Cache the completed read context
                         if opcode::Read::CODE == context.opcode {
                             if let Some(segment) = self.wal.segment_file_of(context.wal_offset) {
-                                effected_segments.insert(segment.wal_offset);
+                                affected_segments.insert(segment.wal_offset);
                                 trace!("Affected segment[wal_offset={}]", segment.wal_offset);
                             }
-                        }
-
-                        if opcode::FilesUpdate::CODE == context.opcode {
-                            files_registered.insert(context.wal_offset, context.sparse_offset);
                         }
                     }
                 }
@@ -1221,7 +1225,7 @@ impl IO {
             }
         }
 
-        self.complete_read_tasks(effected_segments);
+        self.complete_read_tasks(affected_segments);
 
         if self.write_window.committed > committed {
             self.complete_write_tasks();
@@ -1254,8 +1258,8 @@ impl IO {
             .index(task.stream_id, task.offset as u64, handle);
     }
 
-    fn complete_read_tasks(&mut self, effected_segments: HashSet<u64>) {
-        effected_segments.into_iter().for_each(|wal_offset| {
+    fn complete_read_tasks(&mut self, affected_segments: HashSet<u64>) {
+        affected_segments.into_iter().for_each(|wal_offset| {
             let inflight_read_tasks = self.inflight_read_tasks.remove(&wal_offset);
             if let Some(mut inflight_read_tasks) = inflight_read_tasks {
                 // If the inflight read task is completed, we need to complete it and remove it from the inflight list
