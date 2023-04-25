@@ -459,6 +459,29 @@ impl Wal {
             .count()
     }
 
+    /// Returns segment files, in form of `(wal_offset, fd)`, that are pending to register.
+    pub(crate) fn files_to_register(&self, inflight: &HashMap<u64, i32>) -> HashMap<u64, i32> {
+        self.segments
+            .iter()
+            .rev()
+            .take_while(|segment| {
+                segment.status == Status::OpenAt
+                    || segment.status == Status::Fallocate64
+                    || segment.status == Status::FilesUpdate
+            })
+            .filter(|segment| {
+                segment.status == Status::FilesUpdate && !inflight.contains_key(&segment.wal_offset)
+            })
+            .map(|segment| {
+                debug_assert!(
+                    segment.sd.is_some(),
+                    "A pending to register segment file should have been open()"
+                );
+                (segment.wal_offset, segment.sd.as_ref().unwrap().fd)
+            })
+            .collect()
+    }
+
     /// Delete segments when their backed file is deleted
     pub(crate) fn delete_segments(&mut self, offsets: Vec<u64>) {
         if offsets.is_empty() {

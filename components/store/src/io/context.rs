@@ -23,6 +23,11 @@ pub(crate) struct Context {
     /// The start time of this context
     /// This field is used to calculate the duration from creation to completion of this operation
     pub(crate) start_time: minstant::Instant,
+
+    /// For io_uring_register file
+    pub(crate) fd: i32,
+
+    
 }
 
 impl Context {
@@ -40,6 +45,7 @@ impl Context {
             wal_offset,
             len,
             start_time,
+            fd: 0,
         }))
     }
 
@@ -67,6 +73,25 @@ impl Context {
             wal_offset,
             len,
             start_time,
+            fd: 0,
         }))
+    }
+
+    pub(crate) fn register_ctx(
+        opcode: u8,
+        wal_offset: u64,
+        fd: i32,
+        register_file_descriptor: u32,
+        alignment: usize,
+    ) -> Box<Self> {
+        let buf = Arc::new(AlignedBuf::new(0, alignment, alignment).unwrap());
+        Box::new(Self {
+            opcode,
+            buf,
+            wal_offset,
+            fd,
+            len: register_file_descriptor,
+            start_time: minstant::Instant::now(),
+        })
     }
 }

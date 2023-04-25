@@ -14,6 +14,7 @@ use crate::io::write_window::WriteWindow;
 use crate::AppendResult;
 use crate::BufSlice;
 use std::io;
+use std::os::fd::RawFd;
 
 use crossbeam::channel::{Receiver, Sender, TryRecvError};
 use io_uring::register;
@@ -27,6 +28,7 @@ use std::{
     os::fd::AsRawFd,
 };
 use tokio::sync::oneshot;
+use tokio_uring::buf::fixed;
 
 use super::block_cache::{EntryRange, MergeRange};
 use super::buf::AlignedBuf;
@@ -104,6 +106,9 @@ pub(crate) struct IO {
     ///
     /// The key is the start wal offset of segment that contains the read tasks.
     inflight_read_tasks: BTreeMap<u64, VecDeque<ReadTask>>,
+
+    /// Inflight register files tasks that are not yet completed.
+    inflight_register_tasks: HashMap<u64, RawFd>,
 
     /// Offsets of blocks that are partially filled with data and are still inflight.
     barrier: RefCell<HashSet<u64>>,
@@ -206,6 +211,7 @@ impl IO {
             pending_data_tasks: VecDeque::new(),
             inflight_write_tasks: BTreeMap::new(),
             inflight_read_tasks: BTreeMap::new(),
+            inflight_register_tasks: HashMap::new(),
             barrier: RefCell::new(HashSet::new()),
             blocked: HashMap::new(),
             resubmit_sqes: VecDeque::new(),
@@ -536,8 +542,11 @@ impl IO {
                             read_len,
                             minstant::Instant::now(),
                         );
-
-                        let sqe = opcode::Read::new(types::Fd(sd.fd), ptr, read_len)
+                        debug_assert!(
+                            sd.fixed.is_some(),
+                            "Segment file should have registered in data uring"
+                        );
+                        let sqe = opcode::Read::new(types::Fixed(sd.fixed.unwrap()), ptr, read_len)
                             .offset(read_from as libc::off_t)
                             .build()
                             .user_data(context as u64);
@@ -575,6 +584,48 @@ impl IO {
         self.blocked
             .iter()
             .any(|(offset, _entry)| !self.barrier.borrow().contains(offset))
+    }
+
+    #[inline(always)]
+    fn get_and_increase_next_register_file_descriptor(&mut self) -> u32 {
+        let fixed = self.next_register_file_descriptor;
+        self.next_register_file_descriptor += 1;
+        if self.next_register_file_descriptor >= self.options.store.sparse_register_file_descriptors
+        {
+            self.next_register_file_descriptor = 0;
+        }
+
+        fixed
+    }
+
+    fn build_register_sqe(&mut self, entries: &mut Vec<squeue::Entry>) {
+        self.wal
+            .files_to_register(&self.inflight_register_tasks)
+            .into_iter()
+            .for_each(|(wal_offset, fd)| {
+                self.inflight_register_tasks.insert(wal_offset, fd);
+
+                let ctx = Context::register_ctx(
+                    opcode::FilesUpdate::CODE,
+                    wal_offset,
+                    fd,
+                    self.get_and_increase_next_register_file_descriptor(),
+                    self.options.store.alignment,
+                );
+                let fds = &ctx.fd as *const i32;
+                let sqe = opcode::FilesUpdate::new(fds, 1)
+                    .offset(ctx.len as i32)
+                    .build()
+                    .user_data(Box::into_raw(ctx) as u64);
+
+                entries.push(sqe);
+            });
+    }
+
+    fn uring_register(&mut self, wal_offset: u64, fixed: u32) {
+        if let Some(segment) = self.wal.segment_file_of(wal_offset) {
+            segment.uring_register(fixed);
+        }
     }
 
     fn build_write_sqe(&mut self, entries: &mut Vec<squeue::Entry>) {
@@ -651,9 +702,9 @@ impl IO {
                         // When the uring io completes, the pointer will be used to retrieve the `Context`.
                         let context =
                             Context::write_ctx(opcode::Write::CODE, buf, buf_wal_offset, buf_limit, minstant::Instant::now());
-
+                        debug_assert!(sd.fixed.is_some(), "Segment file should have registered into data uring");
                         // Note we have to write the whole page even if the page is partially filled.
-                        let sqe = opcode::Write::new(types::Fd(sd.fd), ptr, buf_capacity)
+                        let sqe = opcode::Write::new(types::Fixed(sd.fixed.unwrap()), ptr, buf_capacity)
                             .offset64(file_offset as libc::off_t)
                             .build()
                             .user_data(context as u64);
@@ -695,6 +746,9 @@ impl IO {
     }
 
     fn build_sqe(&mut self, entries: &mut Vec<squeue::Entry>) {
+        // Build SQEs to register files
+        self.build_register_sqe(entries);
+
         let alignment = self.options.store.alignment;
         if let Err(e) = self.reserve_write_buffers() {
             error!("Failed to reserve write buffers: {}", e);
@@ -937,6 +991,9 @@ impl IO {
         let mut cache_entries = vec![];
         let mut cache_bytes = 0u32;
         let mut effected_segments = HashSet::new();
+
+        let mut files_registered = HashMap::new();
+
         {
             let mut count = 0;
             let mut completion = self.data_ring.completion();
@@ -1046,7 +1103,7 @@ impl IO {
                                     match context.opcode {
                                         opcode::Read::CODE => {
                                             let sqe = opcode::Read::new(
-                                                types::Fd(sd.fd),
+                                                types::Fixed(sd.fixed.unwrap()),
                                                 buf_ptr,
                                                 context.len,
                                             )
@@ -1058,7 +1115,7 @@ impl IO {
                                         }
                                         opcode::Write::CODE => {
                                             let sqe = opcode::Write::new(
-                                                types::Fd(sd.fd),
+                                                types::Fixed(sd.fixed.unwrap()),
                                                 buf_ptr,
                                                 buf.capacity as u32,
                                             )
@@ -1066,6 +1123,14 @@ impl IO {
                                             .build()
                                             .user_data(Box::into_raw(context) as u64);
 
+                                            self.resubmit_sqes.push_back(sqe);
+                                        }
+                                        opcode::FilesUpdate::CODE => {
+                                            let fds = &context.fd as *const i32;
+                                            let sqe = opcode::FilesUpdate::new(fds, 1)
+                                                .offset(context.len as i32)
+                                                .build()
+                                                .user_data(Box::into_raw(context) as u64);
                                             self.resubmit_sqes.push_back(sqe);
                                         }
                                         _ => (),
@@ -1096,6 +1161,10 @@ impl IO {
                                 trace!("Effected segment {}", segment.wal_offset);
                             }
                         }
+
+                        if opcode::FilesUpdate::CODE == context.opcode {
+                            files_registered.insert(context.wal_offset, context.len);
+                        }
                     }
                 }
                 // This will flush any entries consumed in this iterator and will make available new entries in the queue
@@ -1109,6 +1178,10 @@ impl IO {
         }
 
         let (_, free_bytes) = try_reclaim_from_wal(&mut self.wal, cache_bytes);
+
+        files_registered.iter().for_each(|(wal_offset, fixed)| {
+            self.uring_register(*wal_offset, *fixed);
+        });
 
         if free_bytes < cache_bytes as u64 {
             // There is no enough space to cache the returned blocks.
@@ -1473,6 +1546,17 @@ fn on_complete(
                     todo!("Implement read_all");
                 }
                 context.buf.increase_written(result as usize);
+                Ok(())
+            }
+        }
+        opcode::FilesUpdate::CODE => {
+            if result < 0 {
+                error!(
+                    "io_uring_register file failed. Segment.wal_offset={}",
+                    context.wal_offset
+                );
+                Err(StoreError::System(-result))
+            } else {
                 Ok(())
             }
         }

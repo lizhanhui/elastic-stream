@@ -485,6 +485,15 @@ impl LogSegment {
             }
         }
     }
+
+    pub(crate) fn uring_register(&mut self, fixed: u32) {
+        debug_assert!(self.sd.is_some());
+        if let Some(ref mut sd) = self.sd {
+            debug_assert!(sd.fixed.is_none());
+            sd.fixed = Some(fixed);
+        }
+        self.status = Status::ReadWrite;
+    }
 }
 
 impl Drop for LogSegment {
