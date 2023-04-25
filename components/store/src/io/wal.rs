@@ -12,8 +12,8 @@ use crate::{
     io::segment::{LogSegment, Medium, SegmentDescriptor, Status},
 };
 
-use io_uring::{opcode, squeue, types};
-use log::{debug, error, info, trace, warn};
+use io_uring::{opcode, squeue, types, Submitter};
+use log::{error, info, trace, warn};
 use model::flat_record::FlatRecordBatch;
 use percentage::Percentage;
 use protocol::flat_model::records::RecordBatchMeta;
@@ -161,7 +161,6 @@ impl Wal {
             if file_pos + len as u64 > segment.size || 0 == len {
                 info!("Got an invalid record length: `{}`. Stop scanning WAL", len);
                 last_found = true;
-                segment.status = Status::ReadWrite;
                 file_pos -= 8;
                 segment.written = file_pos;
                 break;
@@ -174,7 +173,6 @@ impl Wal {
             if ckm != crc {
                 file_pos -= 8;
                 segment.written = file_pos;
-                segment.status = Status::ReadWrite;
                 info!(
                     "Found a record failing CRC32c. Expecting: `{:#08x}`, Actual: `{:#08x}`",
                     crc, ckm
@@ -192,7 +190,6 @@ impl Wal {
                     debug_assert_eq!(segment.size, file_pos, "Should have reached EOF");
 
                     segment.written = segment.size;
-                    segment.status = Status::Read;
                     info!("Reached EOF of {}", segment);
 
                     // Break if the scan operation reaches the end of file
@@ -251,17 +248,14 @@ impl Wal {
         info!("Start to recover WAL segment files");
         let mut need_scan = true;
         for segment in self.segments.iter_mut() {
+            segment.status = Status::FilesUpdate;
             if segment.wal_offset + segment.size <= offset {
-                segment.status = Status::Read;
                 segment.written = segment.size;
-                debug!("Mark {} as read-only", segment);
                 continue;
             }
 
             if !need_scan {
                 segment.written = 0;
-                segment.status = Status::ReadWrite;
-                debug!("Mark {} as read-write", segment);
                 continue;
             }
 
@@ -578,6 +572,7 @@ impl Wal {
                     segment.sd = Some(SegmentDescriptor {
                         medium: Medium::Ssd,
                         fd: result,
+                        fixed: None,
                         base_ptr: 0,
                     });
                     segment.status = Status::Fallocate64;
@@ -602,7 +597,7 @@ impl Wal {
                 }
                 Status::Fallocate64 => {
                     info!("Fallocate of LogSegmentFile `{}` completed", segment);
-                    segment.status = Status::ReadWrite;
+                    segment.status = Status::FilesUpdate;
                 }
                 Status::Close => {
                     info!("LogSegmentFile: `{}` is closed", segment);
@@ -641,6 +636,50 @@ impl Wal {
         self.delete_segments(to_remove);
 
         Ok(())
+    }
+
+    /// `io_uring_register` existing segment files to data io_uring instance.
+    ///
+    /// As we are using `Submission Queue Polling`, we must register files when conducting read/write.
+    /// See https://unixism.net/loti/tutorial/sq_poll.html
+    ///
+    /// Note: This method is expected to be called after recovery and prior to serving incoming read/write traffic.
+    pub(crate) fn register_files(&mut self, submitter: &Submitter) -> Result<u32, StoreError> {
+        let fds = self
+            .segments
+            .iter()
+            .map(|segment| {
+                debug_assert!(segment.sd.is_some(), "Must have open()");
+                segment.sd.as_ref().unwrap().fd
+            })
+            .collect::<Vec<_>>();
+
+        let mut next_fixed = 0;
+        let n = submitter
+            .register_files_update(next_fixed, &fds[..])
+            .map_err(|e| {
+                error!(
+                    "Failed to io_uring_register for existing segment files: {}",
+                    e
+                );
+                StoreError::IoUring
+            })?;
+        debug_assert_eq!(n, fds.len(), "All segment files FD should be registered");
+
+        // Update segment status, fixed FD.
+        self.segments.iter_mut().for_each(|segment| {
+            debug_assert_eq!(segment.status, Status::FilesUpdate);
+            if let Some(ref mut sd) = segment.sd {
+                sd.fixed = Some(next_fixed);
+                next_fixed += 1;
+            }
+            if segment.remaining() > 0 {
+                segment.status = Status::ReadWrite;
+            } else {
+                segment.status = Status::Read;
+            }
+        });
+        Ok(next_fixed)
     }
 }
 

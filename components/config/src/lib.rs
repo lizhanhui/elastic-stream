@@ -5,6 +5,7 @@ use std::{
 };
 
 use error::ConfigurationError;
+use log::trace;
 use model::DataNode;
 use nix::sys::stat;
 use serde::{Deserialize, Serialize};
@@ -219,6 +220,10 @@ pub struct Store {
     #[serde(default)]
     pub blocks: u64,
 
+    // Number of sparse registered files.
+    #[serde(default)]
+    pub sparse_register_file_descriptors: u32,
+
     #[serde(rename = "read-block-size")]
     pub read_block_size: u32,
 
@@ -239,6 +244,7 @@ impl Default for Store {
             max_cache_size: 1048576,
             alignment: 4096,
             blocks: 0,
+            sparse_register_file_descriptors: 0,
             read_block_size: 131072,
             pre_allocate_segment_file_number: 2,
             uring: Uring::default(),
@@ -365,6 +371,15 @@ impl Configuration {
             stat::stat(wal.as_path()).map_err(|e| ConfigurationError::System(e as i32))?;
         self.store.alignment = file_stat.st_blksize as usize;
         self.store.blocks = file_stat.st_blocks as u64;
+
+        if 0 == self.store.sparse_register_file_descriptors {
+            let nr = (self.store.blocks * self.store.alignment as u64 + self.store.segment_size
+                - 1)
+                / self.store.segment_size
+                * 2;
+            self.store.sparse_register_file_descriptors = nr as u32;
+            trace!("io_uring_register sparse-file={}", nr);
+        }
 
         let metadata = base.join(&self.store.path.metadata);
         if !metadata.exists() {

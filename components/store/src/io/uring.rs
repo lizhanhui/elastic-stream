@@ -118,6 +118,13 @@ pub(crate) struct IO {
 
     /// Provide index service for building read index, shared with the upper store layer.
     indexer: Arc<IndexDriver>,
+
+    /// Next register file descriptor to use when io_uring_register file.
+    ///
+    /// This descriptor is expected to be reset to 0 once it reaches to `config::Configuration::store::sparse_register_file_descriptors`.
+    ///
+    /// By default, `sparse_register_file_descriptors` is configured to `disk-size / segment-file-size * 2`.
+    next_register_file_descriptor: u32,
 }
 
 /// Check if required opcodes are supported by the host operation system.
@@ -176,6 +183,8 @@ impl IO {
             config.store.uring.max_unbounded_worker,
         ])?;
         submitter.register_probe(&mut probe)?;
+        // Requires kernel 5.19+
+        submitter.register_files_sparse(config.store.sparse_register_file_descriptors)?;
         submitter.register_enable_rings()?;
 
         check_io_uring(&probe)?;
@@ -201,6 +210,7 @@ impl IO {
             blocked: HashMap::new(),
             resubmit_sqes: VecDeque::new(),
             indexer,
+            next_register_file_descriptor: 0,
         })
     }
 
@@ -237,6 +247,12 @@ impl IO {
         // Reset committed WAL offset
         self.write_window.reset_committed(pos);
 
+        Ok(())
+    }
+
+    fn register_files(&mut self) -> Result<(), StoreError> {
+        let submitter = self.data_ring.submitter();
+        self.next_register_file_descriptor = self.wal.register_files(&submitter)?;
         Ok(())
     }
 
@@ -595,7 +611,7 @@ impl IO {
             .take()
             .into_iter()
             .filter(|buf| {
-                // Accept the last partial buffer only if it contains uncommited data.
+                // Accept the last partial buffer only if it contains uncommitted data.
                 buf.wal_offset + buf.limit() as u64 > self.write_window.committed
             })
             .flat_map(|buf| {
@@ -1307,6 +1323,7 @@ impl IO {
         io.borrow_mut().load()?;
         let pos = io.borrow().indexer.get_wal_checkpoint()?;
         io.borrow_mut().recover(pos)?;
+        io.borrow_mut().register_files()?;
 
         if recovery_completion_tx.send(()).is_err() {
             error!("Failed to notify completion of recovery");

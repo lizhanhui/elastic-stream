@@ -91,6 +91,9 @@ pub(crate) struct SegmentDescriptor {
     /// It's a file descriptor or a block device descriptor.
     pub(crate) fd: RawFd,
 
+    /// Fixed FD when io_uring_register_files
+    pub(crate) fixed: Option<u32>,
+
     /// The base address of the log segment, always zero if the fd is a file descriptor.
     pub(crate) base_ptr: u64,
 }
@@ -219,8 +222,6 @@ impl LogSegment {
             ))?;
         let metadata = file.metadata()?;
 
-        let mut status = Status::OpenAt;
-
         if self.size != metadata.len() {
             debug_assert!(0 == metadata.len(), "LogSegmentFile is corrupted");
             fcntl::fallocate(
@@ -230,22 +231,22 @@ impl LogSegment {
                 self.size as libc::off_t,
             )
             .map_err(|errno| StoreError::System(errno as i32))?;
-            status = Status::ReadWrite;
-        } else {
-            // We assume the log segment file is read-only. The recovery/apply procedure would update status accordingly.
-            status = Status::Read;
         }
-
-        self.status = status;
+        self.status = Status::FilesUpdate;
         self.sd = Some(SegmentDescriptor {
             medium: Medium::Ssd,
             fd: file.into_raw_fd(),
+            fixed: None,
             base_ptr: 0,
         });
 
         // TODO: read time_range from meta-blocks
 
         Ok(())
+    }
+
+    pub fn remaining(&self) -> u64 {
+        self.size - self.written
     }
 
     pub fn writable(&self) -> bool {
