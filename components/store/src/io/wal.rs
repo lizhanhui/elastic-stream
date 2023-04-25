@@ -667,7 +667,12 @@ impl Wal {
     /// See https://unixism.net/loti/tutorial/sq_poll.html
     ///
     /// Note: This method is expected to be called after recovery and prior to serving incoming read/write traffic.
-    pub(crate) fn register_files(&mut self, submitter: &Submitter) -> Result<u32, StoreError> {
+    pub(crate) fn register_files(
+        &mut self,
+        submitter: &Submitter,
+        next_register_file_descriptor: &mut u32,
+        max_nr: u32,
+    ) -> Result<(), StoreError> {
         let fds = self
             .segments
             .iter()
@@ -675,34 +680,41 @@ impl Wal {
                 debug_assert!(segment.sd.is_some(), "Must have open()");
                 segment.sd.as_ref().unwrap().fd
             })
+            .rev()
+            .take(max_nr as usize)
             .collect::<Vec<_>>();
 
-        let mut next_fixed = 0;
+        if fds.is_empty() {
+            trace!("There is no segment file. Skip io_uring_register");
+            return Ok(());
+        }
+
         let n = submitter
-            .register_files_update(next_fixed, &fds[..])
+            .register_files_update(*next_register_file_descriptor, &fds[..])
             .map_err(|e| {
-                error!(
-                    "Failed to io_uring_register for existing segment files: {}",
-                    e
-                );
+                error!("Failed to io_uring_register existing segment files: {}", e);
                 StoreError::IoUring
             })?;
-        debug_assert_eq!(n, fds.len(), "All segment files FD should be registered");
+        debug_assert_eq!(n, fds.len(), "io_uring_registered {} segment files", n);
 
         // Update segment status, fixed FD.
-        self.segments.iter_mut().for_each(|segment| {
-            debug_assert_eq!(segment.status, Status::FilesUpdate);
-            if let Some(ref mut sd) = segment.sd {
-                sd.fixed = Some(next_fixed);
-                next_fixed += 1;
-            }
-            if segment.remaining() > 0 {
-                segment.status = Status::ReadWrite;
-            } else {
-                segment.status = Status::Read;
-            }
-        });
-        Ok(next_fixed)
+        self.segments
+            .iter_mut()
+            .rev()
+            .take(max_nr as usize)
+            .for_each(|segment| {
+                debug_assert_eq!(segment.status, Status::FilesUpdate);
+                if let Some(ref mut sd) = segment.sd {
+                    sd.fixed = Some(*next_register_file_descriptor);
+                    *next_register_file_descriptor += 1;
+                }
+                if segment.remaining() > 0 {
+                    segment.status = Status::ReadWrite;
+                } else {
+                    segment.status = Status::Read;
+                }
+            });
+        Ok(())
     }
 }
 

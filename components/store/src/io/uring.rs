@@ -188,13 +188,15 @@ impl IO {
             config.store.uring.max_unbounded_worker,
         ])?;
         submitter.register_probe(&mut probe)?;
-        // Requires kernel 5.19+
-        submitter.register_files_sparse(config.store.sparse_register_file_descriptors)?;
         submitter.register_enable_rings()?;
 
         check_io_uring(&probe)?;
 
-        trace!("Polling I/O Uring instance created");
+        let mut sparse = vec![];
+        sparse.resize(config.store.sparse_register_file_descriptors as usize, -1);
+        submitter.register_files(&sparse[..])?;
+
+        trace!("Data I/O Uring instance created");
 
         let (sender, receiver) = crossbeam::channel::unbounded();
 
@@ -258,7 +260,8 @@ impl IO {
 
     fn register_files(&mut self) -> Result<(), StoreError> {
         let submitter = self.data_ring.submitter();
-        self.next_register_file_descriptor = self.wal.register_files(&submitter)?;
+        self.wal
+            .register_files(&submitter, &mut self.next_register_file_descriptor, self.options.store.sparse_register_file_descriptors)?;
         Ok(())
     }
 

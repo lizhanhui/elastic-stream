@@ -486,6 +486,7 @@ mod tests {
 
     #[test]
     fn test_seal() -> Result<(), Box<dyn Error>> {
+        test_util::try_init_log();
         let path = test_util::create_random_path()?;
         trace!("Test store directory: {}", path.to_str().unwrap());
         let _guard = test_util::DirectoryRemovalGuard::new(path.as_path());
@@ -533,6 +534,7 @@ mod tests {
 
     #[test]
     fn test_describe_range() -> Result<(), Box<dyn Error>> {
+        test_util::try_init_log();
         let store_path = test_util::create_random_path()?;
         let _guard = test_util::DirectoryRemovalGuard::new(store_path.as_path());
         let (port_tx, port_rx) = oneshot::channel();
