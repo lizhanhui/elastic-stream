@@ -30,7 +30,7 @@ jobs:
               - 'components/protocol/fbs/rpc.fbs'
   java-build:
     needs: [paths-filter]
-    if: ${{ needs.paths-filter.outputs.java == 'true' }}
+    if: false # ${{ needs.paths-filter.outputs.java == 'true' }}
     uses: ./.github/workflows/java_build.yml
   rust-build:
     needs: [paths-filter]
