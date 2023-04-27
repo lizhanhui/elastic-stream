@@ -1,7 +1,7 @@
 //! This module contains a trait and a simple implementation to generate unique ID for data node.
 
 use log::{error, trace};
-use std::{sync::Arc, time::Duration};
+use std::sync::Arc;
 use tokio::sync::{broadcast, oneshot};
 
 use crate::{error::ClientError, Client};
@@ -28,19 +28,12 @@ impl PlacementManagerIdGenerator {
 impl IdGenerator for PlacementManagerIdGenerator {
     fn generate(&self) -> Result<i32, ClientError> {
         let (tx, rx) = oneshot::channel();
+        let config = Arc::clone(&self.config);
         tokio_uring::start(async {
-            let config = Arc::new(config::Configuration::default());
             let (shutdown_tx, _shutdown_rx) = broadcast::channel(1);
             let client = Client::new(config, shutdown_tx);
 
-            match client
-                .allocate_id(
-                    &self.config.server.placement_manager,
-                    &self.config.server.host,
-                    Duration::from_secs(3),
-                )
-                .await
-            {
+            match client.allocate_id(&self.config.server.host).await {
                 Ok(id) => {
                     trace!(
                         "Acquired ID={} for data-node[host={}]",
@@ -74,6 +67,7 @@ mod tests {
 
     #[test]
     fn test_generate() -> Result<(), Box<dyn Error>> {
+        test_util::try_init_log();
         let path = test_util::create_random_path()?;
         let _guard = test_util::DirectoryRemovalGuard::new(path.as_path());
 
@@ -89,10 +83,9 @@ mod tests {
         });
 
         let port = port_rx.blocking_recv().unwrap();
-        let pm_address = format!("localhost:{}", port);
 
         let mut cfg = config::Configuration::default();
-        cfg.server.placement_manager = pm_address;
+        cfg.placement_manager = format!("localhost:{}", port);
         let config = Arc::new(cfg);
         let generator = PlacementManagerIdGenerator::new(&config);
         let id = generator.generate()?;

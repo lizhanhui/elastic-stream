@@ -1,6 +1,8 @@
 ---
 # Unit of interval in milliseconds
 tick: 100
+# Placement manager address
+placement-manager: "127.0.0.1:12378"
 # Client configuration
 client:
   # Connect timeout duration in ticks
@@ -26,14 +28,12 @@ server:
   uring:
     # Network io_uring queue depth
     queue-depth: 128
-  # Placement manager address
-  placement-manager: "127.0.0.1:12378"
   # Connection idle duration in ticks
   connection-idle-duration: 60
   # grace period in ticks, after this period of time, disconnect lingering client connections
   grace-period: 120
   profiling:
-    enable: true
+    enable: false
     # profiler sampling frequency
     sampling-frequency: 1000
     # Generate flamegraph interval in seconds
