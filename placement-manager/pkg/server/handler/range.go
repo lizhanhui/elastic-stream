@@ -1,13 +1,13 @@
 package handler
 
 import (
+	"fmt"
+
 	"github.com/pkg/errors"
-	"go.uber.org/zap"
 
 	"github.com/AutoMQ/placement-manager/api/rpcfb/rpcfb"
 	"github.com/AutoMQ/placement-manager/pkg/sbp/protocol"
 	"github.com/AutoMQ/placement-manager/pkg/server/cluster"
-	"github.com/AutoMQ/placement-manager/pkg/util/traceutil"
 	"github.com/AutoMQ/placement-manager/pkg/util/typeutil"
 )
 
@@ -42,46 +42,53 @@ func (h *Handler) ListRanges(req *protocol.ListRangesRequest, resp *protocol.Lis
 }
 
 func (h *Handler) SealRanges(req *protocol.SealRangesRequest, resp *protocol.SealRangesResponse) {
-	// TODO check and save ranges' end offset, optionally create new ranges
 	ctx := req.Context()
-	logger := h.lg.With(traceutil.TraceLogField(ctx))
 
 	entries := typeutil.FilterZero[*rpcfb.SealRangeEntryT](req.Entries)
 	sealResponses := make([]*rpcfb.SealRangesResultT, 0, len(entries))
-	ch := make(chan *rpcfb.SealRangesResultT)
 
 	for _, entry := range entries {
-		rangeID := entry.Range
-		go func(rangeID *rpcfb.RangeIdT) {
-			writableRange, err := h.c.SealRange(ctx, rangeID)
+		if entry.Type != rpcfb.SealTypePLACEMENT_MANAGER {
+			sealResponses = append(sealResponses, &rpcfb.SealRangesResultT{
+				Status: &rpcfb.StatusT{Code: rpcfb.ErrorCodeBAD_REQUEST, Message: fmt.Sprintf("invalid seal type: %s", entry.Type)},
+			})
+			continue
+		}
+		if entry.Range == nil {
+			sealResponses = append(sealResponses, &rpcfb.SealRangesResultT{
+				Status: &rpcfb.StatusT{Code: rpcfb.ErrorCodeBAD_REQUEST, Message: "range is nil"},
+			})
+			continue
+		}
 
-			result := &rpcfb.SealRangesResultT{
-				Range: writableRange,
+		writableRange, err := h.c.SealRange(ctx, entry)
+
+		result := &rpcfb.SealRangesResultT{
+			Range: writableRange,
+		}
+		if err != nil {
+			switch {
+			case errors.Is(err, cluster.ErrNotLeader):
+				resp.Error(h.notLeaderError())
+				return
+			case errors.Is(err, cluster.ErrRangeNotFound):
+				result.Status = &rpcfb.StatusT{Code: rpcfb.ErrorCodeRANGE_NOT_FOUND, Message: err.Error()}
+			case errors.Is(err, cluster.ErrRangeAlreadySealed):
+				result.Status = &rpcfb.StatusT{Code: rpcfb.ErrorCodeRANGE_ALREADY_SEALED, Message: err.Error()}
+			case errors.Is(err, cluster.ErrInvalidEndOffset):
+				result.Status = &rpcfb.StatusT{Code: rpcfb.ErrorCodeBAD_REQUEST, Message: err.Error()}
+			case errors.Is(err, cluster.ErrNotEnoughDataNodes):
+				result.Status = &rpcfb.StatusT{Code: rpcfb.ErrorCodePM_NO_AVAILABLE_DN, Message: err.Error()}
+			default:
+				result.Status = &rpcfb.StatusT{Code: rpcfb.ErrorCodePM_INTERNAL_SERVER_ERROR, Message: err.Error()}
 			}
-			if err != nil {
-				logger.Error("failed to seal range", zap.Int64("stream-id", rangeID.StreamId), zap.Int32("range-index", rangeID.RangeIndex), zap.Error(err))
-				switch {
-				case errors.Is(err, cluster.ErrRangeNotFound):
-					result.Status = &rpcfb.StatusT{Code: rpcfb.ErrorCodePM_SEAL_RANGE_NOT_FOUND, Message: err.Error()}
-				case errors.Is(err, cluster.ErrNoDataNodeResponded):
-					result.Status = &rpcfb.StatusT{Code: rpcfb.ErrorCodePM_SEAL_RANGE_NO_DN_RESPONDED, Message: err.Error()}
-				case errors.Is(err, cluster.ErrNotEnoughDataNodes):
-					result.Status = &rpcfb.StatusT{Code: rpcfb.ErrorCodePM_NO_AVAILABLE_DN, Message: err.Error()}
-				default:
-					result.Status = &rpcfb.StatusT{Code: rpcfb.ErrorCodePM_INTERNAL_SERVER_ERROR, Message: err.Error()}
-				}
-			} else {
-				logger.Info("range sealed", zap.Int64("stream-id", rangeID.StreamId), zap.Int32("range-index", rangeID.RangeIndex),
-					zap.Int64("range-end-offset", writableRange.StartOffset)) // writableRange.StartOffset == sealedRange.EndOffset
-				result.Status = &rpcfb.StatusT{Code: rpcfb.ErrorCodeOK}
-			}
-			ch <- result
-		}(rangeID)
+		} else {
+			result.Status = &rpcfb.StatusT{Code: rpcfb.ErrorCodeOK}
+		}
+
+		sealResponses = append(sealResponses, result)
 	}
 
-	for range entries {
-		sealResponses = append(sealResponses, <-ch)
-	}
 	resp.SealResponses = sealResponses
 	resp.OK()
 }

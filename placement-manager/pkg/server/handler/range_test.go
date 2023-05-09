@@ -7,7 +7,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/AutoMQ/placement-manager/api/rpcfb/rpcfb"
-	sbpClient "github.com/AutoMQ/placement-manager/pkg/sbp/client"
 	"github.com/AutoMQ/placement-manager/pkg/sbp/protocol"
 )
 
@@ -82,21 +81,268 @@ func TestListRanges(t *testing.T) {
 
 func TestSealRanges(t *testing.T) {
 	type want struct {
-		endOffset int64
-		wantErr   bool
-		errCode   rpcfb.ErrorCode
+		writableRange *rpcfb.RangeT
+		ranges        []*rpcfb.RangeT
+		wantErr       bool
+		errCode       rpcfb.ErrorCode
 	}
 	tests := []struct {
-		name       string
-		endOffsetF func(rangeIndex int32, addr sbpClient.Address) int64
-		want       want
+		name    string
+		preSeal *rpcfb.SealRangeEntryT
+		seal    *rpcfb.SealRangeEntryT
+		want    want
 	}{
 		{
-			name: "no data node responded",
-			endOffsetF: func(rangeIndex int32, addr sbpClient.Address) int64 {
-				return -1
+			name:    "normal case (seal a writable range; renew; last range is writable)",
+			preSeal: &rpcfb.SealRangeEntryT{Range: &rpcfb.RangeIdT{}, End: 42, Renew: true},
+			seal: &rpcfb.SealRangeEntryT{
+				Type:  rpcfb.SealTypePLACEMENT_MANAGER,
+				Range: &rpcfb.RangeIdT{RangeIndex: 1},
+				End:   84,
+				Renew: true,
 			},
-			want: want{wantErr: true, errCode: rpcfb.ErrorCodePM_SEAL_RANGE_NO_DN_RESPONDED},
+			want: want{
+				writableRange: &rpcfb.RangeT{RangeIndex: 2, StartOffset: 84, EndOffset: -1},
+				ranges: []*rpcfb.RangeT{
+					{EndOffset: 42},
+					{RangeIndex: 1, StartOffset: 42, EndOffset: 84},
+					{RangeIndex: 2, StartOffset: 84, EndOffset: -1},
+				},
+			},
+		},
+
+		{
+			name:    "seal a writable range; renew; last range is writable",
+			preSeal: &rpcfb.SealRangeEntryT{Range: &rpcfb.RangeIdT{}, Renew: true},
+			seal: &rpcfb.SealRangeEntryT{
+				Type:  rpcfb.SealTypePLACEMENT_MANAGER,
+				Range: &rpcfb.RangeIdT{RangeIndex: 1},
+				End:   42,
+				Renew: true,
+			},
+			want: want{
+				writableRange: &rpcfb.RangeT{RangeIndex: 2, StartOffset: 42, EndOffset: -1},
+				ranges: []*rpcfb.RangeT{
+					{},
+					{RangeIndex: 1, EndOffset: 42},
+					{RangeIndex: 2, StartOffset: 42, EndOffset: -1},
+				},
+			},
+		},
+		{
+			name:    "seal a writable range; not renew; last range is writable",
+			preSeal: &rpcfb.SealRangeEntryT{Range: &rpcfb.RangeIdT{}, Renew: true},
+			seal: &rpcfb.SealRangeEntryT{
+				Type:  rpcfb.SealTypePLACEMENT_MANAGER,
+				Range: &rpcfb.RangeIdT{RangeIndex: 1},
+				End:   42,
+			},
+			want: want{
+				ranges: []*rpcfb.RangeT{
+					{},
+					{RangeIndex: 1, EndOffset: 42},
+				},
+			},
+		},
+
+		{
+			name:    "seal a sealed range; renew; last range is writable",
+			preSeal: &rpcfb.SealRangeEntryT{Range: &rpcfb.RangeIdT{}, Renew: true},
+			seal: &rpcfb.SealRangeEntryT{
+				Type:  rpcfb.SealTypePLACEMENT_MANAGER,
+				Range: &rpcfb.RangeIdT{},
+				End:   42,
+				Renew: true,
+			},
+			want: want{
+				writableRange: &rpcfb.RangeT{RangeIndex: 1, EndOffset: -1},
+				ranges: []*rpcfb.RangeT{
+					{},
+					{RangeIndex: 1, EndOffset: -1},
+				},
+				wantErr: true,
+				errCode: rpcfb.ErrorCodeRANGE_ALREADY_SEALED,
+			},
+		},
+		{
+			name:    "seal a sealed range; renew; last range is sealed",
+			preSeal: &rpcfb.SealRangeEntryT{Range: &rpcfb.RangeIdT{}},
+			seal: &rpcfb.SealRangeEntryT{
+				Type:  rpcfb.SealTypePLACEMENT_MANAGER,
+				Range: &rpcfb.RangeIdT{},
+				End:   42,
+				Renew: true,
+			},
+			want: want{
+				writableRange: &rpcfb.RangeT{RangeIndex: 1, EndOffset: -1},
+				ranges: []*rpcfb.RangeT{
+					{},
+					{RangeIndex: 1, EndOffset: -1},
+				},
+				wantErr: true,
+				errCode: rpcfb.ErrorCodeRANGE_ALREADY_SEALED,
+			},
+		},
+		{
+			name:    "seal a sealed range; not renew; last range is writable",
+			preSeal: &rpcfb.SealRangeEntryT{Range: &rpcfb.RangeIdT{}, Renew: true},
+			seal: &rpcfb.SealRangeEntryT{
+				Type:  rpcfb.SealTypePLACEMENT_MANAGER,
+				Range: &rpcfb.RangeIdT{},
+				End:   42,
+			},
+			want: want{
+				ranges: []*rpcfb.RangeT{
+					{},
+					{RangeIndex: 1, EndOffset: -1},
+				},
+				wantErr: true,
+				errCode: rpcfb.ErrorCodeRANGE_ALREADY_SEALED,
+			},
+		},
+		{
+			name:    "seal a sealed range; not renew; last range is sealed",
+			preSeal: &rpcfb.SealRangeEntryT{Range: &rpcfb.RangeIdT{}},
+			seal: &rpcfb.SealRangeEntryT{
+				Type:  rpcfb.SealTypePLACEMENT_MANAGER,
+				Range: &rpcfb.RangeIdT{},
+				End:   42,
+			},
+			want: want{
+				ranges: []*rpcfb.RangeT{
+					{},
+				},
+				wantErr: true,
+				errCode: rpcfb.ErrorCodeRANGE_ALREADY_SEALED,
+			},
+		},
+
+		{
+			name:    "seal a non-exist range; renew; last range is writable",
+			preSeal: &rpcfb.SealRangeEntryT{Range: &rpcfb.RangeIdT{}, Renew: true},
+			seal: &rpcfb.SealRangeEntryT{
+				Type:  rpcfb.SealTypePLACEMENT_MANAGER,
+				Range: &rpcfb.RangeIdT{RangeIndex: 2},
+				End:   42,
+				Renew: true,
+			},
+			want: want{
+				writableRange: &rpcfb.RangeT{RangeIndex: 1, EndOffset: -1},
+				ranges: []*rpcfb.RangeT{
+					{},
+					{RangeIndex: 1, EndOffset: -1},
+				},
+				wantErr: true,
+				errCode: rpcfb.ErrorCodeRANGE_NOT_FOUND,
+			},
+		},
+		{
+			name:    "seal a non-exist range; renew; last range is sealed",
+			preSeal: &rpcfb.SealRangeEntryT{Range: &rpcfb.RangeIdT{}},
+			seal: &rpcfb.SealRangeEntryT{
+				Type:  rpcfb.SealTypePLACEMENT_MANAGER,
+				Range: &rpcfb.RangeIdT{RangeIndex: 2},
+				End:   42,
+				Renew: true,
+			},
+			want: want{
+				writableRange: &rpcfb.RangeT{RangeIndex: 1, EndOffset: -1},
+				ranges: []*rpcfb.RangeT{
+					{},
+					{RangeIndex: 1, EndOffset: -1},
+				},
+				wantErr: true,
+				errCode: rpcfb.ErrorCodeRANGE_NOT_FOUND,
+			},
+		},
+		{
+			name:    "seal a non-exist range; not renew; last range is writable",
+			preSeal: &rpcfb.SealRangeEntryT{Range: &rpcfb.RangeIdT{}, Renew: true},
+			seal: &rpcfb.SealRangeEntryT{
+				Type:  rpcfb.SealTypePLACEMENT_MANAGER,
+				Range: &rpcfb.RangeIdT{RangeIndex: 2},
+				End:   42,
+			},
+			want: want{
+				ranges: []*rpcfb.RangeT{
+					{},
+					{RangeIndex: 1, EndOffset: -1},
+				},
+				wantErr: true,
+				errCode: rpcfb.ErrorCodeRANGE_NOT_FOUND,
+			},
+		},
+		{
+			name:    "seal a non-exist range; not renew; last range is sealed",
+			preSeal: &rpcfb.SealRangeEntryT{Range: &rpcfb.RangeIdT{}},
+			seal: &rpcfb.SealRangeEntryT{
+				Type:  rpcfb.SealTypePLACEMENT_MANAGER,
+				Range: &rpcfb.RangeIdT{RangeIndex: 2},
+				End:   42,
+			},
+			want: want{
+				ranges: []*rpcfb.RangeT{
+					{},
+				},
+				wantErr: true,
+				errCode: rpcfb.ErrorCodeRANGE_NOT_FOUND,
+			},
+		},
+
+		{
+			name:    "invalid type",
+			preSeal: &rpcfb.SealRangeEntryT{Range: &rpcfb.RangeIdT{}},
+			seal: &rpcfb.SealRangeEntryT{
+				Type:  rpcfb.SealTypeDATA_NODE,
+				Range: &rpcfb.RangeIdT{},
+				End:   42,
+				Renew: true,
+			},
+			want: want{
+				writableRange: nil,
+				ranges: []*rpcfb.RangeT{
+					{},
+				},
+				wantErr: true,
+				errCode: rpcfb.ErrorCodeBAD_REQUEST,
+			},
+		},
+		{
+			name:    "stream not exist",
+			preSeal: &rpcfb.SealRangeEntryT{Range: &rpcfb.RangeIdT{}},
+			seal: &rpcfb.SealRangeEntryT{
+				Type:  rpcfb.SealTypePLACEMENT_MANAGER,
+				Range: &rpcfb.RangeIdT{StreamId: 1, RangeIndex: 1},
+				End:   42,
+				Renew: true,
+			},
+			want: want{
+				writableRange: nil,
+				ranges: []*rpcfb.RangeT{
+					{},
+				},
+				wantErr: true,
+				errCode: rpcfb.ErrorCodeRANGE_NOT_FOUND,
+			},
+		},
+		{
+			name:    "invalid end offset",
+			preSeal: &rpcfb.SealRangeEntryT{Range: &rpcfb.RangeIdT{}, End: 84, Renew: true},
+			seal: &rpcfb.SealRangeEntryT{
+				Type:  rpcfb.SealTypePLACEMENT_MANAGER,
+				Range: &rpcfb.RangeIdT{RangeIndex: 1},
+				End:   42,
+				Renew: true,
+			},
+			want: want{
+				writableRange: nil,
+				ranges: []*rpcfb.RangeT{
+					{EndOffset: 84},
+					{RangeIndex: 1, StartOffset: 84, EndOffset: -1},
+				},
+				wantErr: true,
+				errCode: rpcfb.ErrorCodeBAD_REQUEST,
+			},
 		},
 	}
 	for _, tt := range tests {
@@ -105,20 +351,24 @@ func TestSealRanges(t *testing.T) {
 			t.Parallel()
 			re := require.New(t)
 
-			h, closeFunc := startSbpHandler(t, mockSbpClient{tt.endOffsetF}, true)
+			h, closeFunc := startSbpHandler(t, nil, true)
 			defer closeFunc()
 
+			// prepare
 			preHeartbeat(t, h, 0)
 			preHeartbeat(t, h, 1)
 			preHeartbeat(t, h, 2)
 			preCreateStreams(t, h, 1, 3)
+			preSealRange(t, h, tt.preSeal)
 
+			// seal ranges
 			req := &protocol.SealRangesRequest{SealRangesRequestT: rpcfb.SealRangesRequestT{
-				Entries: []*rpcfb.SealRangeEntryT{{Range: &rpcfb.RangeIdT{StreamId: 0, RangeIndex: 0}}},
+				Entries: []*rpcfb.SealRangeEntryT{tt.seal},
 			}}
 			resp := &protocol.SealRangesResponse{}
 			h.SealRanges(req, resp)
 
+			// check seal response
 			re.Equal(rpcfb.ErrorCodeOK, resp.Status.Code)
 			re.Len(resp.SealResponses, 1)
 			if tt.want.wantErr {
@@ -126,9 +376,13 @@ func TestSealRanges(t *testing.T) {
 			} else {
 				re.Equal(rpcfb.ErrorCodeOK, resp.SealResponses[0].Status.Code)
 			}
-			re.Equal(tt.want.endOffset, resp.SealResponses[0].Range.StartOffset)
-			re.Equal(int64(-1), resp.SealResponses[0].Range.EndOffset)
 
+			if resp.SealResponses[0].Range != nil {
+				resp.SealResponses[0].Range.ReplicaNodes = nil // no need check replica nodes
+			}
+			re.Equal(tt.want.writableRange, resp.SealResponses[0].Range)
+
+			// list ranges
 			lReq := &protocol.ListRangesRequest{ListRangesRequestT: rpcfb.ListRangesRequestT{
 				RangeCriteria: []*rpcfb.RangeCriteriaT{
 					{StreamId: 0, NodeId: -1},
@@ -140,17 +394,11 @@ func TestSealRanges(t *testing.T) {
 			re.Len(lResp.ListResponses, 1)
 			re.Equal(rpcfb.ErrorCodeOK, lResp.ListResponses[0].Status.Code)
 
-			if tt.want.wantErr {
-				re.Len(lResp.ListResponses[0].Ranges, 1)
-				re.Equal(int64(0), lResp.ListResponses[0].Ranges[0].StartOffset)
-				re.Equal(int64(-1), lResp.ListResponses[0].Ranges[0].EndOffset)
-				return
+			// check list range response
+			for _, rangeT := range lResp.ListResponses[0].Ranges {
+				rangeT.ReplicaNodes = nil // no need check replica nodes
 			}
-			re.Len(lResp.ListResponses[0].Ranges, 2)
-			re.Equal(int64(0), lResp.ListResponses[0].Ranges[0].StartOffset)
-			re.Equal(tt.want.endOffset, lResp.ListResponses[0].Ranges[0].EndOffset)
-			re.Equal(tt.want.endOffset, lResp.ListResponses[0].Ranges[1].StartOffset)
-			re.Equal(int64(-1), lResp.ListResponses[0].Ranges[1].EndOffset)
+			re.Equal(tt.want.ranges, lResp.ListResponses[0].Ranges)
 		})
 	}
 }
@@ -183,4 +431,27 @@ func preCreateStreams(tb testing.TB, h *Handler, num int, replicaNum int8) {
 	h.CreateStreams(req, resp)
 
 	re.Equal(resp.Status.Code, rpcfb.ErrorCodeOK)
+}
+
+func preSealRange(tb testing.TB, h *Handler, entry *rpcfb.SealRangeEntryT) {
+	re := require.New(tb)
+
+	entry.Type = rpcfb.SealTypePLACEMENT_MANAGER
+	req := &protocol.SealRangesRequest{SealRangesRequestT: rpcfb.SealRangesRequestT{
+		Entries: []*rpcfb.SealRangeEntryT{entry},
+	}}
+	resp := &protocol.SealRangesResponse{}
+	h.SealRanges(req, resp)
+
+	re.Equal(resp.Status.Code, rpcfb.ErrorCodeOK)
+	re.Equal(resp.SealResponses[0].Status.Code, rpcfb.ErrorCodeOK)
+	if entry.Renew {
+		resp.SealResponses[0].Range.ReplicaNodes = nil // no need check replica nodes
+		re.Equal(&rpcfb.RangeT{
+			StreamId:    entry.Range.StreamId,
+			RangeIndex:  entry.Range.RangeIndex + 1,
+			StartOffset: entry.End,
+			EndOffset:   -1,
+		}, resp.SealResponses[0].Range)
+	}
 }
