@@ -4,7 +4,7 @@ use bytes::Bytes;
 use codec::frame::Frame;
 use log::{error, trace, warn};
 use protocol::rpc::header::{
-    ErrorCode, RangeT, SealRangesRequest, SealRangesResponseT, SealRangesResultT, SealType, StatusT,
+    ErrorCode, RangeT, SealRangeResultT, SealRangesRequest, SealRangesResponseT, SealType, StatusT,
 };
 use store::ElasticStore;
 
@@ -51,9 +51,9 @@ impl<'a> SealRange<'a> {
         let mut manager = stream_manager.borrow_mut();
 
         let mut results = vec![];
-        for entry in request.entries.iter().flatten() {
+        for entry in request.entries.iter() {
             debug_assert_eq!(entry.type_, SealType::DATA_NODE);
-            let mut result = SealRangesResultT::default();
+            let mut result = SealRangeResultT::default();
             let mut status = StatusT::default();
             match manager
                 .seal(entry.range.stream_id, entry.range.range_index)
@@ -66,7 +66,7 @@ impl<'a> SealRange<'a> {
                     item.stream_id = entry.range.stream_id;
                     item.range_index = entry.range.range_index;
                     item.end_offset = offset as i64;
-                    result.range = Box::new(item);
+                    result.range = Some(Box::new(item));
                 }
                 Err(e) => {
                     error!(

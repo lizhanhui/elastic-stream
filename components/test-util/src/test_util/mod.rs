@@ -10,7 +10,8 @@ use protocol::rpc::header::{
     DescribePlacementManagerClusterRequest, DescribePlacementManagerClusterResponseT, ErrorCode,
     HeartbeatRequest, HeartbeatResponseT, IdAllocationRequest, IdAllocationResponseT,
     ListRangesRequest, ListRangesResponseT, ListRangesResultT, PlacementManagerClusterT,
-    PlacementManagerNodeT, RangeT, StatusT,
+    PlacementManagerNodeT, RangeT, SealRangeResultT, SealRangesRequest, SealRangesResponseT,
+    SealType, StatusT,
 };
 
 use tokio::sync::oneshot;
@@ -205,6 +206,18 @@ pub async fn run_listener() -> u16 {
                                     }
                                 }
 
+                                OperationCode::SealRanges => {
+                                    response_frame.operation_code = OperationCode::SealRanges;
+                                    if let Some(buf) = frame.header.as_ref() {
+                                        if let Ok(req) = flatbuffers::root::<SealRangesRequest>(buf)
+                                        {
+                                            serve_seal_ranges(&req, &mut response_frame);
+                                        } else {
+                                            error!("Failed to decode seal-ranges-request header");
+                                        }
+                                    }
+                                }
+
                                 _ => {
                                     warn!("Unsupported operation code: {}", frame.operation_code);
                                     unimplemented!("Unimplemented operation code");
@@ -242,6 +255,77 @@ pub async fn run_listener() -> u16 {
         info!("TestServer shut down OK");
     });
     rx.await.unwrap()
+}
+
+fn serve_seal_ranges(req: &SealRangesRequest, response_frame: &mut Frame) {
+    let request = req.unpack();
+
+    let mut response = SealRangesResponseT::default();
+    let mut status_ok = StatusT::default();
+    status_ok.code = ErrorCode::OK;
+    status_ok.message = Some(String::from("OK"));
+    response.status = Box::new(status_ok.clone());
+
+    if !request.entries.is_empty() {
+        for entry in &request.entries {
+            let mut result = SealRangeResultT::default();
+            result.status = Box::new(status_ok.clone());
+            match entry.type_ {
+                SealType::DATA_NODE => {
+                    if entry.range.end_offset != -1 {
+                        let mut status_bad_request = StatusT::default();
+                        status_bad_request.code = ErrorCode::BAD_REQUEST;
+                        status_bad_request.message = Some(String::from(
+                            "end-offset should be -1 in case of data-node seal",
+                        ));
+                        result.status = Box::new(status_bad_request);
+                        response.results.push(result);
+                        continue;
+                    }
+                }
+
+                SealType::PLACEMENT_MANAGER => {
+                    if entry.range.end_offset < 0 {
+                        let mut status_bad_request = StatusT::default();
+                        status_bad_request.code = ErrorCode::BAD_REQUEST;
+                        status_bad_request.message = Some(String::from(
+                            "end-offset should be non-negative in case of placement manager seal",
+                        ));
+                        result.status = Box::new(status_bad_request);
+                        response.results.push(result);
+                        continue;
+                    }
+                }
+
+                _ => {
+                    let mut status_bad_request = StatusT::default();
+                    status_bad_request.code = ErrorCode::BAD_REQUEST;
+                    status_bad_request.message = Some(String::from("Unsupported seal type"));
+                    result.status = Box::new(status_bad_request);
+                    response.results.push(result);
+                    continue;
+                }
+            };
+            let mut range = entry.range.clone();
+            range.end_offset = 100;
+            result.range = Some(range);
+            response.results.push(result);
+        }
+    } else {
+        let mut status_bad_request = StatusT::default();
+        status_bad_request.code = ErrorCode::BAD_REQUEST;
+        status_bad_request.message = Some(String::from(
+            "Seal ranges request should contain at least one range",
+        ));
+        response.status = Box::new(status_bad_request);
+    }
+
+    let mut builder = flatbuffers::FlatBufferBuilder::new();
+    let resp = response.pack(&mut builder);
+    builder.finish(resp, None);
+    let data = builder.finished_data();
+    response_frame.flag_response();
+    response_frame.header = Some(Bytes::copy_from_slice(data));
 }
 
 fn allocate_id(request: &IdAllocationRequest, response_frame: &mut Frame) {
