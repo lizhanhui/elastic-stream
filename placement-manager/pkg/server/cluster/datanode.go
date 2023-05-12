@@ -2,7 +2,7 @@ package cluster
 
 import (
 	"context"
-	"sort"
+	"math/rand"
 	"time"
 
 	"github.com/pkg/errors"
@@ -22,6 +22,7 @@ var (
 type DataNode interface {
 	Heartbeat(ctx context.Context, node *rpcfb.DataNodeT) error
 	AllocateID(ctx context.Context) (int32, error)
+	Metrics(ctx context.Context, node *rpcfb.DataNodeT, metrics *rpcfb.DataNodeMetricsT) error
 }
 
 // Heartbeat updates DataNode's last active time, and save it to storage if its info changed.
@@ -64,28 +65,59 @@ func (c *RaftCluster) AllocateID(ctx context.Context) (int32, error) {
 	return int32(id), nil
 }
 
+// Metrics receives metrics from data nodes.
+// It returns ErrNotLeader if the current PM node is not the leader.
+func (c *RaftCluster) Metrics(ctx context.Context, node *rpcfb.DataNodeT, metrics *rpcfb.DataNodeMetricsT) error {
+	logger := c.lg.With(traceutil.TraceLogField(ctx))
+
+	updated, old := c.cache.SaveDataNode(&cache.DataNode{
+		DataNodeT:      *node,
+		LastActiveTime: time.Now(),
+		Metrics:        metrics,
+	})
+	if updated && c.IsLeader() {
+		logger.Info("data node updated when reporting metrics, start to save it", zap.Any("new", node), zap.Any("old", old))
+		_, err := c.storage.SaveDataNode(ctx, node)
+		logger.Info("finish saving data node", zap.Int32("node-id", node.NodeId), zap.Error(err))
+		if err != nil {
+			if errors.Is(err, kv.ErrTxnFailed) {
+				return ErrNotLeader
+			}
+			return err
+		}
+	}
+
+	return nil
+}
+
 // chooseDataNodes selects `cnt` number of data nodes from the available data nodes for a range.
 // Only DataNodeT.NodeId is filled in the returned DataNodeT.
 // It returns ErrNotEnoughDataNodes if there are not enough data nodes to allocate.
-func (c *RaftCluster) chooseDataNodes(cnt int8) ([]*rpcfb.DataNodeT, error) {
+func (c *RaftCluster) chooseDataNodes(cnt int) ([]*rpcfb.DataNodeT, error) {
 	if cnt <= 0 {
 		return nil, nil
 	}
 
 	nodes := c.cache.ActiveDataNodes(c.cfg.DataNodeTimeout)
-	if int(cnt) > len(nodes) {
+	if cnt > len(nodes) {
 		return nil, errors.Wrapf(ErrNotEnoughDataNodes, "required %d, available %d", cnt, len(nodes))
 	}
-	// TODO more intelligent selection
-	sort.Slice(nodes, func(i, j int) bool {
-		return !nodes[i].LastActiveTime.Before(nodes[j].LastActiveTime)
-	})
 
-	chose := make([]*rpcfb.DataNodeT, 0, cnt)
-	for i := 0; i < int(cnt); i++ {
-		chose = append(chose, &rpcfb.DataNodeT{
-			NodeId: nodes[i].NodeId,
-		})
+	perm := rand.Perm(len(nodes))
+	chose := make([]*rpcfb.DataNodeT, cnt)
+	for i := 0; i < cnt; i++ {
+		// select two random nodes and choose the one with higher score
+		node1 := nodes[perm[i]]
+		id := node1.NodeId
+		if cnt+i < len(perm) {
+			node2 := nodes[perm[cnt+i]]
+			if node2.Score() > node1.Score() {
+				id = node2.NodeId
+			}
+		}
+		chose[i] = &rpcfb.DataNodeT{
+			NodeId: id,
+		}
 	}
 
 	return chose, nil
