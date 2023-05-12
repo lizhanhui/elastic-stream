@@ -1,6 +1,7 @@
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use flatbuffers::FlatBufferBuilder;
 use protocol::flat_model::records::RecordBatchMeta;
+use std::io::Cursor;
 
 use crate::{error::DecodeError, RecordBatch};
 
@@ -13,8 +14,8 @@ pub enum RecordMagic {
 /// Relative offset of `BaseOffset` within `RecordBatch`.
 pub const BASE_OFFSET_POS: usize = 1;
 
-// The length of the record batch prefix, which is the magic byte and the meta length.
-pub const RECORD_BATCH_PREFIX_LEN: usize = 1 + 4;
+// The minimum length of the record batch, which at least includes the magic byte, the metadata length and payload length.
+pub const MIN_RECORD_BATCH_LEN: usize = 1 + 4 + 4;
 
 /// FlatRecordBatch is a flattened version of RecordBatch that is used for serialization.
 /// As the storage and network layout, the schema of FlatRecordBatch with magic 0 is given below:
@@ -60,47 +61,45 @@ impl FlatRecordBatch {
 
     /// Inits a FlatRecordBatch from a buffer of bytes received from storage or network layer.
     pub fn init_from_buf(buf: &mut Bytes) -> Result<Self, DecodeError> {
-        if buf.len() < RECORD_BATCH_PREFIX_LEN {
+        let mut cursor = Cursor::new(&buf[..]);
+        if cursor.remaining() < MIN_RECORD_BATCH_LEN {
             return Err(DecodeError::DataLengthMismatch);
         }
-        // Backup the buffer for the slice operation.
-        let buf_for_slice = buf.slice(0..);
-        let mut cur_ptr = 0;
 
         // Read the magic
-        let magic = buf.get_i8();
+        let magic = cursor.get_i8();
 
         // We only support the Magic0 for now.
         if magic != RecordMagic::Magic0 as i8 {
             return Err(DecodeError::InvalidMagic);
         }
 
-        // Read the meta from the given buf
-        let meta_len = buf.get_i32();
-
-        cur_ptr += RECORD_BATCH_PREFIX_LEN;
-        if buf.len() < meta_len as usize {
+        // Read the metadata length from the given buf
+        let metadata_len = cursor.get_i32() as usize;
+        if cursor.remaining() < metadata_len + 4 {
             return Err(DecodeError::DataLengthMismatch);
         }
-        // Read the meta buffer
-        let batch_meta = buf_for_slice.slice(cur_ptr..(cur_ptr + meta_len as usize));
-        buf.advance(meta_len as usize);
-        cur_ptr += meta_len as usize;
+        cursor.advance(metadata_len as usize);
 
-        // Read the payload from the given buf
-        let payload_len = buf.get_i32();
-        if buf.len() != payload_len as usize {
+        // Read the payload length from the given buf
+        let payload_len = cursor.get_i32() as usize;
+        if cursor.remaining() != payload_len {
             return Err(DecodeError::DataLengthMismatch);
         }
-        cur_ptr += 4;
 
-        let batch_payload = buf_for_slice.slice(cur_ptr..(cur_ptr + payload_len as usize));
-        buf.advance(payload_len as usize);
+        // Slice metadata
+        let metadata_from =  1 /* magic-code */ + 4 /* metadata length field */;
+        let metadata_to = 1 /* magic-code */ + 4 /* metadata length field */ + metadata_len;
+        let metadata = buf.slice(metadata_from..metadata_to);
+
+        // Slice payload
+        let payload_offset = 1 /* magic-code */ + 4 /* metadata length field */ + metadata_len + 4 /* payload length field */;
+        let payload = buf.slice(payload_offset..);
 
         Ok(FlatRecordBatch {
             magic: Some(magic),
-            metadata: batch_meta,
-            payload: batch_payload,
+            metadata,
+            payload,
         })
     }
 
@@ -114,10 +113,10 @@ impl FlatRecordBatch {
 
         // The total length of encoded flat records.
         let meta_len = self.metadata.len();
-        let mut total_len = RECORD_BATCH_PREFIX_LEN;
+        let mut total_len = MIN_RECORD_BATCH_LEN;
 
         let mut batch_prefix = BytesMut::with_capacity(total_len);
-        batch_prefix.put_i8(self.magic.unwrap_or(0));
+        batch_prefix.put_i8(self.magic.unwrap_or(RecordMagic::Magic0 as i8));
         batch_prefix.put_i32(meta_len as i32);
 
         // Insert the prefix to the first element of the bytes_vec.
@@ -131,7 +130,6 @@ impl FlatRecordBatch {
         let mut payload_len_buf = BytesMut::with_capacity(4);
         payload_len_buf.put_i32(self.payload.len() as i32);
         bytes_vec.push(payload_len_buf.freeze());
-        total_len += 4;
 
         // Push the payload to the bytes_vec.
         total_len += self.payload.len();
