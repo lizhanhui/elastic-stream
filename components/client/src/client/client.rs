@@ -3,9 +3,8 @@ use crate::error::ClientError;
 use bytes::Bytes;
 use log::{error, trace, warn};
 use model::{
-    range::Range,
-    range_criteria::RangeCriteria,
-    request::seal::{self, SealRange},
+    range::Range, range_criteria::RangeCriteria, request::seal::SealRange,
+    response::append::AppendResultEntry,
 };
 use observation::metrics::{
     store_metrics::DataNodeStatistics,
@@ -146,9 +145,17 @@ impl Client {
         composite_session.seal(request).await
     }
 
-    pub async fn append(&self, target: &str, buf: Bytes) -> Result<(), ClientError> {
-        unimplemented!()
+    /// Append data to a range.
+    pub async fn append(
+        &self,
+        target: &str,
+        buf: Bytes,
+    ) -> Result<Vec<AppendResultEntry>, ClientError> {
+        let session_manager = unsafe { &mut *self.session_manager.get() };
+        let session = session_manager.get_composite_session(target).await?;
+        session.append(buf).await
     }
+
     /// Report metrics to placement manager
     ///
     /// # Arguments

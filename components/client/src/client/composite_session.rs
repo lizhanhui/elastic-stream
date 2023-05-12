@@ -1,13 +1,15 @@
 use super::{invocation_context::InvocationContext, lb_policy::LbPolicy, session::Session};
 use crate::error::ClientError;
+use bytes::Bytes;
 use itertools::Itertools;
 use log::{debug, error, info, trace, warn};
 use model::{
     client_role::ClientRole,
+    payload::Payload,
     range::Range,
     range_criteria::RangeCriteria,
     request::{seal::SealRange, Request},
-    response::Response,
+    response::{append::AppendResultEntry, Response},
     PlacementManagerNode,
 };
 use observation::metrics::{
@@ -547,6 +549,47 @@ impl CompositeSession {
             shutdown.clone(),
         ))
     }
+
+    pub(crate) async fn append(&self, buf: Bytes) -> Result<Vec<AppendResultEntry>, ClientError> {
+        self.try_reconnect().await;
+        let session = self
+            .sessions
+            .borrow()
+            .iter()
+            .next()
+            .map(|(_addr, session)| session.clone())
+            .ok_or(ClientError::ConnectFailure(self.target.clone()))?;
+
+        let request = Request::Append {
+            timeout: self.config.client_io_timeout(),
+            buf,
+        };
+
+        let (tx, rx) = oneshot::channel();
+        if let Err(ctx) = session.write(request, tx).await {
+            let request = ctx.request();
+            if let Request::Append { buf, .. } = request {
+                if let Ok(entries) = Payload::parse_append_entries(buf) {
+                    error!("Failed to append entries {entries:?}");
+                } else {
+                    error!("Failed to decode append request payload");
+                }
+            }
+            return Err(ClientError::ClientInternal);
+        }
+
+        let response = rx.await.map_err(|_e| ClientError::ClientInternal)?;
+        if let Response::Append { status, entries } = response {
+            if ErrorCode::OK != status.code {
+                warn!("Failed to append: {:?}", status);
+                return Err(ClientError::Append(status.code));
+            }
+            Ok(entries)
+        } else {
+            Err(ClientError::ClientInternal)
+        }
+    }
+
     pub(crate) async fn report_metrics(
         &self,
         uring_statistics: &UringStatistics,
