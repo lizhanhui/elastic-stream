@@ -13,6 +13,7 @@ use protocol::rpc::header::AppendResponse;
 use protocol::rpc::header::CreateRangeResponse;
 use protocol::rpc::header::CreateStreamResponse;
 use protocol::rpc::header::DescribePlacementManagerClusterResponse;
+use protocol::rpc::header::DescribeStreamResponse;
 use protocol::rpc::header::ErrorCode;
 use protocol::rpc::header::HeartbeatResponse;
 use protocol::rpc::header::IdAllocationResponse;
@@ -42,6 +43,10 @@ pub struct Response {
 #[derive(Debug, Clone)]
 pub enum Headers {
     CreateStream {
+        stream: StreamMetadata,
+    },
+
+    DescribeStream {
         stream: StreamMetadata,
     },
 
@@ -318,10 +323,17 @@ impl Response {
                     if self.status.code != ErrorCode::OK {
                         return;
                     }
-
-                    let metadata = Into::<StreamMetadata>::into(response.stream().unpack());
-                    info!("Created stream={:?} on {}", metadata, ctx.target());
-                    self.headers = Some(Headers::CreateStream { stream: metadata });
+                    if let Some(stream) = response.stream() {
+                        let metadata = Into::<StreamMetadata>::into(stream.unpack());
+                        info!("Created stream={:?} on {}", metadata, ctx.target());
+                        self.headers = Some(Headers::CreateStream { stream: metadata });
+                    } else {
+                        // Expected stream metadata is missing
+                        self.status = Status::pm_internal(
+                            "Required stream is missing even if status is OK".to_owned(),
+                        );
+                        error!("Required stream field is missing in CreateStreamResponse even if status is OK");
+                    }
                 }
                 Err(e) => {
                     error!(
@@ -331,6 +343,35 @@ impl Response {
                 }
             }
         }
-        todo!()
+    }
+
+    pub(crate) fn on_describe_stream(&mut self, frame: &Frame, ctx: &InvocationContext) {
+        if let Some(ref buf) = frame.header {
+            match flatbuffers::root::<DescribeStreamResponse>(buf) {
+                Ok(response) => {
+                    self.status = Into::<Status>::into(&response.status().unpack());
+                    if self.status.code != ErrorCode::OK {
+                        return;
+                    }
+                    if let Some(stream) = response.stream() {
+                        let metadata = Into::<StreamMetadata>::into(stream.unpack());
+                        info!("Describe stream={:?} on {}", metadata, ctx.target());
+                        self.headers = Some(Headers::DescribeStream { stream: metadata });
+                    } else {
+                        // Expected stream metadata is missing
+                        self.status = Status::pm_internal(
+                            "Stream is missing even if status is OK".to_owned(),
+                        );
+                        error!("DescribeStreamResponse missed required stream field even if status is OK");
+                    }
+                }
+                Err(e) => {
+                    error!(
+                        "Failed to decode DescribeStreamResponse using FlatBuffers. Cause: {}",
+                        e
+                    );
+                }
+            }
+        }
     }
 }

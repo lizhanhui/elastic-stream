@@ -111,10 +111,6 @@ impl Client {
         composite_session.heartbeat().await
     }
 
-    pub async fn describe_stream(&self, stream_id: u64) -> Result<StreamMetadata, ClientError> {
-        unimplemented!()
-    }
-
     pub async fn create_stream(
         &self,
         replica: u8,
@@ -129,6 +125,22 @@ impl Client {
             .await
             .map_err(|e| {
                 error!("Timeout when create stream. {}", e);
+                ClientError::RpcTimeout {
+                    timeout: self.config.client_io_timeout(),
+                }
+            })?
+    }
+
+    pub async fn describe_stream(&self, stream_id: u64) -> Result<StreamMetadata, ClientError> {
+        let session_manager = unsafe { &mut *self.session_manager.get() };
+        let composite_session = session_manager
+            .get_composite_session(&self.config.placement_manager)
+            .await?;
+        let future = composite_session.describe_stream(stream_id);
+        time::timeout(self.config.client_io_timeout(), future)
+            .await
+            .map_err(|e| {
+                error!("Timeout when describe stream[stream-id={stream_id}]. {}", e);
                 ClientError::RpcTimeout {
                     timeout: self.config.client_io_timeout(),
                 }
@@ -299,6 +311,62 @@ mod tests {
             let client = Client::new(config, tx);
             let id = client.allocate_id("localhost").await?;
             assert_eq!(1, id);
+            Ok(())
+        })
+    }
+
+    #[test]
+    fn test_create_stream() -> Result<(), Box<dyn Error>> {
+        test_util::try_init_log();
+        tokio_uring::start(async move {
+            #[allow(unused_variables)]
+            let port = 2378;
+            let port = run_listener().await;
+            let mut config = config::Configuration::default();
+            config.server.host = "localhost".to_owned();
+            config.server.port = 10911;
+            config.placement_manager = format!("localhost:{}", port);
+            let config = Arc::new(config);
+            let (tx, _rx) = broadcast::channel(1);
+            let client = Client::new(config, tx);
+            let stream_metadata = client
+                .create_stream(3, std::time::Duration::from_secs(1))
+                .await?;
+            assert_eq!(1, stream_metadata.stream_id);
+            assert_eq!(3, stream_metadata.replica);
+            assert_eq!(
+                std::time::Duration::from_secs(1),
+                stream_metadata.retention_period
+            );
+            Ok(())
+        })
+    }
+
+    #[test]
+    fn test_describe_stream() -> Result<(), Box<dyn Error>> {
+        test_util::try_init_log();
+        tokio_uring::start(async move {
+            #[allow(unused_variables)]
+            let port = 2378;
+            let port = run_listener().await;
+            let mut config = config::Configuration::default();
+            config.server.host = "localhost".to_owned();
+            config.server.port = 10911;
+            config.placement_manager = format!("localhost:{}", port);
+            let config = Arc::new(config);
+            let (tx, _rx) = broadcast::channel(1);
+            let client = Client::new(config, tx);
+
+            let stream_metadata = client
+                .describe_stream(1)
+                .await
+                .expect("Describe stream should not fail");
+            assert_eq!(1, stream_metadata.stream_id);
+            assert_eq!(1, stream_metadata.replica);
+            assert_eq!(
+                std::time::Duration::from_secs(3600 * 24),
+                stream_metadata.retention_period
+            );
             Ok(())
         })
     }
