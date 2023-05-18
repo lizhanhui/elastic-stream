@@ -744,61 +744,65 @@ impl CompositeSession {
         memory_statistics: &MemoryStatistics,
     ) -> Result<(), ClientError> {
         self.try_reconnect().await;
-        // TODO: need broadcast metrics to all placement manager cluster nodes
-        if let Some(session) = self.pick_session(LbPolicy::LeaderOnly) {
-            let extension = request::Headers::ReportMetrics {
-                data_node: self.config.server.data_node(),
-                disk_in_rate: disk_statistics.get_disk_in_rate(),
-                disk_out_rate: disk_statistics.get_disk_out_rate(),
-                disk_free_space: disk_statistics.get_disk_free_space(),
-                disk_unindexed_data_size: 0,
-                memory_used: memory_statistics.get_memory_used(),
-                uring_task_rate: uring_statistics.get_uring_task_rate(),
-                uring_inflight_task_cnt: uring_statistics.get_uring_inflight_task_cnt(),
-                uring_pending_task_cnt: uring_statistics.get_uring_pending_task_cnt(),
-                uring_task_avg_latency: uring_statistics.get_uring_task_avg_latency(),
-                network_append_rate: data_node_statistics.get_network_append_rate(),
-                network_fetch_rate: data_node_statistics.get_network_fetch_rate(),
-                network_failed_append_rate: data_node_statistics.get_network_failed_append_rate(),
-                network_failed_fetch_rate: data_node_statistics.get_network_failed_fetch_rate(),
-                network_append_avg_latency: data_node_statistics.get_network_append_avg_latency(),
-                network_fetch_avg_latency: data_node_statistics.get_network_fetch_avg_latency(),
-                range_missing_replica_cnt: 0,
-                range_active_cnt: 0,
-            };
-            let request = request::Request {
-                timeout: self.config.client_io_timeout(),
-                headers: extension,
-            };
-            let (tx, rx) = oneshot::channel();
-            if let Err(e) = session.write(request, tx).await {
-                error!(
-                    "Failed to send report-metrics-request to {}. Cause: {:?}",
-                    self.target, e
-                );
-                return Err(ClientError::ConnectionRefused(self.target.to_owned()));
-            }
-
-            let response = rx.await.map_err(|e| {
-                error!(
-                    "Internal error while report metrics to  {}. Cause: {:?}",
-                    self.target, e
-                );
-                ClientError::ClientInternal
-            })?;
-
-            if !response.ok() {
-                error!(
-                    "Failed to report metrics to {}. Status-Message: `{}`",
-                    self.target, response.status.message
-                );
-                return Err(ClientError::ServerInternal);
-            }
-
-            return Ok(());
+        if self.need_refresh_cluster() {
+            self.refresh_cluster().await;
         }
+        // TODO: add disk_unindexed_data_size, range_missing_replica_cnt, range_active_cnt
+        let extension = request::Headers::ReportMetrics {
+            data_node: self.config.server.data_node(),
+            disk_in_rate: disk_statistics.get_disk_in_rate(),
+            disk_out_rate: disk_statistics.get_disk_out_rate(),
+            disk_free_space: disk_statistics.get_disk_free_space(),
+            disk_unindexed_data_size: 0,
+            memory_used: memory_statistics.get_memory_used(),
+            uring_task_rate: uring_statistics.get_uring_task_rate(),
+            uring_inflight_task_cnt: uring_statistics.get_uring_inflight_task_cnt(),
+            uring_pending_task_cnt: uring_statistics.get_uring_pending_task_cnt(),
+            uring_task_avg_latency: uring_statistics.get_uring_task_avg_latency(),
+            network_append_rate: data_node_statistics.get_network_append_rate(),
+            network_fetch_rate: data_node_statistics.get_network_fetch_rate(),
+            network_failed_append_rate: data_node_statistics.get_network_failed_append_rate(),
+            network_failed_fetch_rate: data_node_statistics.get_network_failed_fetch_rate(),
+            network_append_avg_latency: data_node_statistics.get_network_append_avg_latency(),
+            network_fetch_avg_latency: data_node_statistics.get_network_fetch_avg_latency(),
+            range_missing_replica_cnt: 0,
+            range_active_cnt: 0,
+        };
+        let request = request::Request {
+            timeout: self.config.client_io_timeout(),
+            headers: extension,
+        };
 
-        Err(ClientError::ClientInternal)
+        let mut receivers = vec![];
+        {
+            let sessions = self.sessions.borrow();
+            let futures = sessions
+                .iter()
+                .map(|(_addr, session)| {
+                    let (tx, rx) = oneshot::channel();
+                    receivers.push(rx);
+                    session.write(request.clone(), tx)
+                })
+                .collect::<Vec<_>>();
+            let _res: Vec<Result<(), InvocationContext>> = futures::future::join_all(futures).await;
+        }
+        let res: Vec<Result<response::Response, oneshot::error::RecvError>> =
+            futures::future::join_all(receivers).await;
+        for item in res {
+            match item {
+                Ok(response) => {
+                    if !response.ok() {
+                        error!(
+                            "Failed to report metrics to {}. Status-Message: `{}`",
+                            self.target, response.status.message
+                        );
+                        return Err(ClientError::ServerInternal);
+                    }
+                }
+                Err(_e) => {}
+            }
+        }
+        Ok(())
     }
 }
 
