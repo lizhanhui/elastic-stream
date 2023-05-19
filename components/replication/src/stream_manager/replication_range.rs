@@ -67,15 +67,37 @@ impl ReplicationRange {
     }
 
     pub(crate) async fn create(
+        client: Rc<Client>,
         stream_id: i64,
         epoch: u64,
         index: i32,
         start_offset: u64,
     ) -> Result<RangeMetadata, ReplicationError> {
-        // 1. request placement manager to create range.
-        // 2. request placement manager to create range replica.
+        // 1. request placement manager to create range and get the range metadata.
+        let mut metadata = RangeMetadata::new(stream_id, index, epoch, start_offset, None);
+        metadata = client
+            .create_range(metadata)
+            .await
+            .map_err(|_| ReplicationError::Internal)?;
+        // 2. request data node to create range replica.
+        let mut create_replica_tasks = vec![];
+        for node in metadata.replica().iter() {
+            let address = node.advertise_address.clone();
+            let metadata = metadata.clone();
+            let client = client.clone();
+            create_replica_tasks.push(tokio_uring::spawn(async move {
+                client
+                    .create_range_replica(&address, metadata)
+                    .await
+                    .map_err(|_| ReplicationError::Internal)
+            }));
+        }
+        for task in create_replica_tasks {
+            // if success replica is less than ack count, the stream append task will create new range triggered by append error.
+            let _ = task.await;
+        }
         // 3. return metadata
-        todo!()
+        Ok(metadata)
     }
 
     pub(crate) fn metadata(&self) -> &RangeMetadata {
