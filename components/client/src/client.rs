@@ -234,7 +234,7 @@ impl Client {
     pub async fn append(
         &self,
         target: &str,
-        buf: Bytes,
+        buf: Vec<Bytes>,
     ) -> Result<Vec<AppendResultEntry>, ClientError> {
         let session_manager = unsafe { &mut *self.session_manager.get() };
         let session = session_manager.get_composite_session(target).await?;
@@ -612,7 +612,7 @@ mod tests {
             }
 
             let response = client
-                .append(&config.placement_manager, buf.freeze())
+                .append(&config.placement_manager, vec![buf.freeze()])
                 .await?;
 
             assert_eq!(response.len(), BATCH as usize);
