@@ -114,14 +114,13 @@ impl Client {
 
     pub async fn create_stream(
         &self,
-        replica: u8,
-        retention: Duration,
+        stream_metadata: StreamMetadata,
     ) -> Result<StreamMetadata, ClientError> {
         let session_manager = unsafe { &mut *self.session_manager.get() };
         let composite_session = session_manager
             .get_composite_session(&self.config.placement_manager)
             .await?;
-        let future = composite_session.create_stream(replica, retention);
+        let future = composite_session.create_stream(stream_metadata);
         time::timeout(self.config.client_io_timeout(), future)
             .await
             .map_err(|e| {
@@ -297,6 +296,7 @@ impl Client {
 mod tests {
     use bytes::BytesMut;
     use log::trace;
+    use model::stream::StreamMetadata;
     use model::{
         range::RangeMetadata,
         record::{flat_record::FlatRecordBatch, RecordBatchBuilder},
@@ -369,7 +369,12 @@ mod tests {
             let (tx, _rx) = broadcast::channel(1);
             let client = Client::new(config, tx);
             let stream_metadata = client
-                .create_stream(3, std::time::Duration::from_secs(1))
+                .create_stream(StreamMetadata {
+                    stream_id: 0,
+                    replica: 3,
+                    ack_count: 2,
+                    retention_period: std::time::Duration::from_secs(1),
+                })
                 .await?;
             assert_eq!(1, stream_metadata.stream_id);
             assert_eq!(3, stream_metadata.replica);
