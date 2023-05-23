@@ -1,4 +1,5 @@
 pub mod append_result;
+pub mod bindings;
 mod command;
 pub mod error;
 pub mod frontend;

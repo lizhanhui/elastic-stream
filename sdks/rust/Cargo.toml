@@ -11,7 +11,7 @@ model = { path = "../../components/model" }
 clap = { workspace = true }
 log =  { workspace = true }
 bytes = { workspace = true }
-tokio = { workspace = true }
+tokio = { workspace = true, features = ["full"]  }
 tokio-uring = { workspace = true }
 futures = { workspace = true }
 replication = { path = "../../components/replication" }
@@ -20,7 +20,12 @@ flatbuffers = { workspace = true }
 protocol = { path = "../../components/protocol" }
 util = { path = "../../components/util" }
 lazy_static = { workspace = true }
+jni = "0.21.1"
+num_cpus = "1.15.0"
 
 [dev-dependencies]
 test-util = { path = "../../components/test-util" }
 minitrace = { workspace = true }
+
+[lib]
+crate-type = ["cdylib"]
