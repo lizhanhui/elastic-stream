@@ -1,6 +1,6 @@
-package sdk.elastic.stream.api;
+package com.automq.elasticstream.client.api;
 
-import sdk.elastic.stream.utils.Arguments;
+import com.automq.elasticstream.client.utils.Arguments;
 
 public class OpenStreamOptions {
     private WriteMode writeMode = WriteMode.SINGLE;

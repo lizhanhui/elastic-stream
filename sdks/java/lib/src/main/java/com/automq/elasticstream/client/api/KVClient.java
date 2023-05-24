@@ -1,4 +1,4 @@
-package sdk.elastic.stream.api;
+package com.automq.elasticstream.client.api;
 
 import java.util.List;
 import java.util.concurrent.CompletableFuture;

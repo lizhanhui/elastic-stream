@@ -1,4 +1,4 @@
-package sdk.elastic.stream.api;
+package com.automq.elasticstream.client.api;
 
 /**
  * Append RecordBatch to stream result.
