@@ -1,4 +1,4 @@
-use jni::objects::{GlobalRef, JByteArray, JClass, JObject, JString, JValue, JValueGen};
+use jni::objects::{GlobalRef, JClass, JObject, JString, JValue, JValueGen};
 use jni::sys::{jint, jlong, JNINativeInterface_, JNI_VERSION_1_8};
 use jni::{JNIEnv, JavaVM};
 use log::{error, info};
@@ -108,11 +108,14 @@ async fn process_read_command(
     let result = stream.read(start_offset, end_offset, batch_max_bytes).await;
     match result {
         Ok(result) => {
-            let result: &[u8] = result.as_ref();
+            let len = result.len();
+            let buf = result.as_ptr() as *mut u8;
+            // TODO: It should just forget the memory pointed by buf, not the all result
+            std::mem::forget(result);
             JENV.with(|cell| {
-                let env = unsafe { get_thread_local_jenv(cell) };
-                let output = env.byte_array_from_slice(&result).unwrap();
-                unsafe { call_future_complete_method(env, future, JObject::from(output)) };
+                let mut env = unsafe { get_thread_local_jenv(cell) };
+                let obj = unsafe { env.new_direct_byte_buffer(buf, len).unwrap() };
+                unsafe { call_future_complete_method(env, future, JObject::from(obj)) };
             });
         }
         Err(err) => {
@@ -366,6 +369,7 @@ pub unsafe extern "system" fn Java_sdk_elastic_stream_jni_Frontend_open(
     _class: JClass,
     ptr: *mut Frontend,
     id: jlong,
+    epoch: jlong,
     future: JObject,
 ) {
     let front_end = &mut *ptr;
@@ -447,17 +451,15 @@ pub unsafe extern "system" fn Java_sdk_elastic_stream_jni_Stream_append(
     mut env: JNIEnv,
     _class: JClass,
     ptr: *mut Stream,
-    data: JByteArray,
+    data: JObject,
     count: jint,
     future: JObject,
 ) {
     let stream = &mut *ptr;
     let future = env.new_global_ref(future).unwrap();
-    let array = env
-        .get_array_elements(&data, jni::objects::ReleaseMode::CopyBack)
-        .unwrap();
-    let len = env.get_array_length(&data).unwrap();
-    let slice = from_raw_parts(array.as_ptr() as *mut u8, len.try_into().unwrap());
+    let buf = env.get_direct_buffer_address((&data).into()).unwrap();
+    let len = env.get_direct_buffer_capacity((&data).into()).unwrap();
+    let slice = from_raw_parts(buf, len);
 
     let command = Command::Append {
         stream: stream,
