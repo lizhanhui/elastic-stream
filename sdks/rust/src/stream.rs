@@ -16,7 +16,7 @@ impl Stream {
         Self { id, stream_client }
     }
 
-    pub async fn min_offset(&self) -> Result<i64, ClientError> {
+    pub async fn start_offset(&self) -> Result<i64, ClientError> {
         self.stream_client
             .start_offset(self.id)
             .await
@@ -24,7 +24,7 @@ impl Stream {
             .map_err(Into::into)
     }
 
-    pub async fn max_offset(&self) -> Result<i64, ClientError> {
+    pub async fn next_offset(&self) -> Result<i64, ClientError> {
         self.stream_client
             .next_offset(self.id)
             .await

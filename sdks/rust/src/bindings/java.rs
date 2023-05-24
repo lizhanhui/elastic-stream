@@ -45,11 +45,11 @@ async fn process_command(cmd: Command<'_>) {
         } => {
             process_open_stream_command(front_end, stream_id, epoch, future).await;
         }
-        Command::MinOffset { stream, future } => {
-            process_min_offset_command(stream, future).await;
+        Command::StartOffset { stream, future } => {
+            process_start_offset_command(stream, future).await;
         }
-        Command::MaxOffset { stream, future } => {
-            process_max_offset_command(stream, future).await;
+        Command::NextOffset { stream, future } => {
+            process_next_offset_command(stream, future).await;
         }
         Command::Append {
             stream,
@@ -128,8 +128,8 @@ async fn process_read_command(
     };
 }
 
-async fn process_min_offset_command(stream: &mut Stream, future: GlobalRef) {
-    let result = stream.min_offset().await;
+async fn process_start_offset_command(stream: &mut Stream, future: GlobalRef) {
+    let result = stream.start_offset().await;
     match result {
         Ok(offset) => {
             JENV.with(|cell| {
@@ -153,8 +153,8 @@ async fn process_min_offset_command(stream: &mut Stream, future: GlobalRef) {
     };
 }
 
-async fn process_max_offset_command(stream: &mut Stream, future: GlobalRef) {
-    let result = stream.max_offset().await;
+async fn process_next_offset_command(stream: &mut Stream, future: GlobalRef) {
+    let result = stream.next_offset().await;
     match result {
         Ok(offset) => {
             JENV.with(|cell| {
@@ -396,7 +396,7 @@ pub unsafe extern "system" fn Java_sdk_elastic_stream_jni_Stream_minOffset(
 ) {
     let stream = &mut *ptr;
     let future = env.new_global_ref(future).unwrap();
-    let command = Command::MinOffset {
+    let command = Command::StartOffset {
         stream: stream,
         future: future,
     };
@@ -412,7 +412,7 @@ pub unsafe extern "system" fn Java_sdk_elastic_stream_jni_Stream_maxOffset(
 ) {
     let stream = &mut *ptr;
     let future = env.new_global_ref(future).unwrap();
-    let command = Command::MaxOffset {
+    let command = Command::NextOffset {
         stream: stream,
         future: future,
     };

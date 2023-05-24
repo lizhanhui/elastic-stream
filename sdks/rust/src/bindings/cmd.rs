@@ -23,11 +23,11 @@ pub enum Command<'a> {
         epoch: u64,
         future: GlobalRef,
     },
-    MinOffset {
+    StartOffset {
         stream: &'a mut Stream,
         future: GlobalRef,
     },
-    MaxOffset {
+    NextOffset {
         stream: &'a mut Stream,
         future: GlobalRef,
     },

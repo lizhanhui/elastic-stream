@@ -4,14 +4,14 @@ public class Stream extends ElasticStreamObject {
     public Stream(long ptr) {
         this.ptr = ptr;
     }
-    public CompletableFuture<Long> minOffset() {
+    public CompletableFuture<Long> startOffset() {
         CompletableFuture<Long> future = new CompletableFuture<>();
-        minOffset(this.ptr, future);
+        startOffset(this.ptr, future);
         return future;
     }
-    public CompletableFuture<Long> maxOffset() {
+    public CompletableFuture<Long> nextOffset() {
         CompletableFuture<Long> future = new CompletableFuture<>();
-        maxOffset(this.ptr, future);
+        nextOffset(this.ptr, future);
         return future;
     }
     public CompletableFuture<Long> append(byte[] data, int count) {
@@ -24,8 +24,8 @@ public class Stream extends ElasticStreamObject {
         read(this.ptr, start_offset, end_offset, batch_max_bytes, future);
         return future;
     }
-    private native void minOffset(long ptr, CompletableFuture<Long> future);
-    private native void maxOffset(long ptr, CompletableFuture<Long> future);
+    private native void startOffset(long ptr, CompletableFuture<Long> future);
+    private native void nextOffset(long ptr, CompletableFuture<Long> future);
     private native void append(long ptr, byte[] data, int count, CompletableFuture<Long> future);
     private native void read(long ptr, long start_offset, long end_offset, int batch_max_bytes, CompletableFuture<byte[]> future);
     private native long freeStream(long ptr);
