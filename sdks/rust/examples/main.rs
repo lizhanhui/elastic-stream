@@ -5,6 +5,7 @@ use frontend::{Frontend, StreamOptions};
 use model::{record::flat_record::FlatRecordBatch, RecordBatch};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    env_logger::init();
     tokio_uring::start(async {
         let frontend = Frontend::new("127.0.0.1:12378")?;
         let stream_id = frontend
