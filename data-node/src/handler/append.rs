@@ -196,7 +196,7 @@ impl<'a> Append<'a> {
     ) -> Result<Vec<AppendRecordRequest>, ErrorCode> {
         let mut append_requests: Vec<AppendRecordRequest> = Vec::new();
         let mut payload = self.payload.clone();
-        while !self.payload.is_empty() {
+        while !payload.is_empty() {
             let record_batch = FlatRecordBatch::init_from_buf(&mut payload).map_err(|e| {
                 error!("Failed to decode record batch from payload. Cause: {:?}", e);
                 ErrorCode::BAD_REQUEST
