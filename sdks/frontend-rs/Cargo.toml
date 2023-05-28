@@ -30,4 +30,4 @@ test-util = { path = "../../components/test-util" }
 minitrace = { workspace = true }
 
 [lib]
-crate-type = ["lib"]
+crate-type = ["cdylib", "lib"]
