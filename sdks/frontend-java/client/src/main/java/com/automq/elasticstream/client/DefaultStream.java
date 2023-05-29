@@ -50,7 +50,7 @@ public class DefaultStream implements Stream {
 
     @Override
     public CompletableFuture<FetchResult> fetch(long startOffset, long endOffset, int maxBytesHint) {
-        return jniStream.read(startOffset, (int)(endOffset - startOffset), maxBytesHint).thenApply(bytes -> {
+        return jniStream.read(startOffset, endOffset, maxBytesHint).thenApply(bytes -> {
             List<RecordBatchWithContext> records = FlatRecordBatchCodec.decode(bytes);
             return new DefaultFetchResult(records);
         });
