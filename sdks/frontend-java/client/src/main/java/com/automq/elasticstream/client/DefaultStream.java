@@ -64,9 +64,7 @@ public class DefaultStream implements Stream {
 
     @Override
     public CompletableFuture<Void> close() {
-        // TODO: async close
-        jniStream.close();
-        return CompletableFuture.completedFuture(null);
+        return jniStream.asyncClose();
     }
 
     @Override

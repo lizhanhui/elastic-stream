@@ -66,8 +66,23 @@ async fn process_command(cmd: Command<'_>) {
         } => {
             process_read_command(stream, start_offset, end_offset, batch_max_bytes, future).await;
         }
+        Command::CloseStream { stream, future } => {
+            process_close_stream_command(stream, future).await;
+        }
     }
 }
+async fn process_close_stream_command(stream: &mut Stream, future: GlobalRef) {
+    let result = stream.close().await;
+    match result {
+        Ok(_) => {
+            complete_future_with_void(future);
+        }
+        Err(err) => {
+            complete_future_with_error(future, err);
+        }
+    };
+}
+
 async fn process_append_command(stream: &mut Stream, buf: Bytes, future: GlobalRef) {
     let result = stream.append(buf).await;
     match result {
@@ -374,7 +389,31 @@ pub unsafe extern "system" fn Java_com_automq_elasticstream_client_jni_Stream_fr
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn Java_com_automq_elasticstream_client_jni_Stream_startOffset(
+pub unsafe extern "system" fn Java_com_automq_elasticstream_client_jni_Stream_asyncClose(
+    env: JNIEnv,
+    _class: JClass,
+    ptr: *mut Stream,
+    future: JObject,
+) {
+    let command = env.new_global_ref(future).map(|future| {
+        let stream = unsafe { &mut *ptr };
+        Command::CloseStream { stream, future }
+    });
+    if let Ok(command) = command {
+        if let Some(tx) = unsafe { TX.get() } {
+            if let Err(_e) = tx.send(command) {
+                error!("Failed to dispatch CloseStream command to tokio-uring runtime");
+            }
+        } else {
+            info!("JNI command channel was dropped. Ignore a CloseStream request");
+        }
+    } else {
+        info!("Failed to construct CloseStream command.");
+    }
+}
+
+#[no_mangle]
+pub extern "system" fn Java_com_automq_elasticstream_client_jni_Stream_startOffset(
     env: JNIEnv,
     _class: JClass,
     ptr: *mut Stream,
@@ -826,6 +865,22 @@ fn complete_future_with_jlong(future: GlobalRef, value: i64) {
             if let Ok(obj) =
                 env.new_object(long_class, "(J)V", &[jni::objects::JValueGen::Long(value)])
             {
+                call_future_complete_method(env, future, obj);
+            } else {
+                error!("Failed to create {} object", class_name);
+            }
+        } else {
+            error!("Failed to find {} class", class_name);
+        }
+    });
+}
+
+fn complete_future_with_void(future: GlobalRef) {
+    JENV.with(|cell| {
+        let mut env = get_thread_local_jenv(cell);
+        let class_name = "java/lang/Void";
+        if let Ok(void_class) = env.find_class(class_name) {
+            if let Ok(obj) = env.new_object(void_class, "()V", &[]) {
                 call_future_complete_method(env, future, obj);
             } else {
                 error!("Failed to create {} object", class_name);

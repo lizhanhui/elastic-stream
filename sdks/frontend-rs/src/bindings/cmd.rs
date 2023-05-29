@@ -46,4 +46,9 @@ pub enum Command<'a> {
         batch_max_bytes: i32,
         future: GlobalRef,
     },
+
+    CloseStream {
+        stream: &'a mut Stream,
+        future: GlobalRef,
+    },
 }

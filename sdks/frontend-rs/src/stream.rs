@@ -130,6 +130,20 @@ impl Stream {
             })
             .map_err(Into::into)
     }
+    /// Close stream.
+    ///
+    /// # Arguments
+    ///
+    /// # Returns
+    ///
+    pub async fn close(&self) -> Result<(), ClientError> {
+        let stream_id = self.id;
+        info!("Closing stream[id={}]", stream_id);
+        self.stream_client
+            .close_stream(stream_id)
+            .await
+            .map_err(Into::into)
+    }
 }
 
 impl Drop for Stream {
