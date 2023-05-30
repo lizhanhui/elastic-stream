@@ -2,7 +2,7 @@ use bytes::Bytes;
 use jni::objects::{GlobalRef, JClass, JObject, JString, JValue, JValueGen};
 use jni::sys::{jint, jlong, JNINativeInterface_, JNI_VERSION_1_8};
 use jni::{JNIEnv, JavaVM};
-use log::{error, info};
+use log::{error, info, trace};
 use std::alloc::Layout;
 use std::cell::{OnceCell, RefCell};
 use std::ffi::c_void;
@@ -73,6 +73,7 @@ async fn process_command(cmd: Command<'_>) {
     }
 }
 async fn process_close_stream_command(stream: &mut Stream, future: GlobalRef) {
+    trace!("Start processing close command");
     let result = stream.close().await;
     match result {
         Ok(_) => {
@@ -82,9 +83,11 @@ async fn process_close_stream_command(stream: &mut Stream, future: GlobalRef) {
             complete_future_with_error(future, err);
         }
     };
+    trace!("Close command finished");
 }
 
 async fn process_append_command(stream: &mut Stream, buf: Bytes, future: GlobalRef) {
+    trace!("Start processing append command");
     let result = stream.append(buf).await;
     match result {
         Ok(result) => {
@@ -95,6 +98,7 @@ async fn process_append_command(stream: &mut Stream, buf: Bytes, future: GlobalR
             complete_future_with_error(future, err);
         }
     };
+    trace!("Append command finished");
 }
 async fn process_read_command(
     stream: &mut Stream,
@@ -103,6 +107,7 @@ async fn process_read_command(
     batch_max_bytes: i32,
     future: GlobalRef,
 ) {
+    trace!("Start processing read command");
     let result = stream.read(start_offset, end_offset, batch_max_bytes).await;
     match result {
         Ok(buffers) => {
@@ -142,9 +147,11 @@ async fn process_read_command(
             complete_future_with_error(future, err);
         }
     };
+    trace!("Read command finished");
 }
 
 async fn process_start_offset_command(stream: &mut Stream, future: GlobalRef) {
+    trace!("Start processing start_offset command");
     let result = stream.start_offset().await;
     match result {
         Ok(offset) => {
@@ -154,9 +161,11 @@ async fn process_start_offset_command(stream: &mut Stream, future: GlobalRef) {
             complete_future_with_error(future, err);
         }
     };
+    trace!("Start_offset command finished");
 }
 
 async fn process_next_offset_command(stream: &mut Stream, future: GlobalRef) {
+    trace!("Start processing next_offset command");
     let result = stream.next_offset().await;
     match result {
         Ok(offset) => {
@@ -166,16 +175,19 @@ async fn process_next_offset_command(stream: &mut Stream, future: GlobalRef) {
             complete_future_with_error(future, err);
         }
     };
+    trace!("Next_offset command finished");
 }
 
 fn process_get_frontend_command(
     access_point: String,
     tx: oneshot::Sender<Result<Frontend, ClientError>>,
 ) {
+    trace!("Start processing get_frontend command");
     let result = Frontend::new(&access_point);
     if let Err(_e) = tx.send(result) {
         error!("Failed to dispatch JNI command to tokio-uring runtime");
     }
+    trace!("Get_frontend command finished");
 }
 
 async fn process_open_stream_command(
@@ -184,6 +196,7 @@ async fn process_open_stream_command(
     epoch: u64,
     future: GlobalRef,
 ) {
+    trace!("Start processing open_stream command");
     let result = front_end.open(stream_id, epoch).await;
     match result {
         Ok(stream) => {
@@ -194,6 +207,7 @@ async fn process_open_stream_command(
             complete_future_with_error(future, err);
         }
     };
+    trace!("Open_stream command finished");
 }
 
 async fn process_create_stream_command(
@@ -203,6 +217,7 @@ async fn process_create_stream_command(
     retention: Duration,
     future: GlobalRef,
 ) {
+    trace!("Start processing create_stream command");
     let options = StreamOptions {
         replica,
         ack: ack_count,
@@ -217,6 +232,7 @@ async fn process_create_stream_command(
             complete_future_with_error(future, err);
         }
     };
+    trace!("Create_stream command finished");
 }
 /// # Safety
 ///
@@ -244,6 +260,7 @@ pub extern "system" fn JNI_OnLoad(vm: JavaVM, _: *mut c_void) -> jint {
     let _ = std::thread::Builder::new()
         .name("Runtime".to_string())
         .spawn(move || {
+            trace!("JNI Runtime thread started");
             JENV.with(|cell| {
                 if let Ok(env) = java_vm.attach_current_thread_as_daemon() {
                     *cell.borrow_mut() = Some(env.get_raw());
@@ -255,9 +272,11 @@ pub extern "system" fn JNI_OnLoad(vm: JavaVM, _: *mut c_void) -> jint {
                 *cell.borrow_mut() = Some(java_vm.clone());
             });
             tokio_uring::start(async move {
+                trace!("JNI tokio-uring runtime started");
                 loop {
                     match rx.recv().await {
                         Some(cmd) => {
+                            trace!("JNI tokio-uring receive command");
                             tokio_uring::spawn(async move { process_command(cmd).await });
                         }
                         None => {
@@ -437,6 +456,7 @@ pub unsafe extern "system" fn Java_com_automq_elasticstream_client_jni_Stream_as
     ptr: *mut Stream,
     future: JObject,
 ) {
+    trace!("Started jni_Stream_asyncClose");
     let command = env.new_global_ref(future).map(|future| {
         let stream = unsafe { &mut *ptr };
         Command::CloseStream { stream, future }
@@ -449,6 +469,8 @@ pub unsafe extern "system" fn Java_com_automq_elasticstream_client_jni_Stream_as
                     &mut env,
                     "Failed to dispatch CloseStream command to tokio-uring runtime",
                 );
+            } else {
+                trace!("Dispatched the CloseStream command to tokio-uring runtime");
             }
         } else {
             info!("JNI command channel was dropped. Ignore a CloseStream request");
@@ -470,6 +492,7 @@ pub extern "system" fn Java_com_automq_elasticstream_client_jni_Stream_startOffs
     ptr: *mut Stream,
     future: JObject,
 ) {
+    trace!("Started jni_Stream_startOffset");
     let command = env.new_global_ref(future).map(|future| {
         let stream = unsafe { &mut *ptr };
         Command::StartOffset { stream, future }
@@ -482,6 +505,8 @@ pub extern "system" fn Java_com_automq_elasticstream_client_jni_Stream_startOffs
                     &mut env,
                     "Failed to dispatch StartOffset command to tokio-uring runtime",
                 );
+            } else {
+                trace!("Dispatched the StartOffset command to tokio-uring runtime");
             }
         } else {
             info!("JNI command channel was dropped. Ignore a StartOffset request");
@@ -503,6 +528,7 @@ pub unsafe extern "system" fn Java_com_automq_elasticstream_client_jni_Stream_ne
     ptr: *mut Stream,
     future: JObject,
 ) {
+    trace!("Started jni_Stream_nextOffset");
     let command = env.new_global_ref(future).map(|future| {
         let stream = unsafe { &mut *ptr };
         Command::NextOffset {
@@ -518,6 +544,8 @@ pub unsafe extern "system" fn Java_com_automq_elasticstream_client_jni_Stream_ne
                     &mut env,
                     "Failed to dispatch NextOffset command to tokio-uring runtime",
                 );
+            } else {
+                trace!("Dispatched the NextOffset command to tokio-uring runtime");
             }
         } else {
             info!("JNI command channel was dropped. Ignore a NextOffset request");
@@ -540,6 +568,7 @@ pub unsafe extern "system" fn Java_com_automq_elasticstream_client_jni_Stream_ap
     data: JObject,
     future: JObject,
 ) {
+    trace!("Started jni_Stream_append");
     let buf = env.get_direct_buffer_address((&data).into());
     let len = env.get_direct_buffer_capacity((&data).into());
     let future = env.new_global_ref(future);
@@ -563,6 +592,8 @@ pub unsafe extern "system" fn Java_com_automq_elasticstream_client_jni_Stream_ap
                     &mut env,
                     "Failed to dispatch Append command to tokio-uring runtime",
                 );
+            } else {
+                trace!("Dispatched the Append command to tokio-uring runtime");
             }
         } else {
             info!("JNI command channel was dropped. Ignore an Append request");
@@ -575,6 +606,7 @@ pub unsafe extern "system" fn Java_com_automq_elasticstream_client_jni_Stream_ap
         info!("Failed to construct Append command");
         throw_exception(&mut env, "Failed to construct Append command");
     }
+    trace!("Finished jni_Stream_append");
 }
 
 #[no_mangle]
@@ -587,6 +619,7 @@ pub unsafe extern "system" fn Java_com_automq_elasticstream_client_jni_Stream_re
     batch_max_bytes: jint,
     future: JObject,
 ) {
+    trace!("Started jni_Stream_read");
     let command = env.new_global_ref(future).map(|future| {
         let stream = unsafe { &mut *ptr };
         Command::Read {
@@ -605,6 +638,8 @@ pub unsafe extern "system" fn Java_com_automq_elasticstream_client_jni_Stream_re
                     &mut env,
                     "Failed to dispatch Read command to tokio-uring runtime",
                 );
+            } else {
+                trace!("Dispatched the Read command to tokio-uring runtime");
             }
         } else {
             info!("JNI command channel was dropped. Ignore a Read request");
