@@ -658,7 +658,7 @@ fn call_future_complete_method(mut env: JNIEnv, future: GlobalRef, obj: JObject)
     let s = JValueGen::from(obj);
     let _stopwatch = Stopwatch::new("Future#complete");
     if let Err(_) = env.call_method(future, "complete", "(Ljava/lang/Object;)Z", &[s.borrow()]) {
-        error!("Failed to call future complete method");
+        panic!("Failed to call future complete method");
     }
 }
 fn call_future_complete_exceptionally_method(
@@ -800,7 +800,6 @@ fn call_future_complete_exceptionally_method(
                 }
                 client::error::ClientError::Append(err) => {
                     let exception_class = env.find_class(class_path_pre.to_owned() + "Append");
-                    println!("Append");
                     match exception_class {
                         Ok(exception_class) => env.new_object(
                             exception_class,
@@ -945,10 +944,10 @@ fn call_future_complete_exceptionally_method(
             )
             .is_err()
         {
-            error!("Failed to call future completeExceptionally method");
+            panic!("Failed to call future completeExceptionally method");
         }
     } else {
-        error!("Failed to create exception object");
+        panic!("Failed to create exception object");
     }
 }
 
@@ -963,7 +962,7 @@ fn throw_exception(env: &mut JNIEnv, msg: &str) {
     // TODO: Modify it to ElasticStreamClientException
     let _ = env.exception_clear();
     if env.throw_new("java/lang/Exception", msg).is_err() {
-        error!("Failed to throw new exception");
+        panic!("Failed to throw new exception");
     }
 }
 
@@ -977,10 +976,10 @@ fn complete_future_with_stream(future: GlobalRef, ptr: i64) {
             {
                 call_future_complete_method(env, future, obj);
             } else {
-                error!("Couldn't create {} object", class_name);
+                panic!("Couldn't create {} object", class_name);
             }
         } else {
-            error!("Couldn't find {} class", class_name);
+            panic!("Couldn't find {} class", class_name);
         }
     });
 }
@@ -995,10 +994,10 @@ fn complete_future_with_jlong(future: GlobalRef, value: i64) {
             {
                 call_future_complete_method(env, future, obj);
             } else {
-                error!("Failed to create {} object", class_name);
+                panic!("Failed to create {} object", class_name);
             }
         } else {
-            error!("Failed to find {} class", class_name);
+            panic!("Failed to find {} object", class_name);
         }
     });
 }
@@ -1011,10 +1010,10 @@ fn complete_future_with_void(future: GlobalRef) {
             if let Ok(obj) = env.new_object(void_class, "()V", &[]) {
                 call_future_complete_method(env, future, obj);
             } else {
-                error!("Failed to create {} object", class_name);
+                panic!("Failed to create {} object", class_name);
             }
         } else {
-            error!("Failed to find {} class", class_name);
+            panic!("Failed to find {} class", class_name);
         }
     });
 }
