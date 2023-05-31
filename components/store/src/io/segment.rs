@@ -150,6 +150,7 @@ impl Display for Status {
     }
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Medium {
     Ssd,
@@ -273,6 +274,7 @@ impl LogSegment {
         Ok(self.wal_offset + self.written)
     }
 
+    #[allow(dead_code)]
     pub(crate) fn remaining(&self) -> u64 {
         if Status::ReadWrite != self.status {
             0
