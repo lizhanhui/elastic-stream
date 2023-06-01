@@ -512,7 +512,7 @@ pub unsafe extern "system" fn Java_com_automq_elasticstream_client_jni_Stream_as
 }
 
 #[no_mangle]
-pub extern "system" fn Java_com_automq_elasticstream_client_jni_Stream_startOffset(
+pub unsafe extern "system" fn Java_com_automq_elasticstream_client_jni_Stream_startOffset(
     mut env: JNIEnv,
     _class: JClass,
     ptr: *mut Stream,
@@ -994,9 +994,10 @@ fn get_thread_local_jenv(cell: &RefCell<Option<*mut *const JNINativeInterface_>>
 }
 
 fn throw_exception(env: &mut JNIEnv, msg: &str) {
-    // TODO: Modify it to ElasticStreamClientException
+    let exception_path =
+        "com/automq/elasticstream/client/api/ElasticStreamClientException$Internal";
     let _ = env.exception_clear();
-    if env.throw_new("java/lang/Exception", msg).is_err() {
+    if env.throw_new(exception_path, msg).is_err() {
         panic!("Failed to throw new exception");
     }
 }
