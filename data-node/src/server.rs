@@ -6,8 +6,20 @@ use crate::{
 use config::Configuration;
 use log::{error, info, warn};
 use std::{cell::RefCell, error::Error, os::fd::AsRawFd, rc::Rc, sync::Arc, thread};
-use store::ElasticStore;
+use store::{ElasticStore, Store};
 use tokio::sync::{broadcast, mpsc, oneshot};
+
+pub(crate) struct Server<S> {
+    store: S,
+    shutdown: broadcast::Sender<()>,
+    config: Arc<Configuration>,
+}
+
+impl<S> Server<S> where S: Store {
+    pub(crate) fn new(config: Configuration, shutdown: broadcast::Sender<()>) {
+        
+    }
+}
 
 pub fn launch(
     config: Configuration,
