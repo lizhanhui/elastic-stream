@@ -1,9 +1,8 @@
-use bytes::Bytes;
-use jni::objects::{GlobalRef, JClass, JMethodID, JObject, JString, JValue, JValueGen};
+use bytes::{Bytes};
+use jni::objects::{GlobalRef, JClass, JObject, JString, JValue, JValueGen, JMethodID, JByteArray, AsJArrayRaw};
 use jni::sys::{jint, jlong, JNINativeInterface_, JNI_VERSION_1_8};
 use jni::{JNIEnv, JavaVM};
 use log::{error, info, trace};
-use std::alloc::Layout;
 use std::cell::{OnceCell, RefCell};
 use std::ffi::c_void;
 use std::io::Write;
@@ -118,47 +117,32 @@ async fn process_read_command(
     let result = stream.read(start_offset, end_offset, batch_max_bytes).await;
     match result {
         Ok(buffers) => {
-            // Copy buffers to `DirectByteBuffer`
-            let total = buffers.iter().map(|buf| buf.len()).sum();
-            if let Ok(layout) = Layout::from_size_align(total, 1) {
-                // # Safety
-                // It should always be safe to allocate memory with alignment of 1 unless the system
-                // is running out of memory.
-                let ptr = unsafe { std::alloc::alloc(layout) };
-                let mut p = 0;
-                buffers.iter().for_each(|buf| {
-                    // # Safety
-                    // We are copying slices from store to continuous memory for DirectByteBuffer. This
-                    // is definitely a non-overlapping copy and thus safe.
-                    //
-                    // Note DirectByteBuffer is responsible of returning the allocated memory.
-                    unsafe { std::ptr::copy_nonoverlapping(buf.as_ptr(), ptr.add(p), buf.len()) };
-                    p += buf.len();
-                });
-
-                JENV.with(|cell| {
-                    let mut env = get_thread_local_jenv(cell);
-                    // # Safety
-                    // Standard JNI call.
-                    if let Ok(obj) = unsafe { env.new_direct_byte_buffer(ptr, total) } {
-                        call_future_complete_method(env, future, JObject::from(obj));
-                    } else {
-                        complete_future_with_error(
-                            future,
-                            ClientError::Internal(
-                                "Failed to create a new direct_byte_buffer".to_string(),
-                            ),
-                        );
-                        error!("Failed to create a new direct_byte_buffer");
+            let total: usize = buffers.iter().map(|buf| buf.len()).sum();
+            JENV.with(|cell| {
+                let env = get_thread_local_jenv(cell);
+                let byte_array = env.new_byte_array(total as i32);
+                let mut p: usize = 0;
+                if let Ok(byte_array) = byte_array {
+                    {
+                        buffers.iter().for_each(|buf| {
+                            let slice = buf.as_ref();
+                            let slice: &[i8] = unsafe { 
+                                std::slice::from_raw_parts(slice.as_ptr() as *const i8, slice.len())
+                            };
+                            let _ = env.set_byte_array_region(&byte_array, p as i32, slice);
+                            p += buf.len();
+                        });
                     }
-                });
-            } else {
-                complete_future_with_error(
-                    future,
-                    ClientError::Internal("Bad alignment".to_string()),
-                );
-                error!("Bad alignment");
-            }
+                    call_future_complete_method(env, future, JObject::from(byte_array));
+                } else {
+                    complete_future_with_error(
+                        future,
+                        ClientError::Internal("Failed to create byte array".to_string()),
+                    );
+                    error!("Failed to create byte array");
+                }
+                
+            });
         }
         Err(err) => {
             complete_future_with_error(future, err);
