@@ -1,30 +1,48 @@
-use std::collections::{BinaryHeap, HashMap};
+use log::error;
+use std::{
+    cmp,
+    collections::BTreeMap,
+};
 
-use log::trace;
 use model::Batch;
+
+
+use crate::error::ServiceError;
 
 /// Append Request Window ensures append requests of a stream range are dispatched to store in order.
 ///
 /// Note that `Window` is intended to be used by a thread-per-core scenario and is not thread-safe.
+///
+/// # Design
+/// Each `Window` has two offset, `next` and `committed`.
+/// * `next` is the next exact offset of the request to be dispatched.
+/// * `committed` is the committed offset of the stream range.
+///
+/// The below rules show the relationship between `next` and `committed`:
+/// * `next` is always greater than or equal to `committed`.
+/// * The request with offset equal to `next` is the expected next request to be dispatched.
+/// * The request with offset less than `committed` should be responded with a `ServiceError::OffsetCommitted`.
+/// * The request with offset greater than `next` should be responded with a `ServiceError::OffsetOutOfOrder`.
+/// * The other requests should be responded with a `ServiceError::OffsetInWindow`.
 #[derive(Debug)]
-pub(crate) struct Window<R> {
+pub(crate) struct Window {
+    /// The barrier offset, the requests beyond this offset should be blocked.
     next: u64,
 
-    requests: BinaryHeap<R>,
+    /// The committed offset means all requests before this offset are persisted to store.
+    committed: u64,
 
     /// Submitted request offset to batch size.
-    submitted: HashMap<u64, u32>,
+    submitted: BTreeMap<u64, u32>,
 }
 
-impl<R> Window<R>
-where
-    R: Batch + Ord,
-{
+impl Window {
     pub(crate) fn new(next: u64) -> Self {
         Self {
             next,
-            requests: BinaryHeap::new(),
-            submitted: HashMap::new(),
+            submitted: BTreeMap::new(),
+            // The initial commit offset is the same as the next offset.
+            committed: next,
         }
     }
 
@@ -36,39 +54,70 @@ where
         self.next = next;
     }
 
-    pub(crate) fn fast_forward(&mut self, request: &R) -> bool {
+    /// Checks the request with the given offset is ready to be dispatched.
+    ///
+    /// # Arguments
+    /// * `request` - the request to be dispatched.
+    ///
+    /// # Return
+    /// `Ok` if the request is ready to be dispatched, `Err` any error occurs.
+    pub(crate) fn check_barrier<R>(&mut self, request: &R) -> Result<(), ServiceError>
+    where
+        R: Batch + Ord,
+    {
+        if request.offset() < self.committed {
+            // A retry request on a committed offset.
+            // The client could regard the request as success.
+            return Err(ServiceError::OffsetCommitted);
+        }
+
         if request.offset() < self.next {
-            trace!(
-                "Retry request tolerated, offset={}, len={}",
-                request.offset(),
-                request.len()
-            );
-            return true;
-        } else if request.offset() == self.next {
-            self.next += request.len() as u64;
-            self.submitted.insert(request.offset(), request.len());
-            return true;
+            // A retry request on a offset that is already in the write window.
+            // To avoid data loss, the client should await the request to be completed and retry if necessary.
+            return Err(ServiceError::OffsetInFlight);
         }
-        false
-    }
 
-    pub(crate) fn push(&mut self, request: R) {
-        self.requests.push(request);
-    }
-
-    pub(crate) fn pop(&mut self) -> Option<R> {
-        if let Some(request) = self.requests.peek() {
-            if request.offset() == self.next {
-                self.next = request.offset() + request.len() as u64;
-                self.submitted.insert(request.offset(), request.len());
-                return self.requests.pop();
-            }
+        if request.offset() > self.next {
+            // A request on a offset that is beyond the write window.
+            // The client should promise the order of the requests.
+            return Err(ServiceError::OffsetOutOfOrder);
         }
-        None
+
+        self.submitted.insert(request.offset(), request.len());
+        // Expected request to be dispatched, just advance the next offset and go.
+        self.next += request.len() as u64;
+        return Ok(());
     }
 
+    /// Commits the request with the given offset, and wakes up the subsequent request if exists.
+    ///
+    /// Note that this method will be called in the bootstrap phase to init the committed and next offset.
+    ///
+    /// # Arguments
+    /// * `offset` - the offset to be committed.
+    ///
+    /// # Return
+    /// * the committed offset.
     pub(crate) fn commit(&mut self, offset: u64) -> u64 {
         let mut res = offset;
+
+        // In bootstrap phase, the submitted map is empty, so we just update the next and committed offset.
+        if self.submitted.is_empty() {
+            self.next = offset;
+            self.committed = offset;
+            return offset;
+        }
+
+        // TODO: below code is too defensive, we should find a more concise way to do this.
+        if let Some((first_key, _len)) = self.submitted.first_key_value() {
+            if *first_key != offset {
+                // Unexpected commit call, the offset should be the first key of the submitted map.
+                error!("Unexpected commit call, the offset should be the first key of the submitted map, offset: {}, first_key: {}", offset, first_key);
+            }
+        }
+
+        // Drain the submitted requests in ascending key order, and commit all the requests before the given offset.
+        // Note: in the current thread per core scenario, the requests are committed in the same order as they are submitted.
         self.submitted
             .drain_filter(|k, _| k <= &offset)
             .for_each(|(offset, len)| {
@@ -76,12 +125,16 @@ where
                     res = offset + len as u64;
                 }
             });
-        res
+
+        // To avoid rollback the commit offset, keep the larger one.
+        self.committed = cmp::max(self.committed, res);
+        self.committed
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use anyhow::Ok;
     use model::Batch;
     use std::{cmp::Ordering, error::Error};
 
@@ -128,67 +181,50 @@ mod tests {
     }
 
     #[test]
-    fn test_new() -> Result<(), Box<dyn Error>> {
+    fn test_new() {
         let mut window = super::Window::new(0);
         let foo1 = Foo::new(0);
-        assert!(window.fast_forward(&foo1));
+        assert!(window.check_barrier(&foo1).is_ok());
         assert_eq!(2, window.next());
-        Ok(())
     }
 
     #[test]
-    fn test_push_pop() -> Result<(), Box<dyn Error>> {
+    fn test_check_barrier() {
         let mut window = super::Window::new(0);
         let foo1 = Foo::new(0);
         let foo2 = Foo::new(2);
 
-        assert_eq!(false, window.fast_forward(&foo2));
-        window.push(foo2);
-        assert_eq!(None, window.pop());
-        assert_eq!(true, window.fast_forward(&foo1));
-        assert_eq!(Some(Foo::new(2)), window.pop());
-        assert_eq!(4, window.next());
-        assert!(window.requests.is_empty());
+        // foo2 will be rejected because the offset is beyond the write window, the error is OffsetOutOfOrder.
+        assert!(matches!(
+            window.check_barrier(&foo2).unwrap_err(),
+            super::ServiceError::OffsetOutOfOrder
+        ));
 
-        window.reset_next(0);
-        let foo1 = Foo::new(0);
-        let foo2 = Foo::new(2);
-        window.push(foo2);
-        window.push(foo1);
-        assert_eq!(Some(Foo::new(0)), window.pop());
-        assert_eq!(Some(Foo::new(2)), window.pop());
-        assert_eq!(4, window.next());
-        assert!(window.requests.is_empty());
+        // foo1 will be accepted.
+        assert!(window.check_barrier(&foo1).is_ok());
+        assert_eq!(2, window.next());
+        // Now, foo2 will be accepted.
+        assert!(window.check_barrier(&foo2).is_ok());
 
-        Ok(())
-    }
-
-    #[test]
-    fn test_commit() -> Result<(), Box<dyn Error>> {
-        let mut window = super::Window::new(0);
-        let foo1 = Foo::new(0);
-        let foo2 = Foo::new(2);
-
-        if !window.fast_forward(&foo2) {
-            window.push(foo2);
-        }
-
-        // After fast-forward, an inflight batch entry is inserted.
-        assert!(window.fast_forward(&foo1));
-        // When commit, the offset should be amended if there is a corresponding inflight batch entry.
-        // After the commit , the entry will be removed.
-        assert_eq!(2, window.commit(0));
-        assert_eq!(0, window.commit(0));
-
-        // If there is no inflight batch entry, the commit offset should not be amended.
-        assert_eq!(2, window.commit(2));
-
-        // After popping a request, an inflight batch entry is inserted.
-        window.pop();
+        // Commit foo2, and foo1 will be committed implicitly.
         assert_eq!(4, window.commit(2));
 
-        // There is no inflight batch entry, so the commit offset should not be amended.
-        assert_eq!(4, window.commit(4));
-        Ok(())
+        // Now, foo1 will be rejected because the offset is already committed, the error is OffsetCommitted.
+        assert!(matches!(
+            window.check_barrier(&foo1).unwrap_err(),
+            super::ServiceError::OffsetCommitted
+        ));
+
+        let foo3 = Foo::new(4);
+        assert!(window.check_barrier(&foo3).is_ok());
+
+        // The in-flight request will be rejected, the error is OffsetInFlight.
+        assert!(matches!(
+            window.check_barrier(&foo3).unwrap_err(),
+            super::ServiceError::OffsetInFlight
+        ));
+
+        assert!(window.next == 6);
+        assert!(window.committed == 4);
     }
 }
