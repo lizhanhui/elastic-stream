@@ -1,4 +1,4 @@
-use log::error;
+use log::{error, warn};
 use std::{
     cmp,
     collections::BTreeMap,
@@ -68,18 +68,33 @@ impl Window {
         if request.offset() < self.committed {
             // A retry request on a committed offset.
             // The client could regard the request as success.
+            warn!(
+                "Try to append request on committed offset {}, current committed={:?}",
+                request.offset(),
+                self.committed
+            );
             return Err(ServiceError::OffsetCommitted);
         }
 
         if request.offset() < self.next {
             // A retry request on a offset that is already in the write window.
             // To avoid data loss, the client should await the request to be completed and retry if necessary.
+            warn!(
+                "Try to append request on offset {}, which is in the write window, current next={:?}",
+                request.offset(),
+                self.next
+            );
             return Err(ServiceError::OffsetInFlight);
         }
 
         if request.offset() > self.next {
             // A request on a offset that is beyond the write window.
             // The client should promise the order of the requests.
+            error!(
+                "Try to append request on offset {}, which is beyond the write window, current next={:?}",
+                request.offset(),
+                self.next
+            );
             return Err(ServiceError::OffsetOutOfOrder);
         }
 

@@ -121,6 +121,9 @@ pub enum AppendError {
     #[error("The request is on the fly")]
     Inflight,
 
+    #[error("The request is out of order")]
+    OutOfOrder,
+
     #[error("The specified range is not found")]
     RangeNotFound,
 

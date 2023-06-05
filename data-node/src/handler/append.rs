@@ -276,6 +276,7 @@ impl From<ServiceError> for AppendError {
         match err {
             ServiceError::OffsetCommitted => AppendError::Committed,
             ServiceError::OffsetInFlight => AppendError::Inflight,
+            ServiceError::OffsetOutOfOrder => AppendError::OutOfOrder,
             _ => AppendError::Internal,
         }
     }
