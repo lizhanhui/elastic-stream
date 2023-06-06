@@ -4,12 +4,12 @@ use codec::frame::Frame;
 use chrono::prelude::*;
 use flatbuffers::FlatBufferBuilder;
 use futures::future::join_all;
-use log::{error, trace, warn};
+use log::{error, info, trace, warn};
 use model::payload::Payload;
 use protocol::rpc::header::{
     AppendRequest, AppendResponseArgs, AppendResultEntryArgs, ErrorCode, StatusArgs,
 };
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::UnsafeCell, fmt, rc::Rc};
 use store::{
     error::AppendError, option::WriteOptions, AppendRecordRequest, AppendResult, ElasticStore,
     Store,
@@ -94,7 +94,7 @@ impl<'a> Append<'a> {
     pub(crate) async fn apply(
         &self,
         store: Rc<ElasticStore>,
-        stream_manager: Rc<RefCell<StreamManager>>,
+        stream_manager: Rc<UnsafeCell<StreamManager>>,
         response: &mut Frame,
     ) {
         let to_store_requests = match self.build_store_requests() {
@@ -111,23 +111,24 @@ impl<'a> Append<'a> {
         let futures: Vec<_> = to_store_requests
             .iter()
             .map(|req| {
+                info!("AppendRecordRequest - {}", req);
                 let result = async {
-                    if let Some(range) = stream_manager
-                        .borrow_mut()
+                    if let Some(range) = unsafe { &mut *stream_manager.get() }
                         .get_range(req.stream_id, req.range_index)
                     {
                         if let Some(window) = range.window_mut() {
                             let _ = window.check_barrier(req)?;
-                            let options = WriteOptions::default();
-                            let append_result = store.append(options, req.clone()).await?;
-                            return Ok(append_result);
                         }
+                    } else {
+                        warn!(
+                            "Target stream/range is not found. stream-id={}, range-index={}",
+                            req.stream_id, req.range_index
+                        );
+                        return Err(AppendError::RangeNotFound);
                     }
-                    warn!(
-                        "Target stream/range is not found. stream-id={}, range-index={}",
-                        req.stream_id, req.range_index
-                    );
-                    return Err(AppendError::RangeNotFound);
+                    let options = WriteOptions::default();
+                    let append_result = store.append(options, req.clone()).await?;
+                    return Ok(append_result);
                 };
                 Box::pin(result)
             })
@@ -149,8 +150,7 @@ impl<'a> Append<'a> {
             .map(|res| {
                 match res {
                     Ok(result) => {
-                        if let Err(e) = stream_manager
-                            .borrow_mut()
+                        if let Err(e) = unsafe { &mut *stream_manager.get() }
                             .commit(result.stream_id, result.offset as u64)
                         {
                             warn!(
@@ -273,6 +273,27 @@ impl From<ServiceError> for AppendError {
             ServiceError::OffsetInFlight => AppendError::Inflight,
             ServiceError::OffsetOutOfOrder => AppendError::OutOfOrder,
             _ => AppendError::Internal,
+        }
+    }
+}
+
+impl<'a> fmt::Display for Append<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match Payload::parse_append_entries(&self.payload) {
+            Err(e) => write!(
+                f,
+                "Failed to decode append entries from payload. Cause: {:?}",
+                e
+            ),
+            Ok(entries) => entries.iter().fold(Ok(()), |result, entry| {
+                result.and_then(|_| {
+                    write!(
+                        f,
+                        "AppendEntry: stream-id={}, range-index={}, offset={}, len={}\n",
+                        entry.stream_id, entry.index, entry.offset, entry.len
+                    )
+                })
+            }),
         }
     }
 }

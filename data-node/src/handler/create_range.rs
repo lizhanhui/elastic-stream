@@ -1,4 +1,5 @@
-use std::{cell::RefCell, rc::Rc};
+use core::fmt;
+use std::{cell::UnsafeCell, rc::Rc};
 
 use bytes::Bytes;
 use codec::frame::Frame;
@@ -37,14 +38,14 @@ impl<'a> CreateRange<'a> {
     pub(crate) async fn apply(
         &self,
         _store: Rc<ElasticStore>,
-        stream_manager: Rc<RefCell<StreamManager>>,
+        stream_manager: Rc<UnsafeCell<StreamManager>>,
         response: &mut Frame,
     ) {
         let request = self.request.unpack();
         let mut builder = flatbuffers::FlatBufferBuilder::new();
         let mut create_response = SealRangeResponseT::default();
 
-        let mut manager = stream_manager.borrow_mut();
+        let manager = unsafe { &mut *stream_manager.get() };
 
         let range = request.range;
         let range: RangeMetadata = Into::<RangeMetadata>::into(&*range);
@@ -69,5 +70,11 @@ impl<'a> CreateRange<'a> {
         builder.finish(resp, None);
         let data = builder.finished_data();
         response.header = Some(Bytes::copy_from_slice(data));
+    }
+}
+
+impl<'a> fmt::Display for CreateRange<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:?}", self.request)
     }
 }

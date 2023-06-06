@@ -1,7 +1,7 @@
 use crate::stream_manager::StreamManager;
 use codec::frame::Frame;
 use log::trace;
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::UnsafeCell, fmt, rc::Rc};
 use store::ElasticStore;
 
 /// Process Ping request
@@ -21,11 +21,17 @@ impl<'a> Ping<'a> {
     pub(crate) async fn apply(
         &self,
         _store: Rc<ElasticStore>,
-        _stream_manager: Rc<RefCell<StreamManager>>,
+        _stream_manager: Rc<UnsafeCell<StreamManager>>,
         response: &mut Frame,
     ) {
         trace!("Ping[stream-id={}] received", self.request.stream_id);
         response.header = self.request.header.clone();
         response.payload = self.request.payload.clone();
+    }
+}
+
+impl<'a> fmt::Display for Ping<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "Ping[stream-id={}]", self.request.stream_id)
     }
 }

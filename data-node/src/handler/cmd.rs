@@ -1,4 +1,4 @@
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::UnsafeCell, fmt, rc::Rc};
 
 use codec::frame::{Frame, OperationCode};
 use log::error;
@@ -97,7 +97,7 @@ impl<'a> Command<'a> {
     pub(crate) async fn apply(
         &self,
         store: Rc<ElasticStore>,
-        stream_manager: Rc<RefCell<StreamManager>>,
+        stream_manager: Rc<UnsafeCell<StreamManager>>,
         response: &mut Frame,
     ) {
         match self {
@@ -107,6 +107,19 @@ impl<'a> Command<'a> {
             Command::Ping(cmd) => cmd.apply(store, stream_manager, response).await,
             Command::CreateRange(cmd) => cmd.apply(store, stream_manager, response).await,
             Command::SealRange(cmd) => cmd.apply(store, stream_manager, response).await,
+        }
+    }
+}
+
+impl<'a> fmt::Display for Command<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Command::Append(cmd) => write!(f, "{}", cmd),
+            Command::Fetch(cmd) => write!(f, "{}", cmd),
+            Command::Heartbeat(cmd) => write!(f, "{}", cmd),
+            Command::Ping(cmd) => write!(f, "{}", cmd),
+            Command::CreateRange(cmd) => write!(f, "{}", cmd),
+            Command::SealRange(cmd) => write!(f, "{}", cmd),
         }
     }
 }
