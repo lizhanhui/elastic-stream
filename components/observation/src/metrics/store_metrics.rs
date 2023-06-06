@@ -9,10 +9,10 @@ use prometheus::{
 #[derive(Debug)]
 pub struct DataNodeStatistics {
     last_instant: Instant,
-    network_append_old: i16,
-    network_fetch_old: i16,
-    network_failed_append_old: i16,
-    network_failed_fetch_old: i16,
+    network_append_old: u64,
+    network_fetch_old: u64,
+    network_failed_append_old: u64,
+    network_failed_fetch_old: u64,
     network_append_rate: i16,
     network_fetch_rate: i16,
     network_failed_append_rate: i16,
@@ -46,31 +46,31 @@ impl DataNodeStatistics {
         let current_instant = Instant::now();
         let time_delta = current_instant
             .saturating_duration_since(self.last_instant)
-            .as_millis() as i64
+            .as_millis() as u64
             / 1000;
         self.last_instant = current_instant;
         update_rate(
             &mut self.network_append_old,
             &mut self.network_append_rate,
-            STORE_APPEND_COUNT.get() as i16,
+            STORE_APPEND_COUNT.get(),
             time_delta,
         );
         update_rate(
             &mut self.network_fetch_old,
             &mut self.network_fetch_rate,
-            STORE_FETCH_COUNT.get() as i16,
+            STORE_FETCH_COUNT.get(),
             time_delta,
         );
         update_rate(
             &mut self.network_failed_append_old,
             &mut self.network_failed_append_rate,
-            STORE_FAILED_APPEND_COUNT.get() as i16,
+            STORE_FAILED_APPEND_COUNT.get(),
             time_delta,
         );
         update_rate(
             &mut self.network_failed_fetch_old,
             &mut self.network_failed_fetch_rate,
-            STORE_FAILED_FETCH_COUNT.get() as i16,
+            STORE_FAILED_FETCH_COUNT.get(),
             time_delta,
         );
     }
@@ -134,11 +134,11 @@ impl DataNodeStatistics {
 
 /// The update_rate() is used to calculate a new rate
 /// based on the current metric, old metric, and time_delta.
-fn update_rate(old_metric: &mut i16, rate: &mut i16, cur_metric: i16, time_delta: i64) {
+fn update_rate(old_metric: &mut u64, rate: &mut i16, cur_metric: u64, time_delta: u64) {
     let metric_delta = cur_metric - *old_metric;
     if time_delta > 0 {
         *old_metric = cur_metric;
-        *rate = metric_delta / time_delta as i16;
+        *rate = (metric_delta / time_delta) as i16;
     }
 }
 lazy_static! {

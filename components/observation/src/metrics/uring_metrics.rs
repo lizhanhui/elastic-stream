@@ -7,7 +7,7 @@ use prometheus::{
 };
 pub struct UringStatistics {
     last_instant: Instant,
-    uring_task_old: i16,
+    uring_task_old: u64,
     uring_task_rate: i16,
 }
 
@@ -33,13 +33,13 @@ impl UringStatistics {
         // between the last record and the current one, in seconds.
         let time_delta = current_instant
             .saturating_duration_since(self.last_instant)
-            .as_millis() as i64
+            .as_millis() as u64
             / 1000;
         self.last_instant = current_instant;
         update_rate(
             &mut self.uring_task_old,
             &mut self.uring_task_rate,
-            COMPLETED_READ_IO.get() as i16 + COMPLETED_WRITE_IO.get() as i16,
+            COMPLETED_READ_IO.get() + COMPLETED_WRITE_IO.get(),
             time_delta,
         );
     }
@@ -80,11 +80,11 @@ impl UringStatistics {
 
 /// The update_rate() is used to calculate a new rate
 /// based on the current metric, old metric, and time_delta.
-fn update_rate(old_metric: &mut i16, rate: &mut i16, cur_metric: i16, time_delta: i64) {
+fn update_rate(old_metric: &mut u64, rate: &mut i16, cur_metric: u64, time_delta: u64) {
     let metric_delta = cur_metric - *old_metric;
     if time_delta > 0 {
         *old_metric = cur_metric;
-        *rate = metric_delta / time_delta as i16;
+        *rate = (metric_delta / time_delta) as i16;
     }
 }
 
