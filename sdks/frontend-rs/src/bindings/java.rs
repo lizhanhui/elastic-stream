@@ -688,7 +688,8 @@ pub unsafe extern "system" fn Java_com_automq_elasticstream_client_jni_Stream_re
 }
 
 fn call_future_complete_method(mut env: JNIEnv, future: GlobalRef, obj: JObject) {
-    let s = JValueGen::from(obj);
+    let obj = env.auto_local(obj);
+    let s = JValueGen::from(&obj);
     let _stopwatch = Stopwatch::new("Future#complete");
     let method = unsafe { FUTURE_COMPLETE_CACHE.get() }.unwrap();
     if unsafe {
