@@ -25,6 +25,7 @@ num_cpus = "1.15.0"
 chrono = { workspace = true }
 minstant = { workspace = true }
 log4rs = { workspace = true }
+rand = { workspace = true }
 
 [dev-dependencies]
 test-util = { path = "../../components/test-util" }
