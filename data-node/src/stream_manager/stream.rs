@@ -65,7 +65,7 @@ impl Stream {
             }
         }
 
-        if let Some(range) = self.ranges.iter().rev().next() {
+        if let Some(range) = self.ranges.iter().next_back() {
             if range.metadata.index() > metadata.index() {
                 warn!(
                     "Attempting to create a range which should have been sealed: {:?}. Last range on current node: {:?}",
@@ -85,17 +85,17 @@ impl Stream {
     }
 
     pub(crate) fn seal(&mut self, metadata: &mut RangeMetadata) -> Result<(), ServiceError> {
-        self.verify_stream_id(&metadata)?;
+        self.verify_stream_id(metadata)?;
         if let Some(range) = self.get_range(metadata.index()) {
             range.seal(metadata);
-            return Ok(());
+            Ok(())
         } else {
             info!("Range does not exist, metadata={:?}. Create the sealed range on data-node directly", metadata);
-            return Err(ServiceError::NotFound(format!(
+            Err(ServiceError::NotFound(format!(
                 "Range[{}#{}] is not found",
                 metadata.stream_id(),
                 metadata.index()
-            )));
+            )))
         }
     }
 

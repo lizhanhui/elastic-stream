@@ -7,7 +7,7 @@ use log::{error, info};
 use model::range::RangeMetadata;
 use store::{ElasticStore, Store};
 
-use crate::error::{self, ServiceError};
+use crate::error::ServiceError;
 
 use super::{fetcher::Fetcher, range::Range, stream::Stream};
 
@@ -133,7 +133,7 @@ impl StreamManager {
                     .collect::<Vec<_>>();
                 // Create the missing ranges in the stream
                 ranges.into_iter().for_each(|item| {
-                    stream.create_range(item.clone());
+                    stream.create_range(item);
                 });
             }
             stream.seal(range)

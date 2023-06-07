@@ -24,13 +24,14 @@ impl Range {
             window: if metadata.is_sealed() {
                 None
             } else {
-                Some(Window::new(log_ident.clone(), metadata.start()))
+                Some(Window::new(log_ident, metadata.start()))
             },
             metadata,
             committed: None,
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn committed(&self) -> Option<u64> {
         self.committed
     }
@@ -42,9 +43,7 @@ impl Range {
     }
 
     pub(crate) fn commit(&mut self, offset: u64) {
-        let offset = self
-            .window_mut()
-            .and_then(|window| Some(window.commit(offset)));
+        let offset = self.window_mut().map(|window| window.commit(offset));
 
         if let Some(offset) = offset {
             if let Some(ref mut committed) = self.committed {
@@ -73,9 +72,10 @@ impl Range {
 
     pub(crate) fn seal(&mut self, metadata: &mut RangeMetadata) {
         let end = self.committed.unwrap_or(self.metadata.start());
-        metadata
-            .end()
-            .map(|end_offset| self.metadata.set_end(end_offset));
+        if let Some(end_offset) = metadata.end() {
+            self.metadata.set_end(end_offset)
+        };
+
         metadata.set_end(end);
 
         // Drop window once the range is sealed.
