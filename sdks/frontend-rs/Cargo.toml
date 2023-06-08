@@ -27,6 +27,9 @@ minstant = { workspace = true }
 log4rs = { workspace = true }
 rand = { workspace = true }
 
+[target.'cfg(not(target_env = "msvc"))'.dependencies]
+tikv-jemallocator = "0.5"
+
 [dev-dependencies]
 test-util = { path = "../../components/test-util" }
 minitrace = { workspace = true }
