@@ -11,10 +11,12 @@ use std::time::Duration;
 use tokio::sync::{mpsc, oneshot};
 
 use crate::{ClientError, Frontend, Stopwatch, Stream, StreamOptions};
+use crossbeam::channel::{unbounded, Sender};
 
-use super::cmd::Command;
+use super::cmd::{CallbackCommand, Command};
 
 static mut TX: OnceCell<mpsc::UnboundedSender<Command>> = OnceCell::new();
+static mut CALLBACK_TX: OnceCell<Sender<CallbackCommand>> = OnceCell::new();
 // TODO: Add exception class cache
 static mut STREAM_CLASS_CACHE: OnceCell<GlobalRef> = OnceCell::new();
 static mut STREAM_CTOR_CACHE: OnceCell<JMethodID> = OnceCell::new();
@@ -82,10 +84,14 @@ async fn process_close_stream_command(stream: &mut Stream, future: GlobalRef) {
     let result = stream.close().await;
     match result {
         Ok(_) => {
-            complete_future_with_void(future);
+            let tx = unsafe { CALLBACK_TX.get() }.unwrap();
+            let _ = tx.send(CallbackCommand::CloseStream { future });
+            // complete_future_with_void(future);
         }
         Err(err) => {
-            complete_future_with_error(future, err);
+            // complete_future_with_error(future, err);
+            let tx = unsafe { CALLBACK_TX.get() }.unwrap();
+            let _ = tx.send(CallbackCommand::ClientError { future, err });
         }
     };
     trace!("Close command finished");
@@ -93,16 +99,21 @@ async fn process_close_stream_command(stream: &mut Stream, future: GlobalRef) {
 
 async fn process_append_command(stream: &mut Stream, buf: Bytes, future: GlobalRef) {
     trace!("Start processing append command");
-    let _stopwatch_all = Stopwatch::new("append#all", Duration::from_millis(20));
     let result = stream.append(buf).await;
     match result {
         Ok(result) => {
-            let _stopwatch_callback = Stopwatch::new("append#callback", Duration::from_millis(1));
             let base_offset = result.base_offset;
-            complete_future_with_jlong(future, base_offset);
+            // complete_future_with_jlong(future, base_offset);
+            let tx = unsafe { CALLBACK_TX.get() }.unwrap();
+            let _ = tx.send(CallbackCommand::Append {
+                future,
+                base_offset,
+            });
         }
         Err(err) => {
-            complete_future_with_error(future, err);
+            // complete_future_with_error(future, err);
+            let tx = unsafe { CALLBACK_TX.get() }.unwrap();
+            let _ = tx.send(CallbackCommand::ClientError { future, err });
         }
     };
     trace!("Append command finished");
@@ -115,39 +126,17 @@ async fn process_read_command(
     future: GlobalRef,
 ) {
     trace!("Start processing read command");
-    let _stopwatch_all = Stopwatch::new("read#all", Duration::from_millis(10));
     let result = stream.read(start_offset, end_offset, batch_max_bytes).await;
     match result {
         Ok(buffers) => {
-            let _stopwatch_callback = Stopwatch::new("read#callback", Duration::from_millis(1));
-            let total: usize = buffers.iter().map(|buf| buf.len()).sum();
-            JENV.with(|cell| {
-                let env = get_thread_local_jenv(cell);
-                let byte_array = env.new_byte_array(total as i32);
-                let mut p: usize = 0;
-                if let Ok(byte_array) = byte_array {
-                    {
-                        buffers.iter().for_each(|buf| {
-                            let slice = buf.as_ref();
-                            let slice: &[i8] = unsafe {
-                                std::slice::from_raw_parts(slice.as_ptr() as *const i8, slice.len())
-                            };
-                            let _ = env.set_byte_array_region(&byte_array, p as i32, slice);
-                            p += buf.len();
-                        });
-                    }
-                    call_future_complete_method(env, future, JObject::from(byte_array));
-                } else {
-                    complete_future_with_error(
-                        future,
-                        ClientError::Internal("Failed to create byte array".to_string()),
-                    );
-                    error!("Failed to create byte array");
-                }
-            });
+            let tx = unsafe { CALLBACK_TX.get() }.unwrap();
+            let _ = tx.send(CallbackCommand::Read { future, buffers });
+            // complete_future_with_byte_array(future, buffers);
         }
         Err(err) => {
-            complete_future_with_error(future, err);
+            // complete_future_with_error(future, err);
+            let tx = unsafe { CALLBACK_TX.get() }.unwrap();
+            let _ = tx.send(CallbackCommand::ClientError { future, err });
         }
     };
     trace!("Read command finished");
@@ -158,10 +147,14 @@ async fn process_start_offset_command(stream: &mut Stream, future: GlobalRef) {
     let result = stream.start_offset().await;
     match result {
         Ok(offset) => {
-            complete_future_with_jlong(future, offset);
+            let tx = unsafe { CALLBACK_TX.get() }.unwrap();
+            let _ = tx.send(CallbackCommand::StartOffset { future, offset });
+            // complete_future_with_jlong(future, offset);
         }
         Err(err) => {
-            complete_future_with_error(future, err);
+            // complete_future_with_error(future, err);
+            let tx = unsafe { CALLBACK_TX.get() }.unwrap();
+            let _ = tx.send(CallbackCommand::ClientError { future, err });
         }
     };
     trace!("Start_offset command finished");
@@ -172,10 +165,14 @@ async fn process_next_offset_command(stream: &mut Stream, future: GlobalRef) {
     let result = stream.next_offset().await;
     match result {
         Ok(offset) => {
-            complete_future_with_jlong(future, offset);
+            let tx = unsafe { CALLBACK_TX.get() }.unwrap();
+            let _ = tx.send(CallbackCommand::NextOffset { future, offset });
+            // complete_future_with_jlong(future, offset);
         }
         Err(err) => {
-            complete_future_with_error(future, err);
+            // complete_future_with_error(future, err);
+            let tx = unsafe { CALLBACK_TX.get() }.unwrap();
+            let _ = tx.send(CallbackCommand::ClientError { future, err });
         }
     };
     trace!("Next_offset command finished");
@@ -204,10 +201,14 @@ async fn process_open_stream_command(
     match result {
         Ok(stream) => {
             let ptr = Box::into_raw(Box::new(stream)) as jlong;
-            complete_future_with_stream(future, ptr);
+            // complete_future_with_stream(future, ptr);
+            let tx = unsafe { CALLBACK_TX.get() }.unwrap();
+            let _ = tx.send(CallbackCommand::OpenStream { future, ptr });
         }
         Err(err) => {
-            complete_future_with_error(future, err);
+            // complete_future_with_error(future, err);
+            let tx = unsafe { CALLBACK_TX.get() }.unwrap();
+            let _ = tx.send(CallbackCommand::ClientError { future, err });
         }
     };
     trace!("Open_stream command finished");
@@ -229,10 +230,17 @@ async fn process_create_stream_command(
     let result = front_end.create(options).await;
     match result {
         Ok(stream_id) => {
-            complete_future_with_jlong(future, stream_id as i64);
+            // complete_future_with_jlong(future, stream_id as i64);
+            let tx = unsafe { CALLBACK_TX.get() }.unwrap();
+            let _ = tx.send(CallbackCommand::CreateStream {
+                future,
+                stream_id: stream_id as i64,
+            });
         }
         Err(err) => {
-            complete_future_with_error(future, err);
+            // complete_future_with_error(future, err);
+            let tx = unsafe { CALLBACK_TX.get() }.unwrap();
+            let _ = tx.send(CallbackCommand::ClientError { future, err });
         }
     };
     trace!("Create_stream command finished");
@@ -245,49 +253,102 @@ pub extern "system" fn JNI_OnLoad(vm: JavaVM, _: *mut c_void) -> jint {
     crate::init_log();
     let java_vm = Arc::new(vm);
     let (tx, mut rx) = mpsc::unbounded_channel();
+    let (callback_tx, callback_rx) = unbounded();
     // # Safety
     // Set OnceCell, expected to be safe.
     if unsafe { TX.set(tx) }.is_err() {
         error!("Failed to set command channel sender");
     }
+    if unsafe { CALLBACK_TX.set(callback_tx) }.is_err() {
+        error!("Failed to set callback channel sender");
+    }
+
+    let mut env = java_vm.get_env().unwrap();
+    let stream_path = "com/automq/elasticstream/client/jni/Stream";
+    let void_path = "java/lang/Void";
+    let jlong_path = "java/lang/Long";
+    let completable_future_path = "java/util/concurrent/CompletableFuture";
+    let stream_class = env.find_class(stream_path).unwrap();
+    let stream_class: GlobalRef = env.new_global_ref(stream_class).unwrap();
+    let stream_ctor = env.get_method_id(stream_path, "<init>", "(J)V").unwrap();
+
+    let void_class = env.find_class(void_path).unwrap();
+    let void_class: GlobalRef = env.new_global_ref(void_class).unwrap();
+    let void_ctor = env.get_method_id(void_path, "<init>", "()V").unwrap();
+    let jlong_class = env.find_class(jlong_path).unwrap();
+    let jlong_class: GlobalRef = env.new_global_ref(jlong_class).unwrap();
+    let jlong_ctor = env.get_method_id(jlong_path, "<init>", "(J)V").unwrap();
+    let future_complete_method = env
+        .get_method_id(completable_future_path, "complete", "(Ljava/lang/Object;)Z")
+        .unwrap();
+    unsafe { STREAM_CLASS_CACHE.set(stream_class).unwrap() };
+    unsafe { STREAM_CTOR_CACHE.set(stream_ctor).unwrap() };
+    unsafe { VOID_CLASS_CACHE.set(void_class).unwrap() };
+    unsafe { VOID_CTOR_CACHE.set(void_ctor).unwrap() };
+    unsafe { JLONG_CLASS_CACHE.set(jlong_class).unwrap() };
+    unsafe { JLONG_CTOR_CACHE.set(jlong_ctor).unwrap() };
+    unsafe { FUTURE_COMPLETE_CACHE.set(future_complete_method).unwrap() };
+
+    let cpu_sum = num_cpus::get();
+    (0..cpu_sum).for_each(|i| {
+        let java_vm_clone = java_vm.clone();
+        let callback_rx_clone = callback_rx.clone();
+        let _ = std::thread::Builder::new()
+            .name(format!("CallBackThread-{}", i))
+            .spawn(move || {
+                JENV.with(|cell| {
+                    if let Ok(env) = java_vm_clone.attach_current_thread_as_daemon() {
+                        *cell.borrow_mut() = Some(env.get_raw());
+                    } else {
+                        error!("Failed to attach current thread as daemon");
+                    }
+                });
+                loop {
+                    match callback_rx_clone.recv() {
+                        Ok(command) => match command {
+                            CallbackCommand::Append {
+                                future,
+                                base_offset,
+                            } => {
+                                let _stopwatch = Stopwatch::new("Append#callback", Duration::from_millis(1));
+                                complete_future_with_jlong(future, base_offset);
+                            }
+                            CallbackCommand::Read { future, buffers } => {
+                                let _stopwatch = Stopwatch::new("Read#callback", Duration::from_millis(1));
+                                complete_future_with_byte_array(future, buffers);
+                            }
+                            CallbackCommand::CreateStream { future, stream_id } => {
+                                complete_future_with_jlong(future, stream_id);
+                            }
+                            CallbackCommand::OpenStream { future, ptr } => {
+                                complete_future_with_stream(future, ptr);
+                            }
+                            CallbackCommand::StartOffset { future, offset } => {
+                                complete_future_with_jlong(future, offset);
+                            }
+                            CallbackCommand::NextOffset { future, offset } => {
+                                complete_future_with_jlong(future, offset);
+                            }
+                            CallbackCommand::CloseStream { future } => {
+                                complete_future_with_void(future);
+                            }
+                            CallbackCommand::ClientError { future, err } => {
+                                complete_future_with_error(future, err);
+                            }
+                        },
+                        Err(_) => {
+                            info!("Callback channel is dropped");
+                            break;
+                        }
+                    }
+                }
+            });
+    });
+    //
     let _ = std::thread::Builder::new()
         .name("Runtime".to_string())
         .spawn(move || {
             trace!("JNI Runtime thread started");
-            JENV.with(|cell| {
-                if let Ok(mut env) = java_vm.attach_current_thread_as_daemon() {
-                    *cell.borrow_mut() = Some(env.get_raw());
-                    let stream_path = "com/automq/elasticstream/client/jni/Stream";
-                    let void_path = "java/lang/Void";
-                    let jlong_path = "java/lang/Long";
-                    let completable_future_path = "java/util/concurrent/CompletableFuture";
-                    let stream_class = env.find_class(stream_path).unwrap();
-                    let stream_class: GlobalRef = env.new_global_ref(stream_class).unwrap();
-                    let stream_ctor = env.get_method_id(stream_path, "<init>", "(J)V").unwrap();
-
-                    let void_class = env.find_class(void_path).unwrap();
-                    let void_class: GlobalRef = env.new_global_ref(void_class).unwrap();
-                    let void_ctor = env.get_method_id(void_path, "<init>", "()V").unwrap();
-                    let jlong_class = env.find_class(jlong_path).unwrap();
-                    let jlong_class: GlobalRef = env.new_global_ref(jlong_class).unwrap();
-                    let jlong_ctor = env.get_method_id(jlong_path, "<init>", "(J)V").unwrap();
-                    let future_complete_method = env
-                        .get_method_id(completable_future_path, "complete", "(Ljava/lang/Object;)Z")
-                        .unwrap();
-                    unsafe { STREAM_CLASS_CACHE.set(stream_class).unwrap() };
-                    unsafe { STREAM_CTOR_CACHE.set(stream_ctor).unwrap() };
-                    unsafe { VOID_CLASS_CACHE.set(void_class).unwrap() };
-                    unsafe { VOID_CTOR_CACHE.set(void_ctor).unwrap() };
-                    unsafe { JLONG_CLASS_CACHE.set(jlong_class).unwrap() };
-                    unsafe { JLONG_CTOR_CACHE.set(jlong_ctor).unwrap() };
-                    unsafe { FUTURE_COMPLETE_CACHE.set(future_complete_method).unwrap() };
-                } else {
-                    error!("Failed to attach current thread as daemon");
-                }
-            });
-            JAVA_VM.with(|cell| {
-                *cell.borrow_mut() = Some(java_vm.clone());
-            });
             tokio_uring::start(async move {
                 trace!("JNI tokio-uring runtime started");
                 loop {
@@ -1081,6 +1142,34 @@ fn complete_future_with_void(future: GlobalRef) {
             }
         } else {
             panic!("Failed to find Void class");
+        }
+    });
+}
+
+fn complete_future_with_byte_array(future: GlobalRef, buffers: Vec<Bytes>) {
+    let total: usize = buffers.iter().map(|buf| buf.len()).sum();
+    JENV.with(|cell| {
+        let env = get_thread_local_jenv(cell);
+        let byte_array = env.new_byte_array(total as i32);
+        let mut p: usize = 0;
+        if let Ok(byte_array) = byte_array {
+            {
+                buffers.iter().for_each(|buf| {
+                    let slice = buf.as_ref();
+                    let slice: &[i8] = unsafe {
+                        std::slice::from_raw_parts(slice.as_ptr() as *const i8, slice.len())
+                    };
+                    let _ = env.set_byte_array_region(&byte_array, p as i32, slice);
+                    p += buf.len();
+                });
+            }
+            call_future_complete_method(env, future, JObject::from(byte_array));
+        } else {
+            complete_future_with_error(
+                future,
+                ClientError::Internal("Failed to create byte array".to_string()),
+            );
+            error!("Failed to create byte array");
         }
     });
 }
