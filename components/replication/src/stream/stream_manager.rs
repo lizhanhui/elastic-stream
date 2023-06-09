@@ -20,7 +20,6 @@ use super::cache::RecordBatchCache;
 
 /// `StreamManager` is intended to be used in thread-per-core usage case. It is NOT `Send`.
 pub(crate) struct StreamManager {
-    config: Arc<Configuration>,
     client: Rc<Client>,
     streams: Rc<RefCell<HashMap<u64, Rc<ReplicationStream>>>>,
     cache: Rc<RecordBatchCache>,
@@ -36,7 +35,6 @@ impl StreamManager {
         Self::schedule_heartbeat(&client, config.client_heartbeat_interval());
 
         Self {
-            config,
             client,
             streams,
             cache,
@@ -47,7 +45,7 @@ impl StreamManager {
         // Spawn a task to broadcast heartbeat to servers.
         //
         // TODO: watch ctrl-c signal to shutdown timely.
-        let client = Rc::clone(&client);
+        let client = Rc::clone(client);
         tokio_uring::spawn(async move {
             let mut interval = tokio::time::interval(interval);
             loop {

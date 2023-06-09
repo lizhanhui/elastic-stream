@@ -32,7 +32,7 @@ pub(crate) struct ReplicationStream {
     /// #append send StreamAppendRequest to tx.
     append_requests_tx: mpsc::bounded::Tx<StreamAppendRequest>,
     /// send by range ack / delay retry to trigger append task loop next round.
-    append_tasks_tx: mpsc::bounded::Tx<()>,
+    append_tasks_tx: mpsc::unbounded::Tx<()>,
     // send when stream close.
     shutdown_signal_tx: broadcast::Sender<()>,
     // stream closed mark.
@@ -47,7 +47,7 @@ impl ReplicationStream {
         cache: Rc<RecordBatchCache>,
     ) -> Rc<Self> {
         let (append_requests_tx, append_requests_rx) = mpsc::bounded::channel(1024);
-        let (append_tasks_tx, append_tasks_rx) = mpsc::bounded::channel(1024);
+        let (append_tasks_tx, append_tasks_rx) = mpsc::unbounded::channel();
         let (shutdown_signal_tx, shutdown_signal_rx) = broadcast::channel(1);
         let this = Rc::new(Self {
             log_ident: format!("Stream[{id}] "),
@@ -307,7 +307,7 @@ impl ReplicationStream {
     async fn append_task(
         stream: Weak<ReplicationStream>,
         mut append_requests_rx: mpsc::bounded::Rx<StreamAppendRequest>,
-        mut append_tasks_rx: mpsc::bounded::Rx<()>,
+        mut append_tasks_rx: mpsc::unbounded::Rx<()>,
         mut shutdown_signal_rx: broadcast::Receiver<()>,
         closed: Rc<RefCell<bool>>,
     ) {
