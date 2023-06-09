@@ -11,7 +11,6 @@ pub(crate) struct Stopwatch<'a> {
 
 impl<'a> Stopwatch<'a> {
     pub(crate) fn new(name: &'a str, warn_threshold: Duration) -> Stopwatch<'a> {
-        trace!("{} starts", name);
         Stopwatch {
             name,
             start: Instant::now(),

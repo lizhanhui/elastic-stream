@@ -4,13 +4,13 @@ use client::Client;
 use config::Configuration;
 use log::warn;
 use model::{client_role::ClientRole, stream::StreamMetadata};
-use tokio::sync::{broadcast, mpsc, oneshot};
+use tokio::sync::{broadcast, oneshot};
 
 use crate::{
     request::{
         AppendRequest, AppendResponse, CloseStreamRequest, CreateStreamRequest,
         CreateStreamResponse, OpenStreamRequest, OpenStreamResponse, ReadRequest, ReadResponse,
-        Request, TrimRequest,
+        TrimRequest,
     },
     stream::replication_stream::ReplicationStream,
     ReplicationError,
@@ -18,69 +18,38 @@ use crate::{
 
 use super::cache::RecordBatchCache;
 
+/// `StreamManager` is intended to be used in thread-per-core usage case. It is NOT `Send`.
 pub(crate) struct StreamManager {
     config: Arc<Configuration>,
-    rx: mpsc::UnboundedReceiver<Request>,
     client: Rc<Client>,
     streams: Rc<RefCell<HashMap<u64, Rc<ReplicationStream>>>>,
     cache: Rc<RecordBatchCache>,
 }
 
 impl StreamManager {
-    pub(crate) fn new(config: Arc<Configuration>, rx: mpsc::UnboundedReceiver<Request>) -> Self {
+    pub(crate) fn new(config: Arc<Configuration>) -> Self {
         let (shutdown, _rx) = broadcast::channel(1);
         let client = Rc::new(Client::new(Arc::clone(&config), shutdown));
         let streams = Rc::new(RefCell::new(HashMap::new()));
         let cache = Rc::new(RecordBatchCache::new());
+
+        Self::schedule_heartbeat(&client, config.client_heartbeat_interval());
+
         Self {
             config,
-            rx,
             client,
             streams,
             cache,
         }
     }
 
-    pub(crate) fn spawn_loop(mut this: Self) {
-        let client = Rc::clone(&this.client);
-        let config = Arc::clone(&this.config);
-
-        tokio_uring::spawn(async move {
-            while let Some(request) = this.rx.recv().await {
-                match request {
-                    Request::Append { request, tx } => {
-                        this.append(request, tx);
-                    }
-                    Request::Read { request, tx } => {
-                        this.fetch(request, tx);
-                    }
-                    Request::CreateStream { request, tx } => {
-                        this.create(request, tx);
-                    }
-                    Request::OpenStream { request, tx } => {
-                        this.open(request, tx);
-                    }
-                    Request::CloseStream { request, tx } => {
-                        this.close(request, tx);
-                    }
-                    Request::StartOffset { request, tx } => {
-                        this.start_offset(request, tx);
-                    }
-                    Request::NextOffset { request, tx } => {
-                        this.next_offset(request, tx);
-                    }
-                    Request::Trim { request, tx } => {
-                        this.trim(request, tx);
-                    }
-                }
-            }
-        });
-
+    fn schedule_heartbeat(client: &Rc<Client>, interval: std::time::Duration) {
         // Spawn a task to broadcast heartbeat to servers.
         //
         // TODO: watch ctrl-c signal to shutdown timely.
+        let client = Rc::clone(&client);
         tokio_uring::spawn(async move {
-            let mut interval = tokio::time::interval(config.client_heartbeat_interval());
+            let mut interval = tokio::time::interval(interval);
             loop {
                 interval.tick().await;
                 client.broadcast_heartbeat(ClientRole::Frontend).await;
@@ -88,7 +57,7 @@ impl StreamManager {
         });
     }
 
-    fn append(
+    pub fn append(
         &mut self,
         request: AppendRequest,
         tx: oneshot::Sender<Result<AppendResponse, ReplicationError>>,
@@ -107,7 +76,7 @@ impl StreamManager {
         }
     }
 
-    fn fetch(
+    pub fn fetch(
         &mut self,
         request: ReadRequest,
         tx: oneshot::Sender<Result<ReadResponse, ReplicationError>>,
@@ -130,7 +99,7 @@ impl StreamManager {
         }
     }
 
-    fn create(
+    pub fn create(
         &mut self,
         request: CreateStreamRequest,
         tx: oneshot::Sender<Result<CreateStreamResponse, ReplicationError>>,
@@ -158,7 +127,7 @@ impl StreamManager {
         });
     }
 
-    fn open(
+    pub fn open(
         &mut self,
         request: OpenStreamRequest,
         tx: oneshot::Sender<Result<OpenStreamResponse, ReplicationError>>,
@@ -179,7 +148,7 @@ impl StreamManager {
         });
     }
 
-    fn close(
+    pub fn close(
         &mut self,
         request: CloseStreamRequest,
         tx: oneshot::Sender<Result<(), ReplicationError>>,
@@ -199,7 +168,11 @@ impl StreamManager {
         }
     }
 
-    fn start_offset(&mut self, stream_id: u64, tx: oneshot::Sender<Result<u64, ReplicationError>>) {
+    pub fn start_offset(
+        &mut self,
+        stream_id: u64,
+        tx: oneshot::Sender<Result<u64, ReplicationError>>,
+    ) {
         let result = if let Some(stream) = self.streams.borrow().get(&stream_id) {
             Ok(stream.start_offset())
         } else {
@@ -208,7 +181,11 @@ impl StreamManager {
         let _ = tx.send(result);
     }
 
-    fn next_offset(&mut self, stream_id: u64, tx: oneshot::Sender<Result<u64, ReplicationError>>) {
+    pub fn next_offset(
+        &mut self,
+        stream_id: u64,
+        tx: oneshot::Sender<Result<u64, ReplicationError>>,
+    ) {
         let result = if let Some(stream) = self.streams.borrow().get(&stream_id) {
             Ok(stream.next_offset())
         } else {
@@ -217,7 +194,11 @@ impl StreamManager {
         let _ = tx.send(result);
     }
 
-    fn trim(&mut self, request: TrimRequest, tx: oneshot::Sender<Result<(), ReplicationError>>) {
+    pub fn trim(
+        &mut self,
+        request: TrimRequest,
+        tx: oneshot::Sender<Result<(), ReplicationError>>,
+    ) {
         let stream = self
             .streams
             .borrow_mut()

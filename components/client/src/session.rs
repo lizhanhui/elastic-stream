@@ -7,6 +7,7 @@ use codec::{
 use model::client_role::ClientRole;
 use transport::connection::Connection;
 
+use local_sync::oneshot;
 use log::{error, info, trace, warn};
 use std::{
     cell::{RefCell, UnsafeCell},
@@ -16,10 +17,7 @@ use std::{
     sync::Arc,
     time::Instant,
 };
-use tokio::sync::{
-    broadcast::{self, error::RecvError},
-    oneshot,
-};
+use tokio::sync::broadcast::{self, error::RecvError};
 use tokio_uring::net::TcpStream;
 
 use crate::invocation_context::InvocationContext;

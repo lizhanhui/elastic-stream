@@ -16,4 +16,5 @@ tokio = { workspace = true }
 tokio-uring = { workspace = true }
 itertools = { workspace = true }
 bytes = { workspace = true }
+local-sync = { workspace = true }
 moka = { workspace = true }
