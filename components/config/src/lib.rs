@@ -224,6 +224,9 @@ pub struct Store {
     pub uring: Uring,
 
     pub rocksdb: RocksDB,
+    
+    #[serde(rename = "total-segment-file-size")]
+    pub total_segment_file_size: u64, 
 }
 
 impl Default for Store {
@@ -239,6 +242,7 @@ impl Default for Store {
             pre_allocate_segment_file_number: 2,
             uring: Uring::default(),
             rocksdb: RocksDB::default(),
+            total_segment_file_size: u64::MAX,
         }
     }
 }
