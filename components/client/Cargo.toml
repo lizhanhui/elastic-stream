@@ -24,6 +24,7 @@ tokio-uring = { workspace = true }
 tokio = { workspace = true }
 crossbeam = { workspace = true }
 observation = {path = "../observation"}
+local-sync = { workspace = true }
 
 [dev-dependencies]
 mockall = { workspace = true }

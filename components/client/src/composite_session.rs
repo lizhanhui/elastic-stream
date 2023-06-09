@@ -3,6 +3,7 @@ use crate::{error::ClientError, invocation_context::InvocationContext};
 use bytes::Bytes;
 use codec::frame::OperationCode;
 use itertools::Itertools;
+use local_sync::oneshot;
 use log::{debug, error, info, trace, warn};
 use model::{
     client_role::ClientRole, fetch::FetchRequestEntry, fetch::FetchResultEntry,
@@ -26,7 +27,7 @@ use std::{
     time::{Duration, Instant},
 };
 use tokio::{
-    sync::{broadcast, oneshot},
+    sync::broadcast,
     time::{self, timeout},
 };
 use tokio_uring::net::TcpStream;

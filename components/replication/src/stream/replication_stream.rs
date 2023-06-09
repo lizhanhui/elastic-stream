@@ -6,6 +6,7 @@ use super::replication_range::ReplicationRange;
 use bytes::Bytes;
 use client::Client;
 use itertools::Itertools;
+use local_sync::{mpsc, oneshot};
 use log::{error, info, trace, warn};
 use model::RecordBatch;
 use std::cell::OnceCell;
@@ -16,8 +17,6 @@ use std::ops::Bound::Included;
 use std::rc::{Rc, Weak};
 use std::time::Instant;
 use tokio::sync::broadcast;
-use tokio::sync::mpsc;
-use tokio::sync::oneshot;
 use tokio::time::{sleep, Duration};
 
 pub(crate) struct ReplicationStream {
@@ -31,9 +30,9 @@ pub(crate) struct ReplicationStream {
     next_offset: RefCell<u64>,
     last_range: RefCell<Option<Rc<ReplicationRange>>>,
     /// #append send StreamAppendRequest to tx.
-    append_requests_tx: mpsc::Sender<StreamAppendRequest>,
+    append_requests_tx: mpsc::bounded::Tx<StreamAppendRequest>,
     /// send by range ack / delay retry to trigger append task loop next round.
-    append_tasks_tx: mpsc::Sender<()>,
+    append_tasks_tx: mpsc::unbounded::Tx<()>,
     // send when stream close.
     shutdown_signal_tx: broadcast::Sender<()>,
     // stream closed mark.
@@ -47,8 +46,8 @@ impl ReplicationStream {
         client: Weak<Client>,
         cache: Rc<RecordBatchCache>,
     ) -> Rc<Self> {
-        let (append_requests_tx, append_requests_rx) = mpsc::channel(1024);
-        let (append_tasks_tx, append_tasks_rx) = mpsc::channel(1024);
+        let (append_requests_tx, append_requests_rx) = mpsc::bounded::channel(1024);
+        let (append_tasks_tx, append_tasks_rx) = mpsc::unbounded::channel();
         let (shutdown_signal_tx, shutdown_signal_rx) = broadcast::channel(1);
         let this = Rc::new(Self {
             log_ident: format!("Stream[{id}] "),
@@ -302,13 +301,13 @@ impl ReplicationStream {
     }
 
     pub(crate) fn trigger_append_task(&self) {
-        let _ = self.append_tasks_tx.try_send(());
+        let _ = self.append_tasks_tx.send(());
     }
 
     async fn append_task(
         stream: Weak<ReplicationStream>,
-        mut append_requests_rx: mpsc::Receiver<StreamAppendRequest>,
-        mut append_tasks_rx: mpsc::Receiver<()>,
+        mut append_requests_rx: mpsc::bounded::Rx<StreamAppendRequest>,
+        mut append_tasks_rx: mpsc::unbounded::Rx<()>,
         mut shutdown_signal_rx: broadcast::Receiver<()>,
         closed: Rc<RefCell<bool>>,
     ) {

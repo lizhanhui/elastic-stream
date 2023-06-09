@@ -1,8 +1,8 @@
 use std::{cell::OnceCell, net::SocketAddr};
 
 use crate::{request, response};
+use local_sync::oneshot;
 use log::error;
-use tokio::sync::oneshot;
 
 #[derive(Debug)]
 pub struct InvocationContext {
