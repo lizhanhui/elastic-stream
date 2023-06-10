@@ -1,0 +1,5 @@
+Package: data-node
+Version: 0.2
+Maintainer: AutoMQ
+Architecture: x86-64
+Description: Data nodes are range servers that store ranges of each elastic streams.
