@@ -632,7 +632,7 @@ impl Wal {
                 Status::Close => {
                     info!("LogSegmentFile: `{}` is closed", segment);
                     segment.sd = None;
-
+                    segment.status = Status::UnlinkAt;
                     info!("About to delete LogSegmentFile `{}`", segment);
                     let sqe = opcode::UnlinkAt::new(
                         types::Fd(libc::AT_FDCWD),
@@ -647,7 +647,7 @@ impl Wal {
                             StoreError::IoUring
                         })
                     }?;
-                    self.inflight_control_tasks.insert(offset, Status::Close);
+                    self.inflight_control_tasks.insert(offset, Status::UnlinkAt);
                 }
                 Status::UnlinkAt => {
                     info!("LogSegmentFile: `{}` is deleted", segment);
