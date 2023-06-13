@@ -3,6 +3,7 @@ use jni::objects::{GlobalRef, JClass, JMethodID, JObject, JString, JValue, JValu
 use jni::sys::{jint, jlong, JNINativeInterface_, JNI_VERSION_1_8};
 use jni::{JNIEnv, JavaVM};
 use log::{error, info, trace};
+use std::alloc::Layout;
 use std::cell::{OnceCell, RefCell};
 use std::ffi::c_void;
 use std::slice;
@@ -320,7 +321,7 @@ pub extern "system" fn JNI_OnLoad(vm: JavaVM, _: *mut c_void) -> jint {
                             CallbackCommand::Read { future, buffers } => {
                                 let _stopwatch =
                                     Stopwatch::new("Read#callback", Duration::from_millis(1));
-                                complete_future_with_byte_array(future, buffers);
+                                complete_future_with_direct_byte_buffer(future, buffers);
                             }
                             CallbackCommand::CreateStream { future, stream_id } => {
                                 complete_future_with_jlong(future, stream_id);
@@ -1150,7 +1151,7 @@ fn complete_future_with_void(future: GlobalRef) {
         }
     });
 }
-
+#[allow(unused)]
 fn complete_future_with_byte_array(future: GlobalRef, buffers: Vec<Bytes>) {
     let total: usize = buffers.iter().map(|buf| buf.len()).sum();
     JENV.with(|cell| {
@@ -1184,4 +1185,42 @@ fn complete_future_with_error(future: GlobalRef, err: ClientError) {
         let mut env = get_thread_local_jenv(cell);
         call_future_complete_exceptionally_method(&mut env, future, err);
     });
+}
+
+fn complete_future_with_direct_byte_buffer(future: GlobalRef, buffers: Vec<Bytes>) {
+    // Copy buffers to `DirectByteBuffer`
+    let total = buffers.iter().map(|buf| buf.len()).sum();
+    if let Ok(layout) = Layout::from_size_align(total, 1) {
+        // # Safety
+        // It should always be safe to allocate memory with alignment of 1 unless the system
+        // is running out of memory.
+        let ptr = unsafe { std::alloc::alloc(layout) };
+        let mut p = 0;
+        buffers.iter().for_each(|buf| {
+            // # Safety
+            // We are copying slices from store to continuous memory for DirectByteBuffer. This
+            // is definitely a non-overlapping copy and thus safe.
+            //
+            // Note DirectByteBuffer is responsible of returning the allocated memory.
+            unsafe { std::ptr::copy_nonoverlapping(buf.as_ptr(), ptr.add(p), buf.len()) };
+            p += buf.len();
+        });
+        JENV.with(|cell| {
+            let mut env = get_thread_local_jenv(cell);
+            // # Safety
+            // Standard JNI call.
+            if let Ok(obj) = unsafe { env.new_direct_byte_buffer(ptr, total) } {
+                call_future_complete_method(env, future, JObject::from(obj));
+            } else {
+                complete_future_with_error(
+                    future,
+                    ClientError::Internal("Failed to create a new direct_byte_buffer".to_string()),
+                );
+                error!("Failed to create a new direct_byte_buffer");
+            }
+        });
+    } else {
+        complete_future_with_error(future, ClientError::Internal("Bad alignment".to_string()));
+        error!("Bad alignment");
+    }
 }
