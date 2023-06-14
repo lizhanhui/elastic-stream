@@ -4,6 +4,7 @@ use bytes::Bytes;
 use jni::objects::GlobalRef;
 use tokio::sync::oneshot;
 
+use super::tracing::Tracer;
 use crate::{ClientError, Frontend, Stream};
 
 pub enum Command<'a> {
@@ -37,6 +38,7 @@ pub enum Command<'a> {
         stream: &'a mut Stream,
         buf: Bytes,
         future: GlobalRef,
+        tracer: Tracer,
     },
 
     Read {
@@ -45,6 +47,7 @@ pub enum Command<'a> {
         end_offset: i64,
         batch_max_bytes: i32,
         future: GlobalRef,
+        tracer: Tracer,
     },
 
     CloseStream {
@@ -57,10 +60,12 @@ pub enum CallbackCommand {
     Append {
         future: GlobalRef,
         base_offset: i64,
+        tracer: Tracer,
     },
     Read {
         future: GlobalRef,
         buffers: Vec<Bytes>,
+        tracer: Tracer,
     },
     CreateStream {
         future: GlobalRef,

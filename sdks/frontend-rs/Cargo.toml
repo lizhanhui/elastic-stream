@@ -26,9 +26,10 @@ chrono = { workspace = true }
 minstant = { workspace = true }
 log4rs = { workspace = true }
 crossbeam = { workspace = true }
+minitrace = { workspace = true }
+minitrace-jaeger = "0.4.1"
 [dev-dependencies]
 test-util = { path = "../../components/test-util" }
-minitrace = { workspace = true }
 criterion = { version = "0.4", features = ["html_reports"] }
 
 [lib]

@@ -3,6 +3,8 @@ use jni::objects::{GlobalRef, JClass, JMethodID, JObject, JString, JValue, JValu
 use jni::sys::{jint, jlong, JNINativeInterface_, JNI_VERSION_1_8};
 use jni::{JNIEnv, JavaVM};
 use log::{error, info, trace};
+use minitrace::future::FutureExt;
+use minitrace::Span;
 use std::alloc::Layout;
 use std::cell::{OnceCell, RefCell};
 use std::ffi::c_void;
@@ -15,6 +17,7 @@ use crate::{ClientError, Frontend, Stopwatch, Stream, StreamOptions};
 use crossbeam::channel::{unbounded, Sender};
 
 use super::cmd::{CallbackCommand, Command};
+use super::tracing::{Tracer, TracingService};
 
 static mut TX: OnceCell<mpsc::UnboundedSender<Command>> = OnceCell::new();
 static mut CALLBACK_TX: OnceCell<Sender<CallbackCommand>> = OnceCell::new();
@@ -26,6 +29,7 @@ static mut JLONG_CTOR_CACHE: OnceCell<JMethodID> = OnceCell::new();
 static mut VOID_CLASS_CACHE: OnceCell<GlobalRef> = OnceCell::new();
 static mut VOID_CTOR_CACHE: OnceCell<JMethodID> = OnceCell::new();
 static mut FUTURE_COMPLETE_CACHE: OnceCell<JMethodID> = OnceCell::new();
+static mut TRACING_SERVICE: OnceCell<TracingService> = OnceCell::new();
 thread_local! {
     static JAVA_VM: RefCell<Option<Arc<JavaVM>>> = RefCell::new(None);
     static JENV: RefCell<Option<*mut jni::sys::JNIEnv>> = RefCell::new(None);
@@ -63,8 +67,9 @@ async fn process_command(cmd: Command<'_>) {
             stream,
             buf,
             future,
+            tracer,
         } => {
-            process_append_command(stream, buf, future).await;
+            process_append_command(stream, buf, future, tracer).await;
         }
         Command::Read {
             stream,
@@ -72,8 +77,17 @@ async fn process_command(cmd: Command<'_>) {
             end_offset,
             batch_max_bytes,
             future,
+            tracer,
         } => {
-            process_read_command(stream, start_offset, end_offset, batch_max_bytes, future).await;
+            process_read_command(
+                stream,
+                start_offset,
+                end_offset,
+                batch_max_bytes,
+                future,
+                tracer,
+            )
+            .await;
         }
         Command::CloseStream { stream, future } => {
             process_close_stream_command(stream, future).await;
@@ -98,9 +112,17 @@ async fn process_close_stream_command(stream: &mut Stream, future: GlobalRef) {
     trace!("Close command finished");
 }
 
-async fn process_append_command(stream: &mut Stream, buf: Bytes, future: GlobalRef) {
+async fn process_append_command(
+    stream: &mut Stream,
+    buf: Bytes,
+    future: GlobalRef,
+    tracer: Tracer,
+) {
     trace!("Start processing append command");
-    let result = stream.append(buf).await;
+    let result = stream
+        .append(buf)
+        .in_span(tracer.get_child_span("stream.append()"))
+        .await;
     match result {
         Ok(result) => {
             let base_offset = result.base_offset;
@@ -109,6 +131,7 @@ async fn process_append_command(stream: &mut Stream, buf: Bytes, future: GlobalR
             let _ = tx.send(CallbackCommand::Append {
                 future,
                 base_offset,
+                tracer,
             });
         }
         Err(err) => {
@@ -126,13 +149,21 @@ async fn process_read_command(
     end_offset: i64,
     batch_max_bytes: i32,
     future: GlobalRef,
+    tracer: Tracer,
 ) {
     trace!("Start processing read command");
-    let result = stream.read(start_offset, end_offset, batch_max_bytes).await;
+    let result = stream
+        .read(start_offset, end_offset, batch_max_bytes)
+        .in_span(tracer.get_child_span("stream.read()"))
+        .await;
     match result {
         Ok(buffers) => {
             let tx = unsafe { CALLBACK_TX.get() }.unwrap();
-            let _ = tx.send(CallbackCommand::Read { future, buffers });
+            let _ = tx.send(CallbackCommand::Read {
+                future,
+                buffers,
+                tracer,
+            });
             // complete_future_with_byte_array(future, buffers);
         }
         Err(err) => {
@@ -256,6 +287,7 @@ pub extern "system" fn JNI_OnLoad(vm: JavaVM, _: *mut c_void) -> jint {
     let java_vm = Arc::new(vm);
     let (tx, mut rx) = mpsc::unbounded_channel();
     let (callback_tx, callback_rx) = unbounded();
+    let _ = unsafe { TRACING_SERVICE.set(TracingService::new(Duration::from_millis(1))) };
     // # Safety
     // Set OnceCell, expected to be safe.
     if unsafe { TX.set(tx) }.is_err() {
@@ -313,14 +345,21 @@ pub extern "system" fn JNI_OnLoad(vm: JavaVM, _: *mut c_void) -> jint {
                             CallbackCommand::Append {
                                 future,
                                 base_offset,
+                                tracer,
                             } => {
                                 let _stopwatch =
                                     Stopwatch::new("Append#callback", Duration::from_millis(1));
+                                let _guard = tracer.set_local_parent();
                                 complete_future_with_jlong(future, base_offset);
                             }
-                            CallbackCommand::Read { future, buffers } => {
+                            CallbackCommand::Read {
+                                future,
+                                buffers,
+                                tracer,
+                            } => {
                                 let _stopwatch =
                                     Stopwatch::new("Read#callback", Duration::from_millis(1));
+                                let _guard = tracer.set_local_parent();
                                 complete_future_with_direct_byte_buffer(future, buffers);
                             }
                             CallbackCommand::CreateStream { future, stream_id } => {
@@ -672,12 +711,25 @@ pub unsafe extern "system" fn Java_com_automq_elasticstream_client_jni_Stream_ap
     data: JObject,
     future: JObject,
 ) {
+    let tracing_service = TRACING_SERVICE.get().unwrap();
+    let tracer = tracing_service.new_tracer("root#append");
+    let _guard = tracer.set_local_parent();
     trace!("Started jni_Stream_append");
-    let buf = env.get_direct_buffer_address((&data).into());
-    let len = env.get_direct_buffer_capacity((&data).into());
-    let future = env.new_global_ref(future);
+    let buf = {
+        let _span = tracer.get_child_span_with_local_parent("env.get_direct_buffer_address()");
+        env.get_direct_buffer_address((&data).into())
+    };
+    let len = {
+        let _span = tracer.get_child_span_with_local_parent("env.get_direct_buffer_capacity()");
+        env.get_direct_buffer_capacity((&data).into())
+    };
+    let future = {
+        let _span = tracer.get_child_span_with_local_parent("env.new_global_ref()");
+        env.new_global_ref(future)
+    };
     let command: Result<Command, ()> = match (buf, len, future) {
         (Ok(buf), Ok(len), Ok(future)) => {
+            let _span = tracer.get_child_span_with_local_parent("Create an append command");
             let stream = &mut *ptr;
             // # Safety
             // Java caller guarantees that `buf` will remain valid until `Future#complete` is called.
@@ -688,6 +740,7 @@ pub unsafe extern "system" fn Java_com_automq_elasticstream_client_jni_Stream_ap
                 stream,
                 buf,
                 future,
+                tracer,
             })
         }
         _ => Err(()),
@@ -730,17 +783,24 @@ pub unsafe extern "system" fn Java_com_automq_elasticstream_client_jni_Stream_re
     batch_max_bytes: jint,
     future: JObject,
 ) {
+    let tracing_service = TRACING_SERVICE.get().unwrap();
+    let tracer = tracing_service.new_tracer("root#read");
+    let _guard = tracer.set_local_parent();
     trace!("Started jni_Stream_read");
-    let command = env.new_global_ref(future).map(|future| {
-        let stream = unsafe { &mut *ptr };
-        Command::Read {
-            stream,
-            start_offset,
-            end_offset,
-            batch_max_bytes,
-            future,
-        }
-    });
+    let command = {
+        let _span = tracer.get_child_span_with_local_parent("env.new_global_ref()");
+        env.new_global_ref(future).map(|future| {
+            let stream = unsafe { &mut *ptr };
+            Command::Read {
+                stream,
+                start_offset,
+                end_offset,
+                batch_max_bytes,
+                future,
+                tracer,
+            }
+        })
+    };
     if let Ok(command) = command {
         if let Some(tx) = unsafe { TX.get() } {
             if let Err(_e) = tx.send(command) {
@@ -765,6 +825,7 @@ pub unsafe extern "system" fn Java_com_automq_elasticstream_client_jni_Stream_re
     }
 }
 
+#[minitrace::trace("call_future_complete_method()")]
 fn call_future_complete_method(mut env: JNIEnv, future: GlobalRef, obj: JObject) {
     let obj = env.auto_local(obj);
     let s = JValueGen::from(&obj);
@@ -1111,7 +1172,7 @@ fn complete_future_with_stream(future: GlobalRef, ptr: i64) {
         }
     });
 }
-
+#[minitrace::trace("complete_future_with_jlong()")]
 fn complete_future_with_jlong(future: GlobalRef, value: i64) {
     JENV.with(|cell| {
         let mut env = get_thread_local_jenv(cell);
@@ -1119,11 +1180,14 @@ fn complete_future_with_jlong(future: GlobalRef, value: i64) {
         let long_ctor = unsafe { JLONG_CTOR_CACHE.get() };
         if let (Some(long_class), Some(long_ctor)) = (long_class, long_ctor) {
             if let Ok(obj) = unsafe {
-                env.new_object_unchecked(
-                    long_class,
-                    *long_ctor,
-                    &[jni::objects::JValue::Long(value).as_jni()],
-                )
+                {
+                    let _span = Span::enter_with_local_parent("env.new_object_unchecked()");
+                    env.new_object_unchecked(
+                        long_class,
+                        *long_ctor,
+                        &[jni::objects::JValue::Long(value).as_jni()],
+                    )
+                }
             } {
                 call_future_complete_method(env, future, obj);
             } else {
@@ -1186,7 +1250,7 @@ fn complete_future_with_error(future: GlobalRef, err: ClientError) {
         call_future_complete_exceptionally_method(&mut env, future, err);
     });
 }
-
+#[minitrace::trace("complete_future_with_direct_byte_buffer()")]
 fn complete_future_with_direct_byte_buffer(future: GlobalRef, buffers: Vec<Bytes>) {
     // Copy buffers to `DirectByteBuffer`
     let total = buffers.iter().map(|buf| buf.len()).sum();
