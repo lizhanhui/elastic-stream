@@ -871,20 +871,15 @@ impl IO {
         });
     }
 
-    fn await_data_task_completion(&self, mut wanted: usize) {
+    fn await_data_task_completion(&self) {
         if self.inflight == 0 {
             trace!("No inflight data task. Skip `await_data_task_completion`");
             return;
         }
 
-        trace!(
-            "Waiting for at least {}/{} data CQE(s) to reap",
-            wanted,
-            self.inflight
-        );
-
-        if wanted > self.inflight {
-            wanted = self.inflight;
+        let mut wanted = 0;
+        if self.inflight as u32 >= self.options.store.uring.queue_depth {
+            wanted = 1;
         }
 
         let now = Instant::now();
@@ -1345,8 +1340,6 @@ impl IO {
         let min_preallocated_segment_files =
             io.borrow().options.store.pre_allocate_segment_file_number;
 
-        let cqe_wanted = 1;
-
         // Main loop
         loop {
             // Check if we need to create a new log segment
@@ -1391,7 +1384,7 @@ impl IO {
             }
 
             // Wait complete asynchronous IO
-            io.borrow().await_data_task_completion(cqe_wanted);
+            io.borrow().await_data_task_completion();
 
             {
                 let mut io_mut = io.borrow_mut();
