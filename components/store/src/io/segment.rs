@@ -269,6 +269,10 @@ impl LogSegment {
         buf.put_u64(latest);
         let buf = buf.freeze();
         let crc: u32 = util::crc32::crc32(&buf[..]);
+        let mut total_buf = BytesMut::with_capacity(4 + 8);
+        total_buf.put_u32(crc);
+        total_buf.put_u64(self.wal_offset);
+        let crc = util::crc32::crc32(total_buf);
         writer.write_u32(crc)?;
         writer.write_u32(length_type)?;
         writer.write(&buf[..])?;
@@ -296,6 +300,10 @@ impl LogSegment {
         payload: &[u8],
     ) -> Result<u64, StoreError> {
         let crc = util::crc32::crc32(payload);
+        let mut total_buf = BytesMut::with_capacity(4 + 8);
+        total_buf.put_u32(crc);
+        total_buf.put_u64(self.wal_offset);
+        let crc = util::crc32::crc32(total_buf);
         let length_type = RecordType::Full.with_length(payload.len() as u32);
         writer.write_u32(crc)?;
         writer.write_u32(length_type)?;
@@ -521,7 +529,7 @@ mod tests {
         buf::{AlignedBuf, AlignedBufWriter},
         record::RecordType,
     };
-    use bytes::BytesMut;
+    use bytes::{BufMut, BytesMut};
     use rand::RngCore;
     use std::{
         error::Error,
@@ -565,7 +573,12 @@ mod tests {
         let buffers = buf_writer.take();
         let buf = buffers.first().unwrap();
         let crc = buf.read_u32(0)?;
-        assert_eq!(crc, util::crc32::crc32(&data));
+        let ckm = util::crc32::crc32(&data);
+        let mut total_ckm = bytes::BytesMut::with_capacity(4 + 8);
+        total_ckm.put_u32(ckm);
+        total_ckm.put_u64(segment.wal_offset);
+        let ckm = util::crc32::crc32(total_ckm);
+        assert_eq!(crc, ckm);
         let length_type = buf.read_u32(4)?;
         let (len, t) = RecordType::parse(length_type)?;
         assert_eq!(t, RecordType::Full);
