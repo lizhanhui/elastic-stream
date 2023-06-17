@@ -194,6 +194,32 @@ impl Default for Path {
     }
 }
 
+/// Policy to reclaim segment files once store takes up more space than the configured threshold.
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+pub enum ReclaimSegmentFilePolicy {
+    /// Delete the oldest segment files.
+    Delete,
+
+    /// Recycle the oldest segment files.
+    Recycle,
+}
+
+impl ReclaimSegmentFilePolicy {
+    pub fn is_delete(&self) -> bool {
+        matches!(self, ReclaimSegmentFilePolicy::Delete)
+    }
+
+    pub fn is_recycle(&self) -> bool {
+        matches!(self, ReclaimSegmentFilePolicy::Recycle)
+    }
+}
+
+impl Default for ReclaimSegmentFilePolicy {
+    fn default() -> Self {
+        Self::Delete
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Store {
     #[serde(rename = "mkdirs-if-missing")]
@@ -227,6 +253,9 @@ pub struct Store {
 
     #[serde(rename = "total-segment-file-size")]
     pub total_segment_file_size: u64,
+
+    #[serde(rename = "reclaim-policy")]
+    pub reclaim_policy: ReclaimSegmentFilePolicy,
 }
 
 impl Default for Store {
@@ -243,6 +272,7 @@ impl Default for Store {
             uring: Uring::default(),
             rocksdb: RocksDB::default(),
             total_segment_file_size: u64::MAX,
+            reclaim_policy: ReclaimSegmentFilePolicy::default(),
         }
     }
 }
@@ -434,6 +464,8 @@ impl Configuration {
 
 #[cfg(test)]
 mod tests {
+    use serde::{Deserialize, Serialize};
+
     use super::Configuration;
     use std::{error::Error, fs::File, io::Read, path::Path};
 
@@ -470,5 +502,27 @@ mod tests {
             set.insert(client_id);
         }
         assert_eq!(100, set.len());
+    }
+
+    #[derive(Debug, Serialize, Deserialize)]
+    pub struct Foo {
+        pub reclaim_policy: super::ReclaimSegmentFilePolicy,
+    }
+
+    #[test]
+    fn test_reclaim_policy() -> Result<(), Box<dyn Error>> {
+        let s = r#"
+            reclaim_policy: "Delete"
+        "#;
+        let foo: Foo = serde_yaml::from_str(s)?;
+        assert_eq!(super::ReclaimSegmentFilePolicy::Delete, foo.reclaim_policy);
+
+        let s = r#"
+            reclaim_policy: "Recycle"
+        "#;
+        let foo: Foo = serde_yaml::from_str(s)?;
+        assert_eq!(super::ReclaimSegmentFilePolicy::Recycle, foo.reclaim_policy);
+
+        Ok(())
     }
 }

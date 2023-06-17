@@ -286,25 +286,57 @@ impl Wal {
 
     /// New a segment, and then open it in the uring driver.
     pub(crate) fn try_open_segment(&mut self) -> Result<(), StoreError> {
-        let segment = self.alloc_segment()?;
+        let mut segment = self.alloc_segment()?;
         let offset = segment.wal_offset;
         debug_assert_eq!(segment.status, Status::OpenAt);
         info!("About to create/open LogSegmentFile: `{}`", segment);
-        let status = segment.status;
-        self.inflight_control_tasks.insert(offset, status);
-        let sqe = opcode::OpenAt::new(types::Fd(libc::AT_FDCWD), segment.path.as_ptr())
-            .flags(libc::O_CREAT | libc::O_RDWR | libc::O_DIRECT)
-            .mode(libc::S_IRWXU | libc::S_IRWXG)
+        let exist_recycled_segment_file = self
+            .segments
+            .front()
+            .filter(|segment| segment.status == Status::Recycled)
+            .is_some();
+
+        if self.config.store.reclaim_policy.is_recycle() && exist_recycled_segment_file {
+            // Since there exists a recycled segment file, we can reuse it by renaming it.
+            segment.status = Status::RenameAt;
+
+            let recycled_segment = self.segments.pop_front().unwrap();
+            let old_segment_path = recycled_segment.path.clone();
+
+            self.inflight_control_tasks.insert(offset, Status::RenameAt);
+            let sqe = opcode::RenameAt::new(
+                types::Fd(libc::AT_FDCWD),
+                old_segment_path.into_raw(),
+                types::Fd(libc::AT_FDCWD),
+                segment.path.as_ptr(),
+            )
             .build()
             .user_data(offset);
-        unsafe {
-            self.control_ring.submission().push(&sqe).map_err(|e| {
-                error!("Failed to push OpenAt SQE to submission queue: {:?}", e);
-                StoreError::IoUring
-            })?
-        };
-        self.segments.push_back(segment);
-        Ok(())
+            unsafe {
+                self.control_ring.submission().push(&sqe).map_err(|e| {
+                    error!("Failed to push RenameAt SQE to submission queue: {:?}", e);
+                    StoreError::IoUring
+                })?
+            };
+            self.segments.push_back(segment);
+            Ok(())
+        } else {
+            let status = segment.status;
+            self.inflight_control_tasks.insert(offset, status);
+            let sqe = opcode::OpenAt::new(types::Fd(libc::AT_FDCWD), segment.path.as_ptr())
+                .flags(libc::O_CREAT | libc::O_RDWR | libc::O_DIRECT)
+                .mode(libc::S_IRWXU | libc::S_IRWXG)
+                .build()
+                .user_data(offset);
+            unsafe {
+                self.control_ring.submission().push(&sqe).map_err(|e| {
+                    error!("Failed to push OpenAt SQE to submission queue: {:?}", e);
+                    StoreError::IoUring
+                })?
+            };
+            self.segments.push_back(segment);
+            Ok(())
+        }
     }
 
     pub(crate) fn check_expired_segment(&mut self) {
@@ -595,6 +627,7 @@ impl Wal {
 
     fn on_file_op_completion(&mut self, offset: u64, result: i32) -> Result<(), StoreError> {
         let mut to_remove = vec![];
+        let recycled = self.config.store.reclaim_policy.is_recycle();
         if let Some(segment) = self.segment_file_of(offset) {
             if -1 == result {
                 error!("LogSegment file operation failed: {}", segment);
@@ -657,27 +690,49 @@ impl Wal {
 
                 Status::Close => {
                     info!("LogSegmentFile: `{}` is closed", segment);
-                    segment.sd = None;
-                    segment.status = Status::UnlinkAt;
-                    info!("About to delete LogSegmentFile `{}`", segment);
-                    let sqe = opcode::UnlinkAt::new(
-                        types::Fd(libc::AT_FDCWD),
-                        segment.path.as_ptr() as *const libc::c_char,
-                    )
-                    .build()
-                    .flags(squeue::Flags::empty())
-                    .user_data(offset);
-                    unsafe {
-                        self.control_ring.submission().push(&sqe).map_err(|e| {
-                            error!("Failed to push Unlink SQE to SQ: {:?}", e);
-                            StoreError::IoUring
-                        })
-                    }?;
-                    self.inflight_control_tasks.insert(offset, Status::UnlinkAt);
+                    if !recycled {
+                        segment.sd = None;
+                        segment.status = Status::UnlinkAt;
+                        info!("About to delete LogSegmentFile `{}`", segment);
+                        let sqe = opcode::UnlinkAt::new(
+                            types::Fd(libc::AT_FDCWD),
+                            segment.path.as_ptr() as *const libc::c_char,
+                        )
+                        .build()
+                        .flags(squeue::Flags::empty())
+                        .user_data(offset);
+                        unsafe {
+                            self.control_ring.submission().push(&sqe).map_err(|e| {
+                                error!("Failed to push Unlink SQE to SQ: {:?}", e);
+                                StoreError::IoUring
+                            })
+                        }?;
+                        self.inflight_control_tasks.insert(offset, Status::UnlinkAt);
+                    } else {
+                        info!("LogSegmentFile `{}` become recycled", segment);
+                        segment.sd = None;
+                        segment.status = Status::Recycled;
+                    }
                 }
                 Status::UnlinkAt => {
                     info!("LogSegmentFile: `{}` is deleted", segment);
                     to_remove.push(offset)
+                }
+                Status::RenameAt => {
+                    info!("LogSegmentFile: `{}` is renamed", segment);
+                    segment.status = Status::OpenAt;
+                    let sqe = opcode::OpenAt::new(types::Fd(libc::AT_FDCWD), segment.path.as_ptr())
+                        .flags(libc::O_CREAT | libc::O_RDWR | libc::O_DIRECT | libc::O_DSYNC)
+                        .mode(libc::S_IRWXU | libc::S_IRWXG)
+                        .build()
+                        .user_data(offset);
+                    unsafe {
+                        self.control_ring.submission().push(&sqe).map_err(|e| {
+                            error!("Failed to push OpenAt SQE to submission queue: {:?}", e);
+                            StoreError::IoUring
+                        })?
+                    };
+                    self.inflight_control_tasks.insert(offset, Status::OpenAt);
                 }
                 _ => {}
             };

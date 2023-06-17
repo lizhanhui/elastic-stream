@@ -115,6 +115,12 @@ pub(crate) enum Status {
 
     // Delete the file to reclaim disk space.
     UnlinkAt,
+
+    // The segment file is ready to reuse.
+    Recycled,
+
+    // Rename the recycled segment file.
+    RenameAt,
 }
 
 impl Display for LogSegment {
@@ -151,6 +157,12 @@ impl Display for Status {
             }
             Self::UnlinkAt => {
                 write!(f, "unlink")
+            }
+            Self::Recycled => {
+                write!(f, "recycled")
+            }
+            Self::RenameAt => {
+                write!(f, "rename")
             }
         }
     }

@@ -66,6 +66,8 @@ store:
   # The total size of Status::Read segment files 
   # 100GiB
   total-segment-file-size: 107374182400
+  # Policy to reclaim segment files
+  reclaim-policy: "Delete"
   # io_uring setup
   uring:
     # IO io_uring queue depth
