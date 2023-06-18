@@ -13,19 +13,19 @@ mod util;
 use self::cmd::Command;
 use crate::{
     metrics::{APPEND_LATENCY, FETCH_LATENCY},
-    stream_manager::StreamManager,
+    stream_manager::{fetcher::PlacementFetcher, StreamManager},
 };
 use bytes::Bytes;
 use codec::frame::Frame;
 use log::{trace, warn};
 use protocol::rpc::header::{StatusT, SystemErrorT};
 use std::{cell::UnsafeCell, rc::Rc};
-use store::ElasticStore;
+use store::Store;
 
 /// Representation of the incoming request.
 ///
 ///
-pub struct ServerCall {
+pub struct ServerCall<S, F> {
     /// The incoming request
     pub(crate) request: Frame,
 
@@ -37,12 +37,16 @@ pub struct ServerCall {
     /// `Store` to query, persist and replicate records.
     ///
     /// Note this store is `!Send` as it follows thread-per-core pattern.
-    pub(crate) store: Rc<ElasticStore>,
+    pub(crate) store: Rc<S>,
 
-    pub(crate) stream_manager: Rc<UnsafeCell<StreamManager>>,
+    pub(crate) stream_manager: Rc<UnsafeCell<StreamManager<S, F>>>,
 }
 
-impl ServerCall {
+impl<S, F> ServerCall<S, F>
+where
+    S: Store,
+    F: PlacementFetcher,
+{
     /// Serve the incoming request
     ///
     /// Delegate each incoming request to its dedicated `on_xxx` method according to

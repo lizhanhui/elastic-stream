@@ -7,32 +7,38 @@ use std::{
 
 use config::Configuration;
 use log::{info, trace, warn};
-use store::ElasticStore;
+use store::Store;
 use tokio::sync::mpsc;
 use tokio_uring::net::TcpStream;
 use transport::connection::Connection;
 
 use crate::{
-    connection_handler, connection_tracker::ConnectionTracker, handler::ServerCall,
-    stream_manager::StreamManager,
+    connection_handler,
+    connection_tracker::ConnectionTracker,
+    handler::ServerCall,
+    stream_manager::{fetcher::PlacementFetcher, StreamManager},
 };
 
-pub(crate) struct Session {
+pub(crate) struct Session<S, F> {
     config: Arc<Configuration>,
     stream: TcpStream,
     addr: SocketAddr,
-    store: Rc<ElasticStore>,
-    stream_manager: Rc<UnsafeCell<StreamManager>>,
+    store: Rc<S>,
+    stream_manager: Rc<UnsafeCell<StreamManager<S, F>>>,
     connection_tracker: Rc<RefCell<ConnectionTracker>>,
 }
 
-impl Session {
+impl<S, F> Session<S, F>
+where
+    S: Store + 'static,
+    F: PlacementFetcher + 'static,
+{
     pub(crate) fn new(
         config: Arc<Configuration>,
         stream: TcpStream,
         addr: SocketAddr,
-        store: Rc<ElasticStore>,
-        stream_manager: Rc<UnsafeCell<StreamManager>>,
+        store: Rc<S>,
+        stream_manager: Rc<UnsafeCell<StreamManager<S, F>>>,
         connection_tracker: Rc<RefCell<ConnectionTracker>>,
     ) -> Self {
         Self {
@@ -60,8 +66,8 @@ impl Session {
     }
 
     async fn process0(
-        store: Rc<ElasticStore>,
-        stream_manager: Rc<UnsafeCell<StreamManager>>,
+        store: Rc<S>,
+        stream_manager: Rc<UnsafeCell<StreamManager<S, F>>>,
         connection_tracker: Rc<RefCell<ConnectionTracker>>,
         peer_address: SocketAddr,
         stream: TcpStream,

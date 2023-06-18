@@ -10,9 +10,9 @@ use protocol::rpc::header::{
     FetchResultEntryArgs, Status, StatusArgs,
 };
 use std::{cell::UnsafeCell, fmt, pin::Pin, rc::Rc};
-use store::{error::FetchError, option::ReadOptions, ElasticStore, FetchResult, Store};
+use store::{error::FetchError, option::ReadOptions, FetchResult, Store};
 
-use crate::stream_manager::StreamManager;
+use crate::stream_manager::{fetcher::PlacementFetcher, StreamManager};
 
 use super::util::{finish_response_builder, root_as_rpc_request, MIN_BUFFER_SIZE};
 
@@ -50,12 +50,15 @@ impl<'a> Fetch<'a> {
     }
 
     /// Apply the fetch requests to the store
-    pub(crate) async fn apply(
+    pub(crate) async fn apply<S, F>(
         &self,
-        store: Rc<ElasticStore>,
-        stream_manager: Rc<UnsafeCell<StreamManager>>,
+        store: Rc<S>,
+        stream_manager: Rc<UnsafeCell<StreamManager<S, F>>>,
         response: &mut Frame,
-    ) {
+    ) where
+        S: Store,
+        F: PlacementFetcher,
+    {
         let store_requests = self.build_store_requests(unsafe { &mut *stream_manager.get() });
         let futures = store_requests
             .into_iter()
@@ -170,10 +173,14 @@ impl<'a> Fetch<'a> {
     }
 
     /// TODO: this method is out of sync with new replication protocol.
-    fn build_store_requests(
+    fn build_store_requests<S, F>(
         &self,
-        stream_manager: &mut StreamManager,
-    ) -> Vec<Result<ReadOptions, FetchError>> {
+        stream_manager: &mut StreamManager<S, F>,
+    ) -> Vec<Result<ReadOptions, FetchError>>
+    where
+        S: Store,
+        F: PlacementFetcher,
+    {
         self.fetch_request
             .entries()
             .iter()

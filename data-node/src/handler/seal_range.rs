@@ -5,9 +5,12 @@ use codec::frame::Frame;
 use log::{error, trace, warn};
 use model::range::RangeMetadata;
 use protocol::rpc::header::{ErrorCode, RangeT, SealRangeRequest, SealRangeResponseT, StatusT};
-use store::ElasticStore;
+use store::Store;
 
-use crate::{error::ServiceError, stream_manager::StreamManager};
+use crate::{
+    error::ServiceError,
+    stream_manager::{fetcher::PlacementFetcher, StreamManager},
+};
 
 use super::util::root_as_rpc_request;
 
@@ -34,12 +37,15 @@ impl<'a> SealRange<'a> {
         Ok(Self { request })
     }
 
-    pub(crate) async fn apply(
+    pub(crate) async fn apply<S, F>(
         &self,
-        _store: Rc<ElasticStore>,
-        stream_manager: Rc<UnsafeCell<StreamManager>>,
+        _store: Rc<S>,
+        stream_manager: Rc<UnsafeCell<StreamManager<S, F>>>,
         response: &mut Frame,
-    ) {
+    ) where
+        S: Store,
+        F: PlacementFetcher,
+    {
         let request = self.request.unpack();
         let mut builder = flatbuffers::FlatBufferBuilder::new();
         let mut seal_response = SealRangeResponseT::default();

@@ -8,7 +8,10 @@ use std::{
 
 use crate::{
     connection_tracker::ConnectionTracker,
-    stream_manager::{fetcher::FetchRangeTask, StreamManager},
+    stream_manager::{
+        fetcher::{FetchRangeTask, PlacementFetcher},
+        StreamManager,
+    },
     worker_config::WorkerConfig,
 };
 use client::Client;
@@ -19,7 +22,7 @@ use observation::metrics::{
     sys_metrics::{DiskStatistics, MemoryStatistics},
     uring_metrics::UringStatistics,
 };
-use store::ElasticStore;
+use store::Store;
 use tokio::sync::{broadcast, mpsc};
 use tokio_uring::net::TcpListener;
 use util::metrics::http_serve;
@@ -31,20 +34,24 @@ use util::metrics::http_serve;
 /// and communication with the placement manager.
 ///
 /// Inter-worker communications are achieved via channels.
-pub(crate) struct Worker {
+pub(crate) struct Worker<S, F> {
     config: WorkerConfig,
-    store: Rc<ElasticStore>,
-    stream_manager: Rc<UnsafeCell<StreamManager>>,
+    store: Rc<S>,
+    stream_manager: Rc<UnsafeCell<StreamManager<S, F>>>,
     client: Rc<Client>,
     #[allow(dead_code)]
     channels: Option<Vec<mpsc::UnboundedReceiver<FetchRangeTask>>>,
 }
 
-impl Worker {
+impl<S, F> Worker<S, F>
+where
+    S: Store + 'static,
+    F: PlacementFetcher + 'static,
+{
     pub fn new(
         config: WorkerConfig,
-        store: Rc<ElasticStore>,
-        stream_manager: Rc<UnsafeCell<StreamManager>>,
+        store: Rc<S>,
+        stream_manager: Rc<UnsafeCell<StreamManager<S, F>>>,
         client: Rc<Client>,
         channels: Option<Vec<mpsc::UnboundedReceiver<FetchRangeTask>>>,
     ) -> Self {
