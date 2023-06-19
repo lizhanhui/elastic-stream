@@ -402,7 +402,7 @@ pub extern "system" fn JNI_OnLoad(vm: JavaVM, _: *mut c_void) -> jint {
                         .setup_sqpoll(2000)
                         .setup_sqpoll_cpu((num_cpus::get() - 1) as u32)
                 )
-                .entries(1024)
+                .entries(32768)
                 .start(async move {
                     trace!("JNI tokio-uring runtime started");
                     loop {
