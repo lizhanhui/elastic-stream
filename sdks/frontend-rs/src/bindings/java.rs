@@ -400,9 +400,6 @@ pub extern "system" fn JNI_OnLoad(vm: JavaVM, _: *mut c_void) -> jint {
                 .uring_builder(
                     tokio_uring::uring_builder()
                         .setup_sqpoll(2000)
-                        .setup_defer_taskrun()
-                        .setup_coop_taskrun()
-                        .setup_single_issuer()
                         .setup_sqpoll_cpu((num_cpus::get() - 1) as u32)
                 )
                 .entries(1024)
