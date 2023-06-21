@@ -1,5 +1,6 @@
 use clap::Parser;
 use data_node::Cli;
+use log::info;
 use tokio::sync::broadcast;
 
 #[cfg(not(target_env = "msvc"))]
@@ -11,8 +12,9 @@ static GLOBAL: Jemalloc = Jemalloc;
 
 fn main() {
     let cli = Cli::parse();
-
     cli.init_log().unwrap();
+
+    display_built_info();
 
     let config = match cli.create_config() {
         Ok(config) => config,
@@ -37,6 +39,53 @@ fn main() {
 
     if let Err(e) = data_node::server::launch(config, shutdown_tx) {
         eprintln!("Failed to start data-node: {:?}", e);
+    }
+}
+
+// Additively prints the built info to both stdout and log.
+macro_rules! build_info {
+    ($($st:tt)*) => {
+        println!($($st)*);
+        info!($($st)*);
+    };
+}
+
+/// Display the built information.
+///
+/// The build information is additively printed to both stdout and log.
+fn display_built_info() {
+    build_info!(
+        "Data-Node v{}, built for {} by {}.",
+        data_node::built_info::PKG_VERSION,
+        data_node::built_info::TARGET,
+        data_node::built_info::RUSTC_VERSION
+    );
+
+    let built_time = built::util::strptime(data_node::built_info::BUILT_TIME_UTC);
+    build_info!(
+        "Built with profile \"{}\", on {} ({} days ago).",
+        data_node::built_info::PROFILE,
+        built_time.with_timezone(&built::chrono::offset::Local),
+        (built::chrono::offset::Utc::now() - built_time).num_days(),
+    );
+
+    if let (Some(v), Some(dirty), Some(hash), Some(short_hash)) = (
+        data_node::built_info::GIT_VERSION,
+        data_node::built_info::GIT_DIRTY,
+        data_node::built_info::GIT_COMMIT_HASH,
+        data_node::built_info::GIT_COMMIT_HASH_SHORT,
+    ) {
+        build_info!(
+            "Built from git `{}`, commit {}, short_commit {}; the working directory was \"{}\".",
+            v,
+            hash,
+            short_hash,
+            if dirty { "dirty" } else { "clean" }
+        );
+    }
+
+    if let Some(r) = data_node::built_info::GIT_HEAD_REF {
+        build_info!("The branch was `{r}`.");
     }
 }
 
