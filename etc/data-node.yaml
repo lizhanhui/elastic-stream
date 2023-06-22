@@ -24,7 +24,7 @@ server:
   # Listening port
   port: 10911
   # Number of Thread-per-Core Nodes
-  concurrency: 1
+  worker-cpu-set: "1"
   uring:
     # Network io_uring queue depth
     queue-depth: 128
@@ -68,6 +68,7 @@ store:
   total-segment-file-size: 107374182400
   # Policy to reclaim segment files
   reclaim-policy: "Delete"
+  io-cpu: 2
   # io_uring setup
   uring:
     # IO io_uring queue depth
@@ -88,6 +89,8 @@ store:
     create-if-missing: true
     # Flush index entries of record-batch every `flush_threshold`
     flush-threshold: 32768
+    # cpu-set for RocksDB threads to run on, sample value: "0-2,4-6,8"
+    cpu-set: "0"
 
 replication:
   connection-pool-size: 2

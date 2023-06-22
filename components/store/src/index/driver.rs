@@ -5,8 +5,9 @@ use std::{
 };
 
 use crate::{error::StoreError, index::LocalRangeManager};
+use config::Configuration;
 use crossbeam::channel::{self, Receiver, Select, Sender, TryRecvError};
-use log::{error, info};
+use log::{error, info, warn};
 use model::range::RangeMetadata;
 use tokio::sync::{mpsc, oneshot};
 
@@ -59,17 +60,22 @@ pub(crate) enum IndexCommand {
 
 impl IndexDriver {
     pub(crate) fn new(
-        path: &str,
+        config: &Arc<Configuration>,
         min_offset: Arc<dyn MinOffset>,
         flush_threshold: usize,
     ) -> Result<Self, StoreError> {
         let (tx, rx) = channel::unbounded();
         let (shutdown_tx, shutdown_rx) = channel::bounded(1);
-        let indexer = Arc::new(Indexer::new(path, min_offset, flush_threshold)?);
+        let indexer = Arc::new(Indexer::new(config, min_offset, flush_threshold)?);
         let runner = IndexDriverRunner::new(rx, shutdown_rx, Arc::clone(&indexer));
+        // Always bind indexer thread to processor-0, which runs miscellaneous tasks.
+        let core = core_affinity::CoreId { id: 0 };
         let handle = Builder::new()
             .name("IndexDriver".to_owned())
             .spawn(move || {
+                if !core_affinity::set_for_current(core) {
+                    warn!("Failed to set core affinity for indexer thread");
+                }
                 runner.run();
             })
             .map_err(|e| StoreError::Internal(e.to_string()))?;
@@ -302,6 +308,8 @@ impl IndexDriverRunner {
 
 #[cfg(test)]
 mod tests {
+    use config::Configuration;
+
     use crate::index::MinOffset;
     use std::{error::Error, sync::Arc};
 
@@ -318,8 +326,13 @@ mod tests {
         let db_path = test_util::create_random_path()?;
         let _dir_guard = test_util::DirectoryRemovalGuard::new(db_path.as_path());
         let min_offset = Arc::new(TestMinOffset {});
-        let index_driver =
-            super::IndexDriver::new(db_path.as_os_str().to_str().unwrap(), min_offset, 128)?;
+        let mut configuration = Configuration::default();
+        configuration
+            .store
+            .path
+            .set_base(db_path.as_os_str().to_str().unwrap());
+        let config = Arc::new(Configuration::default());
+        let index_driver = super::IndexDriver::new(&config, min_offset, 128)?;
         assert_eq!(0, index_driver.get_wal_checkpoint()?);
 
         index_driver.shutdown_indexer();

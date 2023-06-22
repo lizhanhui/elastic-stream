@@ -14,6 +14,40 @@ lazy_static::lazy_static! {
     static ref CLIENT_ID_COUNTER: AtomicUsize = AtomicUsize::new(0);
 }
 
+pub fn parse_cpu_set(set: &str) -> Vec<libc::c_int> {
+    let mut result = vec![];
+
+    if set.is_empty() {
+        for id in 0..num_cpus::get() {
+            result.push(id as libc::c_int);
+        }
+    } else {
+        set.split_terminator(',').for_each(|group| {
+            if group.contains('-') {
+                let boundaries = group.split('-').collect::<Vec<_>>();
+                debug_assert_eq!(2, boundaries.len());
+                if let (Ok(l), Ok(r)) = (
+                    boundaries[0].trim().parse::<libc::c_int>(),
+                    boundaries[1].trim().parse::<libc::c_int>(),
+                ) {
+                    for id in l..=r {
+                        if result.contains(&id) {
+                            continue;
+                        }
+                        result.push(id);
+                    }
+                }
+            } else if let Ok(id) = group.trim().parse::<libc::c_int>() {
+                if result.contains(&id) {
+                    return;
+                }
+                result.push(id);
+            }
+        })
+    }
+    result
+}
+
 fn client_id() -> String {
     let hostname = gethostname::gethostname()
         .into_string()
@@ -104,7 +138,8 @@ pub struct Server {
     #[serde(default)]
     pub node_id: i32,
 
-    pub concurrency: usize,
+    #[serde(rename = "worker-cpu-set")]
+    pub worker_cpu_set: String,
 
     pub uring: Uring,
 
@@ -132,7 +167,7 @@ impl Default for Server {
             host: "127.0.0.1".to_owned(),
             port: 10911,
             node_id: 0,
-            concurrency: 1,
+            worker_cpu_set: String::from("0"),
             uring: Uring::default(),
             connection_idle_duration: 60,
             grace_period: 120,
@@ -256,6 +291,9 @@ pub struct Store {
 
     #[serde(rename = "reclaim-policy")]
     pub reclaim_policy: ReclaimSegmentFilePolicy,
+
+    #[serde(rename = "io-cpu")]
+    pub io_cpu: usize,
 }
 
 impl Default for Store {
@@ -273,6 +311,7 @@ impl Default for Store {
             rocksdb: RocksDB::default(),
             total_segment_file_size: u64::MAX,
             reclaim_policy: ReclaimSegmentFilePolicy::default(),
+            io_cpu: 0,
         }
     }
 }
@@ -306,7 +345,7 @@ impl Default for Uring {
         Self {
             queue_depth: 128,
             sqpoll_idle_ms: 2000,
-            sqpoll_cpu: 1,
+            sqpoll_cpu: 0,
             max_bounded_worker: 2,
             max_unbounded_worker: 2,
         }
@@ -320,6 +359,9 @@ pub struct RocksDB {
 
     #[serde(rename = "flush-threshold")]
     pub flush_threshold: usize,
+
+    #[serde(rename = "cpu-set")]
+    pub cpu_set: Option<String>,
 }
 
 impl Default for RocksDB {
@@ -327,6 +369,7 @@ impl Default for RocksDB {
         Self {
             create_if_missing: true,
             flush_threshold: 32768,
+            cpu_set: None,
         }
     }
 }
@@ -387,8 +430,14 @@ impl Configuration {
     /// are potentially created.
     pub fn check_and_apply(&mut self) -> Result<(), ConfigurationError> {
         let total_processor_num = num_cpus::get();
-        if self.server.concurrency + 1 > total_processor_num {
-            return Err(ConfigurationError::ConcurrencyTooLarge);
+        for id in parse_cpu_set(&self.server.worker_cpu_set) {
+            if id as usize >= total_processor_num {
+                return Err(ConfigurationError::InvalidCoreId(id as usize));
+            }
+        }
+
+        if self.store.io_cpu >= total_processor_num {
+            return Err(ConfigurationError::InvalidCoreId(self.store.io_cpu));
         }
 
         if self.client.client_id.is_empty() {
@@ -488,7 +537,7 @@ mod tests {
         file.read_to_string(&mut content)?;
         let config: Configuration = serde_yaml::from_str(&content)?;
         assert_eq!(10911, config.server.port);
-        assert_eq!(1, config.server.concurrency);
+        assert_eq!("1", config.server.worker_cpu_set);
         assert_eq!(128, config.server.uring.queue_depth);
         assert_eq!(32768, config.store.rocksdb.flush_threshold);
 
@@ -528,5 +577,23 @@ mod tests {
         assert_eq!(super::ReclaimSegmentFilePolicy::Recycle, foo.reclaim_policy);
 
         Ok(())
+    }
+
+    #[test]
+    fn test_parse_cpu_set() {
+        assert_eq!(vec![0], super::parse_cpu_set("0"));
+        assert_eq!(vec![1], super::parse_cpu_set("1"));
+        assert_eq!(vec![0, 2, 4, 6, 8], super::parse_cpu_set("0, 2, 4, 6, 8"));
+        assert_eq!(vec![0, 1], super::parse_cpu_set("0-1"));
+        assert_eq!(vec![0, 1, 2, 3, 5, 7, 9], super::parse_cpu_set("0-3,5,7,9"));
+        assert_eq!(
+            super::parse_cpu_set(""),
+            (0..num_cpus::get() as i32).collect::<Vec<_>>()
+        );
+
+        // Some corner cases
+        assert_eq!(vec![0], super::parse_cpu_set("0,,,"));
+        assert_eq!(vec![0, 1], super::parse_cpu_set("0, 0, 1"));
+        assert_eq!(vec![0, 1, 2], super::parse_cpu_set("0-1, 0, 1, 2"));
     }
 }
