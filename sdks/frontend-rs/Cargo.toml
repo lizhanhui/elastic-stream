@@ -10,6 +10,7 @@ config = { path = "../../components/config" }
 model = { path = "../../components/model" }
 clap = { workspace = true }
 log =  { workspace = true }
+local-sync = { workspace = true }
 bytes = { workspace = true }
 tokio = { workspace = true, features = ["full"]  }
 tokio-uring = { workspace = true }

@@ -1132,6 +1132,7 @@ dependencies = [
  "futures",
  "jni",
  "lazy_static",
+ "local-sync",
  "log",
  "log4rs",
  "minitrace",
