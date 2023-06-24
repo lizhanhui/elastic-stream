@@ -1307,7 +1307,7 @@ impl IO {
             && self.channel_disconnected
     }
 
-    fn submit_data_tasks(&mut self, entries: &Vec<squeue::Entry>) -> Result<(), StoreError> {
+    fn submit_data_tasks(&mut self, entries: &[squeue::Entry]) -> Result<(), StoreError> {
         // Submit io_uring entries into submission queue.
         trace!(
             "Get {} incoming SQE(s) to submit, inflight: {}",
@@ -1321,7 +1321,7 @@ impl IO {
                     .submission()
                     .push_multiple(entries)
                     .map_err(|e| {
-                        info!("Failed to push SQE entries into submission queue: {:?}", e);
+                        error!("Failed to push SQE entries into submission queue: {:?}", e);
                         StoreError::IoUring
                     })?
             };
@@ -1332,14 +1332,23 @@ impl IO {
         Ok(())
     }
 
-    pub(crate) fn run(
-        io: RefCell<IO>,
-        recovery_completion_tx: oneshot::Sender<()>,
-    ) -> Result<(), StoreError> {
-        io.borrow_mut().load()?;
-        let pos = io.borrow().indexer.get_wal_checkpoint()?;
-        io.borrow_mut().recover(pos)?;
+    pub(crate) fn run(io: RefCell<IO>, recovery_completion_tx: oneshot::Sender<()>) {
+        if let Err(e) = io.borrow_mut().load() {
+            eprintln!("Failed to load WAL segment files: {}", e);
+            std::process::exit(1);
+        }
 
+        let pos = match io.borrow().indexer.get_wal_checkpoint() {
+            Ok(pos) => pos,
+            Err(e) => {
+                eprintln!("Failed to get WAL checkpoint from metadata store: {}", e);
+                std::process::exit(1);
+            }
+        };
+
+        if let Err(e) = io.borrow_mut().recover(pos) {
+            eprintln!("Store recovery failed: {}", e);
+        }
         if recovery_completion_tx.send(()).is_err() {
             error!("Failed to notify completion of recovery");
         }
@@ -1348,18 +1357,25 @@ impl IO {
             io.borrow().options.store.pre_allocate_segment_file_number;
 
         // Main loop
-        loop {
+        'main_loop: loop {
             // Check if we need to create a new log segment
             loop {
                 if io.borrow().wal.writable_segment_count() > min_preallocated_segment_files {
                     break;
                 }
-                io.borrow_mut().wal.try_open_segment()?;
+
+                if let Err(e) = io.borrow_mut().wal.try_open_segment() {
+                    eprintln!("Failed to create/open WAL segment files: {}", e);
+                    break 'main_loop;
+                }
             }
 
             // check if we have expired segment files to close and delete
             {
-                io.borrow_mut().wal.try_close_segment()?;
+                if let Err(e) = io.borrow_mut().wal.try_close_segment() {
+                    eprintln!("Failed to close/delete/recycle WAL segment file: {}", e);
+                    break;
+                }
             }
 
             let mut entries = vec![];
@@ -1375,7 +1391,10 @@ impl IO {
             }
 
             if !entries.is_empty() {
-                io.borrow_mut().submit_data_tasks(&entries)?;
+                if let Err(e) = io.borrow_mut().submit_data_tasks(&entries) {
+                    eprintln!("Failed to submit data tasks: {}", e);
+                    break;
+                }
             } else {
                 let io_borrow = io.borrow();
                 if !io_borrow.should_quit() {
@@ -1398,15 +1417,19 @@ impl IO {
                 // Reap data CQE(s)
                 io_mut.reap_data_tasks();
                 // Perform file operation
-                io_mut.wal.reap_control_tasks()?;
+                if let Err(e) = io_mut.wal.reap_control_tasks() {
+                    eprintln!("Failed to reap control tasks: {}", e);
+                    break;
+                }
             }
         }
         info!("Main loop quit");
 
         // Flush index and metadata
-        io.borrow().indexer.flush(true)?;
-
-        Ok(())
+        io.borrow()
+            .indexer
+            .flush(true)
+            .expect("Flush metadata to RocksDB instance should not fail");
     }
 }
 

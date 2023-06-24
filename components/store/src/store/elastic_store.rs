@@ -104,7 +104,8 @@ impl ElasticStore {
             if let Err(_e) = sender.send((tx, sharing_uring)) {
                 error!("Failed to expose sharing_uring and task channel sender");
             }
-            io::IO::run(io, recovery_completion_tx)
+            io::IO::run(io, recovery_completion_tx);
+            Ok(())
         })?;
         let (tx, sharing_uring) = receiver
             .blocking_recv()

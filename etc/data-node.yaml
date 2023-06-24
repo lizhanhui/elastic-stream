@@ -54,7 +54,7 @@ store:
     # Directory of WAL segment files. It could be absolute or relative to `base`
     wal: "wal"
     # Directory of metadata RocksDB files. It could be absolute or relative to `base`
-    metadata: "metadata"
+    metadata: "/home/ubuntu/store/metadata"
   # 1GiB
   segment-size: 1073741824
   # Max block cache size
