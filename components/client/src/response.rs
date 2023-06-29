@@ -13,7 +13,7 @@ use model::AppendResultEntry;
 use protocol::rpc::header::AppendResponse;
 use protocol::rpc::header::CreateRangeResponse;
 use protocol::rpc::header::CreateStreamResponse;
-use protocol::rpc::header::DescribePlacementManagerClusterResponse;
+use protocol::rpc::header::DescribePlacementDriverClusterResponse;
 use protocol::rpc::header::DescribeStreamResponse;
 use protocol::rpc::header::ErrorCode;
 use protocol::rpc::header::FetchResponse;
@@ -25,7 +25,7 @@ use protocol::rpc::header::SealRangeResponse;
 use protocol::rpc::header::SystemError;
 
 use model::range::RangeMetadata;
-use model::PlacementManagerNode;
+use model::PlacementDriverNode;
 use model::Status;
 
 use crate::invocation_context::InvocationContext;
@@ -62,8 +62,8 @@ pub enum Headers {
         id: i32,
     },
 
-    DescribePlacementManager {
-        nodes: Option<Vec<PlacementManagerNode>>,
+    DescribePlacementDriver {
+        nodes: Option<Vec<PlacementDriverNode>>,
     },
 
     SealRange {
@@ -302,9 +302,9 @@ impl Response {
         }
     }
 
-    pub fn on_describe_placement_manager(&mut self, frame: &Frame) {
+    pub fn on_describe_placement_driver(&mut self, frame: &Frame) {
         if let Some(ref buf) = frame.header {
-            match flatbuffers::root::<DescribePlacementManagerClusterResponse>(buf) {
+            match flatbuffers::root::<DescribePlacementDriverClusterResponse>(buf) {
                 Ok(response) => {
                     debug!("Received {response:?}");
                     self.status = Into::<Status>::into(&response.status().unpack());
@@ -318,13 +318,13 @@ impl Response {
                         .nodes
                         .iter()
                         .map(Into::into)
-                        .collect::<Vec<PlacementManagerNode>>();
+                        .collect::<Vec<PlacementDriverNode>>();
 
-                    self.headers = Some(Headers::DescribePlacementManager { nodes: Some(nodes) });
+                    self.headers = Some(Headers::DescribePlacementDriver { nodes: Some(nodes) });
                 }
                 Err(_e) => {
                     // Deserialize error
-                    warn!( "Failed to decode `DescribePlacementManagerClusterResponse` response header using FlatBuffers. Cause: {}", _e);
+                    warn!( "Failed to decode `DescribePlacementDriverClusterResponse` response header using FlatBuffers. Cause: {}", _e);
                 }
             }
         }
@@ -346,7 +346,7 @@ impl Response {
                         self.headers = Some(Headers::CreateStream { stream: metadata });
                     } else {
                         // Expected stream metadata is missing
-                        self.status = Status::pm_internal(
+                        self.status = Status::pd_internal(
                             "Required stream is missing even if status is OK".to_owned(),
                         );
                         error!("Required stream field is missing in CreateStreamResponse even if status is OK");
@@ -376,7 +376,7 @@ impl Response {
                         self.headers = Some(Headers::DescribeStream { stream: metadata });
                     } else {
                         // Expected stream metadata is missing
-                        self.status = Status::pm_internal(
+                        self.status = Status::pd_internal(
                             "Stream is missing even if status is OK".to_owned(),
                         );
                         error!("DescribeStreamResponse missed required stream field even if status is OK");

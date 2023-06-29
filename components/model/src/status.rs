@@ -53,9 +53,9 @@ impl Status {
         }
     }
 
-    pub fn pm_internal(message: String) -> Self {
+    pub fn pd_internal(message: String) -> Self {
         Self {
-            code: ErrorCode::PM_INTERNAL_SERVER_ERROR,
+            code: ErrorCode::PD_INTERNAL_SERVER_ERROR,
             message,
             details: None,
         }
