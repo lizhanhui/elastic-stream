@@ -2,9 +2,9 @@ use std::fmt::{self, Display, Formatter};
 
 use derivative::Derivative;
 use log::info;
-use protocol::rpc::header::{DataNodeT, RangeT};
+use protocol::rpc::header::{RangeServerT, RangeT};
 
-use crate::data_node::DataNode;
+use crate::range_server::RangeServer;
 
 /// Representation of a stream range in form of `[start, end)` in which `start` is inclusive and `end` is exclusive.
 /// If `start` == `end`, there will be no valid records in the range.
@@ -28,11 +28,11 @@ pub struct RangeMetadata {
     /// The end of the range, exclusive
     end: Option<u64>,
 
-    /// List of data nodes, that all have identical records within the range.
+    /// List of range servers, that all have identical records within the range.
     #[derivative(PartialEq = "ignore")]
-    replica: Vec<DataNode>,
+    replica: Vec<RangeServer>,
 
-    /// The range replica expected count. When cluster nodes count is less than replica count but
+    /// The range replica expected count. When cluster servers count is less than replica count but
     /// but larger than ack_count, the range can still be successfully created.
     replica_count: u8,
 
@@ -77,11 +77,11 @@ impl RangeMetadata {
         }
     }
 
-    pub fn replica(&self) -> &Vec<DataNode> {
+    pub fn replica(&self) -> &Vec<RangeServer> {
         &self.replica
     }
 
-    pub fn replica_mut(&mut self) -> &mut Vec<DataNode> {
+    pub fn replica_mut(&mut self) -> &mut Vec<RangeServer> {
         &mut self.replica
     }
 
@@ -161,14 +161,14 @@ impl From<&RangeMetadata> for RangeT {
             None => -1,
             Some(offset) => offset as i64,
         };
-        let mut replica: Vec<DataNodeT> = vec![];
-        for node in &value.replica {
-            replica.push(node.into());
+        let mut replica: Vec<RangeServerT> = vec![];
+        for server in &value.replica {
+            replica.push(server.into());
         }
         if replica.is_empty() {
-            range.nodes = None;
+            range.servers = None;
         } else {
-            range.nodes = Some(replica);
+            range.servers = Some(replica);
         }
         range.replica_count = value.replica_count as i8;
         range.ack_count = value.ack_count as i8;
@@ -178,10 +178,10 @@ impl From<&RangeMetadata> for RangeT {
 
 impl From<&RangeT> for RangeMetadata {
     fn from(value: &RangeT) -> Self {
-        let mut replica: Vec<DataNode> = vec![];
-        if let Some(nodes) = &value.nodes {
-            for node in nodes {
-                replica.push(node.into());
+        let mut replica: Vec<RangeServer> = vec![];
+        if let Some(servers) = &value.servers {
+            for server in servers {
+                replica.push(server.into());
             }
         }
         Self {

@@ -10,32 +10,32 @@ import (
 
 // Cache is the cache for all metadata.
 type Cache struct {
-	dataNodes cmap.ConcurrentMap[int32, *DataNode]
+	rangeServers cmap.ConcurrentMap[int32, *RangeServer]
 }
 
 // NewCache creates a new Cache.
 func NewCache() *Cache {
 	return &Cache{
-		dataNodes: cmap.NewWithCustomShardingFunction[int32, *DataNode](func(key int32) uint32 { return uint32(key) }),
+		rangeServers: cmap.NewWithCustomShardingFunction[int32, *RangeServer](func(key int32) uint32 { return uint32(key) }),
 	}
 }
 
 // Reset resets the cache.
 func (c *Cache) Reset() {
-	// No need to reset data nodes, as they will be updated by heartbeat.
+	// No need to reset range servers, as they will be updated by heartbeat.
 }
 
-// DataNode is the cache for DataNodeT and its status.
-type DataNode struct {
-	rpcfb.DataNodeT
+// RangeServer is the cache for RangeServerT and its status.
+type RangeServer struct {
+	rpcfb.RangeServerT
 	LastActiveTime time.Time
-	Metrics        *rpcfb.DataNodeMetricsT
+	Metrics        *rpcfb.RangeServerMetricsT
 }
 
-// Score returns the score of the data node.
-func (n *DataNode) Score() (score int) {
+// Score returns the score of the range server.
+func (rs *RangeServer) Score() (score int) {
 	// TODO more intelligent score
-	if n.Metrics == nil {
+	if rs.Metrics == nil {
 		return
 	}
 
@@ -46,37 +46,37 @@ func (n *DataNode) Score() (score int) {
 	)
 
 	score += 10000
-	score -= int(10 * n.Metrics.DiskInRate / (100 * MB))
-	score -= int(10 * n.Metrics.DiskOutRate / (100 * MB))
-	score += int(10 * n.Metrics.DiskFreeSpace / (50 * GB))
-	score -= int(10 * n.Metrics.DiskUnindexedDataSize / (100 * MB))
-	score -= int(10 * n.Metrics.MemoryUsed / (1 * GB))
-	score -= int(10 * n.Metrics.UringTaskRate / 1024)
-	score -= int(10 * n.Metrics.UringInflightTaskCnt / 128)
-	score -= int(10 * n.Metrics.UringPendingTaskCnt / 1024)
-	score -= int(10 * n.Metrics.UringTaskAvgLatency / 10)
-	score -= int(10 * n.Metrics.NetworkAppendRate / 256)
-	score -= int(10 * n.Metrics.NetworkFetchRate / 256)
-	score -= int(10 * n.Metrics.NetworkFailedAppendRate / 1)
-	score -= int(10 * n.Metrics.NetworkFailedFetchRate / 1)
-	score -= int(10 * n.Metrics.NetworkAppendAvgLatency / 1)
-	score -= int(10 * n.Metrics.NetworkAppendAvgLatency / 1)
-	score -= int(10 * n.Metrics.RangeMissingReplicaCnt / 2)
-	score -= int(10 * n.Metrics.RangeActiveCnt / 10)
+	score -= int(10 * rs.Metrics.DiskInRate / (100 * MB))
+	score -= int(10 * rs.Metrics.DiskOutRate / (100 * MB))
+	score += int(10 * rs.Metrics.DiskFreeSpace / (50 * GB))
+	score -= int(10 * rs.Metrics.DiskUnindexedDataSize / (100 * MB))
+	score -= int(10 * rs.Metrics.MemoryUsed / (1 * GB))
+	score -= int(10 * rs.Metrics.UringTaskRate / 1024)
+	score -= int(10 * rs.Metrics.UringInflightTaskCnt / 128)
+	score -= int(10 * rs.Metrics.UringPendingTaskCnt / 1024)
+	score -= int(10 * rs.Metrics.UringTaskAvgLatency / 10)
+	score -= int(10 * rs.Metrics.NetworkAppendRate / 256)
+	score -= int(10 * rs.Metrics.NetworkFetchRate / 256)
+	score -= int(10 * rs.Metrics.NetworkFailedAppendRate / 1)
+	score -= int(10 * rs.Metrics.NetworkFailedFetchRate / 1)
+	score -= int(10 * rs.Metrics.NetworkAppendAvgLatency / 1)
+	score -= int(10 * rs.Metrics.NetworkAppendAvgLatency / 1)
+	score -= int(10 * rs.Metrics.RangeMissingReplicaCnt / 2)
+	score -= int(10 * rs.Metrics.RangeActiveCnt / 10)
 
 	return
 }
 
-// SaveDataNode saves a data node to the cache.
-// It returns true if the data node is new or its info is updated.
+// SaveRangeServer saves a range server to the cache.
+// It returns true if the range server is new or its info is updated.
 // If its info is updated, the old value is returned.
-func (c *Cache) SaveDataNode(node *DataNode) (updated bool, old rpcfb.DataNodeT) {
-	_ = c.dataNodes.Upsert(node.NodeId, node, func(exist bool, valueInMap, newValue *DataNode) *DataNode {
+func (c *Cache) SaveRangeServer(rangeServer *RangeServer) (updated bool, old rpcfb.RangeServerT) {
+	_ = c.rangeServers.Upsert(rangeServer.ServerId, rangeServer, func(exist bool, valueInMap, newValue *RangeServer) *RangeServer {
 		if exist {
-			if !isDataNodeEqual(valueInMap.DataNodeT, newValue.DataNodeT) {
+			if !isRangeServerEqual(valueInMap.RangeServerT, newValue.RangeServerT) {
 				updated = true
-				valueInMap.DataNodeT = newValue.DataNodeT
-				old = valueInMap.DataNodeT
+				valueInMap.RangeServerT = newValue.RangeServerT
+				old = valueInMap.RangeServerT
 			}
 			valueInMap.LastActiveTime = newValue.LastActiveTime
 			if newValue.Metrics != nil {
@@ -90,38 +90,38 @@ func (c *Cache) SaveDataNode(node *DataNode) (updated bool, old rpcfb.DataNodeT)
 	return
 }
 
-// DataNode returns the data node by node ID.
-// The returned value is nil if the data node is not found.
+// RangeServer returns the range server by server ID.
+// The returned value is nil if the range server is not found.
 // The returned value should not be modified.
-func (c *Cache) DataNode(nodeID int32) *DataNode {
-	node, ok := c.dataNodes.Get(nodeID)
+func (c *Cache) RangeServer(serverID int32) *RangeServer {
+	rangeServer, ok := c.rangeServers.Get(serverID)
 	if !ok {
 		return nil
 	}
-	return node
+	return rangeServer
 }
 
-// ActiveDataNodes returns all active data nodes.
-func (c *Cache) ActiveDataNodes(timeout time.Duration) []*DataNode {
-	nodes := make([]*DataNode, 0)
-	c.dataNodes.IterCb(func(_ int32, node *DataNode) {
-		if node.LastActiveTime.IsZero() || time.Since(node.LastActiveTime) > timeout {
+// ActiveRangeServers returns all active range servers.
+func (c *Cache) ActiveRangeServers(timeout time.Duration) []*RangeServer {
+	rangeServers := make([]*RangeServer, 0)
+	c.rangeServers.IterCb(func(_ int32, rangeServer *RangeServer) {
+		if rangeServer.LastActiveTime.IsZero() || time.Since(rangeServer.LastActiveTime) > timeout {
 			return
 		}
-		if node.Metrics != nil && node.Metrics.DiskFreeSpace == 0 {
+		if rangeServer.Metrics != nil && rangeServer.Metrics.DiskFreeSpace == 0 {
 			return
 		}
-		nodes = append(nodes, node)
+		rangeServers = append(rangeServers, rangeServer)
 	})
-	return nodes
+	return rangeServers
 }
 
-// DataNodeCount returns the count of data nodes in the cache.
-func (c *Cache) DataNodeCount() int {
-	return c.dataNodes.Count()
+// RangeServerCount returns the count of range servers in the cache.
+func (c *Cache) RangeServerCount() int {
+	return c.rangeServers.Count()
 }
 
-func isDataNodeEqual(a, b rpcfb.DataNodeT) bool {
-	return a.NodeId == b.NodeId &&
+func isRangeServerEqual(a, b rpcfb.RangeServerT) bool {
+	return a.ServerId == b.ServerId &&
 		a.AdvertiseAddr == b.AdvertiseAddr
 }

@@ -5,7 +5,7 @@ use std::{
 };
 
 use error::ConfigurationError;
-use model::DataNode;
+use model::RangeServer;
 use nix::sys::stat;
 use serde::{Deserialize, Serialize};
 pub mod error;
@@ -134,9 +134,9 @@ pub struct Server {
     pub host: String,
     pub port: u16,
 
-    /// Data Node ID
+    /// Range Server ID
     #[serde(default)]
-    pub node_id: i32,
+    pub server_id: i32,
 
     #[serde(rename = "worker-cpu-set")]
     pub worker_cpu_set: String,
@@ -153,9 +153,9 @@ pub struct Server {
 }
 
 impl Server {
-    pub fn data_node(&self) -> DataNode {
-        DataNode {
-            node_id: self.node_id,
+    pub fn range_server(&self) -> RangeServer {
+        RangeServer {
+            server_id: self.server_id,
             advertise_address: format!("{}:{}", self.host, self.port),
         }
     }
@@ -166,7 +166,7 @@ impl Default for Server {
         Self {
             host: "127.0.0.1".to_owned(),
             port: 10911,
-            node_id: 0,
+            server_id: 0,
             worker_cpu_set: String::from("0"),
             uring: Uring::default(),
             connection_idle_duration: 60,
@@ -531,7 +531,7 @@ mod tests {
             .unwrap()
             .parent()
             .unwrap()
-            .join("etc/data-node.yaml");
+            .join("etc/range-server.yaml");
         let mut file = File::open(path.as_path())?;
         let mut content = String::new();
         file.read_to_string(&mut content)?;

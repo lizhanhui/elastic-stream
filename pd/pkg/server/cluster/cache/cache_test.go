@@ -9,17 +9,17 @@ import (
 	"github.com/AutoMQ/pd/api/rpcfb/rpcfb"
 )
 
-// Test_isDataNodeEqual will fail if there are new fields in rpcfb.DataNodeT
-func Test_isDataNodeEqual(t *testing.T) {
+// Test_isRangeServerEqual will fail if there are new fields in rpcfb.RangeServerT
+func Test_isRangeServerEqual(t *testing.T) {
 	t.Parallel()
 	re := require.New(t)
 
-	var node1, node2 rpcfb.DataNodeT
-	_ = gofakeit.New(1).Struct(&node1)
-	_ = gofakeit.New(2).Struct(&node2)
+	var rangeServer1, rangeServer2 rpcfb.RangeServerT
+	_ = gofakeit.New(1).Struct(&rangeServer1)
+	_ = gofakeit.New(2).Struct(&rangeServer2)
 
-	node2.NodeId = node1.NodeId
-	node2.AdvertiseAddr = node1.AdvertiseAddr
+	rangeServer2.ServerId = rangeServer1.ServerId
+	rangeServer2.AdvertiseAddr = rangeServer1.AdvertiseAddr
 
-	re.True(isDataNodeEqual(node1, node2))
+	re.True(isRangeServerEqual(rangeServer1, rangeServer2))
 }

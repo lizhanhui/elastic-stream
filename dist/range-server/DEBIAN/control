@@ -1,0 +1,5 @@
+Package: range-server
+Version: 0.2
+Maintainer: AutoMQ
+Architecture: amd64
+Description: Range Servers are range servers that store ranges of each elastic streams.

@@ -2,13 +2,13 @@ use bytes::{Bytes, BytesMut};
 use model::fetch::FetchRequestEntry;
 use model::stream::StreamMetadata;
 use model::{
-    client_role::ClientRole, data_node::DataNode, range::RangeMetadata, ListRangeCriteria,
+    client_role::ClientRole, range::RangeMetadata, range_server::RangeServer, ListRangeCriteria,
 };
 use protocol::rpc::header::{
-    AppendRequestT, CreateRangeRequestT, CreateStreamRequestT, DataNodeMetricsT,
+    AppendRequestT, CreateRangeRequestT, CreateStreamRequestT,
     DescribePlacementDriverClusterRequestT, DescribeStreamRequestT, FetchEntryT, FetchRequestT,
-    HeartbeatRequestT, IdAllocationRequestT, ListRangeCriteriaT, ListRangeRequestT, RangeT,
-    ReportMetricsRequestT, SealKind, SealRangeRequestT,
+    HeartbeatRequestT, IdAllocationRequestT, ListRangeCriteriaT, ListRangeRequestT,
+    RangeServerMetricsT, RangeT, ReportMetricsRequestT, SealKind, SealRangeRequestT,
 };
 use std::fmt;
 use std::time::Duration;
@@ -31,7 +31,7 @@ pub enum Headers {
     Heartbeat {
         client_id: String,
         role: ClientRole,
-        data_node: Option<DataNode>,
+        range_server: Option<RangeServer>,
     },
 
     CreateStream {
@@ -51,7 +51,7 @@ pub enum Headers {
     },
 
     DescribePlacementDriver {
-        data_node: DataNode,
+        range_server: RangeServer,
     },
 
     CreateRange {
@@ -70,7 +70,7 @@ pub enum Headers {
     },
 
     ReportMetrics {
-        data_node: DataNode,
+        range_server: RangeServer,
         disk_in_rate: i64,
         disk_out_rate: i64,
         disk_free_space: i64,
@@ -98,13 +98,13 @@ impl From<&Request> for Bytes {
             Headers::Heartbeat {
                 client_id,
                 role,
-                data_node,
+                range_server,
             } => {
-                let data_node = data_node.as_ref().map(|node| Box::new(node.into()));
+                let range_server = range_server.as_ref().map(|server| Box::new(server.into()));
                 let mut heartbeat_request = HeartbeatRequestT::default();
                 heartbeat_request.client_id = Some(client_id.to_owned());
                 heartbeat_request.client_role = role.into();
-                heartbeat_request.data_node = data_node;
+                heartbeat_request.range_server = range_server;
                 let heartbeat = heartbeat_request.pack(&mut builder);
                 builder.finish(heartbeat, None);
             }
@@ -127,8 +127,8 @@ impl From<&Request> for Bytes {
 
             Headers::ListRange { criteria } => {
                 let mut criteria_t = ListRangeCriteriaT::default();
-                if let Some(node_id) = criteria.node_id {
-                    criteria_t.node_id = node_id as i32;
+                if let Some(server_id) = criteria.server_id {
+                    criteria_t.server_id = server_id as i32;
                 }
 
                 if let Some(stream_id) = criteria.stream_id {
@@ -152,9 +152,9 @@ impl From<&Request> for Bytes {
                 builder.finish(request, None);
             }
 
-            Headers::DescribePlacementDriver { data_node } => {
+            Headers::DescribePlacementDriver { range_server } => {
                 let mut request = DescribePlacementDriverClusterRequestT::default();
-                request.data_node = Box::new(data_node.into());
+                request.range_server = Box::new(range_server.into());
                 let request = request.pack(&mut builder);
                 builder.finish(request, None);
             }
@@ -217,7 +217,7 @@ impl From<&Request> for Bytes {
             }
 
             Headers::ReportMetrics {
-                data_node,
+                range_server,
                 disk_in_rate,
                 disk_out_rate,
                 disk_free_space,
@@ -236,7 +236,7 @@ impl From<&Request> for Bytes {
                 range_missing_replica_cnt,
                 range_active_cnt,
             } => {
-                let mut metrics = DataNodeMetricsT::default();
+                let mut metrics = RangeServerMetricsT::default();
                 metrics.disk_in_rate = *disk_in_rate;
                 metrics.disk_out_rate = *disk_out_rate;
                 metrics.disk_free_space = *disk_free_space;
@@ -256,7 +256,7 @@ impl From<&Request> for Bytes {
                 metrics.range_active_cnt = *range_active_cnt;
 
                 let mut request = ReportMetricsRequestT::default();
-                request.data_node = Some(Box::new(data_node.into()));
+                request.range_server = Some(Box::new(range_server.into()));
                 request.metrics = Some(Box::new(metrics));
 
                 let request = request.pack(&mut builder);
