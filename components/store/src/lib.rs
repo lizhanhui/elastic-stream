@@ -34,6 +34,7 @@ use error::{AppendError, FetchError, StoreError};
 use model::range::RangeMetadata;
 
 pub mod cursor;
+pub mod ops;
 pub mod option;
 
 mod index;
@@ -44,6 +45,7 @@ mod store;
 
 pub use crate::io::buf::buf_slice::BufSlice;
 pub use crate::io::record::RECORD_PREFIX_LENGTH;
+pub use crate::ops::fetch::Fetch;
 pub use crate::store::append_result::AppendResult;
 pub use crate::store::elastic_store::ElasticStore;
 pub use crate::store::fetch_result::FetchResult;
@@ -63,7 +65,7 @@ pub trait Store {
 
     /// Retrieve a single existing record at the given stream and offset.
     /// * `options` - Read options, specifying target stream and offset.
-    async fn fetch(&self, options: ReadOptions) -> Result<FetchResult, FetchError>;
+    fn fetch(&self, options: ReadOptions) -> Fetch;
 
     /// List all stream ranges in the store
     ///
