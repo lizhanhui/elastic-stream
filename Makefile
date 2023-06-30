@@ -24,8 +24,23 @@ REGISTRY ?= docker.io/elasticstream
 # This version-strategy uses git tags to set the version string
 VERSION ?= $(shell git describe --tags --always --dirty)
 
-# Set this to 1 to build in release mode.
-RELEASE ?=
+# Version of the package, start with digits
+DEB_VERSION ?= $(shell echo $(VERSION) | sed -e 's/^[^0-9]*//')
+
+PROFILE ?= dev
+
+# https://doc.rust-lang.org/cargo/guide/build-cache.html
+# > For historical reasons, the dev and test profiles are stored in the debug directory,
+# > and the release and bench profiles are stored in the release directory.
+# > User-defined profiles are stored in a directory with the same name as the profile.
+PROFILE_PATH := $(PROFILE)
+ifeq ($(PROFILE),dev)
+  PROFILE_PATH := debug
+else ifeq ($(PROFILE),test)
+  PROFILE_PATH := debug
+else ifeq ($(PROFILE),bench)
+  PROFILE_PATH := release
+endif
 
 ###
 ### These variables should not need tweaking.
@@ -64,11 +79,6 @@ else
   $(error Unsupported OS/ARCH $(OS)/$(ARCH))
 endif
 
-BUILD_TYPE :=
-ifeq ($(RELEASE),1)
-  BUILD_TYPE := --release
-endif
-
 BIN_EXTENSION :=
 ifeq ($(OS), windows)
   BIN_EXTENSION := .exe
@@ -78,6 +88,8 @@ TAG := $(VERSION)__$(OS)_$(ARCH)
 
 # This is used in docker buildx commands
 BUILDX_NAME := $(shell basename $$(pwd))
+
+FLATC := $(shell command -v flatc 2> /dev/null)
 
 # If you want to build all binaries, see the 'all-build' rule.
 # If you want to build all containers, see the 'all-container' rule.
@@ -106,6 +118,12 @@ push-%:
 	    RUST_OS=$(firstword $(subst _, ,$*)) \
 	    RUST_ARCH=$(lastword $(subst _, ,$*))
 
+deb-%:
+	$(MAKE) deb                           \
+	    --no-print-directory              \
+	    RUST_OS=$(firstword $(subst _, ,$*)) \
+	    RUST_ARCH=$(lastword $(subst _, ,$*))
+
 all-build: # @HELP builds binaries for all platforms
 all-build: $(addprefix build-, $(subst /,_, $(ALL_PLATFORMS)))
 
@@ -115,17 +133,94 @@ all-container: $(addprefix container-, $(subst /,_, $(ALL_PLATFORMS)))
 all-push: # @HELP pushes containers for all platforms to the defined registry
 all-push: $(addprefix push-, $(subst /,_, $(ALL_PLATFORMS)))
 
-build: # @HELP builds the binary for the current platform
-build: target/$(TARGET)/$(BUILD_TYPE)/$(BINS)$(BIN_EXTENSION)
+all-deb: # @HELP builds debian packages for all platforms
+all-deb: $(addprefix deb-, $(subst /,_, $(ALL_PLATFORMS)))
 
-.PHONY: target/$(TARGET)/$(BUILD_TYPE)/$(BINS)$(BIN_EXTENSION)
-target/$(TARGET)/$(BUILD_TYPE)/$(BINS)$(BIN_EXTENSION):
-	cross build --target $(TARGET) $(BUILD_TYPE)
-	echo -ne "binary: target/$(TARGET)/$(BUILD_TYPE)/$(BINS)$(BIN_EXTENSION)"
+build: # @HELP builds the binary for the current platform
+build: target/$(TARGET)/$(PROFILE_PATH)/$(BINS)$(BIN_EXTENSION)
+	echo -ne "binary: target/$(TARGET)/$(PROFILE_PATH)/$(BINS)$(BIN_EXTENSION)"
 	echo
+
+target/$(TARGET)/$(PROFILE_PATH)/$(BINS)$(BIN_EXTENSION): .flatc
+	cross build --target $(TARGET) --profile $(PROFILE)
 
 container:
 	echo "TODO"
+
+DEB_FILES = $(foreach bin,$(BINS),dist/$(bin)_$(DEB_VERSION)_$(ARCH).deb)
+
+# We print the deb package names here, rather than in DEB_FILES so
+# they are always at the end of the output.
+deb debs: # @HELP builds deb packages for one platform ($OS/$ARCH)
+deb debs: $(DEB_FILES)
+	for bin in $(BINS); do                                    \
+	    echo "deb: dist/$${bin}_$(DEB_VERSION)_$(ARCH).deb";  \
+	done
+	echo
+
+# Each deb-file target can reference a $(BIN) variable.
+# This is done in 2 steps to enable target-specific variables.
+$(foreach bin,$(BINS),$(eval $(strip                      \
+	dist/$(bin)_$(DEB_VERSION)_$(ARCH).deb: BIN = $(bin)  \
+)))
+$(foreach bin,$(BINS),$(eval  \
+	dist/$(bin)_$(DEB_VERSION)_$(ARCH).deb: target/$(TARGET)/$(PROFILE_PATH)/$(BINS)$(BIN_EXTENSION) $$(shell find ./dist/$(bin) -type f)  \
+))
+
+# This is the target definition for all deb-files.
+# These are used to track build state in hidden files.
+$(DEB_FILES):
+	if [ "$(OS)" != "linux" ]; then         \
+	    echo "deb: invalid OS: $(OS)";      \
+	    exit 1;                             \
+	fi
+	if [[ ! "$(DEB_VERSION)" =~ ^[0-9]+\.[0-9]+\.[0-9]+ ]]; then   \
+	    echo "deb: invalid version: $(DEB_VERSION)";               \
+	    exit 1;                                                    \
+	fi
+	rm -rf .dist/$(BIN)_$(DEB_VERSION)_$(ARCH).tmp
+	mkdir -p .dist
+	cp -r dist/$(BIN) .dist/$(BIN)_$(DEB_VERSION)_$(ARCH).tmp
+
+	find .dist/$(BIN)_$(DEB_VERSION)_$(ARCH).tmp -type f -exec \
+	sed -i                                                     \
+	    -e 's|{ARG_VERSION}|$(DEB_VERSION)|g'                  \
+	    -e 's|{ARG_ARCH}|$(ARCH)|g'                            \
+	    {} +
+	cp target/$(TARGET)/$(PROFILE_PATH)/$(BINS)$(BIN_EXTENSION) .dist/$(BIN)_$(DEB_VERSION)_$(ARCH).tmp/usr/local/bin/$(BIN)$(BIN_EXTENSION)
+	cp etc/*.yaml .dist/$(BIN)_$(DEB_VERSION)_$(ARCH).tmp/etc/$(BIN)/
+
+	dpkg-deb --root-owner-group --build .dist/$(BIN)_$(DEB_VERSION)_$(ARCH).tmp dist/$(BIN)_$(DEB_VERSION)_$(ARCH).deb
+
+	rm -rf .dist/$(BIN)_$(DEB_VERSION)_$(ARCH).tmp
+
+.flatc: $(shell find components/protocol/fbs -type f)
+	if [ -z "$(FLATC)" ]; then \
+	    echo "flatc not found"; \
+	    exit 1; \
+	fi
+	if [ "$$($(FLATC) --version | cut -d' ' -f3)" != "23.3.3" ]; then \
+	    echo "flatc version must be 23.3.3"; \
+	    exit 1; \
+	fi
+	cargo build --package protocol
+	date > $@
+
+version: # @HELP outputs the version string
+version:
+	echo $(VERSION)
+
+clean: # @HELP removes built binaries and temporary files
+clean: flatc-clean cargo-clean deb-clean
+
+flatc-clean:
+	rm -f .flatc
+
+cargo-clean:
+	cargo clean
+
+deb-clean:
+	rm -rf .dist dist/*.deb
 
 help: # @HELP prints this message
 help:
@@ -134,7 +229,7 @@ help:
 	echo "  OS = $(OS)"
 	echo "  ARCH = $(ARCH)"
 	echo "  TARGET = $(TARGET)"
-	echo "  BUILD_TYPE = $(BUILD_TYPE)"
+	echo "  PROFILE = $(PROFILE)"
 	echo "  REGISTRY = $(REGISTRY)"
 	echo
 	echo "TARGETS:"
