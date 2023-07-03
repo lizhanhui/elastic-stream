@@ -1,5 +1,5 @@
 use super::util::{root_as_rpc_request, MIN_BUFFER_SIZE};
-use crate::stream_manager::{fetcher::PlacementFetcher, StreamManager};
+use crate::stream_manager::StreamManager;
 use codec::frame::Frame;
 use flatbuffers::FlatBufferBuilder;
 use log::{trace, warn};
@@ -45,14 +45,14 @@ impl<'a> Fetch<'a> {
     }
 
     /// Apply the fetch requests to the store
-    pub(crate) async fn apply<S, F>(
+    pub(crate) async fn apply<S, M>(
         &self,
         store: Rc<S>,
-        stream_manager: Rc<UnsafeCell<StreamManager<S, F>>>,
+        stream_manager: Rc<UnsafeCell<M>>,
         response: &mut Frame,
     ) where
         S: Store,
-        F: PlacementFetcher,
+        M: StreamManager,
     {
         let mut builder = FlatBufferBuilder::with_capacity(MIN_BUFFER_SIZE);
 
@@ -114,13 +114,9 @@ impl<'a> Fetch<'a> {
         response.header = Some(bytes::Bytes::copy_from_slice(data));
     }
 
-    fn build_read_opt<S, F>(
-        &self,
-        stream_manager: &mut StreamManager<S, F>,
-    ) -> Result<ReadOptions, FetchError>
+    fn build_read_opt<M>(&self, stream_manager: &mut M) -> Result<ReadOptions, FetchError>
     where
-        S: Store,
-        F: PlacementFetcher,
+        M: StreamManager,
     {
         // Retrieve stream id from req.range
         let stream_id = self.fetch_request.range().stream_id();
@@ -166,7 +162,9 @@ impl<'a> fmt::Display for Fetch<'a> {
 #[cfg(test)]
 mod tests {
 
-    use crate::stream_manager::{fetcher::PlacementFetcher, StreamManager};
+    use crate::stream_manager::{
+        fetcher::PlacementFetcher, manager::DefaultStreamManager, StreamManager,
+    };
     use codec::frame::{Frame, OperationCode};
     use config::Configuration;
     use model::stream::StreamMetadata;
@@ -289,7 +287,7 @@ mod tests {
             let store = Rc::new(MockStore {
                 config: Arc::new(Configuration::default()),
             });
-            let stream_manager = Rc::new(UnsafeCell::new(StreamManager::new(
+            let stream_manager = Rc::new(UnsafeCell::new(DefaultStreamManager::new(
                 MockPlacementFetcher {},
                 Rc::clone(&store),
             )));

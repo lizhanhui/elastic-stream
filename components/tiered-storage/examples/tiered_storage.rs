@@ -9,6 +9,7 @@ use tiered_storage::RangeFetchResult;
 use tiered_storage::RangeFetcher;
 
 use clap::Parser;
+use tiered_storage::object_manager::MemoryObjectManager;
 use tiered_storage::object_storage::ObjectTieredStorage;
 use tiered_storage::object_storage::ObjectTieredStorageConfig;
 use tiered_storage::TieredStorage;
@@ -30,7 +31,9 @@ fn main() {
             force_flush_interval: Duration::from_secs(60 * 60),
         };
         let range_fetcher = Rc::new(RangeFetcherMock {});
-        let object_store = ObjectTieredStorage::new(config, range_fetcher).unwrap();
+        let memory_object_manager: MemoryObjectManager = Default::default();
+        let object_manager = Rc::new(memory_object_manager);
+        let object_store = ObjectTieredStorage::new(config, range_fetcher, object_manager).unwrap();
         object_store.add_range(1, 2, 0, 0);
         let mut end_offset = 1;
         loop {
