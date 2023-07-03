@@ -13,11 +13,10 @@ members = [
     "components/protocol",
     "components/replication",
     "components/store",
-    "components/test-util",
+    "components/tiered-storage",
     "components/tool",
     "components/transport",
     "components/util",
-    "components/tiered-storage",
     "range-server",
     "sdks/frontend-rs",
 ]

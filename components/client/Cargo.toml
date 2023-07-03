@@ -27,7 +27,8 @@ transport = { path = "../transport" }
 
 [dev-dependencies]
 cargo-llvm-cov = { workspace = true }
+chrono = { workspace = true }
+env_logger = { workspace = true }
 mockall = { workspace = true }
-test-util = { path = "../test-util" }
-util = { path = "../util" }
 tempfile = { workspace = true }
+util = { path = "../util" }

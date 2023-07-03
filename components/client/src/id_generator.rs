@@ -59,21 +59,20 @@ impl IdGenerator for PlacementDriverIdGenerator {
 
 #[cfg(test)]
 mod tests {
-    use std::{error::Error, sync::Arc};
-
-    use tokio::sync::oneshot;
-
     use super::{IdGenerator, PlacementDriverIdGenerator};
+    use crate::mocks::run_listener;
+    use std::{error::Error, sync::Arc};
+    use tokio::sync::oneshot;
 
     #[test]
     fn test_generate() -> Result<(), Box<dyn Error>> {
-        test_util::try_init_log();
+        crate::log::try_init_log();
         let (stop_tx, stop_rx) = oneshot::channel();
         let (port_tx, port_rx) = oneshot::channel();
 
         let handle = std::thread::spawn(move || {
             tokio_uring::start(async {
-                let port = test_util::run_listener().await;
+                let port = run_listener().await;
                 let _ = port_tx.send(port);
                 let _ = stop_rx.await;
             });
