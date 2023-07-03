@@ -4,7 +4,7 @@
 2. Affordable via EC
 3. SLA(Scalable + Availability + Reliability)
 
-## Storage Achievement in NVMe SSD
+### Storage Advancements in NVMe SSD
 1. Millions of IOPS
 2. Thread-Per-Core(Run-to-Complete) architecture shifts bottleneck of IO-intensive workload from IO to CPU.
 3. Scale with CPU processors
