@@ -9,7 +9,7 @@ pub struct AppendEntry {
     pub index: u32,
 
     /// Base offset
-    pub offset: u64,
+    pub offset: Option<u64>,
 
     /// Quantity of nested records
     pub len: u32,
@@ -20,7 +20,10 @@ impl Display for AppendEntry {
         write!(
             f,
             "{{ stream_id: {}, index: {}, offset: {}, len: {} }}",
-            self.stream_id, self.index, self.offset, self.len
+            self.stream_id,
+            self.index,
+            self.offset.map(|value| value as i64).unwrap_or(-1),
+            self.len
         )
     }
 }
