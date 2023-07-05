@@ -95,3 +95,10 @@ store:
 replication:
   connection-pool-size: 2
   thread-count: 4
+
+observation:
+  metrics:
+    # Host address
+    host: "127.0.0.1"
+    # Listening port
+    port: 9898

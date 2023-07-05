@@ -374,6 +374,23 @@ impl Default for RocksDB {
     }
 }
 
+#[derive(Default, Debug, Serialize, Deserialize, Clone)]
+pub struct Observation {
+    pub metrics: Metrics,
+}
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Metrics {
+    pub host: String,
+    pub port: u16,
+}
+impl Default for Metrics {
+    fn default() -> Self {
+        Self {
+            host: "127.0.0.1".to_owned(),
+            port: 9898,
+        }
+    }
+}
 /// Configurable items of the replication layer.
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Replication {
@@ -408,6 +425,8 @@ pub struct Configuration {
     pub store: Store,
 
     pub replication: Replication,
+
+    pub observation: Observation,
 }
 
 impl Default for Configuration {
@@ -419,6 +438,7 @@ impl Default for Configuration {
             server: Default::default(),
             store: Default::default(),
             replication: Default::default(),
+            observation: Default::default(),
         }
     }
 }

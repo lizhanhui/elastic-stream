@@ -6,6 +6,7 @@ edition = "2021"
 
 [dependencies]
 bytes = { workspace = true }
+clap = { workspace = true }
 crc32fast = { workspace = true }
 hyper = { version = "0.14.25", features = ["full"] }
 lazy_static = { version = "1.4.0" }

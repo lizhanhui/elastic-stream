@@ -103,8 +103,10 @@ where
                     .expect("Failed to bootstrap stream ranges from placement drivers");
 
                 if self.config.primary {
-                    tokio_uring::spawn(async {
-                        http_serve().await;
+                    let port = self.config.server_config.observation.metrics.port;
+                    let host = self.config.server_config.observation.metrics.host.clone();
+                    tokio_uring::spawn(async move {
+                        http_serve(&host, port).await;
                     });
                     self.report_metrics(shutdown.subscribe());
                 }

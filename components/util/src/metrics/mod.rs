@@ -1,10 +1,14 @@
 // Copyright 2016 TiKV Project Authors. Licensed under Apache-2.0.
 
-use std::io::Write;
+use std::{
+    io::Write,
+    net::{IpAddr, Ipv4Addr, SocketAddr},
+};
 
 use log::error;
 use prometheus::{proto::MetricType, Encoder, TextEncoder, TEXT_FORMAT};
 
+use log::info;
 pub mod process_linux;
 pub mod threads_linux;
 use hyper::{
@@ -31,7 +35,7 @@ pub fn dump_to(w: &mut impl Write, should_simplify: bool) {
     let metric_families = prometheus::gather();
     if !should_simplify {
         if let Err(e) = encoder.encode(&metric_families, w) {
-            eprintln!("prometheus encoding error. error: {}", e)
+            error!("prometheus encoding error. error: {}", e)
         }
         return;
     }
@@ -49,22 +53,25 @@ pub fn dump_to(w: &mut impl Write, should_simplify: bool) {
         if !metrics.is_empty() {
             mf.set_metric(metrics.into());
             if let Err(e) = encoder.encode(&[mf], w) {
-                eprintln!("prometheus encoding error. error: {}", e);
+                error!("prometheus encoding error. error: {}", e);
             }
         }
     }
 }
 
-pub async fn http_serve() {
-    let addr = ([127, 0, 0, 1], 9898).into();
-    println!("Listening on http://{}", addr);
+pub async fn http_serve(host: &str, port: u16) {
+    let ip = host
+        .parse::<IpAddr>()
+        .unwrap_or(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)));
+    let socket_addr = SocketAddr::new(ip, port);
+    info!("Listening on http://{}", socket_addr);
 
-    let serve_future = Server::bind(&addr).serve(make_service_fn(|_| async {
+    let serve_future = Server::bind(&socket_addr).serve(make_service_fn(|_| async {
         Ok::<_, hyper::Error>(service_fn(http_serve_req))
     }));
 
     if let Err(err) = serve_future.await {
-        eprintln!("server error: {}", err);
+        error!("server error: {}", err);
     }
 }
 
