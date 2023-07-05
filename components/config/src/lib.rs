@@ -324,9 +324,21 @@ impl Store {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Uring {
+    /// Enable polling for SQ completions and I/O completion events.
+    /// If this option is disabled, interrupt mode is used.
+    /// Note that the network uring doesn't support polling mode, so this option will be ignored for network uring.
+    #[serde(rename = "enable-polling", default)]
+    pub polling: bool,
+
+    /// In interrupt mode, or when queue_depth is full, the uring driver will enter to syscall and wait for I/O completion events.
+    /// This option specifies the timeout value in nanoseconds for the syscall.
+    #[serde(rename = "enter-timeout-ns", default)]
+    pub enter_timeout_ns: u32,
+
     #[serde(rename = "queue-depth")]
     pub queue_depth: u32,
 
+    /// The below two options are only valid when `enable-polling` is true.
     #[serde(rename = "sqpoll-idle-ms", default)]
     pub sqpoll_idle_ms: u32,
 
@@ -343,6 +355,8 @@ pub struct Uring {
 impl Default for Uring {
     fn default() -> Self {
         Self {
+            polling: false,
+            enter_timeout_ns: 2000,
             queue_depth: 128,
             sqpoll_idle_ms: 2000,
             sqpoll_cpu: 0,
