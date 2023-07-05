@@ -13,7 +13,7 @@ mod util;
 use self::cmd::Command;
 use crate::{
     metrics::{APPEND_LATENCY, FETCH_LATENCY},
-    stream_manager::StreamManager,
+    range_manager::RangeManager,
 };
 use bytes::Bytes;
 use codec::frame::Frame;
@@ -39,13 +39,13 @@ pub(crate) struct ServerCall<S, M> {
     /// Note this store is `!Send` as it follows thread-per-core pattern.
     pub(crate) store: Rc<S>,
 
-    pub(crate) stream_manager: Rc<UnsafeCell<M>>,
+    pub(crate) range_manager: Rc<UnsafeCell<M>>,
 }
 
 impl<S, M> ServerCall<S, M>
 where
     S: Store,
-    M: StreamManager,
+    M: RangeManager,
 {
     /// Serve the incoming request
     ///
@@ -77,7 +77,7 @@ where
                 // Delegate the request to its dedicated handler.
                 cmd.apply(
                     Rc::clone(&self.store),
-                    Rc::clone(&self.stream_manager),
+                    Rc::clone(&self.range_manager),
                     &mut response,
                 )
                 .await;

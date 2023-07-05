@@ -1,5 +1,5 @@
 use super::util::{root_as_rpc_request, MIN_BUFFER_SIZE};
-use crate::stream_manager::StreamManager;
+use crate::range_manager::RangeManager;
 use codec::frame::Frame;
 use flatbuffers::FlatBufferBuilder;
 use log::{trace, warn};
@@ -48,15 +48,15 @@ impl<'a> Fetch<'a> {
     pub(crate) async fn apply<S, M>(
         &self,
         store: Rc<S>,
-        stream_manager: Rc<UnsafeCell<M>>,
+        range_manager: Rc<UnsafeCell<M>>,
         response: &mut Frame,
     ) where
         S: Store,
-        M: StreamManager,
+        M: RangeManager,
     {
         let mut builder = FlatBufferBuilder::with_capacity(MIN_BUFFER_SIZE);
 
-        let option = match self.build_read_opt(unsafe { &mut *stream_manager.get() }) {
+        let option = match self.build_read_opt(unsafe { &mut *range_manager.get() }) {
             Ok(opt) => opt,
             Err(_e) => {
                 Self::handle_fetch_error(_e, &mut builder, response);
@@ -114,9 +114,9 @@ impl<'a> Fetch<'a> {
         response.header = Some(bytes::Bytes::copy_from_slice(data));
     }
 
-    fn build_read_opt<M>(&self, stream_manager: &mut M) -> Result<ReadOptions, FetchError>
+    fn build_read_opt<M>(&self, range_manager: &mut M) -> Result<ReadOptions, FetchError>
     where
-        M: StreamManager,
+        M: RangeManager,
     {
         // Retrieve stream id from req.range
         let stream_id = self.fetch_request.range().stream_id();
@@ -125,8 +125,7 @@ impl<'a> Fetch<'a> {
         let limit = self.fetch_request.limit();
 
         // If the stream-range exists and contains the requested offset, build the read options
-        // FIXME: Use range_manager instead of stream_manager
-        if stream_manager.get_range(stream_id, range_index).is_some() {
+        if range_manager.get_range(stream_id, range_index).is_some() {
             Ok(ReadOptions {
                 stream_id,
                 range: range_index as u32,
@@ -162,8 +161,8 @@ impl<'a> fmt::Display for Fetch<'a> {
 #[cfg(test)]
 mod tests {
 
-    use crate::stream_manager::{
-        fetcher::MockPlacementFetcher, manager::DefaultStreamManager, StreamManager,
+    use crate::range_manager::{
+        fetcher::MockPlacementFetcher, manager::DefaultRangeManager, RangeManager,
     };
     use codec::frame::{Frame, OperationCode};
     use model::stream::StreamMetadata;
@@ -223,12 +222,12 @@ mod tests {
 
         tokio_uring::start(async move {
             let store = Rc::new(mock_store);
-            let stream_manager = Rc::new(UnsafeCell::new(DefaultStreamManager::new(
+            let range_manager = Rc::new(UnsafeCell::new(DefaultRangeManager::new(
                 mock_fetcher,
                 Rc::clone(&store),
             )));
 
-            let sm = unsafe { &mut *stream_manager.get() };
+            let sm = unsafe { &mut *range_manager.get() };
             sm.start().await.unwrap();
 
             let request = build_fetch_request();
@@ -236,7 +235,7 @@ mod tests {
             let handler =
                 super::Fetch::parse_frame(&request).expect("Failed to parse request frame");
             handler
-                .apply(Rc::clone(&store), stream_manager, &mut response)
+                .apply(Rc::clone(&store), range_manager, &mut response)
                 .await;
             let header = response.header.unwrap();
             let fetch_response = flatbuffers::root::<FetchResponse>(&header).unwrap();
