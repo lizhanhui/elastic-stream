@@ -325,7 +325,7 @@ impl Wal {
             self.inflight_control_tasks.insert(offset, status);
             let sqe = opcode::OpenAt::new(types::Fd(libc::AT_FDCWD), segment.path.as_ptr())
                 .flags(libc::O_CREAT | libc::O_RDWR | libc::O_DIRECT)
-                .mode(libc::S_IRWXU | libc::S_IRWXG)
+                .mode(libc::S_IRUSR | libc::S_IWUSR | libc::S_IRGRP | libc::S_IWGRP)
                 .build()
                 .user_data(offset);
             unsafe {
@@ -723,7 +723,7 @@ impl Wal {
                     segment.status = Status::OpenAt;
                     let sqe = opcode::OpenAt::new(types::Fd(libc::AT_FDCWD), segment.path.as_ptr())
                         .flags(libc::O_CREAT | libc::O_RDWR | libc::O_DIRECT)
-                        .mode(libc::S_IRWXU | libc::S_IRWXG)
+                        .mode(libc::S_IRUSR | libc::S_IWUSR | libc::S_IRGRP | libc::S_IWGRP)
                         .build()
                         .user_data(offset);
                     unsafe {
