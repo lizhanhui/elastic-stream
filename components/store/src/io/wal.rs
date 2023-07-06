@@ -124,6 +124,31 @@ impl Wal {
         // Sort log segment file by file name.
         segment_files.sort();
 
+        // Preallocate segment files until they reach the maximum number specified in the configuration file.
+        let next_wal_offset = segment_files
+            .last()
+            .map(|segment| segment.wal_offset + segment.size)
+            .unwrap_or(0);
+
+        let iter = std::iter::successors(Some(next_wal_offset), |&offset| {
+            Some(offset + self.config.store.segment_size)
+        })
+        .take_while(|&offset| {
+            offset + self.config.store.segment_size <= self.config.store.total_segment_file_size
+        });
+
+        for offset in iter {
+            let log_segment_file = LogSegment::new(
+                &self.config,
+                offset,
+                self.config.store.segment_size,
+                wal_path.join(LogSegment::format(offset)).as_path(),
+            );
+            if let Ok(log_segment_file) = log_segment_file {
+                segment_files.push(log_segment_file);
+            }
+        }
+
         for mut segment_file in segment_files.into_iter() {
             segment_file.open()?;
             self.segments.push_back(segment_file);
@@ -779,8 +804,23 @@ mod tests {
         cfg.store.path.set_base(store_base.path().to_str().unwrap());
         cfg.check_and_apply()
             .expect("Failed to check-and-apply configuration");
+        let segment_sum = cfg.store.total_segment_file_size / cfg.store.segment_size;
         let config = Arc::new(cfg);
-        // Prepare log segment files
+        let mut wal = create_wal(&config)?;
+        wal.load_from_paths()?;
+        assert_eq!(segment_sum, wal.segments.len() as u64);
+        Ok(())
+    }
+    #[test]
+    fn test_expand_wals() -> Result<(), StoreError> {
+        let store_base = tempfile::tempdir().map_err(|e| StoreError::IO(e))?;
+        let mut cfg = config::Configuration::default();
+        cfg.store.path.set_base(store_base.path().to_str().unwrap());
+        cfg.check_and_apply()
+            .expect("Failed to check-and-apply configuration");
+        let segment_size = cfg.store.segment_size;
+        let segment_sum = cfg.store.total_segment_file_size / cfg.store.segment_size;
+        let config = Arc::new(cfg);
         let files: Vec<_> = (0..10)
             .into_iter()
             .map(|i| {
@@ -788,15 +828,15 @@ mod tests {
                     .store
                     .path
                     .wal_path()
-                    .join(LogSegment::format(i * 100));
+                    .join(LogSegment::format(i * segment_size));
                 File::create(f.as_path())
             })
             .try_collect()?;
         assert_eq!(10, files.len());
-
+        // Prepare log segment files
         let mut wal = create_wal(&config)?;
         wal.load_from_paths()?;
-        assert_eq!(files.len(), wal.segments.len());
+        assert_eq!(segment_sum, wal.segments.len() as u64);
         Ok(())
     }
 
