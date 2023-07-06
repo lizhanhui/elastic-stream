@@ -20,15 +20,21 @@ Each range-server, by default, has one IO thread, taking up a dedicated core, ru
 Multiple independent workers runs in parallel within a range-server. Each of them are backed by an io_uring instance with FAST_POLL feature set. A worker also takes up a dedicated core and is in charge of a group of streams. Inter-worker communication is fulfilled by way of message passing, aka, lockless ring buffer.
 
 ## How to Build
-Rust crates are managed by cargo. To build range server,
 
-### Debug Mode
-```
+This project employs several distinct programming languages. The Placement Driver is developed utilizing Go, whereas the Range Server leverages the Rust language. In addition, we furnish two SDK implementations with Java and Rust.
+
+For the parts crafted in Go and Java, you can locate the corresponding build commands in the [`./pd`](./pd) and [`./sdks/frontend-java`](./sdks/frontend-java) directories respectively.
+
+### Rust Crates
+
+Considering the necessity for unified build and testing process, streamlined dependency management, and consistent project-wide coding practices, we've placed all our Rust crates within one workspace.
+
+Particularly, some crates might have additional dependencies when building. please run `./scripts/install_deps.sh` before you kick things off. Given that the top-level directory of the project doubles as a crate root, you're empowered to run commands below to build it.
+
+```sh
+# debug mode.
 cargo build
-```
-
-### Release Mode
-```
+# release mode.
 cargo build --release
 ```
 
