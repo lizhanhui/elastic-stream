@@ -683,7 +683,7 @@ checksum = "2da6da31387c7e4ef160ffab6d5e7f00c42626fe39aea70a7b0f1773f7dd6c1b"
 
 [[package]]
 name = "client"
-version = "0.1.0"
+version = "0.2.1"
 dependencies = [
  "async-channel",
  "bytes",
@@ -715,7 +715,7 @@ dependencies = [
 
 [[package]]
 name = "codec"
-version = "0.1.0"
+version = "0.2.1"
 dependencies = [
  "byteorder",
  "bytes",
@@ -754,7 +754,7 @@ dependencies = [
 
 [[package]]
 name = "config"
-version = "0.1.0"
+version = "0.2.1"
 dependencies = [
  "gethostname",
  "lazy_static",
@@ -1233,7 +1233,7 @@ checksum = "6c2141d6d6c8512188a7891b4b01590a45f6dac67afb4f255c4124dbb86d4eaa"
 
 [[package]]
 name = "frontend"
-version = "0.1.0"
+version = "0.2.1"
 dependencies = [
  "bytes",
  "chrono",
@@ -2116,7 +2116,7 @@ dependencies = [
 
 [[package]]
 name = "mock-server"
-version = "0.1.0"
+version = "0.2.1"
 dependencies = [
  "bytes",
  "codec",
@@ -2158,7 +2158,7 @@ dependencies = [
 
 [[package]]
 name = "model"
-version = "0.1.0"
+version = "0.2.1"
 dependencies = [
  "bytes",
  "chrono",
@@ -2378,7 +2378,7 @@ dependencies = [
 
 [[package]]
 name = "observation"
-version = "0.1.0"
+version = "0.2.1"
 dependencies = [
  "lazy_static",
  "log",
@@ -2650,7 +2650,7 @@ dependencies = [
 
 [[package]]
 name = "polling"
-version = "0.1.0"
+version = "0.2.1"
 dependencies = [
  "codec",
  "log",
@@ -2828,7 +2828,7 @@ checksum = "106dd99e98437432fed6519dedecfade6a06a73bb7b2a1e019fdd2bee5778d94"
 
 [[package]]
 name = "protocol"
-version = "0.1.0"
+version = "0.2.1"
 dependencies = [
  "flatbuffers",
  "flatc-rust",
@@ -2904,7 +2904,7 @@ dependencies = [
 
 [[package]]
 name = "range-server"
-version = "0.1.0"
+version = "0.2.1"
 dependencies = [
  "anyhow",
  "built",
@@ -2933,7 +2933,7 @@ dependencies = [
  "num_cpus",
  "num_enum",
  "observation",
- "polling 0.1.0",
+ "polling 0.2.1",
  "pprof",
  "prometheus",
  "protocol",
@@ -3015,7 +3015,7 @@ checksum = "436b050e76ed2903236f032a59761c1eb99e1b0aead2c257922771dab1fc8c78"
 
 [[package]]
 name = "replication"
-version = "0.1.0"
+version = "0.2.1"
 dependencies = [
  "bytes",
  "client",
@@ -3567,7 +3567,7 @@ checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 
 [[package]]
 name = "store"
-version = "0.1.0"
+version = "0.2.1"
 dependencies = [
  "byteorder",
  "bytes",
@@ -3783,7 +3783,7 @@ dependencies = [
 
 [[package]]
 name = "tiered-storage"
-version = "0.1.0"
+version = "0.2.1"
 dependencies = [
  "bytes",
  "clap 4.3.10",
@@ -3997,7 +3997,7 @@ dependencies = [
 
 [[package]]
 name = "tool"
-version = "0.1.0"
+version = "0.2.1"
 dependencies = [
  "clap 4.3.10",
  "io-uring",
@@ -4052,7 +4052,7 @@ dependencies = [
 
 [[package]]
 name = "transport"
-version = "0.1.0"
+version = "0.2.1"
 dependencies = [
  "bytes",
  "cargo-llvm-cov",
@@ -4147,7 +4147,7 @@ checksum = "711b9620af191e0cdc7468a8d14e709c3dcdb115b36f838e601583af800a370a"
 
 [[package]]
 name = "util"
-version = "0.1.0"
+version = "0.2.1"
 dependencies = [
  "bytes",
  "clap 4.3.10",
