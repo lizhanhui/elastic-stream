@@ -287,15 +287,13 @@ impl fmt::Display for Append {
                 "Failed to decode append entries from payload. Cause: {:?}",
                 e
             ),
-            Ok(entries) => entries.iter().fold(Ok(()), |result, entry| {
-                result.and_then(|_| {
-                    let offset = entry.offset.map(|value| value as i64).unwrap_or(-1);
-                    write!(
-                        f,
-                        "AppendEntry: stream-id={}, range-index={}, offset={}, len={}",
-                        entry.stream_id, entry.index, offset, entry.len
-                    )
-                })
+            Ok(entries) => entries.iter().try_for_each(|entry| {
+                let offset = entry.offset.map(|value| value as i64).unwrap_or(-1);
+                write!(
+                    f,
+                    "AppendEntry: stream-id={}, range-index={}, offset={}, len={}",
+                    entry.stream_id, entry.index, offset, entry.len
+                )
             }),
         }
     }
