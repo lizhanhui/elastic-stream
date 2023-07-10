@@ -98,6 +98,9 @@ pub enum FetchError {
 
     #[error("The request is illegal")]
     BadRequest,
+
+    #[error("Stored data is found corrupted")]
+    DataCorrupted,
 }
 
 #[derive(Debug, Error)]

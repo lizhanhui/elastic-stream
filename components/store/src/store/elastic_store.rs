@@ -21,6 +21,7 @@ use crate::{
     option::{ReadOptions, WriteOptions},
     AppendRecordRequest, AppendResult, FetchResult, Store,
 };
+use bytes::Buf;
 use client::PlacementDriverIdGenerator;
 use crossbeam::channel::Sender;
 use futures::future::join_all;
@@ -244,7 +245,25 @@ impl Store for ElasticStore {
             let flattened_result: Vec<_> = io_result
                 .into_iter()
                 .map(|res| match res {
-                    Ok(Ok(res)) => Ok(res),
+                    Ok(Ok(mut res)) => {
+                        // Strip storage record header
+                        let mut record_prefix = util::bytes::advance_bytes(
+                            &mut res.payload,
+                            crate::RECORD_PREFIX_LENGTH as usize,
+                        );
+
+                        // Verify data integrity
+                        if record_prefix.len() < crate::RECORD_PREFIX_LENGTH as usize {
+                            return Err(FetchError::DataCorrupted);
+                        }
+
+                        if util::crc32::crc32_vectored(res.payload.iter())
+                            != record_prefix.get_u32()
+                        {
+                            return Err(FetchError::DataCorrupted);
+                        }
+                        Ok(res)
+                    }
                     Ok(Err(e)) => Err(e),
                     Err(_) => Err(FetchError::ChannelRecv), // Channel receive error branch
                 })

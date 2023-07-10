@@ -40,6 +40,7 @@ const (
 	ErrorCodePD_NOT_LEADER                 ErrorCode = 1503
 	ErrorCodeRS_INTERNAL_SERVER_ERROR      ErrorCode = 2500
 	ErrorCodeRS_NOT_IMPLEMENTED            ErrorCode = 2501
+	ErrorCodeRS_DATA_CORRUPTED             ErrorCode = 2502
 )
 
 var EnumNamesErrorCode = map[ErrorCode]string{
@@ -76,6 +77,7 @@ var EnumNamesErrorCode = map[ErrorCode]string{
 	ErrorCodePD_NOT_LEADER:                 "PD_NOT_LEADER",
 	ErrorCodeRS_INTERNAL_SERVER_ERROR:      "RS_INTERNAL_SERVER_ERROR",
 	ErrorCodeRS_NOT_IMPLEMENTED:            "RS_NOT_IMPLEMENTED",
+	ErrorCodeRS_DATA_CORRUPTED:             "RS_DATA_CORRUPTED",
 }
 
 var EnumValuesErrorCode = map[string]ErrorCode{
@@ -112,6 +114,7 @@ var EnumValuesErrorCode = map[string]ErrorCode{
 	"PD_NOT_LEADER":                 ErrorCodePD_NOT_LEADER,
 	"RS_INTERNAL_SERVER_ERROR":      ErrorCodeRS_INTERNAL_SERVER_ERROR,
 	"RS_NOT_IMPLEMENTED":            ErrorCodeRS_NOT_IMPLEMENTED,
+	"RS_DATA_CORRUPTED":             ErrorCodeRS_DATA_CORRUPTED,
 }
 
 func (v ErrorCode) String() string {
