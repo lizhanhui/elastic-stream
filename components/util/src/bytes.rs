@@ -33,7 +33,7 @@ impl<'a> Buf for BytesSliceCursor<'a> {
     }
 }
 
-pub fn advance_bytes(bufs: &mut Vec<Bytes>, mut n: usize) -> Bytes {
+pub fn advance_bytes(bufs: &mut [Bytes], mut n: usize) -> Bytes {
     let mut advanced_buf = BytesMut::with_capacity(n);
     bufs.iter_mut().try_for_each(|buf| {
         if n == 0 {
