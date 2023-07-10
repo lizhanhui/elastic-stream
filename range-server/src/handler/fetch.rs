@@ -148,6 +148,7 @@ impl<'a> Fetch<'a> {
             FetchError::NoRecord => ErrorCode::NO_NEW_RECORD,
             FetchError::RangeNotFound => ErrorCode::RANGE_NOT_FOUND,
             FetchError::BadRequest => ErrorCode::BAD_REQUEST,
+            FetchError::DataCorrupted => ErrorCode::RS_DATA_CORRUPTED,
         };
         status.message = Some(err.to_string());
     }
