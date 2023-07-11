@@ -8,6 +8,7 @@ use crate::{
 };
 use config::Configuration;
 use log::{error, info};
+use object_storage::object_storage::AsyncObjectStorage;
 use std::{cell::UnsafeCell, error::Error, os::fd::AsRawFd, rc::Rc, sync::Arc, thread};
 use store::{ElasticStore, Store};
 
@@ -36,6 +37,9 @@ pub fn launch(
         info!("Continuous profiling starts");
     }
 
+    // Load object storage service
+    let object_storage = AsyncObjectStorage::new(&config.object_storage, store.clone());
+
     recovery_completion_rx.blocking_recv()?;
 
     let mut channels = vec![];
@@ -55,6 +59,7 @@ pub fn launch(
         .map(|core_id| {
             let server_config = config.clone();
             let store = store.clone();
+            let object_storage = object_storage.clone();
             let (tx, rx) = mpsc::unbounded_channel();
             channels.push(rx);
 
@@ -79,6 +84,7 @@ pub fn launch(
                     let range_manager = Rc::new(UnsafeCell::new(DefaultRangeManager::new(
                         fetcher,
                         Rc::clone(&store),
+                        Rc::new(object_storage),
                     )));
                     let mut worker = Worker::new(worker_config, store, range_manager, client, None);
                     worker.serve(shutdown_tx)
@@ -116,6 +122,7 @@ pub fn launch(
                 let range_manager = Rc::new(UnsafeCell::new(DefaultRangeManager::new(
                     fetcher,
                     Rc::clone(&store),
+                    Rc::new(object_storage),
                 )));
 
                 let mut worker =

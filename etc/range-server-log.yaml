@@ -87,3 +87,8 @@ loggers:
     appenders:
       - range-server
     additive: false
+  object_storage:
+    level: trace
+    appenders:
+      - range-server
+    additive: false

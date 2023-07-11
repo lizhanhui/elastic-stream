@@ -1,26 +1,25 @@
 #![feature(async_fn_in_trait)]
 
 use bytes::BytesMut;
+use config::ObjectStorageConfig;
+use object_storage::range_fetcher::RangeFetchResult;
+use object_storage::range_fetcher::RangeFetcher;
 use std::env;
-use std::rc::Rc;
 use std::time::Duration;
 use store::error::FetchError;
-use tiered_storage::RangeFetchResult;
-use tiered_storage::RangeFetcher;
 
 use clap::Parser;
-use tiered_storage::object_manager::MemoryObjectManager;
-use tiered_storage::object_storage::ObjectTieredStorage;
-use tiered_storage::object_storage::ObjectTieredStorageConfig;
-use tiered_storage::TieredStorage;
+use object_storage::object_manager::MemoryObjectManager;
+use object_storage::object_storage::DefaultObjectStorage;
+use object_storage::ObjectStorage;
 use tokio::time::sleep;
 
 fn main() {
-    env::set_var("RUST_LOG", "tiered_storage=debug");
+    env::set_var("RUST_LOG", "object_storage=debug");
     env_logger::init();
     let args = Args::parse();
     tokio_uring::start(async move {
-        let config = ObjectTieredStorageConfig {
+        let config = ObjectStorageConfig {
             endpoint: args.endpoint,
             bucket: args.bucket,
             region: args.region,
@@ -28,16 +27,15 @@ fn main() {
             part_size: args.part_size,
             max_cache_size: args.max_cache_size,
             cache_low_watermark: args.cache_low_watermark,
-            force_flush_interval: Duration::from_secs(60 * 60),
+            force_flush_secs: 60 * 60,
         };
-        let range_fetcher = Rc::new(RangeFetcherMock {});
+        let range_fetcher = RangeFetcherMock {};
         let memory_object_manager: MemoryObjectManager = Default::default();
-        let object_manager = Rc::new(memory_object_manager);
-        let object_store = ObjectTieredStorage::new(config, range_fetcher, object_manager).unwrap();
-        object_store.add_range(1, 2, 0, 0);
+        let object_manager = memory_object_manager;
+        let object_store = DefaultObjectStorage::new(&config, range_fetcher, object_manager);
         let mut end_offset = 1;
         loop {
-            object_store.new_record_arrived(1, 2, end_offset, 128 * 1024);
+            object_store.new_commit(1, 2, 128 * 1024);
             end_offset = end_offset + 1;
             sleep(Duration::from_millis(args.send_interval_millis)).await;
         }
