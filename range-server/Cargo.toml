@@ -26,6 +26,7 @@ flatbuffers = { workspace = true }
 futures = { workspace = true }
 io-uring = { workspace = true }
 lazy_static = { version = "1.4.0" }
+local-sync = { workspace = true }
 log = { workspace = true }
 log4rs = { workspace = true }
 minstant = { workspace = true }
