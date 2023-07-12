@@ -4,8 +4,7 @@ import (
 	"context"
 
 	"github.com/AutoMQ/pd/api/rpcfb/rpcfb"
-	"github.com/AutoMQ/pd/pkg/sbp/codec/format"
-	"github.com/AutoMQ/pd/pkg/sbp/codec/operation"
+	"github.com/AutoMQ/pd/pkg/sbp/codec"
 	"github.com/AutoMQ/pd/pkg/util/fbutil"
 )
 
@@ -35,7 +34,7 @@ type OutRequest interface {
 	marshaller
 
 	// Operation returns the operation of the request.
-	Operation() operation.Operation
+	Operation() rpcfb.OperationCode
 }
 
 // baseRequest is a base implementation of Request
@@ -64,7 +63,7 @@ type EmptyRequest struct {
 	baseUnmarshaler
 }
 
-func (e EmptyRequest) Unmarshal(_ format.Format, _ []byte) error {
+func (e EmptyRequest) Unmarshal(_ codec.Format, _ []byte) error {
 	_ = e.baseUnmarshaler
 	return nil
 }
@@ -82,7 +81,7 @@ func (hr *HeartbeatRequest) marshalFlatBuffer() ([]byte, error) {
 	return fbutil.Marshal(&hr.HeartbeatRequestT), nil
 }
 
-func (hr *HeartbeatRequest) Marshal(fmt format.Format) ([]byte, error) {
+func (hr *HeartbeatRequest) Marshal(fmt codec.Format) ([]byte, error) {
 	return marshal(hr, fmt)
 }
 
@@ -91,12 +90,12 @@ func (hr *HeartbeatRequest) unmarshalFlatBuffer(data []byte) error {
 	return nil
 }
 
-func (hr *HeartbeatRequest) Unmarshal(fmt format.Format, data []byte) error {
+func (hr *HeartbeatRequest) Unmarshal(fmt codec.Format, data []byte) error {
 	return unmarshal(hr, fmt, data)
 }
 
-func (hr *HeartbeatRequest) Operation() operation.Operation {
-	return operation.Operation{Code: operation.OpHeartbeat}
+func (hr *HeartbeatRequest) Operation() rpcfb.OperationCode {
+	return rpcfb.OperationCodeHEARTBEAT
 }
 
 // IDAllocationRequest is a request to operation.OpAllocateID
@@ -112,7 +111,7 @@ func (ia *IDAllocationRequest) unmarshalFlatBuffer(data []byte) error {
 	return nil
 }
 
-func (ia *IDAllocationRequest) Unmarshal(fmt format.Format, data []byte) error {
+func (ia *IDAllocationRequest) Unmarshal(fmt codec.Format, data []byte) error {
 	return unmarshal(ia, fmt, data)
 }
 
@@ -133,7 +132,7 @@ func (lr *ListRangeRequest) unmarshalFlatBuffer(data []byte) error {
 	return nil
 }
 
-func (lr *ListRangeRequest) Unmarshal(fmt format.Format, data []byte) error {
+func (lr *ListRangeRequest) Unmarshal(fmt codec.Format, data []byte) error {
 	return unmarshal(lr, fmt, data)
 }
 
@@ -154,7 +153,7 @@ func (sr *SealRangeRequest) unmarshalFlatBuffer(data []byte) error {
 	return nil
 }
 
-func (sr *SealRangeRequest) Unmarshal(fmt format.Format, data []byte) error {
+func (sr *SealRangeRequest) Unmarshal(fmt codec.Format, data []byte) error {
 	return unmarshal(sr, fmt, data)
 }
 
@@ -175,7 +174,7 @@ func (cr *CreateRangeRequest) unmarshalFlatBuffer(data []byte) error {
 	return nil
 }
 
-func (cr *CreateRangeRequest) Unmarshal(fmt format.Format, data []byte) error {
+func (cr *CreateRangeRequest) Unmarshal(fmt codec.Format, data []byte) error {
 	return unmarshal(cr, fmt, data)
 }
 
@@ -196,7 +195,7 @@ func (cs *CreateStreamRequest) unmarshalFlatBuffer(data []byte) error {
 	return nil
 }
 
-func (cs *CreateStreamRequest) Unmarshal(fmt format.Format, data []byte) error {
+func (cs *CreateStreamRequest) Unmarshal(fmt codec.Format, data []byte) error {
 	return unmarshal(cs, fmt, data)
 }
 
@@ -217,7 +216,7 @@ func (ds *DeleteStreamRequest) unmarshalFlatBuffer(data []byte) error {
 	return nil
 }
 
-func (ds *DeleteStreamRequest) Unmarshal(fmt format.Format, data []byte) error {
+func (ds *DeleteStreamRequest) Unmarshal(fmt codec.Format, data []byte) error {
 	return unmarshal(ds, fmt, data)
 }
 
@@ -238,7 +237,7 @@ func (us *UpdateStreamRequest) unmarshalFlatBuffer(data []byte) error {
 	return nil
 }
 
-func (us *UpdateStreamRequest) Unmarshal(fmt format.Format, data []byte) error {
+func (us *UpdateStreamRequest) Unmarshal(fmt codec.Format, data []byte) error {
 	return unmarshal(us, fmt, data)
 }
 
@@ -259,7 +258,7 @@ func (ds *DescribeStreamRequest) unmarshalFlatBuffer(data []byte) error {
 	return nil
 }
 
-func (ds *DescribeStreamRequest) Unmarshal(fmt format.Format, data []byte) error {
+func (ds *DescribeStreamRequest) Unmarshal(fmt codec.Format, data []byte) error {
 	return unmarshal(ds, fmt, data)
 }
 
@@ -280,7 +279,7 @@ func (rm *ReportMetricsRequest) unmarshalFlatBuffer(data []byte) error {
 	return nil
 }
 
-func (rm *ReportMetricsRequest) Unmarshal(fmt format.Format, data []byte) error {
+func (rm *ReportMetricsRequest) Unmarshal(fmt codec.Format, data []byte) error {
 	return unmarshal(rm, fmt, data)
 }
 
@@ -301,7 +300,7 @@ func (dpd *DescribePDClusterRequest) unmarshalFlatBuffer(data []byte) error {
 	return nil
 }
 
-func (dpd *DescribePDClusterRequest) Unmarshal(fmt format.Format, data []byte) error {
+func (dpd *DescribePDClusterRequest) Unmarshal(fmt codec.Format, data []byte) error {
 	return unmarshal(dpd, fmt, data)
 }
 

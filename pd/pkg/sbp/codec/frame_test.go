@@ -8,8 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 
-	"github.com/AutoMQ/pd/pkg/sbp/codec/format"
-	"github.com/AutoMQ/pd/pkg/sbp/codec/operation"
+	"github.com/AutoMQ/pd/api/rpcfb/rpcfb"
 )
 
 func TestNextID(t *testing.T) {
@@ -48,10 +47,10 @@ func TestReadFrame(t *testing.T) {
 				0x53, 0x8D, 0x4D, 0x69, // payload checksum
 			},
 			want: &DataFrame{baseFrame{
-				OpCode:    operation.Operation{Code: operation.OpListRange},
+				OpCode:    rpcfb.OperationCodeLIST_RANGE,
 				Flag:      3,
 				StreamID:  16909060,
-				HeaderFmt: format.FlatBuffer(),
+				HeaderFmt: FormatFlatBuffer,
 				Header:    []byte{0x01, 0x02, 0x03, 0x04},
 				Payload:   []byte{0x05, 0x06, 0x07, 0x08},
 			}},
@@ -70,10 +69,10 @@ func TestReadFrame(t *testing.T) {
 				0x53, 0x8D, 0x4D, 0x69, // payload checksum
 			},
 			want: &PingFrame{baseFrame{
-				OpCode:    operation.Operation{Code: operation.OpPing},
+				OpCode:    rpcfb.OperationCodePING,
 				Flag:      3,
 				StreamID:  16909060,
-				HeaderFmt: format.FlatBuffer(),
+				HeaderFmt: FormatFlatBuffer,
 				Header:    nil,
 				Payload:   []byte{0x05, 0x06, 0x07, 0x08},
 			}},
@@ -92,10 +91,10 @@ func TestReadFrame(t *testing.T) {
 				0x00, 0x00, 0x00, 0x00, // payload checksum
 			},
 			want: &PingFrame{baseFrame{
-				OpCode:    operation.Operation{Code: operation.OpPing},
+				OpCode:    rpcfb.OperationCodePING,
 				Flag:      3,
 				StreamID:  16909060,
-				HeaderFmt: format.FlatBuffer(),
+				HeaderFmt: FormatFlatBuffer,
 				Header:    []byte{0x01, 0x02, 0x03, 0x04},
 				Payload:   nil,
 			}},
@@ -113,10 +112,10 @@ func TestReadFrame(t *testing.T) {
 				0x00, 0x00, 0x00, 0x00, // payload checksum
 			},
 			want: &PingFrame{baseFrame{
-				OpCode:    operation.Operation{Code: operation.OpPing},
+				OpCode:    rpcfb.OperationCodePING,
 				Flag:      3,
 				StreamID:  16909060,
-				HeaderFmt: format.FlatBuffer(),
+				HeaderFmt: FormatFlatBuffer,
 				Header:    nil,
 				Payload:   nil,
 			}},
@@ -267,10 +266,10 @@ func TestWriteFrame(t *testing.T) {
 		{
 			name: "normal case",
 			frame: DataFrame{baseFrame{
-				OpCode:    operation.Operation{Code: operation.OpListRange},
+				OpCode:    rpcfb.OperationCodeLIST_RANGE,
 				Flag:      3,
 				StreamID:  16909060,
-				HeaderFmt: format.FlatBuffer(),
+				HeaderFmt: FormatFlatBuffer,
 				Header:    []byte{0x01, 0x02, 0x03, 0x04},
 				Payload:   []byte{0x05, 0x06, 0x07, 0x08},
 			}},
@@ -290,10 +289,10 @@ func TestWriteFrame(t *testing.T) {
 		{
 			name: "normal case without header",
 			frame: PingFrame{baseFrame{
-				OpCode:    operation.Operation{Code: operation.OpPing},
+				OpCode:    rpcfb.OperationCodePING,
 				Flag:      3,
 				StreamID:  16909060,
-				HeaderFmt: format.FlatBuffer(),
+				HeaderFmt: FormatFlatBuffer,
 				Header:    nil,
 				Payload:   []byte{0x05, 0x06, 0x07, 0x08},
 			}},
@@ -312,10 +311,10 @@ func TestWriteFrame(t *testing.T) {
 		{
 			name: "normal case without payload",
 			frame: PingFrame{baseFrame{
-				OpCode:    operation.Operation{Code: operation.OpPing},
+				OpCode:    rpcfb.OperationCodePING,
 				Flag:      3,
 				StreamID:  16909060,
-				HeaderFmt: format.FlatBuffer(),
+				HeaderFmt: FormatFlatBuffer,
 				Header:    []byte{0x01, 0x02, 0x03, 0x04},
 				Payload:   nil,
 			}},
@@ -334,10 +333,10 @@ func TestWriteFrame(t *testing.T) {
 		{
 			name: "normal case without header and payload",
 			frame: PingFrame{baseFrame{
-				OpCode:    operation.Operation{Code: operation.OpPing},
+				OpCode:    rpcfb.OperationCodePING,
 				Flag:      3,
 				StreamID:  16909060,
-				HeaderFmt: format.FlatBuffer(),
+				HeaderFmt: FormatFlatBuffer,
 				Header:    nil,
 				Payload:   nil,
 			}},
@@ -355,10 +354,10 @@ func TestWriteFrame(t *testing.T) {
 		{
 			name: "too large payload",
 			frame: PingFrame{baseFrame{
-				OpCode:    operation.Operation{Code: operation.OpPing},
+				OpCode:    rpcfb.OperationCodePING,
 				Flag:      3,
 				StreamID:  16909060,
-				HeaderFmt: format.FlatBuffer(),
+				HeaderFmt: FormatFlatBuffer,
 				Header:    nil,
 				Payload:   make([]byte, 16*1024*1024+1),
 			}},
@@ -398,10 +397,10 @@ func TestWriteFrameError(t *testing.T) {
 	re := require.New(t)
 	framer := NewFramer(&errorWriter{}, nil, zap.NewNop())
 	err := framer.WriteFrame(baseFrame{
-		OpCode:    operation.Operation{Code: operation.OpPing},
+		OpCode:    rpcfb.OperationCodePING,
 		Flag:      3,
 		StreamID:  16909060,
-		HeaderFmt: format.FlatBuffer(),
+		HeaderFmt: FormatFlatBuffer,
 		Header:    nil,
 		Payload:   nil,
 	})
