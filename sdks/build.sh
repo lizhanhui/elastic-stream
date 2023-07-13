@@ -19,7 +19,7 @@ install_cross() {
     if [ $? == 0 ]; then
         echo "cross has installed"
     else
-        cargo install cross
+        cargo install cross --git https://github.com/cross-rs/cross
     fi
 }
 

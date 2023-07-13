@@ -16,7 +16,8 @@ public class Frontend extends ElasticStreamObject {
     }
 
     private static void loadNativeLibrary() {
-        String sharedLibName = "frontend";
+        String sharedLibName = "frontend" + '_' + PlatformDependent.normalizedOs() + '_'
+                + PlatformDependent.normalizedArch();
         ClassLoader cl = PlatformDependent.getClassLoader(Native.class);
         try {
             NativeLibraryLoader.load(sharedLibName, cl);
