@@ -103,7 +103,7 @@ pub enum FetchError {
     DataCorrupted,
 }
 
-#[derive(Debug, Error)]
+#[derive(Debug, Error, PartialEq)]
 pub enum AppendError {
     #[error("Failed to submit AppendRecordRequest")]
     SubmissionQueue,

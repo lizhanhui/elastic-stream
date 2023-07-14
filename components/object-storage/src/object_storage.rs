@@ -9,7 +9,7 @@ use std::{
     collections::{HashMap, HashSet},
 };
 use std::{env, thread};
-use store::{ElasticStore, Store};
+use store::Store;
 use tokio::sync::{mpsc, oneshot};
 use tokio::time::sleep;
 
@@ -26,10 +26,12 @@ pub struct AsyncObjectStorage {
 }
 
 impl AsyncObjectStorage {
-    pub fn new(config: &ObjectStorageConfig, store: ElasticStore) -> Self {
+    pub fn new<S>(config: &ObjectStorageConfig, store: S) -> Self
+    where
+        S: Store + Send + Sync + 'static,
+    {
         let (tx, mut rx) = mpsc::unbounded_channel();
         let config = config.clone();
-        let store = store;
         let _ = thread::Builder::new()
             .name("ObjectStorage".to_owned())
             .spawn(move || {

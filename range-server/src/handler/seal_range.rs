@@ -36,7 +36,7 @@ impl<'a> SealRange<'a> {
 
     pub(crate) async fn apply<S, M>(
         &self,
-        _store: Rc<S>,
+        store: Rc<S>,
         range_manager: Rc<UnsafeCell<M>>,
         response: &mut Frame,
     ) where
@@ -53,7 +53,7 @@ impl<'a> SealRange<'a> {
 
         let range = request.range;
         let mut range = Into::<RangeMetadata>::into(&*range);
-
+        store.seal(range.clone());
         match manager.seal(&mut range) {
             Ok(_) => {
                 status.code = ErrorCode::OK;

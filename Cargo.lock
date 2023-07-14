@@ -3692,6 +3692,7 @@ dependencies = [
  "io-uring",
  "lazy_static",
  "libc",
+ "local-sync",
  "log",
  "minstant",
  "mock-server",

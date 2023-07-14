@@ -135,7 +135,7 @@ impl Append {
                     let options = WriteOptions::default();
 
                     // Append to store
-                    let append_result = store.append(options, req).await?;
+                    let append_result = store.append(&options, req).await?;
                     Ok(append_result)
                 };
                 Box::pin(result)

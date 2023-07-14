@@ -37,7 +37,7 @@ impl<'a> CreateRange<'a> {
 
     pub(crate) async fn apply<S, M>(
         &self,
-        _store: Rc<S>,
+        store: Rc<S>,
         range_manager: Rc<UnsafeCell<M>>,
         response: &mut Frame,
     ) where
@@ -52,6 +52,7 @@ impl<'a> CreateRange<'a> {
 
         let range = request.range;
         let range: RangeMetadata = Into::<RangeMetadata>::into(&*range);
+        store.create(range.clone());
         if let Err(e) = manager.create_range(range.clone()) {
             error!("Failed to create range: {:?}", e);
             let mut status = StatusT::default();

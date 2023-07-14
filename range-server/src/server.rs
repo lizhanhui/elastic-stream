@@ -10,7 +10,7 @@ use config::Configuration;
 use log::{error, info};
 use object_storage::object_storage::AsyncObjectStorage;
 use std::{cell::UnsafeCell, error::Error, os::fd::AsRawFd, rc::Rc, sync::Arc, thread};
-use store::{ElasticStore, Store};
+use store::{BufferedStore, ElasticStore, Store};
 
 use tokio::sync::{broadcast, mpsc, oneshot};
 
@@ -74,7 +74,7 @@ pub fn launch(
                         primary: false,
                     };
 
-                    let store = Rc::new(store);
+                    let store = Rc::new(BufferedStore::new(store));
                     let client = Rc::new(client::Client::new(
                         Arc::clone(&server_config),
                         shutdown_tx.clone(),
@@ -117,7 +117,7 @@ pub fn launch(
                     shutdown_tx.clone(),
                 ));
                 let fetcher = PlacementClient::new(Rc::clone(&client));
-                let store = Rc::new(store);
+                let store = Rc::new(BufferedStore::new(store));
 
                 let range_manager = Rc::new(UnsafeCell::new(DefaultRangeManager::new(
                     fetcher,

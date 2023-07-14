@@ -31,7 +31,7 @@ pub(crate) mod io;
 mod offset_manager;
 pub mod option;
 mod request;
-mod store;
+pub mod store;
 pub mod util;
 
 use self::option::{ReadOptions, WriteOptions};
@@ -41,6 +41,7 @@ use std::sync::Arc;
 
 pub use crate::io::record::RECORD_PREFIX_LENGTH;
 pub use crate::store::append_result::AppendResult;
+pub use crate::store::buffer::store::BufferedStore;
 pub use crate::store::elastic_store::ElasticStore;
 pub use crate::store::fetch_result::FetchResult;
 pub use request::AppendRecordRequest;
@@ -57,7 +58,7 @@ pub trait Store {
     /// * `record` - Data record to append.
     async fn append(
         &self,
-        options: WriteOptions,
+        options: &WriteOptions,
         request: AppendRecordRequest,
     ) -> Result<AppendResult, AppendError>;
 

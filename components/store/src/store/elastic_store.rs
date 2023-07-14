@@ -178,7 +178,7 @@ impl ElasticStore {
 impl Store for ElasticStore {
     async fn append(
         &self,
-        _options: WriteOptions,
+        _options: &WriteOptions,
         request: AppendRecordRequest,
     ) -> Result<AppendResult, AppendError> {
         let now = std::time::Instant::now();
@@ -477,7 +477,7 @@ mod tests {
         });
 
         let store = rx.await.unwrap();
-
+        let options = WriteOptions::default();
         let mut append_fs = vec![];
         (0..1024)
             .into_iter()
@@ -489,8 +489,7 @@ mod tests {
                 buffer: Bytes::from(format!("{}-{}", "hello, world", i)),
             })
             .for_each(|req| {
-                let options = WriteOptions::default();
-                let append_f = store.append(options, req);
+                let append_f = store.append(&options, req);
                 append_fs.push(append_f)
             });
 
