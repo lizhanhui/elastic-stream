@@ -318,6 +318,13 @@ impl Stream for ReplicationStream {
             .unwrap_or(0)
     }
 
+    fn confirm_offset(&self) -> u64 {
+        self.last_range
+            .borrow()
+            .as_ref()
+            .map_or(0, |r| r.confirm_offset())
+    }
+
     /// next record offset to be appended.
     fn next_offset(&self) -> u64 {
         *self.next_offset.borrow()

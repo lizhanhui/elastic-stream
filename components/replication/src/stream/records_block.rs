@@ -63,6 +63,10 @@ impl RecordsBlock {
             .unwrap_or(0)
     }
 
+    pub(crate) fn is_empty(&self) -> bool {
+        self.records.is_empty()
+    }
+
     pub(crate) fn empty_block(offset: u64) -> Self {
         Self {
             records: vec![],

@@ -158,6 +158,10 @@ where
         self.stream.start_offset()
     }
 
+    fn confirm_offset(&self) -> u64 {
+        self.stream.confirm_offset()
+    }
+
     fn next_offset(&self) -> u64 {
         self.stream.next_offset()
     }

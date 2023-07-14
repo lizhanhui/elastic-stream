@@ -142,10 +142,10 @@ impl RecordsBlockKey {
 
 #[derive(Clone, Debug)]
 pub(crate) struct Readahead {
-    start_offset: u64,
-    end_offset: Option<u64>,
-    size_hint: u32,
-    timestamp: Instant,
+    pub(crate) start_offset: u64,
+    pub(crate) end_offset: Option<u64>,
+    pub(crate) size_hint: u32,
+    pub(crate) timestamp: Instant,
 }
 
 type StreamId = u64;
@@ -402,9 +402,13 @@ fn re_gen_readahead(readahead: &Readahead) -> Readahead {
     }
 }
 
-fn block_size_align(size: u32) -> u32 {
+pub(crate) fn block_size_align(size: u32) -> u32 {
     let align = BLOCK_SIZE;
-    (size + align - 1) / align * align
+    if let Some(size) = size.checked_add(align - 1) {
+        size / align * align
+    } else {
+        u32::MAX / align * align
+    }
 }
 
 #[cfg(test)]

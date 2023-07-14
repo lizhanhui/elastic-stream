@@ -21,6 +21,8 @@ pub(crate) trait Stream {
 
     fn start_offset(&self) -> u64;
 
+    fn confirm_offset(&self) -> u64;
+
     fn next_offset(&self) -> u64;
 
     async fn append(&self, record_batch: RecordBatch) -> Result<u64, ReplicationError>;

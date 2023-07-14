@@ -22,7 +22,7 @@ use crate::{
 };
 
 use super::{
-    cache::HotCache,
+    cache::{BlockCache, HotCache},
     cache_stream::CacheStream,
     object_reader::{AsyncObjectReader, DefaultObjectReader},
     object_stream::ObjectStream,
@@ -37,7 +37,8 @@ pub(crate) struct StreamManager {
     clients: Vec<Rc<Client>>,
     round_robin: usize,
     streams: Rc<RefCell<HashMap<u64, Rc<FStream>>>>,
-    cache: Rc<HotCache>,
+    hot_cache: Rc<HotCache>,
+    block_cache: Rc<BlockCache>,
     object_reader: Rc<AsyncObjectReader>,
 }
 
@@ -45,7 +46,8 @@ impl StreamManager {
     pub(crate) fn new(config: Arc<Configuration>) -> Self {
         let (shutdown, _rx) = broadcast::channel(1);
         let streams = Rc::new(RefCell::new(HashMap::new()));
-        let cache = Rc::new(HotCache::new(Self::get_max_cache_size()));
+        let cache = Rc::new(HotCache::new(Self::get_max_cache_size() * 2 / 3));
+        let block_cache = Rc::new(BlockCache::new(Self::get_max_cache_size() / 3));
 
         let mut clients = vec![];
         for _ in 0..config.replication.connection_pool_size {
@@ -60,8 +62,9 @@ impl StreamManager {
             clients,
             round_robin: 0,
             streams,
-            cache,
+            hot_cache: cache,
             object_reader,
+            block_cache,
         }
     }
 
@@ -196,7 +199,8 @@ impl StreamManager {
             }
         };
         let streams = self.streams.clone();
-        let cache = self.cache.clone();
+        let hot_cache = self.hot_cache.clone();
+        let block_cache = self.block_cache.clone();
         let object_reader = self.object_reader.clone();
         tokio_uring::spawn(async move {
             let client = Rc::downgrade(&client);
@@ -204,7 +208,8 @@ impl StreamManager {
                 request.stream_id,
                 request.epoch,
                 client,
-                cache,
+                hot_cache,
+                block_cache,
                 object_reader,
             );
             if let Err(e) = stream.open().await {
@@ -285,15 +290,16 @@ impl StreamManager {
         stream_id: u64,
         epoch: u64,
         client: Weak<Client>,
-        cache: Rc<HotCache>,
+        hot_cache: Rc<HotCache>,
+        block_cache: Rc<BlockCache>,
         object_reader: Rc<AsyncObjectReader>,
     ) -> Rc<FStream> {
-        let stream = ReplicationStream::new(stream_id as i64, epoch, client, cache.clone());
+        let stream = ReplicationStream::new(stream_id as i64, epoch, client, hot_cache.clone());
 
         let object_reader = DefaultObjectReader::new(object_reader);
         let stream = ObjectStream::new(stream, object_reader);
 
-        CacheStream::new(stream_id, stream, cache)
+        CacheStream::new(stream_id, stream, hot_cache, block_cache)
     }
 
     fn get_max_cache_size() -> u64 {

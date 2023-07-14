@@ -1,27 +1,38 @@
 use std::{cmp::min, rc::Rc};
 
-use log::error;
+use log::{debug, error, warn};
 use model::RecordBatch;
 
 use crate::ReplicationError;
 
-use super::{cache::HotCache, FetchDataset, Stream};
+use super::{
+    cache::{block_size_align, BlockCache, HotCache, Readahead},
+    records_block::RecordsBlock,
+    FetchDataset, Stream,
+};
 
 pub(crate) struct CacheStream<S> {
     stream_id: u64,
     stream: Rc<S>,
     hot_cache: Rc<HotCache>,
+    block_cache: Rc<BlockCache>,
 }
 
 impl<S> CacheStream<S>
 where
     S: Stream + 'static,
 {
-    pub(crate) fn new(stream_id: u64, stream: Rc<S>, hot_cache: Rc<HotCache>) -> Rc<Self> {
+    pub(crate) fn new(
+        stream_id: u64,
+        stream: Rc<S>,
+        hot_cache: Rc<HotCache>,
+        block_cache: Rc<BlockCache>,
+    ) -> Rc<Self> {
         Rc::new(Self {
             stream_id,
             stream,
             hot_cache,
+            block_cache,
         })
     }
 
@@ -33,6 +44,7 @@ where
     ) -> Result<FetchDataset, ReplicationError> {
         let mut blocks = vec![];
 
+        // 1. try read from hot cache.
         let hot_block =
             self.hot_cache
                 .get_block(self.stream_id, start_offset, end_offset, batch_max_bytes);
@@ -45,18 +57,89 @@ where
             return Ok(FetchDataset::Full(blocks));
         }
 
-        // TODO: read ahead in background.
+        // 2. try read from block cache
+        let (block, readahead) =
+            self.block_cache
+                .get_block(self.stream_id, start_offset, end_offset, batch_max_bytes);
+        start_offset = block.end_offset();
+        batch_max_bytes -= min(block.size(), batch_max_bytes);
+        if !block.is_empty() {
+            blocks.push(block);
+        }
+
+        // 2.1 trigger background readahead.
+        if let Some(readahead) = readahead {
+            self.background_readahead(readahead);
+        }
+        if start_offset >= end_offset || batch_max_bytes == 0 {
+            // fullfil by block cache.
+            return Ok(FetchDataset::Full(blocks));
+        }
+
+        // 3. read from stream.
+        // double the end_offset and size to readahead.
+        let readahead_end_offset = min(
+            self.stream.confirm_offset(),
+            start_offset + (end_offset - start_offset) * 2,
+        );
+        let readahead_batch_max_bytes = block_size_align(batch_max_bytes * 2);
+
         let dataset = self
             .stream
-            .fetch(start_offset, end_offset, batch_max_bytes)
+            .fetch(
+                start_offset,
+                readahead_end_offset,
+                readahead_batch_max_bytes,
+            )
             .await?;
         if let FetchDataset::Full(mut remote_blocks) = dataset {
-            blocks.append(&mut remote_blocks);
+            let mut remaining_block_index = 0;
+            for block in remote_blocks.iter() {
+                let records = block.get_records(start_offset, end_offset, batch_max_bytes);
+                if records.is_empty() {
+                    break;
+                }
+                if records.last().unwrap().end_offset() == block.end_offset() {
+                    remaining_block_index += 1;
+                }
+                blocks.push(RecordsBlock::new(records));
+            }
+            remote_blocks.drain(0..remaining_block_index);
+            if !remote_blocks.is_empty() {
+                self.block_cache.insert(self.stream_id, remote_blocks);
+            }
             Ok(FetchDataset::Full(blocks))
         } else {
             error!("fetch dataset is not full");
             Err(ReplicationError::Internal)
         }
+    }
+
+    fn background_readahead(&self, readahead: Readahead) {
+        let stream_id = self.stream_id;
+        let stream = self.stream.clone();
+        let block_cache = self.block_cache.clone();
+        tokio_uring::spawn(async move {
+            let start_offset = readahead.start_offset;
+            let end_offset = readahead
+                .end_offset
+                .unwrap_or_else(|| stream.confirm_offset());
+            let size = readahead.size_hint;
+            debug!("stream{stream_id} background readahead([{start_offset},{end_offset}), {size})");
+            let rst = stream.fetch(start_offset, end_offset, size).await;
+            match rst {
+                Ok(dataset) => {
+                    if let FetchDataset::Full(remote_blocks) = dataset {
+                        block_cache.insert(stream_id, remote_blocks);
+                    } else {
+                        error!("stream{stream_id} readahead([{start_offset},{end_offset}), {size}) failed, not full dataset");
+                    }
+                }
+                Err(e) => {
+                    warn!("stream{stream_id} readahead([{start_offset},{end_offset}), {size}) failed: {}", e);
+                }
+            }
+        });
     }
 }
 
@@ -74,6 +157,10 @@ where
 
     fn start_offset(&self) -> u64 {
         self.stream.start_offset()
+    }
+
+    fn confirm_offset(&self) -> u64 {
+        self.stream.confirm_offset()
     }
 
     fn next_offset(&self) -> u64 {
