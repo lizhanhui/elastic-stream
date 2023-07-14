@@ -81,14 +81,14 @@ where
                             Internal
                         })?
                         .end_offset();
-                    let object_blocks_len = object_blocks.iter().map(|b| b.len()).sum();
+                    let object_blocks_len = object_blocks.iter().map(|b| b.size()).sum();
                     start_offset = object_blocks_end_offset;
                     remaining_size -= min(object_blocks_len, remaining_size);
                     final_blocks.append(&mut object_blocks);
                 }
             }
             if remaining_size > 0 {
-                let records_blocks_len = records_blocks.iter().map(|b| b.len()).sum();
+                let records_blocks_len = records_blocks.iter().map(|b| b.size()).sum();
                 remaining_size -= min(records_blocks_len, remaining_size);
                 start_offset = records_blocks.last().unwrap().end_offset();
                 final_blocks.append(&mut records_blocks);
@@ -120,7 +120,7 @@ fn object_read_first(
     for mut block in records_blocks.into_iter() {
         end_offset = block.end_offset();
         block.trim(objects_end_offset, None);
-        if block.len() > 0 {
+        if block.size() > 0 {
             blocks.push(block);
         }
     }

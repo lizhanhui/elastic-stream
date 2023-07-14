@@ -37,7 +37,7 @@ where
             self.hot_cache
                 .get_block(self.stream_id, start_offset, end_offset, batch_max_bytes);
         start_offset = hot_block.end_offset();
-        batch_max_bytes -= min(hot_block.len(), batch_max_bytes);
+        batch_max_bytes -= min(hot_block.size(), batch_max_bytes);
 
         blocks.push(hot_block);
         if start_offset >= end_offset || batch_max_bytes == 0 {

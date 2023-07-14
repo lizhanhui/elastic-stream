@@ -34,6 +34,7 @@
         "nonoverlapping",
         "oneshot",
         "overcommit",
+        "Readahead",
         "rocksdb",
         "SPSC",
         "SQPOLL",

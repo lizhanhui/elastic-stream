@@ -1,3 +1,4 @@
+use std::cmp::min;
 use std::fmt::Debug;
 use std::fmt::Formatter;
 
@@ -20,23 +21,29 @@ impl RecordsBlock {
     }
 
     #[allow(dead_code)]
-    pub(crate) fn get_records(&self, start_offset: u64, end_offset: u64) -> Vec<BlockRecord> {
+    pub(crate) fn get_records(
+        &self,
+        start_offset: u64,
+        end_offset: u64,
+        mut size_hint: u32,
+    ) -> Vec<BlockRecord> {
         let mut records = vec![];
         for record in &self.records {
             let record_end_offset = record.start_offset + record.end_offset_delta as u64;
             if record_end_offset <= start_offset {
                 continue;
             }
-            if record.start_offset >= end_offset {
+            if record.start_offset >= end_offset || size_hint == 0 {
                 break;
             }
+            size_hint -= min(record.size(), size_hint);
             records.push(record.clone());
         }
         records
     }
 
-    pub(crate) fn len(&self) -> u32 {
-        self.records.iter().map(|r| r.len()).sum()
+    pub(crate) fn size(&self) -> u32 {
+        self.records.iter().map(|r| r.size()).sum()
     }
 
     pub(crate) fn start_offset(&self) -> u64 {
@@ -161,7 +168,7 @@ pub(crate) struct BlockRecord {
 }
 
 impl BlockRecord {
-    pub(crate) fn len(&self) -> u32 {
+    pub(crate) fn size(&self) -> u32 {
         self.data.iter().map(|d| d.len()).sum::<usize>() as u32
     }
 

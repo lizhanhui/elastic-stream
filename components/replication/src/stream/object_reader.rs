@@ -72,7 +72,7 @@ impl ObjectReader for DefaultObjectReader {
                 position = 0;
             }
             object_metadata_manager.add_position_hint(end_offset, position);
-            position += block.len();
+            position += block.size();
         }
         // TODO: double check block continuous.
         Ok(object_blocks)

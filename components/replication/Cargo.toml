@@ -16,6 +16,7 @@ flatbuffers = { workspace = true }
 itertools = { workspace = true }
 local-sync = { workspace = true }
 log = { workspace = true }
+lru = { workspace = true }
 model = { path = "../model" }
 opendal = { workspace = true }
 protocol = { path = "../protocol" }
