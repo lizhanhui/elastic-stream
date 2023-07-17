@@ -1,4 +1,5 @@
 use config::ObjectStorageConfig;
+use log::info;
 use model::object::ObjectMetadata;
 use opendal::services::{Fs, S3};
 use opendal::Operator;
@@ -17,7 +18,7 @@ use crate::object_manager::MemoryObjectManager;
 use crate::range_accumulator::{DefaultRangeAccumulator, RangeAccumulator};
 use crate::range_fetcher::{DefaultRangeFetcher, RangeFetcher};
 use crate::range_offload::RangeOffload;
-use crate::{ObjectManager, ObjectStorage};
+use crate::{shutdown_chan, ObjectManager, ObjectStorage, ShutdownRx, ShutdownTx};
 use crate::{Owner, RangeKey};
 
 #[derive(Clone)]
@@ -67,6 +68,11 @@ impl AsyncObjectStorage {
                                     let _ = tx.send(rst);
                                 });
                             }
+                            Task::Close(_) => {
+                                let object_storage = object_storage.clone();
+                                object_storage.close().await;
+                                break;
+                            }
                         }
                     }
                 });
@@ -107,12 +113,19 @@ impl ObjectStorage for AsyncObjectStorage {
         let _ = self.tx.send(Task::GetOffloadingRange(tx));
         rx.await.unwrap()
     }
+
+    async fn close(&self) {
+        let (tx, rx) = oneshot::channel();
+        let _ = self.tx.send(Task::Close(tx));
+        let _ = rx.await;
+    }
 }
 
 enum Task {
     NewCommit(u64, u32, u32),
     GetObjects(GetObjectsTask),
     GetOffloadingRange(oneshot::Sender<Vec<RangeKey>>),
+    Close(oneshot::Sender<()>),
 }
 
 struct GetObjectsTask {
@@ -126,12 +139,14 @@ struct GetObjectsTask {
 
 pub struct DefaultObjectStorage<F: RangeFetcher, M: ObjectManager> {
     config: ObjectStorageConfig,
-    ranges: RefCell<HashMap<RangeKey, Rc<DefaultRangeAccumulator>>>,
+    ranges: Rc<RefCell<HashMap<RangeKey, Rc<DefaultRangeAccumulator>>>>,
     part_full_ranges: RefCell<HashSet<RangeKey>>,
     cache_size: RefCell<i64>,
     op: Option<Operator>,
     object_manager: Rc<M>,
     range_fetcher: Rc<F>,
+    shutdown_tx: ShutdownTx,
+    shutdown_rx: RefCell<Option<ShutdownRx>>,
 }
 
 impl<F, M> DefaultObjectStorage<F, M>
@@ -154,6 +169,12 @@ where
             self.object_manager.clone(),
             &self.config,
         ));
+
+        let shutdown_rx = if let Some(shutdown_rx) = self.shutdown_rx.borrow().as_ref() {
+            shutdown_rx.clone()
+        } else {
+            return;
+        };
         self.ranges.borrow_mut().insert(
             range,
             Rc::new(DefaultRangeAccumulator::new(
@@ -162,6 +183,7 @@ where
                 self.range_fetcher.clone(),
                 self.config.clone(),
                 range_offload,
+                shutdown_rx,
             )),
         );
     }
@@ -248,6 +270,13 @@ where
     async fn get_offloading_range(&self) -> Vec<RangeKey> {
         self.object_manager.get_offloading_range()
     }
+
+    async fn close(&self) {
+        info!("object storage closing");
+        drop(self.shutdown_rx.borrow_mut().take());
+        self.shutdown_tx.shutdown().await;
+        info!("object storage closed")
+    }
 }
 
 impl<F, M> DefaultObjectStorage<F, M>
@@ -282,30 +311,46 @@ where
         };
 
         let force_flush_secs = config.force_flush_secs;
+        let (shutdown_tx, shutdown_rx) = shutdown_chan();
         let this = Rc::new(DefaultObjectStorage {
             config: config.clone(),
-            ranges: RefCell::new(HashMap::new()),
+            ranges: Rc::new(RefCell::new(HashMap::new())),
             part_full_ranges: RefCell::new(HashSet::new()),
             cache_size: RefCell::new(0),
             op,
             object_manager: Rc::new(object_manager),
             range_fetcher: Rc::new(range_fetcher),
+            shutdown_tx,
+            shutdown_rx: RefCell::new(Some(shutdown_rx.clone())),
         });
-        Self::run_force_flush_task(this.clone(), Duration::from_secs(force_flush_secs));
+        Self::run_force_flush_task(
+            this.ranges.clone(),
+            Duration::from_secs(force_flush_secs),
+            shutdown_rx,
+        );
         this
     }
 
-    pub fn run_force_flush_task(storage: Rc<DefaultObjectStorage<F, M>>, max_duration: Duration) {
+    pub fn run_force_flush_task(
+        ranges: Rc<RefCell<HashMap<RangeKey, Rc<DefaultRangeAccumulator>>>>,
+        max_duration: Duration,
+        shutdown_rx: ShutdownRx,
+    ) {
         tokio_uring::spawn(async move {
+            let mut notify_shutdown_rx = shutdown_rx.subscribe();
             loop {
-                storage.ranges.borrow().iter().for_each(|(_, range)| {
-                    range.try_flush(max_duration);
-                });
-                sleep(Duration::from_secs(1)).await;
+                tokio::select! {
+                    _ = notify_shutdown_rx.recv() => {
+                        break;
+                    }
+                    _ = sleep(Duration::from_secs(1)) => {
+                        ranges.borrow().iter().for_each(|(_, range)| {
+                            range.try_flush(max_duration);
+                        });
+                    }
+                }
             }
+            info!("object storage force flush task shutdown")
         });
     }
 }
-
-#[cfg(test)]
-mod test {}

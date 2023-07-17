@@ -7,9 +7,13 @@ mod range_accumulator;
 pub mod range_fetcher;
 mod range_offload;
 
+use std::cell::UnsafeCell;
+
 use model::object::ObjectMetadata;
 
 use mockall::{automock, predicate::*};
+
+use tokio::sync::{broadcast, mpsc};
 
 #[automock]
 pub trait ObjectStorage {
@@ -26,6 +30,8 @@ pub trait ObjectStorage {
     ) -> Vec<ObjectMetadata>;
 
     async fn get_offloading_range(&self) -> Vec<RangeKey>;
+
+    async fn close(&self);
 }
 
 #[cfg_attr(test, automock)]
@@ -63,5 +69,88 @@ impl RangeKey {
             stream_id,
             range_index,
         }
+    }
+}
+
+/// New Shutdown channel (ShutdownTx, ShutdownRx).
+/// - ShutdownTx: send shutdown signal to all task and await task complete(detected by all ShutdownRx are dropped).
+/// - ShutdownRx: subscribe shutdown signal.
+///
+/// # Example:
+///
+/// ```
+/// #[tokio::main]
+/// async fn main() {
+///     let (mut tx, rx) = shutdown_chan();
+///     for i in 0..2 {
+///         let rx = rx.clone();
+///         tokio::spawn(async move {
+///             let mut notify_rx = rx.subscribe();
+///             loop {
+///                 tokio::select! {
+///                     _ = notify_rx.recv() => {
+///                         println!("task recv shutdown signal");
+///                         break;
+///                     }
+///                     _ = tokio::time::sleep(std::time::Duration::from_millis(100)) => {
+///                         println!("task tick");
+///                         }
+///                     }
+///             }
+///             println!("task exit");
+///         });
+///     }
+///     drop(rx);
+///     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+///     println!("shutting");
+///     tx.shutdown().await;
+///     println!("shutdown");
+/// }
+/// ```
+pub fn shutdown_chan() -> (ShutdownTx, ShutdownRx) {
+    let (notify_tx, _notify_rx) = broadcast::channel(1);
+    let (await_tx, await_rx) = mpsc::channel(1);
+    (
+        ShutdownTx::new(notify_tx.clone(), await_rx),
+        ShutdownRx::new(notify_tx, await_tx),
+    )
+}
+
+#[derive(Clone)]
+pub struct ShutdownRx {
+    notify_tx: broadcast::Sender<()>,
+    _await_tx: mpsc::Sender<()>,
+}
+
+impl ShutdownRx {
+    pub fn new(notify_tx: broadcast::Sender<()>, await_tx: mpsc::Sender<()>) -> Self {
+        Self {
+            notify_tx,
+            _await_tx: await_tx,
+        }
+    }
+
+    pub fn subscribe(&self) -> broadcast::Receiver<()> {
+        self.notify_tx.subscribe()
+    }
+}
+
+pub struct ShutdownTx {
+    notify_tx: broadcast::Sender<()>,
+    await_rx: UnsafeCell<mpsc::Receiver<()>>,
+}
+
+impl ShutdownTx {
+    pub fn new(notify_tx: broadcast::Sender<()>, await_rx: mpsc::Receiver<()>) -> Self {
+        Self {
+            notify_tx,
+            await_rx: UnsafeCell::new(await_rx),
+        }
+    }
+
+    pub async fn shutdown(&self) {
+        let _ = self.notify_tx.send(());
+        // receive a error, when all await_rx is dropped
+        let _ = unsafe { &mut *self.await_rx.get() }.recv().await;
     }
 }

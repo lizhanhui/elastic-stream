@@ -18,6 +18,7 @@ use std::rc::Rc;
 use std::time::Duration;
 use std::vec::Vec;
 use tokio::sync::mpsc;
+use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 use tokio::time::sleep;
 
@@ -94,7 +95,7 @@ where
             // the last multi-part object exist, then write to it.
             let (object_full, end_offset) = multi_part_obj.write(payload);
             if object_full {
-                multi_part_obj.close();
+                multi_part_obj.close(None);
                 *multi_part_object = None;
             }
             return end_offset;
@@ -129,9 +130,17 @@ where
     }
 
     /// force inflight multi-part object to complete.
-    pub fn flush(&self) {
+    pub fn async_flush(&self) {
         if let Some(multi_part_object) = self.multi_part_object.take() {
-            multi_part_object.close();
+            multi_part_object.close(None);
+        }
+    }
+
+    pub async fn flush(&self) {
+        let (tx, rx) = oneshot::channel::<()>();
+        if let Some(multi_part_object) = self.multi_part_object.take() {
+            multi_part_object.close(Some(tx));
+            let _ = rx.await;
         }
     }
 }
@@ -141,7 +150,7 @@ struct MultiPartObject {
     object_size: u32,
     size: RefCell<u32>,
     last_pass_through_size: RefCell<u32>,
-    tx: mpsc::UnboundedSender<(Vec<Bytes>, Bytes, u64)>,
+    tx: mpsc::UnboundedSender<MultiPartWriteEvent>,
 }
 
 impl MultiPartObject {
@@ -152,7 +161,7 @@ impl MultiPartObject {
         object_manager: Rc<M>,
         object_size: u32,
     ) -> Self {
-        let (tx, rx) = mpsc::unbounded_channel::<(Vec<Bytes>, Bytes, u64)>();
+        let (tx, rx) = mpsc::unbounded_channel::<MultiPartWriteEvent>();
         let this = Self {
             start_offset: object_metadata.start_offset,
             object_size,
@@ -181,12 +190,22 @@ impl MultiPartObject {
         )
         .unwrap_or_else(|_| panic!("parse record fail {:?}", part));
         *self.last_pass_through_size.borrow_mut() = remain_pass_through_size;
-        let _ = self.tx.send((part, index, new_end_offset));
+        let _ = self.tx.send(MultiPartWriteEvent {
+            data: part,
+            index,
+            end_offset: new_end_offset,
+            tx: None,
+        });
         (*size >= self.object_size, new_end_offset)
     }
 
-    pub fn close(&self) {
-        let _ = self.tx.send((Vec::new(), Bytes::new(), 0));
+    pub fn close(&self, tx: Option<oneshot::Sender<()>>) {
+        let _ = self.tx.send(MultiPartWriteEvent {
+            data: Vec::new(),
+            index: Bytes::new(),
+            end_offset: 0,
+            tx,
+        });
     }
 
     fn write_loop<M: ObjectManager + 'static>(
@@ -194,7 +213,7 @@ impl MultiPartObject {
         key: String,
         op: Operator,
         object_manager: Rc<M>,
-        mut rx: mpsc::UnboundedReceiver<(Vec<Bytes>, Bytes, u64)>,
+        mut rx: mpsc::UnboundedReceiver<MultiPartWriteEvent>,
     ) {
         tokio_uring::spawn(async move {
             // TODO: delay init multi-part object, if there is only one part or several parts is too small. the multi-part object is not necessary.
@@ -205,13 +224,15 @@ impl MultiPartObject {
             let mut writer = None;
             loop {
                 match rx.recv().await {
-                    Some((part, index, new_end_offset)) => {
+                    Some(event) => {
+                        let data = event.data;
+                        let index = event.index;
+                        let new_end_offset = event.end_offset;
+                        let tx = event.tx;
                         sparse_index.extend(index);
                         if new_end_offset > end_offset {
                             end_offset = new_end_offset;
                         }
-                        // TODO:
-                        // get multi-part object writer.
                         if writer.is_none() {
                             loop {
                                 writer = match op.writer(&key).await {
@@ -228,10 +249,10 @@ impl MultiPartObject {
                         let writer = writer.as_mut().unwrap();
 
                         // write part or complete object.
-                        let payload_length: usize = part.iter().map(|p| p.len()).sum();
+                        let payload_length: usize = data.iter().map(|p| p.len()).sum();
                         data_len += payload_length;
                         let mut bytes = BytesMut::with_capacity(payload_length);
-                        for b in part.iter() {
+                        for b in data.iter() {
                             bytes.extend_from_slice(b);
                         }
                         let bytes = bytes.freeze();
@@ -276,7 +297,10 @@ impl MultiPartObject {
                                     }
                                 }
                             }
-                            break;
+                            if let Some(tx) = tx {
+                                let _ = tx.send(());
+                            }
+                            return;
                         } else {
                             loop {
                                 match writer.write(bytes.clone()).await {
@@ -291,6 +315,9 @@ impl MultiPartObject {
                                     }
                                 }
                             }
+                            if let Some(tx) = tx {
+                                let _ = tx.send(());
+                            }
                         }
                     }
                     None => {
@@ -300,6 +327,13 @@ impl MultiPartObject {
             }
         });
     }
+}
+
+struct MultiPartWriteEvent {
+    data: Vec<Bytes>,
+    index: Bytes,
+    end_offset: u64,
+    tx: Option<oneshot::Sender<()>>,
 }
 
 struct Object<M: ObjectManager + 'static> {
