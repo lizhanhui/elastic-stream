@@ -229,6 +229,10 @@ impl Session {
             request::Headers::ReportMetrics { .. } => {
                 frame.operation_code = OperationCode::REPORT_METRICS;
             }
+
+            request::Headers::ReportReplicaProgress { .. } => {
+                frame.operation_code = OperationCode::REPORT_REPLICA_PROGRESS;
+            }
         };
 
         frame.payload = request.body.clone();
@@ -416,6 +420,10 @@ impl Session {
 
                         OperationCode::HEARTBEAT => {
                             unreachable!();
+                        }
+
+                        OperationCode::REPORT_REPLICA_PROGRESS => {
+                            response.on_report_replica_progress(&frame);
                         }
 
                         _ => {

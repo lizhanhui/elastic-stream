@@ -1,13 +1,15 @@
 use super::{lb_policy::LbPolicy, session::Session};
-use crate::{error::ClientError, invocation_context::InvocationContext};
+use crate::{
+    error::ClientError, invocation_context::InvocationContext, request::Request, response::Response,
+};
 use bytes::Bytes;
 use itertools::Itertools;
 use local_sync::oneshot;
 use log::{debug, error, info, trace, warn};
 use model::{
-    client_role::ClientRole, range::RangeMetadata, request::fetch::FetchRequest,
-    response::fetch::FetchResultSet, stream::StreamMetadata, AppendResultEntry, ListRangeCriteria,
-    PlacementDriverNode,
+    client_role::ClientRole, range::RangeMetadata, replica::ReplicaProgress,
+    request::fetch::FetchRequest, response::fetch::FetchResultSet, stream::StreamMetadata,
+    AppendResultEntry, ListRangeCriteria, PlacementDriverNode,
 };
 use observation::metrics::{
     store_metrics::RangeServerStatistics,
@@ -989,6 +991,68 @@ impl CompositeSession {
             body: None,
         };
 
+        let res = self.broadcast_to_pd(&request).await;
+        for item in res {
+            match item {
+                Ok(response) => {
+                    if !response.ok() {
+                        error!(
+                            "Failed to report metrics to {}. Status-Message: `{}`",
+                            self.target, response.status.message
+                        );
+                        return Err(ClientError::ServerInternal);
+                    }
+                }
+                Err(_e) => {}
+            }
+        }
+        Ok(())
+    }
+
+    pub(crate) async fn report_replica_progress(
+        &self,
+        replica_progress: Vec<ReplicaProgress>,
+    ) -> Result<(), ClientError> {
+        self.try_reconnect().await;
+
+        if self.need_refresh_placement_driver_cluster()
+            && self.refresh_placement_driver_cluster().await.is_err()
+        {
+            error!("Failed to refresh placement driver cluster");
+        }
+
+        let headers = request::Headers::ReportReplicaProgress {
+            range_server: self.config.server.range_server(),
+            replica_progress,
+        };
+        let request = request::Request {
+            timeout: self.config.client_io_timeout(),
+            headers,
+            body: None,
+        };
+
+        let res = self.broadcast_to_pd(&request).await;
+        for item in res {
+            match item {
+                Ok(response) => {
+                    if !response.ok() {
+                        error!(
+                            "Failed to report replica progress to {}. Status-Message: `{}`",
+                            self.target, response.status.message
+                        );
+                        return Err(ClientError::ServerInternal);
+                    }
+                }
+                Err(_e) => {}
+            }
+        }
+        Ok(())
+    }
+
+    async fn broadcast_to_pd(
+        &self,
+        request: &Request,
+    ) -> Vec<Result<Response, oneshot::error::RecvError>> {
         let mut receivers = vec![];
         {
             let sessions = self
@@ -1009,23 +1073,7 @@ impl CompositeSession {
 
             let _res: Vec<Result<(), InvocationContext>> = futures::future::join_all(futures).await;
         }
-        let res: Vec<Result<response::Response, oneshot::error::RecvError>> =
-            futures::future::join_all(receivers).await;
-        for item in res {
-            match item {
-                Ok(response) => {
-                    if !response.ok() {
-                        error!(
-                            "Failed to report metrics to {}. Status-Message: `{}`",
-                            self.target, response.status.message
-                        );
-                        return Err(ClientError::ServerInternal);
-                    }
-                }
-                Err(_e) => {}
-            }
-        }
-        Ok(())
+        futures::future::join_all(receivers).await
     }
 }
 

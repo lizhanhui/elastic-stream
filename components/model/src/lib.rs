@@ -13,6 +13,7 @@ pub mod placement_driver_node;
 pub mod range;
 pub mod range_server;
 pub mod record;
+pub mod replica;
 pub mod request;
 pub mod response;
 pub mod status;

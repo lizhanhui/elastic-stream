@@ -5,8 +5,9 @@ use crate::{composite_session::CompositeSession, error::ClientError};
 use bytes::Bytes;
 use log::{error, trace, warn};
 use model::{
-    client_role::ClientRole, range::RangeMetadata, request::fetch::FetchRequest,
-    response::fetch::FetchResultSet, stream::StreamMetadata, AppendResultEntry, ListRangeCriteria,
+    client_role::ClientRole, range::RangeMetadata, replica::ReplicaProgress,
+    request::fetch::FetchRequest, response::fetch::FetchResultSet, stream::StreamMetadata,
+    AppendResultEntry, ListRangeCriteria,
 };
 use observation::metrics::{
     store_metrics::RangeServerStatistics,
@@ -279,6 +280,16 @@ impl Client {
                 memory_statistics,
             )
             .await
+    }
+
+    pub async fn report_replica_progress(
+        &self,
+        target: &str,
+        progress: Vec<ReplicaProgress>,
+    ) -> Result<(), ClientError> {
+        let session_manager = unsafe { &mut *self.session_manager.get() };
+        let composite_session = session_manager.get_composite_session(target).await.unwrap();
+        composite_session.report_replica_progress(progress).await
     }
 }
 

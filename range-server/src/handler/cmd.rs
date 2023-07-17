@@ -91,6 +91,12 @@ impl<'a> Command<'a> {
                 error!("DescribePlacementDriver is not supported in range-server");
                 Err(ErrorCode::UNSUPPORTED_OPERATION)
             }
+
+            OperationCode::REPORT_REPLICA_PROGRESS => {
+                error!("ReportReplicaProgress is not supported in range-server");
+                Err(ErrorCode::UNSUPPORTED_OPERATION)
+            }
+
             _ => {
                 error!("Request with unsupported operation code  is received");
                 Err(ErrorCode::UNSUPPORTED_OPERATION)

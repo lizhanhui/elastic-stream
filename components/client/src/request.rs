@@ -2,13 +2,15 @@ use bytes::{Bytes, BytesMut};
 use model::request::fetch::FetchRequest;
 use model::stream::StreamMetadata;
 use model::{
-    client_role::ClientRole, range::RangeMetadata, range_server::RangeServer, ListRangeCriteria,
+    client_role::ClientRole, range::RangeMetadata, range_server::RangeServer,
+    replica::ReplicaProgress, ListRangeCriteria,
 };
 use protocol::rpc::header::{
     AppendRequestT, CreateRangeRequestT, CreateStreamRequestT,
     DescribePlacementDriverClusterRequestT, DescribeStreamRequestT, FetchRequestT,
     HeartbeatRequestT, IdAllocationRequestT, ListRangeCriteriaT, ListRangeRequestT,
-    RangeServerMetricsT, RangeT, ReportMetricsRequestT, SealKind, SealRangeRequestT,
+    RangeServerMetricsT, RangeT, ReplicaProgressT, ReportMetricsRequestT,
+    ReportReplicaProgressRequestT, SealKind, SealRangeRequestT,
 };
 use std::fmt;
 use std::time::Duration;
@@ -88,6 +90,11 @@ pub enum Headers {
         network_fetch_avg_latency: i16,
         range_missing_replica_cnt: i16,
         range_active_cnt: i16,
+    },
+
+    ReportReplicaProgress {
+        range_server: RangeServer,
+        replica_progress: Vec<ReplicaProgress>,
     },
 }
 
@@ -242,6 +249,20 @@ impl From<&Request> for Bytes {
                 request.range_server = Some(Box::new(range_server.into()));
                 request.metrics = Some(Box::new(metrics));
 
+                let request = request.pack(&mut builder);
+                builder.finish(request, None);
+            }
+            Headers::ReportReplicaProgress {
+                range_server,
+                replica_progress,
+            } => {
+                let mut request = ReportReplicaProgressRequestT::default();
+                request.timeout_ms = req.timeout.as_millis() as i32;
+                request.range_server = Box::new(range_server.into());
+                request.replica_progress = replica_progress
+                    .iter()
+                    .map(ReplicaProgressT::from)
+                    .collect();
                 let request = request.pack(&mut builder);
                 builder.finish(request, None);
             }

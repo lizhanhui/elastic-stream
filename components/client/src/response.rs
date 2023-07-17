@@ -21,6 +21,7 @@ use protocol::rpc::header::IdAllocationResponse;
 use protocol::rpc::header::ListRangeResponse;
 use protocol::rpc::header::OperationCode;
 use protocol::rpc::header::ReportMetricsResponse;
+use protocol::rpc::header::ReportReplicaProgressResponse;
 use protocol::rpc::header::SealRangeResponse;
 use protocol::rpc::header::SystemError;
 
@@ -396,6 +397,25 @@ impl Response {
                 Err(e) => {
                     error!(
                         "Failed to decode DescribeStreamResponse using FlatBuffers. Cause: {}",
+                        e
+                    );
+                }
+            }
+        }
+    }
+
+    pub fn on_report_replica_progress(&mut self, frame: &Frame) {
+        if let Some(ref buf) = frame.header {
+            match flatbuffers::root::<ReportReplicaProgressResponse>(buf) {
+                Ok(response) => {
+                    trace!("Received Report replica progress response: {:?}", response);
+                    self.status = Into::<Status>::into(&response.status().unpack());
+                }
+
+                Err(e) => {
+                    println!("buf = {:?}", buf);
+                    error!(
+                        "Failed to parse Report replica progress response header: {:?}",
                         e
                     );
                 }
