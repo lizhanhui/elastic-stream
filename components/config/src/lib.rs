@@ -426,6 +426,8 @@ impl Default for Replication {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ObjectStorageConfig {
+    #[serde(default = "default_cluster")]
+    pub cluster: String,
     pub endpoint: String,
     pub bucket: String,
     pub region: String,
@@ -441,9 +443,14 @@ pub struct ObjectStorageConfig {
     pub force_flush_secs: u64,
 }
 
+fn default_cluster() -> String {
+    "elasticstream".to_owned()
+}
+
 impl Default for ObjectStorageConfig {
     fn default() -> Self {
         Self {
+            cluster: "elasticstream".to_owned(),
             endpoint: "".to_owned(),
             bucket: "".to_owned(),
             region: "".to_owned(),

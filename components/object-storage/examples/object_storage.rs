@@ -20,6 +20,7 @@ fn main() {
     let args = Args::parse();
     tokio_uring::start(async move {
         let config = ObjectStorageConfig {
+            cluster: args.cluster,
             endpoint: args.endpoint,
             bucket: args.bucket,
             region: args.region,
@@ -30,7 +31,7 @@ fn main() {
             force_flush_secs: 60 * 60,
         };
         let range_fetcher = RangeFetcherMock {};
-        let memory_object_manager: MemoryObjectManager = Default::default();
+        let memory_object_manager: MemoryObjectManager = MemoryObjectManager::new(&config.cluster);
         let object_manager = memory_object_manager;
         let object_store = DefaultObjectStorage::new(&config, range_fetcher, object_manager);
         let mut end_offset = 1;
@@ -46,6 +47,9 @@ fn main() {
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 pub struct Args {
+    #[arg(short, long, default_value_t = String::from("es_obj_example"))]
+    pub cluster: String,
+
     #[arg(short, long, default_value_t = String::from("https://s3.amazonaws.com"))]
     pub endpoint: String,
 

@@ -8,6 +8,7 @@ pub const FOOTER_MAGIC: u64 = 0x88e241b785f4cff7;
 pub struct ObjectMetadata {
     pub stream_id: u64,
     pub range_index: u32,
+    pub epoch: u16,
     pub start_offset: u64,
     pub end_offset_delta: u32,
     pub data_len: u32,
@@ -16,10 +17,11 @@ pub struct ObjectMetadata {
 }
 
 impl ObjectMetadata {
-    pub fn new(stream_id: u64, range_index: u32, start_offset: u64) -> Self {
+    pub fn new(stream_id: u64, range_index: u32, epoch: u16, start_offset: u64) -> Self {
         Self {
             stream_id,
             range_index,
+            epoch,
             start_offset,
             end_offset_delta: 0,
             data_len: 0,
@@ -96,6 +98,18 @@ impl ObjectMetadata {
     }
 }
 
+pub fn gen_object_key(
+    cluster: &str,
+    stream_id: u64,
+    range_index: u32,
+    epoch: u16,
+    start_offset: u64,
+) -> String {
+    // reverse the offset to make the object key dispersed.
+    let rev_offset_hex: String = format!("{:x}", start_offset).chars().rev().collect();
+    format!("{rev_offset_hex}_{cluster}_{stream_id:x}_{range_index:x}_{epoch:x}",)
+}
+
 impl From<&ObjectMetadataT> for ObjectMetadata {
     fn from(t: &ObjectMetadataT) -> Self {
         let sparse_index = if let Some(sparse_index) = t.sparse_index.clone() {
@@ -106,6 +120,7 @@ impl From<&ObjectMetadataT> for ObjectMetadata {
         ObjectMetadata {
             stream_id: 0,
             range_index: 0,
+            epoch: 0,
             start_offset: t.start_offset as u64,
             end_offset_delta: t.end_offset_delta as u32,
             data_len: t.data_len as u32,

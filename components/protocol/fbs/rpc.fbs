@@ -389,7 +389,7 @@ table OffloadOwner {
     server_id: int32 = -1 (id: 0);
 
     // The epoch of the owner.
-    epoch: int64 = -1 (id: 1);
+    epoch: int16 = -1 (id: 1);
 }
 
 table Range {
@@ -661,7 +661,7 @@ table Obj {
     range_index: int32 = -1 (id: 1);
 
     // The epoch of the range server that offloads the object.
-    epoch: int64 = -1 (id: 2);
+    epoch: int16 = -1 (id: 2);
 
     // The start offset of the object in the range.
     start_offset: int64 = -1 (id: 3);

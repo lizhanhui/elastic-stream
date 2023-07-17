@@ -8,7 +8,7 @@ import (
 
 type OffloadOwnerT struct {
 	ServerId int32 `json:"server_id"`
-	Epoch int64 `json:"epoch"`
+	Epoch int16 `json:"epoch"`
 }
 
 func (t *OffloadOwnerT) Pack(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
@@ -70,16 +70,16 @@ func (rcv *OffloadOwner) MutateServerId(n int32) bool {
 	return rcv._tab.MutateInt32Slot(4, n)
 }
 
-func (rcv *OffloadOwner) Epoch() int64 {
+func (rcv *OffloadOwner) Epoch() int16 {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(6))
 	if o != 0 {
-		return rcv._tab.GetInt64(o + rcv._tab.Pos)
+		return rcv._tab.GetInt16(o + rcv._tab.Pos)
 	}
 	return -1
 }
 
-func (rcv *OffloadOwner) MutateEpoch(n int64) bool {
-	return rcv._tab.MutateInt64Slot(6, n)
+func (rcv *OffloadOwner) MutateEpoch(n int16) bool {
+	return rcv._tab.MutateInt16Slot(6, n)
 }
 
 func OffloadOwnerStart(builder *flatbuffers.Builder) {
@@ -88,8 +88,8 @@ func OffloadOwnerStart(builder *flatbuffers.Builder) {
 func OffloadOwnerAddServerId(builder *flatbuffers.Builder, serverId int32) {
 	builder.PrependInt32Slot(0, serverId, -1)
 }
-func OffloadOwnerAddEpoch(builder *flatbuffers.Builder, epoch int64) {
-	builder.PrependInt64Slot(1, epoch, -1)
+func OffloadOwnerAddEpoch(builder *flatbuffers.Builder, epoch int16) {
+	builder.PrependInt16Slot(1, epoch, -1)
 }
 func OffloadOwnerEnd(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
 	return builder.EndObject()

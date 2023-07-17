@@ -37,7 +37,7 @@ impl AsyncObjectStorage {
             .spawn(move || {
                 tokio_uring::start(async move {
                     let range_fetcher = DefaultRangeFetcher::new(Rc::new(store));
-                    let object_manager = MemoryObjectManager::default();
+                    let object_manager = MemoryObjectManager::new(&config.cluster);
                     let object_storage =
                         DefaultObjectStorage::new(&config, range_fetcher, object_manager);
                     while let Some(task) = rx.recv().await {
@@ -149,9 +149,10 @@ where
         let range_offload = Rc::new(RangeOffload::new(
             stream_id,
             range_index,
+            owner.epoch,
             op,
             self.object_manager.clone(),
-            self.config.object_size,
+            &self.config,
         ));
         self.ranges.borrow_mut().insert(
             range,
@@ -292,14 +293,6 @@ where
         });
         Self::run_force_flush_task(this.clone(), Duration::from_secs(force_flush_secs));
         this
-    }
-
-    pub fn object_manager() -> Rc<MemoryObjectManager> {
-        Rc::new(MemoryObjectManager::default())
-    }
-
-    pub fn range_fetcher<S: Store + 'static>(store: Rc<S>) -> Rc<DefaultRangeFetcher<S>> {
-        Rc::new(DefaultRangeFetcher::<S>::new(store))
     }
 
     pub fn run_force_flush_task(storage: Rc<DefaultObjectStorage<F, M>>, max_duration: Duration) {

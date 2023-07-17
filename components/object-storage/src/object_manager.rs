@@ -1,10 +1,20 @@
 use std::{cell::RefCell, collections::HashMap};
 
 use crate::{ObjectManager, Owner, RangeKey};
-use model::object::ObjectMetadata;
+use model::object::{gen_object_key, ObjectMetadata};
 
 pub struct MemoryObjectManager {
+    cluster: String,
     map: RefCell<HashMap<RangeKey, Vec<ObjectMetadata>>>,
+}
+
+impl MemoryObjectManager {
+    pub fn new(cluster: &str) -> Self {
+        Self {
+            cluster: cluster.to_string(),
+            map: RefCell::new(HashMap::new()),
+        }
+    }
 }
 
 impl ObjectManager for MemoryObjectManager {
@@ -46,9 +56,12 @@ impl ObjectManager for MemoryObjectManager {
                 })
                 .map(|meta| {
                     let mut meta = meta.clone();
-                    let key = format!(
-                        "ess3test/{}-{}/{}",
-                        stream_id, range_index, meta.start_offset
+                    let key = gen_object_key(
+                        &self.cluster,
+                        stream_id,
+                        range_index,
+                        meta.epoch,
+                        meta.start_offset,
                     );
                     meta.key = Some(key);
                     meta
@@ -62,13 +75,5 @@ impl ObjectManager for MemoryObjectManager {
     fn get_offloading_range(&self) -> Vec<RangeKey> {
         // TODO: replay meta event, get offloading range.
         vec![]
-    }
-}
-
-impl Default for MemoryObjectManager {
-    fn default() -> Self {
-        Self {
-            map: RefCell::new(HashMap::new()),
-        }
     }
 }

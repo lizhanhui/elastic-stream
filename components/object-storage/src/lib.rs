@@ -47,7 +47,7 @@ pub trait ObjectManager {
 }
 
 pub struct Owner {
-    pub epoch: u32,
+    pub epoch: u16,
     pub start_offset: u64,
 }
 

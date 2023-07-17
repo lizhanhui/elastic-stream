@@ -2,9 +2,11 @@ use bytes::Buf;
 use bytes::BufMut;
 use bytes::Bytes;
 use bytes::BytesMut;
+use config::ObjectStorageConfig;
 use log::debug;
 use log::warn;
 use model::error::DecodeError;
+use model::object::gen_object_key;
 use model::object::BLOCK_DELIMITER;
 use model::object::FOOTER_MAGIC;
 use model::record::flat_record::RecordMagic;
@@ -41,10 +43,12 @@ const SPARSE_SIZE: u32 = 16 * 1024 * 1024;
 pub struct RangeOffload<M: ObjectManager + 'static> {
     stream_id: u64,
     range_index: u32,
-    object_size: u32,
+    epoch: u16,
     multi_part_object: RefCell<Option<MultiPartObject>>,
     op: Operator,
     object_manager: Rc<M>,
+    cluster: String,
+    object_size: u32,
 }
 
 impl<M> RangeOffload<M>
@@ -54,17 +58,22 @@ where
     pub fn new(
         stream_id: u64,
         range_index: u32,
+        epoch: u16,
         op: Operator,
         object_manager: Rc<M>,
-        object_size: u32,
+        config: &ObjectStorageConfig,
     ) -> RangeOffload<M> {
+        let cluster = config.cluster.clone();
+        let object_size = config.object_size;
         Self {
             stream_id,
             range_index,
-            object_size,
+            epoch,
             multi_part_object: RefCell::new(None),
             op,
             object_manager,
+            cluster,
+            object_size,
         }
     }
 
@@ -72,10 +81,12 @@ where
         // TODO: 统计 inflight bytes 来进行背压，避免网络打爆。或者通过一个全局的并发限制器。如果限制则直接返回 false，或者卡住。
         let payload_length: usize = payload.iter().map(|p| p.len()).sum();
         let payload_length = payload_length as u32;
-        // TODO: key name, reverse hex representation of start_offset as prefix.
-        let key = format!(
-            "ess3test/{}-{}/{}",
-            self.stream_id, self.range_index, start_offset
+        let key = gen_object_key(
+            &self.cluster,
+            self.stream_id,
+            self.range_index,
+            self.epoch,
+            start_offset,
         );
 
         let mut multi_part_object = self.multi_part_object.borrow_mut();
@@ -91,7 +102,7 @@ where
 
         if payload_length >= self.object_size {
             let object_metadata =
-                ObjectMetadata::new(self.stream_id, self.range_index, start_offset);
+                ObjectMetadata::new(self.stream_id, self.range_index, self.epoch, start_offset);
             // direct write when payload length is larger than object_size.
             let object = Object {
                 key,
@@ -103,7 +114,8 @@ where
         }
 
         // start a new multi-part object.
-        let object_metadata = ObjectMetadata::new(self.stream_id, self.range_index, start_offset);
+        let object_metadata =
+            ObjectMetadata::new(self.stream_id, self.range_index, self.epoch, start_offset);
         let new_multi_part_object = MultiPartObject::new(
             object_metadata,
             key,
@@ -523,7 +535,7 @@ mod tests {
                 object_manager: Rc::new(object_manager),
             };
 
-            let object_metadata = ObjectMetadata::new(1, 0, 233);
+            let object_metadata = ObjectMetadata::new(1, 0, 0, 233);
             let (end_offset, join_handle) = obj.write(encoded.clone(), object_metadata);
             assert_eq!(243, end_offset);
             join_handle.await.unwrap();

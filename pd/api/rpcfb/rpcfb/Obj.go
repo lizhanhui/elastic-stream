@@ -9,7 +9,7 @@ import (
 type ObjT struct {
 	StreamId int64 `json:"stream_id"`
 	RangeIndex int32 `json:"range_index"`
-	Epoch int64 `json:"epoch"`
+	Epoch int16 `json:"epoch"`
 	StartOffset int64 `json:"start_offset"`
 	EndOffsetDelta int32 `json:"end_offset_delta"`
 	DataLen int32 `json:"data_len"`
@@ -101,16 +101,16 @@ func (rcv *Obj) MutateRangeIndex(n int32) bool {
 	return rcv._tab.MutateInt32Slot(6, n)
 }
 
-func (rcv *Obj) Epoch() int64 {
+func (rcv *Obj) Epoch() int16 {
 	o := flatbuffers.UOffsetT(rcv._tab.Offset(8))
 	if o != 0 {
-		return rcv._tab.GetInt64(o + rcv._tab.Pos)
+		return rcv._tab.GetInt16(o + rcv._tab.Pos)
 	}
 	return -1
 }
 
-func (rcv *Obj) MutateEpoch(n int64) bool {
-	return rcv._tab.MutateInt64Slot(8, n)
+func (rcv *Obj) MutateEpoch(n int16) bool {
+	return rcv._tab.MutateInt16Slot(8, n)
 }
 
 func (rcv *Obj) StartOffset() int64 {
@@ -192,8 +192,8 @@ func ObjAddStreamId(builder *flatbuffers.Builder, streamId int64) {
 func ObjAddRangeIndex(builder *flatbuffers.Builder, rangeIndex int32) {
 	builder.PrependInt32Slot(1, rangeIndex, -1)
 }
-func ObjAddEpoch(builder *flatbuffers.Builder, epoch int64) {
-	builder.PrependInt64Slot(2, epoch, -1)
+func ObjAddEpoch(builder *flatbuffers.Builder, epoch int16) {
+	builder.PrependInt16Slot(2, epoch, -1)
 }
 func ObjAddStartOffset(builder *flatbuffers.Builder, startOffset int64) {
 	builder.PrependInt64Slot(3, startOffset, -1)
