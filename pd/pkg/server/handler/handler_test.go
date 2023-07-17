@@ -46,7 +46,7 @@ func (m *mockServer) IDAllocator(key string, start, step uint64) id.Allocator {
 	}, zap.NewNop())
 }
 
-func (m *mockServer) Member() cluster.Member {
+func (m *mockServer) Member() cluster.MemberService {
 	return m
 }
 

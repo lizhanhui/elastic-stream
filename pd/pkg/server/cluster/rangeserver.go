@@ -19,7 +19,7 @@ var (
 	ErrNotEnoughRangeServers = errors.New("not enough range servers")
 )
 
-type RangeServer interface {
+type RangeServerService interface {
 	Heartbeat(ctx context.Context, rangeServer *rpcfb.RangeServerT) error
 	AllocateID(ctx context.Context) (int32, error)
 	Metrics(ctx context.Context, rangeServer *rpcfb.RangeServerT, metrics *rpcfb.RangeServerMetricsT) error

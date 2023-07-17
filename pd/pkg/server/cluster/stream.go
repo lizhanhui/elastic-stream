@@ -16,7 +16,7 @@ var (
 	ErrStreamNotFound = errors.New("stream not found")
 )
 
-type Stream interface {
+type StreamService interface {
 	CreateStream(ctx context.Context, stream *rpcfb.StreamT) (*rpcfb.StreamT, error)
 	DeleteStream(ctx context.Context, streamID int64) (*rpcfb.StreamT, error)
 	UpdateStream(ctx context.Context, stream *rpcfb.StreamT) (*rpcfb.StreamT, error)

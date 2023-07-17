@@ -26,8 +26,8 @@ const (
 	_streamByRangeLimit = 1e4
 )
 
-// Stream defines operations on stream.
-type Stream interface {
+// StreamEndpoint defines operations on stream.
+type StreamEndpoint interface {
 	CreateStream(ctx context.Context, stream *rpcfb.StreamT) (*rpcfb.StreamT, error)
 	DeleteStream(ctx context.Context, streamID int64) (*rpcfb.StreamT, error)
 	UpdateStream(ctx context.Context, stream *rpcfb.StreamT) (*rpcfb.StreamT, error)

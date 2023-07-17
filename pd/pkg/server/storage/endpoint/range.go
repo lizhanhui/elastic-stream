@@ -20,18 +20,16 @@ const (
 
 	// ranges in stream
 	_rangeStreamPath         = "ranges"
-	_rangeStreamPrefix       = "s"
-	_rangeStreamPrefixFormat = _rangeStreamPrefix + kv.KeySeparator + _streamIDFormat + kv.KeySeparator + _rangeStreamPath + kv.KeySeparator
-	_rangeStreamFormat       = _rangeStreamPrefix + kv.KeySeparator + _streamIDFormat + kv.KeySeparator + _rangeStreamPath + kv.KeySeparator + _rangeIDFormat
-	_rangeStreamKeyLen       = len(_rangeStreamPrefix) + len(kv.KeySeparator) + _streamIDLen + len(kv.KeySeparator) + len(_rangeStreamPath) + len(kv.KeySeparator) + _rangeIDLen
+	_rangeStreamPrefixFormat = _rangeStreamPath + kv.KeySeparator + _streamIDFormat + kv.KeySeparator
+	_rangeStreamFormat       = _rangeStreamPath + kv.KeySeparator + _streamIDFormat + kv.KeySeparator + _rangeIDFormat
+	_rangeStreamKeyLen       = len(_rangeStreamPath) + len(kv.KeySeparator) + _streamIDLen + len(kv.KeySeparator) + _rangeIDLen
 
 	// ranges on range server
-	_rangeOnServerPath               = "stream-range"
-	_rangeOnServerPrefix             = "rs"
-	_rangeOnServerPrefixFormat       = _rangeOnServerPrefix + kv.KeySeparator + _rangeServerIDFormat + kv.KeySeparator + _rangeOnServerPath + kv.KeySeparator
-	_rangeOnServerStreamPrefixFormat = _rangeOnServerPrefix + kv.KeySeparator + _rangeServerIDFormat + kv.KeySeparator + _rangeOnServerPath + kv.KeySeparator + _streamIDFormat + kv.KeySeparator
-	_rangeOnServerFormat             = _rangeOnServerPrefix + kv.KeySeparator + _rangeServerIDFormat + kv.KeySeparator + _rangeOnServerPath + kv.KeySeparator + _streamIDFormat + kv.KeySeparator + _rangeIDFormat
-	_rangeOnServerKeyLen             = len(_rangeOnServerPrefix) + len(kv.KeySeparator) + _rangeServerIDLen + len(kv.KeySeparator) + len(_rangeOnServerPath) + len(kv.KeySeparator) + _streamIDLen + len(kv.KeySeparator) + _rangeIDLen
+	_rangeOnServerPath               = "ranges-rs"
+	_rangeOnServerPrefixFormat       = _rangeOnServerPath + kv.KeySeparator + _rangeServerIDFormat + kv.KeySeparator
+	_rangeOnServerStreamPrefixFormat = _rangeOnServerPath + kv.KeySeparator + _rangeServerIDFormat + kv.KeySeparator + _streamIDFormat + kv.KeySeparator
+	_rangeOnServerFormat             = _rangeOnServerPath + kv.KeySeparator + _rangeServerIDFormat + kv.KeySeparator + _streamIDFormat + kv.KeySeparator + _rangeIDFormat
+	_rangeOnServerKeyLen             = len(_rangeOnServerPath) + len(kv.KeySeparator) + _rangeServerIDLen + len(kv.KeySeparator) + _streamIDLen + len(kv.KeySeparator) + _rangeIDLen
 
 	_rangeByRangeLimit = 1e4
 )
@@ -41,7 +39,7 @@ type RangeID struct {
 	Index    int32
 }
 
-type Range interface {
+type RangeEndpoint interface {
 	CreateRange(ctx context.Context, rangeT *rpcfb.RangeT) error
 	UpdateRange(ctx context.Context, rangeT *rpcfb.RangeT) (*rpcfb.RangeT, error)
 	GetRange(ctx context.Context, rangeID *RangeID) (*rpcfb.RangeT, error)
@@ -99,7 +97,7 @@ func (e *Endpoint) UpdateRange(ctx context.Context, rangeT *rpcfb.RangeT) (*rpcf
 		return nil, errors.Wrap(err, "update range")
 	}
 	if prevValue == nil {
-		logger.Warn("range not found when update range")
+		logger.Warn("range not found when updating")
 		return nil, nil
 	}
 

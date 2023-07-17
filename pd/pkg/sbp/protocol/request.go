@@ -68,7 +68,7 @@ func (e EmptyRequest) Unmarshal(_ codec.Format, _ []byte) error {
 	return nil
 }
 
-// HeartbeatRequest is a request to operation.OpHeartbeat
+// HeartbeatRequest is a request to rpcfb.OperationCodeHEARTBEAT
 type HeartbeatRequest struct {
 	baseRequest
 	baseMarshaller
@@ -98,7 +98,7 @@ func (hr *HeartbeatRequest) Operation() rpcfb.OperationCode {
 	return rpcfb.OperationCodeHEARTBEAT
 }
 
-// IDAllocationRequest is a request to operation.OpAllocateID
+// IDAllocationRequest is a request to rpcfb.OperationCodeALLOCATE_ID
 type IDAllocationRequest struct {
 	baseRequest
 	baseUnmarshaler
@@ -119,7 +119,7 @@ func (ia *IDAllocationRequest) Timeout() int32 {
 	return ia.TimeoutMs
 }
 
-// ListRangeRequest is a request to operation.OpListRange
+// ListRangeRequest is a request to rpcfb.OperationCodeLIST_RANGE
 type ListRangeRequest struct {
 	baseRequest
 	baseUnmarshaler
@@ -140,7 +140,7 @@ func (lr *ListRangeRequest) Timeout() int32 {
 	return lr.TimeoutMs
 }
 
-// SealRangeRequest is a request to operation.OpSealRange
+// SealRangeRequest is a request to rpcfb.OperationCodeSEAL_RANGE
 type SealRangeRequest struct {
 	baseRequest
 	baseUnmarshaler
@@ -161,7 +161,7 @@ func (sr *SealRangeRequest) Timeout() int32 {
 	return sr.TimeoutMs
 }
 
-// CreateRangeRequest is a request to operation.OpCreateRange
+// CreateRangeRequest is a request to rpcfb.OperationCodeCREATE_RANGE
 type CreateRangeRequest struct {
 	baseRequest
 	baseUnmarshaler
@@ -182,7 +182,7 @@ func (cr *CreateRangeRequest) Timeout() int32 {
 	return cr.TimeoutMs
 }
 
-// CreateStreamRequest is a request to operation.OpCreateStream
+// CreateStreamRequest is a request to rpcfb.OperationCodeCREATE_STREAM
 type CreateStreamRequest struct {
 	baseRequest
 	baseUnmarshaler
@@ -203,7 +203,7 @@ func (cs *CreateStreamRequest) Timeout() int32 {
 	return cs.TimeoutMs
 }
 
-// DeleteStreamRequest is a request to operation.OpDeleteStream
+// DeleteStreamRequest is a request to rpcfb.OperationCodeDELETE_STREAM
 type DeleteStreamRequest struct {
 	baseRequest
 	baseUnmarshaler
@@ -224,7 +224,7 @@ func (ds *DeleteStreamRequest) Timeout() int32 {
 	return ds.TimeoutMs
 }
 
-// UpdateStreamRequest is a request to operation.OpUpdateStream
+// UpdateStreamRequest is a request to rpcfb.OperationCodeUPDATE_STREAM
 type UpdateStreamRequest struct {
 	baseRequest
 	baseUnmarshaler
@@ -245,7 +245,7 @@ func (us *UpdateStreamRequest) Timeout() int32 {
 	return us.TimeoutMs
 }
 
-// DescribeStreamRequest is a request to operation.OpDescribeStream
+// DescribeStreamRequest is a request to rpcfb.OperationCodeDESCRIBE_STREAM
 type DescribeStreamRequest struct {
 	baseRequest
 	baseUnmarshaler
@@ -266,7 +266,7 @@ func (ds *DescribeStreamRequest) Timeout() int32 {
 	return ds.TimeoutMs
 }
 
-// ReportMetricsRequest is a request to operation.OpReportMetrics
+// ReportMetricsRequest is a request to rpcfb.OperationCodeREPORT_METRICS
 type ReportMetricsRequest struct {
 	baseRequest
 	baseUnmarshaler
@@ -287,7 +287,7 @@ func (rm *ReportMetricsRequest) Timeout() int32 {
 	return 0
 }
 
-// DescribePDClusterRequest is a request to operation.OpDescribePDCluster
+// DescribePDClusterRequest is a request to rpcfb.OperationCodeDESCRIBE_PLACEMENT_DRIVER
 type DescribePDClusterRequest struct {
 	baseRequest
 	baseUnmarshaler
@@ -306,4 +306,25 @@ func (dpd *DescribePDClusterRequest) Unmarshal(fmt codec.Format, data []byte) er
 
 func (dpd *DescribePDClusterRequest) Timeout() int32 {
 	return dpd.TimeoutMs
+}
+
+// CommitObjectRequest is a request to rpcfb.OperationCodeCOMMIT_OBJECT
+type CommitObjectRequest struct {
+	baseRequest
+	baseUnmarshaler
+
+	rpcfb.CommitObjectRequestT
+}
+
+func (co *CommitObjectRequest) unmarshalFlatBuffer(data []byte) error {
+	co.CommitObjectRequestT = *rpcfb.GetRootAsCommitObjectRequest(data, 0).UnPack()
+	return nil
+}
+
+func (co *CommitObjectRequest) Unmarshal(fmt codec.Format, data []byte) error {
+	return unmarshal(co, fmt, data)
+}
+
+func (co *CommitObjectRequest) Timeout() int32 {
+	return co.TimeoutMs
 }

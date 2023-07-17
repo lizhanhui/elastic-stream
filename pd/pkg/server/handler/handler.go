@@ -13,10 +13,11 @@ import (
 )
 
 type Cluster interface {
-	cluster.RangeServer
-	cluster.Range
-	cluster.Stream
-	cluster.Member
+	cluster.RangeServerService
+	cluster.RangeService
+	cluster.StreamService
+	cluster.MemberService
+	cluster.ObjectService
 }
 
 // Handler is an sbp handler, implements server.Handler

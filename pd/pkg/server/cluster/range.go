@@ -35,7 +35,7 @@ var (
 	ErrInvalidStartOffset = errors.New("invalid start offset")
 )
 
-type Range interface {
+type RangeService interface {
 	ListRange(ctx context.Context, criteria *rpcfb.ListRangeCriteriaT) (ranges []*rpcfb.RangeT, err error)
 	SealRange(ctx context.Context, r *rpcfb.RangeT) (*rpcfb.RangeT, error)
 	CreateRange(ctx context.Context, r *rpcfb.RangeT) (*rpcfb.RangeT, error)

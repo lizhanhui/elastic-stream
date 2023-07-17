@@ -34,6 +34,8 @@ const (
 	MinRangeIndex int32 = 0
 	// MinRangeServerID is the minimum range server ID.
 	MinRangeServerID int32 = 0
+	// MinObjectID is the minimum object ID.
+	MinObjectID int64 = 0
 )
 
 // Endpoint is the base underlying storage endpoint for all other upper

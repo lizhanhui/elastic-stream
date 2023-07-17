@@ -38,6 +38,8 @@ const (
 	_streamIDStep          = 100
 	_rangeServerIDAllocKey = "range-server"
 	_rangeServerIDStep     = 1
+	_objectIDAllocKey      = "object"
+	_objectIDStep          = 100
 )
 
 var (
@@ -59,7 +61,8 @@ type RaftCluster struct {
 	storage        storage.Storage
 	sAlloc         id.Allocator // stream id allocator
 	dnAlloc        id.Allocator // range server id allocator
-	member         Member
+	oAlloc         id.Allocator // object id allocator
+	member         MemberService
 	cache          *cache.Cache
 	rangeServerIdx atomic.Uint64
 	client         sbpClient.Client
@@ -70,7 +73,7 @@ type RaftCluster struct {
 	lg *zap.Logger
 }
 
-type Member interface {
+type MemberService interface {
 	IsLeader() bool
 	// ClusterInfo returns all members in the cluster.
 	ClusterInfo(ctx context.Context) ([]*member.Info, error)
@@ -80,12 +83,12 @@ type Member interface {
 type Server interface {
 	Storage() storage.Storage
 	IDAllocator(key string, start, step uint64) id.Allocator
-	Member() Member
+	Member() MemberService
 	SbpClient() sbpClient.Client
 }
 
 // NewRaftCluster creates a new RaftCluster.
-func NewRaftCluster(ctx context.Context, cfg *config.Cluster, member Member, logger *zap.Logger) *RaftCluster {
+func NewRaftCluster(ctx context.Context, cfg *config.Cluster, member MemberService, logger *zap.Logger) *RaftCluster {
 	return &RaftCluster{
 		ctx:    ctx,
 		cfg:    cfg,
@@ -114,6 +117,7 @@ func (c *RaftCluster) Start(s Server) error {
 	c.runningCtx, c.runningCancel = context.WithCancel(c.ctx)
 	c.sAlloc = s.IDAllocator(_streamIDAllocKey, uint64(endpoint.MinStreamID), _streamIDStep)
 	c.dnAlloc = s.IDAllocator(_rangeServerIDAllocKey, uint64(endpoint.MinRangeServerID), _rangeServerIDStep)
+	c.oAlloc = s.IDAllocator(_objectIDAllocKey, uint64(endpoint.MinObjectID), _objectIDStep)
 	c.client = s.SbpClient()
 	c.sealMus = cmap.NewWithCustomShardingFunction[int64, chan struct{}](func(key int64) uint32 { return uint32(key) })
 

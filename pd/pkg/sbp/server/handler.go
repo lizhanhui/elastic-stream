@@ -29,6 +29,8 @@ type Handler interface {
 	ReportMetrics(req *protocol.ReportMetricsRequest, resp *protocol.ReportMetricsResponse)
 	// DescribePDCluster describes pd cluster membership.
 	DescribePDCluster(req *protocol.DescribePDClusterRequest, resp *protocol.DescribePDClusterResponse)
+	// CommitObject commits an object.
+	CommitObject(req *protocol.CommitObjectRequest, resp *protocol.CommitObjectResponse)
 }
 
 var (
@@ -108,6 +110,13 @@ var (
 			newResp: func() protocol.OutResponse { return &protocol.DescribePDClusterResponse{} },
 			act: func(handler Handler, req protocol.InRequest, resp protocol.OutResponse) {
 				handler.DescribePDCluster(req.(*protocol.DescribePDClusterRequest), resp.(*protocol.DescribePDClusterResponse))
+			},
+		},
+		rpcfb.OperationCodeCOMMIT_OBJECT: {
+			newReq:  func() protocol.InRequest { return &protocol.CommitObjectRequest{} },
+			newResp: func() protocol.OutResponse { return &protocol.CommitObjectResponse{} },
+			act: func(handler Handler, req protocol.InRequest, resp protocol.OutResponse) {
+				handler.CommitObject(req.(*protocol.CommitObjectRequest), resp.(*protocol.CommitObjectResponse))
 			},
 		},
 	}

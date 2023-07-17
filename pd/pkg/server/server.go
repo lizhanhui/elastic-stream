@@ -402,7 +402,7 @@ func (s *Server) Storage() storage.Storage {
 	return s.storage
 }
 
-func (s *Server) Member() cluster.Member {
+func (s *Server) Member() cluster.MemberService {
 	return s.member
 }
 

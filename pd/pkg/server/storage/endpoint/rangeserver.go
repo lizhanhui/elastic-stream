@@ -26,7 +26,7 @@ const (
 	_rangeServerByRangeLimit = 1e4
 )
 
-type RangeServer interface {
+type RangeServerEndpoint interface {
 	SaveRangeServer(ctx context.Context, rangeServer *rpcfb.RangeServerT) (*rpcfb.RangeServerT, error)
 	ForEachRangeServer(ctx context.Context, f func(rangeServer *rpcfb.RangeServerT) error) error
 }

@@ -86,3 +86,10 @@ func (c Checker) DescribePDCluster(req *protocol.DescribePDClusterRequest, resp 
 	// all pd nodes will handle describe PD cluster request, so we don't need to check leader here.
 	c.Handler.DescribePDCluster(req, resp)
 }
+
+func (c Checker) CommitObject(req *protocol.CommitObjectRequest, resp *protocol.CommitObjectResponse) {
+	if !c.Handler.Check(req, resp) {
+		return
+	}
+	c.Handler.CommitObject(req, resp)
+}
