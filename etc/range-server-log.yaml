@@ -35,7 +35,6 @@ appenders:
         kind: size
         limit: 16 mb
       roller:
-      roller:
         kind: fixed_window
         pattern: logs/archive/range-server.{}.log
         count: 10
