@@ -24,6 +24,8 @@ pub trait ObjectStorage {
         end_offset: u64,
         size_hint: u32,
     ) -> Vec<ObjectMetadata>;
+
+    async fn get_offloading_range(&self) -> Vec<RangeKey>;
 }
 
 #[cfg_attr(test, automock)]
@@ -40,6 +42,8 @@ pub trait ObjectManager {
         end_offset: u64,
         size_hint: u32,
     ) -> Vec<ObjectMetadata>;
+
+    fn get_offloading_range(&self) -> Vec<RangeKey>;
 }
 
 pub struct Owner {
@@ -49,8 +53,8 @@ pub struct Owner {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct RangeKey {
-    stream_id: u64,
-    range_index: u32,
+    pub stream_id: u64,
+    pub range_index: u32,
 }
 
 impl RangeKey {

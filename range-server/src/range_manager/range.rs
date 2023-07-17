@@ -31,7 +31,6 @@ impl Range {
         }
     }
 
-    #[cfg(test)]
     pub(crate) fn committed(&self) -> Option<u64> {
         self.committed
     }

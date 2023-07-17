@@ -21,7 +21,7 @@ use protocol::rpc::header::IdAllocationResponse;
 use protocol::rpc::header::ListRangeResponse;
 use protocol::rpc::header::OperationCode;
 use protocol::rpc::header::ReportMetricsResponse;
-use protocol::rpc::header::ReportReplicaProgressResponse;
+use protocol::rpc::header::ReportRangeProgressResponse;
 use protocol::rpc::header::SealRangeResponse;
 use protocol::rpc::header::SystemError;
 
@@ -406,7 +406,7 @@ impl Response {
 
     pub fn on_report_replica_progress(&mut self, frame: &Frame) {
         if let Some(ref buf) = frame.header {
-            match flatbuffers::root::<ReportReplicaProgressResponse>(buf) {
+            match flatbuffers::root::<ReportRangeProgressResponse>(buf) {
                 Ok(response) => {
                     trace!("Received Report replica progress response: {:?}", response);
                     self.status = Into::<Status>::into(&response.status().unpack());

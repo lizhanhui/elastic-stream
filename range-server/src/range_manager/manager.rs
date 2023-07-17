@@ -5,7 +5,9 @@ use std::{
 };
 
 use log::{error, info};
-use model::{object::ObjectMetadata, range::RangeMetadata, stream::StreamMetadata};
+use model::{
+    object::ObjectMetadata, range::RangeMetadata, replica::RangeProgress, stream::StreamMetadata,
+};
 use object_storage::ObjectStorage;
 use store::Store;
 
@@ -77,6 +79,14 @@ where
         }
         Ok(())
     }
+
+    fn get_range(&self, stream_id: u64, range_index: u32) -> Option<&Range> {
+        if let Some(stream) = self.streams.get(&(stream_id as i64)) {
+            stream.get_range(range_index as i32)
+        } else {
+            None
+        }
+    }
 }
 
 impl<S, F, O> RangeManager for DefaultRangeManager<S, F, O>
@@ -121,7 +131,7 @@ where
         _last_offset_delta: u32,
         bytes_len: u32,
     ) -> Result<(), ServiceError> {
-        if let Some(range) = self.get_range(stream_id, range_index) {
+        if let Some(range) = self.get_range_mut(stream_id, range_index) {
             range.commit(offset).await;
             self.object_storage
                 .new_commit(stream_id as u64, range_index as u32, bytes_len);
@@ -171,9 +181,9 @@ where
         self.streams.get_mut(&stream_id)
     }
 
-    fn get_range(&mut self, stream_id: i64, index: i32) -> Option<&mut Range> {
+    fn get_range_mut(&mut self, stream_id: i64, index: i32) -> Option<&mut Range> {
         if let Some(stream) = self.get_stream(stream_id) {
-            stream.get_range(index)
+            stream.get_range_mut(index)
         } else {
             None
         }
@@ -190,6 +200,25 @@ where
         self.object_storage
             .get_objects(stream_id, range_index, start_offset, end_offset, size_hint)
             .await
+    }
+
+    async fn get_range_progress(&self) -> Vec<RangeProgress> {
+        let mut progress = Vec::new();
+        let offloading_range = self.object_storage.get_offloading_range().await;
+        for range_key in offloading_range.iter() {
+            let stream_id = range_key.stream_id;
+            let range_index = range_key.range_index;
+            if let Some(range) = self.get_range(stream_id, range_index) {
+                if let Some(committed) = range.committed() {
+                    progress.push(RangeProgress {
+                        stream_id,
+                        range_index,
+                        confirm_offset: committed,
+                    });
+                }
+            }
+        }
+        progress
     }
 }
 

@@ -58,6 +58,11 @@ impl ObjectManager for MemoryObjectManager {
             vec![]
         }
     }
+
+    fn get_offloading_range(&self) -> Vec<RangeKey> {
+        // TODO: replay meta event, get offloading range.
+        vec![]
+    }
 }
 
 impl Default for MemoryObjectManager {

@@ -933,16 +933,16 @@ table TxnResponse {
     responses: [ResponseOp] (id: 2);
 }
 
-table ReportReplicaProgressRequest {
+table ReportRangeProgressRequest {
     // The timeout in milliseconds to wait for the response.
     timeout_ms: int32 (id: 0);
 
     range_server: RangeServer (id: 1, required);
 
-    replica_progress: [ReplicaProgress] (id: 2, required);
+    range_progress: [RangeProgress] (id: 2, required);
 }
 
-table ReplicaProgress {
+table RangeProgress {
     stream_id: int64 (id: 0);
 
     range_index: int32 (id: 1);
@@ -950,7 +950,7 @@ table ReplicaProgress {
     confirm_offset: int64 (id: 2);
 }
 
-table ReportReplicaProgressResponse {
+table ReportRangeProgressResponse {
     status: Status (id: 0, required);
 
     throttle_time_ms: int32 (id: 1);

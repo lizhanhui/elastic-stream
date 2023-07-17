@@ -8,7 +8,7 @@ use super::range::Range;
 pub(crate) struct Stream {
     metadata: StreamMetadata,
 
-    ranges: Vec<Range>,
+    pub(crate) ranges: Vec<Range>,
 }
 
 impl Stream {
@@ -86,7 +86,7 @@ impl Stream {
 
     pub(crate) fn seal(&mut self, metadata: &mut RangeMetadata) -> Result<(), ServiceError> {
         self.verify_stream_id(metadata)?;
-        if let Some(range) = self.get_range(metadata.index()) {
+        if let Some(range) = self.get_range_mut(metadata.index()) {
             range.seal(metadata);
             Ok(())
         } else {
@@ -99,9 +99,15 @@ impl Stream {
         }
     }
 
-    pub(crate) fn get_range(&mut self, index: i32) -> Option<&mut Range> {
+    pub(crate) fn get_range_mut(&mut self, index: i32) -> Option<&mut Range> {
         self.ranges
             .iter_mut()
+            .find(|range| range.metadata.index() == index)
+    }
+
+    pub(crate) fn get_range(&self, index: i32) -> Option<&Range> {
+        self.ranges
+            .iter()
             .find(|range| range.metadata.index() == index)
     }
 
@@ -179,7 +185,9 @@ mod tests {
         let range = RangeMetadata::from(range);
         stream.create_range(range);
 
-        let range = stream.get_range(0).expect("The first range should exist");
+        let range = stream
+            .get_range_mut(0)
+            .expect("The first range should exist");
         range.window_mut().and_then(|window| {
             window
                 .check_barrier(&Foo {

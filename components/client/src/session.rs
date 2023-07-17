@@ -230,7 +230,7 @@ impl Session {
                 frame.operation_code = OperationCode::REPORT_METRICS;
             }
 
-            request::Headers::ReportReplicaProgress { .. } => {
+            request::Headers::ReportRangeProgress { .. } => {
                 frame.operation_code = OperationCode::REPORT_REPLICA_PROGRESS;
             }
         };

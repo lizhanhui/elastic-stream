@@ -93,7 +93,7 @@ impl<'a> Command<'a> {
             }
 
             OperationCode::REPORT_REPLICA_PROGRESS => {
-                error!("ReportReplicaProgress is not supported in range-server");
+                error!("ReportRangeProgress is not supported in range-server");
                 Err(ErrorCode::UNSUPPORTED_OPERATION)
             }
 

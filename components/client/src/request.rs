@@ -3,14 +3,14 @@ use model::request::fetch::FetchRequest;
 use model::stream::StreamMetadata;
 use model::{
     client_role::ClientRole, range::RangeMetadata, range_server::RangeServer,
-    replica::ReplicaProgress, ListRangeCriteria,
+    replica::RangeProgress, ListRangeCriteria,
 };
 use protocol::rpc::header::{
     AppendRequestT, CreateRangeRequestT, CreateStreamRequestT,
     DescribePlacementDriverClusterRequestT, DescribeStreamRequestT, FetchRequestT,
-    HeartbeatRequestT, IdAllocationRequestT, ListRangeCriteriaT, ListRangeRequestT,
-    RangeServerMetricsT, RangeT, ReplicaProgressT, ReportMetricsRequestT,
-    ReportReplicaProgressRequestT, SealKind, SealRangeRequestT,
+    HeartbeatRequestT, IdAllocationRequestT, ListRangeCriteriaT, ListRangeRequestT, RangeProgressT,
+    RangeServerMetricsT, RangeT, ReportMetricsRequestT, ReportRangeProgressRequestT, SealKind,
+    SealRangeRequestT,
 };
 use std::fmt;
 use std::time::Duration;
@@ -92,9 +92,9 @@ pub enum Headers {
         range_active_cnt: i16,
     },
 
-    ReportReplicaProgress {
+    ReportRangeProgress {
         range_server: RangeServer,
-        replica_progress: Vec<ReplicaProgress>,
+        range_progress: Vec<RangeProgress>,
     },
 }
 
@@ -252,17 +252,15 @@ impl From<&Request> for Bytes {
                 let request = request.pack(&mut builder);
                 builder.finish(request, None);
             }
-            Headers::ReportReplicaProgress {
+            Headers::ReportRangeProgress {
                 range_server,
-                replica_progress,
+                range_progress: replica_progress,
             } => {
-                let mut request = ReportReplicaProgressRequestT::default();
+                let mut request = ReportRangeProgressRequestT::default();
                 request.timeout_ms = req.timeout.as_millis() as i32;
                 request.range_server = Box::new(range_server.into());
-                request.replica_progress = replica_progress
-                    .iter()
-                    .map(ReplicaProgressT::from)
-                    .collect();
+                request.range_progress =
+                    replica_progress.iter().map(RangeProgressT::from).collect();
                 let request = request.pack(&mut builder);
                 builder.finish(request, None);
             }

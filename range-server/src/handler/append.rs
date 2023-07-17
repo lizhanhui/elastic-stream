@@ -112,7 +112,7 @@ impl Append {
                 trace!("Received append request: {}", req);
                 let result = async {
                     if let Some(range) = unsafe { &mut *range_manager.get() }
-                        .get_range(req.stream_id, req.range_index)
+                        .get_range_mut(req.stream_id, req.range_index)
                     {
                         if let Some(window) = range.window_mut() {
                             // Check write barrier to ensure that the incoming requests arrive in order.

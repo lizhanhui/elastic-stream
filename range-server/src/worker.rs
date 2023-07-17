@@ -110,6 +110,8 @@ where
                     });
                     self.report_metrics(shutdown.subscribe());
                 }
+                // TODO: report after pd can handle the request.
+                // self.report_range_progress(shutdown.subscribe());
 
                 self.heartbeat(shutdown.subscribe());
 
@@ -170,6 +172,28 @@ where
                         .await;
                     }
 
+                }
+            }
+        });
+    }
+
+    #[allow(dead_code)]
+    fn report_range_progress(&self, mut shutdown_rx: broadcast::Receiver<()>) {
+        let client = self.client.clone();
+        let config = Arc::clone(&self.config.server_config);
+        let range_manager = self.range_manager.clone();
+        tokio_uring::spawn(async move {
+            let mut interval = tokio::time::interval(config.client_heartbeat_interval());
+            loop {
+                tokio::select! {
+                    _ = shutdown_rx.recv() => {
+                        info!("Received shutdown signal. Stop report range progress.");
+                        break;
+                    }
+                    _  = interval.tick() => {
+                        let range_progress = unsafe{ & *range_manager.get()}.get_range_progress().await;
+                        let _ = client.report_range_progress(&config.placement_driver, range_progress).await;
+                    }
                 }
             }
         });

@@ -60,6 +60,13 @@ impl AsyncObjectStorage {
                                     let _ = task.tx.send(rst);
                                 });
                             }
+                            Task::GetOffloadingRange(tx) => {
+                                let object_storage = object_storage.clone();
+                                tokio_uring::spawn(async move {
+                                    let rst = object_storage.get_offloading_range().await;
+                                    let _ = tx.send(rst);
+                                });
+                            }
                         }
                     }
                 });
@@ -94,11 +101,18 @@ impl ObjectStorage for AsyncObjectStorage {
         }));
         rx.await.unwrap()
     }
+
+    async fn get_offloading_range(&self) -> Vec<RangeKey> {
+        let (tx, rx) = oneshot::channel();
+        let _ = self.tx.send(Task::GetOffloadingRange(tx));
+        rx.await.unwrap()
+    }
 }
 
 enum Task {
     NewCommit(u64, u32, u32),
     GetObjects(GetObjectsTask),
+    GetOffloadingRange(oneshot::Sender<Vec<RangeKey>>),
 }
 
 struct GetObjectsTask {
@@ -228,6 +242,10 @@ where
     ) -> Vec<ObjectMetadata> {
         self.object_manager
             .get_objects(stream_id, range_index, start_offset, end_offset, size_hint)
+    }
+
+    async fn get_offloading_range(&self) -> Vec<RangeKey> {
+        self.object_manager.get_offloading_range()
     }
 }
 

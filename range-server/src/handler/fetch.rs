@@ -140,7 +140,10 @@ impl<'a> Fetch<'a> {
         let limit = self.fetch_request.limit();
 
         // If the stream-range exists and contains the requested offset, build the read options
-        if range_manager.get_range(stream_id, range_index).is_some() {
+        if range_manager
+            .get_range_mut(stream_id, range_index)
+            .is_some()
+        {
             Ok(ReadOptions {
                 stream_id,
                 range: range_index as u32,
