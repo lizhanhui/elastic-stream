@@ -44,7 +44,7 @@ impl<'a> SealRange<'a> {
         M: RangeManager,
     {
         let request = self.request.unpack();
-        let mut builder = flatbuffers::FlatBufferBuilder::new();
+
         let mut seal_response = SealRangeResponseT::default();
         let mut status = StatusT::default();
         status.code = ErrorCode::OK;
@@ -53,7 +53,19 @@ impl<'a> SealRange<'a> {
 
         let range = request.range;
         let mut range = Into::<RangeMetadata>::into(&*range);
-        store.seal(range.clone());
+        if let Err(e) = store.seal(range.clone()).await {
+            error!(
+                "Failed to seal stream-id={}, range_index={} in store",
+                range.stream_id(),
+                range.index()
+            );
+            status.code = ErrorCode::RS_SEAL_RANGE;
+            status.message = Some(e.to_string());
+            seal_response.status = Box::new(status);
+            self.build_response(response, &seal_response);
+            return;
+        }
+
         match manager.seal(&mut range) {
             Ok(_) => {
                 status.code = ErrorCode::OK;
@@ -70,16 +82,21 @@ impl<'a> SealRange<'a> {
                     ServiceError::NotFound(_) => status.code = ErrorCode::RANGE_NOT_FOUND,
                     _ => status.code = ErrorCode::RS_INTERNAL_SERVER_ERROR,
                 }
-                status.message = Some(format!("{:?}", e));
+                status.message = Some(e.to_string());
             }
         }
         seal_response.status = Box::new(status);
+        self.build_response(response, &seal_response);
+    }
 
+    #[inline]
+    fn build_response(&self, frame: &mut Frame, seal_response: &SealRangeResponseT) {
+        let mut builder = flatbuffers::FlatBufferBuilder::new();
         trace!("{:?}", seal_response);
         let resp = seal_response.pack(&mut builder);
         builder.finish(resp, None);
         let data = builder.finished_data();
-        response.header = Some(Bytes::copy_from_slice(data));
+        frame.header = Some(Bytes::copy_from_slice(data));
     }
 }
 

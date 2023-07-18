@@ -45,23 +45,33 @@ impl<'a> CreateRange<'a> {
         M: RangeManager,
     {
         let request = self.request.unpack();
-        let mut builder = flatbuffers::FlatBufferBuilder::new();
+
         let mut create_response = SealRangeResponseT::default();
 
         let manager = unsafe { &mut *range_manager.get() };
 
         let range = request.range;
         let range: RangeMetadata = Into::<RangeMetadata>::into(&*range);
-        store.create(range.clone());
+        let mut status = StatusT::default();
+
+        // Notify range creation to `Store`
+        if let Err(e) = store.create(range.clone()).await {
+            error!("Failed to create-range in store: {}", e.to_string());
+            status.code = ErrorCode::RS_CREATE_RANGE;
+            status.message = Some(format!("Failed to create range: {}", e));
+            create_response.status = Box::new(status);
+            self.build_response(response, &create_response);
+            return;
+        }
+
+        // Notify range creation to `RangeManager`
         if let Err(e) = manager.create_range(range.clone()) {
             error!("Failed to create range: {:?}", e);
-            let mut status = StatusT::default();
             // TODO: Map service error to the corresponding error code.
             status.code = ErrorCode::RS_INTERNAL_SERVER_ERROR;
             status.message = Some(format!("Failed to create range: {}", e));
             create_response.status = Box::new(status);
         } else {
-            let mut status = StatusT::default();
             status.code = ErrorCode::OK;
             status.message = Some(String::from("OK"));
             create_response.status = Box::new(status);
@@ -70,10 +80,16 @@ impl<'a> CreateRange<'a> {
             trace!("Created range={:?}", range);
         }
 
+        self.build_response(response, &create_response);
+    }
+
+    #[inline]
+    fn build_response(&self, frame: &mut Frame, create_response: &SealRangeResponseT) {
+        let mut builder = flatbuffers::FlatBufferBuilder::new();
         let resp = create_response.pack(&mut builder);
         builder.finish(resp, None);
         let data = builder.finished_data();
-        response.header = Some(Bytes::copy_from_slice(data));
+        frame.header = Some(Bytes::copy_from_slice(data));
     }
 }
 

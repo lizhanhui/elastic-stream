@@ -2,6 +2,7 @@ use std::{cell::RefCell, collections::HashMap, rc::Rc, sync::Arc};
 
 use futures::future::join_all;
 use local_sync::oneshot;
+use log::trace;
 use model::range::RangeMetadata;
 
 use crate::{
@@ -69,6 +70,7 @@ where
     S: Store,
 {
     pub fn new(store: S) -> Self {
+        trace!("BufferedStore::new");
         Self {
             store,
             buffer: Rc::new(RefCell::new(StoreBuffer::new())),
@@ -89,6 +91,12 @@ where
         options: &WriteOptions,
         request: AppendRecordRequest,
     ) -> Result<AppendResult, AppendError> {
+        trace!(
+            "BufferedStore#append stream-id={}, range-index={}, offset={}",
+            request.stream_id,
+            request.range_index,
+            request.offset
+        );
         if self.buffer.borrow_mut().fast_forward(&request) {
             let stream_id = request.stream_id as u64;
             let range = request.range_index as u32;

@@ -41,6 +41,8 @@ const (
 	ErrorCodeRS_INTERNAL_SERVER_ERROR      ErrorCode = 2500
 	ErrorCodeRS_NOT_IMPLEMENTED            ErrorCode = 2501
 	ErrorCodeRS_DATA_CORRUPTED             ErrorCode = 2502
+	ErrorCodeRS_CREATE_RANGE               ErrorCode = 2503
+	ErrorCodeRS_SEAL_RANGE                 ErrorCode = 2504
 )
 
 var EnumNamesErrorCode = map[ErrorCode]string{
@@ -78,6 +80,8 @@ var EnumNamesErrorCode = map[ErrorCode]string{
 	ErrorCodeRS_INTERNAL_SERVER_ERROR:      "RS_INTERNAL_SERVER_ERROR",
 	ErrorCodeRS_NOT_IMPLEMENTED:            "RS_NOT_IMPLEMENTED",
 	ErrorCodeRS_DATA_CORRUPTED:             "RS_DATA_CORRUPTED",
+	ErrorCodeRS_CREATE_RANGE:               "RS_CREATE_RANGE",
+	ErrorCodeRS_SEAL_RANGE:                 "RS_SEAL_RANGE",
 }
 
 var EnumValuesErrorCode = map[string]ErrorCode{
@@ -115,6 +119,8 @@ var EnumValuesErrorCode = map[string]ErrorCode{
 	"RS_INTERNAL_SERVER_ERROR":      ErrorCodeRS_INTERNAL_SERVER_ERROR,
 	"RS_NOT_IMPLEMENTED":            ErrorCodeRS_NOT_IMPLEMENTED,
 	"RS_DATA_CORRUPTED":             ErrorCodeRS_DATA_CORRUPTED,
+	"RS_CREATE_RANGE":               ErrorCodeRS_CREATE_RANGE,
+	"RS_SEAL_RANGE":                 ErrorCodeRS_SEAL_RANGE,
 }
 
 func (v ErrorCode) String() string {

@@ -77,6 +77,12 @@ enum ErrorCode : int16 {
     RS_INTERNAL_SERVER_ERROR = 2500,
     RS_NOT_IMPLEMENTED = 2501,
     RS_DATA_CORRUPTED = 2502,
+
+    // Failed to create range on range server using the given metadata.
+    RS_CREATE_RANGE = 2503,
+
+    // Failed to seal range on range server
+    RS_SEAL_RANGE = 2504,
 }
 
 // Flag variants shared by multiple opcodes
