@@ -1,14 +1,12 @@
 use config::ObjectStorageConfig;
+use log::warn;
 use std::{
     cell::RefCell,
     rc::Rc,
     time::{Duration, Instant},
 };
 use store::error::FetchError;
-use tokio::{
-    sync::mpsc::{self, UnboundedReceiver},
-    time::sleep,
-};
+use tokio::{sync::mpsc, time::sleep};
 
 use crate::{
     range_fetcher::RangeFetcher, range_offload::RangeOffload, ObjectManager, RangeKey, ShutdownRx,
@@ -24,7 +22,7 @@ pub trait RangeAccumulator {
 
 pub struct DefaultRangeAccumulator {
     size: RefCell<u32>,
-    tx: mpsc::UnboundedSender<EventKind>,
+    tx: mpsc::Sender<EventKind>,
     object_size: u32,
     part_size: u32,
     timestamp: RefCell<Instant>,
@@ -43,7 +41,9 @@ impl RangeAccumulator for DefaultRangeAccumulator {
             // trigger offload when there unloaded records size is large than object_size.
             *size = 0;
             self.timestamp.replace(Instant::now());
-            let _ = self.tx.send(EventKind::ObjectFull);
+            let _ = self.tx.try_send(EventKind::ObjectFull).map_err(|e| {
+                warn!("send object full event failed: {}", e);
+            });
             (-(old_size as i32), false)
         } else {
             *size += records_size;
@@ -62,7 +62,9 @@ impl RangeAccumulator for DefaultRangeAccumulator {
             let old_size = *size;
             *timestamp = Instant::now();
             *size = 0;
-            let _ = self.tx.send(EventKind::TimeExpired);
+            let _ = self.tx.try_send(EventKind::TimeExpired).map_err(|e| {
+                warn!("send time expired event failed: {}", e);
+            });
             -(old_size as i32)
         } else {
             0
@@ -78,7 +80,9 @@ impl RangeAccumulator for DefaultRangeAccumulator {
         if *size >= self.part_size {
             let old_size = *size;
             *size = 0;
-            let _ = self.tx.send(EventKind::PartFull);
+            let _ = self.tx.try_send(EventKind::PartFull).map_err(|e| {
+                warn!("send part full event failed: {}", e);
+            });
             -(old_size as i32)
         } else {
             0
@@ -95,7 +99,7 @@ impl DefaultRangeAccumulator {
         range_offload: Rc<RangeOffload<M>>,
         shutdown_rx: ShutdownRx,
     ) -> Self {
-        let (tx, rx) = mpsc::unbounded_channel();
+        let (tx, rx) = mpsc::channel(16);
         Self::read_loop(
             range,
             start_offset,
@@ -119,7 +123,7 @@ impl DefaultRangeAccumulator {
         range: RangeKey,
         start_offset: u64,
         object_size: u32,
-        mut rx: UnboundedReceiver<EventKind>,
+        mut rx: mpsc::Receiver<EventKind>,
         range_fetcher: Rc<F>,
         range_offload: Rc<RangeOffload<M>>,
         shutdown_rx: ShutdownRx,
@@ -162,7 +166,7 @@ impl DefaultRangeAccumulator {
                                         // read to end
                                         break;
                                     }
-                                    next_offset = range_offload.write(next_offset, records.payload);
+                                    next_offset = range_offload.write(next_offset, records.payload).await;
                                 }
                                 Err(e) => match e {
                                     FetchError::NoRecord => {
@@ -180,7 +184,7 @@ impl DefaultRangeAccumulator {
                             }
                         }
                         if force_flush {
-                            range_offload.async_flush();
+                            range_offload.trigger_flush();
                         }
                     }
                 }
@@ -191,7 +195,7 @@ impl DefaultRangeAccumulator {
 
 impl Drop for DefaultRangeAccumulator {
     fn drop(&mut self) {
-        let _ = self.tx.send(EventKind::Close);
+        let _ = self.tx.try_send(EventKind::Close);
     }
 }
 

@@ -5,6 +5,7 @@ use bytes::BytesMut;
 use config::ObjectStorageConfig;
 use log::debug;
 use log::warn;
+use mockall::lazy_static;
 use model::error::DecodeError;
 use model::object::gen_object_key;
 use model::object::BLOCK_DELIMITER;
@@ -22,6 +23,8 @@ use std::time::Instant;
 use std::vec::Vec;
 use tokio::sync::mpsc;
 use tokio::sync::oneshot;
+use tokio::sync::Semaphore;
+use tokio::sync::SemaphorePermit;
 use tokio::task::JoinHandle;
 use tokio::time::sleep;
 
@@ -30,6 +33,9 @@ use model::object::ObjectMetadata;
 use util::bytes::BytesSliceCursor;
 
 const SPARSE_SIZE: u32 = 16 * 1024 * 1024;
+lazy_static! {
+    static ref OBJECT_WRITE_LIMITER: Semaphore = Semaphore::new(100);
+}
 
 /// Object format:
 ///   data block            => bytes
@@ -81,8 +87,7 @@ where
         }
     }
 
-    pub fn write(&self, start_offset: u64, payload: Vec<Bytes>) -> u64 {
-        // TODO: 统计 inflight bytes 来进行背压，避免网络打爆。或者通过一个全局的并发限制器。如果限制则直接返回 false，或者卡住。
+    pub async fn write(&self, start_offset: u64, payload: Vec<Bytes>) -> u64 {
         let payload_length: usize = payload.iter().map(|p| p.len()).sum();
         let payload_length = payload_length as u32;
         let key = gen_object_key(
@@ -93,15 +98,17 @@ where
             start_offset,
         );
 
-        let mut multi_part_object = self.multi_part_object.borrow_mut();
-        if let Some(multi_part_obj) = multi_part_object.as_ref() {
-            // the last multi-part object exist, then write to it.
-            let (object_full, end_offset) = multi_part_obj.write(payload);
-            if object_full {
-                multi_part_obj.close(None);
-                *multi_part_object = None;
+        {
+            let mut multi_part_object = self.multi_part_object.borrow_mut();
+            if let Some(multi_part_obj) = multi_part_object.as_ref() {
+                // the last multi-part object exist, then write to it.
+                let (object_full, end_offset) = multi_part_obj.write(payload);
+                if object_full {
+                    multi_part_obj.close(None);
+                    *multi_part_object = None;
+                }
+                return end_offset;
             }
-            return end_offset;
         }
 
         if payload_length >= self.object_size {
@@ -113,11 +120,12 @@ where
                 op: self.op.clone(),
                 object_manager: self.object_manager.clone(),
             };
-            let (end_offset, _) = object.write(payload, object_metadata);
+            let (end_offset, _) = object.write(payload, object_metadata).await;
             return end_offset;
         }
 
         // start a new multi-part object.
+        let permit = OBJECT_WRITE_LIMITER.acquire().await.unwrap();
         let object_metadata =
             ObjectMetadata::new(self.stream_id, self.range_index, self.epoch, start_offset);
         let new_multi_part_object = MultiPartObject::new(
@@ -126,14 +134,15 @@ where
             self.op.clone(),
             self.object_manager.clone(),
             self.object_size,
+            permit,
         );
         let (_, end_offset) = new_multi_part_object.write(payload);
-        *multi_part_object = Some(new_multi_part_object);
+        *self.multi_part_object.borrow_mut() = Some(new_multi_part_object);
         end_offset
     }
 
     /// force inflight multi-part object to complete.
-    pub fn async_flush(&self) {
+    pub fn trigger_flush(&self) {
         if let Some(multi_part_object) = self.multi_part_object.take() {
             multi_part_object.close(None);
         }
@@ -163,6 +172,7 @@ impl MultiPartObject {
         op: Operator,
         object_manager: Rc<M>,
         object_size: u32,
+        permit: SemaphorePermit<'static>,
     ) -> Self {
         let (tx, rx) = mpsc::unbounded_channel::<MultiPartWriteEvent>();
         let this = Self {
@@ -175,7 +185,7 @@ impl MultiPartObject {
         {
             let key = key;
             let op = op;
-            Self::write_loop(object_metadata, key, op, object_manager, rx);
+            Self::write_loop(object_metadata, key, op, object_manager, rx, permit);
         }
         this
     }
@@ -217,6 +227,7 @@ impl MultiPartObject {
         op: Operator,
         object_manager: Rc<M>,
         mut rx: mpsc::UnboundedReceiver<MultiPartWriteEvent>,
+        permit: SemaphorePermit<'static>,
     ) {
         tokio_uring::spawn(async move {
             // TODO: delay init multi-part object, if there is only one part or several parts is too small. the multi-part object is not necessary.
@@ -282,6 +293,7 @@ impl MultiPartObject {
                             if let Some(tx) = tx {
                                 let _ = tx.send(());
                             }
+                            drop(permit);
                             return;
                         } else {
                             Self::write_part(writer, &key, &bytes).await;
@@ -354,12 +366,13 @@ impl<M> Object<M>
 where
     M: ObjectManager + 'static,
 {
-    pub fn write(
+    pub async fn write(
         &self,
         payload: Vec<Bytes>,
         object_metadata: ObjectMetadata,
     ) -> (u64, JoinHandle<()>) {
-        self.write0(payload, object_metadata, SPARSE_SIZE)
+        let permit = OBJECT_WRITE_LIMITER.acquire().await.unwrap();
+        self.write0(payload, object_metadata, SPARSE_SIZE, permit)
     }
 
     pub fn write0(
@@ -367,6 +380,7 @@ where
         payload: Vec<Bytes>,
         mut object_metadata: ObjectMetadata,
         sparse_size: u32,
+        permit: SemaphorePermit<'static>,
     ) -> (u64, JoinHandle<()>) {
         let key = self.key.clone();
         let op = self.op.clone();
@@ -394,6 +408,8 @@ where
             let bytes = bytes.freeze();
             Self::write_object(&op, &key, &bytes).await;
             object_manager.commit_object(object_metadata);
+            // explicit ref permit in async function to force move permit to async block.
+            drop(permit);
         });
         (end_offset, join_handle)
     }
@@ -586,7 +602,7 @@ mod tests {
             };
 
             let object_metadata = ObjectMetadata::new(1, 0, 0, 233);
-            let (end_offset, join_handle) = obj.write(encoded.clone(), object_metadata);
+            let (end_offset, join_handle) = obj.write(encoded.clone(), object_metadata).await;
             assert_eq!(243, end_offset);
             join_handle.await.unwrap();
 
