@@ -79,23 +79,24 @@ impl RangeKey {
 /// # Example:
 ///
 /// ```
-/// #[tokio::main]
-/// async fn main() {
-///     let (mut tx, rx) = shutdown_chan();
-///     for i in 0..2 {
+/// use object_storage::shutdown_chan;
+///
+/// tokio_uring::start(async move {
+///     let (tx, rx) = shutdown_chan();
+///     for _i in 0..2 {
 ///         let rx = rx.clone();
-///         tokio::spawn(async move {
+///         tokio_uring::spawn(async move {
 ///             let mut notify_rx = rx.subscribe();
 ///             loop {
 ///                 tokio::select! {
-///                     _ = notify_rx.recv() => {
-///                         println!("task recv shutdown signal");
-///                         break;
+///                 _ = notify_rx.recv() => {
+///                     println!("task recv shutdown signal");
+///                     break;
+///                 }
+///                 _ = tokio::time::sleep(std::time::Duration::from_millis(100)) => {
+///                     println!("task tick");
 ///                     }
-///                     _ = tokio::time::sleep(std::time::Duration::from_millis(100)) => {
-///                         println!("task tick");
-///                         }
-///                     }
+///                 }
 ///             }
 ///             println!("task exit");
 ///         });
@@ -105,7 +106,7 @@ impl RangeKey {
 ///     println!("shutting");
 ///     tx.shutdown().await;
 ///     println!("shutdown");
-/// }
+/// })
 /// ```
 pub fn shutdown_chan() -> (ShutdownTx, ShutdownRx) {
     let (notify_tx, _notify_rx) = broadcast::channel(1);
