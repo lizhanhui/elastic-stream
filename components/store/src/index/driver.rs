@@ -330,7 +330,7 @@ mod tests {
             .store
             .path
             .set_base(db_path.path().as_os_str().to_str().unwrap());
-        let config = Arc::new(Configuration::default());
+        let config = Arc::new(configuration);
         let index_driver = super::IndexDriver::new(&config, min_offset, 128)?;
         assert_eq!(0, index_driver.get_wal_checkpoint()?);
 
