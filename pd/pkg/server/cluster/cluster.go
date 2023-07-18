@@ -60,7 +60,7 @@ type RaftCluster struct {
 
 	storage        storage.Storage
 	sAlloc         id.Allocator // stream id allocator
-	dnAlloc        id.Allocator // range server id allocator
+	rsAlloc        id.Allocator // range server id allocator
 	oAlloc         id.Allocator // object id allocator
 	member         MemberService
 	cache          *cache.Cache
@@ -116,7 +116,7 @@ func (c *RaftCluster) Start(s Server) error {
 	c.storage = s.Storage()
 	c.runningCtx, c.runningCancel = context.WithCancel(c.ctx)
 	c.sAlloc = s.IDAllocator(_streamIDAllocKey, uint64(endpoint.MinStreamID), _streamIDStep)
-	c.dnAlloc = s.IDAllocator(_rangeServerIDAllocKey, uint64(endpoint.MinRangeServerID), _rangeServerIDStep)
+	c.rsAlloc = s.IDAllocator(_rangeServerIDAllocKey, uint64(endpoint.MinRangeServerID), _rangeServerIDStep)
 	c.oAlloc = s.IDAllocator(_objectIDAllocKey, uint64(endpoint.MinObjectID), _objectIDStep)
 	c.client = s.SbpClient()
 	c.sealMus = cmap.NewWithCustomShardingFunction[int64, chan struct{}](func(key int64) uint32 { return uint32(key) })

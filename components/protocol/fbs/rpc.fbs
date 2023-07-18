@@ -73,6 +73,9 @@ enum ErrorCode : int16 {
     // leader nodes. Otherwise, use this code to signal the client to redirect future requests.
     PD_NOT_LEADER = 1503,
 
+    // When listing or watching resources, the resource version is too old and the PD server has compacted it.
+    PD_COMPACTED = 1504,
+
     // 25xx is reserved for range server errors
     RS_INTERNAL_SERVER_ERROR = 2500,
     RS_NOT_IMPLEMENTED = 2501,

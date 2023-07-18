@@ -18,6 +18,7 @@ type Cluster interface {
 	cluster.StreamService
 	cluster.MemberService
 	cluster.ObjectService
+	cluster.ResourceService
 }
 
 // Handler is an sbp handler, implements server.Handler

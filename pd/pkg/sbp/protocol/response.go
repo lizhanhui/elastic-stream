@@ -385,3 +385,51 @@ func (co *CommitObjectResponse) Error(status *rpcfb.StatusT) {
 func (co *CommitObjectResponse) OK() {
 	co.Status = &rpcfb.StatusT{Code: rpcfb.ErrorCodeOK}
 }
+
+// ListResourceResponse is a response to rpcfb.OperationCodeLIST_RESOURCE
+type ListResourceResponse struct {
+	baseMarshaller
+	singleResponse
+
+	rpcfb.ListResourceResponseT
+}
+
+func (lr *ListResourceResponse) marshalFlatBuffer() ([]byte, error) {
+	return fbutil.Marshal(&lr.ListResourceResponseT), nil
+}
+
+func (lr *ListResourceResponse) Marshal(fmt codec.Format) ([]byte, error) {
+	return marshal(lr, fmt)
+}
+
+func (lr *ListResourceResponse) Error(status *rpcfb.StatusT) {
+	lr.Status = status
+}
+
+func (lr *ListResourceResponse) OK() {
+	lr.Status = &rpcfb.StatusT{Code: rpcfb.ErrorCodeOK}
+}
+
+// WatchResourceResponse is a response to rpcfb.OperationCodeWATCH_RESOURCE
+type WatchResourceResponse struct {
+	baseMarshaller
+	singleResponse
+
+	rpcfb.WatchResourceResponseT
+}
+
+func (wr *WatchResourceResponse) marshalFlatBuffer() ([]byte, error) {
+	return fbutil.Marshal(&wr.WatchResourceResponseT), nil
+}
+
+func (wr *WatchResourceResponse) Marshal(fmt codec.Format) ([]byte, error) {
+	return marshal(wr, fmt)
+}
+
+func (wr *WatchResourceResponse) Error(status *rpcfb.StatusT) {
+	wr.Status = status
+}
+
+func (wr *WatchResourceResponse) OK() {
+	wr.Status = &rpcfb.StatusT{Code: rpcfb.ErrorCodeOK}
+}

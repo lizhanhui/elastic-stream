@@ -38,6 +38,7 @@ const (
 	ErrorCodePD_NOT_IMPLEMENTED            ErrorCode = 1501
 	ErrorCodePD_NO_AVAILABLE_RS            ErrorCode = 1502
 	ErrorCodePD_NOT_LEADER                 ErrorCode = 1503
+	ErrorCodePD_COMPACTED                  ErrorCode = 1504
 	ErrorCodeRS_INTERNAL_SERVER_ERROR      ErrorCode = 2500
 	ErrorCodeRS_NOT_IMPLEMENTED            ErrorCode = 2501
 	ErrorCodeRS_DATA_CORRUPTED             ErrorCode = 2502
@@ -77,6 +78,7 @@ var EnumNamesErrorCode = map[ErrorCode]string{
 	ErrorCodePD_NOT_IMPLEMENTED:            "PD_NOT_IMPLEMENTED",
 	ErrorCodePD_NO_AVAILABLE_RS:            "PD_NO_AVAILABLE_RS",
 	ErrorCodePD_NOT_LEADER:                 "PD_NOT_LEADER",
+	ErrorCodePD_COMPACTED:                  "PD_COMPACTED",
 	ErrorCodeRS_INTERNAL_SERVER_ERROR:      "RS_INTERNAL_SERVER_ERROR",
 	ErrorCodeRS_NOT_IMPLEMENTED:            "RS_NOT_IMPLEMENTED",
 	ErrorCodeRS_DATA_CORRUPTED:             "RS_DATA_CORRUPTED",
@@ -116,6 +118,7 @@ var EnumValuesErrorCode = map[string]ErrorCode{
 	"PD_NOT_IMPLEMENTED":            ErrorCodePD_NOT_IMPLEMENTED,
 	"PD_NO_AVAILABLE_RS":            ErrorCodePD_NO_AVAILABLE_RS,
 	"PD_NOT_LEADER":                 ErrorCodePD_NOT_LEADER,
+	"PD_COMPACTED":                  ErrorCodePD_COMPACTED,
 	"RS_INTERNAL_SERVER_ERROR":      ErrorCodeRS_INTERNAL_SERVER_ERROR,
 	"RS_NOT_IMPLEMENTED":            ErrorCodeRS_NOT_IMPLEMENTED,
 	"RS_DATA_CORRUPTED":             ErrorCodeRS_DATA_CORRUPTED,

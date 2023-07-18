@@ -28,4 +28,5 @@ type Storage interface {
 	endpoint.RangeEndpoint
 	endpoint.RangeServerEndpoint
 	endpoint.ObjectEndpoint
+	endpoint.ResourceEndpoint
 }

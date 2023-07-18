@@ -263,16 +263,21 @@ func TestEtcd_GetByRange(t *testing.T) {
 	}
 	type args struct {
 		r     Range
+		rev   int64
 		limit int64
 		desc  bool
 	}
 	type want struct {
-		kvs  []KeyValue
-		more bool
+		kvs      []KeyValue
+		revision int64
+		more     bool
+	}
+	type kv struct {
+		k, v string
 	}
 	tests := []struct {
 		name    string
-		preset  map[string]string
+		preset  []kv
 		fields  fields
 		args    args
 		want    want
@@ -281,50 +286,59 @@ func TestEtcd_GetByRange(t *testing.T) {
 	}{
 		{
 			name:   "get keys",
-			preset: map[string]string{"/test/key1": "val1", "/test/key2": "val2", "/test/key3": "val3"},
+			preset: []kv{{"/test/key1", "val1"}, {"/test/key2", "val2"}, {"/test/key3", "val3"}},
 			args: args{
 				r: Range{[]byte("key1"), []byte("key3")},
 			},
-			want: want{kvs: []KeyValue{{Key: []byte("key1"), Value: []byte("val1")}, {Key: []byte("key2"), Value: []byte("val2")}}},
+			want: want{kvs: []KeyValue{{Key: []byte("key1"), Value: []byte("val1")}, {Key: []byte("key2"), Value: []byte("val2")}}, revision: 4},
 		},
 		{
 			name:   "get keys with prefix",
-			preset: map[string]string{"/test/key1": "val1", "/test/key2": "val2", "/test/key3": "val3"},
+			preset: []kv{{"/test/key1", "val1"}, {"/test/key2", "val2"}, {"/test/key3", "val3"}},
 			args: args{
 				r: Range{[]byte("key"), []byte(clientv3.GetPrefixRangeEnd("key"))},
 			},
-			want: want{kvs: []KeyValue{{Key: []byte("key1"), Value: []byte("val1")}, {Key: []byte("key2"), Value: []byte("val2")}, {Key: []byte("key3"), Value: []byte("val3")}}},
+			want: want{kvs: []KeyValue{{Key: []byte("key1"), Value: []byte("val1")}, {Key: []byte("key2"), Value: []byte("val2")}, {Key: []byte("key3"), Value: []byte("val3")}}, revision: 4},
+		},
+		{
+			name:   "get keys with rev",
+			preset: []kv{{"/test/key1", "val1"}, {"/test/key2", "val2"}, {"/test/key3", "val3"}},
+			args: args{
+				r:   Range{[]byte("key1"), []byte("key3")},
+				rev: 3,
+			},
+			want: want{kvs: []KeyValue{{Key: []byte("key1"), Value: []byte("val1")}, {Key: []byte("key2"), Value: []byte("val2")}}, revision: 3},
 		},
 		{
 			name:   "get keys with limit",
-			preset: map[string]string{"/test/key1": "val1", "/test/key2": "val2", "/test/key3": "val3"},
+			preset: []kv{{"/test/key1", "val1"}, {"/test/key2", "val2"}, {"/test/key3", "val3"}},
 			args: args{
 				r:     Range{[]byte("key1"), []byte("key3")},
 				limit: 1,
 			},
-			want: want{kvs: []KeyValue{{Key: []byte("key1"), Value: []byte("val1")}}, more: true},
+			want: want{kvs: []KeyValue{{Key: []byte("key1"), Value: []byte("val1")}}, revision: 4, more: true},
 		},
 		{
 			name:   "get keys with desc",
-			preset: map[string]string{"/test/key1": "val1", "/test/key2": "val2", "/test/key3": "val3"},
+			preset: []kv{{"/test/key1", "val1"}, {"/test/key2", "val2"}, {"/test/key3", "val3"}},
 			args: args{
 				r:    Range{[]byte("key1"), []byte("key3")},
 				desc: true,
 			},
-			want: want{kvs: []KeyValue{{Key: []byte("key2"), Value: []byte("val2")}, {Key: []byte("key1"), Value: []byte("val1")}}},
+			want: want{kvs: []KeyValue{{Key: []byte("key2"), Value: []byte("val2")}, {Key: []byte("key1"), Value: []byte("val1")}}, revision: 4},
 		},
 
 		{
 			name:   "end key greater than start key",
-			preset: map[string]string{"/test/key1": "val1", "/test/key2": "val2", "/test/key3": "val3"},
+			preset: []kv{{"/test/key1", "val1"}, {"/test/key2", "val2"}, {"/test/key3", "val3"}},
 			args: args{
 				r: Range{[]byte("key3"), []byte("key1")},
 			},
-			want: want{kvs: []KeyValue{}},
+			want: want{kvs: []KeyValue{}, revision: 4},
 		},
 		{
 			name:   "get keys with empty range",
-			preset: map[string]string{"/test/key1": "val1", "/test/key2": "val2", "/test/key3": "val3"},
+			preset: []kv{{"/test/key1", "val1"}, {"/test/key2", "val2"}, {"/test/key3", "val3"}},
 			args: args{
 				r: Range{[]byte(""), []byte("")},
 			},
@@ -332,13 +346,23 @@ func TestEtcd_GetByRange(t *testing.T) {
 		},
 		{
 			name:   "get when transaction failed",
-			preset: map[string]string{"/test/key1": "val1", "/test/key2": "val2", "/test/key3": "val3"},
+			preset: []kv{{"/test/key1", "val1"}, {"/test/key2", "val2"}, {"/test/key3", "val3"}},
 			fields: fields{newCmpFunc: alwaysFailedTxnFunc},
 			args: args{
 				r: Range{[]byte("key1"), []byte("key3")},
 			},
 			wantErr: true,
 			errMsg:  "etcd transaction failed",
+		},
+		{
+			name:   "get with future revision",
+			preset: []kv{{"/test/key1", "val1"}, {"/test/key2", "val2"}, {"/test/key3", "val3"}},
+			args: args{
+				r:   Range{[]byte("key1"), []byte("key3")},
+				rev: 5,
+			},
+			wantErr: true,
+			errMsg:  "required revision is a future revision",
 		},
 	}
 	for _, tt := range tests {
@@ -357,20 +381,20 @@ func TestEtcd_GetByRange(t *testing.T) {
 
 			// prepare
 			kv := client.KV
-			for k, v := range tt.preset {
-				_, err := kv.Put(context.Background(), k, v)
+			for _, pair := range tt.preset {
+				_, err := kv.Put(context.Background(), pair.k, pair.v)
 				re.NoError(err)
 			}
 
 			// run
-			kvs, more, err := etcd.GetByRange(context.Background(), tt.args.r, tt.args.limit, tt.args.desc)
+			kvs, revision, more, err := etcd.GetByRange(context.Background(), tt.args.r, tt.args.rev, tt.args.limit, tt.args.desc)
 
 			// check
 			if tt.wantErr {
 				re.ErrorContains(err, tt.errMsg)
 			} else {
 				re.NoError(err)
-				re.Equal(tt.want, want{kvs: kvs, more: more})
+				re.Equal(tt.want, want{kvs: kvs, revision: revision, more: more})
 			}
 		})
 	}

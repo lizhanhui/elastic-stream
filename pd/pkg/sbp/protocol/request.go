@@ -328,3 +328,45 @@ func (co *CommitObjectRequest) Unmarshal(fmt codec.Format, data []byte) error {
 func (co *CommitObjectRequest) Timeout() int32 {
 	return co.TimeoutMs
 }
+
+// ListResourceRequest is a request to rpcfb.OperationCodeLIST_RESOURCE
+type ListResourceRequest struct {
+	baseRequest
+	baseUnmarshaler
+
+	rpcfb.ListResourceRequestT
+}
+
+func (lr *ListResourceRequest) unmarshalFlatBuffer(data []byte) error {
+	lr.ListResourceRequestT = *rpcfb.GetRootAsListResourceRequest(data, 0).UnPack()
+	return nil
+}
+
+func (lr *ListResourceRequest) Unmarshal(fmt codec.Format, data []byte) error {
+	return unmarshal(lr, fmt, data)
+}
+
+func (lr *ListResourceRequest) Timeout() int32 {
+	return lr.TimeoutMs
+}
+
+// WatchResourceRequest is a request to rpcfb.OperationCodeWATCH_RESOURCE
+type WatchResourceRequest struct {
+	baseRequest
+	baseUnmarshaler
+
+	rpcfb.WatchResourceRequestT
+}
+
+func (wr *WatchResourceRequest) unmarshalFlatBuffer(data []byte) error {
+	wr.WatchResourceRequestT = *rpcfb.GetRootAsWatchResourceRequest(data, 0).UnPack()
+	return nil
+}
+
+func (wr *WatchResourceRequest) Unmarshal(fmt codec.Format, data []byte) error {
+	return unmarshal(wr, fmt, data)
+}
+
+func (wr *WatchResourceRequest) Timeout() int32 {
+	return wr.TimeoutMs
+}

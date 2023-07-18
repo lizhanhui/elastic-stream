@@ -93,3 +93,17 @@ func (c Checker) CommitObject(req *protocol.CommitObjectRequest, resp *protocol.
 	}
 	c.Handler.CommitObject(req, resp)
 }
+
+func (c Checker) ListResource(req *protocol.ListResourceRequest, resp *protocol.ListResourceResponse) {
+	if !c.Handler.Check(req, resp) {
+		return
+	}
+	c.Handler.ListResource(req, resp)
+}
+
+func (c Checker) WatchResource(req *protocol.WatchResourceRequest, resp *protocol.WatchResourceResponse) {
+	if !c.Handler.Check(req, resp) {
+		return
+	}
+	c.Handler.WatchResource(req, resp)
+}

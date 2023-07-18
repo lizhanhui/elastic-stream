@@ -20,6 +20,7 @@ const (
 
 	// objects in range
 	_objectPath                = "objects"
+	_objectPrefix              = _objectPath + kv.KeySeparator
 	_objectInRangePrefixFormat = _objectPath + kv.KeySeparator + _streamIDFormat + kv.KeySeparator + _rangeIDFormat + kv.KeySeparator
 	_objectFormat              = _objectPath + kv.KeySeparator + _streamIDFormat + kv.KeySeparator + _rangeIDFormat + kv.KeySeparator + _objectIDFormat
 	_objectKeyLen              = len(_objectPath) + len(kv.KeySeparator) + _streamIDLen + len(kv.KeySeparator) + _rangeIDLen + len(kv.KeySeparator) + _objectIDLen
@@ -121,7 +122,7 @@ func (e *Endpoint) forEachObjectInRangeLimited(ctx context.Context, rangeID Rang
 	logger := e.lg.With(zap.Int64("stream-id", rangeID.StreamID), zap.Int32("range-index", rangeID.Index), traceutil.TraceLogField(ctx))
 
 	startKey := objectPath(rangeID.StreamID, rangeID.Index, startID)
-	kvs, more, err := e.GetByRange(ctx, kv.Range{StartKey: startKey, EndKey: e.endObjectPathInRange(rangeID)}, limit, false)
+	kvs, _, more, err := e.GetByRange(ctx, kv.Range{StartKey: startKey, EndKey: e.endObjectPathInRange(rangeID)}, 0, limit, false)
 	if err != nil {
 		logger.Error("failed to get objects", zap.Int32("start-id", int32(startID)), zap.Int64("limit", limit), zap.Error(err))
 		return MinObjectID - 1, errors.Wrap(err, "get objects")

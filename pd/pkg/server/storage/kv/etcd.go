@@ -19,6 +19,7 @@ import (
 	"context"
 
 	"github.com/pkg/errors"
+	etcdrpc "go.etcd.io/etcd/api/v3/v3rpc/rpctypes"
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"go.etcd.io/etcd/server/v3/embed"
 	"go.uber.org/zap"
@@ -32,6 +33,8 @@ var (
 	ErrTxnFailed = errors.New("etcd transaction failed")
 	// ErrTooManyTxnOps is the error when the number of operations in a transaction exceeds the limit.
 	ErrTooManyTxnOps = errors.New("too many txn operations")
+	// ErrCompacted is the error when the requested revision has been compacted.
+	ErrCompacted = errors.New("requested revision has been compacted")
 )
 
 // Etcd is a kv based on etcd.
@@ -159,15 +162,19 @@ func (e *Etcd) BatchGet(ctx context.Context, keys [][]byte, inTxn bool) ([]KeyVa
 }
 
 // GetByRange returns ErrTxnFailed if EtcdParam.CmpFunc evaluates to false.
-func (e *Etcd) GetByRange(ctx context.Context, r Range, limit int64, desc bool) ([]KeyValue, bool, error) {
+// GetByRange returns ErrCompacted if the requested revision has been compacted.
+func (e *Etcd) GetByRange(ctx context.Context, r Range, rev int64, limit int64, desc bool) ([]KeyValue, int64, bool, error) {
 	if len(r.StartKey) == 0 {
-		return nil, false, nil
+		return nil, 0, false, nil
 	}
 
 	startKey := e.addPrefix(r.StartKey)
 	endKey := e.addPrefix(r.EndKey)
 
 	opts := []clientv3.OpOption{clientv3.WithRange(string(endKey))}
+	if rev > 0 {
+		opts = append(opts, clientv3.WithRev(rev))
+	}
 	if limit > 0 {
 		opts = append(opts, clientv3.WithLimit(limit))
 	}
@@ -177,10 +184,13 @@ func (e *Etcd) GetByRange(ctx context.Context, r Range, limit int64, desc bool) 
 
 	resp, err := e.newTxnFunc(ctx).Then(clientv3.OpGet(string(startKey), opts...)).Commit()
 	if err != nil {
-		return nil, false, errors.Wrap(err, "kv get by range")
+		if err == etcdrpc.ErrCompacted {
+			return nil, 0, false, errors.Wrapf(ErrCompacted, "kv get by range, revision %d", rev)
+		}
+		return nil, 0, false, errors.Wrap(err, "kv get by range")
 	}
 	if !resp.Succeeded {
-		return nil, false, errors.Wrap(ErrTxnFailed, "kv get by range")
+		return nil, 0, false, errors.Wrap(ErrTxnFailed, "kv get by range")
 	}
 
 	// when the transaction succeeds, the number of responses is always 1 and is always a range response.
@@ -197,7 +207,12 @@ func (e *Etcd) GetByRange(ctx context.Context, r Range, limit int64, desc bool) 
 		})
 	}
 
-	return kvs, rangeResp.More, nil
+	returnedRV := rev
+	if returnedRV <= 0 {
+		returnedRV = rangeResp.Header.Revision
+	}
+
+	return kvs, returnedRV, rangeResp.More, nil
 }
 
 // Put returns ErrTxnFailed if EtcdParam.CmpFunc evaluates to false.
