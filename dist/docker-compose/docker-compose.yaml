@@ -18,7 +18,7 @@ services:
     # https://docs.docker.com/compose/compose-file/05-services/#depends_on
     depends_on:
       pd:
-        condition: service_started
+        condition: service_healthy
     volumes:
       - rs_data:/data
   pd:
@@ -34,10 +34,9 @@ services:
     # https://docs.docker.com/compose/compose-file/05-services/#healthcheck
     healthcheck:
       test: ["CMD-SHELL", "echo -e '\x1dclose\x0d' | telnet localhost 12378"]
-      interval: 1m30s
+      interval: 15s
       timeout: 10s
       retries: 3
-      start_period: 3s
 
 # https://docs.docker.com/compose/compose-file/07-volumes/
 volumes:
