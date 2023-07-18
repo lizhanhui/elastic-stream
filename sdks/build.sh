@@ -27,18 +27,18 @@ build_shared_libraries() {
     # Install cross
     install_cross
     # sudo chown -R $USER:$USER .
-    cross build -p frontend --target aarch64-unknown-linux-gnu -v | exit 1
-    cross build -p frontend --target x86_64-unknown-linux-gnu -v | exit 1
-    cp target/aarch64-unknown-linux-gnu/debug/libfrontend.so sdks/frontend-java/client/src/main/resources/META-INF/native/libfrontend_linux_aarch_64.so | exit 1
-    cp target/x86_64-unknown-linux-gnu/debug/libfrontend.so sdks/frontend-java/client/src/main/resources/META-INF/native/libfrontend_linux_x86_64.so | exit 1
+    cross build -p frontend --target aarch64-unknown-linux-gnu -v
+    cross build -p frontend --target x86_64-unknown-linux-gnu -v
+    cp target/aarch64-unknown-linux-gnu/debug/libfrontend.so sdks/frontend-java/client/src/main/resources/META-INF/native/libfrontend_linux_aarch_64.so
+    cp target/x86_64-unknown-linux-gnu/debug/libfrontend.so sdks/frontend-java/client/src/main/resources/META-INF/native/libfrontend_linux_x86_64.so
 }
 
 BASEDIR=$(dirname "$0")
-cd "$BASEDIR/.." || exit
+cd "$BASEDIR/.." || exit 1
 
 try_install_buildx
 
-build_shared_libraries
+build_shared_libraries || exit 1
 
-cd sdks/frontend-java || exit
+cd sdks/frontend-java || exit 1
 mvn -DargLine="--add-opens=java.base/java.nio=ALL-UNNAMED" package
