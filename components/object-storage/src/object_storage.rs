@@ -296,13 +296,13 @@ where
             s3_builder.region(&config.region);
             s3_builder.endpoint(&config.endpoint);
             s3_builder.access_key_id(
-                &env::var("ES_S3_ACCESS_KEY_ID")
-                    .map_err(|_| "ES_S3_ACCESS_KEY_ID cannot find in env")
+                &env::var("ES_OBJ_ACCESS_KEY_ID")
+                    .map_err(|_| "ES_OBJ_ACCESS_KEY_ID cannot find in env")
                     .unwrap(),
             );
             s3_builder.secret_access_key(
-                &env::var("ES_S3_SECRET_ACCESS_KEY")
-                    .map_err(|_| "ES_S3_SECRET_ACCESS_KEY cannot find in env")
+                &env::var("ES_OBJ_SECRET_ACCESS_KEY")
+                    .map_err(|_| "ES_OBJ_SECRET_ACCESS_KEY cannot find in env")
                     .unwrap(),
             );
             Some(Operator::new(s3_builder).unwrap().finish())

@@ -121,9 +121,11 @@ where
         let block_cache = self.block_cache.clone();
         tokio_uring::spawn(async move {
             let start_offset = readahead.start_offset;
-            let end_offset = readahead
-                .end_offset
-                .unwrap_or_else(|| stream.confirm_offset());
+            let confirm_offset = stream.confirm_offset();
+            if start_offset >= confirm_offset {
+                return;
+            }
+            let end_offset = readahead.end_offset.unwrap_or(confirm_offset);
             let size = readahead.size_hint;
             debug!("stream{stream_id} background readahead([{start_offset},{end_offset}), {size})");
             let rst = stream.fetch(start_offset, end_offset, size).await;

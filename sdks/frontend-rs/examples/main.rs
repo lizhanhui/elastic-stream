@@ -1,3 +1,5 @@
+use std::env;
+
 use bytes::{Bytes, BytesMut};
 use frontend::{Frontend, StreamOptions};
 use futures::{future::join_all, FutureExt};
@@ -6,6 +8,7 @@ use model::{record::flat_record::FlatRecordBatch, RecordBatch};
 use tokio::time::{sleep, Duration};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    env::set_var("ES_SDK_LOG", "debug");
     frontend::init_log();
     tokio_uring::start(async {
         let frontend = Frontend::new("127.0.0.1:12378")?;

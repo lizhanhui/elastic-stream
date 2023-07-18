@@ -1,11 +1,15 @@
 use std::{cell::RefCell, collections::BTreeMap, ops::Bound, rc::Rc};
 
 use bytes::Bytes;
-use log::debug;
+use log::{debug, info, warn};
 use model::object::ObjectMetadata;
-use opendal::{services::Fs, Operator};
+use opendal::{
+    services::{Fs, S3},
+    Operator,
+};
 
 use crate::{error::ObjectReadError, Error};
+use serde::Deserialize;
 use tokio::sync::oneshot;
 
 use super::records_block::RecordsBlock;
@@ -79,17 +83,60 @@ impl ObjectReader for DefaultObjectReader {
     }
 }
 
+#[derive(Deserialize, Debug)]
+struct ObjectStorageConfig {
+    pub endpoint: String,
+    #[serde(default = "default_empty_string")]
+    pub bucket: String,
+    #[serde(default = "default_empty_string")]
+    pub region: String,
+    #[serde(default = "default_empty_string")]
+    pub access_key_id: String,
+    #[serde(default = "default_empty_string")]
+    pub secret_access_key: String,
+}
+
+fn default_empty_string() -> String {
+    "".to_owned()
+}
+
 #[derive(Debug)]
 pub(crate) struct AsyncObjectReader {
-    op: Operator,
+    op: Option<Operator>,
 }
 
 impl AsyncObjectReader {
     pub(crate) fn new() -> Self {
-        // new op from config
-        let mut builder = Fs::default();
-        builder.root("/tmp");
-        let op: Operator = Operator::new(builder).unwrap().finish();
+        let op = match envy::prefixed("ES_OBJ_").from_env::<ObjectStorageConfig>() {
+            Ok(config) => {
+                if config.endpoint.starts_with("fs://") {
+                    let mut builder = Fs::default();
+                    builder.root("/tmp/");
+                    info!("start local test fs operator");
+                    Some(Operator::new(builder).unwrap().finish())
+                } else {
+                    let mut s3_builder = S3::default();
+                    s3_builder.root("/");
+                    s3_builder.bucket(&config.bucket);
+                    s3_builder.region(&config.region);
+                    s3_builder.endpoint(&config.endpoint);
+                    s3_builder.access_key_id(&config.access_key_id);
+                    s3_builder.secret_access_key(&config.secret_access_key);
+                    info!(
+                        "start object operator with endpoint: {}, bucket: {}, region: {}",
+                        &config.endpoint, &config.bucket, &config.region
+                    );
+                    Some(Operator::new(s3_builder).unwrap().finish())
+                }
+            }
+            Err(e) => {
+                warn!(
+                    "read object storage config fail: {}, start without object storage",
+                    e
+                );
+                None
+            }
+        };
         Self { op }
     }
 
@@ -98,6 +145,12 @@ impl AsyncObjectReader {
         object: &ObjectMetadata,
         range: (u32, u32),
     ) -> Result<Vec<RecordsBlock>, ObjectReadError> {
+        if self.op.is_none() {
+            return Err(ObjectReadError::Unexpected(Error::new(
+                0,
+                "Operator is not initialized",
+            )));
+        }
         // // TODO: dispatch task to different thread.
         let (tx, rx) = oneshot::channel();
         let object_key = object.key.clone().unwrap();
@@ -112,7 +165,7 @@ impl AsyncObjectReader {
         _object_data_len: u32,
         tx: oneshot::Sender<Result<Vec<RecordsBlock>, ObjectReadError>>,
     ) {
-        let op = self.op.clone();
+        let op = self.op.as_ref().unwrap().clone();
         tokio_uring::spawn(async move {
             // TODO: 最后一个 block 可能没有数据，每个 block 必须读到数据,object_reader 负责。
             let rst = op
@@ -152,7 +205,6 @@ impl ObjectMetadataManager {
         }
     }
 
-    #[allow(dead_code)]
     pub(crate) fn add_object_metadata(&self, metadata: &ObjectMetadata) {
         let mut metadata_map = self.metadata_map.borrow_mut();
         metadata_map
