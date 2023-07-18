@@ -10,12 +10,15 @@ use model::object::gen_object_key;
 use model::object::BLOCK_DELIMITER;
 use model::object::FOOTER_MAGIC;
 use model::record::flat_record::RecordMagic;
+use observation::metrics::object_metrics;
 use opendal::Operator;
+use opendal::Writer;
 use protocol::flat_model::records::RecordBatchMeta;
 use std::cell::RefCell;
 use std::io::IoSlice;
 use std::rc::Rc;
 use std::time::Duration;
+use std::time::Instant;
 use std::vec::Vec;
 use tokio::sync::mpsc;
 use tokio::sync::oneshot;
@@ -266,55 +269,22 @@ impl MultiPartObject {
                             left_part
                                 .extend_from_slice(&gen_footer(data_len as u32, index_len as u32));
                             let left_part = left_part.freeze();
-                            loop {
-                                match writer.write(left_part.clone()).await {
-                                    Ok(_) => {
-                                        debug!("{key} write multi-part object footer success");
-                                        break;
-                                    }
-                                    Err(e) => {
-                                        warn!("{key} write footer fail, retry later, {e}");
-                                        sleep(Duration::from_secs(1)).await;
-                                        continue;
-                                    }
-                                }
-                            }
+                            Self::write_part(writer, &key, &left_part).await;
+
                             // complete multi-part object.
-                            loop {
-                                match writer.close().await {
-                                    Ok(_) => {
-                                        debug!("{key} complete multi-part object success");
-                                        object_metadata.end_offset_delta =
-                                            (end_offset - object_metadata.start_offset) as u32;
-                                        object_metadata.data_len = data_len as u32;
-                                        object_manager.commit_object(object_metadata);
-                                        break;
-                                    }
-                                    Err(e) => {
-                                        warn!("{key} complete multi-part object fail, retry later, {e}");
-                                        sleep(Duration::from_secs(1)).await;
-                                        continue;
-                                    }
-                                }
-                            }
+                            Self::complete_object(writer, &key).await;
+
+                            object_metadata.end_offset_delta =
+                                (end_offset - object_metadata.start_offset) as u32;
+                            object_metadata.data_len = data_len as u32;
+                            object_manager.commit_object(object_metadata);
+
                             if let Some(tx) = tx {
                                 let _ = tx.send(());
                             }
                             return;
                         } else {
-                            loop {
-                                match writer.write(bytes.clone()).await {
-                                    Ok(_) => {
-                                        debug!("{key} write multi-part object part[len={payload_length}] success");
-                                        break;
-                                    }
-                                    Err(e) => {
-                                        warn!("{key} write part fail, retry later, {e}");
-                                        sleep(Duration::from_secs(1)).await;
-                                        continue;
-                                    }
-                                }
-                            }
+                            Self::write_part(writer, &key, &bytes).await;
                             if let Some(tx) = tx {
                                 let _ = tx.send(());
                             }
@@ -326,6 +296,44 @@ impl MultiPartObject {
                 }
             }
         });
+    }
+
+    async fn write_part(writer: &mut Writer, key: &str, bytes: &Bytes) {
+        loop {
+            let start = Instant::now();
+            match writer.write(bytes.clone()).await {
+                Ok(_) => {
+                    object_metrics::multi_part_object_write(bytes.len() as u32, start.elapsed());
+                    debug!(
+                        "{key} write multi-part object part[len={}] success",
+                        bytes.len()
+                    );
+                    break;
+                }
+                Err(e) => {
+                    warn!("{key} write part fail, retry later, {e}");
+                    sleep(Duration::from_secs(1)).await;
+                    continue;
+                }
+            }
+        }
+    }
+
+    async fn complete_object(writer: &mut Writer, key: &str) {
+        loop {
+            match writer.close().await {
+                Ok(_) => {
+                    object_metrics::multi_part_object_complete();
+                    debug!("{key} complete multi-part object success");
+                    break;
+                }
+                Err(e) => {
+                    warn!("{key} complete multi-part object fail, retry later, {e}");
+                    sleep(Duration::from_secs(1)).await;
+                    continue;
+                }
+            }
+        }
     }
 }
 
@@ -383,24 +391,32 @@ where
             bytes.extend_from_slice(&sparse_index);
             // footer
             bytes.extend_from_slice(&gen_footer(payload_length as u32, sparse_index_len as u32));
-            loop {
-                debug!("{key} start write object[len={payload_length}]");
-                match op.write(&key, bytes.clone()).await {
-                    Ok(_) => {
-                        debug!("{key} write object success[len={payload_length}]");
-                        object_manager.commit_object(object_metadata);
-                        break;
-                    }
-                    Err(e) => {
-                        // retry later until success.
-                        warn!("{key} write object, retry later, {e}");
-                        sleep(Duration::from_secs(1)).await;
-                        continue;
-                    }
-                }
-            }
+            let bytes = bytes.freeze();
+            Self::write_object(&op, &key, &bytes).await;
+            object_manager.commit_object(object_metadata);
         });
         (end_offset, join_handle)
+    }
+
+    async fn write_object(op: &Operator, key: &str, bytes: &Bytes) {
+        loop {
+            let data_len = bytes.len();
+            debug!("{key} start write object[len={}]", data_len);
+            let start = Instant::now();
+            match op.write(key, bytes.clone()).await {
+                Ok(_) => {
+                    debug!("{key} write object success[len={}]", data_len);
+                    object_metrics::object_complete(data_len as u32, start.elapsed());
+                    break;
+                }
+                Err(e) => {
+                    // retry later until success.
+                    warn!("{key} write object, retry later, {e}");
+                    sleep(Duration::from_secs(1)).await;
+                    continue;
+                }
+            }
+        }
     }
 }
 

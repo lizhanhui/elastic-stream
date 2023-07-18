@@ -2451,6 +2451,7 @@ dependencies = [
  "log",
  "mockall",
  "model",
+ "observation",
  "opendal",
  "protocol",
  "store",

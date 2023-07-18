@@ -15,6 +15,7 @@ flatbuffers = { workspace = true }
 log = { workspace = true }
 mockall = { workspace = true }
 model = { path = "../model" }
+observation = { path = "../observation" }
 opendal = { workspace = true }
 protocol = { path = "../protocol" }
 store = { path = "../store" }
