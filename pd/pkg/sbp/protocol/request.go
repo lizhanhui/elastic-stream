@@ -283,10 +283,6 @@ func (rm *ReportMetricsRequest) Unmarshal(fmt codec.Format, data []byte) error {
 	return unmarshal(rm, fmt, data)
 }
 
-func (rm *ReportMetricsRequest) Timeout() int32 {
-	return 0
-}
-
 // DescribePDClusterRequest is a request to rpcfb.OperationCodeDESCRIBE_PLACEMENT_DRIVER
 type DescribePDClusterRequest struct {
 	baseRequest

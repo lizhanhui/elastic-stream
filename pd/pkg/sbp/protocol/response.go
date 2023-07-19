@@ -143,11 +143,9 @@ func (ia *IDAllocationResponse) OK() {
 // ListRangeResponse is a response to rpcfb.OperationCodeLIST_RANGE
 type ListRangeResponse struct {
 	baseMarshaller
+	singleResponse
 
 	rpcfb.ListRangeResponseT
-
-	// HasNext indicates whether there are more responses after this one.
-	HasNext bool
 }
 
 func (lr *ListRangeResponse) marshalFlatBuffer() ([]byte, error) {
@@ -160,10 +158,6 @@ func (lr *ListRangeResponse) Marshal(fmt codec.Format) ([]byte, error) {
 
 func (lr *ListRangeResponse) Error(status *rpcfb.StatusT) {
 	lr.Status = status
-}
-
-func (lr *ListRangeResponse) IsEnd() bool {
-	return !lr.HasNext
 }
 
 func (lr *ListRangeResponse) OK() {

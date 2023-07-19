@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"reflect"
 	"testing"
 
 	"github.com/brianvoe/gofakeit/v6"
@@ -10,10 +11,32 @@ import (
 	"github.com/AutoMQ/pd/pkg/util/fbutil"
 )
 
+type packableRequest interface {
+	InRequest
+	fbutil.Packable
+}
+
+var _inRequests = []packableRequest{
+	&CommitObjectRequest{},
+	&CreateRangeRequest{},
+	&CreateStreamRequest{},
+	&DeleteStreamRequest{},
+	&DescribePDClusterRequest{},
+	&DescribeStreamRequest{},
+	&HeartbeatRequest{},
+	&IDAllocationRequest{},
+	&ListRangeRequest{},
+	&ListResourceRequest{},
+	&ReportMetricsRequest{},
+	&SealRangeRequest{},
+	&UpdateStreamRequest{},
+	&WatchResourceRequest{},
+}
+
 func TestListRangeRequest_Unmarshal(t *testing.T) {
 	var mockListRangeRequest ListRangeRequest
 	_ = gofakeit.Struct(&mockListRangeRequest)
-	mockData := fbutil.Marshal(&mockListRangeRequest.ListRangeRequestT)
+	mockData := fbutil.Marshal(&mockListRangeRequest)
 
 	type args struct {
 		fmt  codec.Format
@@ -84,6 +107,51 @@ func TestListRangeRequest_Unmarshal(t *testing.T) {
 			} else {
 				re.NoError(err)
 				re.Equal(tt.want, l)
+			}
+		})
+	}
+}
+
+func TestAll_Unmarshal(t *testing.T) {
+	for _, req := range _inRequests {
+		req := req
+		t.Run(reflect.TypeOf(req).String(), func(t *testing.T) {
+			t.Parallel()
+			re := require.New(t)
+
+			// mock
+			mockReq := reflect.New(reflect.TypeOf(req).Elem()).Interface().(packableRequest)
+			err := gofakeit.Struct(mockReq)
+			re.NoError(err)
+			data := fbutil.Marshal(mockReq)
+
+			newReq := reflect.New(reflect.TypeOf(req).Elem()).Interface().(packableRequest)
+			err = newReq.Unmarshal(codec.FormatFlatBuffer, data)
+			re.NoError(err)
+			re.Equal(mockReq, newReq)
+		})
+	}
+}
+
+func TestAll_Timeout(t *testing.T) {
+	noTimeoutReqs := map[string]struct{}{
+		reflect.TypeOf(&ReportMetricsRequest{}).String(): {},
+		reflect.TypeOf(&HeartbeatRequest{}).String():     {},
+	}
+
+	for _, req := range _inRequests {
+		req := req
+		t.Run(reflect.TypeOf(req).String(), func(t *testing.T) {
+			t.Parallel()
+			re := require.New(t)
+
+			// mock
+			err := gofakeit.Struct(req)
+			re.NoError(err)
+			if _, ok := noTimeoutReqs[reflect.TypeOf(req).String()]; ok {
+				re.Zero(req.Timeout())
+			} else {
+				re.NotZero(req.Timeout())
 			}
 		})
 	}
