@@ -1,0 +1,58 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "range-server.fullname" . }}
+  labels:
+    {{- include "range-server.labels" . | nindent 4 }}
+spec:
+  serviceName: {{ include "range-server.fullname" . }}
+  replicas: {{ .Values.replicaCount }}
+  podManagementPolicy: Parallel
+  selector:
+    matchLabels:
+      {{- include "range-server.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "range-server.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: {{ .Chart.Name }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["/usr/local/bin/range-server", "start"]
+          ports:
+            {{- range $key, $val := .Values.service.ports }}
+            - containerPort: {{ $val }}
+              protocol: TCP
+              name: {{ $key }}
+            {{- end }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: range-server-store
+              mountPath: {{ .Values.storage.path | default "/data/store" | quote }}
+          env:
+            - name: NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: ES_ADDR
+              value: "0.0.0.0:{{ .Values.service.ports.server }}"
+            - name: ES_ADVERTISE_ADDR
+              value: "$(NAME).{{ include "range-server.name" . }}:{{ .Values.service.ports.server }}"
+            - name: ES_PD
+              value: "{{ .Values.pdAddress }}"
+  volumeClaimTemplates:
+  - metadata:
+      name: range-server-store
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      storageClassName: {{ .Values.storage.storageClassName | quote }}
+      resources:
+        requests:
+          storage: {{ .Values.storage.size | quote }}

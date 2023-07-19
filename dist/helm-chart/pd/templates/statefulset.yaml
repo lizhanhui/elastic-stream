@@ -1,0 +1,77 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "pd.fullname" . }}
+  labels:
+    {{- include "pd.labels" . | nindent 4 }}
+spec:
+  serviceName: {{ include "pd.fullname" . }}
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "pd.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "pd.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: {{ .Chart.Name }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["/usr/local/bin/pd", "--config", "/etc/pd/config.yaml"]
+          ports:
+            {{- range $key, $val := .Values.service.ports }}
+            - containerPort: {{ $val }}
+              protocol: TCP
+              name: {{ $key }}
+            {{- end }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: pd-data
+              mountPath: {{ .Values.storage.mountPath | default "/data/placement-driver" | quote }}
+          env:
+            - name: NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: PD_PEERURLS
+              value: "http://0.0.0.0:{{ .Values.service.ports.peer }}"
+            - name: PD_CLIENTURLS
+              value: "http://0.0.0.0:{{ .Values.service.ports.client }}"
+            - name: PD_ADVERTISEPEERURLS
+              value: "http://$(NAME).{{ include "pd.name" . }}:{{ .Values.service.ports.peer }}"
+            - name: PD_ADVERTISECLIENTURLS
+              value: "http://$(NAME).{{ include "pd.name" . }}:{{ .Values.service.ports.client }}"
+            - name: PD_NAME
+              value: "$(NAME)"
+            - name: PD_DATADIR
+              value:  "{{ .Values.storage.mountPath }}/default.$(NAME)"
+            - name: PD_INITIALCLUSTER
+              value: ""
+            {{ $replicaCount := int .Values.replicaCount}}
+            {{ $dot := . }}
+            {{ range $podIndex := until $replicaCount }}
+            - name: PD_INITIALCLUSTER
+              value: "$(PD_INITIALCLUSTER)pd-{{$podIndex}}=http://pd-{{$podIndex}}.{{ include "pd.name" $dot }}:{{ $.Values.service.ports.peer }},"
+            {{ end }}
+            - name: PD_PDADDR
+              value: "0.0.0.0:{{ .Values.service.ports.server }}"
+            - name: PD_ADVERTISEPDADDR
+              value: "$(NAME).{{ include "pd.name" . }}:{{ .Values.service.ports.server }}"
+            - name: PD_ETCD_INITIALCLUSTERTOKEN
+              value: "pd-cluster"
+  volumeClaimTemplates:
+  - metadata:
+      name: pd-data
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      storageClassName: {{ .Values.storage.storageClassName | quote }}
+      resources:
+        requests:
+          storage: {{ .Values.storage.size | quote }}
