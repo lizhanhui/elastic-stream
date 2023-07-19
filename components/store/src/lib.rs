@@ -24,7 +24,6 @@
 #![feature(iterator_try_collect)]
 #![feature(io_error_more)]
 
-pub mod cursor;
 pub mod error;
 mod index;
 pub(crate) mod io;

@@ -110,7 +110,7 @@ impl From<&Request> for Bytes {
                 let range_server = range_server.as_ref().map(|server| Box::new(server.into()));
                 let mut heartbeat_request = HeartbeatRequestT::default();
                 heartbeat_request.client_id = Some(client_id.to_owned());
-                heartbeat_request.client_role = role.into();
+                heartbeat_request.client_role = (*role).into();
                 heartbeat_request.range_server = range_server;
                 let heartbeat = heartbeat_request.pack(&mut builder);
                 builder.finish(heartbeat, None);

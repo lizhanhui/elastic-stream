@@ -63,3 +63,76 @@ impl<'a> fmt::Display for Heartbeat<'a> {
         write!(f, "{:?}", self.request)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::{cell::UnsafeCell, error::Error, rc::Rc};
+
+    use bytes::Bytes;
+    use codec::frame::Frame;
+    use protocol::rpc::header::{
+        ClientRole, ErrorCode, HeartbeatRequestT, HeartbeatResponse, OperationCode,
+    };
+    use store::MockStore;
+
+    use crate::range_manager::MockRangeManager;
+
+    fn heartbeat_request() -> Frame {
+        let mut frame = Frame::new(OperationCode::HEARTBEAT);
+
+        let mut request = HeartbeatRequestT::default();
+        request.client_id = Some("sample-client-id".to_owned());
+        request.client_role = ClientRole::CLIENT_ROLE_FRONTEND;
+
+        let mut builder = flatbuffers::FlatBufferBuilder::new();
+        let req = request.pack(&mut builder);
+        builder.finish(req, None);
+        let data = builder.finished_data();
+        frame.header = Some(Bytes::copy_from_slice(data));
+        frame
+    }
+
+    #[test]
+    fn test_parse_frame() -> Result<(), Box<dyn Error>> {
+        let frame = heartbeat_request();
+        super::Heartbeat::parse_frame(&frame).unwrap();
+        Ok(())
+    }
+
+    #[test]
+    fn test_parse_frame_bad_request() {
+        let mut frame = Frame::new(OperationCode::HEARTBEAT);
+        frame.header = Some(Bytes::from_static(b"xxx"));
+        match super::Heartbeat::parse_frame(&frame) {
+            Ok(_) => {
+                panic!("Should be bad request");
+            }
+            Err(ec) => {
+                assert_eq!(ec, ErrorCode::BAD_REQUEST);
+            }
+        }
+    }
+
+    #[test]
+    fn test_heartbeat_apply() {
+        let frame = heartbeat_request();
+        let handler = super::Heartbeat::parse_frame(&frame).unwrap();
+
+        let mut response = Frame::new(OperationCode::UNKNOWN);
+        let store = Rc::new(MockStore::default());
+        let rm = Rc::new(UnsafeCell::new(MockRangeManager::default()));
+
+        tokio_uring::start(async move {
+            handler.apply(store, rm, &mut response).await;
+            if let Some(header) = response.header {
+                let resp = flatbuffers::root::<HeartbeatResponse>(&header[..]).unwrap();
+                let ec = resp.status().code();
+                assert_eq!(ec, ErrorCode::OK);
+                assert_eq!(ClientRole::CLIENT_ROLE_FRONTEND, resp.client_role());
+                assert_eq!(resp.client_id(), Some("sample-client-id"));
+            } else {
+                panic!("Should have a valid response header");
+            }
+        })
+    }
+}
