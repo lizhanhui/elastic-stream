@@ -1,0 +1,6 @@
+codecov:
+  token: 60f6825c-fb96-44d0-a3a3-e1924cd241d2
+ignore:
+  - "pd/pkg/util/testutil"
+  - "pd/api"
+  - "pd/third_party"

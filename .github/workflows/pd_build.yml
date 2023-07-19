@@ -93,3 +93,9 @@ jobs:
             ${{matrix.platform}}-${{matrix.go-version}}-pd-
       - name: Test
         run: make test GOFLAGS="-v" GO_VERSION=${{ matrix.go-version }} GO_TEST_FLAGS="-coverprofile=covprofile -covermode=atomic -coverpkg=./..."
+      - name: Upload coverage
+        uses: codecov/codecov-action@v3
+        with:
+          files: ./pd/covprofile
+          fail_ci_if_error: true
+          verbose: true
