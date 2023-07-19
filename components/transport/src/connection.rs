@@ -393,7 +393,7 @@ mod tests {
 
     #[test]
     fn test_write_frame() -> Result<(), Box<dyn Error>> {
-        crate::log::try_init_log();
+        ulog::try_init_log();
         let (counter_tx, counter_rx) = tokio::sync::oneshot::channel();
         let (port_tx, port_rx) = tokio::sync::oneshot::channel();
 

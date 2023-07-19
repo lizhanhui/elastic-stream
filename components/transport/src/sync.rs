@@ -6,7 +6,7 @@ mod tests {
 
     #[test]
     fn test_oneshot() -> Result<(), Box<dyn Error>> {
-        crate::log::try_init_log();
+        ulog::try_init_log();
         tokio_uring::start(async move {
             let (tx, rx) = local_sync::oneshot::channel();
             tokio_uring::spawn(async move {

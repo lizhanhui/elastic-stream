@@ -1101,7 +1101,7 @@ mod tests {
 
     #[test]
     fn test_describe_placement_driver_cluster() -> Result<(), Box<dyn Error>> {
-        crate::log::try_init_log();
+        ulog::try_init_log();
         let mut config = config::Configuration::default();
         config.server.server_id = 1;
         let config = Arc::new(config);

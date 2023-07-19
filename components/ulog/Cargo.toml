@@ -1,0 +1,17 @@
+[package]
+name = "ulog"
+edition = "2021"
+version = { workspace = true }
+authors = { workspace = true }
+description = { workspace = true }
+license = { workspace = true }
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+chrono = { workspace = true }
+env_logger = { workspace = true, optional = true }
+log = { workspace = true }
+
+[features]
+default = ["env"]
+env = ["env_logger"]

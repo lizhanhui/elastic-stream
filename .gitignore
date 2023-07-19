@@ -6,7 +6,6 @@ components/protocol/src/generated/
 pd/default.*
 benchmark/logs/
 sdks/java/flatc
-log
 logs
 default.pd*
 

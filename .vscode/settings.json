@@ -44,6 +44,7 @@
         "syscall",
         "thiserror",
         "ubyte",
+        "ulog",
         "Uring",
         "writev"
     ],

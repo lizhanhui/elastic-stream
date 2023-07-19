@@ -21,3 +21,4 @@ chrono = { workspace = true }
 env_logger = { workspace = true }
 protocol = { path = "../protocol" }
 tokio = { workspace = true }
+ulog = { path = "../ulog", features = ["env"] }

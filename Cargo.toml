@@ -18,6 +18,7 @@ members = [
     "components/store",
     "components/tool",
     "components/transport",
+    "components/ulog",
     "components/util",
     "range-server",
     "sdks/frontend-rs",

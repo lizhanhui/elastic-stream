@@ -716,6 +716,7 @@ dependencies = [
  "tokio",
  "tokio-uring",
  "transport",
+ "ulog",
  "util",
 ]
 
@@ -1302,6 +1303,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tokio-uring",
+ "ulog",
  "util",
 ]
 
@@ -4147,6 +4149,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tokio-uring",
+ "ulog",
 ]
 
 [[package]]
@@ -4169,6 +4172,15 @@ name = "typenum"
 version = "1.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "497961ef93d974e23eb6f433eb5fe1b7930b659f06d12dec6fc44a8f554c0bba"
+
+[[package]]
+name = "ulog"
+version = "0.2.5"
+dependencies = [
+ "chrono",
+ "env_logger",
+ "log",
+]
 
 [[package]]
 name = "unicode-bidi"

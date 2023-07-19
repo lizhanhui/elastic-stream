@@ -66,7 +66,7 @@ mod tests {
 
     #[test]
     fn test_generate() -> Result<(), Box<dyn Error>> {
-        crate::log::try_init_log();
+        ulog::try_init_log();
         let (stop_tx, stop_rx) = oneshot::channel();
         let (port_tx, port_rx) = oneshot::channel();
 
