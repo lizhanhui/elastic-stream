@@ -33,12 +33,12 @@ impl IdGenerator for PlacementDriverIdGenerator {
             let (shutdown_tx, _shutdown_rx) = broadcast::channel(1);
             let client = Client::new(config, shutdown_tx);
 
-            match client.allocate_id(&self.config.server.host).await {
+            match client.allocate_id(&self.config.server.advertise_addr).await {
                 Ok(id) => {
                     trace!(
-                        "Acquired ID={} for range-server[host={}]",
+                        "Acquired ID={} for range-server[{}]",
                         id,
-                        self.config.server.host
+                        self.config.server.advertise_addr
                     );
                     let _ = tx.send(Ok(id));
                 }

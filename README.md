@@ -85,5 +85,5 @@ Read the [following link](https://doc.rust-lang.org/beta/unstable-book/compiler-
 
 ### Launch Range Server
 ```sh
-cargo run --bin range-server -- -c etc/range-server.yaml --log etc/range-server-log.yaml
+cargo run --bin range-server -- start --log etc/range-server-log.yaml
 ```

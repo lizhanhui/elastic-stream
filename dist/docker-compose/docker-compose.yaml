@@ -8,10 +8,7 @@ services:
     # https://docs.docker.com/compose/compose-file/05-services/#entrypoint
     entrypoint:
       - /usr/local/bin/range-server
-      - -c
-      - /etc/range-server/range-server.yaml
-      - -l
-      - /etc/range-server/range-server-log.yaml
+      - start
 
     ports:
       - "10911:10911"

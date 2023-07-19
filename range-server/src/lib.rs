@@ -4,7 +4,7 @@
 #![feature(btree_extract_if)]
 #![feature(async_fn_in_trait)]
 
-pub(crate) mod cli;
+pub mod cli;
 pub(crate) mod connection_tracker;
 mod delegate_task;
 pub mod error;

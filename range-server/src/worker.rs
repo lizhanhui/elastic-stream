@@ -84,7 +84,7 @@ where
                     .setup_attach_wq(self.config.sharing_uring),
             )
             .start(async {
-                let bind_address = format!("0.0.0.0:{}", self.config.server_config.server.port);
+                let bind_address = &self.config.server_config.server.addr;
                 let listener =
                     match TcpListener::bind(bind_address.parse().expect("Failed to bind")) {
                         Ok(listener) => {

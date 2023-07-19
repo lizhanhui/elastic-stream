@@ -131,8 +131,11 @@ impl Default for Profiling {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Server {
-    pub host: String,
-    pub port: u16,
+    #[serde(skip_serializing, skip_deserializing)]
+    pub addr: String,
+
+    #[serde(skip_serializing, skip_deserializing)]
+    pub advertise_addr: String,
 
     /// Range Server ID
     #[serde(default)]
@@ -156,7 +159,7 @@ impl Server {
     pub fn range_server(&self) -> RangeServer {
         RangeServer {
             server_id: self.server_id,
-            advertise_address: format!("{}:{}", self.host, self.port),
+            advertise_address: self.advertise_addr.clone(),
         }
     }
 }
@@ -164,8 +167,8 @@ impl Server {
 impl Default for Server {
     fn default() -> Self {
         Self {
-            host: "127.0.0.1".to_owned(),
-            port: 10911,
+            addr: String::from("127.0.0.1:10911"),
+            advertise_addr: String::from("127.0.0.1:10911"),
             server_id: 0,
             worker_cpu_set: String::from("0"),
             uring: Uring::default(),
@@ -468,7 +471,7 @@ pub struct Configuration {
     /// Unit of time in milliseconds.
     pub tick: u64,
 
-    #[serde(rename = "placement-driver")]
+    #[serde(skip_serializing, skip_deserializing)]
     pub placement_driver: String,
 
     pub client: Client,
@@ -613,7 +616,6 @@ mod tests {
         let mut content = String::new();
         file.read_to_string(&mut content)?;
         let config: Configuration = serde_yaml::from_str(&content)?;
-        assert_eq!(10911, config.server.port);
         assert_eq!("1", config.server.worker_cpu_set);
         assert_eq!(128, config.server.uring.queue_depth);
         assert_eq!(32768, config.store.rocksdb.flush_threshold);

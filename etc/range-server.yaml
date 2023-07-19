@@ -1,8 +1,6 @@
 ---
 # Unit of interval in milliseconds
 tick: 100
-# Placement driver address
-placement-driver: "127.0.0.1:12378"
 # Client configuration
 client:
   # Connect timeout duration in ticks
@@ -19,10 +17,6 @@ client:
   refresh-pd-cluster-interval: 300
 # Server configuration
 server:
-  # Advertise host address
-  host: "127.0.0.1"
-  # Listening port
-  port: 10911
   # Number of Thread-per-Core Nodes
   worker-cpu-set: "1"
   uring:

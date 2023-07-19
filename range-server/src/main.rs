@@ -1,6 +1,6 @@
 use clap::Parser;
 use log::info;
-use range_server::Cli;
+use range_server::{cli::Commands, Cli};
 use tokio::sync::broadcast;
 
 #[cfg(not(target_env = "msvc"))]
@@ -12,17 +12,24 @@ static GLOBAL: Jemalloc = Jemalloc;
 
 fn main() {
     let cli = Cli::parse();
-    cli.init_log().unwrap();
 
-    display_built_info();
+    let config = match cli.command {
+        Commands::Start(args) => {
+            args.init_log().unwrap();
+            match args.create_config() {
+                Ok(config) => config,
+                Err(e) => {
+                    eprintln!(
+                            "Failed to create configuration from the specified configuration file. Cause: {:?}",
+                            e
+                        );
+                    return;
+                }
+            }
+        }
 
-    let config = match cli.create_config() {
-        Ok(config) => config,
-        Err(e) => {
-            eprintln!(
-                "Failed to create configuration from the specified configuration file. Cause: {:?}",
-                e
-            );
+        Commands::BuildInfo => {
+            display_built_info();
             return;
         }
     };
