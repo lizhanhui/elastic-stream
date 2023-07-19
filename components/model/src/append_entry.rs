@@ -27,3 +27,28 @@ impl Display for AppendEntry {
         )
     }
 }
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn test_append_entry_display() {
+        let entry = super::AppendEntry {
+            stream_id: 1,
+            index: 0,
+            offset: None,
+            len: 1,
+        };
+
+        let message = format!("{}", entry);
+        assert_eq!("{ stream_id: 1, index: 0, offset: -1, len: 1 }", &message);
+
+        let entry = super::AppendEntry {
+            stream_id: 1,
+            index: 1,
+            offset: Some(1),
+            len: 2,
+        };
+        let message = format!("{}", entry);
+        assert_eq!("{ stream_id: 1, index: 1, offset: 1, len: 2 }", &message);
+    }
+}

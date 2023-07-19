@@ -52,3 +52,42 @@ impl InvocationContext {
         self.response_observer.take()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::{
+        error::Error,
+        net::{IpAddr, Ipv4Addr},
+        time::Duration,
+    };
+
+    use local_sync::oneshot;
+    use protocol::rpc::header::OperationCode;
+
+    #[test]
+    fn test_invocation_new() -> Result<(), Box<dyn Error>> {
+        let target = "127.0.0.1:80".parse()?;
+        let (tx, mut rx) = oneshot::channel();
+        let request = crate::request::Request {
+            timeout: Duration::from_millis(1),
+            headers: crate::request::Headers::Append,
+            body: None,
+        };
+
+        let mut ctx = super::InvocationContext::new(target, request, tx);
+        assert_eq!(ctx.target().ip(), IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)));
+        assert_eq!(ctx.target().port(), 80);
+        assert!(!ctx.is_closed());
+
+        let observer = ctx.response_observer();
+        assert!(observer.is_some());
+        assert!(ctx.is_closed());
+
+        let response = crate::response::Response::new(OperationCode::APPEND);
+        observer.unwrap().send(response).unwrap();
+
+        rx.try_recv().unwrap();
+
+        Ok(())
+    }
+}
