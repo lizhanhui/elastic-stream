@@ -56,6 +56,7 @@ tikv-jemallocator = "0.5"
 mock-server = { path = "../components/mock-server" }
 mockall = { workspace = true }
 store = { path = "../components/store", features = ["mock"] }
+ulog = { path = "../components/ulog", features = ["env"] }
 
 [build-dependencies]
 built = { workspace = true, features = ["git2", "chrono", "semver"] }

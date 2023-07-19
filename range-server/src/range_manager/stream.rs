@@ -42,6 +42,7 @@ impl Stream {
             .for_each(|range| range.reset(offset));
     }
 
+    /// TODO: error handling
     pub(crate) fn create_range(&mut self, metadata: RangeMetadata) {
         if self.verify_stream_id(&metadata).is_err() {
             return;
