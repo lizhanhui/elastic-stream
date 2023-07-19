@@ -22,13 +22,13 @@ import (
 )
 
 type mockServer struct {
-	kv        clientv3.KV
+	client    kv.Client
 	sbpClient sbpClient.Client
 }
 
 func (m *mockServer) Storage() storage.Storage {
 	etcdKV := kv.NewEtcd(kv.EtcdParam{
-		KV:       m.kv,
+		Client:   m.client,
 		RootPath: "/test-server",
 		CmpFunc:  func() clientv3.Cmp { return clientv3.Compare(clientv3.CreateRevision("not-exist-key"), "=", 0) },
 	}, zap.NewNop())
@@ -37,7 +37,7 @@ func (m *mockServer) Storage() storage.Storage {
 
 func (m *mockServer) IDAllocator(key string, start, step uint64) id.Allocator {
 	return id.NewEtcdAllocator(&id.EtcdAllocatorParam{
-		KV:       m.kv,
+		KV:       m.client,
 		CmpFunc:  func() clientv3.Cmp { return clientv3.Compare(clientv3.CreateRevision("not-exist-key"), "=", 0) },
 		RootPath: "/test-server",
 		Key:      key,
@@ -94,7 +94,7 @@ func startSbpHandler(tb testing.TB, sbpClient sbpClient.Client, isLeader bool) (
 	_, client, closeFunc := testutil.StartEtcd(tb, nil)
 
 	var server cluster.Server
-	server = &mockServer{kv: client, sbpClient: sbpClient}
+	server = &mockServer{client: client, sbpClient: sbpClient}
 	if !isLeader {
 		server = &mockServerNotLeader{server}
 	}

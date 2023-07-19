@@ -44,7 +44,7 @@ func (e *Endpoint) SaveRangeServer(ctx context.Context, rangeServer *rpcfb.Range
 	value := fbutil.Marshal(rangeServer)
 	defer mcache.Free(value)
 
-	_, err := e.Put(ctx, key, value, false)
+	_, err := e.KV.Put(ctx, key, value, false)
 	if err != nil {
 		logger.Error("failed to save range server", zap.Error(err))
 		return nil, errors.Wrap(err, "save range server")
@@ -71,7 +71,7 @@ func (e *Endpoint) forEachRangeServerLimited(ctx context.Context, f func(rangeSe
 	logger := e.lg.With(traceutil.TraceLogField(ctx))
 
 	startKey := rangeServerPath(startID)
-	kvs, _, more, err := e.GetByRange(ctx, kv.Range{StartKey: startKey, EndKey: e.endRangeServerPath()}, 0, limit, false)
+	kvs, _, more, err := e.KV.GetByRange(ctx, kv.Range{StartKey: startKey, EndKey: e.endRangeServerPath()}, 0, limit, false)
 	if err != nil {
 		logger.Error("failed to get range servers", zap.Int32("start-id", startID), zap.Int64("limit", limit), zap.Error(err))
 		return MinRangeServerID - 1, errors.Wrap(err, "get range servers")
@@ -94,7 +94,7 @@ func (e *Endpoint) forEachRangeServerLimited(ctx context.Context, f func(rangeSe
 }
 
 func (e *Endpoint) endRangeServerPath() []byte {
-	return e.GetPrefixRangeEnd([]byte(_rangeServerPrefix))
+	return e.KV.GetPrefixRangeEnd([]byte(_rangeServerPrefix))
 }
 
 func rangeServerPath(serverID int32) []byte {

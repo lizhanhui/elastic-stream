@@ -35,6 +35,52 @@ type KeyValue struct {
 	Value []byte
 }
 
+type EventType string
+
+const (
+	Added    EventType = "ADDED"
+	Modified EventType = "MODIFIED"
+	Deleted  EventType = "DELETED"
+)
+
+// Event represents a single event to a watched resource.
+type Event struct {
+	Type EventType
+
+	Key []byte
+
+	// Value is
+	// - the new value of the key if Type is Added or Modified.
+	// - the previous value of the key if Type is Deleted.
+	Value []byte
+}
+
+// Events represents a list of events.
+// All events in Events happen at the same revision.
+type Events struct {
+	Events []Event
+
+	// Revision is the revision of the KV when the events happen.
+	Revision int64
+
+	// Error is the error if an error occurs, otherwise nil.
+	// If it is not nil, the Events will be nil.
+	// It will be set to ErrCompacted if the revision has been compacted.
+	Error error
+}
+
+type Filter func(event Event) bool
+
+type Watcher interface {
+	// Close closes the watcher and releases the related resources.
+	Close()
+
+	// EventChan returns a channel that receives events that happen or happened
+	// If an error occurs or Close() is called, the channel will be closed.
+	// Events.Revision is unique and monotonically increasing for all events received from the channel.
+	EventChan() <-chan Events
+}
+
 // KV represents the basic interface for a key-value store.
 type KV interface {
 	// Get retrieves the value associated with the given key.
@@ -58,6 +104,14 @@ type KV interface {
 	// and a boolean value indicating whether there are more keys in the range.
 	// If desc is true, GetByRange returns the key-value pairs in descending order.
 	GetByRange(ctx context.Context, r Range, rev int64, limit int64, desc bool) (kvs []KeyValue, revision int64, more bool, err error)
+
+	// Watch watches on a prefix.
+	// If the prefix is empty, Watch will watch on all keys.
+	// If rev is less than or equal to 0, Watch watches on the latest revision.
+	// If rev is greater than 0, Watch watches on the given revision, which means the watcher will not receive events
+	// with a revision less than the given revision.
+	// If filter is not nil, only the key-value pairs that pass the filter will be returned.
+	Watch(ctx context.Context, prefix []byte, rev int64, filter Filter) Watcher
 
 	// Put sets the value for the given key.
 	// IF the key is empty, Put does nothing and returns no error.

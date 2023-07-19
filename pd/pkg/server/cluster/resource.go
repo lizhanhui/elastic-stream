@@ -34,11 +34,23 @@ type ResourceService interface {
 	// It returns ErrInvalidResourceType if the requested resource type is invalid.
 	// It returns ErrInvalidContinuation if the continuation string is invalid.
 	ListResource(ctx context.Context, types []rpcfb.ResourceType, limit int32, continueStr []byte) (resources []*rpcfb.ResourceT, resourceVersion int64, newContinueStr []byte, err error)
+	// WatchResource watches resources of given types from the given resource version.
+	// If rv is 0, it watches resources with the latest resource version.
+	// If rv is greater than 0, the returned events happen on or after the given resource version.
+	// It returns ErrCompacted if the requested resource version has been compacted.
+	// It returns ErrInvalidResourceType if the requested resource type is invalid.
+	WatchResource(ctx context.Context, rv int64, types []rpcfb.ResourceType) ([]*rpcfb.ResourceEventT, int64, error)
 }
 
 func (c *RaftCluster) ListResource(ctx context.Context, types []rpcfb.ResourceType, limit int32, continueStr []byte) ([]*rpcfb.ResourceT, int64, []byte, error) {
-	logger := c.lg.With(zap.Stringers("resouce-types", types), zap.Int32("limit", limit), zap.ByteString("continue", continueStr), traceutil.TraceLogField(ctx))
+	logger := c.lg.With(zap.Stringers("resource-types", types), zap.Int32("limit", limit), zap.ByteString("continue", continueStr), traceutil.TraceLogField(ctx))
 	types = typeutil.SortAndUnique[rpcfb.ResourceType](types, func(i, j rpcfb.ResourceType) bool { return i < j })
+
+	err := checkResourceType(types)
+	if err != nil {
+		logger.Error("invalid resource type", zap.Error(err))
+		return nil, 0, nil, err
+	}
 
 	var continuation Continuation
 	if continueStr == nil {
@@ -106,6 +118,38 @@ func (c *RaftCluster) ListResource(ctx context.Context, types []rpcfb.ResourceTy
 		}
 	}
 	return resources, continuation.ResourceVersion, newContinueStr, nil
+}
+
+func (c *RaftCluster) WatchResource(ctx context.Context, rv int64, types []rpcfb.ResourceType) ([]*rpcfb.ResourceEventT, int64, error) {
+	logger := c.lg.With(zap.Int64("resource-version", rv), zap.Stringers("resource-types", types), traceutil.TraceLogField(ctx))
+	types = typeutil.SortAndUnique[rpcfb.ResourceType](types, func(i, j rpcfb.ResourceType) bool { return i < j })
+
+	err := checkResourceType(types)
+	if err != nil {
+		logger.Error("invalid resource type", zap.Error(err))
+		return nil, 0, err
+	}
+
+	logger.Debug("start to watch resources")
+	evs, newRV, err := c.storage.WatchResource(ctx, rv, types)
+	logger.Debug("finish watching resources", zap.Int("event-count", len(evs)), zap.Int64("new-rv", newRV), zap.Error(err))
+	if err != nil {
+		if errors.Is(err, kv.ErrCompacted) {
+			err = ErrCompacted
+		}
+		return nil, 0, err
+	}
+
+	return evs, newRV, nil
+}
+
+func checkResourceType(types []rpcfb.ResourceType) error {
+	for _, typ := range types {
+		if typ == rpcfb.ResourceTypeUNKNOWN {
+			return errors.Wrapf(ErrInvalidResourceType, "invalid type %s", typ)
+		}
+	}
+	return nil
 }
 
 type Continuation struct {

@@ -41,7 +41,7 @@ func (e *Endpoint) CreateStream(ctx context.Context, stream *rpcfb.StreamT) (*rp
 
 	key := streamPath(stream.StreamId)
 	value := fbutil.Marshal(stream)
-	prevValue, err := e.Put(ctx, key, value, true)
+	prevValue, err := e.KV.Put(ctx, key, value, true)
 	mcache.Free(value)
 
 	if err != nil {
@@ -59,7 +59,7 @@ func (e *Endpoint) CreateStream(ctx context.Context, stream *rpcfb.StreamT) (*rp
 func (e *Endpoint) DeleteStream(ctx context.Context, streamID int64) (*rpcfb.StreamT, error) {
 	logger := e.lg.With(zap.Int64("stream-id", streamID), traceutil.TraceLogField(ctx))
 
-	prevV, err := e.Delete(ctx, streamPath(streamID), true)
+	prevV, err := e.KV.Delete(ctx, streamPath(streamID), true)
 	if err != nil {
 		logger.Error("failed to delete stream", zap.Error(err))
 		return nil, errors.Wrap(err, "delete stream")
@@ -82,7 +82,7 @@ func (e *Endpoint) UpdateStream(ctx context.Context, stream *rpcfb.StreamT) (*rp
 	}
 
 	streamInfo := fbutil.Marshal(stream)
-	prevV, err := e.Put(ctx, streamPath(stream.StreamId), streamInfo, true)
+	prevV, err := e.KV.Put(ctx, streamPath(stream.StreamId), streamInfo, true)
 	mcache.Free(streamInfo)
 	if err != nil {
 		logger.Error("failed to update stream", zap.Error(err))
@@ -100,7 +100,7 @@ func (e *Endpoint) UpdateStream(ctx context.Context, stream *rpcfb.StreamT) (*rp
 func (e *Endpoint) GetStream(ctx context.Context, streamID int64) (*rpcfb.StreamT, error) {
 	logger := e.lg.With(zap.Int64("stream-id", streamID), traceutil.TraceLogField(ctx))
 
-	v, err := e.Get(ctx, streamPath(streamID))
+	v, err := e.KV.Get(ctx, streamPath(streamID))
 	if err != nil {
 		logger.Error("failed to get stream", zap.Error(err))
 		return nil, errors.Wrap(err, "get stream")
@@ -131,7 +131,7 @@ func (e *Endpoint) forEachStreamLimited(ctx context.Context, f func(stream *rpcf
 	logger := e.lg.With(traceutil.TraceLogField(ctx))
 
 	startKey := streamPath(startID)
-	kvs, _, more, err := e.GetByRange(ctx, kv.Range{StartKey: startKey, EndKey: e.endStreamPath()}, 0, limit, false)
+	kvs, _, more, err := e.KV.GetByRange(ctx, kv.Range{StartKey: startKey, EndKey: e.endStreamPath()}, 0, limit, false)
 	if err != nil {
 		logger.Error("failed to get streams", zap.Int64("start-id", startID), zap.Int64("limit", limit), zap.Error(err))
 		return MinStreamID - 1, errors.Wrap(err, "get streams")
@@ -154,7 +154,7 @@ func (e *Endpoint) forEachStreamLimited(ctx context.Context, f func(stream *rpcf
 }
 
 func (e *Endpoint) endStreamPath() []byte {
-	return e.GetPrefixRangeEnd([]byte(_streamPrefix))
+	return e.KV.GetPrefixRangeEnd([]byte(_streamPrefix))
 }
 
 func streamPath(streamID int64) []byte {

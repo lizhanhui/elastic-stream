@@ -39,7 +39,26 @@ func (h *Handler) ListResource(req *protocol.ListResourceRequest, resp *protocol
 }
 
 func (h *Handler) WatchResource(req *protocol.WatchResourceRequest, resp *protocol.WatchResourceResponse) {
-	_ = req
-	_ = resp
-	// TODO
+	ctx := req.Context()
+
+	if len(req.ResourceType) == 0 {
+		resp.Error(&rpcfb.StatusT{Code: rpcfb.ErrorCodeBAD_REQUEST, Message: "resource type is empty"})
+	}
+
+	events, rv, err := h.c.WatchResource(ctx, req.ResourceVersion, req.ResourceType)
+	if err != nil {
+		switch {
+		case errors.Is(err, cluster.ErrCompacted):
+			resp.Error(&rpcfb.StatusT{Code: rpcfb.ErrorCodePD_COMPACTED, Message: err.Error()})
+		case errors.Is(err, cluster.ErrInvalidResourceType):
+			resp.Error(&rpcfb.StatusT{Code: rpcfb.ErrorCodeBAD_REQUEST, Message: err.Error()})
+		default:
+			resp.Error(&rpcfb.StatusT{Code: rpcfb.ErrorCodePD_INTERNAL_SERVER_ERROR, Message: err.Error()})
+		}
+		return
+	}
+
+	resp.Events = events
+	resp.ResourceVersion = rv
+	resp.OK()
 }

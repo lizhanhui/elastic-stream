@@ -2,7 +2,10 @@ package kv
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	clientv3 "go.etcd.io/etcd/client/v3"
@@ -85,7 +88,7 @@ func TestEtcd_Get(t *testing.T) {
 			defer closeFunc()
 
 			etcd := NewEtcd(EtcdParam{
-				KV:       client,
+				Client:   client,
 				RootPath: "/test",
 			}, zap.NewNop())
 
@@ -230,7 +233,7 @@ func TestEtcd_BatchGet(t *testing.T) {
 			defer closeFunc()
 
 			etcd := NewEtcd(EtcdParam{
-				KV:        client,
+				Client:    client,
 				RootPath:  "/test",
 				CmpFunc:   tt.fields.newCmpFunc,
 				MaxTxnOps: tt.fields.maxTxnOps,
@@ -374,7 +377,7 @@ func TestEtcd_GetByRange(t *testing.T) {
 			defer closeFunc()
 
 			etcd := NewEtcd(EtcdParam{
-				KV:       client,
+				Client:   client,
 				RootPath: "/test",
 				CmpFunc:  tt.fields.newCmpFunc,
 			}, zap.NewNop())
@@ -398,6 +401,272 @@ func TestEtcd_GetByRange(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestEtcd_Watch(t *testing.T) {
+	timeoutCtx, cancel := context.WithTimeout(context.Background(), 1*time.Millisecond)
+	defer cancel()
+	type args struct {
+		ctx    context.Context
+		prefix []byte
+		rev    int64
+		filter Filter
+	}
+	type kv struct {
+		k, v string
+	}
+	type want struct {
+		Events
+		errStr string
+	}
+	tests := []struct {
+		name     string
+		preset   []kv
+		args     args
+		afterOps []func(kv clientv3.KV) error
+		wants    []*want
+	}{
+		{
+			name:   "normal case",
+			preset: []kv{{"/test/foo/key1", "val1"}, {"/test/bar/key2", "val2"}, {"/test/foo/key3", "val3"}},
+			args: args{
+				ctx:    context.Background(),
+				prefix: []byte("foo/"),
+				rev:    3,
+			},
+			afterOps: []func(kv clientv3.KV) error{
+				// Add
+				func(kv clientv3.KV) error {
+					_, err := kv.Txn(context.Background()).Then(
+						clientv3.OpPut("/test/foo/key4", "val4"),
+						clientv3.OpPut("/test/foo/key5", "val5")).Commit()
+					return err
+				},
+				// Modify and delete
+				func(kv clientv3.KV) error {
+					_, err := kv.Txn(context.Background()).Then(
+						clientv3.OpPut("/test/foo/key4", "val44"),
+						clientv3.OpDelete("/test/foo/key5")).Commit()
+					return err
+				},
+			},
+			wants: []*want{
+				{Events: Events{
+					Events:   []Event{{Type: Added, Key: []byte("foo/key3"), Value: []byte("val3")}},
+					Revision: 4,
+				}},
+				{Events: Events{
+					Events:   []Event{{Type: Added, Key: []byte("foo/key4"), Value: []byte("val4")}, {Type: Added, Key: []byte("foo/key5"), Value: []byte("val5")}},
+					Revision: 5,
+				}},
+				{Events: Events{
+					Events:   []Event{{Type: Modified, Key: []byte("foo/key4"), Value: []byte("val44")}, {Type: Deleted, Key: []byte("foo/key5"), Value: []byte("val5")}},
+					Revision: 6,
+				}},
+			},
+		},
+		{
+			name:   "filter",
+			preset: []kv{},
+			args: args{
+				ctx:    context.Background(),
+				prefix: []byte("foo/"),
+				filter: func(e Event) bool {
+					if e.Type == Modified {
+						return false
+					}
+					return strings.HasPrefix(string(e.Key), "foo/key4")
+				},
+			},
+			afterOps: []func(kv clientv3.KV) error{
+				// Add
+				func(kv clientv3.KV) error {
+					_, err := kv.Txn(context.Background()).Then(
+						clientv3.OpPut("/test/foo/key4", "val4"),
+						clientv3.OpPut("/test/foo/key5", "val5")).Commit()
+					return err
+				},
+				// Modify
+				func(kv clientv3.KV) error {
+					_, err := kv.Txn(context.Background()).Then(
+						clientv3.OpPut("/test/foo/key4", "val44"),
+						clientv3.OpPut("/test/foo/key5", "val55")).Commit()
+					return err
+				},
+				// Delete
+				func(kv clientv3.KV) error {
+					_, err := kv.Txn(context.Background()).Then(
+						clientv3.OpDelete("/test/foo/key4"),
+						clientv3.OpDelete("/test/foo/key5")).Commit()
+					return err
+				},
+				// Add
+				func(kv clientv3.KV) error {
+					_, err := kv.Txn(context.Background()).Then(
+						clientv3.OpPut("/test/foo/key4", "val444"),
+						clientv3.OpPut("/test/foo/key5", "val555")).Commit()
+					return err
+				},
+			},
+			wants: []*want{
+				nil,
+				{Events: Events{
+					Events:   []Event{{Type: Added, Key: []byte("foo/key4"), Value: []byte("val4")}},
+					Revision: 2,
+				}},
+				nil,
+				{Events: Events{
+					Events:   []Event{{Type: Deleted, Key: []byte("foo/key4"), Value: []byte("val44")}},
+					Revision: 4,
+				}},
+
+				{Events: Events{
+					Events:   []Event{{Type: Added, Key: []byte("foo/key4"), Value: []byte("val444")}},
+					Revision: 5,
+				}},
+			},
+		},
+		{
+			name:   "timeout context",
+			preset: []kv{{"/test/foo/key1", "val1"}, {"/test/bar/key2", "val2"}, {"/test/foo/key3", "val3"}},
+			args: args{
+				ctx:    timeoutCtx,
+				prefix: []byte("foo/"),
+				rev:    3,
+			},
+		},
+		{
+			name:   "compacted after receiving events",
+			preset: []kv{{"/test/foo/key1", "val1"}, {"/test/bar/key2", "val2"}, {"/test/foo/key3", "val3"}},
+			args: args{
+				ctx:    context.Background(),
+				prefix: []byte("foo/"),
+				rev:    3,
+			},
+			afterOps: []func(kv clientv3.KV) error{
+				func(kv clientv3.KV) error {
+					resp, err := kv.Compact(context.Background(), 4)
+					_ = resp
+					return err
+				},
+				func(kv clientv3.KV) error {
+					_, err := kv.Txn(context.Background()).Then(
+						clientv3.OpPut("/test/foo/key4", "val4"),
+						clientv3.OpPut("/test/foo/key5", "val5")).Commit()
+					return err
+				},
+			},
+			wants: []*want{
+				{Events: Events{
+					Events:   []Event{{Type: Added, Key: []byte("foo/key3"), Value: []byte("val3")}},
+					Revision: 4,
+				}},
+				nil,
+				{Events: Events{
+					Events:   []Event{{Type: Added, Key: []byte("foo/key4"), Value: []byte("val4")}, {Type: Added, Key: []byte("foo/key5"), Value: []byte("val5")}},
+					Revision: 5,
+				}},
+			},
+		},
+	}
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			re := require.New(t)
+			_, client, closeFunc := testutil.StartEtcd(t, nil)
+			defer closeFunc()
+
+			etcd := NewEtcd(EtcdParam{
+				Client:   client,
+				RootPath: "/test",
+			}, zap.NewNop())
+
+			// prepare
+			kv := client.KV
+			for _, pair := range tt.preset {
+				_, err := kv.Put(context.Background(), pair.k, pair.v)
+				re.NoError(err)
+			}
+
+			// run
+			watcher := etcd.Watch(tt.args.ctx, tt.args.prefix, tt.args.rev, tt.args.filter)
+			defer watcher.Close()
+
+			checkDone := make(chan struct{})
+			sig := make(chan struct{})
+
+			go func() {
+				defer close(checkDone)
+				// check
+				ch := watcher.EventChan()
+				for i, w := range tt.wants {
+					if w == nil {
+						// skip
+						sig <- struct{}{}
+						continue
+					}
+					select {
+					case e, ok := <-ch:
+						if !ok {
+							re.Failf("channel closed", "did not receive event %d: %+v", i, w)
+						}
+						if w.errStr != "" {
+							re.ErrorContains(e.Error, w.errStr)
+							continue
+						}
+						re.Equal(w.Events, e)
+						sig <- struct{}{}
+					case <-time.After(1 * time.Second):
+						re.Failf("timeout", "did not receive event %d: %+v", i, w)
+					}
+				}
+			}()
+
+			// apply operations
+			for _, op := range tt.afterOps {
+				select {
+				case <-sig:
+				case <-checkDone:
+					return
+				}
+				err := op(kv)
+				re.NoError(err)
+			}
+			select {
+			case <-sig:
+			case <-checkDone:
+			}
+		})
+	}
+}
+
+func TestEtcd_WatchCompacted(t *testing.T) {
+	t.Parallel()
+	re := require.New(t)
+	_, client, closeFunc := testutil.StartEtcd(t, nil)
+	defer closeFunc()
+
+	etcd := NewEtcd(EtcdParam{
+		Client:   client,
+		RootPath: "/test",
+	}, zap.NewNop())
+
+	// put keys and compact
+	kv := client.KV
+	for i := 0; i < 10; i++ {
+		_, err := kv.Put(context.Background(), fmt.Sprintf("/test/foo/key%d", i), fmt.Sprintf("val%d", i))
+		re.NoError(err)
+	}
+	_, err := kv.Compact(context.Background(), 10)
+	re.NoError(err)
+
+	// watch a compacted revision
+	watcher := etcd.Watch(context.Background(), []byte("foo/"), 1, nil)
+	defer watcher.Close()
+
+	event := <-watcher.EventChan()
+	re.ErrorContains(event.Error, ErrCompacted.Error())
 }
 
 func TestEtcd_Put(t *testing.T) {
@@ -533,7 +802,7 @@ func TestEtcd_Put(t *testing.T) {
 			defer closeFunc()
 
 			etcd := NewEtcd(EtcdParam{
-				KV:       client,
+				Client:   client,
 				RootPath: "/test",
 			}, zap.NewNop())
 
@@ -846,7 +1115,7 @@ func TestEtcd_BatchPut(t *testing.T) {
 			defer closeFunc()
 
 			etcd := NewEtcd(EtcdParam{
-				KV:        client,
+				Client:    client,
 				RootPath:  "/test",
 				CmpFunc:   tt.fields.newCmpFunc,
 				MaxTxnOps: tt.fields.maxTxnOps,
@@ -967,7 +1236,7 @@ func TestEtcd_Delete(t *testing.T) {
 			defer closeFunc()
 
 			etcd := NewEtcd(EtcdParam{
-				KV:       client,
+				Client:   client,
 				RootPath: "/test",
 			}, zap.NewNop())
 
@@ -1185,7 +1454,7 @@ func TestEtcd_BatchDelete(t *testing.T) {
 			defer closeFunc()
 
 			etcd := NewEtcd(EtcdParam{
-				KV:        client,
+				Client:    client,
 				RootPath:  "/test",
 				CmpFunc:   tt.fields.newCmpFunc,
 				MaxTxnOps: tt.fields.maxTxnOps,

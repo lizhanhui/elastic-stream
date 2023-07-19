@@ -772,7 +772,7 @@ table WatchResourceRequest {
     // The type of the resource.
     resource_type: [ResourceType] (id: 1);
 
-    // The resource version to watch. All changes with a version greater than the given version will be returned.
+    // The resource version to watch. All changes with a version equal to or greater than the given version will be returned.
     resource_version: int64 (id: 2);
 }
 

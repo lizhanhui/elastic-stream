@@ -75,6 +75,16 @@ func (l Logger) GetByRange(ctx context.Context, r Range, rev int64, limit int64,
 	return
 }
 
+func (l Logger) Watch(ctx context.Context, prefix []byte, rev int64, filter Filter) (w Watcher) {
+	w = l.KV.Watch(ctx, prefix, rev, filter)
+
+	logger := l.logger()
+	if logger.Core().Enabled(zap.DebugLevel) {
+		logger.Debug("kv watch", zap.ByteString("prefix", prefix), zap.Int64("rev", rev), traceutil.TraceLogField(ctx))
+	}
+	return
+}
+
 func (l Logger) Put(ctx context.Context, k, v []byte, prevKV bool) (prevV []byte, err error) {
 	prevV, err = l.KV.Put(ctx, k, v, prevKV)
 

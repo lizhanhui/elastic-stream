@@ -17,6 +17,7 @@ package kv
 import (
 	"bytes"
 	"context"
+	"fmt"
 
 	"github.com/pkg/errors"
 	etcdrpc "go.etcd.io/etcd/api/v3/v3rpc/rpctypes"
@@ -26,6 +27,11 @@ import (
 
 	"github.com/AutoMQ/pd/pkg/util/etcdutil"
 	"github.com/AutoMQ/pd/pkg/util/traceutil"
+)
+
+const (
+	// A buffer in order to reduce times of context switch.
+	_watchChanCap = 128
 )
 
 var (
@@ -43,12 +49,19 @@ type Etcd struct {
 	newTxnFunc func(ctx context.Context) clientv3.Txn // WARNING: do not call `If` on the returned txn.
 	maxTxnOps  uint
 
+	watcher clientv3.Watcher
+
 	lg *zap.Logger
+}
+
+type Client interface {
+	clientv3.KV
+	clientv3.Watcher
 }
 
 // EtcdParam is used to create a new etcd kv.
 type EtcdParam struct {
-	KV clientv3.KV
+	Client Client
 	// rootPath is the prefix of all keys in etcd.
 	RootPath string
 	// cmpFunc is used to create a transaction. If cmpFunc is nil, the transaction will not have any condition.
@@ -74,13 +87,16 @@ func NewEtcd(param EtcdParam, lg *zap.Logger) *Etcd {
 	if param.CmpFunc != nil {
 		e.newTxnFunc = func(ctx context.Context) clientv3.Txn {
 			// cmpFunc should be evaluated lazily.
-			return etcdutil.NewTxn(ctx, param.KV, logger.With(traceutil.TraceLogField(ctx))).If(param.CmpFunc())
+			return etcdutil.NewTxn(ctx, param.Client, logger.With(traceutil.TraceLogField(ctx))).If(param.CmpFunc())
 		}
 	} else {
 		e.newTxnFunc = func(ctx context.Context) clientv3.Txn {
-			return etcdutil.NewTxn(ctx, param.KV, logger.With(traceutil.TraceLogField(ctx)))
+			return etcdutil.NewTxn(ctx, param.Client, logger.With(traceutil.TraceLogField(ctx)))
 		}
 	}
+
+	e.watcher = param.Client
+
 	return e
 }
 
@@ -213,6 +229,22 @@ func (e *Etcd) GetByRange(ctx context.Context, r Range, rev int64, limit int64, 
 	}
 
 	return kvs, returnedRV, rangeResp.More, nil
+}
+
+func (e *Etcd) Watch(ctx context.Context, prefix []byte, rev int64, filter Filter) Watcher {
+	ctx = clientv3.WithRequireLeader(ctx)
+	key := e.addPrefix(prefix)
+	opts := []clientv3.OpOption{clientv3.WithPrevKV(), clientv3.WithPrefix()}
+	if rev > 0 {
+		opts = append(opts, clientv3.WithRev(rev))
+	}
+
+	wch := e.watcher.Watch(ctx, string(key), opts...)
+	logger := e.lg.With(zap.ByteString("prefix", prefix), zap.Int64("revision", rev), traceutil.TraceLogField(ctx))
+	watcher := e.newWatchChan(ctx, wch, filter, logger)
+	go watcher.run()
+
+	return watcher
 }
 
 // Put returns ErrTxnFailed if EtcdParam.CmpFunc evaluates to false.
@@ -413,4 +445,149 @@ func (e *Etcd) hasPrefix(k []byte) bool {
 	return len(k) >= len(e.rootPath)+len(KeySeparator) &&
 		bytes.Equal(k[:len(e.rootPath)], e.rootPath) &&
 		string(k[len(e.rootPath):len(e.rootPath)+len(KeySeparator)]) == KeySeparator
+}
+
+type watchChan struct {
+	e *Etcd
+
+	ctx    context.Context
+	cancel context.CancelFunc
+
+	ch         clientv3.WatchChan
+	filter     Filter
+	resultChan chan Events
+
+	lg *zap.Logger
+}
+
+func (e *Etcd) newWatchChan(ctx context.Context, ch clientv3.WatchChan, filter Filter, logger *zap.Logger) *watchChan {
+	ctx, cancel := context.WithCancel(ctx)
+	return &watchChan{
+		e:          e,
+		ctx:        ctx,
+		cancel:     cancel,
+		ch:         ch,
+		filter:     filter,
+		resultChan: make(chan Events, _watchChanCap),
+		lg:         logger,
+	}
+}
+
+func (w *watchChan) Close() {
+	w.cancel()
+}
+
+func (w *watchChan) EventChan() <-chan Events {
+	return w.resultChan
+}
+
+func (w *watchChan) run() {
+	defer func() {
+		close(w.resultChan)
+	}()
+
+	for {
+		select {
+		case <-w.ctx.Done():
+			return
+		case resp, ok := <-w.ch:
+			if !ok {
+				return
+			}
+			if err := resp.Err(); err != nil {
+				w.sendError(err)
+				return
+			}
+			if len(resp.Events) == 0 {
+				continue
+			}
+			events := make([]Event, 0, len(resp.Events))
+			for _, e := range resp.Events {
+				parsed, err := w.parseEvent(e)
+				if err != nil {
+					w.sendError(err)
+					return
+				}
+				if w.filter != nil && !w.filter(parsed) {
+					continue
+				}
+
+				events = append(events, parsed)
+			}
+			if len(events) == 0 {
+				continue
+			}
+			w.sendEvents(Events{Events: events, Revision: resp.Header.Revision})
+		}
+	}
+}
+
+func (w *watchChan) sendError(err error) {
+	logger := w.lg.With(zap.Error(err))
+	if errors.Is(err, etcdrpc.ErrCompacted) {
+		err = ErrCompacted
+		logger.Warn("watch chan error: compaction")
+	} else {
+		logger.Error("watch chan error")
+	}
+
+	select {
+	case w.resultChan <- Events{Error: err}:
+	case <-w.ctx.Done():
+		logger.Warn("error is dropped due to context done")
+	}
+}
+
+func (w *watchChan) sendEvents(e Events) {
+	logger := w.lg.With(zap.Int("events-cnt", len(e.Events)), zap.Int64("events-revision", e.Revision))
+	if len(w.resultChan) == cap(w.resultChan) {
+		logger.Warn("watch chan is full", zap.Int("cap", cap(w.resultChan)))
+	}
+	select {
+	case w.resultChan <- e:
+		if logger.Core().Enabled(zap.DebugLevel) {
+			fields := make([]zap.Field, 0, len(e.Events)*3)
+			for i, ev := range e.Events {
+				fields = append(fields,
+					zap.String(fmt.Sprintf("events-%d-type", i), string(ev.Type)),
+					zap.ByteString(fmt.Sprintf("events-%d-key", i), ev.Key),
+					zap.ByteString(fmt.Sprintf("events-%d-value", i), ev.Value),
+				)
+			}
+			logger.Debug("send events to watch chan", fields...)
+		}
+	case <-w.ctx.Done():
+		logger.Warn("events are dropped due to context done")
+	}
+}
+
+func (w *watchChan) parseEvent(e *clientv3.Event) (Event, error) {
+	var ret Event
+	switch {
+	case e.Type == clientv3.EventTypeDelete:
+		if e.PrevKv == nil {
+			// The previous value has been compacted.
+			return Event{}, errors.Errorf("etcd event has no previous key-value pair. key: %q, modRevision: %d, type: %s", e.Kv.Key, e.Kv.ModRevision, e.Type)
+		}
+		ret = Event{
+			Type:  Deleted,
+			Key:   w.e.trimPrefix(e.Kv.Key),
+			Value: e.PrevKv.Value,
+		}
+	case e.IsCreate():
+		ret = Event{
+			Type:  Added,
+			Key:   w.e.trimPrefix(e.Kv.Key),
+			Value: e.Kv.Value,
+		}
+	case e.IsModify():
+		ret = Event{
+			Type:  Modified,
+			Key:   w.e.trimPrefix(e.Kv.Key),
+			Value: e.Kv.Value,
+		}
+	default:
+		// Should never happen as etcd clientv3.Event has no other types.
+	}
+	return ret, nil
 }

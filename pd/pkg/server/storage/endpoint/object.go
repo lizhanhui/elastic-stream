@@ -49,7 +49,7 @@ func (e *Endpoint) CreateObject(ctx context.Context, object Object) error {
 
 	key := objectPath(object.StreamId, object.RangeIndex, object.ObjectID)
 	value := fbutil.Marshal(object)
-	prevValue, err := e.Put(ctx, key, value, true)
+	prevValue, err := e.KV.Put(ctx, key, value, true)
 	mcache.Free(value)
 
 	if err != nil {
@@ -74,7 +74,7 @@ func (e *Endpoint) UpdateObject(ctx context.Context, object Object) (Object, err
 	key := objectPath(object.StreamId, object.RangeIndex, object.ObjectID)
 	value := fbutil.Marshal(object)
 
-	prevValue, err := e.Put(ctx, key, value, false)
+	prevValue, err := e.KV.Put(ctx, key, value, false)
 	mcache.Free(value)
 	if err != nil {
 		logger.Error("failed to update object", zap.Error(err))
@@ -122,7 +122,7 @@ func (e *Endpoint) forEachObjectInRangeLimited(ctx context.Context, rangeID Rang
 	logger := e.lg.With(zap.Int64("stream-id", rangeID.StreamID), zap.Int32("range-index", rangeID.Index), traceutil.TraceLogField(ctx))
 
 	startKey := objectPath(rangeID.StreamID, rangeID.Index, startID)
-	kvs, _, more, err := e.GetByRange(ctx, kv.Range{StartKey: startKey, EndKey: e.endObjectPathInRange(rangeID)}, 0, limit, false)
+	kvs, _, more, err := e.KV.GetByRange(ctx, kv.Range{StartKey: startKey, EndKey: e.endObjectPathInRange(rangeID)}, 0, limit, false)
 	if err != nil {
 		logger.Error("failed to get objects", zap.Int32("start-id", int32(startID)), zap.Int64("limit", limit), zap.Error(err))
 		return MinObjectID - 1, errors.Wrap(err, "get objects")
@@ -151,7 +151,7 @@ func (e *Endpoint) forEachObjectInRangeLimited(ctx context.Context, rangeID Rang
 }
 
 func (e *Endpoint) endObjectPathInRange(rangeID RangeID) []byte {
-	return e.GetPrefixRangeEnd([]byte(fmt.Sprintf(_objectInRangePrefixFormat, rangeID.StreamID, rangeID.Index)))
+	return e.KV.GetPrefixRangeEnd([]byte(fmt.Sprintf(_objectInRangePrefixFormat, rangeID.StreamID, rangeID.Index)))
 }
 
 func objectPath(streamID int64, rangeIndex int32, objectID int64) []byte {

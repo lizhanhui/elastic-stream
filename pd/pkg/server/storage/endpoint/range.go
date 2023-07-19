@@ -69,7 +69,7 @@ func (e *Endpoint) CreateRange(ctx context.Context, rangeT *rpcfb.RangeT) error 
 		})
 	}
 
-	prevKVs, err := e.BatchPut(ctx, kvs, true, true)
+	prevKVs, err := e.KV.BatchPut(ctx, kvs, true, true)
 	mcache.Free(r)
 
 	if err != nil {
@@ -91,7 +91,7 @@ func (e *Endpoint) UpdateRange(ctx context.Context, rangeT *rpcfb.RangeT) (*rpcf
 	key := rangePathInSteam(rangeT.StreamId, rangeT.Index)
 	value := fbutil.Marshal(rangeT)
 
-	prevValue, err := e.Put(ctx, key, value, true)
+	prevValue, err := e.KV.Put(ctx, key, value, true)
 	mcache.Free(value)
 	if err != nil {
 		logger.Error("failed to update range", zap.Error(err))
@@ -125,7 +125,7 @@ func (e *Endpoint) GetRanges(ctx context.Context, rangeIDs []*RangeID) ([]*rpcfb
 		keys[i] = rangePathInSteam(rangeID.StreamID, rangeID.Index)
 	}
 
-	kvs, err := e.BatchGet(ctx, keys, false)
+	kvs, err := e.KV.BatchGet(ctx, keys, false)
 	if err != nil {
 		logger.Error("failed to get ranges", zap.Error(err))
 		return nil, errors.Wrap(err, "get ranges")
@@ -150,7 +150,7 @@ func (e *Endpoint) GetRanges(ctx context.Context, rangeIDs []*RangeID) ([]*rpcfb
 func (e *Endpoint) GetLastRange(ctx context.Context, streamID int64) (*rpcfb.RangeT, error) {
 	logger := e.lg.With(zap.Int64("stream-id", streamID), traceutil.TraceLogField(ctx))
 
-	kvs, _, _, err := e.GetByRange(ctx, kv.Range{StartKey: rangePathInSteam(streamID, MinRangeIndex), EndKey: e.endRangePathInStream(streamID)}, 0, 1, true)
+	kvs, _, _, err := e.KV.GetByRange(ctx, kv.Range{StartKey: rangePathInSteam(streamID, MinRangeIndex), EndKey: e.endRangePathInStream(streamID)}, 0, 1, true)
 	if err != nil {
 		logger.Error("failed to get last range", zap.Error(err))
 		return nil, err
@@ -199,7 +199,7 @@ func (e *Endpoint) forEachRangeInStreamLimited(ctx context.Context, streamID int
 	logger := e.lg.With(zap.Int64("stream-id", streamID), traceutil.TraceLogField(ctx))
 
 	startKey := rangePathInSteam(streamID, startID)
-	kvs, _, more, err := e.GetByRange(ctx, kv.Range{StartKey: startKey, EndKey: e.endRangePathInStream(streamID)}, 0, limit, false)
+	kvs, _, more, err := e.KV.GetByRange(ctx, kv.Range{StartKey: startKey, EndKey: e.endRangePathInStream(streamID)}, 0, limit, false)
 	if err != nil {
 		logger.Error("failed to get ranges", zap.Int32("start-id", startID), zap.Int64("limit", limit), zap.Error(err))
 		return MinRangeIndex - 1, errors.Wrap(err, "get ranges")
@@ -222,7 +222,7 @@ func (e *Endpoint) forEachRangeInStreamLimited(ctx context.Context, streamID int
 }
 
 func (e *Endpoint) endRangePathInStream(streamID int64) []byte {
-	return e.GetPrefixRangeEnd([]byte(fmt.Sprintf(_rangeStreamPrefixFormat, streamID)))
+	return e.KV.GetPrefixRangeEnd([]byte(fmt.Sprintf(_rangeStreamPrefixFormat, streamID)))
 }
 
 func rangePathInSteam(streamID int64, index int32) []byte {
@@ -286,7 +286,7 @@ func (e *Endpoint) forEachRangeIDOnRangeServerLimited(ctx context.Context, range
 	logger := e.lg.With(zap.Int32("range-server-id", rangeServerID), traceutil.TraceLogField(ctx))
 
 	startKey := rangePathOnRangeServer(rangeServerID, startID.StreamID, startID.Index)
-	kvs, _, more, err := e.GetByRange(ctx, kv.Range{StartKey: startKey, EndKey: e.endRangePathOnRangeServer(rangeServerID)}, 0, limit, false)
+	kvs, _, more, err := e.KV.GetByRange(ctx, kv.Range{StartKey: startKey, EndKey: e.endRangePathOnRangeServer(rangeServerID)}, 0, limit, false)
 	if err != nil {
 		logger.Error("failed to get range ids by range server", zap.Int64("start-stream-id", startID.StreamID), zap.Int32("start-range-index", startID.Index), zap.Int64("limit", limit), zap.Error(err))
 		return nil, errors.Wrap(err, "get range ids by range server")
@@ -314,14 +314,14 @@ func (e *Endpoint) forEachRangeIDOnRangeServerLimited(ctx context.Context, range
 }
 
 func (e *Endpoint) endRangePathOnRangeServer(rangeServerID int32) []byte {
-	return e.GetPrefixRangeEnd([]byte(fmt.Sprintf(_rangeOnServerPrefixFormat, rangeServerID)))
+	return e.KV.GetPrefixRangeEnd([]byte(fmt.Sprintf(_rangeOnServerPrefixFormat, rangeServerID)))
 }
 
 func (e *Endpoint) GetRangeIDsByRangeServerAndStream(ctx context.Context, streamID int64, rangeServerID int32) ([]*RangeID, error) {
 	logger := e.lg.With(zap.Int64("stream-id", streamID), zap.Int32("range-server-id", rangeServerID), traceutil.TraceLogField(ctx))
 
 	startKey := rangePathOnRangeServer(rangeServerID, streamID, MinRangeIndex)
-	kvs, _, _, err := e.GetByRange(ctx, kv.Range{StartKey: startKey, EndKey: e.endRangePathOnRangeServerInStream(rangeServerID, streamID)}, 0, 0, false)
+	kvs, _, _, err := e.KV.GetByRange(ctx, kv.Range{StartKey: startKey, EndKey: e.endRangePathOnRangeServerInStream(rangeServerID, streamID)}, 0, 0, false)
 	if err != nil {
 		logger.Error("failed to get range ids by range server and stream", zap.Error(err))
 		return nil, errors.Wrap(err, "get range ids by range server and stream")
@@ -340,7 +340,7 @@ func (e *Endpoint) GetRangeIDsByRangeServerAndStream(ctx context.Context, stream
 }
 
 func (e *Endpoint) endRangePathOnRangeServerInStream(rangeServerID int32, streamID int64) []byte {
-	return e.GetPrefixRangeEnd([]byte(fmt.Sprintf(_rangeOnServerStreamPrefixFormat, rangeServerID, streamID)))
+	return e.KV.GetPrefixRangeEnd([]byte(fmt.Sprintf(_rangeOnServerStreamPrefixFormat, rangeServerID, streamID)))
 }
 
 func rangePathOnRangeServer(rangeServerID int32, streamID int64, index int32) []byte {

@@ -192,7 +192,7 @@ func (s *Server) startServer() error {
 		return errors.Wrap(err, "init member")
 	}
 	etcdKV := kv.Logger{KV: kv.NewEtcd(kv.EtcdParam{
-		KV:        s.client,
+		Client:    s.client,
 		RootPath:  s.rootPath,
 		CmpFunc:   s.leaderCmp,
 		MaxTxnOps: s.cfg.Etcd.MaxTxnOps,
