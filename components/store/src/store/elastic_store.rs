@@ -370,6 +370,13 @@ impl Store for ElasticStore {
         Ok(ranges)
     }
 
+    /// The single writer has determined to seal the specified range.
+    ///
+    /// The `end` offset in metadata may be current range server specific and thus non-final.
+    /// Additionally, even if the `end` offset is final, range replica may have incomplete data.
+    ///
+    /// Either case, we need to run the range integrity procedure to ensure we are having complete
+    /// and integral replica.
     async fn seal(&self, range: RangeMetadata) -> Result<(), StoreError> {
         let (tx, rx) = oneshot::channel();
         self.indexer.seal_range(range, tx);

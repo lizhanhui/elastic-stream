@@ -21,7 +21,7 @@ impl Range {
         let log_ident = format!("Range[{}#{}] ", metadata.stream_id(), metadata.index());
         Self {
             log_ident: log_ident.clone(),
-            window: if metadata.is_sealed() {
+            window: if metadata.has_end() {
                 None
             } else {
                 Some(Window::new(log_ident, metadata.start()))

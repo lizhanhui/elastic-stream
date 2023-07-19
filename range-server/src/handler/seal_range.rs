@@ -53,6 +53,31 @@ impl<'a> SealRange<'a> {
 
         let range = request.range;
         let mut range = Into::<RangeMetadata>::into(&*range);
+
+        match manager.seal(&mut range) {
+            Ok(_) => {
+                status.code = ErrorCode::OK;
+                status.message = Some(String::from("OK"));
+                seal_response.range = Some(Box::new(Into::<RangeT>::into(&range)));
+            }
+
+            Err(e) => {
+                error!(
+                    "Failed to seal stream-id={}, range_index={}",
+                    range.stream_id(),
+                    range.index()
+                );
+                match e {
+                    ServiceError::NotFound(_) => status.code = ErrorCode::RANGE_NOT_FOUND,
+                    _ => status.code = ErrorCode::RS_INTERNAL_SERVER_ERROR,
+                }
+                status.message = Some(e.to_string());
+                seal_response.status = Box::new(status);
+                self.build_response(response, &seal_response);
+                return;
+            }
+        }
+
         if let Err(e) = store.seal(range.clone()).await {
             error!(
                 "Failed to seal stream-id={}, range_index={} in store",
@@ -66,25 +91,6 @@ impl<'a> SealRange<'a> {
             return;
         }
 
-        match manager.seal(&mut range) {
-            Ok(_) => {
-                status.code = ErrorCode::OK;
-                status.message = Some(String::from("OK"));
-                seal_response.range = Some(Box::new(Into::<RangeT>::into(&range)));
-            }
-            Err(e) => {
-                error!(
-                    "Failed to seal stream-id={}, range_index={}",
-                    range.stream_id(),
-                    range.index()
-                );
-                match e {
-                    ServiceError::NotFound(_) => status.code = ErrorCode::RANGE_NOT_FOUND,
-                    _ => status.code = ErrorCode::RS_INTERNAL_SERVER_ERROR,
-                }
-                status.message = Some(e.to_string());
-            }
-        }
         seal_response.status = Box::new(status);
         self.build_response(response, &seal_response);
     }

@@ -126,7 +126,7 @@ impl RangeMetadata {
         self.ack_count
     }
 
-    pub fn is_sealed(&self) -> bool {
+    pub fn has_end(&self) -> bool {
         self.end.is_some()
     }
 
@@ -207,11 +207,11 @@ mod tests {
     #[test]
     fn test_take_slot() {
         let mut range = RangeMetadata::new(0, 0, 0, 0, None);
-        assert!(!range.is_sealed());
+        assert!(!range.has_end());
 
         // Double seal should return the same offset.
         range.set_end(100);
-        assert!(range.is_sealed());
+        assert!(range.has_end());
         assert_eq!(range.end(), Some(100));
     }
 

@@ -569,7 +569,10 @@ impl super::LocalRangeManager for Indexer {
     }
 
     fn seal(&self, stream_id: i64, range: &RangeMetadata) -> Result<(), StoreError> {
-        debug_assert!(range.is_sealed(), "Range is not sealed yet");
+        debug_assert!(
+            range.has_end(),
+            "The metadata to seal range does not have end offset"
+        );
         let end = range.end().ok_or(StoreError::Internal("".to_owned()))?;
         debug_assert!(end >= range.start(), "End of range cannot less than start");
         // prefix + stream-id + range-index
