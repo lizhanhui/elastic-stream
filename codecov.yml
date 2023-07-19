@@ -7,7 +7,7 @@ ignore:
   - "pd/third_party/"
 
 comment:
-  layout: "header, diff, flags, components, files, footer"
+  layout: "reach, diff, flags, components, tree, reach"
   behavior: new
 
 component_management:
