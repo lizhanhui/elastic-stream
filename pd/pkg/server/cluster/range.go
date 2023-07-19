@@ -287,6 +287,7 @@ func (c *RaftCluster) sealRangeLocked(ctx context.Context, lastRange *rpcfb.Rang
 		Servers:      eraseRangeServersInfo(lastRange.Servers),
 		ReplicaCount: lastRange.ReplicaCount,
 		AckCount:     lastRange.AckCount,
+		OffloadOwner: lastRange.OffloadOwner,
 	}
 
 	logger.Info("start to seal range")
@@ -333,6 +334,8 @@ func (c *RaftCluster) newRangeLocked(ctx context.Context, newRange *rpcfb.RangeT
 		Servers:      servers,
 		ReplicaCount: stream.Replica,
 		AckCount:     stream.AckCount,
+		// TODO: choose offload owner by some strategy.
+		OffloadOwner: &rpcfb.OffloadOwnerT{ServerId: servers[0].ServerId},
 	}
 
 	logger.Info("start to create range")

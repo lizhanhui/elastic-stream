@@ -633,4 +633,5 @@ func fillRangeInfo(r *rpcfb.RangeT) {
 	r.Servers = []*rpcfb.RangeServerT{{ServerId: 0}, {ServerId: 1}, {ServerId: 2}}
 	r.ReplicaCount = 3
 	r.AckCount = 3
+	r.OffloadOwner = &rpcfb.OffloadOwnerT{}
 }
