@@ -97,10 +97,17 @@ where
                         }
                     };
 
-                unsafe { &mut *self.range_manager.get() }
+                if unsafe { &mut *self.range_manager.get() }
                     .start()
                     .await
-                    .expect("Failed to bootstrap stream ranges from placement drivers");
+                    .is_err()
+                {
+                    eprintln!(
+                        "Failed to bootstrap stream ranges from PD: {}",
+                        self.config.server_config.placement_driver
+                    );
+                    panic!("Failed to retrieve bootstrap stream ranges metadata from PD");
+                }
 
                 if self.config.primary {
                     let port = self.config.server_config.observation.metrics.port;

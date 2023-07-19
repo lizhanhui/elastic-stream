@@ -1,6 +1,6 @@
 services:
   range-server:
-    image: "elasticstream/elastic-stream:0.2.4"
+    image: "elasticstream/elastic-stream:0.2.5"
     configs:
       - source: rs_config
         target: /etc/range-server/range-server.yaml
@@ -9,7 +9,10 @@ services:
     entrypoint:
       - /usr/local/bin/range-server
       - start
-
+    environment:
+      - ES_ADDR=0.0.0.0:10911
+      - ES_ADVERTISE_ADDR=range-server:10911
+      - ES_PD=pd:12378
     ports:
       - "10911:10911"
     # https://docs.docker.com/compose/compose-file/05-services/#depends_on
@@ -19,7 +22,7 @@ services:
     volumes:
       - rs_data:/data
   pd:
-    image: "elasticstream/elastic-stream:0.2.4"
+    image: "elasticstream/elastic-stream:0.2.5"
     configs:
       - source: pd_config
         target: /etc/pd/config.yaml

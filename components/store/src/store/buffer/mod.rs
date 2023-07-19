@@ -28,7 +28,7 @@ impl PartialEq for BufferedRequest {
 
 impl PartialOrd for BufferedRequest {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        self.request.partial_cmp(&other.request)
+        Some(self.cmp(other))
     }
 }
 

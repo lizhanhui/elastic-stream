@@ -93,7 +93,7 @@ async fn process_command(cmd: Command<'_>) {
         }
     }
 }
-async fn process_close_stream_command(stream: &mut Stream, future: GlobalRef) {
+async fn process_close_stream_command(stream: &Stream, future: GlobalRef) {
     trace!("Start processing close command");
     let result = stream.close().await;
     match result {
@@ -111,12 +111,7 @@ async fn process_close_stream_command(stream: &mut Stream, future: GlobalRef) {
     trace!("Close command finished");
 }
 
-async fn process_append_command(
-    stream: &mut Stream,
-    buf: Bytes,
-    future: GlobalRef,
-    tracer: Tracer,
-) {
+async fn process_append_command(stream: &Stream, buf: Bytes, future: GlobalRef, tracer: Tracer) {
     trace!("Start processing append command");
     let result = stream
         .append(buf)
@@ -143,7 +138,7 @@ async fn process_append_command(
 }
 
 async fn process_read_command(
-    stream: &mut Stream,
+    stream: &Stream,
     start_offset: i64,
     end_offset: i64,
     batch_max_bytes: i32,
@@ -174,7 +169,7 @@ async fn process_read_command(
     trace!("Read command finished");
 }
 
-async fn process_start_offset_command(stream: &mut Stream, future: GlobalRef) {
+async fn process_start_offset_command(stream: &Stream, future: GlobalRef) {
     trace!("Start processing start_offset command");
     let result = stream.start_offset().await;
     match result {
@@ -192,7 +187,7 @@ async fn process_start_offset_command(stream: &mut Stream, future: GlobalRef) {
     trace!("Start_offset command finished");
 }
 
-async fn process_next_offset_command(stream: &mut Stream, future: GlobalRef) {
+async fn process_next_offset_command(stream: &Stream, future: GlobalRef) {
     trace!("Start processing next_offset command");
     let result = stream.next_offset().await;
     match result {
@@ -235,7 +230,7 @@ async fn process_open_stream_command(
 }
 
 async fn process_create_stream_command(
-    front_end: &mut Frontend,
+    front_end: &Frontend,
     replica: u8,
     ack_count: u8,
     retention: Duration,

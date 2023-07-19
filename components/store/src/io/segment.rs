@@ -536,18 +536,13 @@ impl Drop for LogSegment {
 
 impl PartialOrd for LogSegment {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        self.wal_offset.partial_cmp(&other.wal_offset)
+        Some(self.cmp(other))
     }
 }
 
 impl Ord for LogSegment {
     fn cmp(&self, other: &Self) -> Ordering {
-        match self.partial_cmp(other) {
-            Some(res) => res,
-            None => {
-                unreachable!("Should not reach here");
-            }
-        }
+        self.wal_offset.cmp(&other.wal_offset)
     }
 }
 

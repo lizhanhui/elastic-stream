@@ -986,7 +986,7 @@ impl IO {
                     // Safety:
                     // It's safe to convert tag ptr back to Box<Context> as the memory pointed by ptr
                     // is allocated by Box itself, hence, there will no alignment issue at all.
-                    let mut context = unsafe { Box::from_raw(ptr) };
+                    let context = unsafe { Box::from_raw(ptr) };
                     let latency = context.start_time.elapsed();
 
                     // Log slow IO latency
@@ -1028,8 +1028,7 @@ impl IO {
                         trace!("Remove the barrier with wal_offset={}", context.wal_offset);
                     }
 
-                    if let Err(e) = on_complete(&mut self.write_window, &mut context, cqe.result())
-                    {
+                    if let Err(e) = on_complete(&mut self.write_window, &context, cqe.result()) {
                         match e {
                             StoreError::System(errno) => {
                                 error!(
@@ -1471,7 +1470,7 @@ fn try_reclaim_from_wal(wal: &mut Wal, reclaim_bytes: u32) -> (u64, u64) {
 /// * `result` - Result code, exactly same to system call return value.
 fn on_complete(
     write_window: &mut WriteWindow,
-    context: &mut Context,
+    context: &Context,
     result: i32,
 ) -> Result<(), StoreError> {
     match context.opcode {

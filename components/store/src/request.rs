@@ -58,17 +58,7 @@ impl PartialEq for AppendRecordRequest {
 
 impl PartialOrd for AppendRecordRequest {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        match other.stream_id.partial_cmp(&self.stream_id) {
-            Some(Ordering::Equal) => {}
-            ord => return ord,
-        }
-
-        match other.range_index.partial_cmp(&self.range_index) {
-            Some(Ordering::Equal) => {}
-            ord => return ord,
-        }
-
-        other.offset.partial_cmp(&self.offset)
+        Some(self.cmp(other))
     }
 }
 
