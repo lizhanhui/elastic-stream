@@ -37,3 +37,17 @@ impl Drop for HandleJoiner {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn test_joiner() {
+        let mut joiner = super::HandleJoiner::default();
+        for _ in 0..3 {
+            let handle = std::thread::spawn(move || {
+                std::thread::sleep(std::time::Duration::from_millis(300));
+            });
+            joiner.push(handle);
+        }
+    }
+}

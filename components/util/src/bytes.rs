@@ -69,4 +69,14 @@ mod tests {
         assert_eq!(cursor.get_u8(), b'c');
         assert_eq!(cursor.get_u8(), b'd');
     }
+
+    #[test]
+    fn test_advance_bytes() {
+        let buf1 = Bytes::copy_from_slice(b"abc");
+        let buf2 = Bytes::copy_from_slice(b"def");
+        let mut buffers = vec![buf1, buf2];
+        super::advance_bytes(&mut buffers, 4);
+        let remaining: usize = buffers.iter().map(|buf| buf.len()).sum();
+        assert_eq!(2, remaining);
+    }
 }
