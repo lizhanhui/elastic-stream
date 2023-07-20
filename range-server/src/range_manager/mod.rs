@@ -4,11 +4,11 @@ pub(crate) mod range;
 pub(crate) mod stream;
 pub(crate) mod window;
 
-use self::stream::Stream;
 use crate::error::ServiceError;
 #[cfg(test)]
 use mockall::automock;
-use model::{object::ObjectMetadata, range::RangeMetadata, replica::RangeProgress};
+use model::{object::ObjectMetadata, range::RangeMetadata, replica::RangeProgress, Batch};
+use store::error::AppendError;
 
 #[cfg_attr(test, automock)]
 pub(crate) trait RangeManager {
@@ -17,6 +17,7 @@ pub(crate) trait RangeManager {
     /// Create a new range for the specified stream.
     fn create_range(&mut self, range: RangeMetadata) -> Result<(), ServiceError>;
 
+    /// Commit work-in-progress append requests
     async fn commit(
         &mut self,
         stream_id: i64,
@@ -26,20 +27,28 @@ pub(crate) trait RangeManager {
         bytes_len: u32,
     ) -> Result<(), ServiceError>;
 
+    /// Seal the given range.
+    ///
+    /// Two cases are involved:
+    /// - Active seal operation where range metadata has end offset filled;
+    /// - Passive seal operation where end of range metadata is `None`;
     fn seal(&mut self, range: &mut RangeMetadata) -> Result<(), ServiceError>;
 
-    /// Get a stream by id.
+    /// Check if current server is prepared to process the given append request.
     ///
-    /// # Arguments
-    /// `stream_id` - The id of the stream.
-    ///
-    /// # Returns
-    /// The stream if it exists, otherwise `None`.
-    #[allow(clippy::needless_lifetimes)]
-    fn get_stream<'a>(&'a mut self, stream_id: i64) -> Option<&'a mut Stream>;
+    /// It is true that the underlying `BufferedStore` is capable of handling out-of-order
+    /// append requests, we still prefer to accept append request orderly at the moment.
+    fn check_barrier<R>(
+        &mut self,
+        stream_id: i64,
+        range_index: i32,
+        req: &R,
+    ) -> Result<(), AppendError>
+    where
+        R: Batch + Ord + 'static;
 
-    #[allow(clippy::needless_lifetimes)]
-    fn get_range_mut<'a>(&'a mut self, stream_id: i64, index: i32) -> Option<&'a mut range::Range>;
+    /// Check if the specified range is being served.
+    fn has_range(&self, stream_id: u64, index: u32) -> bool;
 
     /// Get objects that in the specified range.
     /// return (objects, cover_all)

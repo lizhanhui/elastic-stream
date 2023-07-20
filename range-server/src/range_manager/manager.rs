@@ -4,12 +4,13 @@ use std::{
     time::Duration,
 };
 
-use log::{error, info};
+use log::{error, info, warn};
 use model::{
     object::ObjectMetadata, range::RangeMetadata, replica::RangeProgress, stream::StreamMetadata,
+    Batch,
 };
 use object_storage::ObjectStorage;
-use store::Store;
+use store::{error::AppendError, Store};
 
 use crate::error::ServiceError;
 
@@ -83,6 +84,25 @@ where
     fn get_range(&self, stream_id: u64, range_index: u32) -> Option<&Range> {
         if let Some(stream) = self.streams.get(&(stream_id as i64)) {
             stream.get_range(range_index as i32)
+        } else {
+            None
+        }
+    }
+
+    /// Get a stream by id.
+    ///
+    /// # Arguments
+    /// `stream_id` - The id of the stream.
+    ///
+    /// # Returns
+    /// The stream if it exists, otherwise `None`.
+    fn get_stream(&mut self, stream_id: i64) -> Option<&mut Stream> {
+        self.streams.get_mut(&stream_id)
+    }
+
+    fn get_range_mut(&mut self, stream_id: i64, index: i32) -> Option<&mut Range> {
+        if let Some(stream) = self.get_stream(stream_id) {
+            stream.get_range_mut(index)
         } else {
             None
         }
@@ -170,23 +190,39 @@ where
         }
     }
 
-    /// Get a stream by id.
-    ///
-    /// # Arguments
-    /// `stream_id` - The id of the stream.
-    ///
-    /// # Returns
-    /// The stream if it exists, otherwise `None`.
-    fn get_stream(&mut self, stream_id: i64) -> Option<&mut Stream> {
-        self.streams.get_mut(&stream_id)
+    fn check_barrier<R>(
+        &mut self,
+        stream_id: i64,
+        range_index: i32,
+        req: &R,
+    ) -> Result<(), AppendError>
+    where
+        R: Batch + Ord + 'static,
+    {
+        if let Some(range) = self.get_range_mut(stream_id, range_index) {
+            if let Some(window) = range.window_mut() {
+                // Check write barrier to ensure that the incoming requests arrive in order.
+                // Some ServiceError is returned if the request is out of order.
+                window.check_barrier(req)?;
+            } else {
+                warn!(
+                    "Try append to a sealed range[{}#{}]",
+                    stream_id, range_index
+                );
+                return Err(AppendError::RangeSealed);
+            }
+        } else {
+            warn!(
+                "Target stream/range is not found. stream-id={}, range-index={}",
+                stream_id, range_index
+            );
+            return Err(AppendError::RangeNotFound);
+        }
+        Ok(())
     }
 
-    fn get_range_mut(&mut self, stream_id: i64, index: i32) -> Option<&mut Range> {
-        if let Some(stream) = self.get_stream(stream_id) {
-            stream.get_range_mut(index)
-        } else {
-            None
-        }
+    fn has_range(&self, stream_id: u64, index: u32) -> bool {
+        self.get_range(stream_id, index).is_some()
     }
 
     async fn get_objects(

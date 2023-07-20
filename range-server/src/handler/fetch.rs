@@ -137,7 +137,7 @@ impl<'a> Fetch<'a> {
         response.header = Some(bytes::Bytes::copy_from_slice(data));
     }
 
-    fn build_read_opt<M>(&self, range_manager: &mut M) -> Result<ReadOptions, FetchError>
+    fn build_read_opt<M>(&self, range_manager: &M) -> Result<ReadOptions, FetchError>
     where
         M: RangeManager,
     {
@@ -148,10 +148,7 @@ impl<'a> Fetch<'a> {
         let limit = self.fetch_request.limit();
 
         // If the stream-range exists and contains the requested offset, build the read options
-        if range_manager
-            .get_range_mut(stream_id, range_index)
-            .is_some()
-        {
+        if range_manager.has_range(stream_id as u64, range_index as u32) {
             Ok(ReadOptions {
                 stream_id,
                 range: range_index as u32,

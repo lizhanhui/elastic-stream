@@ -111,29 +111,9 @@ impl Append {
             .map(|req| {
                 trace!("Received append request: {}", req);
                 let result = async {
-                    if let Some(range) = unsafe { &mut *range_manager.get() }
-                        .get_range_mut(req.stream_id, req.range_index)
-                    {
-                        if let Some(window) = range.window_mut() {
-                            // Check write barrier to ensure that the incoming requests arrive in order.
-                            // Some ServiceError is returned if the request is out of order.
-                            window.check_barrier(&req)?;
-                        } else {
-                            warn!(
-                                "Try append to a sealed range[{}#{}]",
-                                req.stream_id, req.range_index
-                            );
-                            return Err(AppendError::RangeSealed);
-                        }
-                    } else {
-                        warn!(
-                            "Target stream/range is not found. stream-id={}, range-index={}",
-                            req.stream_id, req.range_index
-                        );
-                        return Err(AppendError::RangeNotFound);
-                    }
+                    let manager = unsafe { &mut *range_manager.get() };
+                    manager.check_barrier(req.stream_id, req.range_index, &req)?;
                     let options = WriteOptions::default();
-
                     // Append to store
                     let append_result = store.append(&options, req).await?;
                     Ok(append_result)
@@ -296,5 +276,172 @@ impl fmt::Display for Append {
                 )
             }),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{cell::UnsafeCell, rc::Rc};
+
+    use bytes::{BufMut, Bytes, BytesMut};
+    use codec::frame::Frame;
+    use model::record::flat_record::RecordMagic;
+    use protocol::{
+        flat_model::records::{KeyValueT, RecordBatchMetaT},
+        rpc::header::{AppendResponse, ErrorCode, OperationCode},
+    };
+    use store::{error::AppendError, AppendRecordRequest, AppendResult, MockStore};
+
+    use crate::range_manager::MockRangeManager;
+
+    fn create_append_entry() -> Bytes {
+        let mut buf = BytesMut::new();
+        buf.put_u8(RecordMagic::Magic0 as u8);
+
+        let mut batch_metadata = RecordBatchMetaT::default();
+        batch_metadata.base_offset = 10;
+        batch_metadata.last_offset_delta = 1;
+        batch_metadata.range_index = 1;
+        batch_metadata.stream_id = 1;
+        batch_metadata.flags = 1;
+        batch_metadata.base_timestamp = 1000;
+
+        let mut kv = vec![];
+        for i in 0..3 {
+            let mut entry = KeyValueT::default();
+            entry.key = format!("key-{}", i);
+            entry.value = format!("value-{}", i);
+            kv.push(entry);
+        }
+        batch_metadata.properties = Some(kv);
+
+        let mut fbb = flatbuffers::FlatBufferBuilder::default();
+        let batch = batch_metadata.pack(&mut fbb);
+        fbb.finish(batch, None);
+        let data = fbb.finished_data();
+        buf.put_u32(data.len() as u32);
+        buf.put_slice(data);
+        buf.put_u32(0);
+        buf.freeze()
+    }
+
+    #[test]
+    fn test_parse_frame() {
+        let frame = Frame::new(OperationCode::APPEND);
+        match super::Append::parse_frame(&frame) {
+            Ok(_) => {
+                panic!("Bad request should have failed parsing");
+            }
+            Err(ec) => {
+                assert_eq!(ec, ErrorCode::BAD_REQUEST);
+            }
+        }
+    }
+
+    #[test]
+    fn test_apply() {
+        let mut store = MockStore::default();
+
+        store.expect_append().once().returning(|_opt, _request| {
+            let append = AppendResult {
+                stream_id: 1,
+                range_index: 1,
+                offset: 10,
+                last_offset_delta: 1,
+                wal_offset: 0,
+                bytes_len: 0,
+            };
+            Ok(append)
+        });
+
+        let mut range_manager = MockRangeManager::default();
+        range_manager
+            .expect_check_barrier()
+            .once()
+            .returning_st(|_stream_id, _index, _: &AppendRecordRequest| Ok(()));
+        range_manager.expect_commit().once().returning_st(
+            |_stream_id, _range_index, _offset, _last_offset_delta, _bytes_len| Ok(()),
+        );
+
+        let mut request = Frame::new(OperationCode::APPEND);
+        request.payload = Some(vec![create_append_entry()]);
+
+        let handler = super::Append::parse_frame(&request).expect("Parse shall not raise an error");
+        let mut response = Frame::new(OperationCode::APPEND);
+        tokio_uring::start(async move {
+            handler
+                .apply(
+                    Rc::new(store),
+                    Rc::new(UnsafeCell::new(range_manager)),
+                    &mut response,
+                )
+                .await;
+
+            if let Some(ref buf) = response.header {
+                match flatbuffers::root::<AppendResponse>(buf) {
+                    Ok(resp) => {
+                        assert_eq!(resp.status().code(), ErrorCode::OK);
+                        resp.entries()
+                            .iter()
+                            .flat_map(|entries| entries.iter())
+                            .for_each(|e| {
+                                assert_eq!(e.status().code(), ErrorCode::OK);
+                            });
+                    }
+                    Err(_e) => {
+                        panic!("Failed to decode response header using flatbuffer");
+                    }
+                }
+            } else {
+                panic!("Frame should have an append-response header");
+            }
+        })
+    }
+
+    #[test]
+    fn test_apply_when_out_of_order() {
+        let store = MockStore::default();
+
+        let mut range_manager = MockRangeManager::default();
+        range_manager.expect_check_barrier().once().returning_st(
+            |_stream_id, _index, _: &AppendRecordRequest| Err(AppendError::OutOfOrder),
+        );
+
+        let mut request = Frame::new(OperationCode::APPEND);
+        request.payload = Some(vec![create_append_entry()]);
+
+        let handler = super::Append::parse_frame(&request).expect("Parse shall not raise an error");
+        let mut response = Frame::new(OperationCode::APPEND);
+        tokio_uring::start(async move {
+            handler
+                .apply(
+                    Rc::new(store),
+                    Rc::new(UnsafeCell::new(range_manager)),
+                    &mut response,
+                )
+                .await;
+
+            if let Some(ref buf) = response.header {
+                match flatbuffers::root::<AppendResponse>(buf) {
+                    Ok(resp) => {
+                        assert_eq!(resp.status().code(), ErrorCode::OK);
+                        resp.entries()
+                            .iter()
+                            .flat_map(|entries| entries.iter())
+                            .for_each(|e| {
+                                assert_eq!(
+                                    e.status().code(),
+                                    ErrorCode::APPEND_TO_OVERTAKEN_OFFSET
+                                );
+                            });
+                    }
+                    Err(_e) => {
+                        panic!("Failed to decode response header using flatbuffer");
+                    }
+                }
+            } else {
+                panic!("Frame should have an append-response header");
+            }
+        })
     }
 }
