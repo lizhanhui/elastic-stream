@@ -11,7 +11,7 @@ use protocol::rpc::header::{
     DescribePlacementDriverClusterRequestT, DescribeStreamRequestT, FetchRequestT,
     HeartbeatRequestT, IdAllocationRequestT, ListRangeCriteriaT, ListRangeRequestT,
     ListResourceRequestT, ObjT, RangeProgressT, RangeServerMetricsT, RangeT, ReportMetricsRequestT,
-    ReportRangeProgressRequestT, ResourceType, SealKind, SealRangeRequestT,
+    ReportRangeProgressRequestT, ResourceType, SealKind, SealRangeRequestT, WatchResourceRequestT,
 };
 use std::fmt;
 use std::time::Duration;
@@ -106,6 +106,11 @@ pub enum Headers {
         resource_type: Vec<ResourceType>,
         limit: i32,
         continuation: Option<Bytes>,
+    },
+
+    WatchResource {
+        resource_type: Vec<ResourceType>,
+        version: i64,
     },
 }
 
@@ -289,9 +294,20 @@ impl From<&Request> for Bytes {
             } => {
                 let mut request = ListResourceRequestT::default();
                 request.timeout_ms = req.timeout.as_millis() as i32;
-                request.resource_type = Some(resource_type.clone());
+                request.resource_type = resource_type.clone();
                 request.limit = *limit;
                 request.continuation = continuation.clone().map(|c| c.to_vec());
+                let request = request.pack(&mut builder);
+                builder.finish(request, None);
+            }
+            Headers::WatchResource {
+                resource_type,
+                version,
+            } => {
+                let mut request = WatchResourceRequestT::default();
+                request.timeout_ms = req.timeout.as_millis() as i32;
+                request.resource_type = resource_type.clone();
+                request.resource_version = *version;
                 let request = request.pack(&mut builder);
                 builder.finish(request, None);
             }

@@ -233,12 +233,17 @@ impl Session {
             request::Headers::ReportRangeProgress { .. } => {
                 frame.operation_code = OperationCode::REPORT_REPLICA_PROGRESS;
             }
+
             request::Headers::CommitObject { .. } => {
                 frame.operation_code = OperationCode::COMMIT_OBJECT;
             }
 
             request::Headers::ListResource { .. } => {
                 frame.operation_code = OperationCode::LIST_RESOURCE;
+            }
+
+            request::Headers::WatchResource { .. } => {
+                frame.operation_code = OperationCode::WATCH_RESOURCE;
             }
         };
 
@@ -439,6 +444,10 @@ impl Session {
 
                         OperationCode::LIST_RESOURCE => {
                             response.on_list_resource(&frame);
+                        }
+
+                        OperationCode::WATCH_RESOURCE => {
+                            response.on_watch_resource(&frame);
                         }
 
                         _ => {

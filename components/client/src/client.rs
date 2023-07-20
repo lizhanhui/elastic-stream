@@ -10,7 +10,10 @@ use model::{
     range::RangeMetadata,
     replica::RangeProgress,
     request::fetch::FetchRequest,
-    response::{fetch::FetchResultSet, resource::ListResourceResult},
+    response::{
+        fetch::FetchResultSet,
+        resource::{ListResourceResult, WatchResourceResult},
+    },
     stream::StreamMetadata,
     AppendResultEntry, ListRangeCriteria,
 };
@@ -20,7 +23,7 @@ use observation::metrics::{
     uring_metrics::UringStatistics,
 };
 use protocol::rpc::header::{ResourceType, SealKind};
-use std::{cell::UnsafeCell, rc::Rc, sync::Arc};
+use std::{cell::UnsafeCell, rc::Rc, sync::Arc, time::Duration};
 use tokio::{sync::broadcast, time};
 
 /// `Client` is used to send
@@ -319,6 +322,8 @@ impl Client {
     /// * `ListResourceResult.version` - Resource version of the resource list, which can be used for watch.
     /// * `ListResourceResult.continuation` - Continuation token for next list. If empty, no more resources.
     ///
+    /// TODO: Error handling
+    ///
     pub async fn list_resource(
         &self,
         types: &[ResourceType],
@@ -334,6 +339,35 @@ impl Client {
             .list_resource(types, limit, continuation)
             .await
     }
+
+    /// Watch resources from PD of given types on given version.
+    ///
+    /// # Arguments
+    /// * `types` - Resource types to watch.
+    /// * `version` - Resource version to watch. All changes with a version equal to or greater than this version will be returned.
+    /// * `timeout` - If no resource change after this timeout, the watch will be cancelled.
+    ///
+    /// # Returns
+    /// * `WatchResourceResult.events` - List of resource events, including add, modify and delete.
+    /// * `WatchResourceResult.version` - Resource version when the request is processed. Should use `version + 1` for next watch.
+    ///
+    /// TODO: Error handling
+    ///
+    pub async fn watch_resource(
+        &self,
+        types: &[ResourceType],
+        version: i64,
+        timeout: Duration,
+    ) -> Result<WatchResourceResult, ClientError> {
+        let session_manager = unsafe { &mut *self.session_manager.get() };
+        let composite_session = session_manager
+            .get_composite_session(&self.config.placement_driver)
+            .await
+            .unwrap();
+        composite_session
+            .watch_resource(types, version, timeout)
+            .await
+    }
 }
 
 #[cfg(test)]
@@ -342,7 +376,7 @@ mod tests {
     use log::trace;
     use mock_server::run_listener;
     use model::client_role::ClientRole;
-    use model::resource::Resource;
+    use model::resource::{EventType, Resource};
     use model::stream::StreamMetadata;
     use model::ListRangeCriteria;
     use model::{
@@ -793,63 +827,125 @@ mod tests {
             assert_eq!(400, result.version);
             assert_eq!(None, result.continuation);
             assert_eq!(4, result.resources.len());
-            match &result.resources[0] {
-                Resource::RangeServer(range_server) => {
-                    assert_eq!(42, range_server.server_id);
-                    assert_eq!(
-                        String::from("127.0.0.1:10911"),
-                        range_server.advertise_address
-                    );
-                }
-                _ => {
-                    panic!("Should be range server")
-                }
-            }
-            match &result.resources[1] {
-                Resource::Stream(stream) => {
-                    assert_eq!(42, stream.stream_id.unwrap());
-                    assert_eq!(2, stream.replica);
-                    assert_eq!(1, stream.ack_count);
-                    assert_eq!(
-                        std::time::Duration::from_secs(3600 * 24),
-                        stream.retention_period
-                    );
-                }
-                _ => {
-                    panic!("Should be stream")
-                }
-            }
-            match &result.resources[2] {
-                Resource::Range(range) => {
-                    assert_eq!(42, range.stream_id());
-                    assert_eq!(0, range.index());
-                    assert_eq!(13, range.epoch());
-                    assert_eq!(0, range.start());
-                    assert_eq!(100, range.end().unwrap());
-                    assert_eq!(1, range.replica().len());
-                    assert_eq!(42, range.replica()[0].server_id);
-                    assert_eq!(2, range.replica_count());
-                    assert_eq!(1, range.ack_count());
-                }
-                _ => {
-                    panic!("Should be range")
-                }
-            }
-            match &result.resources[3] {
-                Resource::Object(object) => {
-                    assert_eq!(42, object.stream_id);
-                    assert_eq!(0, object.range_index);
-                    assert_eq!(1, object.epoch);
-                    assert_eq!(10, object.start_offset);
-                    assert_eq!(10, object.end_offset_delta);
-                    assert_eq!(1024, object.data_len);
-                }
-                _ => {
-                    panic!("Should be object")
-                }
-            }
+            check_range_server(&result.resources[0]);
+            check_stream(&result.resources[1]);
+            check_range(&result.resources[2]);
+            check_object(&result.resources[3]);
 
             Ok(())
         })
+    }
+
+    #[test]
+    fn test_watch_resource() -> Result<(), ClientError> {
+        ulog::try_init_log();
+        tokio_uring::start(async {
+            #[allow(unused_variables)]
+            let port = 2378;
+            let port = run_listener().await;
+            let mut config = config::Configuration::default();
+            config.placement_driver = format!("localhost:{}", port);
+            config.server.addr = "127.0.0.1:10911".to_owned();
+            config.server.advertise_addr = "127.0.0.1:10911".to_owned();
+            config.check_and_apply().unwrap();
+            let config = Arc::new(config);
+            let (tx, _rx) = broadcast::channel(1);
+            let client = Client::new(Arc::clone(&config), tx);
+
+            let version = 100;
+            let result = client
+                .watch_resource(
+                    vec![
+                        ResourceType::RANGE_SERVER,
+                        ResourceType::STREAM,
+                        ResourceType::RANGE,
+                        ResourceType::OBJECT,
+                    ]
+                    .as_ref(),
+                    version,
+                    std::time::Duration::from_secs(100),
+                )
+                .await
+                .expect("Watch resource should not fail");
+
+            assert_eq!(version + 3, result.version);
+            assert_eq!(4, result.events.len());
+            assert_eq!(EventType::ADDED, result.events[0].event_type);
+            check_range_server(&result.events[0].resource);
+            assert_eq!(EventType::MODIFIED, result.events[1].event_type);
+            check_stream(&result.events[1].resource);
+            assert_eq!(EventType::DELETED, result.events[2].event_type);
+            check_range(&result.events[2].resource);
+            assert_eq!(EventType::ADDED, result.events[3].event_type);
+            check_object(&result.events[3].resource);
+            Ok(())
+        })
+    }
+
+    fn check_range_server(resource: &Resource) {
+        match resource {
+            Resource::RangeServer(range_server) => {
+                assert_eq!(42, range_server.server_id);
+                assert_eq!(
+                    String::from("127.0.0.1:10911"),
+                    range_server.advertise_address
+                );
+            }
+            _ => {
+                panic!("Should be range server")
+            }
+        }
+    }
+
+    fn check_stream(resource: &Resource) {
+        match resource {
+            Resource::Stream(stream) => {
+                assert_eq!(42, stream.stream_id.unwrap());
+                assert_eq!(2, stream.replica);
+                assert_eq!(1, stream.ack_count);
+                assert_eq!(
+                    std::time::Duration::from_secs(3600 * 24),
+                    stream.retention_period
+                );
+            }
+            _ => {
+                panic!("Should be stream")
+            }
+        }
+    }
+
+    fn check_range(resource: &Resource) {
+        match resource {
+            Resource::Range(range) => {
+                assert_eq!(42, range.stream_id());
+                assert_eq!(0, range.index());
+                assert_eq!(13, range.epoch());
+                assert_eq!(0, range.start());
+                assert_eq!(100, range.end().unwrap());
+                assert_eq!(1, range.replica().len());
+                assert_eq!(42, range.replica()[0].server_id);
+                assert_eq!(2, range.replica_count());
+                assert_eq!(1, range.ack_count());
+            }
+            _ => {
+                panic!("Should be range")
+            }
+        }
+    }
+
+    fn check_object(resource: &Resource) {
+        match resource {
+            Resource::Object(object) => {
+                assert_eq!(42, object.stream_id);
+                assert_eq!(0, object.range_index);
+                assert_eq!(1, object.epoch);
+                assert_eq!(10, object.start_offset);
+                assert_eq!(10, object.end_offset_delta);
+                assert_eq!(1024, object.data_len);
+            }
+            _ => {
+                panic!("Should be object")
+            }
+        }
     }
 }

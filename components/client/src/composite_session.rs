@@ -12,7 +12,10 @@ use model::{
     range::RangeMetadata,
     replica::RangeProgress,
     request::fetch::FetchRequest,
-    response::{fetch::FetchResultSet, resource::ListResourceResult},
+    response::{
+        fetch::FetchResultSet,
+        resource::{ListResourceResult, WatchResourceResult},
+    },
     stream::StreamMetadata,
     AppendResultEntry, ListRangeCriteria, PlacementDriverNode,
 };
@@ -968,6 +971,39 @@ impl CompositeSession {
         } else {
             error!(
                 "Failed to list resource from {}. Status: `{:?}`",
+                self.target, response.status
+            );
+            // TODO: error handling
+            Err(ClientError::ClientInternal)
+        }
+    }
+
+    pub async fn watch_resource(
+        &self,
+        types: &[ResourceType],
+        version: i64,
+        timeout: Duration,
+    ) -> Result<WatchResourceResult, ClientError> {
+        let request = request::Request {
+            timeout,
+            headers: request::Headers::WatchResource {
+                resource_type: types.to_owned(),
+                version,
+            },
+            body: None,
+        };
+        let response = self.request(request).await?;
+
+        if response.ok() {
+            match response.headers {
+                Some(response::Headers::WatchResource { events, version }) => {
+                    Ok(WatchResourceResult { events, version })
+                }
+                _ => unreachable!(),
+            }
+        } else {
+            error!(
+                "Failed to watch resource from {}. Status: `{:?}`",
                 self.target, response.status
             );
             // TODO: error handling

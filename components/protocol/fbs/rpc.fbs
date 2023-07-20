@@ -738,7 +738,7 @@ enum EventType: byte {
 
 table ResourceEvent {
     type: EventType (id: 0);
-    resource: Resource (id: 1);
+    resource: Resource (id: 1, required);
 }
 
 table ListResourceRequest {
@@ -746,7 +746,7 @@ table ListResourceRequest {
     timeout_ms: int32 (id: 0);
 
     // The type of the resource.
-    resource_type: [ResourceType] (id: 1);
+    resource_type: [ResourceType] (id: 1, required);
 
     // The maximum number of resources to return.
     // If not set, the server will return all the resources.
@@ -782,7 +782,7 @@ table WatchResourceRequest {
     timeout_ms: int32 (id: 0);
 
     // The type of the resource.
-    resource_type: [ResourceType] (id: 1);
+    resource_type: [ResourceType] (id: 1, required);
 
     // The resource version to watch. All changes with a version equal to or greater than the given version will be returned.
     resource_version: int64 (id: 2);

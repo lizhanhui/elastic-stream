@@ -11,11 +11,12 @@ use protocol::rpc::header::{
     AppendResponseT, AppendResultEntryT, CreateRangeRequest, CreateRangeResponseT,
     CreateStreamRequest, CreateStreamResponseT, DescribePlacementDriverClusterRequest,
     DescribePlacementDriverClusterResponseT, DescribeStreamRequest, DescribeStreamResponseT,
-    ErrorCode, HeartbeatRequest, HeartbeatResponseT, IdAllocationRequest, IdAllocationResponseT,
-    ListRangeRequest, ListRangeResponseT, ListResourceRequest, ListResourceResponseT, ObjT,
-    OffloadOwnerT, OperationCode, PlacementDriverClusterT, PlacementDriverNodeT, RangeServerT,
-    RangeT, ReportMetricsRequest, ReportMetricsResponseT, ResourceT, ResourceType, SealKind,
-    SealRangeRequest, SealRangeResponseT, StatusT, StreamT,
+    ErrorCode, EventType, HeartbeatRequest, HeartbeatResponseT, IdAllocationRequest,
+    IdAllocationResponseT, ListRangeRequest, ListRangeResponseT, ListResourceRequest,
+    ListResourceResponseT, ObjT, OffloadOwnerT, OperationCode, PlacementDriverClusterT,
+    PlacementDriverNodeT, RangeServerT, RangeT, ReportMetricsRequest, ReportMetricsResponseT,
+    ResourceEventT, ResourceT, ResourceType, SealKind, SealRangeRequest, SealRangeResponseT,
+    StatusT, StreamT, WatchResourceRequest, WatchResourceResponseT,
 };
 
 use tokio::sync::oneshot;
@@ -313,6 +314,21 @@ pub async fn run_listener() -> u16 {
                                     }
                                 }
 
+                                OperationCode::WATCH_RESOURCE => {
+                                    response_frame.operation_code = OperationCode::WATCH_RESOURCE;
+                                    if let Some(buf) = frame.header.as_ref() {
+                                        if let Ok(req) =
+                                            flatbuffers::root::<WatchResourceRequest>(buf)
+                                        {
+                                            server_watch_resource(&req, &mut response_frame)
+                                        } else {
+                                            error!(
+                                                "Failed to decode watch-resource-request header"
+                                            );
+                                        }
+                                    }
+                                }
+
                                 _ => {
                                     warn!(
                                         "Unsupported operation code: {}",
@@ -528,16 +544,70 @@ fn serve_list_resource(request: &ListResourceRequest, frame: &mut Frame) {
     status.message = Some("OK".to_string());
     response.status = Box::new(status);
 
-    let mut resources = vec![];
+    let resources = vec![mock_range_server(), mock_stream(), mock_range(), mock_obj()];
 
+    response.resources = resources;
+    response.resource_version = 400;
+    response.continuation = None;
+
+    let mut builder = flatbuffers::FlatBufferBuilder::new();
+    let resp = response.pack(&mut builder);
+    builder.finish(resp, None);
+    let buf = builder.finished_data();
+    frame.header = Some(Bytes::copy_from_slice(buf));
+}
+
+fn server_watch_resource(request: &WatchResourceRequest, frame: &mut Frame) {
+    trace!("Received a watch-resource request: {:?}", request);
+    let mut response = WatchResourceResponseT::default();
+    let mut status = StatusT::default();
+    status.code = ErrorCode::OK;
+    status.message = Some("OK".to_string());
+    response.status = Box::new(status);
+
+    let mut events = vec![];
+
+    let mut range_server_e = ResourceEventT::default();
+    range_server_e.type_ = EventType::ADDED;
+    range_server_e.resource = Box::new(mock_range_server());
+    events.push(range_server_e);
+
+    let mut stream_e = ResourceEventT::default();
+    stream_e.type_ = EventType::MODIFIED;
+    stream_e.resource = Box::new(mock_stream());
+    events.push(stream_e);
+
+    let mut range_e = ResourceEventT::default();
+    range_e.type_ = EventType::DELETED;
+    range_e.resource = Box::new(mock_range());
+    events.push(range_e);
+
+    let mut obj_e = ResourceEventT::default();
+    obj_e.type_ = EventType::ADDED;
+    obj_e.resource = Box::new(mock_obj());
+    events.push(obj_e);
+
+    response.events = events;
+    response.resource_version = request.resource_version() + 3;
+
+    let mut builder = flatbuffers::FlatBufferBuilder::new();
+    let resp = response.pack(&mut builder);
+    builder.finish(resp, None);
+    let buf = builder.finished_data();
+    frame.header = Some(Bytes::copy_from_slice(buf));
+}
+
+fn mock_range_server() -> ResourceT {
     let mut range_server = RangeServerT::default();
     range_server.server_id = 42;
     range_server.advertise_addr = "127.0.0.1:10911".to_owned();
     let mut range_server_t = ResourceT::default();
     range_server_t.type_ = ResourceType::RANGE_SERVER;
     range_server_t.range_server = Some(Box::new(range_server));
-    resources.push(range_server_t);
+    range_server_t
+}
 
+fn mock_stream() -> ResourceT {
     let mut stream = StreamT::default();
     stream.stream_id = 42;
     stream.replica = 2;
@@ -546,8 +616,10 @@ fn serve_list_resource(request: &ListResourceRequest, frame: &mut Frame) {
     let mut stream_t = ResourceT::default();
     stream_t.type_ = ResourceType::STREAM;
     stream_t.stream = Some(Box::new(stream));
-    resources.push(stream_t);
+    stream_t
+}
 
+fn mock_range() -> ResourceT {
     let mut range = RangeT::default();
     range.stream_id = 42;
     range.epoch = 13;
@@ -566,8 +638,10 @@ fn serve_list_resource(request: &ListResourceRequest, frame: &mut Frame) {
     let mut range_t = ResourceT::default();
     range_t.type_ = ResourceType::RANGE;
     range_t.range = Some(Box::new(range));
-    resources.push(range_t);
+    range_t
+}
 
+fn mock_obj() -> ResourceT {
     let mut object = ObjT::default();
     object.stream_id = 42;
     object.range_index = 0;
@@ -578,15 +652,5 @@ fn serve_list_resource(request: &ListResourceRequest, frame: &mut Frame) {
     let mut object_t = ResourceT::default();
     object_t.type_ = ResourceType::OBJECT;
     object_t.object = Some(Box::new(object));
-    resources.push(object_t);
-
-    response.resources = resources;
-    response.resource_version = 400;
-    response.continuation = None;
-
-    let mut builder = flatbuffers::FlatBufferBuilder::new();
-    let resp = response.pack(&mut builder);
-    builder.finish(resp, None);
-    let buf = builder.finished_data();
-    frame.header = Some(Bytes::copy_from_slice(buf));
+    object_t
 }

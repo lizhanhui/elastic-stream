@@ -8,6 +8,7 @@ use log::trace;
 use log::warn;
 use model::object::ObjectMetadata;
 use model::resource::Resource;
+use model::resource::ResourceEvent;
 use model::stream::StreamMetadata;
 use model::AppendResultEntry;
 use protocol::rpc::header::AppendResponse;
@@ -31,6 +32,7 @@ use protocol::rpc::header::SystemError;
 use model::range::RangeMetadata;
 use model::PlacementDriverNode;
 use model::Status;
+use protocol::rpc::header::WatchResourceResponse;
 
 use crate::invocation_context::InvocationContext;
 
@@ -91,6 +93,11 @@ pub enum Headers {
         resources: Vec<Resource>,
         version: i64,
         continuation: Option<Bytes>,
+    },
+
+    WatchResource {
+        events: Vec<ResourceEvent>,
+        version: i64,
     },
 }
 
@@ -471,6 +478,32 @@ impl Response {
 
                 Err(e) => {
                     error!("Failed to parse List resource response header: {:?}", e);
+                }
+            }
+        }
+    }
+
+    pub fn on_watch_resource(&mut self, frame: &Frame) {
+        if let Some(buf) = frame.header.as_ref() {
+            match flatbuffers::root::<WatchResourceResponse>(buf) {
+                Ok(response) => {
+                    trace!("Received Watch resource response: {:?}", response);
+                    self.status = Into::<Status>::into(&response.status().unpack());
+                    if self.status.code == ErrorCode::OK {
+                        self.headers = Some(Headers::WatchResource {
+                            events: response
+                                .events()
+                                .iter()
+                                .map(|e| e.unpack())
+                                .map(|et| ResourceEvent::from(&et))
+                                .collect(),
+                            version: response.resource_version(),
+                        })
+                    }
+                }
+
+                Err(e) => {
+                    error!("Failed to parse Watch resource response header: {:?}", e);
                 }
             }
         }

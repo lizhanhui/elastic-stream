@@ -1,4 +1,6 @@
-use protocol::rpc::header::{ObjT, RangeServerT, RangeT, ResourceT, ResourceType, StreamT};
+use protocol::rpc::header::{
+    self, ObjT, RangeServerT, RangeT, ResourceEventT, ResourceT, ResourceType, StreamT,
+};
 
 use crate::{object::ObjectMetadata, range::RangeMetadata, stream::StreamMetadata, RangeServer};
 
@@ -49,6 +51,34 @@ impl From<&ResourceT> for Resource {
             ResourceType::UNKNOWN => Resource::NONE,
             ResourceType(i8::MIN..=ResourceType::ENUM_MIN) => Resource::NONE,
             ResourceType(ResourceType::ENUM_MAX..=i8::MAX) => Resource::NONE,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum EventType {
+    NONE,
+    ADDED,
+    MODIFIED,
+    DELETED,
+}
+
+#[derive(Debug, Clone)]
+pub struct ResourceEvent {
+    pub event_type: EventType,
+    pub resource: Resource,
+}
+
+impl From<&ResourceEventT> for ResourceEvent {
+    fn from(t: &ResourceEventT) -> Self {
+        Self {
+            event_type: match t.type_ {
+                header::EventType::ADDED => EventType::ADDED,
+                header::EventType::MODIFIED => EventType::MODIFIED,
+                header::EventType::DELETED => EventType::DELETED,
+                _ => EventType::NONE,
+            },
+            resource: Resource::from(t.resource.as_ref()),
         }
     }
 }
