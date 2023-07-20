@@ -7,24 +7,27 @@ import "strconv"
 type ResourceType int8
 
 const (
-	ResourceTypeUNKNOWN ResourceType = 0
-	ResourceTypeSTREAM  ResourceType = 1
-	ResourceTypeRANGE   ResourceType = 2
-	ResourceTypeOBJECT  ResourceType = 3
+	ResourceTypeUNKNOWN      ResourceType = 0
+	ResourceTypeRANGE_SERVER ResourceType = 1
+	ResourceTypeSTREAM       ResourceType = 2
+	ResourceTypeRANGE        ResourceType = 3
+	ResourceTypeOBJECT       ResourceType = 4
 )
 
 var EnumNamesResourceType = map[ResourceType]string{
-	ResourceTypeUNKNOWN: "UNKNOWN",
-	ResourceTypeSTREAM:  "STREAM",
-	ResourceTypeRANGE:   "RANGE",
-	ResourceTypeOBJECT:  "OBJECT",
+	ResourceTypeUNKNOWN:      "UNKNOWN",
+	ResourceTypeRANGE_SERVER: "RANGE_SERVER",
+	ResourceTypeSTREAM:       "STREAM",
+	ResourceTypeRANGE:        "RANGE",
+	ResourceTypeOBJECT:       "OBJECT",
 }
 
 var EnumValuesResourceType = map[string]ResourceType{
-	"UNKNOWN": ResourceTypeUNKNOWN,
-	"STREAM":  ResourceTypeSTREAM,
-	"RANGE":   ResourceTypeRANGE,
-	"OBJECT":  ResourceTypeOBJECT,
+	"UNKNOWN":      ResourceTypeUNKNOWN,
+	"RANGE_SERVER": ResourceTypeRANGE_SERVER,
+	"STREAM":       ResourceTypeSTREAM,
+	"RANGE":        ResourceTypeRANGE,
+	"OBJECT":       ResourceTypeOBJECT,
 }
 
 func (v ResourceType) String() string {

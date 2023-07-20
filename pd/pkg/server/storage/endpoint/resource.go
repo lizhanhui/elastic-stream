@@ -50,10 +50,7 @@ func (e *Endpoint) ListResource(ctx context.Context, rv int64, token ContinueTok
 
 	resources := make([]*rpcfb.ResourceT, len(kvs))
 	for i, keyValue := range kvs {
-		resources[i] = &rpcfb.ResourceT{
-			Type: token.ResourceType,
-			Data: keyValue.Value,
-		}
+		resources[i] = newResource(token.ResourceType, keyValue.Value)
 	}
 
 	return resources, newRV, token, nil
@@ -106,10 +103,7 @@ func (e *Endpoint) WatchResource(ctx context.Context, rv int64, types []rpcfb.Re
 				logger.Error("failed to get resource type", zap.Binary("event-key", event.Key), zap.Binary("event-value", event.Value), zap.Error(err))
 				continue
 			}
-			resourceEvents[i].Resource = &rpcfb.ResourceT{
-				Type: resourceType,
-				Data: event.Value,
-			}
+			resourceEvents[i].Resource = newResource(resourceType, event.Value)
 		}
 		return resourceEvents, events.Revision, nil
 	case <-ctx.Done():
@@ -119,6 +113,8 @@ func (e *Endpoint) WatchResource(ctx context.Context, rv int64, types []rpcfb.Re
 
 func keyPrefix(resourceType rpcfb.ResourceType) ([]byte, error) {
 	switch resourceType {
+	case rpcfb.ResourceTypeRANGE_SERVER:
+		return []byte(_rangeServerPrefix), nil
 	case rpcfb.ResourceTypeSTREAM:
 		return []byte(_streamPrefix), nil
 	case rpcfb.ResourceTypeRANGE:
@@ -132,6 +128,8 @@ func keyPrefix(resourceType rpcfb.ResourceType) ([]byte, error) {
 
 func resourceType(key []byte) (rpcfb.ResourceType, error) {
 	switch {
+	case bytes.HasPrefix(key, []byte(_rangeServerPrefix)):
+		return rpcfb.ResourceTypeRANGE_SERVER, nil
 	case bytes.HasPrefix(key, []byte(_streamPrefix)):
 		return rpcfb.ResourceTypeSTREAM, nil
 	case bytes.HasPrefix(key, []byte(_rangePrefix)):
@@ -141,6 +139,21 @@ func resourceType(key []byte) (rpcfb.ResourceType, error) {
 	default:
 		return rpcfb.ResourceTypeUNKNOWN, errors.Errorf("unknown resource type for key %s", key)
 	}
+}
+
+func newResource(typ rpcfb.ResourceType, data []byte) *rpcfb.ResourceT {
+	resource := &rpcfb.ResourceT{Type: typ}
+	switch typ {
+	case rpcfb.ResourceTypeRANGE_SERVER:
+		resource.RangeServer = rpcfb.GetRootAsRangeServer(data, 0).UnPack()
+	case rpcfb.ResourceTypeSTREAM:
+		resource.Stream = rpcfb.GetRootAsStream(data, 0).UnPack()
+	case rpcfb.ResourceTypeRANGE:
+		resource.Range = rpcfb.GetRootAsRange(data, 0).UnPack()
+	case rpcfb.ResourceTypeOBJECT:
+		resource.Object = rpcfb.GetRootAsObj(data, 0).UnPack()
+	}
+	return resource
 }
 
 // ContinueToken is used to continue a list operation from a previous result.

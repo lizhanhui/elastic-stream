@@ -712,19 +712,21 @@ table CommitObjectResponse {
 
 enum ResourceType: byte {
     UNKNOWN = 0,
-    STREAM = 1,
-    RANGE = 2,
-    OBJECT = 3,
+    RANGE_SERVER = 1,
+    STREAM = 2,
+    RANGE = 3,
+    OBJECT = 4,
 }
 
+// As vectors of unions are not yet supported in rust, we use a struct to wrap the union like
+// `union Resource { RangeServer, Stream, Range, Obj }`.
 table Resource {
     type: ResourceType (id: 0);
 
-    // Depending on the type, the resource could be
-    // A Stream
-    // A Range
-    // An Obj
-    data: [ubyte] (id: 1);
+    range_server: RangeServer (id: 1);
+    stream: Stream (id: 2);
+    range: Range (id: 3);
+    object: Obj (id: 4);
 }
 
 enum EventType: byte {
