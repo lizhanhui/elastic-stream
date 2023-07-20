@@ -130,3 +130,78 @@ where
         };
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::{cell::UnsafeCell, rc::Rc};
+
+    use codec::frame::Frame;
+    use local_sync::mpsc;
+    use protocol::rpc::header::{ErrorCode, OperationCode, SystemError};
+    use store::MockStore;
+
+    use crate::range_manager::MockRangeManager;
+
+    use super::ServerCall;
+
+    #[test]
+    fn test_call() {
+        let store = MockStore::default();
+        let range_manager = MockRangeManager::default();
+        let (tx, mut rx) = mpsc::unbounded::channel();
+
+        let request = Frame::new(OperationCode::PING);
+
+        let mut server_call = ServerCall {
+            request,
+            sender: tx,
+            store: Rc::new(store),
+            range_manager: Rc::new(UnsafeCell::new(range_manager)),
+        };
+
+        tokio_uring::start(async move {
+            server_call.call().await;
+            match rx.recv().await {
+                Some(resp) => {
+                    assert_eq!(resp.operation_code, OperationCode::PING);
+                }
+                None => {
+                    panic!("Should get a response frame");
+                }
+            }
+        });
+    }
+
+    #[test]
+    fn test_call_when_error() {
+        let store = MockStore::default();
+        let range_manager = MockRangeManager::default();
+        let (tx, mut rx) = mpsc::unbounded::channel();
+
+        let request = Frame::new(OperationCode::CREATE_RANGE);
+
+        let mut server_call = ServerCall {
+            request,
+            sender: tx,
+            store: Rc::new(store),
+            range_manager: Rc::new(UnsafeCell::new(range_manager)),
+        };
+
+        tokio_uring::start(async move {
+            server_call.call().await;
+            match rx.recv().await {
+                Some(resp) => {
+                    assert_eq!(resp.operation_code, OperationCode::CREATE_RANGE);
+                    assert!(resp.system_error());
+                    if let Some(ref buf) = resp.header {
+                        let sys_error = flatbuffers::root::<SystemError>(buf).unwrap();
+                        assert_eq!(sys_error.status().code(), ErrorCode::BAD_REQUEST);
+                    }
+                }
+                None => {
+                    panic!("Should get a response frame");
+                }
+            }
+        });
+    }
+}
