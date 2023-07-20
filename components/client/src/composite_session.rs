@@ -7,8 +7,13 @@ use itertools::Itertools;
 use local_sync::oneshot;
 use log::{debug, error, info, trace, warn};
 use model::{
-    client_role::ClientRole, object::ObjectMetadata, range::RangeMetadata, replica::RangeProgress,
-    request::fetch::FetchRequest, response::fetch::FetchResultSet, stream::StreamMetadata,
+    client_role::ClientRole,
+    object::ObjectMetadata,
+    range::RangeMetadata,
+    replica::RangeProgress,
+    request::fetch::FetchRequest,
+    response::{fetch::FetchResultSet, resource::ListResourceResult},
+    stream::StreamMetadata,
     AppendResultEntry, ListRangeCriteria, PlacementDriverNode,
 };
 use observation::metrics::{
@@ -16,7 +21,7 @@ use observation::metrics::{
     sys_metrics::{DiskStatistics, MemoryStatistics},
     uring_metrics::UringStatistics,
 };
-use protocol::rpc::header::{ErrorCode, PlacementDriverCluster};
+use protocol::rpc::header::{ErrorCode, PlacementDriverCluster, ResourceType};
 use protocol::rpc::header::{OperationCode, SealKind};
 use std::{
     cell::RefCell,
@@ -926,6 +931,46 @@ impl CompositeSession {
                 self.target, response.status
             );
             // TODO: refine error handling according to status code
+            Err(ClientError::ClientInternal)
+        }
+    }
+
+    pub async fn list_resource(
+        &self,
+        types: &[ResourceType],
+        limit: i32,
+        continuation: &Option<Bytes>,
+    ) -> Result<ListResourceResult, ClientError> {
+        let request = request::Request {
+            timeout: self.config.client_io_timeout(),
+            headers: request::Headers::ListResource {
+                resource_type: types.to_owned(),
+                limit,
+                continuation: continuation.clone(),
+            },
+            body: None,
+        };
+        let response = self.request(request).await?;
+
+        if response.ok() {
+            match response.headers {
+                Some(response::Headers::ListResource {
+                    resources,
+                    version,
+                    continuation,
+                }) => Ok(ListResourceResult {
+                    resources,
+                    version,
+                    continuation,
+                }),
+                _ => unreachable!(),
+            }
+        } else {
+            error!(
+                "Failed to list resource from {}. Status: `{:?}`",
+                self.target, response.status
+            );
+            // TODO: error handling
             Err(ClientError::ClientInternal)
         }
     }

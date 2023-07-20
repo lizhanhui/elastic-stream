@@ -21,8 +21,8 @@ pub struct StreamMetadata {
 }
 
 /// Converter from `StreamT` to `Stream`.
-impl From<StreamT> for StreamMetadata {
-    fn from(stream: StreamT) -> Self {
+impl From<&StreamT> for StreamMetadata {
+    fn from(stream: &StreamT) -> Self {
         Self {
             stream_id: if stream.stream_id < 0 {
                 None

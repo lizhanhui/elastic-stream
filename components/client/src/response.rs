@@ -7,9 +7,11 @@ use log::info;
 use log::trace;
 use log::warn;
 use model::object::ObjectMetadata;
+use model::resource::Resource;
 use model::stream::StreamMetadata;
 use model::AppendResultEntry;
 use protocol::rpc::header::AppendResponse;
+use protocol::rpc::header::CommitObjectResponse;
 use protocol::rpc::header::CreateRangeResponse;
 use protocol::rpc::header::CreateStreamResponse;
 use protocol::rpc::header::DescribePlacementDriverClusterResponse;
@@ -19,6 +21,7 @@ use protocol::rpc::header::FetchResponse;
 use protocol::rpc::header::HeartbeatResponse;
 use protocol::rpc::header::IdAllocationResponse;
 use protocol::rpc::header::ListRangeResponse;
+use protocol::rpc::header::ListResourceResponse;
 use protocol::rpc::header::OperationCode;
 use protocol::rpc::header::ReportMetricsResponse;
 use protocol::rpc::header::ReportRangeProgressResponse;
@@ -82,6 +85,12 @@ pub enum Headers {
 
     CreateRange {
         range: RangeMetadata,
+    },
+
+    ListResource {
+        resources: Vec<Resource>,
+        version: i64,
+        continuation: Option<Bytes>,
     },
 }
 
@@ -353,7 +362,7 @@ impl Response {
                         return;
                     }
                     if let Some(stream) = response.stream() {
-                        let metadata = Into::<StreamMetadata>::into(stream.unpack());
+                        let metadata = Into::<StreamMetadata>::into(&stream.unpack());
                         info!("Created {:?} on {}", metadata, ctx.target());
                         self.headers = Some(Headers::CreateStream { stream: metadata });
                     } else {
@@ -383,7 +392,7 @@ impl Response {
                         return;
                     }
                     if let Some(stream) = response.stream() {
-                        let metadata = Into::<StreamMetadata>::into(stream.unpack());
+                        let metadata = Into::<StreamMetadata>::into(&stream.unpack());
                         debug!("Describe stream={:?} on {}", metadata, ctx.target());
                         self.headers = Some(Headers::DescribeStream { stream: metadata });
                     } else {
@@ -413,11 +422,55 @@ impl Response {
                 }
 
                 Err(e) => {
-                    println!("buf = {:?}", buf);
                     error!(
                         "Failed to parse Report replica progress response header: {:?}",
                         e
                     );
+                }
+            }
+        }
+    }
+
+    pub fn on_commit_object(&mut self, frame: &Frame) {
+        if let Some(buf) = frame.header.as_ref() {
+            match flatbuffers::root::<CommitObjectResponse>(buf) {
+                Ok(response) => {
+                    trace!("Received Commit object response: {:?}", response);
+                    self.status = Into::<Status>::into(&response.status().unpack());
+                }
+
+                Err(e) => {
+                    error!("Failed to parse Commit object response header: {:?}", e);
+                }
+            }
+        }
+    }
+
+    pub fn on_list_resource(&mut self, frame: &Frame) {
+        if let Some(buf) = frame.header.as_ref() {
+            match flatbuffers::root::<ListResourceResponse>(buf) {
+                Ok(response) => {
+                    trace!("Received List resource response: {:?}", response);
+                    self.status = Into::<Status>::into(&response.status().unpack());
+                    if self.status.code == ErrorCode::OK {
+                        self.headers = Some(Headers::ListResource {
+                            resources: response
+                                .resources()
+                                .iter()
+                                .map(|r| r.unpack())
+                                .map(|rt| Resource::from(&rt))
+                                .collect(),
+                            version: response.resource_version(),
+                            continuation: response
+                                .continuation()
+                                .map(|c| c.bytes())
+                                .map(Bytes::copy_from_slice),
+                        })
+                    }
+                }
+
+                Err(e) => {
+                    error!("Failed to parse List resource response header: {:?}", e);
                 }
             }
         }

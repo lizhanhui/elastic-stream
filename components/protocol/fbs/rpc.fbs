@@ -767,7 +767,7 @@ table ListResourceResponse {
     throttle_time_ms: int32 (id: 1);
 
     // The list of the resources.
-    resources: [Resource] (id: 2);
+    resources: [Resource] (id: 2, required);
 
     // The resource version when the request is processed.
     resource_version: int64 (id: 3);
@@ -795,7 +795,7 @@ table WatchResourceResponse {
     throttle_time_ms: int32 (id: 1);
 
     // The list of the events.
-    events: [ResourceEvent] (id: 2);
+    events: [ResourceEvent] (id: 2, required);
 
     // The resource version when the request is processed.
     resource_version: int64 (id: 3);

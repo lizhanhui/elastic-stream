@@ -15,6 +15,7 @@ pub mod range_server;
 pub mod record;
 pub mod replica;
 pub mod request;
+pub mod resource;
 pub mod response;
 pub mod status;
 pub mod stream;

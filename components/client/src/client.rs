@@ -5,8 +5,13 @@ use crate::{composite_session::CompositeSession, error::ClientError};
 use bytes::Bytes;
 use log::{error, trace, warn};
 use model::{
-    client_role::ClientRole, object::ObjectMetadata, range::RangeMetadata, replica::RangeProgress,
-    request::fetch::FetchRequest, response::fetch::FetchResultSet, stream::StreamMetadata,
+    client_role::ClientRole,
+    object::ObjectMetadata,
+    range::RangeMetadata,
+    replica::RangeProgress,
+    request::fetch::FetchRequest,
+    response::{fetch::FetchResultSet, resource::ListResourceResult},
+    stream::StreamMetadata,
     AppendResultEntry, ListRangeCriteria,
 };
 use observation::metrics::{
@@ -14,7 +19,7 @@ use observation::metrics::{
     sys_metrics::{DiskStatistics, MemoryStatistics},
     uring_metrics::UringStatistics,
 };
-use protocol::rpc::header::SealKind;
+use protocol::rpc::header::{ResourceType, SealKind};
 use std::{cell::UnsafeCell, rc::Rc, sync::Arc};
 use tokio::{sync::broadcast, time};
 
@@ -301,14 +306,43 @@ impl Client {
         let composite_session = session_manager.get_composite_session(target).await.unwrap();
         composite_session.commit_object(metadata).await
     }
+
+    /// List resources from PD of given types.
+    ///
+    /// # Arguments
+    /// * `types` - Resource types to list.
+    /// * `limit` - Maximum number of resources to list. If zero, no limit.
+    /// * `continuation` - Optional. Continuation token from previous list.
+    ///
+    /// # Returns
+    /// * `ListResourceResult.resources` - List of resources.
+    /// * `ListResourceResult.version` - Resource version of the resource list, which can be used for watch.
+    /// * `ListResourceResult.continuation` - Continuation token for next list. If empty, no more resources.
+    ///
+    pub async fn list_resource(
+        &self,
+        types: &[ResourceType],
+        limit: i32,
+        continuation: &Option<Bytes>,
+    ) -> Result<ListResourceResult, ClientError> {
+        let session_manager = unsafe { &mut *self.session_manager.get() };
+        let composite_session = session_manager
+            .get_composite_session(&self.config.placement_driver)
+            .await
+            .unwrap();
+        composite_session
+            .list_resource(types, limit, continuation)
+            .await
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use bytes::BytesMut;
+    use bytes::{Bytes, BytesMut};
     use log::trace;
     use mock_server::run_listener;
     use model::client_role::ClientRole;
+    use model::resource::Resource;
     use model::stream::StreamMetadata;
     use model::ListRangeCriteria;
     use model::{
@@ -320,7 +354,7 @@ mod tests {
         sys_metrics::{DiskStatistics, MemoryStatistics},
         uring_metrics::UringStatistics,
     };
-    use protocol::rpc::header::SealKind;
+    use protocol::rpc::header::{ResourceType, SealKind};
     use std::{error::Error, sync::Arc};
     use tokio::sync::broadcast;
 
@@ -722,6 +756,100 @@ mod tests {
                     &memory_statistics,
                 )
                 .await
+        })
+    }
+
+    #[test]
+    fn test_list_resource() -> Result<(), ClientError> {
+        ulog::try_init_log();
+        tokio_uring::start(async {
+            #[allow(unused_variables)]
+            let port = 2378;
+            let port = run_listener().await;
+            let mut config = config::Configuration::default();
+            config.placement_driver = format!("localhost:{}", port);
+            config.server.addr = "127.0.0.1:10911".to_owned();
+            config.server.advertise_addr = "127.0.0.1:10911".to_owned();
+            config.check_and_apply().unwrap();
+            let config = Arc::new(config);
+            let (tx, _rx) = broadcast::channel(1);
+            let client = Client::new(Arc::clone(&config), tx);
+
+            let result = client
+                .list_resource(
+                    vec![
+                        ResourceType::RANGE_SERVER,
+                        ResourceType::STREAM,
+                        ResourceType::RANGE,
+                        ResourceType::OBJECT,
+                    ]
+                    .as_ref(),
+                    100,
+                    &Option::None::<Bytes>,
+                )
+                .await
+                .expect("List resource should not fail");
+
+            assert_eq!(400, result.version);
+            assert_eq!(None, result.continuation);
+            assert_eq!(4, result.resources.len());
+            match &result.resources[0] {
+                Resource::RangeServer(range_server) => {
+                    assert_eq!(42, range_server.server_id);
+                    assert_eq!(
+                        String::from("127.0.0.1:10911"),
+                        range_server.advertise_address
+                    );
+                }
+                _ => {
+                    panic!("Should be range server")
+                }
+            }
+            match &result.resources[1] {
+                Resource::Stream(stream) => {
+                    assert_eq!(42, stream.stream_id.unwrap());
+                    assert_eq!(2, stream.replica);
+                    assert_eq!(1, stream.ack_count);
+                    assert_eq!(
+                        std::time::Duration::from_secs(3600 * 24),
+                        stream.retention_period
+                    );
+                }
+                _ => {
+                    panic!("Should be stream")
+                }
+            }
+            match &result.resources[2] {
+                Resource::Range(range) => {
+                    assert_eq!(42, range.stream_id());
+                    assert_eq!(0, range.index());
+                    assert_eq!(13, range.epoch());
+                    assert_eq!(0, range.start());
+                    assert_eq!(100, range.end().unwrap());
+                    assert_eq!(1, range.replica().len());
+                    assert_eq!(42, range.replica()[0].server_id);
+                    assert_eq!(2, range.replica_count());
+                    assert_eq!(1, range.ack_count());
+                }
+                _ => {
+                    panic!("Should be range")
+                }
+            }
+            match &result.resources[3] {
+                Resource::Object(object) => {
+                    assert_eq!(42, object.stream_id);
+                    assert_eq!(0, object.range_index);
+                    assert_eq!(1, object.epoch);
+                    assert_eq!(10, object.start_offset);
+                    assert_eq!(10, object.end_offset_delta);
+                    assert_eq!(1024, object.data_len);
+                }
+                _ => {
+                    panic!("Should be object")
+                }
+            }
+
+            Ok(())
         })
     }
 }

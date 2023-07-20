@@ -148,6 +148,21 @@ impl From<ObjectMetadata> for ObjectMetadataT {
     }
 }
 
+impl From<&ObjT> for ObjectMetadata {
+    fn from(t: &ObjT) -> Self {
+        ObjectMetadata {
+            stream_id: t.stream_id as u64,
+            range_index: t.range_index as u32,
+            epoch: t.epoch as u16,
+            start_offset: t.start_offset as u64,
+            end_offset_delta: t.end_offset_delta as u32,
+            data_len: t.data_len as u32,
+            sparse_index: t.sparse_index.clone().map(Bytes::from).unwrap_or_default(),
+            key: None,
+        }
+    }
+}
+
 impl From<&ObjectMetadata> for ObjT {
     fn from(m: &ObjectMetadata) -> Self {
         let mut t = ObjT::default();

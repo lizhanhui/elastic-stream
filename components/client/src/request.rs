@@ -9,9 +9,9 @@ use model::{
 use protocol::rpc::header::{
     AppendRequestT, CommitObjectRequestT, CreateRangeRequestT, CreateStreamRequestT,
     DescribePlacementDriverClusterRequestT, DescribeStreamRequestT, FetchRequestT,
-    HeartbeatRequestT, IdAllocationRequestT, ListRangeCriteriaT, ListRangeRequestT, ObjT,
-    RangeProgressT, RangeServerMetricsT, RangeT, ReportMetricsRequestT,
-    ReportRangeProgressRequestT, SealKind, SealRangeRequestT,
+    HeartbeatRequestT, IdAllocationRequestT, ListRangeCriteriaT, ListRangeRequestT,
+    ListResourceRequestT, ObjT, RangeProgressT, RangeServerMetricsT, RangeT, ReportMetricsRequestT,
+    ReportRangeProgressRequestT, ResourceType, SealKind, SealRangeRequestT,
 };
 use std::fmt;
 use std::time::Duration;
@@ -100,6 +100,12 @@ pub enum Headers {
 
     CommitObject {
         metadata: ObjectMetadata,
+    },
+
+    ListResource {
+        resource_type: Vec<ResourceType>,
+        limit: i32,
+        continuation: Option<Bytes>,
     },
 }
 
@@ -273,6 +279,19 @@ impl From<&Request> for Bytes {
                 let mut request = CommitObjectRequestT::default();
                 request.timeout_ms = req.timeout.as_millis() as i32;
                 request.object = Some(Box::new(ObjT::from(metadata)));
+                let request = request.pack(&mut builder);
+                builder.finish(request, None);
+            }
+            Headers::ListResource {
+                resource_type,
+                limit,
+                continuation,
+            } => {
+                let mut request = ListResourceRequestT::default();
+                request.timeout_ms = req.timeout.as_millis() as i32;
+                request.resource_type = Some(resource_type.clone());
+                request.limit = *limit;
+                request.continuation = continuation.clone().map(|c| c.to_vec());
                 let request = request.pack(&mut builder);
                 builder.finish(request, None);
             }

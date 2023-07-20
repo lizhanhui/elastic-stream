@@ -132,7 +132,7 @@ mod tests {
         stream.stream_id = 1;
         stream.replica = 1;
         stream.retention_period_ms = 1000;
-        let stream = StreamMetadata::from(stream);
+        let stream = StreamMetadata::from(&stream);
         assert_eq!(stream.stream_id, Some(1));
         assert_eq!(stream.replica, 1);
         assert_eq!(stream.retention_period.as_millis(), 1000);
@@ -145,7 +145,7 @@ mod tests {
         stream.stream_id = 1;
         stream.replica = 1;
         stream.retention_period_ms = 1000;
-        let stream_metadata = StreamMetadata::from(stream);
+        let stream_metadata = StreamMetadata::from(&stream);
         let mut stream = super::Stream::new(stream_metadata);
 
         let range = RangeMetadata::new(1, 0, 0, 0, None);
@@ -179,7 +179,7 @@ mod tests {
         stream.stream_id = 1;
         stream.replica = 1;
         stream.retention_period_ms = 1000;
-        let stream_metadata = StreamMetadata::from(stream);
+        let stream_metadata = StreamMetadata::from(&stream);
         let mut stream = super::Stream::new(stream_metadata);
 
         let range = RangeMetadata::new(1, 0, 0, 0, None);

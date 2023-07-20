@@ -236,6 +236,10 @@ impl Session {
             request::Headers::CommitObject { .. } => {
                 frame.operation_code = OperationCode::COMMIT_OBJECT;
             }
+
+            request::Headers::ListResource { .. } => {
+                frame.operation_code = OperationCode::LIST_RESOURCE;
+            }
         };
 
         frame.payload = request.body.clone();
@@ -430,8 +434,11 @@ impl Session {
                         }
 
                         OperationCode::COMMIT_OBJECT => {
-                            warn!("Received an unexpected `CommitObject` response");
-                            return;
+                            response.on_commit_object(&frame);
+                        }
+
+                        OperationCode::LIST_RESOURCE => {
+                            response.on_list_resource(&frame);
                         }
 
                         _ => {

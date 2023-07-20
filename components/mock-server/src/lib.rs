@@ -12,8 +12,9 @@ use protocol::rpc::header::{
     CreateStreamRequest, CreateStreamResponseT, DescribePlacementDriverClusterRequest,
     DescribePlacementDriverClusterResponseT, DescribeStreamRequest, DescribeStreamResponseT,
     ErrorCode, HeartbeatRequest, HeartbeatResponseT, IdAllocationRequest, IdAllocationResponseT,
-    ListRangeRequest, ListRangeResponseT, OperationCode, PlacementDriverClusterT,
-    PlacementDriverNodeT, RangeT, ReportMetricsRequest, ReportMetricsResponseT, SealKind,
+    ListRangeRequest, ListRangeResponseT, ListResourceRequest, ListResourceResponseT, ObjT,
+    OffloadOwnerT, OperationCode, PlacementDriverClusterT, PlacementDriverNodeT, RangeServerT,
+    RangeT, ReportMetricsRequest, ReportMetricsResponseT, ResourceT, ResourceType, SealKind,
     SealRangeRequest, SealRangeResponseT, StatusT, StreamT,
 };
 
@@ -299,6 +300,19 @@ pub async fn run_listener() -> u16 {
                                     serve_append(frame.payload, &mut response_frame);
                                 }
 
+                                OperationCode::LIST_RESOURCE => {
+                                    response_frame.operation_code = OperationCode::LIST_RESOURCE;
+                                    if let Some(buf) = frame.header.as_ref() {
+                                        if let Ok(req) =
+                                            flatbuffers::root::<ListResourceRequest>(buf)
+                                        {
+                                            serve_list_resource(&req, &mut response_frame)
+                                        } else {
+                                            error!("Failed to decode list-resource-request header");
+                                        }
+                                    }
+                                }
+
                                 _ => {
                                     warn!(
                                         "Unsupported operation code: {}",
@@ -504,4 +518,75 @@ fn allocate_id(request: &IdAllocationRequest, response_frame: &mut Frame) {
 
     response_frame.flag_response();
     response_frame.header = Some(Bytes::copy_from_slice(data));
+}
+
+fn serve_list_resource(request: &ListResourceRequest, frame: &mut Frame) {
+    trace!("Received a list-resource request: {:?}", request);
+    let mut response = ListResourceResponseT::default();
+    let mut status = StatusT::default();
+    status.code = ErrorCode::OK;
+    status.message = Some("OK".to_string());
+    response.status = Box::new(status);
+
+    let mut resources = vec![];
+
+    let mut range_server = RangeServerT::default();
+    range_server.server_id = 42;
+    range_server.advertise_addr = "127.0.0.1:10911".to_owned();
+    let mut range_server_t = ResourceT::default();
+    range_server_t.type_ = ResourceType::RANGE_SERVER;
+    range_server_t.range_server = Some(Box::new(range_server));
+    resources.push(range_server_t);
+
+    let mut stream = StreamT::default();
+    stream.stream_id = 42;
+    stream.replica = 2;
+    stream.ack_count = 1;
+    stream.retention_period_ms = time::Duration::from_secs(3600 * 24).as_millis() as i64;
+    let mut stream_t = ResourceT::default();
+    stream_t.type_ = ResourceType::STREAM;
+    stream_t.stream = Some(Box::new(stream));
+    resources.push(stream_t);
+
+    let mut range = RangeT::default();
+    range.stream_id = 42;
+    range.epoch = 13;
+    range.index = 0;
+    range.start = 0;
+    range.end = 100;
+    let mut rs = RangeServerT::default();
+    rs.server_id = 42;
+    range.servers = Some(vec![rs]);
+    range.replica_count = 2;
+    range.ack_count = 1;
+    let mut owner = OffloadOwnerT::default();
+    owner.server_id = 42;
+    owner.epoch = 1;
+    range.offload_owner = Some(Box::new(owner));
+    let mut range_t = ResourceT::default();
+    range_t.type_ = ResourceType::RANGE;
+    range_t.range = Some(Box::new(range));
+    resources.push(range_t);
+
+    let mut object = ObjT::default();
+    object.stream_id = 42;
+    object.range_index = 0;
+    object.epoch = 1;
+    object.start_offset = 10;
+    object.end_offset_delta = 10;
+    object.data_len = 1024;
+    let mut object_t = ResourceT::default();
+    object_t.type_ = ResourceType::OBJECT;
+    object_t.object = Some(Box::new(object));
+    resources.push(object_t);
+
+    response.resources = resources;
+    response.resource_version = 400;
+    response.continuation = None;
+
+    let mut builder = flatbuffers::FlatBufferBuilder::new();
+    let resp = response.pack(&mut builder);
+    builder.finish(resp, None);
+    let buf = builder.finished_data();
+    frame.header = Some(Bytes::copy_from_slice(buf));
 }

@@ -8,7 +8,7 @@ ignore:
 
 comment:
   layout: "reach, diff, flags, components, tree, reach"
-  behavior: new
+  behavior: default
 
 component_management:
   individual_components:
