@@ -1,5 +1,49 @@
+use std::fmt::Display;
+
 use flatbuffers::InvalidFlatbuffer;
+use protocol::rpc::header::ErrorCode;
 use thiserror::Error;
+
+#[derive(Debug)]
+pub struct EsError {
+    pub code: ErrorCode,
+    pub message: String,
+    source: Option<anyhow::Error>,
+}
+
+impl EsError {
+    pub fn new(code: ErrorCode, message: &str) -> Self {
+        Self {
+            code,
+            message: message.to_string(),
+            source: None,
+        }
+    }
+
+    pub fn set_source(mut self, src: impl Into<anyhow::Error>) -> Self {
+        debug_assert!(self.source.is_none(), "the source error has been set");
+
+        self.source = Some(src.into());
+        self
+    }
+}
+
+impl Display for EsError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let source = self.source.as_ref().map(|e| e.to_string());
+        write!(
+            f,
+            "code: {:?}, message: {}, source: {:?}",
+            self.code, self.message, source
+        )
+    }
+}
+
+impl std::error::Error for EsError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        self.source.as_ref().map(|v| v.as_ref())
+    }
+}
 
 #[derive(Debug, Error, PartialEq)]
 pub enum RangeError {

@@ -49,6 +49,16 @@ enum ErrorCode : int16 {
     // or
     // Try to create a new range with an epoch that is smaller than the previous range's epoch.
     EXPIRED_RANGE_EPOCH = 1471,
+    // Cannot find the object for the request.
+    OBJECT_NOT_FOUND = 1472,
+    // Cannot find match records in objects.
+    NO_MATCH_RECORDS_IN_OBJECT = 1473,
+    // Object operator is uninitialized.
+    OBJECT_OPERATOR_UNINITIALIZED = 1474,
+    // The object data is illegal, parse error.
+    OBJECT_PARSE_ERROR = 1475,
+    // Request object store error.
+    REQUEST_OBJECT_STORE_ERROR = 1476,
 
     // Server understands the intended operation but it does not support that.
     UNSUPPORTED_OPERATION = 1498,

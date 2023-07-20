@@ -2,13 +2,13 @@ use std::{cell::RefCell, collections::BTreeMap, ops::Bound, rc::Rc};
 
 use bytes::Bytes;
 use log::{debug, info, warn};
-use model::object::ObjectMetadata;
+use model::{error::EsError, object::ObjectMetadata};
 use opendal::{
     services::{Fs, S3},
     Operator,
 };
+use protocol::rpc::header::ErrorCode;
 
-use crate::{error::ObjectReadError, Error};
 use serde::Deserialize;
 use tokio::sync::oneshot;
 
@@ -21,7 +21,7 @@ pub(crate) trait ObjectReader {
         end_offset: Option<u64>,
         size_hint: u32,
         object_metadata_manager: &ObjectMetadataManager,
-    ) -> Result<Vec<RecordsBlock>, ObjectReadError>;
+    ) -> Result<Vec<RecordsBlock>, EsError>;
 }
 
 #[derive(Debug)]
@@ -42,25 +42,25 @@ impl ObjectReader for DefaultObjectReader {
         end_offset: Option<u64>,
         size_hint: u32,
         object_metadata_manager: &ObjectMetadataManager,
-    ) -> Result<Vec<RecordsBlock>, ObjectReadError> {
+    ) -> Result<Vec<RecordsBlock>, EsError> {
         let (object, range) = if let Some((object, range)) =
             object_metadata_manager.find_first(start_offset, end_offset, size_hint)
         {
             (object, range)
         } else {
-            return Err(ObjectReadError::NotFound(Error::new(
-                0,
+            return Err(EsError::new(
+                ErrorCode::OBJECT_NOT_FOUND,
                 "Cannot find object for the range.",
-            )));
+            ));
         };
         let mut position = range.0;
         debug!("fetch {:?} blocks in range {:?}", object.key, range);
         let mut object_blocks = self.object_reader.read(&object, range).await?;
         if object_blocks.is_empty() {
-            return Err(ObjectReadError::Unexpected(Error::new(
-                0,
+            return Err(EsError::new(
+                ErrorCode::NO_MATCH_RECORDS_IN_OBJECT,
                 "Object reader return empty block",
-            )));
+            ));
         }
         let first = object_blocks.first_mut().unwrap();
         first.trim(start_offset, end_offset);
@@ -144,12 +144,12 @@ impl AsyncObjectReader {
         &self,
         object: &ObjectMetadata,
         range: (u32, u32),
-    ) -> Result<Vec<RecordsBlock>, ObjectReadError> {
+    ) -> Result<Vec<RecordsBlock>, EsError> {
         if self.op.is_none() {
-            return Err(ObjectReadError::Unexpected(Error::new(
-                0,
+            return Err(EsError::new(
+                ErrorCode::OBJECT_OPERATOR_UNINITIALIZED,
                 "Operator is not initialized",
-            )));
+            ));
         }
         // // TODO: dispatch task to different thread.
         let (tx, rx) = oneshot::channel();
@@ -163,7 +163,7 @@ impl AsyncObjectReader {
         object_key: String,
         range: (u32, u32),
         _object_data_len: u32,
-        tx: oneshot::Sender<Result<Vec<RecordsBlock>, ObjectReadError>>,
+        tx: oneshot::Sender<Result<Vec<RecordsBlock>, EsError>>,
     ) {
         let op = self.op.as_ref().unwrap().clone();
         tokio_uring::spawn(async move {
@@ -174,15 +174,16 @@ impl AsyncObjectReader {
             let rst = match rst {
                 Ok(b) => match RecordsBlock::parse(Bytes::from(b), 1024 * 1024, true) {
                     Ok(blocks) => Ok(blocks),
-                    Err(_) => Err(ObjectReadError::Unexpected(Error::new(
-                        0,
-                        "parse block fail",
-                    ))),
+                    Err(e) => Err(
+                        EsError::new(ErrorCode::OBJECT_PARSE_ERROR, "parse block fail")
+                            .set_source(e),
+                    ),
                 },
-                Err(_) => Err(ObjectReadError::ReqStoreFail(Error::new(
-                    0,
+                Err(e) => Err(EsError::new(
+                    ErrorCode::REQUEST_OBJECT_STORE_ERROR,
                     "req store fail",
-                ))),
+                )
+                .set_source(e)),
             };
             let _ = tx.send(rst);
         });

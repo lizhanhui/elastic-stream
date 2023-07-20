@@ -50,7 +50,7 @@ pub(crate) struct ReplicationRange {
     open_for_write: bool,
     /// Range status.
     status: RefCell<u32>,
-    seal_task_tx: Rc<broadcast::Sender<Result<u64, ReplicationError>>>,
+    seal_task_tx: Rc<broadcast::Sender<Result<u64, Rc<ReplicationError>>>>,
 }
 
 impl ReplicationRange {
@@ -68,7 +68,7 @@ impl ReplicationRange {
             0
         };
 
-        let (seal_task_tx, _) = broadcast::channel::<Result<u64, ReplicationError>>(1);
+        let (seal_task_tx, _) = broadcast::channel::<Result<u64, Rc<ReplicationError>>>(1);
 
         let log_ident = format!("Range[{}#{}] ", metadata.stream_id(), metadata.index());
         let mut this = Rc::new(Self {
@@ -316,10 +316,20 @@ impl ReplicationRange {
         }
         if self.is_sealing() {
             // if range is sealing, wait for seal task to complete.
-            self.seal_task_tx.subscribe().recv().await.map_err(|_| {
-                error!("{}Seal task channel closed", self.log_ident);
-                ReplicationError::Internal
-            })?
+            self.seal_task_tx
+                .subscribe()
+                .recv()
+                .await
+                .map(|rst| {
+                    rst.map_err(|e| {
+                        warn!("{} The range seal fail, {}", self.log_ident, e);
+                        ReplicationError::Internal
+                    })
+                })
+                .map_err(|_| {
+                    error!("{}Seal task channel closed", self.log_ident);
+                    ReplicationError::Internal
+                })?
         } else {
             self.mark_sealing();
             if self.open_for_write {
