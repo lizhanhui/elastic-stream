@@ -55,6 +55,8 @@ mod tests {
         let mock_store = MockStore::new();
         tokio_uring::start(async move {
             let ping = super::Ping::new(&request);
+            let msg = format!("{}", ping);
+            assert_eq!("Ping[stream-id=1]", msg);
             let store = Rc::new(mock_store);
             let range_manager = Rc::new(UnsafeCell::new(MockRangeManager::new()));
             ping.apply(Rc::clone(&store), range_manager, &mut response)

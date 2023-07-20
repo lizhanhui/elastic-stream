@@ -3016,6 +3016,7 @@ dependencies = [
  "crc",
  "crossbeam",
  "ctrlc",
+ "env_logger",
  "flatbuffers",
  "futures",
  "io-uring",
