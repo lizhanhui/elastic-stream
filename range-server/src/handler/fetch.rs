@@ -56,62 +56,70 @@ impl<'a> Fetch<'a> {
     {
         let mut builder = FlatBufferBuilder::with_capacity(MIN_BUFFER_SIZE);
 
-        let option = match self.build_read_opt(unsafe { &mut *range_manager.get() }) {
+        let mut option = match self.build_read_opt(unsafe { &mut *range_manager.get() }) {
             Ok(opt) => opt,
             Err(_e) => {
                 Self::handle_fetch_error(_e, &mut builder, response);
                 return;
             }
         };
-        let stream_id = option.stream_id as u64;
-        let range_index = option.range;
-        let start_offset = option.offset as u64;
-        let end_offset = option.max_offset;
-        let size_hint = option.max_bytes as u32;
 
-        // TODO: handle store timeout
-        let start = Instant::now();
-        match store.fetch(option).await {
-            Ok(fetch_result) => {
-                trace!(
-                    "Fetch records from store took {:?}us",
-                    start.elapsed().as_micros()
-                );
-                let status_args = StatusArgs {
-                    code: ErrorCode::OK,
-                    ..Default::default()
-                };
-                let status = Status::create(&mut builder, &status_args);
+        let (objects, cover_all) = unsafe { &*range_manager.get() }
+            .get_objects(
+                option.stream_id as u64,
+                option.range,
+                option.offset as u64,
+                option.max_offset,
+                option.max_bytes as u32,
+            )
+            .await;
+        read_option(&mut option, cover_all);
 
-                let objects = unsafe { &*range_manager.get() }
-                    .get_objects(stream_id, range_index, start_offset, end_offset, size_hint)
-                    .await;
-                let objects = objects
-                    .into_iter()
-                    .map(|o| Into::<ObjectMetadataT>::into(o).pack(&mut builder))
-                    .collect::<Vec<_>>();
-                let objects = builder.create_vector(&objects);
-
-                let fetch_response_args = FetchResponseArgs {
-                    status: Some(status),
-                    throttle_time_ms: -1,
-                    object_metadata_list: Some(objects),
-                };
-                let fetch_response = FetchResponse::create(&mut builder, &fetch_response_args);
-                builder.finish(fetch_response, None);
-                let data = builder.finished_data();
-                response.header = Some(bytes::Bytes::copy_from_slice(data));
-                let buffers = fetch_result
-                    .results
-                    .into_iter()
-                    .flat_map(|i| i.into_iter())
-                    .collect::<Vec<_>>();
-                response.payload = Some(buffers);
+        let payload = if option.offset as u64 >= option.max_offset || option.max_bytes == 0 {
+            None
+        } else {
+            let start = Instant::now();
+            match store.fetch(option).await {
+                Ok(fetch_result) => {
+                    trace!(
+                        "Fetch records from store took {:?}us",
+                        start.elapsed().as_micros()
+                    );
+                    let buffers = fetch_result
+                        .results
+                        .into_iter()
+                        .flat_map(|i| i.into_iter())
+                        .collect::<Vec<_>>();
+                    Some(buffers)
+                }
+                Err(e) => {
+                    Self::handle_fetch_error(e, &mut builder, response);
+                    return;
+                }
             }
-            Err(e) => {
-                Self::handle_fetch_error(e, &mut builder, response);
-            }
-        }
+        };
+        let status_args = StatusArgs {
+            code: ErrorCode::OK,
+            ..Default::default()
+        };
+        let status = Status::create(&mut builder, &status_args);
+
+        let objects = objects
+            .into_iter()
+            .map(|o| Into::<ObjectMetadataT>::into(o).pack(&mut builder))
+            .collect::<Vec<_>>();
+        let objects = builder.create_vector(&objects);
+
+        let fetch_response_args = FetchResponseArgs {
+            status: Some(status),
+            throttle_time_ms: -1,
+            object_metadata_list: Some(objects),
+        };
+        let fetch_response = FetchResponse::create(&mut builder, &fetch_response_args);
+        builder.finish(fetch_response, None);
+        let data = builder.finished_data();
+        response.header = Some(bytes::Bytes::copy_from_slice(data));
+        response.payload = payload;
     }
 
     fn handle_fetch_error(
@@ -174,6 +182,16 @@ impl<'a> Fetch<'a> {
 impl<'a> fmt::Display for Fetch<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "Fetch[{:?}]", self.fetch_request)
+    }
+}
+
+#[cfg(not(feature = "object-first"))]
+fn read_option(_option: &mut ReadOptions, _objects_cover_all: bool) {}
+
+#[cfg(feature = "object-first")]
+fn read_option(option: &mut ReadOptions, objects_cover_all: bool) {
+    if objects_cover_all {
+        option.max_bytes = 0;
     }
 }
 
@@ -242,7 +260,7 @@ mod tests {
         let mut object_storage = MockObjectStorage::new();
         object_storage
             .expect_get_objects()
-            .returning(|_, _, _, _, _| vec![]);
+            .returning(|_, _, _, _, _| (vec![], false));
 
         tokio_uring::start(async move {
             let store = Rc::new(mock_store);

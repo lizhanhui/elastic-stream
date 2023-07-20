@@ -184,6 +184,7 @@ impl BlockCache {
     ///     then set readahead.size = blocks' size / 2 to decrease cache pressure.
     /// - Else, the readahead.size = blocks' size.
     pub(crate) fn insert(&self, stream_id: u64, blocks: Vec<RecordsBlock>) {
+        let blocks: Vec<RecordsBlock> = blocks.into_iter().filter(|b| !b.is_empty()).collect();
         if blocks.is_empty() {
             return;
         }

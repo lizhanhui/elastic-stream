@@ -64,3 +64,4 @@ built = { workspace = true, features = ["git2", "chrono", "semver"] }
 
 [features]
 paranoid = []
+object-first = []

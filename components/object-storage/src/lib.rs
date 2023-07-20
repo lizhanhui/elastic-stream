@@ -27,7 +27,7 @@ pub trait ObjectStorage {
         start_offset: u64,
         end_offset: u64,
         size_hint: u32,
-    ) -> Vec<ObjectMetadata>;
+    ) -> (Vec<ObjectMetadata>, bool);
 
     async fn get_offloading_range(&self) -> Vec<RangeKey>;
 
@@ -47,7 +47,7 @@ pub trait ObjectManager {
         start_offset: u64,
         end_offset: u64,
         size_hint: u32,
-    ) -> Vec<ObjectMetadata>;
+    ) -> (Vec<ObjectMetadata>, bool);
 
     fn get_offloading_range(&self) -> Vec<RangeKey>;
 }

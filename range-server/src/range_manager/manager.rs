@@ -196,7 +196,7 @@ where
         start_offset: u64,
         end_offset: u64,
         size_hint: u32,
-    ) -> Vec<ObjectMetadata> {
+    ) -> (Vec<ObjectMetadata>, bool) {
         self.object_storage
             .get_objects(stream_id, range_index, start_offset, end_offset, size_hint)
             .await

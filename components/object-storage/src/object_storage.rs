@@ -95,7 +95,7 @@ impl ObjectStorage for AsyncObjectStorage {
         start_offset: u64,
         end_offset: u64,
         size_hint: u32,
-    ) -> Vec<ObjectMetadata> {
+    ) -> (Vec<ObjectMetadata>, bool) {
         let (tx, rx) = oneshot::channel();
         let _ = self.tx.send(Task::GetObjects(GetObjectsTask {
             stream_id,
@@ -134,7 +134,7 @@ struct GetObjectsTask {
     start_offset: u64,
     end_offset: u64,
     size_hint: u32,
-    tx: oneshot::Sender<Vec<ObjectMetadata>>,
+    tx: oneshot::Sender<(Vec<ObjectMetadata>, bool)>,
 }
 
 pub struct DefaultObjectStorage<F: RangeFetcher, M: ObjectManager> {
@@ -262,7 +262,7 @@ where
         start_offset: u64,
         end_offset: u64,
         size_hint: u32,
-    ) -> Vec<ObjectMetadata> {
+    ) -> (Vec<ObjectMetadata>, bool) {
         self.object_manager
             .get_objects(stream_id, range_index, start_offset, end_offset, size_hint)
     }

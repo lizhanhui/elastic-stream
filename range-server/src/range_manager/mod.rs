@@ -41,6 +41,8 @@ pub(crate) trait RangeManager {
     #[allow(clippy::needless_lifetimes)]
     fn get_range_mut<'a>(&'a mut self, stream_id: i64, index: i32) -> Option<&'a mut range::Range>;
 
+    /// Get objects that in the specified range.
+    /// return (objects, cover_all)
     async fn get_objects(
         &self,
         stream_id: u64,
@@ -48,7 +50,7 @@ pub(crate) trait RangeManager {
         start_offset: u64,
         end_offset: u64,
         size_hint: u32,
-    ) -> Vec<ObjectMetadata>;
+    ) -> (Vec<ObjectMetadata>, bool);
 
     async fn get_range_progress(&self) -> Vec<RangeProgress>;
 }

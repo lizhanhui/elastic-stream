@@ -65,7 +65,7 @@ where
                         .object_reader
                         .read_first_object_blocks(
                             start_offset,
-                            Some(blocks_start_offset),
+                            None,
                             remaining_size,
                             &self.object_metadata_manager,
                         )
