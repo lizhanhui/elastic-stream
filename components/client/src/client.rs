@@ -5,7 +5,7 @@ use crate::{composite_session::CompositeSession, error::ClientError};
 use bytes::Bytes;
 use log::{error, trace, warn};
 use model::{
-    client_role::ClientRole, range::RangeMetadata, replica::RangeProgress,
+    client_role::ClientRole, object::ObjectMetadata, range::RangeMetadata, replica::RangeProgress,
     request::fetch::FetchRequest, response::fetch::FetchResultSet, stream::StreamMetadata,
     AppendResultEntry, ListRangeCriteria,
 };
@@ -290,6 +290,16 @@ impl Client {
         let session_manager = unsafe { &mut *self.session_manager.get() };
         let composite_session = session_manager.get_composite_session(target).await.unwrap();
         composite_session.report_range_progress(progress).await
+    }
+
+    pub async fn commit_object(
+        &self,
+        target: &str,
+        metadata: ObjectMetadata,
+    ) -> Result<(), ClientError> {
+        let session_manager = unsafe { &mut *self.session_manager.get() };
+        let composite_session = session_manager.get_composite_session(target).await.unwrap();
+        composite_session.commit_object(metadata).await
     }
 }
 

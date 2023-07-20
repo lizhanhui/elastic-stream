@@ -233,6 +233,9 @@ impl Session {
             request::Headers::ReportRangeProgress { .. } => {
                 frame.operation_code = OperationCode::REPORT_REPLICA_PROGRESS;
             }
+            request::Headers::CommitObject { .. } => {
+                frame.operation_code = OperationCode::COMMIT_OBJECT;
+            }
         };
 
         frame.payload = request.body.clone();
@@ -424,6 +427,11 @@ impl Session {
 
                         OperationCode::REPORT_REPLICA_PROGRESS => {
                             response.on_report_replica_progress(&frame);
+                        }
+
+                        OperationCode::COMMIT_OBJECT => {
+                            warn!("Received an unexpected `CommitObject` response");
+                            return;
                         }
 
                         _ => {

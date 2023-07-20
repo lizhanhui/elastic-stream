@@ -1,5 +1,5 @@
 use bytes::{Buf, Bytes};
-use protocol::rpc::header::ObjectMetadataT;
+use protocol::rpc::header::{ObjT, ObjectMetadataT};
 
 pub const BLOCK_DELIMITER: u8 = 0x66;
 pub const FOOTER_MAGIC: u64 = 0x88e241b785f4cff7;
@@ -138,6 +138,20 @@ impl From<ObjectMetadata> for ObjectMetadataT {
         t.end_offset_delta = m.end_offset_delta as i32;
         t.sparse_index = Some(m.sparse_index.to_vec());
         t.data_len = m.data_len as i32;
+        t
+    }
+}
+
+impl From<&ObjectMetadata> for ObjT {
+    fn from(m: &ObjectMetadata) -> Self {
+        let mut t = ObjT::default();
+        t.stream_id = m.stream_id as i64;
+        t.range_index = m.range_index as i32;
+        t.epoch = m.epoch as i16;
+        t.start_offset = m.start_offset as i64;
+        t.end_offset_delta = m.end_offset_delta as i32;
+        t.data_len = m.data_len as i32;
+        t.sparse_index = Some(m.sparse_index.to_vec());
         t
     }
 }

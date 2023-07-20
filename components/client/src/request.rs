@@ -1,4 +1,5 @@
 use bytes::{Bytes, BytesMut};
+use model::object::ObjectMetadata;
 use model::request::fetch::FetchRequest;
 use model::stream::StreamMetadata;
 use model::{
@@ -6,11 +7,11 @@ use model::{
     replica::RangeProgress, ListRangeCriteria,
 };
 use protocol::rpc::header::{
-    AppendRequestT, CreateRangeRequestT, CreateStreamRequestT,
+    AppendRequestT, CommitObjectRequestT, CreateRangeRequestT, CreateStreamRequestT,
     DescribePlacementDriverClusterRequestT, DescribeStreamRequestT, FetchRequestT,
-    HeartbeatRequestT, IdAllocationRequestT, ListRangeCriteriaT, ListRangeRequestT, RangeProgressT,
-    RangeServerMetricsT, RangeT, ReportMetricsRequestT, ReportRangeProgressRequestT, SealKind,
-    SealRangeRequestT,
+    HeartbeatRequestT, IdAllocationRequestT, ListRangeCriteriaT, ListRangeRequestT, ObjT,
+    RangeProgressT, RangeServerMetricsT, RangeT, ReportMetricsRequestT,
+    ReportRangeProgressRequestT, SealKind, SealRangeRequestT,
 };
 use std::fmt;
 use std::time::Duration;
@@ -95,6 +96,10 @@ pub enum Headers {
     ReportRangeProgress {
         range_server: RangeServer,
         range_progress: Vec<RangeProgress>,
+    },
+
+    CommitObject {
+        metadata: ObjectMetadata,
     },
 }
 
@@ -261,6 +266,13 @@ impl From<&Request> for Bytes {
                 request.range_server = Box::new(range_server.into());
                 request.range_progress =
                     replica_progress.iter().map(RangeProgressT::from).collect();
+                let request = request.pack(&mut builder);
+                builder.finish(request, None);
+            }
+            Headers::CommitObject { metadata } => {
+                let mut request = CommitObjectRequestT::default();
+                request.timeout_ms = req.timeout.as_millis() as i32;
+                request.object = Some(Box::new(ObjT::from(metadata)));
                 let request = request.pack(&mut builder);
                 builder.finish(request, None);
             }

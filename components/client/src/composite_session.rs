@@ -7,7 +7,7 @@ use itertools::Itertools;
 use local_sync::oneshot;
 use log::{debug, error, info, trace, warn};
 use model::{
-    client_role::ClientRole, range::RangeMetadata, replica::RangeProgress,
+    client_role::ClientRole, object::ObjectMetadata, range::RangeMetadata, replica::RangeProgress,
     request::fetch::FetchRequest, response::fetch::FetchResultSet, stream::StreamMetadata,
     AppendResultEntry, ListRangeCriteria, PlacementDriverNode,
 };
@@ -292,54 +292,27 @@ impl CompositeSession {
         host: &str,
         timeout: Option<Duration>,
     ) -> Result<i32, ClientError> {
-        loop {
-            self.try_reconnect().await;
-            if let Some(session) = self.pick_session(LbPolicy::LeaderOnly).await {
-                let request = request::Request {
-                    timeout: timeout.unwrap_or(self.config.client_io_timeout()),
-                    headers: request::Headers::AllocateId {
-                        host: host.to_owned(),
-                    },
-                    body: None,
-                };
-                let (tx, rx) = oneshot::channel();
-                if let Err(e) = session.write(request, tx).await {
-                    error!(
-                        "Failed to send ID-allocation-request to {}. Cause: {:?}",
-                        self.target, e
-                    );
-                    return Err(ClientError::ConnectionRefused(self.target.to_owned()));
-                }
-
-                let response = rx.await.map_err(|e| {
-                    error!(
-                        "Internal error while allocating ID from {}. Cause: {:?}",
-                        self.target, e
-                    );
-                    ClientError::ClientInternal
-                })?;
-
-                if !response.ok() {
-                    if ErrorCode::PD_NOT_LEADER == response.status.code
-                        && self.refresh_leadership_on_demand(&response.status).await
-                    {
-                        continue;
-                    }
-                    error!(
-                        "Failed to allocate ID from {}. Status-Message: `{}`",
-                        self.target, response.status.message
-                    );
-                    // TODO: refine error handling
-                    return Err(ClientError::ServerInternal);
-                }
-
-                if let Some(response::Headers::AllocateId { id }) = response.headers {
-                    return Ok(id);
-                } else {
-                    unreachable!();
-                }
+        let request = request::Request {
+            timeout: timeout.unwrap_or(self.config.client_io_timeout()),
+            headers: request::Headers::AllocateId {
+                host: host.to_owned(),
+            },
+            body: None,
+        };
+        let response = self.request(request).await?;
+        if response.ok() {
+            if let Some(response::Headers::AllocateId { id }) = response.headers {
+                Ok(id)
+            } else {
+                unreachable!()
             }
-            return Err(ClientError::ClientInternal);
+        } else {
+            error!(
+                "Failed to allocate ID from {}. Status-Message: `{}`",
+                self.target, response.status.message
+            );
+            // TODO: refine error handling
+            Err(ClientError::ServerInternal)
         }
     }
 
@@ -367,58 +340,24 @@ impl CompositeSession {
         &self,
         stream_metadata: StreamMetadata,
     ) -> Result<StreamMetadata, ClientError> {
-        loop {
-            self.try_reconnect().await;
-            let session = self
-                .pick_session(LbPolicy::LeaderOnly)
-                .await
-                .ok_or(ClientError::ConnectFailure(self.target.clone()))?;
-            let (tx, rx) = oneshot::channel();
-            let request = request::Request {
-                timeout: self.config.client_io_timeout(),
-                headers: request::Headers::CreateStream {
-                    stream_metadata: stream_metadata.clone(),
-                },
-                body: None,
-            };
-
-            if let Err(ctx) = session.write(request, tx).await {
-                error!(
-                    "Failed to send create-stream request to {}. Cause: {:?}",
-                    self.target, ctx
-                );
-                return Err(ClientError::ConnectionRefused(self.target.to_owned()));
-            }
-
-            let response = rx.await.map_err(|e| {
-                error!(
-                    "Internal error while creating stream from {}. Cause: {:?}",
-                    self.target, e
-                );
-                ClientError::ClientInternal
-            })?;
-
-            if !response.ok() {
-                if ErrorCode::PD_NOT_LEADER == response.status.code
-                    && self.refresh_leadership_on_demand(&response.status).await
-                {
-                    // Retry after refresh leadership
-                    continue;
-                }
-
-                error!(
-                    "Failed to create stream from {}. Status: `{:?}`",
-                    self.target, response.status
-                );
-                // TODO: refine error handling according to status code
-                return Err(ClientError::ClientInternal);
-            }
-
-            if let Some(response::Headers::CreateStream { stream }) = response.headers {
-                return Ok(stream);
-            } else {
-                unreachable!();
-            }
+        let request = request::Request {
+            timeout: self.config.client_io_timeout(),
+            headers: request::Headers::CreateStream { stream_metadata },
+            body: None,
+        };
+        let response = self.request(request).await?;
+        if !response.ok() {
+            error!(
+                "Failed to create stream from {}. Status-Message: `{}`",
+                self.target, response.status.message
+            );
+            // TODO: refine error handling
+            return Err(ClientError::ServerInternal);
+        }
+        if let Some(response::Headers::CreateStream { stream }) = response.headers {
+            Ok(stream)
+        } else {
+            unreachable!()
         }
     }
 
@@ -426,56 +365,24 @@ impl CompositeSession {
         &self,
         stream_id: u64,
     ) -> Result<StreamMetadata, ClientError> {
-        loop {
-            self.try_reconnect().await;
-            let session = self
-                .pick_session(LbPolicy::PickFirst)
-                .await
-                .ok_or(ClientError::ClientInternal)?;
-
-            let request = request::Request {
-                timeout: self.config.client_io_timeout(),
-                headers: request::Headers::DescribeStream { stream_id },
-                body: None,
-            };
-
-            let (tx, rx) = oneshot::channel();
-            if let Err(ctx) = session.write(request, tx).await {
-                error!(
-                    "Failed to send describe-stream request to {}. Cause: {:?}",
-                    self.target, ctx
-                );
-                return Err(ClientError::ConnectionRefused(self.target.to_owned()));
-            }
-
-            let response = rx.await.map_err(|e| {
-                error!(
-                    "Internal error while describing stream from {}. Cause: {:?}",
-                    self.target, e
-                );
-                ClientError::ClientInternal
-            })?;
-
-            if !response.ok() {
-                if ErrorCode::PD_NOT_LEADER == response.status.code
-                    && self.refresh_leadership_on_demand(&response.status).await
-                {
-                    // Retry after refresh leadership
-                    continue;
-                }
-
-                error!(
-                    "Failed to describe stream[stream-id={stream_id}] from {}. Status: `{:?}`",
-                    self.target, response.status
-                );
-                return Err(ClientError::ClientInternal);
-            }
-
+        let request = request::Request {
+            timeout: self.config.client_io_timeout(),
+            headers: request::Headers::DescribeStream { stream_id },
+            body: None,
+        };
+        let response = self.request(request).await?;
+        if response.ok() {
             if let Some(response::Headers::DescribeStream { stream }) = response.headers {
-                return Ok(stream);
+                Ok(stream)
             } else {
-                unreachable!();
+                unreachable!()
             }
+        } else {
+            error!(
+                "Failed to describe stream[stream-id={stream_id}] from {}. Status: `{:?}`",
+                self.target, response.status
+            );
+            Err(ClientError::ClientInternal)
         }
     }
 
@@ -486,58 +393,27 @@ impl CompositeSession {
         &self,
         range: RangeMetadata,
     ) -> Result<RangeMetadata, ClientError> {
-        loop {
-            self.try_reconnect().await;
-            if let Some(session) = self.pick_session(self.lb_policy).await {
-                let (tx, rx) = oneshot::channel();
-                let stream_id = range.stream_id();
-                let request = request::Request {
-                    timeout: self.config.client_io_timeout(),
-                    headers: request::Headers::CreateRange {
-                        range: range.clone(),
-                    },
-                    body: None,
-                };
-
-                if let Err(ctx) = session.write(request, tx).await {
-                    error!(
-                        "Failed to send create-range request to {}. Cause: {:?}",
-                        self.target, ctx
-                    );
-                    return Err(ClientError::ConnectionRefused(self.target.to_owned()));
-                }
-
-                let response = rx.await.map_err(|e| {
-                    error!(
-                        "Internal client error when creating range on {}. Cause: {:?}",
-                        self.target, e
-                    );
-                    ClientError::ClientInternal
-                })?;
-
-                if !response.ok() {
-                    // Handle recoverable error
-                    if ErrorCode::PD_NOT_LEADER == response.status.code
-                        && self.refresh_leadership_on_demand(&response.status).await
-                    {
-                        continue;
-                    }
-
-                    error!(
-                        "Failed to create range on {} for Stream[id={}]: {response:?}",
-                        self.target, stream_id
-                    );
-                    return Err(ClientError::CreateRange(response.status.code));
-                }
-
-                if let Some(response::Headers::CreateRange { range }) = response.headers {
-                    return Ok(range);
-                } else {
-                    unreachable!();
-                }
+        let stream_id = range.stream_id();
+        let request = request::Request {
+            timeout: self.config.client_io_timeout(),
+            headers: request::Headers::CreateRange {
+                range: range.clone(),
+            },
+            body: None,
+        };
+        let response = self.request(request).await?;
+        if response.ok() {
+            if let Some(response::Headers::CreateRange { range }) = response.headers {
+                Ok(range)
             } else {
-                return Err(ClientError::ClientInternal);
+                unreachable!()
             }
+        } else {
+            error!(
+                "Failed to create range on {} for Stream[id={}]: {response:?}",
+                self.target, stream_id
+            );
+            Err(ClientError::CreateRange(response.status.code))
         }
     }
 
@@ -545,43 +421,26 @@ impl CompositeSession {
         &self,
         criteria: ListRangeCriteria,
     ) -> Result<Vec<RangeMetadata>, ClientError> {
-        self.try_reconnect().await;
-        if let Some(session) = self.pick_session(LbPolicy::LeaderOnly).await {
-            let request = request::Request {
-                timeout: self.config.client_io_timeout(),
-                headers: request::Headers::ListRange { criteria },
-                body: None,
-            };
-            let (tx, rx) = oneshot::channel();
-            if let Err(_ctx) = session.write(request, tx).await {
-                error!("Failed to send list-range request to {}.", self.target);
-                return Err(ClientError::ClientInternal);
-            }
-
-            let response = rx.await.map_err(|e| {
-                error!(
-                    "Internal client error when listing ranges from {}. Cause: {:?}",
-                    self.target, e
-                );
-                ClientError::ClientInternal
-            })?;
-
-            if !response.ok() {
-                error!(
-                    "Failed to list-ranges from {}. Status-Message: `{}`",
-                    self.target, response.status.message
-                );
-                // TODO: refine error handling
-                return Err(ClientError::ServerInternal);
-            }
-
+        let request = request::Request {
+            timeout: self.config.client_io_timeout(),
+            headers: request::Headers::ListRange { criteria },
+            body: None,
+        };
+        let response = self.request(request).await?;
+        if response.ok() {
             if let Some(response::Headers::ListRange { ranges }) = response.headers {
-                return ranges.ok_or(ClientError::ClientInternal);
+                ranges.ok_or(ClientError::ClientInternal)
             } else {
-                unreachable!();
+                unreachable!()
             }
+        } else {
+            error!(
+                "Failed to list-ranges from {}. Status-Message: `{}`",
+                self.target, response.status.message
+            );
+            // TODO: refine error handling
+            Err(ClientError::ServerInternal)
         }
-        Err(ClientError::ClientInternal)
     }
 
     /// Describe current placement driver cluster membership.
@@ -1049,6 +908,28 @@ impl CompositeSession {
         Ok(())
     }
 
+    pub async fn commit_object(&self, metadata: ObjectMetadata) -> Result<(), ClientError> {
+        let request = request::Request {
+            timeout: self.config.client_io_timeout(),
+            headers: request::Headers::CommitObject {
+                metadata: metadata.clone(),
+            },
+            body: None,
+        };
+        let response = self.request(request).await?;
+
+        if response.ok() {
+            Ok(())
+        } else {
+            error!(
+                "Failed to commit object from {}. Status: `{:?}`",
+                self.target, response.status
+            );
+            // TODO: refine error handling according to status code
+            Err(ClientError::ClientInternal)
+        }
+    }
+
     async fn broadcast_to_pd(
         &self,
         request: &Request,
@@ -1074,6 +955,41 @@ impl CompositeSession {
             let _res: Vec<Result<(), InvocationContext>> = futures::future::join_all(futures).await;
         }
         futures::future::join_all(receivers).await
+    }
+
+    async fn request(&self, request: Request) -> Result<Response, ClientError> {
+        loop {
+            self.try_reconnect().await;
+            let session = self
+                .pick_session(self.lb_policy)
+                .await
+                .ok_or(ClientError::ConnectFailure(self.target.clone()))?;
+            let (tx, rx) = oneshot::channel();
+            if let Err(ctx) = session.write(request.clone(), tx).await {
+                error!(
+                    "Failed to send request to {}. Cause: {:?}",
+                    self.target, ctx
+                );
+                return Err(ClientError::ConnectionRefused(self.target.to_owned()));
+            }
+
+            let response = rx.await.map_err(|e| {
+                error!(
+                    "Internal error while request from {}. Cause: {:?}",
+                    self.target, e
+                );
+                ClientError::ClientInternal
+            })?;
+
+            if !response.ok()
+                && ErrorCode::PD_NOT_LEADER == response.status.code
+                && self.refresh_leadership_on_demand(&response.status).await
+            {
+                // Retry after refresh leadership
+                continue;
+            }
+            return Ok(response);
+        }
     }
 }
 
