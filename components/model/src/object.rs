@@ -105,9 +105,15 @@ pub fn gen_object_key(
     epoch: u16,
     start_offset: u64,
 ) -> String {
-    // reverse the offset to make the object key dispersed.
-    let rev_offset_hex: String = format!("{:x}", start_offset).chars().rev().collect();
-    format!("{rev_offset_hex}_{cluster}_{stream_id:x}_{range_index:x}_{epoch:x}",)
+    // reverse the ((stream_id * 31 + range_index) * 31 + start_offset) as prefix to make the object key dispersed.
+    // prefix_number calculate formula references the Java hash code algorithm.
+    let mut prefix_number = stream_id.overflowing_mul(31).0;
+    prefix_number = (prefix_number.overflowing_add(range_index as u64).0)
+        .overflowing_mul(31)
+        .0;
+    prefix_number = prefix_number.overflowing_add(start_offset).0;
+    let prefix: String = format!("{:x}", prefix_number).chars().rev().collect();
+    format!("{prefix}_{cluster}_{stream_id:x}_{range_index:x}_{epoch:x}_{start_offset:x}",)
 }
 
 impl From<&ObjectMetadataT> for ObjectMetadata {
