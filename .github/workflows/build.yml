@@ -33,15 +33,15 @@ jobs:
               - 'components/protocol/fbs/rpc.fbs'
   java-build:
     needs: [paths-filter]
-    if: ${{ needs.paths-filter.outputs.java == 'true' }}
+    if: ${{ needs.paths-filter.outputs.java == 'true' || github.event_name == 'push' }}
     uses: ./.github/workflows/java_build.yml
   rust-build:
     needs: [paths-filter]
-    if: ${{ needs.paths-filter.outputs.rust == 'true' }}
+    if: ${{ needs.paths-filter.outputs.rust == 'true' || github.event_name == 'push' }}
     uses: ./.github/workflows/rust_build.yml
   pd-build:
     needs: [paths-filter]
-    if: ${{ needs.paths-filter.outputs.pd == 'true' }}
+    if: ${{ needs.paths-filter.outputs.pd == 'true' || github.event_name == 'push' }}
     uses: ./.github/workflows/pd_build.yml
   build-result:
     runs-on: ubuntu-latest
