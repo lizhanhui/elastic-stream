@@ -21,6 +21,7 @@ func TestMain(m *testing.M) {
 }
 
 func TestStartSingleServer(t *testing.T) {
+	t.Parallel()
 	re := require.New(t)
 
 	svr := startServer(t, "test-pd", "", tempurl.Alloc(t))
@@ -30,6 +31,7 @@ func TestStartSingleServer(t *testing.T) {
 }
 
 func TestStartMultiServer(t *testing.T) {
+	t.Parallel()
 	re := require.New(t)
 
 	peerUrls := make([]string, 3)
@@ -44,20 +46,26 @@ func TestStartMultiServer(t *testing.T) {
 	svrs := make([]*Server, 3)
 	wg := sync.WaitGroup{}
 	wg.Add(3)
+	stopCh := make(chan struct{})
 	for i := 0; i < 3; i++ {
 		go func(i int) {
 			svrs[i] = startServer(t, names[i], initialCluster, peerUrls[i])
+			wg.Done()
+
+			<-stopCh
+			svrs[i].Close()
 			wg.Done()
 		}(i)
 	}
 
 	defer func() {
-		for i := 0; i < 3; i++ {
-			svrs[i].Close()
-		}
+		wg.Add(3)
+		close(stopCh)
+		wg.Wait()                   // wait for all servers to stop
+		time.Sleep(5 * time.Second) // wait for all goroutines to quit
 	}()
 
-	wg.Wait()
+	wg.Wait() // wait for all servers to start
 	anyLeader := func() bool {
 		for i := 0; i < 3; i++ {
 			if svrs[i].Member().IsLeader() {

@@ -361,7 +361,7 @@ func (s *Server) checkLeaderLoop(ctx context.Context) {
 			}
 		case <-ctx.Done():
 			// Server is closed and it should return nil.
-			logger.Info("server is closed")
+			logger.Info("server is closed, stop check leader loop")
 			return
 		}
 	}
