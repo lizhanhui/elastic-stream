@@ -344,12 +344,12 @@ impl Client {
     ///
     /// # Arguments
     /// * `types` - Resource types to watch.
-    /// * `version` - Resource version to watch. All changes with a version equal to or greater than this version will be returned.
+    /// * `version` - Resource version to watch. All changes with a version greater than this version will be returned.
     /// * `timeout` - If no resource change after this timeout, the watch will be cancelled.
     ///
     /// # Returns
     /// * `WatchResourceResult.events` - List of resource events, including add, modify and delete.
-    /// * `WatchResourceResult.version` - Resource version when the request is processed. Should use `version + 1` for next watch.
+    /// * `WatchResourceResult.version` - Resource version when the request is processed. This version can be used for next watch.
     ///
     /// TODO: Error handling
     ///

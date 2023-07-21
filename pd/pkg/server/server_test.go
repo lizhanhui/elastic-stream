@@ -65,7 +65,9 @@ func TestStartMultiServer(t *testing.T) {
 		time.Sleep(5 * time.Second) // wait for all goroutines to quit
 	}()
 
-	wg.Wait() // wait for all servers to start
+	wg.Wait()                   // wait for all servers to start
+	time.Sleep(1 * time.Second) // wait for leader election
+
 	anyLeader := func() bool {
 		for i := 0; i < 3; i++ {
 			if svrs[i].Member().IsLeader() {

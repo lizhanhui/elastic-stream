@@ -36,7 +36,7 @@ type ResourceService interface {
 	ListResource(ctx context.Context, types []rpcfb.ResourceType, limit int32, continueStr []byte) (resources []*rpcfb.ResourceT, resourceVersion int64, newContinueStr []byte, err error)
 	// WatchResource watches resources of given types from the given resource version.
 	// If rv is 0, it watches resources with the latest resource version.
-	// If rv is greater than 0, the returned events happen on or after the given resource version.
+	// If rv is greater than 0, the returned events happen AFTER the given resource version.
 	// It returns ErrCompacted if the requested resource version has been compacted.
 	// It returns ErrInvalidResourceType if the requested resource type is invalid.
 	WatchResource(ctx context.Context, rv int64, types []rpcfb.ResourceType) ([]*rpcfb.ResourceEventT, int64, error)
@@ -131,6 +131,7 @@ func (c *RaftCluster) WatchResource(ctx context.Context, rv int64, types []rpcfb
 	}
 
 	logger.Debug("start to watch resources")
+	rv++ // watch from the next resource version
 	evs, newRV, err := c.storage.WatchResource(ctx, rv, types)
 	logger.Debug("finish watching resources", zap.Int("event-count", len(evs)), zap.Int64("new-rv", newRV), zap.Error(err))
 	if err != nil {
