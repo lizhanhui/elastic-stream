@@ -4,6 +4,9 @@ use crate::ReplicationError;
 
 use self::records_block::RecordsBlock;
 
+#[cfg(test)]
+use mockall::automock;
+
 pub(crate) mod cache;
 pub(crate) mod cache_stream;
 pub(crate) mod object_reader;
@@ -14,6 +17,7 @@ pub(crate) mod replication_stream;
 pub(crate) mod replicator;
 pub(crate) mod stream_manager;
 
+#[cfg_attr(test, automock)]
 pub(crate) trait Stream {
     async fn open(&self) -> Result<(), ReplicationError>;
 
@@ -38,7 +42,12 @@ pub(crate) trait Stream {
 }
 
 pub(crate) enum FetchDataset {
+    // The dataset is exactly the same as request.
     Full(Vec<RecordsBlock>),
-    Partial(Vec<RecordsBlock>), // only partial data in dataset, should retry fetch again with new start_offset
+    // Only partial data in dataset, should retry fetch again with new start_offset
+    Partial(Vec<RecordsBlock>),
+    // Only partial data in dataset, and remaining data can be found in Object storage.
     Mixin(Vec<RecordsBlock>, Vec<ObjectMetadata>),
+    // The dataset is larger than request.
+    Overflow(Vec<RecordsBlock>),
 }

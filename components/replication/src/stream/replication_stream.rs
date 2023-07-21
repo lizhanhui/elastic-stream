@@ -418,9 +418,16 @@ impl Stream for ReplicationStream {
                 )
                 .await?
             {
+                // Cause of only fetch one range in a time, so the dataset is partial
                 FetchDataset::Full(blocks) => FetchDataset::Partial(blocks),
-                FetchDataset::Partial(blocks) => FetchDataset::Partial(blocks),
                 FetchDataset::Mixin(blocks, objects) => FetchDataset::Mixin(blocks, objects),
+                _ => {
+                    error!(
+                        "{}Fetch dataset should not be Partial or Overflow",
+                        self.log_ident
+                    );
+                    return Err(ReplicationError::Internal);
+                }
             };
             Ok(dataset)
         } else {

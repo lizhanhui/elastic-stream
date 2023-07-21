@@ -14,6 +14,10 @@ use tokio::sync::oneshot;
 
 use super::records_block::RecordsBlock;
 
+#[cfg(test)]
+use mockall::automock;
+
+#[cfg_attr(test, automock)]
 pub(crate) trait ObjectReader {
     async fn read_first_object_blocks(
         &self,

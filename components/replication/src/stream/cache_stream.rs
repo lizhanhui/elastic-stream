@@ -92,27 +92,30 @@ where
                 readahead_batch_max_bytes,
             )
             .await?;
-        if let FetchDataset::Full(mut remote_blocks) = dataset {
-            let mut remaining_block_index = 0;
-            for block in remote_blocks.iter() {
-                let records = block.get_records(start_offset, end_offset, batch_max_bytes);
-                if records.is_empty() {
-                    break;
-                }
-                if records.last().unwrap().end_offset() == block.end_offset() {
-                    remaining_block_index += 1;
-                }
-                blocks.push(RecordsBlock::new(records));
+        let mut remote_blocks = match dataset {
+            FetchDataset::Full(blocks) => blocks,
+            FetchDataset::Overflow(blocks) => blocks,
+            _ => {
+                error!("fetch dataset is not full");
+                return Err(ReplicationError::Internal);
             }
-            remote_blocks.drain(0..remaining_block_index);
-            if !remote_blocks.is_empty() {
-                self.block_cache.insert(self.stream_id, remote_blocks);
+        };
+        let mut remaining_block_index = 0;
+        for block in remote_blocks.iter() {
+            let records = block.get_records(start_offset, end_offset, batch_max_bytes);
+            if records.is_empty() {
+                break;
             }
-            Ok(FetchDataset::Full(blocks))
-        } else {
-            error!("fetch dataset is not full");
-            Err(ReplicationError::Internal)
+            if records.last().unwrap().end_offset() == block.end_offset() {
+                remaining_block_index += 1;
+            }
+            blocks.push(RecordsBlock::new(records));
         }
+        remote_blocks.drain(0..remaining_block_index);
+        if !remote_blocks.is_empty() {
+            self.block_cache.insert(self.stream_id, remote_blocks);
+        }
+        Ok(FetchDataset::Full(blocks))
     }
 
     fn background_readahead(&self, readahead: Readahead) {

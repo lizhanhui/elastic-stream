@@ -59,6 +59,7 @@ enum ErrorCode : int16 {
     OBJECT_PARSE_ERROR = 1475,
     // Request object store error.
     REQUEST_OBJECT_STORE_ERROR = 1476,
+    RECORDS_BLOCKS_NOT_CONTINUOUS = 1477,
 
     // Server understands the intended operation but it does not support that.
     UNSUPPORTED_OPERATION = 1498,
