@@ -299,4 +299,12 @@ mod tests {
         assert!(window.next == 6);
         assert!(window.committed == 4);
     }
+
+    #[test]
+    fn test_fast_commit() {
+        let mut window = super::Window::new(String::from(""), 0);
+        let foo1 = Foo::new(0);
+        window.check_barrier(&foo1).unwrap();
+        assert_eq!(window.fast_commit(0), Some(2));
+    }
 }
