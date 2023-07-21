@@ -1,5 +1,4 @@
 use crate::stream::replication_range::RangeAppendContext;
-use crate::ReplicationError;
 
 use super::cache::HotCache;
 use super::replication_range::ReplicationRange;
@@ -9,7 +8,9 @@ use client::Client;
 use itertools::Itertools;
 use local_sync::{mpsc, oneshot};
 use log::{error, info, trace, warn};
+use model::error::EsError;
 use model::RecordBatch;
+use protocol::rpc::header::ErrorCode;
 use std::cell::OnceCell;
 use std::cell::RefCell;
 use std::cmp::min;
@@ -79,11 +80,12 @@ impl ReplicationStream {
         this
     }
 
-    async fn new_range(&self, range_index: i32, start_offset: u64) -> Result<(), ReplicationError> {
+    async fn new_range(&self, range_index: i32, start_offset: u64) -> Result<(), EsError> {
         if let Some(client) = self.client.upgrade() {
             let range_metadata =
                 ReplicationRange::create(client, self.id, self.epoch, range_index, start_offset)
-                    .await?;
+                    .await
+                    .map_err(|_| EsError::new(ErrorCode::ERROR_CODE_UNSPECIFIED, "todo"))?;
             let range = ReplicationRange::new(
                 range_metadata,
                 true,
@@ -96,7 +98,10 @@ impl ReplicationStream {
             *self.last_range.borrow_mut() = Some(range);
             Ok(())
         } else {
-            Err(ReplicationError::Internal)
+            Err(EsError::new(
+                ErrorCode::UNEXPECTED,
+                "new range fail, client is drop",
+            ))
         }
     }
 
@@ -137,7 +142,7 @@ impl ReplicationStream {
                     let inflight_count = inflight.len();
                     info!("{}Receive shutdown signal, then quick fail {inflight_count} inflight requests with AlreadyClosed err.", log_ident);
                     for (_, append_request) in inflight.iter() {
-                        append_request.fail(ReplicationError::AlreadyClosed);
+                        append_request.fail(EsError::new(ErrorCode::STREAM_ALREADY_CLOSED, "stream is closed"));
                     }
                     break;
                 }
@@ -146,7 +151,10 @@ impl ReplicationStream {
                 let inflight_count = inflight.len();
                 info!("{}Detect closed mark, then quick fail {inflight_count} inflight requests with AlreadyClosed err.", log_ident);
                 for (_, append_request) in inflight.iter() {
-                    append_request.fail(ReplicationError::AlreadyClosed);
+                    append_request.fail(EsError::new(
+                        ErrorCode::STREAM_ALREADY_CLOSED,
+                        "stream is closed",
+                    ));
                 }
                 break;
             }
@@ -238,9 +246,12 @@ impl ReplicationStream {
 }
 
 impl Stream for ReplicationStream {
-    async fn open(&self) -> Result<(), ReplicationError> {
+    async fn open(&self) -> Result<(), EsError> {
         info!("{}Opening...", self.log_ident);
-        let client = self.client.upgrade().ok_or(ReplicationError::Internal)?;
+        let client = self.client.upgrade().ok_or(EsError::new(
+            ErrorCode::UNEXPECTED,
+            "open fail, client is dropped",
+        ))?;
         // 1. load all ranges
         client
             .list_ranges(model::ListRangeCriteria::new(None, Some(self.id as u64)))
@@ -250,7 +261,7 @@ impl Stream for ReplicationStream {
                     "{}Failed to list ranges from placement-driver: {e}",
                     self.log_ident
                 );
-                ReplicationError::Internal
+                EsError::new(ErrorCode::ERROR_CODE_UNSPECIFIED, "list ranges fail")
             })?
             .into_iter()
             // skip old empty range when two range has the same start offset
@@ -283,7 +294,10 @@ impl Stream for ReplicationStream {
                 }
                 Err(e) => {
                     error!("{}Failed to seal range[{range_index}], {e}", self.log_ident);
-                    return Err(ReplicationError::Internal);
+                    return Err(EsError::new(
+                        ErrorCode::ERROR_CODE_UNSPECIFIED,
+                        "fail to seal range",
+                    ));
                 }
             }
         }
@@ -330,17 +344,20 @@ impl Stream for ReplicationStream {
         *self.next_offset.borrow()
     }
 
-    async fn append(&self, record_batch: RecordBatch) -> Result<u64, ReplicationError> {
+    async fn append(&self, record_batch: RecordBatch) -> Result<u64, EsError> {
         let start_timestamp = Instant::now();
         if *self.closed.borrow() {
             warn!("{}Keep append to a closed stream.", self.log_ident);
-            return Err(ReplicationError::AlreadyClosed);
+            return Err(EsError::new(
+                ErrorCode::STREAM_ALREADY_CLOSED,
+                "stream is closed",
+            ));
         }
         let base_offset = *self.next_offset.borrow();
         let count = record_batch.last_offset_delta();
         *self.next_offset.borrow_mut() = base_offset + count as u64;
 
-        let (append_tx, append_rx) = oneshot::channel::<Result<(), ReplicationError>>();
+        let (append_tx, append_rx) = oneshot::channel::<Result<(), EsError>>();
         // trigger background append task to handle the append request.
         if self
             .append_requests_tx
@@ -353,7 +370,10 @@ impl Stream for ReplicationStream {
             .is_err()
         {
             warn!("{}Send to append request channel fail.", self.log_ident);
-            return Err(ReplicationError::AlreadyClosed);
+            return Err(EsError::new(
+                ErrorCode::STREAM_ALREADY_CLOSED,
+                "stream is closed",
+            ));
         }
         // await append result.
         match append_rx.await {
@@ -365,7 +385,10 @@ impl Stream for ReplicationStream {
                 );
                 result.map(|_| base_offset)
             }
-            Err(_) => Err(ReplicationError::AlreadyClosed),
+            Err(_) => Err(EsError::new(
+                ErrorCode::STREAM_ALREADY_CLOSED,
+                "stream is closed",
+            )),
         }
     }
 
@@ -374,7 +397,7 @@ impl Stream for ReplicationStream {
         start_offset: u64,
         end_offset: u64,
         batch_max_bytes: u32,
-    ) -> Result<FetchDataset, ReplicationError> {
+    ) -> Result<FetchDataset, EsError> {
         trace!(
             "{}Fetch [{start_offset}, {end_offset}) with batch_max_bytes={batch_max_bytes}",
             self.log_ident
@@ -384,17 +407,26 @@ impl Stream for ReplicationStream {
         }
         let last_range = match self.last_range.borrow().as_ref() {
             Some(range) => range.clone(),
-            None => return Err(ReplicationError::FetchOutOfRange),
+            None => {
+                return Err(EsError::new(
+                    ErrorCode::OFFSET_OUT_OF_RANGE_BOUNDS,
+                    "fetch out of range",
+                ))
+            }
         };
         // Fetch range is out of stream range.
         if last_range.confirm_offset() < end_offset {
-            return Err(ReplicationError::FetchOutOfRange);
+            return Err(EsError::new(
+                ErrorCode::OFFSET_OUT_OF_RANGE_BOUNDS,
+                "fetch out of range",
+            ));
         }
         // Fast path: if fetch range is in the last range, then fetch from it.
         if last_range.start_offset() <= start_offset {
             return last_range
                 .fetch(start_offset, end_offset, batch_max_bytes)
-                .await;
+                .await
+                .map_err(|_| EsError::new(ErrorCode::ERROR_CODE_UNSPECIFIED, "todo"));
         }
         // Slow path
         // 1. Find the *first* range which match the start_offset.
@@ -408,7 +440,10 @@ impl Stream for ReplicationStream {
             .cloned();
         if let Some(range) = range {
             if range.start_offset() > start_offset {
-                return Err(ReplicationError::FetchOutOfRange);
+                return Err(EsError::new(
+                    ErrorCode::OFFSET_OUT_OF_RANGE_BOUNDS,
+                    "fetch out of range",
+                ));
             }
             let dataset = match range
                 .fetch(
@@ -416,7 +451,8 @@ impl Stream for ReplicationStream {
                     min(end_offset, range.confirm_offset()),
                     batch_max_bytes,
                 )
-                .await?
+                .await
+                .map_err(|_| EsError::new(ErrorCode::ERROR_CODE_UNSPECIFIED, "todo"))?
             {
                 // Cause of only fetch one range in a time, so the dataset is partial
                 FetchDataset::Full(blocks) => FetchDataset::Partial(blocks),
@@ -426,16 +462,22 @@ impl Stream for ReplicationStream {
                         "{}Fetch dataset should not be Partial or Overflow",
                         self.log_ident
                     );
-                    return Err(ReplicationError::Internal);
+                    return Err(EsError::new(
+                        ErrorCode::UNEXPECTED,
+                        "fetch dataset should not be Partial or Overflow",
+                    ));
                 }
             };
             Ok(dataset)
         } else {
-            Err(ReplicationError::FetchOutOfRange)
+            Err(EsError::new(
+                ErrorCode::OFFSET_OUT_OF_RANGE_BOUNDS,
+                "fetch out of range",
+            ))
         }
     }
 
-    async fn trim(&self, _new_start_offset: u64) -> Result<(), ReplicationError> {
+    async fn trim(&self, _new_start_offset: u64) -> Result<(), EsError> {
         todo!()
     }
 }
@@ -443,14 +485,14 @@ impl Stream for ReplicationStream {
 struct StreamAppendRequest {
     base_offset: u64,
     record_batch: RecordBatch,
-    append_tx: RefCell<OnceCell<oneshot::Sender<Result<(), ReplicationError>>>>,
+    append_tx: RefCell<OnceCell<oneshot::Sender<Result<(), EsError>>>>,
 }
 
 impl StreamAppendRequest {
     pub fn new(
         base_offset: u64,
         record_batch: RecordBatch,
-        append_tx: oneshot::Sender<Result<(), ReplicationError>>,
+        append_tx: oneshot::Sender<Result<(), EsError>>,
     ) -> Self {
         let append_tx_cell = OnceCell::new();
         let _ = append_tx_cell.set(append_tx);
@@ -475,7 +517,7 @@ impl StreamAppendRequest {
         }
     }
 
-    pub fn fail(&self, err: ReplicationError) {
+    pub fn fail(&self, err: EsError) {
         if let Some(append_tx) = self.append_tx.borrow_mut().take() {
             let _ = append_tx.send(Err(err));
         }

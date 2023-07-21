@@ -103,7 +103,8 @@ impl StreamManager {
                 let result = stream
                     .append(request.record_batch)
                     .await
-                    .map(|offset| AppendResponse { offset });
+                    .map(|offset| AppendResponse { offset })
+                    .map_err(|_| ReplicationError::Internal);
                 let _ = tx.send(result);
             });
         } else {
@@ -128,8 +129,8 @@ impl StreamManager {
                     .await;
                 let dataset = match result {
                     Ok(dataset) => dataset,
-                    Err(e) => {
-                        let _ = tx.send(Err(e));
+                    Err(_) => {
+                        let _ = tx.send(Err(ReplicationError::Internal));
                         return;
                     }
                 };
@@ -212,8 +213,10 @@ impl StreamManager {
                 block_cache,
                 object_reader,
             );
-            if let Err(e) = stream.open().await {
-                let _ = tx.send(Err(e));
+            // FIXME
+            #[allow(clippy::redundant_pattern_matching)]
+            if let Err(_) = stream.open().await {
+                let _ = tx.send(Err(ReplicationError::Internal));
                 return;
             }
             streams.borrow_mut().insert(request.stream_id, stream);
@@ -279,7 +282,12 @@ impl StreamManager {
             .map(|stream| Rc::clone(&stream));
         if let Some(stream) = stream {
             tokio_uring::spawn(async move {
-                let _ = tx.send(stream.trim(request.new_start_offset).await);
+                let _ = tx.send(
+                    stream
+                        .trim(request.new_start_offset)
+                        .await
+                        .map_err(|_| ReplicationError::Internal),
+                );
             });
         } else {
             let _ = tx.send(Err(ReplicationError::StreamNotExist));

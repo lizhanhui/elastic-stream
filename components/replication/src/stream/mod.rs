@@ -1,6 +1,4 @@
-use model::{object::ObjectMetadata, RecordBatch};
-
-use crate::ReplicationError;
+use model::{error::EsError, object::ObjectMetadata, RecordBatch};
 
 use self::records_block::RecordsBlock;
 
@@ -19,7 +17,7 @@ pub(crate) mod stream_manager;
 
 #[cfg_attr(test, automock)]
 pub(crate) trait Stream {
-    async fn open(&self) -> Result<(), ReplicationError>;
+    async fn open(&self) -> Result<(), EsError>;
 
     async fn close(&self);
 
@@ -29,16 +27,16 @@ pub(crate) trait Stream {
 
     fn next_offset(&self) -> u64;
 
-    async fn append(&self, record_batch: RecordBatch) -> Result<u64, ReplicationError>;
+    async fn append(&self, record_batch: RecordBatch) -> Result<u64, EsError>;
 
     async fn fetch(
         &self,
         start_offset: u64,
         end_offset: u64,
         batch_max_bytes: u32,
-    ) -> Result<FetchDataset, ReplicationError>;
+    ) -> Result<FetchDataset, EsError>;
 
-    async fn trim(&self, _new_start_offset: u64) -> Result<(), ReplicationError>;
+    async fn trim(&self, _new_start_offset: u64) -> Result<(), EsError>;
 }
 
 pub(crate) enum FetchDataset {

@@ -10,6 +10,7 @@ const (
 	ErrorCodeERROR_CODE_UNSPECIFIED        ErrorCode = 0
 	ErrorCodeENCODE                        ErrorCode = 1
 	ErrorCodeDECODE                        ErrorCode = 2
+	ErrorCodeUNEXPECTED                    ErrorCode = 3
 	ErrorCodeOK                            ErrorCode = 1200
 	ErrorCodeNO_NEW_RECORD                 ErrorCode = 1204
 	ErrorCodeBAD_REQUEST                   ErrorCode = 1400
@@ -38,6 +39,7 @@ const (
 	ErrorCodeOBJECT_PARSE_ERROR            ErrorCode = 1475
 	ErrorCodeREQUEST_OBJECT_STORE_ERROR    ErrorCode = 1476
 	ErrorCodeRECORDS_BLOCKS_NOT_CONTINUOUS ErrorCode = 1477
+	ErrorCodeSTREAM_ALREADY_CLOSED         ErrorCode = 1478
 	ErrorCodeUNSUPPORTED_OPERATION         ErrorCode = 1498
 	ErrorCodeUNKNOWN_OPERATION             ErrorCode = 1499
 	ErrorCodePD_INTERNAL_SERVER_ERROR      ErrorCode = 1500
@@ -56,6 +58,7 @@ var EnumNamesErrorCode = map[ErrorCode]string{
 	ErrorCodeERROR_CODE_UNSPECIFIED:        "ERROR_CODE_UNSPECIFIED",
 	ErrorCodeENCODE:                        "ENCODE",
 	ErrorCodeDECODE:                        "DECODE",
+	ErrorCodeUNEXPECTED:                    "UNEXPECTED",
 	ErrorCodeOK:                            "OK",
 	ErrorCodeNO_NEW_RECORD:                 "NO_NEW_RECORD",
 	ErrorCodeBAD_REQUEST:                   "BAD_REQUEST",
@@ -84,6 +87,7 @@ var EnumNamesErrorCode = map[ErrorCode]string{
 	ErrorCodeOBJECT_PARSE_ERROR:            "OBJECT_PARSE_ERROR",
 	ErrorCodeREQUEST_OBJECT_STORE_ERROR:    "REQUEST_OBJECT_STORE_ERROR",
 	ErrorCodeRECORDS_BLOCKS_NOT_CONTINUOUS: "RECORDS_BLOCKS_NOT_CONTINUOUS",
+	ErrorCodeSTREAM_ALREADY_CLOSED:         "STREAM_ALREADY_CLOSED",
 	ErrorCodeUNSUPPORTED_OPERATION:         "UNSUPPORTED_OPERATION",
 	ErrorCodeUNKNOWN_OPERATION:             "UNKNOWN_OPERATION",
 	ErrorCodePD_INTERNAL_SERVER_ERROR:      "PD_INTERNAL_SERVER_ERROR",
@@ -102,6 +106,7 @@ var EnumValuesErrorCode = map[string]ErrorCode{
 	"ERROR_CODE_UNSPECIFIED":        ErrorCodeERROR_CODE_UNSPECIFIED,
 	"ENCODE":                        ErrorCodeENCODE,
 	"DECODE":                        ErrorCodeDECODE,
+	"UNEXPECTED":                    ErrorCodeUNEXPECTED,
 	"OK":                            ErrorCodeOK,
 	"NO_NEW_RECORD":                 ErrorCodeNO_NEW_RECORD,
 	"BAD_REQUEST":                   ErrorCodeBAD_REQUEST,
@@ -130,6 +135,7 @@ var EnumValuesErrorCode = map[string]ErrorCode{
 	"OBJECT_PARSE_ERROR":            ErrorCodeOBJECT_PARSE_ERROR,
 	"REQUEST_OBJECT_STORE_ERROR":    ErrorCodeREQUEST_OBJECT_STORE_ERROR,
 	"RECORDS_BLOCKS_NOT_CONTINUOUS": ErrorCodeRECORDS_BLOCKS_NOT_CONTINUOUS,
+	"STREAM_ALREADY_CLOSED":         ErrorCodeSTREAM_ALREADY_CLOSED,
 	"UNSUPPORTED_OPERATION":         ErrorCodeUNSUPPORTED_OPERATION,
 	"UNKNOWN_OPERATION":             ErrorCodeUNKNOWN_OPERATION,
 	"PD_INTERNAL_SERVER_ERROR":      ErrorCodePD_INTERNAL_SERVER_ERROR,

@@ -1,9 +1,8 @@
 use std::{cmp::min, rc::Rc};
 
 use log::{debug, error, warn};
-use model::RecordBatch;
-
-use crate::ReplicationError;
+use model::{error::EsError, RecordBatch};
+use protocol::rpc::header::ErrorCode;
 
 use super::{
     cache::{block_size_align, BlockCache, HotCache, Readahead},
@@ -41,7 +40,7 @@ where
         mut start_offset: u64,
         end_offset: u64,
         mut batch_max_bytes: u32,
-    ) -> Result<FetchDataset, ReplicationError> {
+    ) -> Result<FetchDataset, EsError> {
         let mut blocks = vec![];
 
         // 1. try read from hot cache.
@@ -97,7 +96,10 @@ where
             FetchDataset::Overflow(blocks) => blocks,
             _ => {
                 error!("fetch dataset is not full");
-                return Err(ReplicationError::Internal);
+                return Err(EsError::new(
+                    ErrorCode::UNEXPECTED,
+                    "fetch dataset is not full",
+                ));
             }
         };
         let mut remaining_block_index = 0;
@@ -152,7 +154,7 @@ impl<S> Stream for CacheStream<S>
 where
     S: Stream + 'static,
 {
-    async fn open(&self) -> Result<(), ReplicationError> {
+    async fn open(&self) -> Result<(), EsError> {
         self.stream.open().await
     }
 
@@ -172,7 +174,7 @@ where
         self.stream.next_offset()
     }
 
-    async fn append(&self, record_batch: RecordBatch) -> Result<u64, ReplicationError> {
+    async fn append(&self, record_batch: RecordBatch) -> Result<u64, EsError> {
         self.stream.append(record_batch).await
     }
 
@@ -181,11 +183,11 @@ where
         start_offset: u64,
         end_offset: u64,
         batch_max_bytes: u32,
-    ) -> Result<FetchDataset, ReplicationError> {
+    ) -> Result<FetchDataset, EsError> {
         self.fetch0(start_offset, end_offset, batch_max_bytes).await
     }
 
-    async fn trim(&self, new_start_offset: u64) -> Result<(), ReplicationError> {
+    async fn trim(&self, new_start_offset: u64) -> Result<(), EsError> {
         self.stream.trim(new_start_offset).await
     }
 }

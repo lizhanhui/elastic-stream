@@ -1,13 +1,10 @@
 use std::{cmp::min, rc::Rc};
 
-use log::{error, warn};
+use log::error;
 use model::error::EsError;
 use protocol::rpc::header::ErrorCode;
 
-use crate::{
-    stream::FetchDataset,
-    ReplicationError::{self, Internal},
-};
+use crate::stream::FetchDataset;
 
 use super::{
     object_reader::{ObjectMetadataManager, ObjectReader},
@@ -39,7 +36,7 @@ where
         start_offset: u64,
         end_offset: u64,
         batch_max_bytes: u32,
-    ) -> Result<super::FetchDataset, crate::ReplicationError> {
+    ) -> Result<super::FetchDataset, EsError> {
         let mut start_offset = start_offset;
         let mut remaining_size = batch_max_bytes;
         let mut final_blocks = vec![];
@@ -75,16 +72,15 @@ where
                             remaining_size,
                             &self.object_metadata_manager,
                         )
-                        .await
-                        .map_err(|e| {
-                            warn!("Failed to read object block: {}", e);
-                            Internal
-                        })?;
+                        .await?;
                     let object_blocks_end_offset = object_blocks
                         .last()
                         .ok_or_else(|| {
                             error!("Object blocks is empty");
-                            Internal
+                            EsError::new(
+                                ErrorCode::NO_MATCH_RECORDS_IN_OBJECT,
+                                "Object blocks is empty",
+                            )
                         })?
                         .end_offset();
                     let object_blocks_len = object_blocks.iter().map(|b| b.size()).sum();
@@ -105,7 +101,7 @@ where
                 break;
             }
         }
-        check_records_sequence(&final_blocks).map_err(|_| ReplicationError::Internal)?;
+        check_records_sequence(&final_blocks)?;
         Ok(FetchDataset::Overflow(final_blocks))
     }
 }
@@ -151,11 +147,11 @@ where
         start_offset: u64,
         end_offset: u64,
         batch_max_bytes: u32,
-    ) -> Result<super::FetchDataset, crate::ReplicationError> {
+    ) -> Result<super::FetchDataset, EsError> {
         self.fetch0(start_offset, end_offset, batch_max_bytes).await
     }
 
-    async fn open(&self) -> Result<(), crate::ReplicationError> {
+    async fn open(&self) -> Result<(), EsError> {
         self.stream.open().await
     }
 
@@ -175,14 +171,11 @@ where
         self.stream.next_offset()
     }
 
-    async fn append(
-        &self,
-        record_batch: model::RecordBatch,
-    ) -> Result<u64, crate::ReplicationError> {
+    async fn append(&self, record_batch: model::RecordBatch) -> Result<u64, EsError> {
         self.stream.append(record_batch).await
     }
 
-    async fn trim(&self, new_start_offset: u64) -> Result<(), crate::ReplicationError> {
+    async fn trim(&self, new_start_offset: u64) -> Result<(), EsError> {
         self.stream.trim(new_start_offset).await
     }
 }
