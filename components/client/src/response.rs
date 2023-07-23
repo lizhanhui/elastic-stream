@@ -6,6 +6,7 @@ use log::error;
 use log::info;
 use log::trace;
 use log::warn;
+use model::error::EsError;
 use model::object::ObjectMetadata;
 use model::resource::Resource;
 use model::resource::ResourceEvent;
@@ -48,6 +49,12 @@ pub struct Response {
     pub headers: Option<Headers>,
 
     pub payload: Option<Bytes>,
+}
+
+impl From<&Response> for EsError {
+    fn from(r: &Response) -> Self {
+        EsError::new(r.status.code, &r.status.message)
+    }
 }
 
 #[derive(Debug, Clone)]

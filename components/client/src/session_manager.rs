@@ -1,7 +1,6 @@
 use super::composite_session::CompositeSession;
-use crate::error::ClientError;
 use log::error;
-use model::client_role::ClientRole;
+use model::{client_role::ClientRole, error::EsError};
 use std::{cell::UnsafeCell, collections::HashMap, rc::Rc, sync::Arc};
 use tokio::sync::broadcast;
 
@@ -41,7 +40,7 @@ impl SessionManager {
     pub(crate) async fn get_composite_session(
         &mut self,
         target: &str,
-    ) -> Result<Rc<CompositeSession>, ClientError> {
+    ) -> Result<Rc<CompositeSession>, EsError> {
         let sessions = unsafe { &mut *self.sessions.get() };
         match sessions.get(target) {
             Some(session) => Ok(Rc::clone(session)),

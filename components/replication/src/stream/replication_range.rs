@@ -5,14 +5,13 @@ use std::{
     time::Instant,
 };
 
-use crate::ReplicationError;
 use bytes::{Bytes, BytesMut};
 use client::Client;
 use itertools::Itertools;
 use log::{debug, error, info, warn};
 
-use model::range::RangeMetadata;
 use model::record::{flat_record::FlatRecordBatch, RecordBatch};
+use model::{error::EsError, range::RangeMetadata};
 
 use tokio::sync::broadcast;
 
@@ -21,7 +20,7 @@ use super::{
     replicator::Replicator, FetchDataset,
 };
 
-use protocol::rpc::header::SealKind;
+use protocol::rpc::header::{ErrorCode, SealKind};
 
 const CORRUPTED_FLAG: u32 = 1 << 0;
 const SEALING_FLAG: u32 = 1 << 1;
@@ -50,7 +49,7 @@ pub(crate) struct ReplicationRange {
     open_for_write: bool,
     /// Range status.
     status: RefCell<u32>,
-    seal_task_tx: Rc<broadcast::Sender<Result<u64, Rc<ReplicationError>>>>,
+    seal_task_tx: Rc<broadcast::Sender<Result<u64, Rc<EsError>>>>,
 }
 
 impl ReplicationRange {
@@ -68,7 +67,7 @@ impl ReplicationRange {
             0
         };
 
-        let (seal_task_tx, _) = broadcast::channel::<Result<u64, Rc<ReplicationError>>>(1);
+        let (seal_task_tx, _) = broadcast::channel::<Result<u64, Rc<EsError>>>(1);
 
         let log_ident = format!("Range[{}#{}] ", metadata.stream_id(), metadata.index());
         let mut this = Rc::new(Self {
@@ -111,12 +110,12 @@ impl ReplicationRange {
         epoch: u64,
         index: i32,
         start_offset: u64,
-    ) -> Result<RangeMetadata, ReplicationError> {
+    ) -> Result<RangeMetadata, EsError> {
         // 1. request placement driver to create range and get the range metadata.
         let mut metadata = RangeMetadata::new(stream_id, index, epoch, start_offset, None);
         metadata = client.create_range(metadata).await.map_err(|e| {
             error!("Create range[{stream_id}#{index}] to pd failed, err: {e}");
-            ReplicationError::Internal
+            EsError::new(ErrorCode::ERROR_CODE_UNSPECIFIED, "todo")
         })?;
         // 2. request range server to create range replica.
         let mut create_replica_tasks = vec![];
@@ -130,7 +129,7 @@ impl ReplicationRange {
                     .await
                     .map_err(|e| {
                         error!("Create range[{stream_id}#{index}] to range server[{address}] failed, err: {e}");
-                        ReplicationError::Internal
+                        EsError::new(ErrorCode::ERROR_CODE_UNSPECIFIED, "todo")
                     })
             }));
         }
@@ -150,9 +149,12 @@ impl ReplicationRange {
         self.client.upgrade()
     }
 
-    fn calculate_confirm_offset(&self) -> Result<u64, ReplicationError> {
+    fn calculate_confirm_offset(&self) -> Result<u64, EsError> {
         if self.replicators.is_empty() {
-            return Err(ReplicationError::Internal);
+            return Err(EsError::new(
+                ErrorCode::REPLICA_NOT_ENOUGH,
+                "cal confirm offset fail, replicas is empty",
+            ));
         }
 
         // Example1: replicas confirmOffset = [1, 2, 3]
@@ -162,7 +164,7 @@ impl ReplicationRange {
         // Example2: replicas confirmOffset = [1, corrupted, 3]
         // - when replica_count=3 and ack_count = 1, then result confirm offset = 3.
         // - when replica_count=3 and ack_count = 2, then result confirm offset = 1.
-        // - when replica_count=3 and ack_count = 3, then result is ReplicationError.
+        // - when replica_count=3 and ack_count = 3, then result is EsError.
         let confirm_offset_index = self.metadata.ack_count() - 1;
         self.replicators
             .iter()
@@ -171,7 +173,10 @@ impl ReplicationRange {
             .sorted()
             .rev() // Descending order
             .nth(confirm_offset_index as usize)
-            .ok_or(ReplicationError::Internal)
+            .ok_or(EsError::new(
+                ErrorCode::REPLICA_NOT_ENOUGH,
+                "cal confirm offset fail, replicas is not enough",
+            ))
     }
 
     pub(crate) fn append(&self, record_batch: &RecordBatch, context: RangeAppendContext) {
@@ -227,7 +232,7 @@ impl ReplicationRange {
         start_offset: u64,
         end_offset: u64,
         batch_max_bytes: u32,
-    ) -> Result<FetchDataset, ReplicationError> {
+    ) -> Result<FetchDataset, EsError> {
         let now = Instant::now();
         // TODO: select replica strategy.
         // - balance the read traffic.
@@ -258,7 +263,7 @@ impl ReplicationRange {
                         "{}Fetch [{}, {}) decode fail, err: {}",
                         self.log_ident, start_offset, end_offset, e
                     );
-                    ReplicationError::Internal
+                    EsError::new(ErrorCode::RECORDS_PARSE_ERROR, "parse records fail")
                 })?
             } else {
                 vec![RecordsBlock::empty_block(end_offset)]
@@ -269,7 +274,10 @@ impl ReplicationRange {
                 Ok(FetchDataset::Full(blocks))
             };
         }
-        Err(ReplicationError::Internal)
+        Err(EsError::new(
+            ErrorCode::ALL_REPLICAS_FETCH_FAILED,
+            "all replicas fetch fail",
+        ))
     }
 
     /// update range confirm offset and invoke stream#try_ack.
@@ -309,7 +317,7 @@ impl ReplicationRange {
         }
     }
 
-    pub(crate) async fn seal(&self) -> Result<u64, ReplicationError> {
+    pub(crate) async fn seal(&self) -> Result<u64, EsError> {
         if self.is_sealed() {
             // if range is already sealed, return confirm offset.
             return Ok(*(self.confirm_offset.borrow()));
@@ -323,12 +331,12 @@ impl ReplicationRange {
                 .map(|rst| {
                     rst.map_err(|e| {
                         warn!("{} The range seal fail, {}", self.log_ident, e);
-                        ReplicationError::Internal
+                        EsError::new(e.code, &e.message)
                     })
                 })
                 .map_err(|_| {
                     error!("{}Seal task channel closed", self.log_ident);
-                    ReplicationError::Internal
+                    EsError::new(ErrorCode::UNEXPECTED, "seal task channel closed")
                 })?
         } else {
             self.mark_sealing();
@@ -370,7 +378,7 @@ impl ReplicationRange {
                     Err(e) => {
                         error!("{}Request pd seal fail, err: {e}", self.log_ident);
                         self.erase_sealing();
-                        Err(ReplicationError::Internal)
+                        Err(EsError::new(ErrorCode::ERROR_CODE_UNSPECIFIED, "todo"))
                     }
                 }
             } else {
@@ -399,20 +407,20 @@ impl ReplicationRange {
                             Err(e) => {
                                 error!("{}Request pd seal fail, err: {e}", self.log_ident);
                                 self.erase_sealing();
-                                Err(ReplicationError::Internal)
+                                Err(EsError::new(ErrorCode::ERROR_CODE_UNSPECIFIED, "todo"))
                             }
                         }
                     }
                     Err(_) => {
                         self.erase_sealing();
-                        Err(ReplicationError::Internal)
+                        Err(EsError::new(ErrorCode::ERROR_CODE_UNSPECIFIED, "todo"))
                     }
                 }
             }
         }
     }
 
-    async fn placement_driver_seal(&self, end_offset: u64) -> Result<(), ReplicationError> {
+    async fn placement_driver_seal(&self, end_offset: u64) -> Result<(), EsError> {
         if let Some(client) = self.client.upgrade() {
             let mut metadata = self.metadata.clone();
             metadata.set_end(end_offset);
@@ -426,11 +434,14 @@ impl ReplicationRange {
                         "{}Request pd seal with end_offset[{end_offset}] fail, err: {e}",
                         self.log_ident
                     );
-                    Err(ReplicationError::Internal)
+                    Err(EsError::new(ErrorCode::ERROR_CODE_UNSPECIFIED, "todo"))
                 }
             }
         } else {
-            Err(ReplicationError::AlreadyClosed)
+            Err(EsError::new(
+                ErrorCode::UNEXPECTED,
+                "seal to pd fail, client is dropped",
+            ))
         }
     }
 
@@ -440,7 +451,7 @@ impl ReplicationRange {
         replica_count: u8,
         ack_count: u8,
         end_offset: Option<u64>,
-    ) -> Result<u64, ReplicationError> {
+    ) -> Result<u64, EsError> {
         let end_offsets = Rc::new(RefCell::new(Vec::<u64>::new()));
         let mut seal_tasks = vec![];
         let replicas = replicas.clone();
@@ -471,7 +482,10 @@ impl ReplicationRange {
             .sorted()
             .nth((replica_count - ack_count) as usize)
             .copied()
-            .ok_or(ReplicationError::SealReplicaNotEnough);
+            .ok_or(EsError::new(
+                ErrorCode::REPLICA_NOT_ENOUGH,
+                "seal fail, replica is not enough",
+            ));
         info!(
             "{}Replicas seal with end_offsets={end_offsets:?} and final end_offset={end_offset:?}",
             log_ident

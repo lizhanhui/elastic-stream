@@ -1,11 +1,12 @@
 use super::session_manager::SessionManager;
 
-use crate::{composite_session::CompositeSession, error::ClientError};
+use crate::composite_session::CompositeSession;
 
 use bytes::Bytes;
 use log::{error, trace, warn};
 use model::{
     client_role::ClientRole,
+    error::EsError,
     object::ObjectMetadata,
     range::RangeMetadata,
     replica::RangeProgress,
@@ -22,7 +23,7 @@ use observation::metrics::{
     sys_metrics::{DiskStatistics, MemoryStatistics},
     uring_metrics::UringStatistics,
 };
-use protocol::rpc::header::{ResourceType, SealKind};
+use protocol::rpc::header::{ErrorCode, ResourceType, SealKind};
 use std::{cell::UnsafeCell, rc::Rc, sync::Arc, time::Duration};
 use tokio::{sync::broadcast, time};
 
@@ -42,7 +43,7 @@ impl Client {
         }
     }
 
-    pub async fn allocate_id(&self, host: &str) -> Result<i32, ClientError> {
+    pub async fn allocate_id(&self, host: &str) -> Result<i32, EsError> {
         let session_manager = unsafe { &mut *self.session_manager.get() };
         let composite_session = session_manager
             .get_composite_session(&self.config.placement_driver)
@@ -52,23 +53,21 @@ impl Client {
             .await
             .map_err(|e| {
                 warn!("Timeout when allocate ID. {}", e);
-                ClientError::RpcTimeout {
-                    timeout: self.config.client_io_timeout(),
-                }
+                EsError::new(ErrorCode::RPC_TIMEOUT, "allocate ID rpc timeout")
             })?
             .map_err(|e| {
                 error!(
                     "Failed to receive response from composite session. Cause: {:?}",
                     e
                 );
-                ClientError::ClientInternal
+                EsError::new(ErrorCode::ERROR_CODE_UNSPECIFIED, "todo")
             })
     }
 
     pub async fn list_ranges(
         &self,
         criteria: ListRangeCriteria,
-    ) -> Result<Vec<RangeMetadata>, ClientError> {
+    ) -> Result<Vec<RangeMetadata>, EsError> {
         let session_manager = unsafe { &mut *self.session_manager.get() };
         let session = session_manager
             .get_composite_session(&self.config.placement_driver)
@@ -78,16 +77,14 @@ impl Client {
             .await
             .map_err(|elapsed| {
                 warn!("Timeout when list range. {}", elapsed);
-                ClientError::RpcTimeout {
-                    timeout: self.config.client_io_timeout(),
-                }
+                EsError::new(ErrorCode::RPC_TIMEOUT, "list ranges rpc timeout")
             })?
             .map_err(|e| {
                 error!(
                     "Failed to receive response from broken channel. Cause: {:?}",
                     e
                 );
-                ClientError::ClientInternal
+                EsError::new(ErrorCode::ERROR_CODE_UNSPECIFIED, "todo")
             })
     }
 
@@ -106,7 +103,7 @@ impl Client {
     pub async fn create_stream(
         &self,
         stream_metadata: StreamMetadata,
-    ) -> Result<StreamMetadata, ClientError> {
+    ) -> Result<StreamMetadata, EsError> {
         let session_manager = unsafe { &mut *self.session_manager.get() };
         let composite_session = session_manager
             .get_composite_session(&self.config.placement_driver)
@@ -116,13 +113,11 @@ impl Client {
             .await
             .map_err(|e| {
                 error!("Timeout when create stream. {}", e);
-                ClientError::RpcTimeout {
-                    timeout: self.config.client_io_timeout(),
-                }
+                EsError::new(ErrorCode::RPC_TIMEOUT, "create stream rpc timeout")
             })?
     }
 
-    pub async fn describe_stream(&self, stream_id: u64) -> Result<StreamMetadata, ClientError> {
+    pub async fn describe_stream(&self, stream_id: u64) -> Result<StreamMetadata, EsError> {
         let session_manager = unsafe { &mut *self.session_manager.get() };
         let composite_session = session_manager
             .get_composite_session(&self.config.placement_driver)
@@ -132,9 +127,7 @@ impl Client {
             .await
             .map_err(|e| {
                 error!("Timeout when describe stream[stream-id={stream_id}]. {}", e);
-                ClientError::RpcTimeout {
-                    timeout: self.config.client_io_timeout(),
-                }
+                EsError::new(ErrorCode::RPC_TIMEOUT, "describe stream rpc timeout")
             })?
     }
 
@@ -142,7 +135,7 @@ impl Client {
     pub async fn create_range(
         &self,
         range_metadata: RangeMetadata,
-    ) -> Result<RangeMetadata, ClientError> {
+    ) -> Result<RangeMetadata, EsError> {
         let session_manager = unsafe { &mut *self.session_manager.get() };
         let composite_session = session_manager
             .get_composite_session(&self.config.placement_driver)
@@ -155,7 +148,7 @@ impl Client {
         &self,
         target: &str,
         range_metadata: RangeMetadata,
-    ) -> Result<(), ClientError> {
+    ) -> Result<(), EsError> {
         let session_manager = unsafe { &mut *self.session_manager.get() };
         let composite_session = session_manager.get_composite_session(target).await?;
         trace!("Create range replica to composite-channel={}", target);
@@ -168,15 +161,13 @@ impl Client {
         &self,
         composite_session: Rc<CompositeSession>,
         range: RangeMetadata,
-    ) -> Result<RangeMetadata, ClientError> {
+    ) -> Result<RangeMetadata, EsError> {
         let future = composite_session.create_range(range);
         time::timeout(self.config.client_io_timeout(), future)
             .await
             .map_err(|e| {
                 error!("Timeout when create range. {}", e);
-                ClientError::RpcTimeout {
-                    timeout: self.config.client_io_timeout(),
-                }
+                EsError::new(ErrorCode::RPC_TIMEOUT, "create range rpc timeout")
             })?
     }
 
@@ -185,13 +176,16 @@ impl Client {
         target: Option<&str>,
         kind: SealKind,
         range: RangeMetadata,
-    ) -> Result<RangeMetadata, ClientError> {
+    ) -> Result<RangeMetadata, EsError> {
         // Validate request
         match kind {
             SealKind::RANGE_SERVER => {
                 if target.is_none() {
                     error!("Target is required while seal range against range servers");
-                    return Err(ClientError::BadRequest);
+                    return Err(EsError::new(
+                        ErrorCode::UNEXPECTED,
+                        "target is required when seal range against range servers",
+                    ));
                 }
             }
             SealKind::PLACEMENT_DRIVER => {
@@ -199,12 +193,15 @@ impl Client {
                     error!(
                         "SealRange.range.end MUST be present while seal against placement driver"
                     );
-                    return Err(ClientError::BadRequest);
+                    return Err(EsError::new(
+                        ErrorCode::UNEXPECTED,
+                        "end_offset is required when seal range against range servers",
+                    ));
                 }
             }
             _ => {
                 error!("Seal request kind must specify");
-                return Err(ClientError::BadRequest);
+                return Err(EsError::new(ErrorCode::UNEXPECTED, "seal kind is empty"));
             }
         }
 
@@ -223,9 +220,7 @@ impl Client {
             .await
             .map_err(|_| {
                 error!("Timeout when seal range");
-                ClientError::RpcTimeout {
-                    timeout: self.config.client_io_timeout(),
-                }
+                EsError::new(ErrorCode::RPC_TIMEOUT, "seal range rpc timeout")
             })?
     }
 
@@ -234,15 +229,13 @@ impl Client {
         &self,
         target: &str,
         buf: Vec<Bytes>,
-    ) -> Result<Vec<AppendResultEntry>, ClientError> {
+    ) -> Result<Vec<AppendResultEntry>, EsError> {
         let session_manager = unsafe { &mut *self.session_manager.get() };
         let session = session_manager.get_composite_session(target).await?;
         let future = session.append(buf);
         time::timeout(self.config.client_io_timeout(), future)
             .await
-            .map_err(|_e| ClientError::RpcTimeout {
-                timeout: self.config.client_io_timeout(),
-            })?
+            .map_err(|_e| EsError::new(ErrorCode::RPC_TIMEOUT, "append rpc timeout"))?
     }
 
     /// Fetch data from a range replica.
@@ -250,15 +243,13 @@ impl Client {
         &self,
         target: &str,
         request: FetchRequest,
-    ) -> Result<FetchResultSet, ClientError> {
+    ) -> Result<FetchResultSet, EsError> {
         let session_manager = unsafe { &mut *self.session_manager.get() };
         let session = session_manager.get_composite_session(target).await?;
         let future = session.fetch(request);
         time::timeout(self.config.client_io_timeout(), future)
             .await
-            .map_err(|_e| ClientError::RpcTimeout {
-                timeout: self.config.client_io_timeout(),
-            })?
+            .map_err(|_e| EsError::new(ErrorCode::RPC_TIMEOUT, "fetch rpc timeout"))?
     }
 
     /// Report metrics to placement driver
@@ -275,7 +266,7 @@ impl Client {
         range_server_statistics: &RangeServerStatistics,
         disk_statistics: &DiskStatistics,
         memory_statistics: &MemoryStatistics,
-    ) -> Result<(), ClientError> {
+    ) -> Result<(), EsError> {
         let session_manager = unsafe { &mut *self.session_manager.get() };
         let composite_session = session_manager.get_composite_session(target).await?;
         trace!("Report metrics to composite-channel={}", target);
@@ -294,7 +285,7 @@ impl Client {
         &self,
         target: &str,
         progress: Vec<RangeProgress>,
-    ) -> Result<(), ClientError> {
+    ) -> Result<(), EsError> {
         let session_manager = unsafe { &mut *self.session_manager.get() };
         let composite_session = session_manager.get_composite_session(target).await.unwrap();
         composite_session.report_range_progress(progress).await
@@ -304,7 +295,7 @@ impl Client {
         &self,
         target: &str,
         metadata: ObjectMetadata,
-    ) -> Result<(), ClientError> {
+    ) -> Result<(), EsError> {
         let session_manager = unsafe { &mut *self.session_manager.get() };
         let composite_session = session_manager.get_composite_session(target).await.unwrap();
         composite_session.commit_object(metadata).await
@@ -329,7 +320,7 @@ impl Client {
         types: &[ResourceType],
         limit: i32,
         continuation: &Option<Bytes>,
-    ) -> Result<ListResourceResult, ClientError> {
+    ) -> Result<ListResourceResult, EsError> {
         let session_manager = unsafe { &mut *self.session_manager.get() };
         let composite_session = session_manager
             .get_composite_session(&self.config.placement_driver)
@@ -358,7 +349,7 @@ impl Client {
         types: &[ResourceType],
         version: i64,
         timeout: Duration,
-    ) -> Result<WatchResourceResult, ClientError> {
+    ) -> Result<WatchResourceResult, EsError> {
         let session_manager = unsafe { &mut *self.session_manager.get() };
         let composite_session = session_manager
             .get_composite_session(&self.config.placement_driver)
@@ -376,6 +367,7 @@ mod tests {
     use log::trace;
     use mock_server::run_listener;
     use model::client_role::ClientRole;
+    use model::error::EsError;
     use model::resource::{EventType, Resource};
     use model::stream::StreamMetadata;
     use model::ListRangeCriteria;
@@ -392,13 +384,10 @@ mod tests {
     use std::{error::Error, sync::Arc};
     use tokio::sync::broadcast;
 
-    use crate::{
-        error::{ClientError, ListRangeError},
-        Client,
-    };
+    use crate::Client;
 
     #[test]
-    fn test_broadcast_heartbeat() -> Result<(), ClientError> {
+    fn test_broadcast_heartbeat() -> Result<(), Box<dyn Error>> {
         tokio_uring::start(async {
             #[allow(unused_variables)]
             let port = 2378;
@@ -470,7 +459,7 @@ mod tests {
     }
 
     #[test]
-    fn test_describe_stream() -> Result<(), Box<dyn Error>> {
+    fn test_describe_stream() -> Result<(), EsError> {
         ulog::try_init_log();
         tokio_uring::start(async move {
             #[allow(unused_variables)]
@@ -499,7 +488,7 @@ mod tests {
     }
 
     #[test]
-    fn test_create_range() -> Result<(), ClientError> {
+    fn test_create_range() -> Result<(), EsError> {
         ulog::try_init_log();
         tokio_uring::start(async {
             #[allow(unused_variables)]
@@ -519,7 +508,7 @@ mod tests {
     }
 
     #[test]
-    fn test_create_range_range_server() -> Result<(), ClientError> {
+    fn test_create_range_range_server() -> Result<(), EsError> {
         ulog::try_init_log();
         tokio_uring::start(async {
             #[allow(unused_variables)]
@@ -546,7 +535,7 @@ mod tests {
     }
 
     #[test]
-    fn test_list_range_by_stream() -> Result<(), ListRangeError> {
+    fn test_list_range_by_stream() -> Result<(), EsError> {
         ulog::try_init_log();
         tokio_uring::start(async {
             #[allow(unused_variables)]
@@ -578,7 +567,7 @@ mod tests {
     }
 
     #[test]
-    fn test_list_range_by_range_server() -> Result<(), ListRangeError> {
+    fn test_list_range_by_range_server() -> Result<(), EsError> {
         ulog::try_init_log();
         tokio_uring::start(async {
             #[allow(unused_variables)]
@@ -611,7 +600,7 @@ mod tests {
 
     /// Test seal range server without end. This RPC is used when the single writer takes over a stream from a failed writer.
     #[test]
-    fn test_seal_range_server() -> Result<(), ClientError> {
+    fn test_seal_range_server() -> Result<(), EsError> {
         ulog::try_init_log();
         tokio_uring::start(async move {
             #[allow(unused_variables)]
@@ -644,7 +633,7 @@ mod tests {
 
     /// Test seal range server with end. This RPC is used when the single writer takes over a stream from a graceful closed writer.
     #[test]
-    fn test_seal_range_server_with_end() -> Result<(), ClientError> {
+    fn test_seal_range_server_with_end() -> Result<(), EsError> {
         ulog::try_init_log();
         tokio_uring::start(async move {
             #[allow(unused_variables)]
@@ -677,7 +666,7 @@ mod tests {
 
     /// Test seal placement driver.
     #[test]
-    fn test_seal_placement_driver() -> Result<(), ClientError> {
+    fn test_seal_placement_driver() -> Result<(), EsError> {
         ulog::try_init_log();
         tokio_uring::start(async move {
             #[allow(unused_variables)]
@@ -763,7 +752,7 @@ mod tests {
     }
 
     #[test]
-    fn test_report_metrics() -> Result<(), ClientError> {
+    fn test_report_metrics() -> Result<(), EsError> {
         ulog::try_init_log();
         tokio_uring::start(async {
             #[allow(unused_variables)]
@@ -794,7 +783,7 @@ mod tests {
     }
 
     #[test]
-    fn test_list_resource() -> Result<(), ClientError> {
+    fn test_list_resource() -> Result<(), EsError> {
         ulog::try_init_log();
         tokio_uring::start(async {
             #[allow(unused_variables)]
@@ -837,7 +826,7 @@ mod tests {
     }
 
     #[test]
-    fn test_watch_resource() -> Result<(), ClientError> {
+    fn test_watch_resource() -> Result<(), EsError> {
         ulog::try_init_log();
         tokio_uring::start(async {
             #[allow(unused_variables)]

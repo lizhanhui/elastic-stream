@@ -1,13 +1,12 @@
 use super::{lb_policy::LbPolicy, session::Session};
-use crate::{
-    error::ClientError, invocation_context::InvocationContext, request::Request, response::Response,
-};
+use crate::{invocation_context::InvocationContext, request::Request, response::Response};
 use bytes::Bytes;
 use itertools::Itertools;
 use local_sync::oneshot;
 use log::{debug, error, info, trace, warn};
 use model::{
     client_role::ClientRole,
+    error::EsError,
     object::ObjectMetadata,
     range::RangeMetadata,
     replica::RangeProgress,
@@ -59,7 +58,7 @@ impl CompositeSession {
         config: Arc<config::Configuration>,
         lb_policy: LbPolicy,
         shutdown: broadcast::Sender<()>,
-    ) -> Result<Self, ClientError>
+    ) -> Result<Self, EsError>
     where
         T: ToSocketAddrs + ToString,
     {
@@ -69,7 +68,7 @@ impl CompositeSession {
         // In the future, we would support multiple internal connection and load balancing among them.
         for socket_addr in target
             .to_socket_addrs()
-            .map_err(|_e| ClientError::BadAddress)?
+            .map_err(|e| EsError::new(ErrorCode::BAD_ADDRESS, &format!("bad address, {}", e)))?
         {
             let res = Self::connect(
                 socket_addr,
@@ -203,7 +202,7 @@ impl CompositeSession {
             )
         });
 
-        let res: Vec<Result<Session, ClientError>> = futures::future::join_all(futures).await;
+        let res: Vec<Result<Session, EsError>> = futures::future::join_all(futures).await;
         for item in res {
             match item {
                 Ok(session) => {
@@ -222,7 +221,7 @@ impl CompositeSession {
         self.refresh_leadership(nodes);
     }
 
-    pub(crate) async fn refresh_placement_driver_cluster(&self) -> Result<(), ClientError> {
+    pub(crate) async fn refresh_placement_driver_cluster(&self) -> Result<(), EsError> {
         match self.describe_placement_driver_cluster().await? {
             Some(nodes) => {
                 self.refresh_sessions(&nodes).await;
@@ -230,7 +229,7 @@ impl CompositeSession {
             }
             None => {
                 warn!("Placement driver returns an unexpected empty cluster. Skip refreshing sessions");
-                Err(ClientError::ServerInternal)
+                Err(EsError::new(ErrorCode::UNEXPECTED, "Empty cluster"))
             }
         }
     }
@@ -299,7 +298,7 @@ impl CompositeSession {
         &self,
         host: &str,
         timeout: Option<Duration>,
-    ) -> Result<i32, ClientError> {
+    ) -> Result<i32, EsError> {
         let request = request::Request {
             timeout: timeout.unwrap_or(self.config.client_io_timeout()),
             headers: request::Headers::AllocateId {
@@ -319,8 +318,7 @@ impl CompositeSession {
                 "Failed to allocate ID from {}. Status-Message: `{}`",
                 self.target, response.status.message
             );
-            // TODO: refine error handling
-            Err(ClientError::ServerInternal)
+            Err(EsError::from(&response))
         }
     }
 
@@ -347,7 +345,7 @@ impl CompositeSession {
     pub(crate) async fn create_stream(
         &self,
         stream_metadata: StreamMetadata,
-    ) -> Result<StreamMetadata, ClientError> {
+    ) -> Result<StreamMetadata, EsError> {
         let request = request::Request {
             timeout: self.config.client_io_timeout(),
             headers: request::Headers::CreateStream { stream_metadata },
@@ -360,7 +358,7 @@ impl CompositeSession {
                 self.target, response.status.message
             );
             // TODO: refine error handling
-            return Err(ClientError::ServerInternal);
+            return Err(EsError::from(&response));
         }
         if let Some(response::Headers::CreateStream { stream }) = response.headers {
             Ok(stream)
@@ -369,10 +367,7 @@ impl CompositeSession {
         }
     }
 
-    pub(crate) async fn describe_stream(
-        &self,
-        stream_id: u64,
-    ) -> Result<StreamMetadata, ClientError> {
+    pub(crate) async fn describe_stream(&self, stream_id: u64) -> Result<StreamMetadata, EsError> {
         let request = request::Request {
             timeout: self.config.client_io_timeout(),
             headers: request::Headers::DescribeStream { stream_id },
@@ -390,7 +385,7 @@ impl CompositeSession {
                 "Failed to describe stream[stream-id={stream_id}] from {}. Status: `{:?}`",
                 self.target, response.status
             );
-            Err(ClientError::ClientInternal)
+            Err(EsError::from(&response))
         }
     }
 
@@ -400,7 +395,7 @@ impl CompositeSession {
     pub(crate) async fn create_range(
         &self,
         range: RangeMetadata,
-    ) -> Result<RangeMetadata, ClientError> {
+    ) -> Result<RangeMetadata, EsError> {
         let stream_id = range.stream_id();
         let request = request::Request {
             timeout: self.config.client_io_timeout(),
@@ -421,14 +416,14 @@ impl CompositeSession {
                 "Failed to create range on {} for Stream[id={}]: {response:?}",
                 self.target, stream_id
             );
-            Err(ClientError::CreateRange(response.status.code))
+            Err(EsError::from(&response))
         }
     }
 
     pub(crate) async fn list_range(
         &self,
         criteria: ListRangeCriteria,
-    ) -> Result<Vec<RangeMetadata>, ClientError> {
+    ) -> Result<Vec<RangeMetadata>, EsError> {
         let request = request::Request {
             timeout: self.config.client_io_timeout(),
             headers: request::Headers::ListRange { criteria },
@@ -437,7 +432,10 @@ impl CompositeSession {
         let response = self.request(request).await?;
         if response.ok() {
             if let Some(response::Headers::ListRange { ranges }) = response.headers {
-                ranges.ok_or(ClientError::ClientInternal)
+                ranges.ok_or(EsError::new(
+                    ErrorCode::UNEXPECTED,
+                    "None ranges in list range response",
+                ))
             } else {
                 unreachable!()
             }
@@ -446,8 +444,7 @@ impl CompositeSession {
                 "Failed to list-ranges from {}. Status-Message: `{}`",
                 self.target, response.status.message
             );
-            // TODO: refine error handling
-            Err(ClientError::ServerInternal)
+            Err(EsError::from(&response))
         }
     }
 
@@ -467,7 +464,7 @@ impl CompositeSession {
     /// Step 3: Once response is received from placement driver server, update the aggregated `Session` table, including leadership
     async fn describe_placement_driver_cluster(
         &self,
-    ) -> Result<Option<Vec<PlacementDriverNode>>, ClientError> {
+    ) -> Result<Option<Vec<PlacementDriverNode>>, EsError> {
         self.try_reconnect().await;
 
         // Get latest `A` records for access point domain name
@@ -476,7 +473,10 @@ impl CompositeSession {
             .to_socket_addrs()
             .map_err(|e| {
                 error!("Failed to parse {} into SocketAddr: {:?}", self.target, e);
-                ClientError::BadAddress
+                EsError::new(
+                    ErrorCode::BAD_ADDRESS,
+                    &format!("describe pd cluster fail, bad address, {}", e),
+                )
             })?
             .collect::<Vec<_>>();
 
@@ -530,7 +530,10 @@ impl CompositeSession {
         }
 
         if !request_sent {
-            return Err(ClientError::ClientInternal);
+            return Err(EsError::new(
+                ErrorCode::UNEXPECTED,
+                "describe pd cluster fail, request not send",
+            ));
         }
 
         match time::timeout(self.config.client_io_timeout(), rx).await {
@@ -546,21 +549,28 @@ impl CompositeSession {
                             "Failed to describe placement driver cluster: {:?}",
                             response.status
                         );
-                        Err(ClientError::ServerInternal)
+                        Err(EsError::from(&response))
                     } else if let Some(response::Headers::DescribePlacementDriver { nodes }) =
                         response.headers
                     {
                         trace!("Received placement driver cluster {:?}", nodes);
                         Ok(nodes)
                     } else {
-                        Err(ClientError::ClientInternal)
+                        Err(EsError::new(
+                            ErrorCode::UNEXPECTED,
+                            "describe pd cluster fail, empty headers",
+                        ))
                     }
                 }
-                Err(_e) => Err(ClientError::ClientInternal),
+                Err(_e) => Err(EsError::new(
+                    ErrorCode::UNEXPECTED,
+                    "describe pd cluster fail, recv error",
+                )),
             },
-            Err(_e) => Err(ClientError::RpcTimeout {
-                timeout: self.config.client_connect_timeout(),
-            }),
+            Err(_e) => Err(EsError::new(
+                ErrorCode::RPC_TIMEOUT,
+                "describe pd cluster timeout",
+            )),
         }
     }
 
@@ -580,12 +590,7 @@ impl CompositeSession {
         &self,
         kind: SealKind,
         range: RangeMetadata,
-    ) -> Result<RangeMetadata, ClientError> {
-        self.try_reconnect().await;
-        let session = self
-            .pick_session(self.lb_policy)
-            .await
-            .ok_or(ClientError::ConnectFailure(self.target.clone()))?;
+    ) -> Result<RangeMetadata, EsError> {
         let request = request::Request {
             timeout: self.config.client_io_timeout(),
             headers: request::Headers::SealRange {
@@ -594,14 +599,7 @@ impl CompositeSession {
             },
             body: None,
         };
-        let (tx, rx) = oneshot::channel();
-        if let Err(ctx) = session.write(request, tx).await {
-            let request = ctx.request();
-            error!("Failed to seal range {request}");
-            return Err(ClientError::ClientInternal);
-        }
-
-        let response = rx.await.map_err(|_e| ClientError::ClientInternal)?;
+        let response = self.request(request).await?;
         if !response.ok() {
             if response.status.code == ErrorCode::RANGE_ALREADY_SEALED {
                 // TODO: check whether end_offset is match if the range is already sealed
@@ -619,14 +617,20 @@ impl CompositeSession {
                 ));
             }
             warn!("Failed to seal range: {:?}", response.status);
-            return Err(ClientError::ServerInternal);
+            return Err(EsError::from(&response));
         }
 
         if let Some(response::Headers::SealRange { range }) = response.headers {
             trace!("Sealed range {:?}", range);
-            range.ok_or(ClientError::ClientInternal)
+            range.ok_or(EsError::new(
+                ErrorCode::UNEXPECTED,
+                "seal range fail, empty range",
+            ))
         } else {
-            Err(ClientError::ClientInternal)
+            Err(EsError::new(
+                ErrorCode::UNEXPECTED,
+                "seal range fail, empty response headers",
+            ))
         }
     }
 
@@ -692,7 +696,7 @@ impl CompositeSession {
         config: Arc<config::Configuration>,
         sessions: Rc<RefCell<HashMap<SocketAddr, Session>>>,
         shutdown: broadcast::Sender<()>,
-    ) -> Result<Session, ClientError> {
+    ) -> Result<Session, EsError> {
         trace!("Establishing connection to {:?}", addr);
         let endpoint = addr.to_string();
         let connect = TcpStream::connect(addr);
@@ -702,24 +706,33 @@ impl CompositeSession {
                     trace!("Connection to {:?} established", addr);
                     connection.set_nodelay(true).map_err(|e| {
                         error!("Failed to disable Nagle's algorithm. Cause: {:?}", e);
-                        ClientError::DisableNagleAlgorithm
+                        EsError::new(ErrorCode::CONNECT_DISABLE_NAGLE_FAIL, "Disable nagle fail")
                     })?;
                     connection
                 }
                 Err(e) => match e.kind() {
                     ErrorKind::ConnectionRefused => {
                         error!("Connection to {} is refused", endpoint);
-                        return Err(ClientError::ConnectionRefused(format!("{:?}", endpoint)));
+                        return Err(EsError::new(
+                            ErrorCode::CONNECT_REFUSED,
+                            &format!("{:?}", endpoint),
+                        ));
                     }
                     _ => {
-                        return Err(ClientError::ConnectFailure(format!("{:?}", e)));
+                        return Err(EsError::new(
+                            ErrorCode::CONNECT_FAIL,
+                            &format!("{:?}", endpoint),
+                        ));
                     }
                 },
             },
             Err(e) => {
                 let description = format!("Timeout when connecting {}, elapsed: {}", endpoint, e);
                 error!("{}", description);
-                return Err(ClientError::ConnectTimeout(description));
+                return Err(EsError::new(
+                    ErrorCode::RPC_TIMEOUT,
+                    &format!("{:?}", endpoint),
+                ));
             }
         };
         Ok(Session::new(
@@ -732,35 +745,17 @@ impl CompositeSession {
         ))
     }
 
-    pub(crate) async fn append(
-        &self,
-        buf: Vec<Bytes>,
-    ) -> Result<Vec<AppendResultEntry>, ClientError> {
+    pub(crate) async fn append(&self, buf: Vec<Bytes>) -> Result<Vec<AppendResultEntry>, EsError> {
         let start_timestamp = Instant::now();
-        self.try_reconnect().await;
-        let session = self
-            .pick_session(self.lb_policy)
-            .await
-            .ok_or(ClientError::ConnectFailure(self.target.clone()))?;
-
         let request = request::Request {
             timeout: self.config.client_io_timeout(),
             headers: request::Headers::Append,
             body: Some(buf),
         };
-
-        let (tx, rx) = oneshot::channel();
-        if let Err(ctx) = session.write(request, tx).await {
-            let request = ctx.request();
-            // TODO: decode append info from flat_record_batch_bytes to provide readable information.
-            error!("Failed to append {request}");
-            return Err(ClientError::ClientInternal);
-        }
-
-        let response = rx.await.map_err(|_e| ClientError::ClientInternal)?;
+        let response = self.request(request).await?;
         if !response.ok() {
             warn!("Failed to append: {:?}", response.status);
-            return Err(ClientError::ServerInternal);
+            return Err(EsError::from(&response));
         }
 
         if let Some(response::Headers::Append { entries }) = response.headers {
@@ -771,34 +766,23 @@ impl CompositeSession {
             );
             Ok(entries)
         } else {
-            Err(ClientError::ClientInternal)
+            Err(EsError::new(
+                ErrorCode::UNEXPECTED,
+                "append fail, empty response headers",
+            ))
         }
     }
 
-    pub(crate) async fn fetch(&self, request: FetchRequest) -> Result<FetchResultSet, ClientError> {
-        // TODO: support fetch request group in session level.
-        self.try_reconnect().await;
-        let session = self
-            .pick_session(self.lb_policy)
-            .await
-            .ok_or(ClientError::ConnectFailure(self.target.clone()))?;
-
+    pub(crate) async fn fetch(&self, request: FetchRequest) -> Result<FetchResultSet, EsError> {
         let request = request::Request {
             timeout: request.max_wait,
             headers: request::Headers::Fetch { request },
             body: None,
         };
-        let (tx, rx) = oneshot::channel();
-        if let Err(ctx) = session.write(request, tx).await {
-            let request = ctx.request();
-            error!("Failed to fetch {request} to {}", self.target);
-            return Err(ClientError::ClientInternal);
-        }
-
-        let response = rx.await.map_err(|_e| ClientError::ClientInternal)?;
+        let response = self.request(request).await?;
         if !response.ok() {
             warn!("Failed to fetch: {:?}", response.status);
-            return Err(ClientError::ServerInternal);
+            return Err(EsError::from(&response));
         }
 
         if let Some(response::Headers::Fetch {
@@ -812,7 +796,10 @@ impl CompositeSession {
                 object_metadata_list,
             })
         } else {
-            Err(ClientError::ClientInternal)
+            Err(EsError::new(
+                ErrorCode::UNEXPECTED,
+                "fetch fail, empty response headers",
+            ))
         }
     }
 
@@ -822,7 +809,7 @@ impl CompositeSession {
         range_server_statistics: &RangeServerStatistics,
         disk_statistics: &DiskStatistics,
         memory_statistics: &MemoryStatistics,
-    ) -> Result<(), ClientError> {
+    ) -> Result<(), EsError> {
         self.try_reconnect().await;
 
         if self.need_refresh_placement_driver_cluster()
@@ -867,7 +854,7 @@ impl CompositeSession {
                             "Failed to report metrics to {}. Status-Message: `{}`",
                             self.target, response.status.message
                         );
-                        return Err(ClientError::ServerInternal);
+                        return Err(EsError::from(&response));
                     }
                 }
                 Err(_e) => {}
@@ -879,7 +866,7 @@ impl CompositeSession {
     pub(crate) async fn report_range_progress(
         &self,
         range_progress: Vec<RangeProgress>,
-    ) -> Result<(), ClientError> {
+    ) -> Result<(), EsError> {
         self.try_reconnect().await;
 
         if self.need_refresh_placement_driver_cluster()
@@ -907,7 +894,7 @@ impl CompositeSession {
                             "Failed to report range progress to {}. Status-Message: `{}`",
                             self.target, response.status.message
                         );
-                        return Err(ClientError::ServerInternal);
+                        return Err(EsError::from(&response));
                     }
                 }
                 Err(_e) => {}
@@ -916,7 +903,7 @@ impl CompositeSession {
         Ok(())
     }
 
-    pub async fn commit_object(&self, metadata: ObjectMetadata) -> Result<(), ClientError> {
+    pub async fn commit_object(&self, metadata: ObjectMetadata) -> Result<(), EsError> {
         let request = request::Request {
             timeout: self.config.client_io_timeout(),
             headers: request::Headers::CommitObject {
@@ -933,8 +920,7 @@ impl CompositeSession {
                 "Failed to commit object from {}. Status: `{:?}`",
                 self.target, response.status
             );
-            // TODO: refine error handling according to status code
-            Err(ClientError::ClientInternal)
+            Err(EsError::from(&response))
         }
     }
 
@@ -943,7 +929,7 @@ impl CompositeSession {
         types: &[ResourceType],
         limit: i32,
         continuation: &Option<Bytes>,
-    ) -> Result<ListResourceResult, ClientError> {
+    ) -> Result<ListResourceResult, EsError> {
         let request = request::Request {
             timeout: self.config.client_io_timeout(),
             headers: request::Headers::ListResource {
@@ -973,8 +959,7 @@ impl CompositeSession {
                 "Failed to list resource from {}. Status: `{:?}`",
                 self.target, response.status
             );
-            // TODO: error handling
-            Err(ClientError::ClientInternal)
+            Err(EsError::from(&response))
         }
     }
 
@@ -983,7 +968,7 @@ impl CompositeSession {
         types: &[ResourceType],
         version: i64,
         timeout: Duration,
-    ) -> Result<WatchResourceResult, ClientError> {
+    ) -> Result<WatchResourceResult, EsError> {
         let request = request::Request {
             timeout,
             headers: request::Headers::WatchResource {
@@ -1006,8 +991,7 @@ impl CompositeSession {
                 "Failed to watch resource from {}. Status: `{:?}`",
                 self.target, response.status
             );
-            // TODO: error handling
-            Err(ClientError::ClientInternal)
+            Err(EsError::from(&response))
         }
     }
 
@@ -1038,20 +1022,23 @@ impl CompositeSession {
         futures::future::join_all(receivers).await
     }
 
-    async fn request(&self, request: Request) -> Result<Response, ClientError> {
+    async fn request(&self, request: Request) -> Result<Response, EsError> {
         loop {
             self.try_reconnect().await;
-            let session = self
-                .pick_session(self.lb_policy)
-                .await
-                .ok_or(ClientError::ConnectFailure(self.target.clone()))?;
+            let session = self.pick_session(self.lb_policy).await.ok_or(EsError::new(
+                ErrorCode::CONNECT_FAIL,
+                &format!("{:?}", self.target),
+            ))?;
             let (tx, rx) = oneshot::channel();
             if let Err(ctx) = session.write(request.clone(), tx).await {
                 error!(
                     "Failed to send request to {}. Cause: {:?}",
                     self.target, ctx
                 );
-                return Err(ClientError::ConnectionRefused(self.target.to_owned()));
+                return Err(EsError::new(
+                    ErrorCode::CONNECT_REFUSED,
+                    &format!("{:?}", self.target),
+                ));
             }
 
             let response = rx.await.map_err(|e| {
@@ -1059,7 +1046,7 @@ impl CompositeSession {
                     "Internal error while request from {}. Cause: {:?}",
                     self.target, e
                 );
-                ClientError::ClientInternal
+                EsError::new(ErrorCode::UNEXPECTED, "channel closed")
             })?;
 
             if !response.ok()

@@ -5,10 +5,11 @@ use std::{
 };
 
 use super::replication_range::ReplicationRange;
-use crate::ReplicationError;
 use bytes::Bytes;
 use log::{error, info, warn};
-use model::{request::fetch::FetchRequest, response::fetch::FetchResultSet, RangeServer};
+use model::{
+    error::EsError, request::fetch::FetchRequest, response::fetch::FetchResultSet, RangeServer,
+};
 use protocol::rpc::header::ErrorCode;
 use protocol::rpc::header::SealKind;
 use tokio::time::sleep;
@@ -153,7 +154,7 @@ impl Replicator {
         start_offset: u64,
         end_offset: u64,
         batch_max_bytes: u32,
-    ) -> Result<FetchResultSet, ReplicationError> {
+    ) -> Result<FetchResultSet, EsError> {
         if let Some(range) = self.range.upgrade() {
             if let Some(client) = range.client() {
                 let result = client
@@ -175,25 +176,31 @@ impl Replicator {
                     .await;
                 match result {
                     Ok(rs) => Ok(rs),
-                    Err(_) => Err(ReplicationError::Internal),
+                    Err(_) => Err(EsError::new(ErrorCode::ERROR_CODE_UNSPECIFIED, "todo")),
                 }
             } else {
                 warn!("{}Client was dropped, aborting replication", self.log_ident);
-                Err(ReplicationError::Internal)
+                Err(EsError::new(
+                    ErrorCode::UNEXPECTED,
+                    "fetch fail, client was dropped",
+                ))
             }
         } else {
             warn!(
                 "{}ReplicationRange was dropped, aborting fetch",
                 self.log_ident
             );
-            Err(ReplicationError::Internal)
+            Err(EsError::new(
+                ErrorCode::UNEXPECTED,
+                "fetch fail, range was dropped",
+            ))
         }
     }
 
     /// Seal the range replica.
     /// - When range is open for write, then end_offset is Some(end_offset).
     /// - When range is created by old stream, then end_offset is None.
-    pub(crate) async fn seal(&self, end_offset: Option<u64>) -> Result<u64, ReplicationError> {
+    pub(crate) async fn seal(&self, end_offset: Option<u64>) -> Result<u64, EsError> {
         if let Some(range) = self.range.upgrade() {
             let mut metadata = range.metadata().clone();
             if let Some(end_offset) = end_offset {
@@ -209,7 +216,10 @@ impl Replicator {
                     .await
                 {
                     Ok(metadata) => {
-                        let end_offset = metadata.end().ok_or(ReplicationError::Internal)?;
+                        let end_offset = metadata.end().ok_or(EsError::new(
+                            ErrorCode::UNEXPECTED,
+                            "expect seal response contain end_offset",
+                        ))?;
                         warn!(
                             "{}Seal replica success with end_offset {end_offset}",
                             self.log_ident
@@ -219,16 +229,22 @@ impl Replicator {
                     }
                     Err(e) => {
                         error!("{}Seal replica fail, err: {e}", self.log_ident);
-                        Err(ReplicationError::Internal)
+                        Err(EsError::new(ErrorCode::ERROR_CODE_UNSPECIFIED, "todo"))
                     }
                 };
             } else {
                 warn!("{}Client was dropped, aborting seal", self.log_ident);
-                Err(ReplicationError::AlreadyClosed)
+                Err(EsError::new(
+                    ErrorCode::UNEXPECTED,
+                    "fetch fail, client was dropped",
+                ))
             }
         } else {
             warn!("{}Range was dropped, aborting seal", self.log_ident);
-            Err(ReplicationError::AlreadyClosed)
+            Err(EsError::new(
+                ErrorCode::UNEXPECTED,
+                "fetch fail, range was dropped",
+            ))
         }
     }
 
