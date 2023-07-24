@@ -113,10 +113,7 @@ impl ReplicationRange {
     ) -> Result<RangeMetadata, EsError> {
         // 1. request placement driver to create range and get the range metadata.
         let mut metadata = RangeMetadata::new(stream_id, index, epoch, start_offset, None);
-        metadata = client.create_range(metadata).await.map_err(|e| {
-            error!("Create range[{stream_id}#{index}] to pd failed, err: {e}");
-            EsError::new(ErrorCode::ERROR_CODE_UNSPECIFIED, "todo")
-        })?;
+        metadata = client.create_range(metadata).await?;
         // 2. request range server to create range replica.
         let mut create_replica_tasks = vec![];
         for server in metadata.replica().iter() {
@@ -129,7 +126,7 @@ impl ReplicationRange {
                     .await
                     .map_err(|e| {
                         error!("Create range[{stream_id}#{index}] to range server[{address}] failed, err: {e}");
-                        EsError::new(ErrorCode::ERROR_CODE_UNSPECIFIED, "todo")
+                        e
                     })
             }));
         }
@@ -147,6 +144,13 @@ impl ReplicationRange {
 
     pub(crate) fn client(&self) -> Option<Rc<Client>> {
         self.client.upgrade()
+    }
+
+    fn get_client(&self) -> Result<Rc<Client>, EsError> {
+        self.client.upgrade().ok_or(EsError::new(
+            ErrorCode::UNEXPECTED,
+            "range get client fail, client is dropped",
+        ))
     }
 
     fn calculate_confirm_offset(&self) -> Result<u64, EsError> {
@@ -378,7 +382,7 @@ impl ReplicationRange {
                     Err(e) => {
                         error!("{}Request pd seal fail, err: {e}", self.log_ident);
                         self.erase_sealing();
-                        Err(EsError::new(ErrorCode::ERROR_CODE_UNSPECIFIED, "todo"))
+                        Err(e)
                     }
                 }
             } else {
@@ -407,13 +411,13 @@ impl ReplicationRange {
                             Err(e) => {
                                 error!("{}Request pd seal fail, err: {e}", self.log_ident);
                                 self.erase_sealing();
-                                Err(EsError::new(ErrorCode::ERROR_CODE_UNSPECIFIED, "todo"))
+                                Err(e)
                             }
                         }
                     }
-                    Err(_) => {
+                    Err(e) => {
                         self.erase_sealing();
-                        Err(EsError::new(ErrorCode::ERROR_CODE_UNSPECIFIED, "todo"))
+                        Err(e)
                     }
                 }
             }
@@ -421,27 +425,21 @@ impl ReplicationRange {
     }
 
     async fn placement_driver_seal(&self, end_offset: u64) -> Result<(), EsError> {
-        if let Some(client) = self.client.upgrade() {
-            let mut metadata = self.metadata.clone();
-            metadata.set_end(end_offset);
-            match client
-                .seal(None, SealKind::PLACEMENT_DRIVER, metadata)
-                .await
-            {
-                Ok(_) => Ok(()),
-                Err(e) => {
-                    error!(
-                        "{}Request pd seal with end_offset[{end_offset}] fail, err: {e}",
-                        self.log_ident
-                    );
-                    Err(EsError::new(ErrorCode::ERROR_CODE_UNSPECIFIED, "todo"))
-                }
+        let client = self.get_client()?;
+        let mut metadata = self.metadata.clone();
+        metadata.set_end(end_offset);
+        match client
+            .seal(None, SealKind::PLACEMENT_DRIVER, metadata)
+            .await
+        {
+            Ok(_) => Ok(()),
+            Err(e) => {
+                error!(
+                    "{}Request pd seal with end_offset[{end_offset}] fail, err: {e}",
+                    self.log_ident
+                );
+                Err(e)
             }
-        } else {
-            Err(EsError::new(
-                ErrorCode::UNEXPECTED,
-                "seal to pd fail, client is dropped",
-            ))
         }
     }
 

@@ -6,6 +6,7 @@ use std::{
 
 use super::replication_range::ReplicationRange;
 use bytes::Bytes;
+use client::Client;
 use log::{error, info, warn};
 use model::{
     error::EsError, request::fetch::FetchRequest, response::fetch::FetchResultSet, RangeServer,
@@ -61,23 +62,16 @@ impl Replicator {
         base_offset: u64,
         last_offset: u64,
     ) {
-        let client = if let Some(range) = self.range.upgrade() {
-            if let Some(client) = range.client() {
-                client
-            } else {
-                warn!("{}Client was dropped, aborting replication", self.log_ident);
+        let (range, client) = match self.get_client() {
+            Ok(rst) => rst,
+            Err(e) => {
+                error!("{} replica append fail, {}", self.log_ident, e);
+                self.corrupted.replace(true);
                 return;
             }
-        } else {
-            warn!(
-                "{}ReplicationRange was dropped, aborting replication",
-                self.log_ident
-            );
-            return;
         };
         let offset = Rc::clone(&self.confirm_offset);
         let target = self.range_server.advertise_address.clone();
-        let range = self.range.clone();
         let corrupted = self.corrupted.clone();
 
         // Spawn a task to replicate data to the target range-server.
@@ -85,25 +79,20 @@ impl Replicator {
         tokio_uring::spawn(async move {
             let mut attempts = 1;
             loop {
-                if let Some(range) = range.upgrade() {
-                    if range.is_sealed() {
-                        info!("{}Range is sealed, aborting replication", log_ident);
-                        break;
-                    }
-                    if *corrupted.borrow() {
-                        range.try_ack();
-                        break;
-                    }
+                if range.is_sealed() {
+                    info!("{}Range is sealed, aborting replication", log_ident);
+                    break;
+                }
+                if *corrupted.borrow() {
+                    range.try_ack();
+                    break;
+                }
 
-                    if attempts > 3 {
-                        warn!("{log_ident}Failed to append entries(base_offset={base_offset}) after 3 attempts, aborting replication");
-                        // TODO: Mark replication range as failing and incur seal immediately.
-                        corrupted.replace(true);
-                        break;
-                    }
-                } else {
-                    warn!("{log_ident}ReplicationRange was dropped, aborting replication");
-                    return;
+                if attempts > 3 {
+                    warn!("{log_ident}Failed to append entries(base_offset={base_offset}) after 3 attempts, aborting replication");
+                    // TODO: Mark replication range as failing and incur seal immediately.
+                    corrupted.replace(true);
+                    break;
                 }
 
                 let result = client
@@ -142,10 +131,7 @@ impl Replicator {
                     }
                 }
             }
-
-            if let Some(range) = range.upgrade() {
-                range.try_ack();
-            }
+            range.try_ack();
         });
     }
 
@@ -155,96 +141,74 @@ impl Replicator {
         end_offset: u64,
         batch_max_bytes: u32,
     ) -> Result<FetchResultSet, EsError> {
-        if let Some(range) = self.range.upgrade() {
-            if let Some(client) = range.client() {
-                let result = client
-                    .fetch(
-                        &self.range_server.advertise_address,
-                        FetchRequest {
-                            max_wait: std::time::Duration::from_secs(3),
-                            range: range.metadata().clone(),
-                            offset: start_offset,
-                            limit: end_offset,
-                            min_bytes: None,
-                            max_bytes: if batch_max_bytes > 0 {
-                                Some(batch_max_bytes as usize)
-                            } else {
-                                None
-                            },
-                        },
-                    )
-                    .await;
-                match result {
-                    Ok(rs) => Ok(rs),
-                    Err(_) => Err(EsError::new(ErrorCode::ERROR_CODE_UNSPECIFIED, "todo")),
-                }
-            } else {
-                warn!("{}Client was dropped, aborting replication", self.log_ident);
-                Err(EsError::new(
-                    ErrorCode::UNEXPECTED,
-                    "fetch fail, client was dropped",
-                ))
-            }
-        } else {
-            warn!(
-                "{}ReplicationRange was dropped, aborting fetch",
-                self.log_ident
-            );
-            Err(EsError::new(
-                ErrorCode::UNEXPECTED,
-                "fetch fail, range was dropped",
-            ))
-        }
+        let (range, client) = self.get_client()?;
+        client
+            .fetch(
+                &self.range_server.advertise_address,
+                FetchRequest {
+                    max_wait: std::time::Duration::from_secs(3),
+                    range: range.metadata().clone(),
+                    offset: start_offset,
+                    limit: end_offset,
+                    min_bytes: None,
+                    max_bytes: if batch_max_bytes > 0 {
+                        Some(batch_max_bytes as usize)
+                    } else {
+                        None
+                    },
+                },
+            )
+            .await
     }
 
     /// Seal the range replica.
     /// - When range is open for write, then end_offset is Some(end_offset).
     /// - When range is created by old stream, then end_offset is None.
     pub(crate) async fn seal(&self, end_offset: Option<u64>) -> Result<u64, EsError> {
-        if let Some(range) = self.range.upgrade() {
-            let mut metadata = range.metadata().clone();
-            if let Some(end_offset) = end_offset {
-                metadata.set_end(end_offset);
-            }
-            if let Some(client) = range.client() {
-                return match client
-                    .seal(
-                        Some(&self.range_server.advertise_address),
-                        SealKind::RANGE_SERVER,
-                        metadata,
-                    )
-                    .await
-                {
-                    Ok(metadata) => {
-                        let end_offset = metadata.end().ok_or(EsError::new(
-                            ErrorCode::UNEXPECTED,
-                            "expect seal response contain end_offset",
-                        ))?;
-                        warn!(
-                            "{}Seal replica success with end_offset {end_offset}",
-                            self.log_ident
-                        );
-                        *self.confirm_offset.borrow_mut() = end_offset;
-                        Ok(end_offset)
-                    }
-                    Err(e) => {
-                        error!("{}Seal replica fail, err: {e}", self.log_ident);
-                        Err(EsError::new(ErrorCode::ERROR_CODE_UNSPECIFIED, "todo"))
-                    }
-                };
-            } else {
-                warn!("{}Client was dropped, aborting seal", self.log_ident);
-                Err(EsError::new(
+        let (range, client) = self.get_client()?;
+        let mut metadata = range.metadata().clone();
+        if let Some(end_offset) = end_offset {
+            metadata.set_end(end_offset);
+        }
+
+        return match client
+            .seal(
+                Some(&self.range_server.advertise_address),
+                SealKind::RANGE_SERVER,
+                metadata,
+            )
+            .await
+        {
+            Ok(metadata) => {
+                let end_offset = metadata.end().ok_or(EsError::new(
                     ErrorCode::UNEXPECTED,
-                    "fetch fail, client was dropped",
-                ))
+                    "expect seal response contain end_offset",
+                ))?;
+                warn!(
+                    "{}Seal replica success with end_offset {end_offset}",
+                    self.log_ident
+                );
+                *self.confirm_offset.borrow_mut() = end_offset;
+                Ok(end_offset)
+            }
+            Err(e) => {
+                error!("{}Seal replica fail, err: {e}", self.log_ident);
+                Err(e)
+            }
+        };
+    }
+
+    fn get_client(&self) -> Result<(Rc<ReplicationRange>, Rc<Client>), EsError> {
+        if let Some(range) = self.range.upgrade() {
+            if let Some(client) = range.client() {
+                Ok((range, client))
+            } else {
+                error!("{}Client was dropped", self.log_ident);
+                Err(EsError::new(ErrorCode::UNEXPECTED, "client was dropped"))
             }
         } else {
-            warn!("{}Range was dropped, aborting seal", self.log_ident);
-            Err(EsError::new(
-                ErrorCode::UNEXPECTED,
-                "fetch fail, range was dropped",
-            ))
+            warn!("{}Range was dropped", self.log_ident);
+            Err(EsError::new(ErrorCode::UNEXPECTED, "range was dropped"))
         }
     }
 

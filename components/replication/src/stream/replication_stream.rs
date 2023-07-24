@@ -84,8 +84,7 @@ impl ReplicationStream {
         if let Some(client) = self.client.upgrade() {
             let range_metadata =
                 ReplicationRange::create(client, self.id, self.epoch, range_index, start_offset)
-                    .await
-                    .map_err(|_| EsError::new(ErrorCode::ERROR_CODE_UNSPECIFIED, "todo"))?;
+                    .await?;
             let range = ReplicationRange::new(
                 range_metadata,
                 true,
@@ -261,7 +260,7 @@ impl Stream for ReplicationStream {
                     "{}Failed to list ranges from placement-driver: {e}",
                     self.log_ident
                 );
-                EsError::new(ErrorCode::ERROR_CODE_UNSPECIFIED, "list ranges fail")
+                e
             })?
             .into_iter()
             // skip old empty range when two range has the same start offset
@@ -294,10 +293,7 @@ impl Stream for ReplicationStream {
                 }
                 Err(e) => {
                     error!("{}Failed to seal range[{range_index}], {e}", self.log_ident);
-                    return Err(EsError::new(
-                        ErrorCode::ERROR_CODE_UNSPECIFIED,
-                        "fail to seal range",
-                    ));
+                    return Err(e);
                 }
             }
         }
@@ -425,8 +421,7 @@ impl Stream for ReplicationStream {
         if last_range.start_offset() <= start_offset {
             return last_range
                 .fetch(start_offset, end_offset, batch_max_bytes)
-                .await
-                .map_err(|_| EsError::new(ErrorCode::ERROR_CODE_UNSPECIFIED, "todo"));
+                .await;
         }
         // Slow path
         // 1. Find the *first* range which match the start_offset.
@@ -451,8 +446,7 @@ impl Stream for ReplicationStream {
                     min(end_offset, range.confirm_offset()),
                     batch_max_bytes,
                 )
-                .await
-                .map_err(|_| EsError::new(ErrorCode::ERROR_CODE_UNSPECIFIED, "todo"))?
+                .await?
             {
                 // Cause of only fetch one range in a time, so the dataset is partial
                 FetchDataset::Full(blocks) => FetchDataset::Partial(blocks),
