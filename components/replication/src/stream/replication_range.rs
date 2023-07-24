@@ -293,14 +293,14 @@ impl ReplicationRange {
             Ok(new_confirm_offset) => {
                 let mut confirm_offset = self.confirm_offset.borrow_mut();
                 match new_confirm_offset.cmp(&confirm_offset) {
-                    Ordering::Equal => {
-                        return;
-                    }
-                    Ordering::Less => {
-                        panic!("Range confirm offset should not decrease, current confirm_offset=[{}], new_confirm_offset=[{}]", *confirm_offset, new_confirm_offset);
-                    }
                     Ordering::Greater => {
                         *confirm_offset = new_confirm_offset;
+                    }
+                    _ => {
+                        // the new_confirm_offset may be less than current offset, in under replicated scenario.
+                        // replicas confirm offsets = [3, 2, 1], then confirm offset is 2
+                        // replicas confirm offsets = [3, corrupted, 1], then confirm offset is 1
+                        return;
                     }
                 }
                 if let Some(stream) = self.stream.upgrade() {
