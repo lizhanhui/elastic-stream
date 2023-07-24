@@ -115,6 +115,8 @@ tempfile = "3"
 
 lru = "0.11.0"
 
+hdrhistogram = "7.5.2"
+
 [profile.dev]
 panic = "unwind"
 

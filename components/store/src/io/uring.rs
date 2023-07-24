@@ -8,20 +8,20 @@ use crate::io::task::WriteTask;
 use crate::io::wal::Wal;
 use crate::io::write_window::WriteWindow;
 use crate::AppendResult;
+use crossbeam::channel::{Receiver, Sender, TryRecvError};
 use io_uring::types::{SubmitArgs, Timespec};
+use io_uring::{opcode, squeue, types};
+use io_uring::{register, Parameters};
+use log::{debug, error, info, trace, warn};
 use minstant::Instant;
 use observation::metrics::uring_metrics::{
     UringStatistics, COMPLETED_READ_IO, COMPLETED_WRITE_IO, INFLIGHT_IO, IO_DEPTH, PENDING_TASK,
     READ_BYTES_TOTAL, READ_IO_LATENCY, WRITE_BYTES_TOTAL, WRITE_IO_LATENCY,
 };
-use std::io;
-
-use crossbeam::channel::{Receiver, Sender, TryRecvError};
-use io_uring::{opcode, squeue, types};
-use io_uring::{register, Parameters};
-use log::{debug, error, info, trace, warn};
 use std::collections::{BTreeMap, HashSet};
+use std::io;
 use std::sync::Arc;
+use std::time::Duration;
 use std::{
     cell::{RefCell, UnsafeCell},
     collections::{HashMap, VecDeque},
@@ -119,6 +119,9 @@ pub(crate) struct IO {
 
     /// Provide index service for building read index, shared with the upper store layer.
     indexer: Arc<IndexDriver>,
+
+    /// Histogram of disk I/O time
+    disk_stats: super::disk_stats::DiskStats,
 }
 
 /// Check if required opcodes are supported by the host operation system.
@@ -154,13 +157,6 @@ fn check_io_uring(probe: &register::Probe, params: &Parameters) -> Result<(), St
         }
     }
     Ok(())
-}
-
-/// A simple macro_rule to log amount of time used to await completion of submitted IO tasks.
-macro_rules! log_disk_perf {
-    ($level:tt, $task:ident, $elapsed:expr) => {
-        $level!("{} took {}ms", $task, $elapsed);
-    };
 }
 
 impl IO {
@@ -230,6 +226,7 @@ impl IO {
             blocked: HashMap::new(),
             resubmit_sqes: VecDeque::new(),
             indexer,
+            disk_stats: super::disk_stats::DiskStats::new(Duration::from_secs(1), u32::MAX as u64),
         })
     }
 
@@ -991,16 +988,8 @@ impl IO {
 
                     // Log slow IO latency
                     if cqe.result() >= 0 {
-                        let elapsed = latency.as_millis();
-                        if elapsed <= 1 {
-                            log_disk_perf!(trace, context, elapsed);
-                        } else if elapsed <= 5 {
-                            log_disk_perf!(debug, context, elapsed);
-                        } else if elapsed <= 10 {
-                            log_disk_perf!(info, context, elapsed);
-                        } else {
-                            log_disk_perf!(warn, context, elapsed);
-                        }
+                        let elapsed = latency.as_micros();
+                        self.disk_stats.record(elapsed as u64);
                     }
 
                     match context.opcode {
@@ -1436,6 +1425,14 @@ impl IO {
                 io_mut.reap_data_tasks();
                 // Perform file operation
                 io_mut.wal.reap_control_tasks()?;
+            }
+
+            // Report disk stats
+            {
+                if !io.borrow().disk_stats.is_ready() {
+                    continue;
+                }
+                io.borrow_mut().disk_stats.report();
             }
         }
         info!("Main loop quit");
