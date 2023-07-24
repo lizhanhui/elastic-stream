@@ -1,9 +1,7 @@
 use bytes::Bytes;
-use model::RecordBatch;
+use model::{error::EsError, RecordBatch};
 use std::time::Duration;
 use tokio::sync::oneshot;
-
-use crate::ReplicationError;
 
 #[derive(Debug)]
 pub struct AppendRequest {
@@ -65,36 +63,36 @@ pub struct TrimRequest {
 pub(crate) enum Request {
     Append {
         request: AppendRequest,
-        tx: oneshot::Sender<Result<AppendResponse, ReplicationError>>,
+        tx: oneshot::Sender<Result<AppendResponse, EsError>>,
     },
     Read {
         request: ReadRequest,
-        tx: oneshot::Sender<Result<ReadResponse, ReplicationError>>,
+        tx: oneshot::Sender<Result<ReadResponse, EsError>>,
     },
     CreateStream {
         request: CreateStreamRequest,
-        tx: oneshot::Sender<Result<CreateStreamResponse, ReplicationError>>,
+        tx: oneshot::Sender<Result<CreateStreamResponse, EsError>>,
     },
     OpenStream {
         request: OpenStreamRequest,
-        tx: oneshot::Sender<Result<OpenStreamResponse, ReplicationError>>,
+        tx: oneshot::Sender<Result<OpenStreamResponse, EsError>>,
     },
     CloseStream {
         request: CloseStreamRequest,
-        tx: oneshot::Sender<Result<(), ReplicationError>>,
+        tx: oneshot::Sender<Result<(), EsError>>,
     },
     StartOffset {
         // stream id
         request: u64,
-        tx: oneshot::Sender<Result<u64, ReplicationError>>,
+        tx: oneshot::Sender<Result<u64, EsError>>,
     },
     NextOffset {
         // stream id
         request: u64,
-        tx: oneshot::Sender<Result<u64, ReplicationError>>,
+        tx: oneshot::Sender<Result<u64, EsError>>,
     },
     Trim {
         request: TrimRequest,
-        tx: oneshot::Sender<Result<(), ReplicationError>>,
+        tx: oneshot::Sender<Result<(), EsError>>,
     },
 }

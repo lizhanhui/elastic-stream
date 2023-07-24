@@ -20,6 +20,14 @@ impl EsError {
         }
     }
 
+    pub fn unexpected(message: &str) -> Self {
+        Self {
+            code: ErrorCode::UNEXPECTED,
+            message: message.to_string(),
+            source: None,
+        }
+    }
+
     pub fn set_source(mut self, src: impl Into<anyhow::Error>) -> Self {
         debug_assert!(self.source.is_none(), "the source error has been set");
 

@@ -2,9 +2,10 @@ use std::time::Duration;
 
 use bytes::Bytes;
 use jni::objects::GlobalRef;
+use model::error::EsError;
 
 use super::tracing::Tracer;
-use crate::{ClientError, Frontend, Stream};
+use crate::{Frontend, Stream};
 
 pub enum Command<'a> {
     CreateStream {
@@ -83,6 +84,6 @@ pub enum CallbackCommand {
     },
     ClientError {
         future: GlobalRef,
-        err: ClientError,
+        err: EsError,
     },
 }

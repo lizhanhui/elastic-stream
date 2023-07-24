@@ -1,6 +1,6 @@
 use std::{sync::Arc, time::Duration};
 
-use log::{error, info, trace};
+use model::error::EsError;
 use tokio::sync::{mpsc, oneshot};
 
 use crate::{
@@ -9,7 +9,6 @@ use crate::{
         ReadRequest, ReadResponse, Request, TrimRequest,
     },
     stream::stream_manager::StreamManager,
-    ReplicationError,
 };
 
 /// `StreamClient` is designed to be `Send`
@@ -72,7 +71,7 @@ impl StreamClient {
         replica: u8,
         ack_count: u8,
         retention_period: Duration,
-    ) -> Result<u64, ReplicationError> {
+    ) -> Result<u64, EsError> {
         let request = CreateStreamRequest {
             replica,
             ack_count,
@@ -81,155 +80,97 @@ impl StreamClient {
 
         let (tx, rx) = oneshot::channel();
         let req = Request::CreateStream { request, tx };
-        if let Err(e) = self.tx.send(req) {
-            error!("Failed to dispatch create-stream request to stream manager {e}");
-            return Err(ReplicationError::Internal);
-        }
-
-        match rx.await {
-            Ok(resp) => resp.map(|res| res.stream_id),
-            Err(e) => {
-                error!(
-                    "Failed to receive create-stream response from internal stream manager: {e}"
-                );
-                Err(ReplicationError::RpcTimeout)
-            }
-        }
+        self.tx.send(req).expect("create stream send request to tx");
+        rx.await
+            .unwrap_or_else(|_| {
+                Err(EsError::unexpected(
+                    "create stream fail to receive response from rx",
+                ))
+            })
+            .map(|res| res.stream_id)
     }
 
-    pub async fn open_stream(&self, stream_id: u64, epoch: u64) -> Result<(), ReplicationError> {
+    pub async fn open_stream(&self, stream_id: u64, epoch: u64) -> Result<(), EsError> {
         let request = OpenStreamRequest { stream_id, epoch };
-
         let (tx, rx) = oneshot::channel();
         let req = Request::OpenStream { request, tx };
-        if let Err(e) = self.tx.send(req) {
-            error!("Failed to dispatch open-stream request to stream manager {e}");
-            return Err(ReplicationError::Internal);
-        }
-
+        self.tx.send(req).expect("open stream send request to tx");
         rx.await
-            .map_err(|e| {
-                error!("Failed to receive open-stream response from internal stream manager: {e}");
-                ReplicationError::RpcTimeout
-            })?
-            .map(|_res| {
-                info!("Open stream[id={stream_id}, epoch={epoch}] OK");
+            .unwrap_or_else(|_| {
+                Err(EsError::unexpected(
+                    "open stream fail to receive response from rx",
+                ))
             })
+            .map(|_| ())
     }
 
-    pub async fn close_stream(&self, stream_id: u64) -> Result<(), ReplicationError> {
+    pub async fn close_stream(&self, stream_id: u64) -> Result<(), EsError> {
         let request = CloseStreamRequest { stream_id };
-
         let (tx, rx) = oneshot::channel();
         let req = Request::CloseStream { request, tx };
-        if let Err(e) = self.tx.send(req) {
-            error!("Failed to dispatch open-stream request to stream manager {e}");
-            return Err(ReplicationError::Internal);
-        }
-
-        rx.await
-            .map_err(|e| {
-                error!("Failed to receive close-stream response from internal stream manager: {e}");
-                ReplicationError::RpcTimeout
-            })?
-            .map(|_res| {
-                info!("Close stream[id={stream_id}] OK");
-            })
+        self.tx.send(req).expect("close stream send request to tx");
+        rx.await.unwrap_or_else(|_| {
+            Err(EsError::unexpected(
+                "close stream fail to receive response from rx",
+            ))
+        })
     }
 
-    pub async fn append(&self, request: AppendRequest) -> Result<AppendResponse, ReplicationError> {
+    pub async fn append(&self, request: AppendRequest) -> Result<AppendResponse, EsError> {
         let (tx, rx) = oneshot::channel();
         let req = Request::Append { tx, request };
-        if let Err(e) = self.tx.send(req) {
-            error!("Failed to dispatch request to stream-manager {e}");
-            return Err(ReplicationError::Internal);
-        }
-        trace!("Submitted append request to internal stream manager and await response");
-
-        match rx.await {
-            Ok(result) => result,
-            Err(e) => {
-                error!("Failed to receive append response from internal stream manager: {e}");
-                Err(ReplicationError::RpcTimeout)
-            }
-        }
+        self.tx.send(req).expect("append send request to tx");
+        rx.await.unwrap_or_else(|_| {
+            Err(EsError::unexpected(
+                "append receive fail to receive response from rx",
+            ))
+        })
     }
 
-    pub async fn read(&self, request: ReadRequest) -> Result<ReadResponse, ReplicationError> {
+    pub async fn read(&self, request: ReadRequest) -> Result<ReadResponse, EsError> {
         let (tx, rx) = oneshot::channel();
         let req = Request::Read { tx, request };
-        if let Err(e) = self.tx.send(req) {
-            error!("Failed to dispatch request to stream-manager {e}");
-            return Err(ReplicationError::Internal);
-        }
-        trace!("Submitted read request to internal stream manager and await response");
-
-        match rx.await {
-            Ok(result) => result,
-            Err(e) => {
-                error!("Failed to receive read response from stream manager: {e}");
-                Err(ReplicationError::RpcTimeout)
-            }
-        }
+        self.tx.send(req).expect("read send request to tx");
+        rx.await.unwrap_or_else(|_| {
+            Err(EsError::unexpected(
+                "read receive fail to receive response from rx",
+            ))
+        })
     }
 
-    pub async fn start_offset(&self, stream_id: u64) -> Result<u64, ReplicationError> {
+    pub async fn start_offset(&self, stream_id: u64) -> Result<u64, EsError> {
         let (tx, rx) = oneshot::channel();
         let req = Request::StartOffset {
             request: stream_id,
             tx,
         };
-        if let Err(e) = self.tx.send(req) {
-            error!("Failed to dispatch request to stream-manager {e}");
-            return Err(ReplicationError::Internal);
-        }
-        trace!("Submitted min offset request to internal stream manager and await response");
-
-        match rx.await {
-            Ok(result) => result,
-            Err(e) => {
-                error!("Failed to receive read response from stream manager: {e}");
-                Err(ReplicationError::RpcTimeout)
-            }
-        }
+        self.tx.send(req).expect("start offset send request to tx");
+        rx.await.unwrap_or_else(|_| {
+            Err(EsError::unexpected(
+                "start offset fail to receive response from rx",
+            ))
+        })
     }
 
-    pub async fn next_offset(&self, stream_id: u64) -> Result<u64, ReplicationError> {
+    pub async fn next_offset(&self, stream_id: u64) -> Result<u64, EsError> {
         let (tx, rx) = oneshot::channel();
         let req = Request::NextOffset {
             request: stream_id,
             tx,
         };
-        if let Err(e) = self.tx.send(req) {
-            error!("Failed to dispatch request to stream-manager {e}");
-            return Err(ReplicationError::Internal);
-        }
-        trace!("Submitted next offset request to internal stream manager and await response");
-
-        match rx.await {
-            Ok(result) => result,
-            Err(e) => {
-                error!("Failed to receive read response from stream manager: {e}");
-                Err(ReplicationError::RpcTimeout)
-            }
-        }
+        self.tx.send(req).expect("next offset send request to tx");
+        rx.await.unwrap_or_else(|_| {
+            Err(EsError::unexpected(
+                "next offset fail to receive response from rx",
+            ))
+        })
     }
 
-    pub async fn trim(&self, request: TrimRequest) -> Result<(), ReplicationError> {
+    pub async fn trim(&self, request: TrimRequest) -> Result<(), EsError> {
         let (tx, rx) = oneshot::channel();
         let req = Request::Trim { request, tx };
-        if let Err(e) = self.tx.send(req) {
-            error!("Failed to dispatch request to stream-manager {e}");
-            return Err(ReplicationError::Internal);
-        }
-        trace!("Submitted trim request to internal stream manager and await response");
-
-        match rx.await {
-            Ok(result) => result,
-            Err(e) => {
-                error!("Failed to receive read response from stream manager: {e}");
-                Err(ReplicationError::RpcTimeout)
-            }
-        }
+        self.tx.send(req).expect("trim send request to tx");
+        rx.await
+            .unwrap_or_else(|_| Err(EsError::unexpected("trim fail to receive response from rx")))
     }
 }

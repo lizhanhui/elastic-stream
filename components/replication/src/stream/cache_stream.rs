@@ -41,6 +41,17 @@ where
         end_offset: u64,
         mut batch_max_bytes: u32,
     ) -> Result<FetchDataset, EsError> {
+        let stream_start_offset = self.start_offset();
+        let stream_end_offset = self.confirm_offset();
+        if start_offset < stream_start_offset || end_offset > stream_end_offset {
+            return Err(EsError::new(
+                ErrorCode::OFFSET_OUT_OF_RANGE_BOUNDS,
+                &format!(
+                    "[{start_offset}, {end_offset} is out of stream bound [{stream_start_offset},{stream_end_offset})",
+                ),
+            ));
+        }
+
         let mut blocks = vec![];
 
         // 1. try read from hot cache.
@@ -78,7 +89,7 @@ where
         // 3. read from stream.
         // double the end_offset and size to readahead.
         let readahead_end_offset = min(
-            self.stream.confirm_offset(),
+            stream_end_offset,
             start_offset + (end_offset - start_offset) * 2,
         );
         let readahead_batch_max_bytes = block_size_align(batch_max_bytes * 2);

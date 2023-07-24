@@ -7,6 +7,7 @@ use jni::{JNIEnv, JavaVM};
 use log::{error, info, trace};
 use minitrace::future::FutureExt;
 use minitrace::Span;
+use model::error::EsError;
 use std::alloc::Layout;
 use std::cell::{OnceCell, RefCell};
 use std::ffi::c_void;
@@ -15,7 +16,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc;
 
-use crate::{ClientError, Frontend, Stopwatch, Stream, StreamOptions};
+use crate::{Frontend, Stopwatch, Stream, StreamOptions};
 use crossbeam::channel::{unbounded, Sender};
 
 use super::cmd::{CallbackCommand, Command};
@@ -23,7 +24,6 @@ use super::tracing::{Tracer, TracingService};
 
 static mut TX: OnceCell<mpsc::UnboundedSender<Command>> = OnceCell::new();
 static mut CALLBACK_TX: OnceCell<Sender<CallbackCommand>> = OnceCell::new();
-// TODO: Add exception class cache
 static mut STREAM_CLASS_CACHE: OnceCell<GlobalRef> = OnceCell::new();
 static mut STREAM_CTOR_CACHE: OnceCell<JMethodID> = OnceCell::new();
 static mut JLONG_CLASS_CACHE: OnceCell<GlobalRef> = OnceCell::new();
@@ -32,6 +32,9 @@ static mut VOID_CLASS_CACHE: OnceCell<GlobalRef> = OnceCell::new();
 static mut VOID_CTOR_CACHE: OnceCell<JMethodID> = OnceCell::new();
 static mut FUTURE_COMPLETE_CACHE: OnceCell<JMethodID> = OnceCell::new();
 static mut TRACING_SERVICE: OnceCell<TracingService> = OnceCell::new();
+static mut ES_EXCEPTION_CLASS_CACHE: OnceCell<GlobalRef> = OnceCell::new();
+static mut ES_EXCEPTION_CTOR_CACHE: OnceCell<JMethodID> = OnceCell::new();
+
 thread_local! {
     static JAVA_VM: RefCell<Option<Arc<JavaVM>>> = RefCell::new(None);
     static JENV: RefCell<Option<*mut jni::sys::JNIEnv>> = RefCell::new(None);
@@ -297,6 +300,14 @@ pub extern "system" fn JNI_OnLoad(vm: JavaVM, _: *mut c_void) -> jint {
     let future_complete_method = env
         .get_method_id(completable_future_path, "complete", "(Ljava/lang/Object;)Z")
         .unwrap();
+
+    let es_exception_path = "com/automq/elasticstream/client/api/ElasticStreamClientException";
+    let es_exception_class = env.find_class(es_exception_path).unwrap();
+    let es_exception_class = env.new_global_ref(es_exception_class).unwrap();
+    let es_exception_ctor = env
+        .get_method_id(es_exception_path, "<init>", "(ILjava/lang/String;)V")
+        .unwrap();
+
     unsafe { STREAM_CLASS_CACHE.set(stream_class).unwrap() };
     unsafe { STREAM_CTOR_CACHE.set(stream_ctor).unwrap() };
     unsafe { VOID_CLASS_CACHE.set(void_class).unwrap() };
@@ -304,6 +315,8 @@ pub extern "system" fn JNI_OnLoad(vm: JavaVM, _: *mut c_void) -> jint {
     unsafe { JLONG_CLASS_CACHE.set(jlong_class).unwrap() };
     unsafe { JLONG_CTOR_CACHE.set(jlong_ctor).unwrap() };
     unsafe { FUTURE_COMPLETE_CACHE.set(future_complete_method).unwrap() };
+    unsafe { ES_EXCEPTION_CLASS_CACHE.set(es_exception_class).unwrap() };
+    unsafe { ES_EXCEPTION_CTOR_CACHE.set(es_exception_ctor).unwrap() };
 
     // Callback thread number is between [2, 4].
     let cpu_sum = std::cmp::max(std::cmp::min(num_cpus::get(), 4), 2);
@@ -841,277 +854,21 @@ fn call_future_complete_method(mut env: JNIEnv, future: GlobalRef, obj: JObject)
     }
 }
 
-fn call_future_complete_exceptionally_method(
-    env: &mut JNIEnv,
-    future: GlobalRef,
-    err: ClientError,
-) {
-    let class_path_pre = "com/automq/elasticstream/client/api/ElasticStreamClientException$";
-    let ctor_sig_string = "(Ljava/lang/String;)V";
-    let ctor_sig_long = "(J)V";
-    let ctor_sig_void = "()V";
-    let ctor_sig_int = "(I)V";
-    let obj = match err {
-        ClientError::ConnectionTimeout => {
-            let exception_class = env.find_class(class_path_pre.to_owned() + "ConnectionTimeout");
-            match exception_class {
-                Ok(exception_class) => env.new_object(exception_class, ctor_sig_void, &[]),
-                Err(err) => Err(err),
-            }
-        }
-        ClientError::ConnectionReset(str) => {
-            let exception_class = env.find_class(class_path_pre.to_owned() + "ConnectionReset");
-            let str = env.new_string(str);
-            match (exception_class, str) {
-                (Ok(exception_class), Ok(str)) => env.new_object(
-                    exception_class,
-                    ctor_sig_string,
-                    &[JValue::Object(str.as_ref())],
-                ),
-                (Err(err), _) => Err(err),
-                (_, Err(err)) => Err(err),
-            }
-        }
-        ClientError::StreamNotFound(stream_id) => {
-            let exception_class = env.find_class(class_path_pre.to_owned() + "StreamNotFound");
-            match exception_class {
-                Ok(exception_class) => env.new_object(
-                    exception_class,
-                    ctor_sig_long,
-                    &[jni::objects::JValueGen::Long(stream_id)],
-                ),
-                Err(err) => Err(err),
-            }
-        }
-        ClientError::BrokenChannel(str) => {
-            let exception_class = env.find_class(class_path_pre.to_owned() + "BrokenChannel");
-            let str = env.new_string(str);
-            match (exception_class, str) {
-                (Ok(exception_class), Ok(str)) => env.new_object(
-                    exception_class,
-                    ctor_sig_string,
-                    &[JValue::Object(str.as_ref())],
-                ),
-                (Err(err), _) => Err(err),
-                (_, Err(err)) => Err(err),
-            }
-        }
-        ClientError::RpcClientError(err) => {
-            let class_path_pre =
-                "com/automq/elasticstream/client/api/ElasticStreamClientException$RpcClientError";
-            match err {
-                client::error::ClientError::BadAddress => {
-                    let exception_class = env.find_class(class_path_pre.to_owned() + "BadAddress");
-                    match exception_class {
-                        Ok(exception_class) => env.new_object(exception_class, ctor_sig_void, &[]),
-                        Err(err) => Err(err),
-                    }
-                }
-                client::error::ClientError::BadRequest => {
-                    let exception_class = env.find_class(class_path_pre.to_owned() + "BadRequest");
-                    match exception_class {
-                        Ok(exception_class) => env.new_object(exception_class, ctor_sig_void, &[]),
-                        Err(err) => Err(err),
-                    }
-                }
-                client::error::ClientError::ConnectionRefused(str) => {
-                    let exception_class =
-                        env.find_class(class_path_pre.to_owned() + "ConnectionRefused");
-                    let str = env.new_string(str);
-                    match (exception_class, str) {
-                        (Ok(exception_class), Ok(str)) => env.new_object(
-                            exception_class,
-                            ctor_sig_string,
-                            &[JValue::Object(str.as_ref())],
-                        ),
-                        (Err(err), _) => Err(err),
-                        (_, Err(err)) => Err(err),
-                    }
-                }
-                client::error::ClientError::ConnectTimeout(str) => {
-                    let exception_class =
-                        env.find_class(class_path_pre.to_owned() + "ConnectTimeout");
-                    let str = env.new_string(str);
-                    match (exception_class, str) {
-                        (Ok(exception_class), Ok(str)) => env.new_object(
-                            exception_class,
-                            ctor_sig_string,
-                            &[JValue::Object(str.as_ref())],
-                        ),
-                        (Err(err), _) => Err(err),
-                        (_, Err(err)) => Err(err),
-                    }
-                }
-                client::error::ClientError::ConnectFailure(str) => {
-                    let exception_class =
-                        env.find_class(class_path_pre.to_owned() + "ConnectFailure");
-                    let str = env.new_string(str);
-                    match (exception_class, str) {
-                        (Ok(exception_class), Ok(str)) => env.new_object(
-                            exception_class,
-                            ctor_sig_string,
-                            &[JValue::Object(str.as_ref())],
-                        ),
-                        (Err(err), _) => Err(err),
-                        (_, Err(err)) => Err(err),
-                    }
-                }
-                client::error::ClientError::DisableNagleAlgorithm => {
-                    let exception_class =
-                        env.find_class(class_path_pre.to_owned() + "DisableNagleAlgorithm");
-                    match exception_class {
-                        Ok(exception_class) => env.new_object(exception_class, ctor_sig_void, &[]),
-                        Err(err) => Err(err),
-                    }
-                }
-                client::error::ClientError::ChannelClosing(str) => {
-                    let exception_class =
-                        env.find_class(class_path_pre.to_owned() + "ChannelClosing");
-                    let str = env.new_string(str);
-                    match (exception_class, str) {
-                        (Ok(exception_class), Ok(str)) => env.new_object(
-                            exception_class,
-                            ctor_sig_string,
-                            &[JValue::Object(str.as_ref())],
-                        ),
-                        (Err(err), _) => Err(err),
-                        (_, Err(err)) => Err(err),
-                    }
-                }
-                client::error::ClientError::Append(err) => {
-                    let exception_class = env.find_class(class_path_pre.to_owned() + "Append");
-                    match exception_class {
-                        Ok(exception_class) => env.new_object(
-                            exception_class,
-                            ctor_sig_int,
-                            &[jni::objects::JValueGen::Int(err.0 as i32)],
-                        ),
-                        Err(err) => Err(err),
-                    }
-                }
-                client::error::ClientError::CreateRange(err) => {
-                    let exception_class = env.find_class(class_path_pre.to_owned() + "CreateRange");
-                    match exception_class {
-                        Ok(exception_class) => env.new_object(
-                            exception_class,
-                            ctor_sig_int,
-                            &[jni::objects::JValueGen::Int(err.0 as i32)],
-                        ),
-                        Err(err) => Err(err),
-                    }
-                }
-                client::error::ClientError::ServerInternal => {
-                    let exception_class =
-                        env.find_class(class_path_pre.to_owned() + "ServerInternal");
-                    match exception_class {
-                        Ok(exception_class) => env.new_object(exception_class, ctor_sig_void, &[]),
-                        Err(err) => Err(err),
-                    }
-                }
-                client::error::ClientError::ClientInternal => {
-                    let exception_class =
-                        env.find_class(class_path_pre.to_owned() + "ClientInternal");
-                    match exception_class {
-                        Ok(exception_class) => env.new_object(exception_class, ctor_sig_void, &[]),
-                        Err(err) => Err(err),
-                    }
-                }
-                client::error::ClientError::RpcTimeout { timeout } => {
-                    let exception_class = env.find_class(class_path_pre.to_owned() + "RpcTimeout");
-                    match exception_class {
-                        Ok(exception_class) => env.new_object(
-                            exception_class,
-                            ctor_sig_long,
-                            &[jni::objects::JValueGen::Long(timeout.as_millis() as i64)],
-                        ),
-                        Err(err) => Err(err),
-                    }
-                }
-            }
-        }
-        ClientError::Replication(err) => {
-            let class_path_pre =
-                "com/automq/elasticstream/client/api/ElasticStreamClientException$Replication";
-            match err {
-                replication::ReplicationError::RpcTimeout => {
-                    let exception_class = env.find_class(class_path_pre.to_owned() + "RpcTimeout");
-                    match exception_class {
-                        Ok(exception_class) => env.new_object(exception_class, ctor_sig_void, &[]),
-                        Err(err) => Err(err),
-                    }
-                }
-                replication::ReplicationError::Internal => {
-                    let exception_class = env.find_class(class_path_pre.to_owned() + "Internal");
-                    match exception_class {
-                        Ok(exception_class) => env.new_object(exception_class, ctor_sig_void, &[]),
-                        Err(err) => Err(err),
-                    }
-                }
-                replication::ReplicationError::AlreadySealed => {
-                    let exception_class =
-                        env.find_class(class_path_pre.to_owned() + "AlreadySealed");
-                    match exception_class {
-                        Ok(exception_class) => env.new_object(exception_class, ctor_sig_void, &[]),
-                        Err(err) => Err(err),
-                    }
-                }
-                replication::ReplicationError::PreconditionRequired => {
-                    let exception_class =
-                        env.find_class(class_path_pre.to_owned() + "PreconditionRequired");
-                    match exception_class {
-                        Ok(exception_class) => env.new_object(exception_class, ctor_sig_void, &[]),
-                        Err(err) => Err(err),
-                    }
-                }
-                replication::ReplicationError::AlreadyClosed => {
-                    let exception_class =
-                        env.find_class(class_path_pre.to_owned() + "AlreadyClosed");
-                    match exception_class {
-                        Ok(exception_class) => env.new_object(exception_class, ctor_sig_void, &[]),
-                        Err(err) => Err(err),
-                    }
-                }
-                replication::ReplicationError::SealReplicaNotEnough => {
-                    let exception_class =
-                        env.find_class(class_path_pre.to_owned() + "SealReplicaNotEnough");
-                    match exception_class {
-                        Ok(exception_class) => env.new_object(exception_class, ctor_sig_void, &[]),
-                        Err(err) => Err(err),
-                    }
-                }
-                replication::ReplicationError::FetchOutOfRange => {
-                    let exception_class =
-                        env.find_class(class_path_pre.to_owned() + "FetchOutOfRange");
-                    match exception_class {
-                        Ok(exception_class) => env.new_object(exception_class, ctor_sig_void, &[]),
-                        Err(err) => Err(err),
-                    }
-                }
-                replication::ReplicationError::StreamNotExist => {
-                    let exception_class =
-                        env.find_class(class_path_pre.to_owned() + "StreamNotExist");
-                    match exception_class {
-                        Ok(exception_class) => env.new_object(exception_class, ctor_sig_void, &[]),
-                        Err(err) => Err(err),
-                    }
-                }
-            }
-        }
-        ClientError::Internal(str) => {
-            let exception_class = env.find_class(class_path_pre.to_owned() + "Internal");
-            let str = env.new_string(str);
-            match (exception_class, str) {
-                (Ok(exception_class), Ok(str)) => env.new_object(
-                    exception_class,
-                    ctor_sig_string,
-                    &[JValue::Object(str.as_ref())],
-                ),
-                (Err(err), _) => Err(err),
-                (_, Err(err)) => Err(err),
-            }
-        }
+fn call_future_complete_exceptionally_method(env: &mut JNIEnv, future: GlobalRef, err: EsError) {
+    let obj = unsafe {
+        let error_message = match env.new_string(err.message) {
+            Ok(s) => s,
+            Err(_) => panic!("Failed to create error message"),
+        };
+        env.new_object_unchecked(
+            ES_EXCEPTION_CLASS_CACHE.get().unwrap(),
+            *ES_EXCEPTION_CTOR_CACHE.get().unwrap(),
+            &[
+                JValue::Int(err.code.0 as i32).as_jni(),
+                JValue::Object(error_message.as_ref()).as_jni(),
+            ],
+        )
     };
-
     if let Ok(obj) = obj {
         let s = JValueGen::from(obj);
         let _stopwatch = Stopwatch::new("Future#completeExceptionally", Duration::from_millis(1));
@@ -1234,16 +991,13 @@ fn complete_future_with_byte_array(future: GlobalRef, buffers: Vec<Bytes>) {
             }
             call_future_complete_method(env, future, JObject::from(byte_array));
         } else {
-            complete_future_with_error(
-                future,
-                ClientError::Internal("Failed to create byte array".to_string()),
-            );
+            complete_future_with_error(future, EsError::unexpected("Failed to create byte array"));
             error!("Failed to create byte array");
         }
     });
 }
 
-fn complete_future_with_error(future: GlobalRef, err: ClientError) {
+fn complete_future_with_error(future: GlobalRef, err: EsError) {
     JENV.with(|cell| {
         let mut env = get_thread_local_jenv(cell);
         call_future_complete_exceptionally_method(&mut env, future, err);
@@ -1278,13 +1032,13 @@ fn complete_future_with_direct_byte_buffer(future: GlobalRef, buffers: Vec<Bytes
             } else {
                 complete_future_with_error(
                     future,
-                    ClientError::Internal("Failed to create a new direct_byte_buffer".to_string()),
+                    EsError::unexpected("Failed to create a new direct_byte_buffer"),
                 );
                 error!("Failed to create a new direct_byte_buffer");
             }
         });
     } else {
-        complete_future_with_error(future, ClientError::Internal("Bad alignment".to_string()));
+        complete_future_with_error(future, EsError::unexpected("Bad alignment"));
         error!("Bad alignment");
     }
 }

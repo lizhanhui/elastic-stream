@@ -1,10 +1,11 @@
 use std::{cell::RefCell, sync::Arc};
 
-use crate::{ClientError, Stream, StreamOptions};
+use crate::{Stream, StreamOptions};
 
 use config::Configuration;
 use log::info;
-use replication::{ReplicationError, StreamClient};
+use model::error::EsError;
+use replication::StreamClient;
 
 #[derive(Debug, Clone)]
 pub struct Frontend {
@@ -15,7 +16,7 @@ pub struct Frontend {
 }
 
 impl Frontend {
-    pub fn new(access_point: &str) -> Result<Self, ClientError> {
+    pub fn new(access_point: &str) -> Result<Self, EsError> {
         info!("New frontend with access-point: {access_point}");
         let mut config = Configuration {
             placement_driver: access_point.to_owned(),
@@ -37,7 +38,7 @@ impl Frontend {
         })
     }
 
-    pub async fn create(&self, options: StreamOptions) -> Result<u64, ClientError> {
+    pub async fn create(&self, options: StreamOptions) -> Result<u64, EsError> {
         info!("Creating stream {options:?}");
         let stream_id = self.stream_clients[0]
             .create_stream(options.replica, options.ack, options.retention)
@@ -46,7 +47,7 @@ impl Frontend {
         Ok(stream_id)
     }
 
-    pub async fn open(&self, stream_id: u64, epoch: u64) -> Result<Stream, ClientError> {
+    pub async fn open(&self, stream_id: u64, epoch: u64) -> Result<Stream, EsError> {
         info!("Opening stream[id={stream_id}]");
         let stream_client = self.route_client()?;
         stream_client.open_stream(stream_id, epoch).await?;
@@ -54,7 +55,7 @@ impl Frontend {
         Ok(Stream::new(stream_id, stream_client))
     }
 
-    fn route_client(&self) -> Result<StreamClient, ReplicationError> {
+    fn route_client(&self) -> Result<StreamClient, EsError> {
         debug_assert!(
             !self.stream_clients.is_empty(),
             "Clients should NOT be empty"
@@ -64,6 +65,9 @@ impl Frontend {
         self.stream_clients
             .get(index)
             .cloned()
-            .ok_or(ReplicationError::Internal)
+            .ok_or(EsError::unexpected(&format!(
+                "Cannot find client for index {}",
+                index
+            )))
     }
 }

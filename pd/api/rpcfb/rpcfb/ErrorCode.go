@@ -49,6 +49,7 @@ const (
 	ErrorCodeCONNECT_FAIL                  ErrorCode = 1485
 	ErrorCodeCONNECT_TIMEOUT               ErrorCode = 1486
 	ErrorCodeCONNECT_DISABLE_NAGLE_FAIL    ErrorCode = 1487
+	ErrorCodeSTREAM_NOT_EXIST              ErrorCode = 1488
 	ErrorCodeUNSUPPORTED_OPERATION         ErrorCode = 1498
 	ErrorCodeUNKNOWN_OPERATION             ErrorCode = 1499
 	ErrorCodePD_INTERNAL_SERVER_ERROR      ErrorCode = 1500
@@ -106,6 +107,7 @@ var EnumNamesErrorCode = map[ErrorCode]string{
 	ErrorCodeCONNECT_FAIL:                  "CONNECT_FAIL",
 	ErrorCodeCONNECT_TIMEOUT:               "CONNECT_TIMEOUT",
 	ErrorCodeCONNECT_DISABLE_NAGLE_FAIL:    "CONNECT_DISABLE_NAGLE_FAIL",
+	ErrorCodeSTREAM_NOT_EXIST:              "STREAM_NOT_EXIST",
 	ErrorCodeUNSUPPORTED_OPERATION:         "UNSUPPORTED_OPERATION",
 	ErrorCodeUNKNOWN_OPERATION:             "UNKNOWN_OPERATION",
 	ErrorCodePD_INTERNAL_SERVER_ERROR:      "PD_INTERNAL_SERVER_ERROR",
@@ -163,6 +165,7 @@ var EnumValuesErrorCode = map[string]ErrorCode{
 	"CONNECT_FAIL":                  ErrorCodeCONNECT_FAIL,
 	"CONNECT_TIMEOUT":               ErrorCodeCONNECT_TIMEOUT,
 	"CONNECT_DISABLE_NAGLE_FAIL":    ErrorCodeCONNECT_DISABLE_NAGLE_FAIL,
+	"STREAM_NOT_EXIST":              ErrorCodeSTREAM_NOT_EXIST,
 	"UNSUPPORTED_OPERATION":         ErrorCodeUNSUPPORTED_OPERATION,
 	"UNKNOWN_OPERATION":             ErrorCodeUNKNOWN_OPERATION,
 	"PD_INTERNAL_SERVER_ERROR":      ErrorCodePD_INTERNAL_SERVER_ERROR,

@@ -8,7 +8,8 @@ use std::{
 use client::Client;
 use config::Configuration;
 use log::{error, warn};
-use model::{client_role::ClientRole, stream::StreamMetadata};
+use model::{client_role::ClientRole, error::EsError, stream::StreamMetadata};
+use protocol::rpc::header::ErrorCode;
 use tokio::sync::{broadcast, oneshot};
 
 use crate::{
@@ -18,7 +19,6 @@ use crate::{
         TrimRequest,
     },
     stream::replication_stream::ReplicationStream,
-    ReplicationError,
 };
 
 use super::{
@@ -68,14 +68,14 @@ impl StreamManager {
         }
     }
 
-    fn route_client(&mut self) -> Result<Rc<Client>, ReplicationError> {
+    fn route_client(&mut self) -> Result<Rc<Client>, EsError> {
         debug_assert!(!self.clients.is_empty(), "Clients should NOT be empty");
         let index = self.round_robin % self.clients.len();
         self.round_robin += 1;
-        self.clients
-            .get(index)
-            .cloned()
-            .ok_or(ReplicationError::Internal)
+        self.clients.get(index).cloned().ok_or(EsError::new(
+            ErrorCode::UNEXPECTED,
+            &format!("Cannot find client for index {}", index),
+        ))
     }
 
     fn schedule_heartbeat(client: &Rc<Client>, interval: std::time::Duration) {
@@ -95,7 +95,7 @@ impl StreamManager {
     pub fn append(
         &mut self,
         request: AppendRequest,
-        tx: oneshot::Sender<Result<AppendResponse, ReplicationError>>,
+        tx: oneshot::Sender<Result<AppendResponse, EsError>>,
     ) {
         let stream = self.streams.borrow().get(&request.stream_id).map(Rc::clone);
         if let Some(stream) = stream {
@@ -103,19 +103,18 @@ impl StreamManager {
                 let result = stream
                     .append(request.record_batch)
                     .await
-                    .map(|offset| AppendResponse { offset })
-                    .map_err(|_| ReplicationError::Internal);
+                    .map(|offset| AppendResponse { offset });
                 let _ = tx.send(result);
             });
         } else {
-            let _ = tx.send(Err(ReplicationError::StreamNotExist));
+            let _ = tx.send(Err(stream_not_exist(request.stream_id)));
         }
     }
 
     pub fn fetch(
         &mut self,
         request: ReadRequest,
-        tx: oneshot::Sender<Result<ReadResponse, ReplicationError>>,
+        tx: oneshot::Sender<Result<ReadResponse, EsError>>,
     ) {
         let stream = self.streams.borrow().get(&request.stream_id).map(Rc::clone);
         if let Some(stream) = stream {
@@ -129,8 +128,8 @@ impl StreamManager {
                     .await;
                 let dataset = match result {
                     Ok(dataset) => dataset,
-                    Err(_) => {
-                        let _ = tx.send(Err(ReplicationError::Internal));
+                    Err(e) => {
+                        let _ = tx.send(Err(e));
                         return;
                     }
                 };
@@ -144,18 +143,21 @@ impl StreamManager {
                     let _ = tx.send(Ok(ReadResponse { data }));
                 } else {
                     error!("Fetch dataset should be full");
-                    let _ = tx.send(Err(ReplicationError::Internal));
+                    let _ = tx.send(Err(EsError::new(
+                        ErrorCode::UNEXPECTED,
+                        "Fetch dataset should be full",
+                    )));
                 }
             });
         } else {
-            let _ = tx.send(Err(ReplicationError::StreamNotExist));
+            let _ = tx.send(Err(stream_not_exist(request.stream_id)));
         }
     }
 
     pub fn create(
         &mut self,
         request: CreateStreamRequest,
-        tx: oneshot::Sender<Result<CreateStreamResponse, ReplicationError>>,
+        tx: oneshot::Sender<Result<CreateStreamResponse, EsError>>,
     ) {
         let metadata = StreamMetadata {
             stream_id: None,
@@ -172,17 +174,14 @@ impl StreamManager {
             }
         };
         tokio_uring::spawn(async move {
-            let result = client
-                .create_stream(metadata)
-                .await
-                .map(|metadata| CreateStreamResponse {
-                    // TODO: unify stream_id type
-                    stream_id: metadata.stream_id.expect("stream id cannot be none"),
-                })
-                .map_err(|e| {
-                    warn!("Failed to create stream, {}", e);
-                    ReplicationError::Internal
-                });
+            let result =
+                client
+                    .create_stream(metadata)
+                    .await
+                    .map(|metadata| CreateStreamResponse {
+                        // TODO: unify stream_id type
+                        stream_id: metadata.stream_id.expect("stream id cannot be none"),
+                    });
             let _ = tx.send(result);
         });
     }
@@ -190,7 +189,7 @@ impl StreamManager {
     pub fn open(
         &mut self,
         request: OpenStreamRequest,
-        tx: oneshot::Sender<Result<OpenStreamResponse, ReplicationError>>,
+        tx: oneshot::Sender<Result<OpenStreamResponse, EsError>>,
     ) {
         let client = match self.route_client() {
             Ok(client) => client,
@@ -215,8 +214,8 @@ impl StreamManager {
             );
             // FIXME
             #[allow(clippy::redundant_pattern_matching)]
-            if let Err(_) = stream.open().await {
-                let _ = tx.send(Err(ReplicationError::Internal));
+            if let Err(e) = stream.open().await {
+                let _ = tx.send(Err(e));
                 return;
             }
             streams.borrow_mut().insert(request.stream_id, stream);
@@ -224,11 +223,7 @@ impl StreamManager {
         });
     }
 
-    pub fn close(
-        &mut self,
-        request: CloseStreamRequest,
-        tx: oneshot::Sender<Result<(), ReplicationError>>,
-    ) {
+    pub fn close(&mut self, request: CloseStreamRequest, tx: oneshot::Sender<Result<(), EsError>>) {
         let stream = self
             .streams
             .borrow_mut()
@@ -240,41 +235,29 @@ impl StreamManager {
                 let _ = tx.send(Ok(()));
             });
         } else {
-            let _ = tx.send(Err(ReplicationError::StreamNotExist));
+            let _ = tx.send(Err(stream_not_exist(request.stream_id)));
         }
     }
 
-    pub fn start_offset(
-        &mut self,
-        stream_id: u64,
-        tx: oneshot::Sender<Result<u64, ReplicationError>>,
-    ) {
+    pub fn start_offset(&mut self, stream_id: u64, tx: oneshot::Sender<Result<u64, EsError>>) {
         let result = if let Some(stream) = self.streams.borrow().get(&stream_id) {
             Ok(stream.start_offset())
         } else {
-            Err(ReplicationError::StreamNotExist)
+            Err(stream_not_exist(stream_id))
         };
         let _ = tx.send(result);
     }
 
-    pub fn next_offset(
-        &mut self,
-        stream_id: u64,
-        tx: oneshot::Sender<Result<u64, ReplicationError>>,
-    ) {
+    pub fn next_offset(&mut self, stream_id: u64, tx: oneshot::Sender<Result<u64, EsError>>) {
         let result = if let Some(stream) = self.streams.borrow().get(&stream_id) {
             Ok(stream.next_offset())
         } else {
-            Err(ReplicationError::StreamNotExist)
+            Err(stream_not_exist(stream_id))
         };
         let _ = tx.send(result);
     }
 
-    pub fn trim(
-        &mut self,
-        request: TrimRequest,
-        tx: oneshot::Sender<Result<(), ReplicationError>>,
-    ) {
+    pub fn trim(&mut self, request: TrimRequest, tx: oneshot::Sender<Result<(), EsError>>) {
         let stream = self
             .streams
             .borrow_mut()
@@ -282,15 +265,10 @@ impl StreamManager {
             .map(|stream| Rc::clone(&stream));
         if let Some(stream) = stream {
             tokio_uring::spawn(async move {
-                let _ = tx.send(
-                    stream
-                        .trim(request.new_start_offset)
-                        .await
-                        .map_err(|_| ReplicationError::Internal),
-                );
+                let _ = tx.send(stream.trim(request.new_start_offset).await);
             });
         } else {
-            let _ = tx.send(Err(ReplicationError::StreamNotExist));
+            let _ = tx.send(Err(stream_not_exist(request.stream_id)));
         }
     }
 
@@ -322,4 +300,11 @@ impl StreamManager {
             * 1024
             * 1024
     }
+}
+
+fn stream_not_exist(stream_id: u64) -> EsError {
+    EsError::new(
+        ErrorCode::STREAM_NOT_EXIST,
+        &format!("Stream {} does not exist", stream_id),
+    )
 }

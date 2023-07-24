@@ -31,7 +31,7 @@ public class Frontend extends ElasticStreamObject {
         this.ptr = getFrontend(access_point);
     }
     public CompletableFuture<Long> create(int replica, int ack, long retention_millis) {
-        CompletableFuture<Long> future = new CompletableFuture<>(); 
+        CompletableFuture<Long> future = new CompletableFuture<>();
         create(this.ptr, replica, ack, retention_millis, future);
         return future;
     }
