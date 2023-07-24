@@ -26,6 +26,7 @@ protocol = { path = "../protocol" }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 tokio-uring = { workspace = true }
+tower = { workspace = true }
 transport = { path = "../transport" }
 
 [dev-dependencies]

@@ -52,6 +52,7 @@ tokio-uring = { git = "https://github.com/tokio-rs/tokio-uring.git", branch = "m
 ] }
 tokio = { version = "1", features = ["sync", "time", "macros"] }
 tokio-util = "0.7"
+tower = { version = "0.4", features = ["full"] }
 crossbeam = "0.8"
 num_cpus = "1"
 thiserror = "1.0"
