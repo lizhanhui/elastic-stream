@@ -1,6 +1,6 @@
 use crate::error::ServiceError;
 use local_sync::oneshot;
-use log::{error, trace, warn};
+use log::{error, info, trace, warn};
 use model::Batch;
 use std::collections::{BTreeMap, HashMap};
 
@@ -186,17 +186,19 @@ impl Window {
     ///
     /// # Return
     /// * the committed offset.
-    pub(crate) async fn commit(&mut self, offset: u64) -> u64 {
+    pub(crate) async fn commit(&mut self, offset: u64) -> Result<u64, ServiceError> {
         trace!("{}-Window tries to commit: {}", self.log_ident, offset);
         match self.fast_commit(offset) {
-            Some(committed) => committed,
+            Some(committed) => Ok(committed),
             None => {
                 let (tx, rx) = oneshot::channel();
                 self.queue_commit(offset, tx);
                 match rx.await {
-                    Ok(committed) => committed,
+                    Ok(committed) => Ok(committed),
                     Err(_e) => {
-                        unreachable!("internal oneshot channel never fails");
+                        info!("Window for {} should have dropped", self.log_ident);
+                        // Window was dropped due to range seal
+                        Err(ServiceError::AlreadySealed)
                     }
                 }
             }
@@ -206,8 +208,11 @@ impl Window {
 
 #[cfg(test)]
 mod tests {
+    use local_sync::semaphore::Semaphore;
     use model::Batch;
-    use std::cmp::Ordering;
+    use std::{cell::UnsafeCell, cmp::Ordering, error::Error, rc::Rc};
+
+    use crate::error::ServiceError;
 
     #[derive(Debug)]
     struct Foo {
@@ -279,7 +284,7 @@ mod tests {
         assert!(window.check_barrier(&foo2).is_ok());
 
         // Commit foo2, and foo1 will be committed implicitly.
-        assert_eq!(4, window.commit(2).await);
+        assert_eq!(Ok(4), window.commit(2).await);
 
         // Now, foo1 will be rejected because the offset is already committed, the error is OffsetCommitted.
         assert!(matches!(
@@ -306,5 +311,43 @@ mod tests {
         let foo1 = Foo::new(0);
         window.check_barrier(&foo1).unwrap();
         assert_eq!(window.fast_commit(0), Some(2));
+    }
+
+    #[test]
+    fn test_commit_when_window_got_dropped() -> Result<(), Box<dyn Error>> {
+        ulog::try_init_log();
+        tokio_uring::start(async move {
+            let mut window = super::Window::new(String::from(""), 0);
+            let foo = Foo::new(0);
+            let foo1 = Foo::new(2);
+            window.check_barrier(&foo)?;
+            window.check_barrier(&foo1)?;
+            let win = Rc::new(UnsafeCell::new(Some(window)));
+            let win2 = Rc::clone(&win);
+
+            let semaphore = Rc::new(Semaphore::new(1));
+            let permit = Rc::clone(&semaphore).acquire_owned().await?;
+            tokio_uring::spawn(async move {
+                let win = unsafe { &mut *win2.get() };
+                if let Some(window) = win.as_mut() {
+                    drop(permit);
+                    match window.commit(2).await {
+                        Ok(_) => {
+                            panic!("Window should have been dropped");
+                        }
+                        Err(e) => {
+                            assert_eq!(e, ServiceError::AlreadySealed);
+                        }
+                    }
+                }
+            });
+
+            let _ = semaphore.acquire().await?;
+            if let Some(win) = unsafe { &mut *win.get() }.take() {
+                drop(win);
+            }
+
+            Ok(())
+        })
     }
 }

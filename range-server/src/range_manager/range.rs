@@ -3,6 +3,8 @@ use std::fmt;
 use log::{info, trace, warn};
 use model::range::RangeMetadata;
 
+use crate::error::ServiceError;
+
 use super::window::Window;
 
 #[derive(Debug)]
@@ -41,11 +43,11 @@ impl Range {
         }
     }
 
-    pub(crate) async fn commit(&mut self, offset: u64) {
+    pub(crate) async fn commit(&mut self, offset: u64) -> Result<(), ServiceError> {
         let offset = match self.window_mut() {
-            Some(win) => win.commit(offset).await,
+            Some(win) => win.commit(offset).await?,
             None => {
-                return;
+                return Err(ServiceError::AlreadySealed);
             }
         };
 
@@ -64,12 +66,13 @@ impl Range {
                 );
                 *committed = offset;
             }
-            return;
+            return Ok(());
         }
 
         if offset >= self.metadata.start() {
             self.committed = Some(offset);
         }
+        Ok(())
     }
 
     pub(crate) fn seal(&mut self, metadata: &mut RangeMetadata) {
@@ -157,7 +160,7 @@ mod tests {
         range
             .window_mut()
             .and_then(|window| window.check_barrier(&Foo { offset: 0, len: 1 }).ok());
-        range.commit(0).await;
+        range.commit(0).await?;
         assert_eq!(range.committed(), Some(1));
 
         Ok(())
@@ -170,7 +173,7 @@ mod tests {
         range
             .window_mut()
             .and_then(|window| window.check_barrier(&Foo { offset: 0, len: 1 }).ok());
-        range.commit(0).await;
+        range.commit(0).await?;
 
         let mut metadata = RangeMetadata::new(0, 0, 0, 0, Some(1));
         range.seal(&mut metadata);

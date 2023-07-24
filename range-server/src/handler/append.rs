@@ -2,12 +2,13 @@ use bytes::Bytes;
 use codec::frame::Frame;
 
 use chrono::prelude::*;
-use flatbuffers::FlatBufferBuilder;
+use flatbuffers::{FlatBufferBuilder, WIPOffset};
 use futures::future::join_all;
 use log::{error, trace, warn};
 use model::payload::Payload;
 use protocol::rpc::header::{
-    AppendResponse, AppendResponseArgs, AppendResultEntryArgs, ErrorCode, StatusArgs,
+    AppendResponse, AppendResponseArgs, AppendResultEntry, AppendResultEntryArgs, ErrorCode,
+    Status, StatusArgs,
 };
 use std::{cell::UnsafeCell, fmt, rc::Rc};
 use store::{error::AppendError, option::WriteOptions, AppendRecordRequest, AppendResult, Store};
@@ -125,7 +126,7 @@ impl Append {
         let res_from_store: Vec<Result<AppendResult, AppendError>> = join_all(futures).await;
 
         let mut builder = FlatBufferBuilder::with_capacity(MIN_BUFFER_SIZE);
-        let ok_status = protocol::rpc::header::Status::create(
+        let ok_status = Status::create(
             &mut builder,
             &StatusArgs {
                 code: ErrorCode::OK,
@@ -149,44 +150,26 @@ impl Append {
                         )
                         .await
                     {
-                        warn!(
-                            "Failed to ack offset on store completion to stream manager: {:?}",
-                            e
-                        );
+                        warn!("Failed to ack offset to stream manager: {:?}", e);
+                        let code = match e {
+                            ServiceError::AlreadySealed => ErrorCode::RANGE_ALREADY_SEALED,
+                            _ => ErrorCode::RS_INTERNAL_SERVER_ERROR,
+                        };
+                        Self::handle_error(&mut append_results, &mut builder, code, &e.to_string());
+                        continue;
                     }
                     let args = AppendResultEntryArgs {
                         timestamp_ms: Utc::now().timestamp(),
                         status: Some(ok_status),
                     };
-                    append_results.push(protocol::rpc::header::AppendResultEntry::create(
-                        &mut builder,
-                        &args,
-                    ));
+                    append_results.push(AppendResultEntry::create(&mut builder, &args));
                 }
                 Err(e) => {
                     // TODO: what to do with the offset on failure?
                     warn!("Failed to append records to store: {:?}", e);
 
                     let (err_code, error_message) = Self::convert_store_error(e);
-
-                    let error_message_fb = Some(builder.create_string(error_message.as_str()));
-                    let status = protocol::rpc::header::Status::create(
-                        &mut builder,
-                        &StatusArgs {
-                            code: err_code,
-                            message: error_message_fb,
-                            detail: None,
-                        },
-                    );
-
-                    let args = AppendResultEntryArgs {
-                        timestamp_ms: 0,
-                        status: Some(status),
-                    };
-                    append_results.push(protocol::rpc::header::AppendResultEntry::create(
-                        &mut builder,
-                        &args,
-                    ));
+                    Self::handle_error(&mut append_results, &mut builder, err_code, &error_message);
                 }
             }
         }
@@ -201,6 +184,31 @@ impl Append {
         let response_header = AppendResponse::create(&mut builder, &res_args);
         let res_header = finish_response_builder(&mut builder, response_header);
         response.header = Some(res_header);
+    }
+
+    fn handle_error<'a, 'b>(
+        append_results: &mut Vec<WIPOffset<AppendResultEntry<'b>>>,
+        builder: &mut FlatBufferBuilder<'a>,
+        code: ErrorCode,
+        message: &str,
+    ) where
+        'a: 'b,
+    {
+        let message = Some(builder.create_string(message));
+        let status = Status::create(
+            builder,
+            &StatusArgs {
+                code,
+                message,
+                detail: None,
+            },
+        );
+
+        let args = AppendResultEntryArgs {
+            timestamp_ms: 0,
+            status: Some(status),
+        };
+        append_results.push(AppendResultEntry::create(builder, &args));
     }
 
     fn build_store_requests(&self) -> Result<Vec<AppendRecordRequest>, ErrorCode> {
