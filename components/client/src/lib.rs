@@ -10,6 +10,7 @@
 #![feature(iterator_try_collect)]
 #![feature(hash_extract_if)]
 #![feature(extract_if)]
+#![feature(impl_trait_in_assoc_type)]
 
 pub mod client;
 pub(crate) mod composite_session;
