@@ -178,6 +178,7 @@ class StreamBench {
         long taskStartTimestamp = System.currentTimeMillis();
         AtomicLong count = new AtomicLong();
         AtomicLong costNanos = new AtomicLong();
+        AtomicLong maxCostNanos = new AtomicLong(0);
         while (true) {
             while (true) {
                 long now = System.nanoTime();
@@ -197,8 +198,9 @@ class StreamBench {
             if (now - lastLogTimestamp > 1000) {
                 long countValue = count.getAndSet(0);
                 long costNanosValue = costNanos.getAndSet(0);
+                long maxCostNanoValue = maxCostNanos.getAndSet(0);
                 if (countValue != 0) {
-                    System.out.println(now + " append task-" + taskIndex + " avg=" + costNanosValue / countValue / 1000 + "us, count=" + countValue + " throughput=" + (countValue * appendTaskConfig.recordSize / 1024) + "KB/s");
+                    System.out.println(now + " append task-" + taskIndex + " avg=" + costNanosValue / countValue / 1000 + "us, max=" + maxCostNanoValue / 1000 + "us, count=" + countValue + " throughput=" + (countValue * appendTaskConfig.recordSize / 1024) + "KB/s");
                 }
                 lastLogTimestamp = now;
             }
@@ -210,7 +212,15 @@ class StreamBench {
             stream.append(new DefaultRecordBatch(10, 233, Collections.emptyMap(), payload.duplicate()))
                     .thenAccept(rst -> {
                         count.incrementAndGet();
-                        costNanos.addAndGet(System.nanoTime() - appendStartNano);
+
+                        long cost = System.nanoTime() - appendStartNano;
+                        costNanos.addAndGet(cost);
+
+                        long maxCost = maxCostNanos.get();
+                        if (cost > maxCost) {
+                            maxCostNanos.compareAndSet(maxCost, cost);
+                        }
+
                         confirmEventListener.accept(new ConfirmEvent(stream, currentStreamIndex, rst.baseOffset() + 10));
                     });
         }
