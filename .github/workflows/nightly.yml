@@ -33,3 +33,63 @@ jobs:
           password: ${{ secrets.DOCKERHUB_READ_WRITE_TOKEN }}
       - name: Build and Push Nightly Images
         run: make manifest-list GO_VERSION=${{ matrix.go-version }} VERSION=nightly ALL_PLATFORMS=linux/amd64
+
+  elastic-stream-images:
+    name: Build and Push Elastic Stream Images
+    strategy:
+      matrix:
+        go-version: ["1.20"]
+        platform: ["ubuntu-22.04"]
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Go Cache
+        uses: actions/cache@v3
+        with:
+          path: ./pd/.go/cache
+          key: ${{matrix.platform}}-${{matrix.go-version}}-pd-release-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{matrix.platform}}-${{matrix.go-version}}-pd-release-
+            ${{matrix.platform}}-${{matrix.go-version}}-pd-
+      - name: Build Placement Driver Debian Packages
+        working-directory: ./pd
+        run: make all-deb GO_VERSION=${{ matrix.go-version }}
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2.4.0
+        with:
+          prefix-key: ""
+          env-vars: ""
+      - name: Install Deps
+        run: |
+          ./scripts/install_deps.sh
+          cargo install cross --git https://github.com/cross-rs/cross
+      - name: Build Range Server Debian Packages
+        run: |
+          make all-deb PROFILE=release
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: elasticstream
+          password: ${{ secrets.DOCKERHUB_READ_WRITE_TOKEN }}
+      - name: Build Docker Image
+        working-directory: ./dist/docker
+        run: |
+          ./build-nightly.sh
+
+  upgrade-helm-chart:
+    name: Upgrade helm chart on private k3s
+    runs-on: private-k3s
+    needs: [elastic-stream-images]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      - name: Update Helm Chart
+        working-directory: ./dist/helm-chart
+        env:
+          KUBE_CONFIG_DATA: ${{ secrets.DEV_KUBE_CONFIG_DATA }}
+        run: |
+          ./upgrade.sh
