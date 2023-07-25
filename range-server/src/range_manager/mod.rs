@@ -18,7 +18,7 @@ pub(crate) trait RangeManager {
     fn create_range(&mut self, range: RangeMetadata) -> Result<(), ServiceError>;
 
     /// Commit work-in-progress append requests
-    async fn commit(
+    fn commit(
         &mut self,
         stream_id: i64,
         range_index: i32,

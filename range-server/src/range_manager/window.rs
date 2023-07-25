@@ -1,8 +1,7 @@
 use crate::error::ServiceError;
-use local_sync::oneshot;
-use log::{error, info, trace, warn};
+use log::{error, trace, warn};
 use model::Batch;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 
 /// Append Request Window ensures append requests of a stream range are dispatched to store in order.
 ///
@@ -31,17 +30,7 @@ pub(crate) struct Window {
     committed: u64,
 
     /// Submitted request offset to batch size.
-    submitted: BTreeMap<u64, u32>,
-
-    /// Given that the tasks are executed out-of-order, it's possible commit with larger offset
-    /// attempts prior to the smaller one.
-    ///
-    /// According to the replication protocol, we must NOT acknowledge requests if their predecessors
-    /// have not been.
-    ///
-    /// To mitigate this issue, tasks with larger commit offset shall be suspended till all of their
-    /// prior records are acknowledged.
-    commit_queue: HashMap<u64, oneshot::Sender<u64>>,
+    submitted: HashMap<u64, u32>,
 }
 
 impl Window {
@@ -49,10 +38,9 @@ impl Window {
         Self {
             log_ident,
             next,
-            submitted: BTreeMap::new(),
+            submitted: HashMap::new(),
             // The initial commit offset is the same as the next offset.
             committed: next,
-            commit_queue: HashMap::new(),
         }
     }
 
@@ -122,59 +110,11 @@ impl Window {
         Ok(())
     }
 
-    fn fast_commit(&mut self, offset: u64) -> Option<u64> {
-        if self.committed == offset {
-            if let Some((first_key, len)) = self.submitted.pop_first() {
-                debug_assert!(
-                    first_key == offset,
-                    "{}Unexpected commit call, the offset should be the first key of the submitted map, offset: {}, first_key: {}",
-                    self.log_ident,
-                    offset,
-                    first_key);
-
-                self.committed = offset + len as u64;
-                trace!(
-                    "{}-Window#committed advances to: {}",
-                    self.log_ident,
-                    self.committed
-                );
-            }
-
-            // Try to commit all prior commit attempts once they become continuous
-            while let Some(tx) = self.commit_queue.remove(&self.committed) {
-                match self.submitted.pop_first() {
-                    Some((offset, len)) => {
-                        debug_assert_eq!(
-                            offset, self.committed,
-                            "The first entry in submitted map should be the one to commit"
-                        );
-                        self.committed = offset + len as u64;
-                        trace!(
-                            "{}-Window#committed advances to: {}",
-                            self.log_ident,
-                            self.committed
-                        );
-                        let _ = tx.send(self.committed);
-                    }
-                    None => {
-                        warn!("Try to commit an offset without prior prepared submit");
-                        unreachable!();
-                    }
-                }
-            }
-            Some(self.committed)
-        } else {
-            None
+    #[inline]
+    fn try_commit(&mut self, value: u64) {
+        if value > self.committed {
+            self.committed = value;
         }
-    }
-
-    /// Queue commit requests till they become continuous
-    fn queue_commit(&mut self, offset: u64, tx: oneshot::Sender<u64>) {
-        debug_assert!(
-            offset > self.committed,
-            "SHOULD use fast_commit before queue_commit"
-        );
-        self.commit_queue.insert(offset, tx);
     }
 
     /// Commits the request with the given offset, and wakes up the subsequent request if exists.
@@ -186,23 +126,21 @@ impl Window {
     ///
     /// # Return
     /// * the committed offset.
-    pub(crate) async fn commit(&mut self, offset: u64) -> Result<u64, ServiceError> {
+    pub(crate) fn commit(&mut self, offset: u64) -> Result<u64, ServiceError> {
         trace!("{}-Window tries to commit: {}", self.log_ident, offset);
-        match self.fast_commit(offset) {
-            Some(committed) => Ok(committed),
+        match self.submitted.remove(&offset) {
+            Some(len) => {
+                self.try_commit(offset + len as u64);
+            }
             None => {
-                let (tx, rx) = oneshot::channel();
-                self.queue_commit(offset, tx);
-                match rx.await {
-                    Ok(committed) => Ok(committed),
-                    Err(_e) => {
-                        info!("Window for {} should have dropped", self.log_ident);
-                        // Window was dropped due to range seal
-                        Err(ServiceError::AlreadySealed)
-                    }
-                }
+                error!("Try to commit offset={} but no check is found", offset);
+                return Err(ServiceError::NotFound(format!(
+                    "No record found for offset={}",
+                    offset
+                )));
             }
         }
+        Ok(self.committed)
     }
 }
 
@@ -284,7 +222,7 @@ mod tests {
         assert!(window.check_barrier(&foo2).is_ok());
 
         // Commit foo2, and foo1 will be committed implicitly.
-        assert_eq!(Ok(4), window.commit(2).await);
+        assert_eq!(Ok(4), window.commit(2));
 
         // Now, foo1 will be rejected because the offset is already committed, the error is OffsetCommitted.
         assert!(matches!(
@@ -306,14 +244,6 @@ mod tests {
     }
 
     #[test]
-    fn test_fast_commit() {
-        let mut window = super::Window::new(String::from(""), 0);
-        let foo1 = Foo::new(0);
-        window.check_barrier(&foo1).unwrap();
-        assert_eq!(window.fast_commit(0), Some(2));
-    }
-
-    #[test]
     fn test_commit_when_window_got_dropped() -> Result<(), Box<dyn Error>> {
         ulog::try_init_log();
         tokio_uring::start(async move {
@@ -331,7 +261,7 @@ mod tests {
                 let win = unsafe { &mut *win2.get() };
                 if let Some(window) = win.as_mut() {
                     drop(permit);
-                    match window.commit(2).await {
+                    match window.commit(2) {
                         Ok(_) => {
                             panic!("Window should have been dropped");
                         }

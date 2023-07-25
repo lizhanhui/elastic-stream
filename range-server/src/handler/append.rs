@@ -140,16 +140,13 @@ impl Append {
             match res {
                 Ok(result) => {
                     let rm = unsafe { &mut *range_manager.get() };
-                    if let Err(e) = rm
-                        .commit(
-                            result.stream_id,
-                            result.range_index as i32,
-                            result.offset as u64,
-                            result.last_offset_delta,
-                            result.bytes_len,
-                        )
-                        .await
-                    {
+                    if let Err(e) = rm.commit(
+                        result.stream_id,
+                        result.range_index as i32,
+                        result.offset as u64,
+                        result.last_offset_delta,
+                        result.bytes_len,
+                    ) {
                         warn!("Failed to ack offset to stream manager: {:?}", e);
                         let code = match e {
                             ServiceError::AlreadySealed => ErrorCode::RANGE_ALREADY_SEALED,

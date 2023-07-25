@@ -143,7 +143,7 @@ where
         Ok(())
     }
 
-    async fn commit(
+    fn commit(
         &mut self,
         stream_id: i64,
         range_index: i32,
@@ -152,7 +152,7 @@ where
         bytes_len: u32,
     ) -> Result<(), ServiceError> {
         if let Some(range) = self.get_range_mut(stream_id, range_index) {
-            range.commit(offset).await?;
+            range.commit(offset)?;
             self.object_storage
                 .new_commit(stream_id as u64, range_index as u32, bytes_len);
             Ok(())

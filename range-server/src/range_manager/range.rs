@@ -43,9 +43,9 @@ impl Range {
         }
     }
 
-    pub(crate) async fn commit(&mut self, offset: u64) -> Result<(), ServiceError> {
+    pub(crate) fn commit(&mut self, offset: u64) -> Result<(), ServiceError> {
         let offset = match self.window_mut() {
-            Some(win) => win.commit(offset).await?,
+            Some(win) => win.commit(offset)?,
             None => {
                 return Err(ServiceError::AlreadySealed);
             }
@@ -160,7 +160,7 @@ mod tests {
         range
             .window_mut()
             .and_then(|window| window.check_barrier(&Foo { offset: 0, len: 1 }).ok());
-        range.commit(0).await?;
+        range.commit(0)?;
         assert_eq!(range.committed(), Some(1));
 
         Ok(())
@@ -173,7 +173,7 @@ mod tests {
         range
             .window_mut()
             .and_then(|window| window.check_barrier(&Foo { offset: 0, len: 1 }).ok());
-        range.commit(0).await?;
+        range.commit(0)?;
 
         let mut metadata = RangeMetadata::new(0, 0, 0, 0, Some(1));
         range.seal(&mut metadata);
