@@ -1,9 +1,14 @@
-use crate::{request::{self, Request}, response::{self, Response}, NodeState, error::ClientError};
+use crate::{
+    error::ClientError,
+    request::{self, Request},
+    response::{self, Response},
+    NodeState,
+};
 use codec::{error::FrameError, frame::Frame};
 
-use std::future::Future;
 use model::client_role::ClientRole;
 use protocol::rpc::header::OperationCode;
+use std::future::Future;
 use tower::Service;
 use transport::connection::Connection;
 
@@ -15,7 +20,8 @@ use std::{
     net::SocketAddr,
     rc::{Rc, Weak},
     sync::Arc,
-    time::Instant, task::{Context, Poll},
+    task::{Context, Poll},
+    time::Instant,
 };
 use tokio::sync::broadcast::{self, error::RecvError};
 use tokio_uring::net::TcpStream;
@@ -483,10 +489,9 @@ impl Clone for Session {
     }
 }
 
-
 /// A `tower::Service` implementation for `Session`.
 ///
-/// # Note feature `GAT` and `type-alias-impl-trait` are used.
+/// # Note feature `GAT` and `type-alias-impl-trait` are required.
 impl Service<Request> for Session {
     type Response = Response;
 
@@ -505,7 +510,9 @@ impl Service<Request> for Session {
             if let Err(_e) = this.write(req, tx).await {
                 return Err(ClientError::BadRequest);
             }
-            rx.await.map_err(|_| ClientError::ChannelClosing("Underlying connection is closed".to_owned()))
+            rx.await.map_err(|_| {
+                ClientError::ChannelClosing("Underlying connection is closed".to_owned())
+            })
         }
     }
 }
