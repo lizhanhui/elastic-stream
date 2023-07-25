@@ -2,7 +2,6 @@ package cluster
 
 import (
 	"context"
-	"math/rand"
 	"time"
 
 	"github.com/pkg/errors"
@@ -91,40 +90,57 @@ func (c *RaftCluster) Metrics(ctx context.Context, rangeServer *rpcfb.RangeServe
 }
 
 // chooseRangeServers selects `cnt` number of range servers from the available range servers for a range.
+// If `blackServerIDs` is not nil, the range servers with the ids in `blackServerIDs` will not be selected, unless there are no other available range servers.
 // Only RangeServerT.ServerId is filled in the returned RangeServerT.
 // It returns ErrNotEnoughRangeServers if there are not enough range servers to allocate.
-func (c *RaftCluster) chooseRangeServers(cnt int) ([]*rpcfb.RangeServerT, error) {
+func (c *RaftCluster) chooseRangeServers(cnt int, blackServerIDs map[int32]struct{}) ([]*rpcfb.RangeServerT, error) {
 	if cnt <= 0 {
 		return nil, nil
 	}
 
-	rangeServers := c.cache.ActiveRangeServers(c.cfg.RangeServerTimeout)
+	chose := make([]*rpcfb.RangeServerT, 0, cnt)
+	rangeServers := c.cache.ActiveRangeServers(c.cfg.RangeServerTimeout, blackServerIDs)
+
+	// If there are not enough range servers, use the black list.
+	for k := range blackServerIDs {
+		if cnt > len(rangeServers) {
+			chose = append(chose, &rpcfb.RangeServerT{
+				ServerId: k,
+			})
+			cnt--
+		} else {
+			break
+		}
+	}
+	// After using the black list, there are still not enough range servers.
 	if cnt > len(rangeServers) {
 		return nil, errors.Wrapf(ErrNotEnoughRangeServers, "required %d, available %d", cnt, len(rangeServers))
 	}
 
-	perm := rand.Perm(len(rangeServers))
-	chose := make([]*rpcfb.RangeServerT, cnt)
-	for i := 0; i < cnt; i++ {
-		// select two random range servers and choose the one with higher score
-		rangeServer1 := rangeServers[perm[i]]
-		id := rangeServer1.ServerId
-		if cnt+i < len(perm) {
-			rangeServer2 := rangeServers[perm[cnt+i]]
-			if rangeServer2.Score() > rangeServer1.Score() {
-				id = rangeServer2.ServerId
-			}
-		}
-		chose[i] = &rpcfb.RangeServerT{
-			ServerId: id,
-		}
-	}
+	// TODO: use a better algorithm to choose range servers
+	// perm := rand.Perm(len(rangeServers))
+	// for i := 0; i < cnt; i++ {
+	// 	// select two random range servers and choose the one with higher score
+	// 	rangeServer1 := rangeServers[perm[i]]
+	// 	id := rangeServer1.ServerId
+	// 	if cnt+i < len(perm) {
+	// 		rangeServer2 := rangeServers[perm[cnt+i]]
+	// 		if rangeServer2.Score() > rangeServer1.Score() {
+	// 			id = rangeServer2.ServerId
+	// 		}
+	// 	}
+	// 	chose[i] = &rpcfb.RangeServerT{
+	// 		ServerId: id,
+	// 	}
+	// }
 
+	// round-robin
 	idx := c.rangeServerIdx.Add(uint64(cnt))
 	for i := 0; i < cnt; i++ {
-		chose[i] = &rpcfb.RangeServerT{
-			ServerId: rangeServers[(idx-uint64(i))%uint64(len(rangeServers))].ServerId,
-		}
+		serverIdx := (idx - uint64(i)) % uint64(len(rangeServers))
+		chose = append(chose, &rpcfb.RangeServerT{
+			ServerId: rangeServers[serverIdx].ServerId,
+		})
 	}
 
 	return chose, nil

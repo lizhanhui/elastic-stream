@@ -101,14 +101,17 @@ func (c *Cache) RangeServer(serverID int32) *RangeServer {
 	return rangeServer
 }
 
-// ActiveRangeServers returns all active range servers.
-func (c *Cache) ActiveRangeServers(timeout time.Duration) []*RangeServer {
+// ActiveRangeServers returns all active range servers which are not in the blacklist.
+func (c *Cache) ActiveRangeServers(timeout time.Duration, blackServerIDs map[int32]struct{}) []*RangeServer {
 	rangeServers := make([]*RangeServer, 0)
 	c.rangeServers.IterCb(func(_ int32, rangeServer *RangeServer) {
 		if rangeServer.LastActiveTime.IsZero() || time.Since(rangeServer.LastActiveTime) > timeout {
 			return
 		}
 		if rangeServer.Metrics != nil && rangeServer.Metrics.DiskFreeSpace == 0 {
+			return
+		}
+		if _, ok := blackServerIDs[rangeServer.ServerId]; ok {
 			return
 		}
 		rangeServers = append(rangeServers, rangeServer)

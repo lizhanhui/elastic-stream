@@ -230,7 +230,7 @@ func (c *RaftCluster) CreateRange(ctx context.Context, r *rpcfb.RangeT) (*rpcfb.
 		<-mu
 	}()
 
-	newRange, err := c.newRangeLocked(ctx, r)
+	newRange, err := c.newRangeLocked(ctx, r, lastRange.Servers)
 	if err != nil {
 		return nil, err
 	}
@@ -303,7 +303,7 @@ func (c *RaftCluster) sealRangeLocked(ctx context.Context, lastRange *rpcfb.Rang
 // newRangeLocked creates a new range and saves it to the storage.
 // It returns the new range if the range is created successfully.
 // It should be called with the stream lock held.
-func (c *RaftCluster) newRangeLocked(ctx context.Context, newRange *rpcfb.RangeT) (*rpcfb.RangeT, error) {
+func (c *RaftCluster) newRangeLocked(ctx context.Context, newRange *rpcfb.RangeT, blackList []*rpcfb.RangeServerT) (*rpcfb.RangeT, error) {
 	logger := c.lg.With(zap.Int64("stream-id", newRange.StreamId), zap.Int32("range-index", newRange.Index), zap.Int64("start", newRange.Start), traceutil.TraceLogField(ctx))
 
 	stream, err := c.storage.GetStream(ctx, newRange.StreamId)
@@ -314,7 +314,11 @@ func (c *RaftCluster) newRangeLocked(ctx context.Context, newRange *rpcfb.RangeT
 		return nil, errors.Wrapf(ErrStreamNotFound, "stream %d not found", newRange.StreamId)
 	}
 
-	servers, err := c.chooseRangeServers(int(stream.Replica))
+	blackServerIDs := make(map[int32]struct{})
+	for _, rs := range blackList {
+		blackServerIDs[rs.ServerId] = struct{}{}
+	}
+	servers, err := c.chooseRangeServers(int(stream.Replica), blackServerIDs)
 	if err != nil {
 		logger.Error("failed to choose range servers", zap.Error(err))
 		return nil, err
