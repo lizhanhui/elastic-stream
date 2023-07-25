@@ -44,10 +44,7 @@ impl Client {
     }
 
     pub async fn allocate_id(&self, host: &str) -> Result<i32, EsError> {
-        let session_manager = unsafe { &mut *self.session_manager.get() };
-        let composite_session = session_manager
-            .get_composite_session(&self.config.placement_driver)
-            .await?;
+        let composite_session = self.get_pd_session().await?;
         let future = composite_session.allocate_id(host, None);
         time::timeout(self.config.client_io_timeout(), future)
             .await
@@ -68,10 +65,7 @@ impl Client {
         &self,
         criteria: ListRangeCriteria,
     ) -> Result<Vec<RangeMetadata>, EsError> {
-        let session_manager = unsafe { &mut *self.session_manager.get() };
-        let session = session_manager
-            .get_composite_session(&self.config.placement_driver)
-            .await?;
+        let session = self.get_pd_session().await?;
         let future = session.list_range(criteria);
         time::timeout(self.config.client_io_timeout(), future)
             .await
@@ -104,10 +98,7 @@ impl Client {
         &self,
         stream_metadata: StreamMetadata,
     ) -> Result<StreamMetadata, EsError> {
-        let session_manager = unsafe { &mut *self.session_manager.get() };
-        let composite_session = session_manager
-            .get_composite_session(&self.config.placement_driver)
-            .await?;
+        let composite_session = self.get_pd_session().await?;
         let future = composite_session.create_stream(stream_metadata);
         time::timeout(self.config.client_io_timeout(), future)
             .await
@@ -118,10 +109,7 @@ impl Client {
     }
 
     pub async fn describe_stream(&self, stream_id: u64) -> Result<StreamMetadata, EsError> {
-        let session_manager = unsafe { &mut *self.session_manager.get() };
-        let composite_session = session_manager
-            .get_composite_session(&self.config.placement_driver)
-            .await?;
+        let composite_session = self.get_pd_session().await?;
         let future = composite_session.describe_stream(stream_id);
         time::timeout(self.config.client_io_timeout(), future)
             .await
@@ -131,15 +119,26 @@ impl Client {
             })?
     }
 
+    pub async fn update_stream_epoch(&self, stream_id: u64, epoch: u64) -> Result<(), EsError> {
+        let composite_session = self.get_pd_session().await?;
+        let future = composite_session.update_stream_epoch(stream_id, epoch);
+        time::timeout(self.config.client_io_timeout(), future)
+            .await
+            .map_err(|e| {
+                error!(
+                    "Timeout when update stream epoch[stream-id={stream_id}]. {}",
+                    e
+                );
+                EsError::new(ErrorCode::RPC_TIMEOUT, "describe stream rpc timeout")
+            })?
+    }
+
     /// Create a new range by send request to placement driver.
     pub async fn create_range(
         &self,
         range_metadata: RangeMetadata,
     ) -> Result<RangeMetadata, EsError> {
-        let session_manager = unsafe { &mut *self.session_manager.get() };
-        let composite_session = session_manager
-            .get_composite_session(&self.config.placement_driver)
-            .await?;
+        let composite_session = self.get_pd_session().await?;
         self.create_range0(composite_session, range_metadata).await
     }
 
@@ -281,24 +280,20 @@ impl Client {
             .await
     }
 
-    pub async fn report_range_progress(
-        &self,
-        target: &str,
-        progress: Vec<RangeProgress>,
-    ) -> Result<(), EsError> {
-        let session_manager = unsafe { &mut *self.session_manager.get() };
-        let composite_session = session_manager.get_composite_session(target).await.unwrap();
-        composite_session.report_range_progress(progress).await
+    pub async fn report_range_progress(&self, progress: Vec<RangeProgress>) -> Result<(), EsError> {
+        let composite_session = self.get_pd_session().await?;
+        let future = composite_session.report_range_progress(progress);
+        time::timeout(self.config.client_io_timeout(), future)
+            .await
+            .map_err(|_| EsError::new(ErrorCode::RPC_TIMEOUT, "watch resource timeout"))?
     }
 
-    pub async fn commit_object(
-        &self,
-        target: &str,
-        metadata: ObjectMetadata,
-    ) -> Result<(), EsError> {
-        let session_manager = unsafe { &mut *self.session_manager.get() };
-        let composite_session = session_manager.get_composite_session(target).await.unwrap();
-        composite_session.commit_object(metadata).await
+    pub async fn commit_object(&self, metadata: ObjectMetadata) -> Result<(), EsError> {
+        let composite_session = self.get_pd_session().await?;
+        let future = composite_session.commit_object(metadata);
+        time::timeout(self.config.client_io_timeout(), future)
+            .await
+            .map_err(|_| EsError::new(ErrorCode::RPC_TIMEOUT, "commit object timeout"))?
     }
 
     /// List resources from PD of given types.
@@ -321,14 +316,11 @@ impl Client {
         limit: i32,
         continuation: &Option<Bytes>,
     ) -> Result<ListResourceResult, EsError> {
-        let session_manager = unsafe { &mut *self.session_manager.get() };
-        let composite_session = session_manager
-            .get_composite_session(&self.config.placement_driver)
+        let composite_session = self.get_pd_session().await?;
+        let future = composite_session.list_resource(types, limit, continuation);
+        time::timeout(self.config.client_io_timeout(), future)
             .await
-            .unwrap();
-        composite_session
-            .list_resource(types, limit, continuation)
-            .await
+            .map_err(|_| EsError::new(ErrorCode::RPC_TIMEOUT, "list resource timeout"))?
     }
 
     /// Watch resources from PD of given types on given version.
@@ -350,13 +342,17 @@ impl Client {
         version: i64,
         timeout: Duration,
     ) -> Result<WatchResourceResult, EsError> {
-        let session_manager = unsafe { &mut *self.session_manager.get() };
-        let composite_session = session_manager
-            .get_composite_session(&self.config.placement_driver)
+        let composite_session = self.get_pd_session().await?;
+        let future = composite_session.watch_resource(types, version, timeout);
+        time::timeout(self.config.client_io_timeout(), future)
             .await
-            .unwrap();
-        composite_session
-            .watch_resource(types, version, timeout)
+            .map_err(|_| EsError::new(ErrorCode::RPC_TIMEOUT, "watch resource timeout"))?
+    }
+
+    async fn get_pd_session(&self) -> Result<Rc<CompositeSession>, EsError> {
+        let session_manager = unsafe { &mut *self.session_manager.get() };
+        session_manager
+            .get_composite_session(&self.config.placement_driver)
             .await
     }
 }

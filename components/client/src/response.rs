@@ -33,6 +33,7 @@ use protocol::rpc::header::SystemError;
 use model::range::RangeMetadata;
 use model::PlacementDriverNode;
 use model::Status;
+use protocol::rpc::header::UpdateStreamEpochResponse;
 use protocol::rpc::header::WatchResourceResponse;
 
 use crate::invocation_context::InvocationContext;
@@ -420,6 +421,22 @@ impl Response {
                 Err(e) => {
                     error!(
                         "Failed to decode DescribeStreamResponse using FlatBuffers. Cause: {}",
+                        e
+                    );
+                }
+            }
+        }
+    }
+
+    pub(crate) fn on_update_stream_epoch(&mut self, frame: &Frame, _ctx: &InvocationContext) {
+        if let Some(ref buf) = frame.header {
+            match flatbuffers::root::<UpdateStreamEpochResponse>(buf) {
+                Ok(response) => {
+                    self.status = Into::<Status>::into(&response.status().unpack());
+                }
+                Err(e) => {
+                    error!(
+                        "Failed to decode UpdateStreamEpoch using FlatBuffers. Cause: {}",
                         e
                     );
                 }

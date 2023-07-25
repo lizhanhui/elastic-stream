@@ -23,6 +23,7 @@ const (
 	OperationCodeUPDATE_STREAM             OperationCode = 12291
 	OperationCodeDESCRIBE_STREAM           OperationCode = 12292
 	OperationCodeTRIM_STREAM               OperationCode = 12293
+	OperationCodeUPDATE_STREAM_EPOCH       OperationCode = 12294
 	OperationCodeREPORT_METRICS            OperationCode = 16385
 	OperationCodeDESCRIBE_PLACEMENT_DRIVER OperationCode = 16386
 	OperationCodeREPORT_REPLICA_PROGRESS   OperationCode = 16387
@@ -48,6 +49,7 @@ var EnumNamesOperationCode = map[OperationCode]string{
 	OperationCodeUPDATE_STREAM:             "UPDATE_STREAM",
 	OperationCodeDESCRIBE_STREAM:           "DESCRIBE_STREAM",
 	OperationCodeTRIM_STREAM:               "TRIM_STREAM",
+	OperationCodeUPDATE_STREAM_EPOCH:       "UPDATE_STREAM_EPOCH",
 	OperationCodeREPORT_METRICS:            "REPORT_METRICS",
 	OperationCodeDESCRIBE_PLACEMENT_DRIVER: "DESCRIBE_PLACEMENT_DRIVER",
 	OperationCodeREPORT_REPLICA_PROGRESS:   "REPORT_REPLICA_PROGRESS",
@@ -73,6 +75,7 @@ var EnumValuesOperationCode = map[string]OperationCode{
 	"UPDATE_STREAM":             OperationCodeUPDATE_STREAM,
 	"DESCRIBE_STREAM":           OperationCodeDESCRIBE_STREAM,
 	"TRIM_STREAM":               OperationCodeTRIM_STREAM,
+	"UPDATE_STREAM_EPOCH":       OperationCodeUPDATE_STREAM_EPOCH,
 	"REPORT_METRICS":            OperationCodeREPORT_METRICS,
 	"DESCRIBE_PLACEMENT_DRIVER": OperationCodeDESCRIBE_PLACEMENT_DRIVER,
 	"REPORT_REPLICA_PROGRESS":   OperationCodeREPORT_REPLICA_PROGRESS,

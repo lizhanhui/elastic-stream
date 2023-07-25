@@ -77,6 +77,7 @@ enum ErrorCode : int16 {
     CONNECT_TIMEOUT = 1486,
     CONNECT_DISABLE_NAGLE_FAIL = 1487,
     STREAM_NOT_EXIST = 1488,
+    EXPIRED_STREAM_EPOCH = 1489,
 
     // Server understands the intended operation but it does not support that.
     UNSUPPORTED_OPERATION = 1498,
@@ -193,6 +194,8 @@ enum OperationCode : short {
     DESCRIBE_STREAM = 0x3004,
     // Trim the min offset of a batch of streams.
     TRIM_STREAM = 0x3005,
+    // Update the epoch of a stream to fence the stream.
+    UPDATE_STREAM_EPOCH = 0x3006,
 
     // 0x4000 ~ 0x4FFF is reserved for observability
 
@@ -990,6 +993,20 @@ table RangeProgress {
 }
 
 table ReportRangeProgressResponse {
+    status: Status (id: 0, required);
+
+    throttle_time_ms: int32 (id: 1);
+}
+
+table UpdateStreamEpochRequest {
+    timeout_ms: int32 (id: 0);
+
+    stream_id: int64  = -1 (id: 1);
+
+    epoch: int64 = -1 (id: 2);
+}
+
+table UpdateStreamEpochResponse {
     status: Status (id: 0, required);
 
     throttle_time_ms: int32 (id: 1);

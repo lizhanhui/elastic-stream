@@ -199,7 +199,7 @@ where
                     }
                     _  = interval.tick() => {
                         let range_progress = unsafe{ & *range_manager.get()}.get_range_progress().await;
-                        let _ = client.report_range_progress(&config.placement_driver, range_progress).await;
+                        let _ = client.report_range_progress(range_progress).await;
                     }
                 }
             }

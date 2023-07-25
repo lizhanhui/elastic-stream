@@ -389,6 +389,28 @@ impl CompositeSession {
         }
     }
 
+    pub(crate) async fn update_stream_epoch(
+        &self,
+        stream_id: u64,
+        epoch: u64,
+    ) -> Result<(), EsError> {
+        let request = request::Request {
+            timeout: self.config.client_io_timeout(),
+            headers: request::Headers::UpdateStreamEpoch { stream_id, epoch },
+            body: None,
+        };
+        let response = self.request(request).await?;
+        if response.ok() {
+            Ok(())
+        } else {
+            warn!(
+                "Fail to update stream{stream_id} epoch to {epoch}, status: {:?}",
+                response.status
+            );
+            Err(EsError::from(&response))
+        }
+    }
+
     /// Create the specified range to the target: placement driver or range server.
     ///
     /// If the target is placement driver, we need to select the session to the primary node;
