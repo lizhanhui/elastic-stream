@@ -23,7 +23,7 @@ service:
 
 storage:
   mountPath: /data/placement-driver
-  storageClassName: "standard"
+  storageClassName: "longhorn"
   size: 1Gi
 
 resources:

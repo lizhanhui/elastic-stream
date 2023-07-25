@@ -24,9 +24,12 @@ pdAddress: "pd:12378"
 
 storage:
   mountPath: /data/store
-  storageClassName: "standard"
+  storageClassName: "longhorn"
   size: 15Gi
 
+promtail:
+  promtailSidecar: false
+  clientUrl: "http://loki:3100/loki/api/v1/push"
 resources:
   {}
   # We usually recommend not to specify default resources and to leave this as a conscious

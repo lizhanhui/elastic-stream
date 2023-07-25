@@ -36,6 +36,10 @@ spec:
           volumeMounts:
             - name: range-server-store
               mountPath: {{ .Values.storage.path | default "/data/store" | quote }}
+              {{- if .Values.promtail.promtailSidecar }}
+            - name: range-server-log
+              mountPath: /root/logs
+              {{- end }}
           env:
             - name: NAME
               valueFrom:
@@ -47,6 +51,30 @@ spec:
               value: "$(NAME).{{ include "range-server.name" . }}:{{ .Values.service.ports.server }}"
             - name: ES_PD
               value: "{{ .Values.pdAddress }}"
+        {{- if .Values.promtail.promtailSidecar }}
+        - name: protail
+          image: grafana/promtail:main
+          args:
+            - "-config.expand-env=true"
+            - "-config.file=/etc/promtail/promtail.yaml"
+            - "-client.url={{ .Values.promtail.clientUrl }}"
+          env:
+            - name: NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          volumeMounts:
+            - name: range-server-log
+              mountPath: /root/logs
+            - name: range-server-promtail-config
+              mountPath: /etc/promtail
+      volumes:
+        - name: range-server-log
+          emptyDir: {}
+        - name: range-server-promtail-config
+          configMap:
+            name: promtail-sidecar-conf
+        {{- end }}
   volumeClaimTemplates:
   - metadata:
       name: range-server-store
