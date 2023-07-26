@@ -1,8 +1,7 @@
-use crate::{request, response, state::SessionState, NodeRole};
+use crate::{heartbeat::HeartbeatData, request, response, state::SessionState, NodeRole};
 use codec::{error::FrameError, frame::Frame};
 
-use model::client_role::ClientRole;
-use protocol::rpc::header::{GoAwayFlags, OperationCode};
+use protocol::rpc::header::{ClientRole, GoAwayFlags, OperationCode, RangeServerState};
 use transport::connection::Connection;
 
 use local_sync::oneshot;
@@ -304,7 +303,7 @@ impl Session {
         Ok(())
     }
 
-    pub(crate) async fn heartbeat(&self, role: ClientRole) {
+    pub(crate) async fn heartbeat(&self, data: &HeartbeatData) {
         let last = *self.idle_since.borrow();
         if Instant::now() - last < self.config.client_heartbeat_interval() {
             return;
@@ -314,12 +313,16 @@ impl Session {
             timeout: self.config.client_io_timeout(),
             headers: request::Headers::Heartbeat {
                 client_id: self.config.client.client_id.clone(),
-                range_server: if role == ClientRole::RangeServer {
-                    Some(self.config.server.range_server())
+                range_server: if data.role == ClientRole::CLIENT_ROLE_RANGE_SERVER {
+                    let mut range_server = self.config.server.range_server();
+                    range_server.state = data
+                        .state
+                        .unwrap_or(RangeServerState::RANGE_SERVER_STATE_READ_WRITE);
+                    Some(range_server)
                 } else {
                     None
                 },
-                role,
+                role: data.role,
             },
             body: None,
         };

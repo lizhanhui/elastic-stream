@@ -396,6 +396,14 @@ table ListRangeCriteria {
     stream_id: int64 = -1 (id: 1);
 }
 
+// State of the range server
+enum RangeServerState : byte {
+    RANGE_SERVER_STATE_UNSPECIFIED = 0,
+    RANGE_SERVER_STATE_READ_ONLY = 1,
+    RANGE_SERVER_STATE_READ_WRITE = 2,
+    RANGE_SERVER_STATE_OFFLINE = 3,
+}
+
 table RangeServer {
     // The server id of the range server.
     server_id: int32 = -1 (id: 0);
@@ -403,6 +411,9 @@ table RangeServer {
     // The advertise address of the range server, for client traffic from outside.
     // The schema of the address is `host:port`, while host supports both domain name and IPv4/IPv6 address.
     advertise_addr: string (id: 1, required);
+
+    // State of the range server: `ReadOnly` or `ReadWrite`.
+    state: RangeServerState(id: 2);
 }
 
 // The list streams request is used to list the ranges of a batch of streams.

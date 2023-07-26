@@ -7,6 +7,7 @@ use std::{
 use error::ConfigurationError;
 use model::RangeServer;
 use nix::sys::stat;
+use protocol::rpc::header::RangeServerState;
 use serde::{Deserialize, Serialize};
 pub mod error;
 
@@ -160,6 +161,7 @@ impl Server {
         RangeServer {
             server_id: self.server_id,
             advertise_address: self.advertise_addr.clone(),
+            state: RangeServerState::RANGE_SERVER_STATE_READ_WRITE,
         }
     }
 }

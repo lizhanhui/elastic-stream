@@ -15,6 +15,7 @@
 pub mod client;
 pub(crate) mod composite_session;
 pub mod error;
+pub mod heartbeat;
 pub mod id_generator;
 pub mod invocation_context;
 pub(crate) mod lb_policy;

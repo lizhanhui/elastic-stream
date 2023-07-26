@@ -769,6 +769,7 @@ dependencies = [
  "model",
  "nix",
  "num_cpus",
+ "protocol",
  "serde",
  "serde_yaml 0.9.22",
  "thiserror",

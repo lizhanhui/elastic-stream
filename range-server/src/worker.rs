@@ -11,14 +11,14 @@ use crate::{
     range_manager::{fetcher::FetchRangeTask, RangeManager},
     worker_config::WorkerConfig,
 };
-use client::{client::Client, DefaultClient};
+use client::{client::Client, heartbeat::HeartbeatData, DefaultClient};
 use log::{debug, error, info, warn};
-use model::client_role::ClientRole;
 use observation::metrics::{
     store_metrics::RangeServerStatistics,
     sys_metrics::{DiskStatistics, MemoryStatistics},
     uring_metrics::UringStatistics,
 };
+use protocol::rpc::header::{ClientRole, RangeServerState};
 use store::Store;
 use tokio::sync::{broadcast, mpsc};
 use tokio_uring::net::TcpListener;
@@ -36,6 +36,9 @@ pub(crate) struct Worker<S, M> {
     store: Rc<S>,
     range_manager: Rc<UnsafeCell<M>>,
     client: Rc<DefaultClient>,
+
+    state: Rc<RefCell<RangeServerState>>,
+
     #[allow(dead_code)]
     channels: Option<Vec<mpsc::UnboundedReceiver<FetchRangeTask>>>,
 }
@@ -57,6 +60,9 @@ where
             store,
             range_manager,
             client,
+            state: Rc::new(RefCell::new(
+                RangeServerState::RANGE_SERVER_STATE_READ_WRITE,
+            )),
             channels,
         }
     }
@@ -117,10 +123,11 @@ where
                     });
                     self.report_metrics(shutdown.subscribe());
                 }
+
                 // TODO: report after pd can handle the request.
                 // self.report_range_progress(shutdown.subscribe());
 
-                self.heartbeat(shutdown.subscribe());
+                self.heartbeat(shutdown.subscribe(), Rc::clone(&self.state));
 
                 match self.run(listener, shutdown.subscribe()).await {
                     Ok(_) => {}
@@ -162,20 +169,39 @@ where
         });
     }
 
-    fn heartbeat(&self, mut shutdown_rx: broadcast::Receiver<()>) {
+    fn heartbeat(
+        &self,
+        mut shutdown_rx: broadcast::Receiver<()>,
+        state: Rc<RefCell<RangeServerState>>,
+    ) {
         let client = Rc::clone(&self.client);
         let config = Arc::clone(&self.config.server_config);
         tokio_uring::spawn(async move {
             let mut interval = tokio::time::interval(config.client_heartbeat_interval());
+            let mut heartbeat_data = HeartbeatData {
+                role: ClientRole::CLIENT_ROLE_RANGE_SERVER,
+                state: Some(*state.borrow()),
+            };
+
             loop {
                 tokio::select! {
                     _ = shutdown_rx.recv() => {
-                        info!("Received shutdown signal. Stop accepting new connections.");
+                        info!("Received shutdown signal.");
+                        // Update range server state.
+                        *state.borrow_mut() = RangeServerState::RANGE_SERVER_STATE_OFFLINE;
+                        // Refresh range sever state of heartbeat data
+                        heartbeat_data.set_state(RangeServerState::RANGE_SERVER_STATE_OFFLINE);
+                        // Notify placement driver that this range server is now
+                        let _ = client.broadcast_heartbeat(&heartbeat_data).await;
                         break;
                     }
+
                     _ = interval.tick() => {
+                        // Refresh range server state
+                        heartbeat_data.set_state(*state.borrow());
+
                         let _ = client
-                        .broadcast_heartbeat(ClientRole::RangeServer)
+                        .broadcast_heartbeat(&heartbeat_data)
                         .await;
                     }
 

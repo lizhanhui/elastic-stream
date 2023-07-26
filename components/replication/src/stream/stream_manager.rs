@@ -5,11 +5,11 @@ use std::{
     sync::Arc,
 };
 
-use client::{client::Client, DefaultClient};
+use client::{client::Client, heartbeat::HeartbeatData, DefaultClient};
 use config::Configuration;
 use log::{error, warn};
-use model::{client_role::ClientRole, error::EsError, stream::StreamMetadata};
-use protocol::rpc::header::ErrorCode;
+use model::{error::EsError, stream::StreamMetadata};
+use protocol::rpc::header::{ClientRole, ErrorCode};
 use tokio::sync::{broadcast, oneshot};
 
 use crate::{
@@ -95,9 +95,14 @@ impl StreamManager {
         let client = Rc::clone(client);
         tokio_uring::spawn(async move {
             let mut interval = tokio::time::interval(interval);
+            let heartbeat_data = HeartbeatData {
+                role: ClientRole::CLIENT_ROLE_FRONTEND,
+                state: None,
+            };
+
             loop {
                 interval.tick().await;
-                client.broadcast_heartbeat(ClientRole::Frontend).await;
+                client.broadcast_heartbeat(&heartbeat_data).await;
             }
         });
     }

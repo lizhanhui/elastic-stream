@@ -26,6 +26,7 @@ func TestRaftCluster_fillRangeServersInfo(t *testing.T) {
 
 	rangeServer2 := rpcfb.RangeServerT{
 		ServerId: rangeServer.ServerId,
+		State:    rangeServer.State,
 	}
 	cluster.fillRangeServersInfo([]*rpcfb.RangeServerT{&rangeServer2})
 

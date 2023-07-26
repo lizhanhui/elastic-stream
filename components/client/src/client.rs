@@ -1,11 +1,10 @@
 use super::session_manager::SessionManager;
 
-use crate::composite_session::CompositeSession;
+use crate::{composite_session::CompositeSession, heartbeat::HeartbeatData};
 
 use bytes::Bytes;
 use log::{error, trace, warn};
 use model::{
-    client_role::ClientRole,
     error::EsError,
     object::ObjectMetadata,
     range::RangeMetadata,
@@ -33,7 +32,7 @@ pub trait Client {
     async fn list_ranges(&self, criteria: ListRangeCriteria)
         -> Result<Vec<RangeMetadata>, EsError>;
 
-    async fn broadcast_heartbeat(&self, role: ClientRole);
+    async fn broadcast_heartbeat(&self, data: &HeartbeatData);
 
     async fn create_stream(
         &self,
@@ -150,9 +149,9 @@ impl Client for DefaultClient {
     ///
     /// # Returns
     ///
-    async fn broadcast_heartbeat(&self, role: ClientRole) {
+    async fn broadcast_heartbeat(&self, data: &HeartbeatData) {
         let session_manager = unsafe { &mut *self.session_manager.get() };
-        session_manager.broadcast_heartbeat(role).await;
+        session_manager.broadcast_heartbeat(data).await;
     }
 
     async fn create_stream(
@@ -440,7 +439,6 @@ mod tests {
     use bytes::{Bytes, BytesMut};
     use log::trace;
     use mock_server::run_listener;
-    use model::client_role::ClientRole;
     use model::error::EsError;
     use model::resource::{EventType, Resource};
     use model::stream::StreamMetadata;
@@ -454,12 +452,11 @@ mod tests {
         sys_metrics::{DiskStatistics, MemoryStatistics},
         uring_metrics::UringStatistics,
     };
-    use protocol::rpc::header::{ResourceType, SealKind};
+    use protocol::rpc::header::{ClientRole, RangeServerState, ResourceType, SealKind};
     use std::{error::Error, sync::Arc};
     use tokio::sync::broadcast;
 
-    use crate::client::Client;
-    use crate::DefaultClient;
+    use crate::{client::Client, heartbeat::HeartbeatData, DefaultClient};
 
     #[test]
     fn test_broadcast_heartbeat() -> Result<(), Box<dyn Error>> {
@@ -475,7 +472,11 @@ mod tests {
             let config = Arc::new(config);
             let (tx, _rx) = broadcast::channel(1);
             let client = DefaultClient::new(Arc::clone(&config), tx);
-            client.broadcast_heartbeat(ClientRole::RangeServer).await;
+            let heartbeat_data = HeartbeatData {
+                role: ClientRole::CLIENT_ROLE_RANGE_SERVER,
+                state: Some(RangeServerState::RANGE_SERVER_STATE_READ_WRITE),
+            };
+            client.broadcast_heartbeat(&heartbeat_data).await;
             Ok(())
         })
     }

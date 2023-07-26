@@ -9,6 +9,7 @@ import (
 type RangeServerT struct {
 	ServerId int32 `json:"server_id"`
 	AdvertiseAddr string `json:"advertise_addr"`
+	State RangeServerState `json:"state"`
 }
 
 func (t *RangeServerT) Pack(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
@@ -20,12 +21,14 @@ func (t *RangeServerT) Pack(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
 	RangeServerStart(builder)
 	RangeServerAddServerId(builder, t.ServerId)
 	RangeServerAddAdvertiseAddr(builder, advertiseAddrOffset)
+	RangeServerAddState(builder, t.State)
 	return RangeServerEnd(builder)
 }
 
 func (rcv *RangeServer) UnPackTo(t *RangeServerT) {
 	t.ServerId = rcv.ServerId()
 	t.AdvertiseAddr = string(rcv.AdvertiseAddr())
+	t.State = rcv.State()
 }
 
 func (rcv *RangeServer) UnPack() *RangeServerT {
@@ -82,14 +85,29 @@ func (rcv *RangeServer) AdvertiseAddr() []byte {
 	return nil
 }
 
+func (rcv *RangeServer) State() RangeServerState {
+	o := flatbuffers.UOffsetT(rcv._tab.Offset(8))
+	if o != 0 {
+		return RangeServerState(rcv._tab.GetInt8(o + rcv._tab.Pos))
+	}
+	return 0
+}
+
+func (rcv *RangeServer) MutateState(n RangeServerState) bool {
+	return rcv._tab.MutateInt8Slot(8, int8(n))
+}
+
 func RangeServerStart(builder *flatbuffers.Builder) {
-	builder.StartObject(2)
+	builder.StartObject(3)
 }
 func RangeServerAddServerId(builder *flatbuffers.Builder, serverId int32) {
 	builder.PrependInt32Slot(0, serverId, -1)
 }
 func RangeServerAddAdvertiseAddr(builder *flatbuffers.Builder, advertiseAddr flatbuffers.UOffsetT) {
 	builder.PrependUOffsetTSlot(1, flatbuffers.UOffsetT(advertiseAddr), 0)
+}
+func RangeServerAddState(builder *flatbuffers.Builder, state RangeServerState) {
+	builder.PrependInt8Slot(2, int8(state), 0)
 }
 func RangeServerEnd(builder *flatbuffers.Builder) flatbuffers.UOffsetT {
 	return builder.EndObject()

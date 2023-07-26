@@ -4,7 +4,6 @@
 pub mod append_entry;
 pub mod append_result_entry;
 pub mod batch;
-pub mod client_role;
 pub mod error;
 pub mod list_range_criteria;
 pub mod object;

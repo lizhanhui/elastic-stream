@@ -172,6 +172,7 @@ func eraseRangeServersInfo(o []*rpcfb.RangeServerT) (rs []*rpcfb.RangeServerT) {
 	for i, rangeServer := range o {
 		rs[i] = &rpcfb.RangeServerT{
 			ServerId: rangeServer.ServerId,
+			State:    rangeServer.State,
 		}
 	}
 	return

@@ -1,14 +1,14 @@
 use super::{lb_policy::LbPolicy, session::Session};
 use crate::{
-    invocation_context::InvocationContext, request::Request, response::Response,
-    state::SessionState,
+    heartbeat::HeartbeatData, invocation_context::InvocationContext, request::Request,
+    response::Response, state::SessionState,
 };
 use bytes::Bytes;
+use config::Configuration;
 use itertools::Itertools;
 use local_sync::oneshot;
 use log::{debug, error, info, trace, warn};
 use model::{
-    client_role::ClientRole,
     error::EsError,
     object::ObjectMetadata,
     range::RangeMetadata,
@@ -47,7 +47,7 @@ use crate::{request, response, NodeRole};
 
 pub(crate) struct CompositeSession {
     target: String,
-    config: Arc<config::Configuration>,
+    config: Arc<Configuration>,
     lb_policy: LbPolicy,
     endpoints: RefCell<Vec<SocketAddr>>,
     sessions: Rc<RefCell<HashMap<SocketAddr, Session>>>,
@@ -58,7 +58,7 @@ pub(crate) struct CompositeSession {
 impl CompositeSession {
     pub(crate) async fn new<T>(
         target: T,
-        config: Arc<config::Configuration>,
+        config: Arc<Configuration>,
         lb_policy: LbPolicy,
         shutdown: broadcast::Sender<()>,
     ) -> Result<Self, EsError>
@@ -277,7 +277,7 @@ impl CompositeSession {
     }
 
     /// Broadcast heartbeat requests to all nested sessions.
-    pub(crate) async fn heartbeat(&self, role: ClientRole) {
+    pub(crate) async fn heartbeat(&self, data: &HeartbeatData) {
         self.try_reconnect().await;
 
         if self.need_refresh_placement_driver_cluster()
@@ -293,7 +293,7 @@ impl CompositeSession {
             .map(|(_, session)| session.clone())
             .collect::<Vec<_>>();
         for session in sessions {
-            session.heartbeat(role).await
+            session.heartbeat(data).await
         }
     }
 
@@ -718,7 +718,7 @@ impl CompositeSession {
     async fn connect(
         addr: SocketAddr,
         duration: Duration,
-        config: Arc<config::Configuration>,
+        config: Arc<Configuration>,
         sessions: Rc<RefCell<HashMap<SocketAddr, Session>>>,
         shutdown: broadcast::Sender<()>,
     ) -> Result<Session, EsError> {
