@@ -6,7 +6,23 @@ on:
       - 'v[0-9]+\.[0-9]+\.[0-9]+'
 
 jobs:
+  check-version:
+    name: Check version in Cargo.toml
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+      - name: Check version in Cargo.toml
+        run: |
+          tag_version=$(echo ${{ github.ref_name }} | sed 's/v//')
+          range_server_version=$(cargo metadata --format-version=1 --no-deps | jq -r '.packages[] | select(.name == "range-server") | .version')
+          if [ "$tag_version" != "$range_server_version" ]; then
+            echo "Range Server version $range_server_version does not match version in tag $tag_version" >&2
+            exit 1
+          fi
+
   release:
+    needs: check-version
     name: Release with Debian Packages and Docker Images
     strategy:
       matrix:
@@ -60,6 +76,7 @@ jobs:
         run: |
           ./build.sh
   java-release:
+    needs: check-version
     name: Publish snapshot package to the Maven Central Repository
     strategy:
       matrix:
