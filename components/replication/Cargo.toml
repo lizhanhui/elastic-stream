@@ -26,3 +26,6 @@ serde = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 tokio-uring = { workspace = true }
+
+[dev-dependencies]
+client = { path = "../client", features = ["mock"] }

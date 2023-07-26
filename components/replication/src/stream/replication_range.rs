@@ -22,9 +22,15 @@ use super::{
 
 use protocol::rpc::header::{ErrorCode, SealKind};
 
+#[cfg(test)]
+use mockall::automock;
+
+pub(crate) type AckCallback = Box<dyn Fn()>;
+
+#[cfg_attr(test, automock)]
 pub(crate) trait ReplicationRange<C>
 where
-    C: Client,
+    C: Client + 'static,
 {
     async fn create(
         client: Rc<C>,
@@ -34,10 +40,10 @@ where
         start_offset: u64,
     ) -> Result<RangeMetadata, EsError>;
 
-    fn new(
+    fn build(
         metadata: RangeMetadata,
         open_for_write: bool,
-        ack_callback: Box<dyn Fn()>,
+        ack_callback: AckCallback,
         client: Weak<C>,
         cache: Rc<HotCache>,
     ) -> Rc<Self>;
@@ -269,7 +275,7 @@ where
         Ok(metadata)
     }
 
-    fn new(
+    fn build(
         metadata: RangeMetadata,
         open_for_write: bool,
         ack_callback: Box<dyn Fn()>,
@@ -345,25 +351,12 @@ where
             panic!("Range append record batch with invalid base offset");
         }
         *self.next_offset.borrow_mut() = context.base_offset + last_offset_delta as u64;
-        let mut record_batch_builder = RecordBatch::new_builder()
-            .with_stream_id(record_batch.stream_id())
-            // use current range index.
-            .with_range_index(self.metadata.index())
-            .with_flags(record_batch.flags())
-            // use base_offset from context.
-            .with_base_offset(base_offset as i64)
-            .with_last_offset_delta(record_batch.last_offset_delta() as i32)
-            .with_base_timestamp(record_batch.base_timestamp())
-            .with_payload(record_batch.payload());
-        if let Some(properties) = record_batch.properties() {
-            for kv in properties.iter() {
-                record_batch_builder =
-                    record_batch_builder.with_property(kv.key.clone(), kv.value.clone());
-            }
-        }
-        let record_batch = record_batch_builder.build().expect("valid record batch");
-        let flat_record_batch: FlatRecordBatch = Into::into(record_batch);
-        let (flat_record_batch_bytes, _) = flat_record_batch.encode();
+        let flat_record_batch_bytes = record_batch_to_bytes(
+            record_batch,
+            &context,
+            self.metadata().stream_id() as u64,
+            self.metadata().index() as u32,
+        );
         self.cache.insert(
             self.metadata.stream_id() as u64,
             base_offset,
@@ -588,7 +581,7 @@ where
 }
 
 pub struct RangeAppendContext {
-    base_offset: u64,
+    pub(crate) base_offset: u64,
 }
 
 impl RangeAppendContext {
@@ -597,7 +590,7 @@ impl RangeAppendContext {
     }
 }
 
-fn vec_bytes_to_bytes(vec_bytes: &Vec<Bytes>) -> Bytes {
+pub(crate) fn vec_bytes_to_bytes(vec_bytes: &Vec<Bytes>) -> Bytes {
     let mut size = 0;
     for bytes in vec_bytes.iter() {
         size += bytes.len();
@@ -607,4 +600,33 @@ fn vec_bytes_to_bytes(vec_bytes: &Vec<Bytes>) -> Bytes {
         bytes_mut.extend_from_slice(&bytes[..]);
     }
     bytes_mut.freeze()
+}
+
+pub(crate) fn record_batch_to_bytes(
+    record_batch: &RecordBatch,
+    context: &RangeAppendContext,
+    stream_id: u64,
+    range_index: u32,
+) -> Vec<Bytes> {
+    let base_offset = context.base_offset;
+    let mut record_batch_builder = RecordBatch::new_builder()
+        .with_stream_id(stream_id as i64)
+        // use current range index.
+        .with_range_index(range_index as i32)
+        .with_flags(record_batch.flags())
+        // use base_offset from context.
+        .with_base_offset(base_offset as i64)
+        .with_last_offset_delta(record_batch.last_offset_delta() as i32)
+        .with_base_timestamp(record_batch.base_timestamp())
+        .with_payload(record_batch.payload());
+    if let Some(properties) = record_batch.properties() {
+        for kv in properties.iter() {
+            record_batch_builder =
+                record_batch_builder.with_property(kv.key.clone(), kv.value.clone());
+        }
+    }
+    let record_batch = record_batch_builder.build().expect("valid record batch");
+    let flat_record_batch: FlatRecordBatch = Into::into(record_batch);
+    let (flat_record_batch_bytes, _) = flat_record_batch.encode();
+    flat_record_batch_bytes
 }

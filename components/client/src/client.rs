@@ -26,6 +26,11 @@ use protocol::rpc::header::{ErrorCode, ResourceType, SealKind};
 use std::{cell::UnsafeCell, rc::Rc, sync::Arc, time::Duration};
 use tokio::{sync::broadcast, time};
 
+#[cfg(any(test, feature = "mock"))]
+use mockall::automock;
+
+/// Definition of core storage trait.
+#[cfg_attr(any(test, feature = "mock"), automock)]
 pub trait Client {
     async fn allocate_id(&self, host: &str) -> Result<i32, EsError>;
 
@@ -51,9 +56,9 @@ pub trait Client {
         range_metadata: RangeMetadata,
     ) -> Result<(), EsError>;
 
-    async fn seal(
+    async fn seal<'a>(
         &self,
-        target: Option<&str>,
+        target: Option<&'a str>,
         kind: SealKind,
         range: RangeMetadata,
     ) -> Result<RangeMetadata, EsError>;
@@ -213,9 +218,9 @@ impl Client for DefaultClient {
             .map(|_| ())
     }
 
-    async fn seal(
+    async fn seal<'a>(
         &self,
-        target: Option<&str>,
+        target: Option<&'a str>,
         kind: SealKind,
         range: RangeMetadata,
     ) -> Result<RangeMetadata, EsError> {

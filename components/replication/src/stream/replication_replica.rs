@@ -15,14 +15,20 @@ use protocol::rpc::header::ErrorCode;
 use protocol::rpc::header::SealKind;
 use tokio::time::sleep;
 
+#[cfg(test)]
+use mockall::automock;
+
+type AckCallback = Box<dyn Fn()>;
+
+#[cfg_attr(test, automock)]
 pub(crate) trait ReplicationReplica<C>
 where
-    C: Client,
+    C: Client + 'static,
 {
     fn new(
         metadata: RangeMetadata,
         range_server: RangeServer,
-        ack: Box<dyn Fn()>,
+        ack: AckCallback,
         client: Weak<C>,
     ) -> Self;
 

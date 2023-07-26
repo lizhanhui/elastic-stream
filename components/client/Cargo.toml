@@ -19,6 +19,7 @@ gethostname = { workspace = true }
 itertools = { workspace = true }
 local-sync = { workspace = true }
 log = { workspace = true }
+mockall = { workspace = true }
 model = { path = "../model" }
 observation = { path = "../observation" }
 ordinal = { workspace = true }
@@ -33,7 +34,9 @@ cargo-llvm-cov = { workspace = true }
 chrono = { workspace = true }
 env_logger = { workspace = true }
 mock-server = { path = "../mock-server" }
-mockall = { workspace = true }
 tempfile = { workspace = true }
 ulog = { path = "../ulog", features = ["env"] }
 util = { path = "../util" }
+
+[features]
+mock = []

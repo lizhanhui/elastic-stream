@@ -88,12 +88,12 @@ where
         this
     }
 
-    async fn new_range(&self, range_index: i32, start_offset: u64) -> Result<(), EsError> {
+    async fn new_range(&self, range_index: i32, start_offset: u64) -> Result<Rc<R>, EsError> {
         if let Some(client) = self.client.upgrade() {
             let range_metadata =
                 R::create(client, self.id, self.epoch, range_index, start_offset).await?;
             let weak_this = self.weak_self.borrow().clone();
-            let range = R::new(
+            let range = R::build(
                 range_metadata,
                 true,
                 Box::new(move || {
@@ -106,8 +106,8 @@ where
             );
             info!("{}Create new range: {:?}", range.metadata(), self.log_ident);
             self.ranges.borrow_mut().insert(start_offset, range.clone());
-            *self.last_range.borrow_mut() = Some(range);
-            Ok(())
+            *self.last_range.borrow_mut() = Some(range.clone());
+            Ok(range)
         } else {
             Err(EsError::new(
                 ErrorCode::UNEXPECTED,
@@ -169,8 +169,72 @@ where
                 }
                 break;
             }
+            Self::append_task0(
+                &stream,
+                log_ident,
+                &mut inflight,
+                &mut next_append_start_offset,
+            )
+            .await;
+        }
+    }
 
-            // 1. get writable range.
+    async fn append_task0(
+        stream: &Rc<Self>,
+        log_ident: &str,
+        inflight: &mut BTreeMap<u64, Rc<StreamAppendRequest>>,
+        next_append_start_offset: &mut u64,
+    ) {
+        // 1. get writable range.
+        let (last_writable_range, rewind_back_next_append_offset) =
+            match Self::get_writable_range(stream).await {
+                Ok(rst) => rst,
+                Err(_e) => {
+                    todo!("deal with fenced error");
+                }
+            };
+        if let Some(rewind) = rewind_back_next_append_offset {
+            *next_append_start_offset = rewind;
+        }
+
+        if !inflight.is_empty() {
+            let range_index = last_writable_range.metadata().index();
+            // 2. ack success append request, and remove them from inflight.
+            let confirm_offset = last_writable_range.confirm_offset();
+            let mut ack_count = 0;
+            for (base_offset, append_request) in inflight.iter() {
+                if *base_offset < confirm_offset {
+                    // if base offset is less than confirm offset, it means append request is already success.
+                    append_request.success();
+                    ack_count += 1;
+                    trace!("{}Ack append request with base_offset={base_offset}, confirm_offset={confirm_offset}", log_ident);
+                }
+            }
+            for _ in 0..ack_count {
+                inflight.pop_first();
+            }
+
+            // 3. try append request which base_offset >= next_append_start_offset.
+            let mut cursor = inflight.lower_bound(Included(next_append_start_offset));
+            while let Some((base_offset, append_request)) = cursor.key_value() {
+                last_writable_range.append(
+                    &append_request.record_batch,
+                    RangeAppendContext::new(*base_offset),
+                );
+                trace!(
+                    "{}Try append record[{base_offset}] to range[{range_index}]",
+                    log_ident
+                );
+                *next_append_start_offset = base_offset + append_request.count() as u64;
+                cursor.move_next();
+            }
+        }
+    }
+
+    async fn get_writable_range(stream: &Rc<Self>) -> Result<(Rc<R>, Option<u64>), EsError> {
+        let log_ident = &stream.log_ident;
+        let mut next_append_start_offset = None;
+        loop {
             let last_range = stream.last_range.borrow().as_ref().cloned();
             let last_writable_range = match last_range {
                 Some(last_range) => {
@@ -182,9 +246,10 @@ where
                             Ok(end_offset) => {
                                 info!("{}Seal not writable last range[{range_index}] with end_offset={end_offset}.", log_ident);
                                 // rewind back next append start offset and try append to new writable range in next round.
-                                next_append_start_offset = end_offset;
+                                next_append_start_offset = Some(end_offset);
                                 if let Err(e) = stream.new_range(range_index + 1, end_offset).await
                                 {
+                                    // TODO: check fenced EsError
                                     error!(
                                         "{}Try create a new range fail, retry later, err[{e}]",
                                         log_ident
@@ -194,11 +259,11 @@ where
                                 }
                             }
                             Err(_) => {
+                                // TODO: check fenced EsError
                                 // delay retry to avoid busy loop
                                 sleep(Duration::from_millis(1000)).await;
                             }
                         }
-                        stream.trigger_append_task();
                         continue;
                     }
                     last_range
@@ -213,45 +278,14 @@ where
                             "{}New a range from absent fail, retry later, err[{e}]",
                             log_ident
                         );
+                        // TODO: check fenced EsError
                         // delay retry to avoid busy loop
                         sleep(Duration::from_millis(1000)).await;
                     }
-                    stream.trigger_append_task();
                     continue;
                 }
             };
-            if !inflight.is_empty() {
-                let range_index = last_writable_range.metadata().index();
-                // 2. ack success append request, and remove them from inflight.
-                let confirm_offset = last_writable_range.confirm_offset();
-                let mut ack_count = 0;
-                for (base_offset, append_request) in inflight.iter() {
-                    if *base_offset < confirm_offset {
-                        // if base offset is less than confirm offset, it means append request is already success.
-                        append_request.success();
-                        ack_count += 1;
-                        trace!("{}Ack append request with base_offset={base_offset}, confirm_offset={confirm_offset}", log_ident);
-                    }
-                }
-                for _ in 0..ack_count {
-                    inflight.pop_first();
-                }
-
-                // 3. try append request which base_offset >= next_append_start_offset.
-                let mut cursor = inflight.lower_bound(Included(&next_append_start_offset));
-                while let Some((base_offset, append_request)) = cursor.key_value() {
-                    last_writable_range.append(
-                        &append_request.record_batch,
-                        RangeAppendContext::new(*base_offset),
-                    );
-                    trace!(
-                        "{}Try append record[{base_offset}] to range[{range_index}]",
-                        log_ident
-                    );
-                    next_append_start_offset = base_offset + append_request.count() as u64;
-                    cursor.move_next();
-                }
-            }
+            return Ok((last_writable_range, next_append_start_offset));
         }
     }
 }
@@ -285,7 +319,7 @@ where
                 let this = self.weak_self.borrow().clone();
                 self.ranges.borrow_mut().insert(
                     range.start(),
-                    R::new(
+                    R::build(
                         range,
                         false,
                         Box::new(move || {
@@ -535,6 +569,294 @@ impl StreamAppendRequest {
     pub fn fail(&self, err: EsError) {
         if let Some(append_tx) = self.append_tx.borrow_mut().take() {
             let _ = append_tx.send(Err(err));
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::error::Error;
+
+    use bytes::BytesMut;
+    use client::client::MockClient;
+    use model::range::RangeMetadata;
+
+    use crate::stream::{
+        records_block::RecordsBlock,
+        replication_range::{
+            record_batch_to_bytes, vec_bytes_to_bytes, AckCallback, MockReplicationRange,
+        },
+    };
+
+    use super::*;
+
+    #[test]
+    fn test_open() -> Result<(), Box<dyn Error>> {
+        tokio_uring::start(async move {
+            let mut client = MockClient::new();
+            client.expect_list_ranges().returning(|_| {
+                Ok(vec![
+                    RangeMetadata::new(0, 0, 0, 0, Some(100)),
+                    RangeMetadata::new(0, 1, 1, 100, None),
+                ])
+            });
+            let client = Rc::new(client);
+            let range_with_context = MockReplicationRange::build_context();
+            range_with_context.expect().returning(|m, _, _, _, _| {
+                if m.index() == 0 {
+                    let mut range0: MockReplicationRange<MockClient> = MockReplicationRange::new();
+                    range0.expect_metadata().times(0).return_const(m);
+                    range0.expect_seal().times(0);
+                    Rc::new(range0)
+                } else if m.index() == 1 {
+                    let mut range1: MockReplicationRange<MockClient> = MockReplicationRange::new();
+                    range1.expect_metadata().times(1).return_const(m);
+                    range1.expect_seal().times(2).returning(|| Ok(200));
+                    range1.expect_confirm_offset().times(1).returning(|| 200);
+                    Rc::new(range1)
+                } else {
+                    panic!("unexpected range index")
+                }
+            });
+            let stream: Rc<ReplicationStream<MockReplicationRange<MockClient>, MockClient>> =
+                ReplicationStream::new(0, 1, Rc::downgrade(&client), Rc::new(HotCache::new(4096)));
+            stream.open().await.unwrap();
+            assert_eq!(0, stream.start_offset());
+            assert_eq!(200, stream.confirm_offset());
+            stream.close().await;
+        });
+        Ok(())
+    }
+
+    #[test]
+    fn test_append() -> Result<(), Box<dyn Error>> {
+        tokio_uring::start(async move {
+            let mut client = MockClient::new();
+            client
+                .expect_list_ranges()
+                .returning(|_| Ok(vec![RangeMetadata::new(0, 0, 0, 0, Some(100))]));
+            let client = Rc::new(client);
+            let stream: Rc<ReplicationStream<MemoryReplicationRange, MockClient>> =
+                ReplicationStream::new(0, 1, Rc::downgrade(&client), Rc::new(HotCache::new(4096)));
+            stream.open().await.unwrap();
+            assert_eq!(1, stream.ranges.borrow().len());
+            let offset = stream.append(new_record(1)).await.unwrap();
+            assert_eq!(100, offset);
+            let offset = stream.append(new_record(1)).await.unwrap();
+            assert_eq!(101, offset);
+            assert_eq!(2, stream.ranges.borrow().len());
+            {
+                // fail the last range.
+                stream
+                    .last_range
+                    .borrow()
+                    .as_ref()
+                    .unwrap()
+                    .writable
+                    .replace(false);
+            }
+            let offset = stream.append(new_record(1)).await.unwrap();
+            assert_eq!(102, offset);
+            assert_eq!(3, stream.ranges.borrow().len());
+            assert_eq!(103, stream.confirm_offset());
+            assert_eq!(103, stream.next_offset());
+        });
+        Ok(())
+    }
+
+    #[test]
+    fn test_fetch() -> Result<(), Box<dyn Error>> {
+        tokio_uring::start(async move {
+            let mut client = MockClient::new();
+            client.expect_list_ranges().returning(|_| Ok(vec![]));
+            let client = Rc::new(client);
+            let stream: Rc<ReplicationStream<MemoryReplicationRange, MockClient>> =
+                ReplicationStream::new(0, 1, Rc::downgrade(&client), Rc::new(HotCache::new(4096)));
+            stream.open().await.unwrap();
+            let _ = stream.append(new_record(1)).await.unwrap();
+            let _ = stream.append(new_record(1)).await.unwrap();
+            {
+                // fail the last range.
+                stream
+                    .last_range
+                    .borrow()
+                    .as_ref()
+                    .unwrap()
+                    .writable
+                    .replace(false);
+            }
+
+            // slow path
+            let _ = stream.append(new_record(1)).await.unwrap();
+            let rst = stream.fetch(0, 1, 1024).await.unwrap();
+            let blocks = get_records_blocks(rst);
+            assert_eq!(1, blocks.len());
+            assert_eq!(0, blocks[0].start_offset());
+            assert_eq!(1, blocks[0].end_offset());
+            let rst = stream.fetch(0, 2, 1024).await.unwrap();
+            let blocks = get_records_blocks(rst);
+            assert_eq!(1, blocks.len());
+            assert_eq!(0, blocks[0].start_offset());
+            assert_eq!(2, blocks[0].end_offset());
+            // only return first range
+            let rst = stream.fetch(0, 3, 1024).await.unwrap();
+            let blocks = get_records_blocks(rst);
+            assert_eq!(1, blocks.len());
+            assert_eq!(0, blocks[0].start_offset());
+            assert_eq!(2, blocks[0].end_offset());
+
+            // fast path
+            let rst = stream.fetch(2, 3, 1024).await.unwrap();
+            let blocks = get_records_blocks(rst);
+            assert_eq!(1, blocks.len());
+            assert_eq!(2, blocks[0].start_offset());
+            assert_eq!(3, blocks[0].end_offset());
+
+            // out of bound
+            if let Err(e) = stream.fetch(0, 4, 1024).await {
+                assert_eq!(ErrorCode::OFFSET_OUT_OF_RANGE_BOUNDS, e.code);
+            } else {
+                panic!("fetch out of bound should fail")
+            }
+
+            if let Err(e) = stream.fetch(4, 10, 1024).await {
+                assert_eq!(ErrorCode::OFFSET_OUT_OF_RANGE_BOUNDS, e.code);
+            } else {
+                panic!("fetch out of bound should fail")
+            }
+        });
+        Ok(())
+    }
+
+    fn get_records_blocks(dataset: FetchDataset) -> Vec<RecordsBlock> {
+        match dataset {
+            FetchDataset::Full(blocks) => blocks,
+            FetchDataset::Partial(blocks) => blocks,
+            FetchDataset::Mixin(_, _) => todo!(),
+            FetchDataset::Overflow(_) => todo!(),
+        }
+    }
+
+    fn new_record(count: u32) -> RecordBatch {
+        RecordBatch::new_builder()
+            .with_stream_id(0)
+            .with_range_index(0)
+            .with_base_offset(0)
+            .with_last_offset_delta(count as i32)
+            .with_payload(BytesMut::zeroed(1).freeze())
+            .build()
+            .unwrap()
+    }
+
+    struct MemoryReplicationRange {
+        metadata: RangeMetadata,
+        records: HotCache,
+        next_offset: RefCell<u64>,
+        confirm_offset: RefCell<u64>,
+        writable: RefCell<bool>,
+        ack: AckCallback,
+    }
+
+    impl ReplicationRange<MockClient> for MemoryReplicationRange {
+        async fn create(
+            _client: Rc<MockClient>,
+            stream_id: i64,
+            epoch: u64,
+            index: i32,
+            start_offset: u64,
+        ) -> Result<RangeMetadata, EsError> {
+            Ok(RangeMetadata::new(
+                stream_id,
+                index,
+                epoch,
+                start_offset,
+                None,
+            ))
+        }
+
+        fn build(
+            metadata: RangeMetadata,
+            open_for_write: bool,
+            ack_callback: AckCallback,
+            _client: Weak<MockClient>,
+            _cache: Rc<HotCache>,
+        ) -> Rc<Self> {
+            let confirm_offset = metadata.end().unwrap_or(metadata.start());
+            Rc::new(MemoryReplicationRange {
+                metadata,
+                records: HotCache::new(1024 * 1024),
+                next_offset: RefCell::new(confirm_offset),
+                confirm_offset: RefCell::new(confirm_offset),
+                writable: RefCell::new(open_for_write),
+                ack: ack_callback,
+            })
+        }
+
+        fn metadata(&self) -> &RangeMetadata {
+            &self.metadata
+        }
+
+        fn append(&self, record_batch: &RecordBatch, context: RangeAppendContext) {
+            let base_offset = context.base_offset;
+            let last_offset_delta = record_batch.last_offset_delta() as u32;
+            *self.next_offset.borrow_mut() =
+                context.base_offset + record_batch.last_offset_delta() as u64;
+            let flat_record_batch_bytes = record_batch_to_bytes(
+                &record_batch,
+                &context,
+                self.metadata().stream_id() as u64,
+                self.metadata().index() as u32,
+            );
+            self.records.insert(
+                self.metadata.stream_id() as u64,
+                base_offset,
+                last_offset_delta,
+                vec![vec_bytes_to_bytes(&flat_record_batch_bytes)],
+            );
+            *self.next_offset.borrow_mut() =
+                context.base_offset + record_batch.last_offset_delta() as u64;
+            *self.confirm_offset.borrow_mut() =
+                context.base_offset + record_batch.last_offset_delta() as u64;
+            (self.ack)();
+        }
+
+        async fn fetch(
+            &self,
+            start_offset: u64,
+            end_offset: u64,
+            batch_max_bytes: u32,
+        ) -> Result<FetchDataset, EsError> {
+            Ok(FetchDataset::Full(vec![self.records.get_block(
+                self.metadata.stream_id() as u64,
+                start_offset,
+                end_offset,
+                batch_max_bytes,
+            )]))
+        }
+
+        fn try_ack(&self) {
+            todo!()
+        }
+
+        async fn seal(&self) -> Result<u64, EsError> {
+            self.writable.replace(false);
+            Ok(self.confirm_offset())
+        }
+
+        fn is_sealed(&self) -> bool {
+            todo!()
+        }
+
+        fn is_writable(&self) -> bool {
+            *self.writable.borrow()
+        }
+
+        fn start_offset(&self) -> u64 {
+            self.metadata.start()
+        }
+
+        fn confirm_offset(&self) -> u64 {
+            *self.confirm_offset.borrow()
         }
     }
 }
