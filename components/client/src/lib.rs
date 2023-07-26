@@ -10,6 +10,7 @@
 #![feature(iterator_try_collect)]
 #![feature(hash_extract_if)]
 #![feature(extract_if)]
+#![feature(async_fn_in_trait)]
 
 pub mod client;
 pub(crate) mod composite_session;
@@ -24,7 +25,7 @@ mod session;
 mod session_manager;
 pub mod state;
 
-pub use crate::client::Client;
+pub use crate::client::DefaultClient;
 pub use crate::id_generator::IdGenerator;
 pub use crate::id_generator::PlacementDriverIdGenerator;
 pub(crate) use crate::role::NodeRole;

@@ -11,8 +11,8 @@ pub(crate) mod object_reader;
 pub(crate) mod object_stream;
 pub(crate) mod records_block;
 pub(crate) mod replication_range;
+pub(crate) mod replication_replica;
 pub(crate) mod replication_stream;
-pub(crate) mod replicator;
 pub(crate) mod stream_manager;
 
 #[cfg_attr(test, automock)]

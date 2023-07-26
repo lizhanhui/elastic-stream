@@ -1,10 +1,10 @@
 use crate::stream::replication_range::RangeAppendContext;
+use crate::stream::replication_range::ReplicationRange;
 
 use super::cache::HotCache;
-use super::replication_range::ReplicationRange;
 use super::FetchDataset;
 use super::Stream;
-use client::Client;
+use client::client::Client;
 use itertools::Itertools;
 use local_sync::{mpsc, oneshot};
 use log::{error, info, trace, warn};
@@ -21,15 +21,19 @@ use std::time::Instant;
 use tokio::sync::broadcast;
 use tokio::time::{sleep, Duration};
 
-pub(crate) struct ReplicationStream {
+pub(crate) struct ReplicationStream<R, C>
+where
+    R: ReplicationRange<C> + 'static,
+    C: Client + 'static,
+{
     log_ident: String,
     weak_self: RefCell<Weak<Self>>,
     id: i64,
     epoch: u64,
-    ranges: RefCell<BTreeMap<u64, Rc<ReplicationRange>>>,
-    client: Weak<Client>,
+    ranges: RefCell<BTreeMap<u64, Rc<R>>>,
+    client: Weak<C>,
     next_offset: RefCell<u64>,
-    last_range: RefCell<Option<Rc<ReplicationRange>>>,
+    last_range: RefCell<Option<Rc<R>>>,
     /// #append send StreamAppendRequest to tx.
     append_requests_tx: mpsc::bounded::Tx<StreamAppendRequest>,
     /// send by range ack / delay retry to trigger append task loop next round.
@@ -41,8 +45,12 @@ pub(crate) struct ReplicationStream {
     cache: Rc<HotCache>,
 }
 
-impl ReplicationStream {
-    pub(crate) fn new(id: i64, epoch: u64, client: Weak<Client>, cache: Rc<HotCache>) -> Rc<Self> {
+impl<R, C> ReplicationStream<R, C>
+where
+    R: ReplicationRange<C> + 'static,
+    C: Client + 'static,
+{
+    pub(crate) fn new(id: i64, epoch: u64, client: Weak<C>, cache: Rc<HotCache>) -> Rc<Self> {
         let (append_requests_tx, append_requests_rx) = mpsc::bounded::channel(1024);
         let (append_tasks_tx, append_tasks_rx) = mpsc::unbounded::channel();
         let (shutdown_signal_tx, shutdown_signal_rx) = broadcast::channel(1);
@@ -83,12 +91,16 @@ impl ReplicationStream {
     async fn new_range(&self, range_index: i32, start_offset: u64) -> Result<(), EsError> {
         if let Some(client) = self.client.upgrade() {
             let range_metadata =
-                ReplicationRange::create(client, self.id, self.epoch, range_index, start_offset)
-                    .await?;
-            let range = ReplicationRange::new(
+                R::create(client, self.id, self.epoch, range_index, start_offset).await?;
+            let weak_this = self.weak_self.borrow().clone();
+            let range = R::new(
                 range_metadata,
                 true,
-                self.weak_self.borrow().clone(),
+                Box::new(move || {
+                    if let Some(stream) = weak_this.upgrade() {
+                        stream.try_ack();
+                    }
+                }),
                 self.client.clone(),
                 self.cache.clone(),
             );
@@ -113,7 +125,7 @@ impl ReplicationStream {
     }
 
     async fn append_task(
-        stream: Weak<ReplicationStream>,
+        stream: Weak<Self>,
         mut append_requests_rx: mpsc::bounded::Rx<StreamAppendRequest>,
         mut append_tasks_rx: mpsc::unbounded::Rx<()>,
         mut shutdown_signal_rx: broadcast::Receiver<()>,
@@ -244,7 +256,11 @@ impl ReplicationStream {
     }
 }
 
-impl Stream for ReplicationStream {
+impl<R, C> Stream for ReplicationStream<R, C>
+where
+    R: ReplicationRange<C> + 'static,
+    C: Client + 'static,
+{
     async fn open(&self) -> Result<(), EsError> {
         info!("{}Opening...", self.log_ident);
         let client = self.client.upgrade().ok_or(EsError::new(
@@ -266,12 +282,17 @@ impl Stream for ReplicationStream {
             // skip old empty range when two range has the same start offset
             .sorted_by(|a, b| Ord::cmp(&a.index(), &b.index()))
             .for_each(|range| {
+                let this = self.weak_self.borrow().clone();
                 self.ranges.borrow_mut().insert(
                     range.start(),
-                    ReplicationRange::new(
+                    R::new(
                         range,
                         false,
-                        self.weak_self.borrow().clone(),
+                        Box::new(move || {
+                            if let Some(stream) = this.upgrade() {
+                                stream.try_ack();
+                            }
+                        }),
                         self.client.clone(),
                         self.cache.clone(),
                     ),

@@ -27,23 +27,84 @@ use protocol::rpc::header::{ErrorCode, ResourceType, SealKind};
 use std::{cell::UnsafeCell, rc::Rc, sync::Arc, time::Duration};
 use tokio::{sync::broadcast, time};
 
+pub trait Client {
+    async fn allocate_id(&self, host: &str) -> Result<i32, EsError>;
+
+    async fn list_ranges(&self, criteria: ListRangeCriteria)
+        -> Result<Vec<RangeMetadata>, EsError>;
+
+    async fn broadcast_heartbeat(&self, role: ClientRole);
+
+    async fn create_stream(
+        &self,
+        stream_metadata: StreamMetadata,
+    ) -> Result<StreamMetadata, EsError>;
+
+    async fn describe_stream(&self, stream_id: u64) -> Result<StreamMetadata, EsError>;
+
+    async fn update_stream_epoch(&self, stream_id: u64, epoch: u64) -> Result<(), EsError>;
+
+    async fn create_range(&self, range_metadata: RangeMetadata) -> Result<RangeMetadata, EsError>;
+
+    async fn create_range_replica(
+        &self,
+        target: &str,
+        range_metadata: RangeMetadata,
+    ) -> Result<(), EsError>;
+
+    async fn seal(
+        &self,
+        target: Option<&str>,
+        kind: SealKind,
+        range: RangeMetadata,
+    ) -> Result<RangeMetadata, EsError>;
+
+    async fn append(
+        &self,
+        target: &str,
+        buf: Vec<Bytes>,
+    ) -> Result<Vec<AppendResultEntry>, EsError>;
+
+    async fn fetch(&self, target: &str, request: FetchRequest) -> Result<FetchResultSet, EsError>;
+
+    async fn report_metrics(
+        &self,
+        target: &str,
+        uring_statistics: &UringStatistics,
+        range_server_statistics: &RangeServerStatistics,
+        disk_statistics: &DiskStatistics,
+        memory_statistics: &MemoryStatistics,
+    ) -> Result<(), EsError>;
+
+    async fn report_range_progress(&self, progress: Vec<RangeProgress>) -> Result<(), EsError>;
+
+    async fn commit_object(&self, metadata: ObjectMetadata) -> Result<(), EsError>;
+
+    async fn list_resource(
+        &self,
+        types: &[ResourceType],
+        limit: i32,
+        continuation: &Option<Bytes>,
+    ) -> Result<ListResourceResult, EsError>;
+
+    async fn watch_resource(
+        &self,
+        types: &[ResourceType],
+        version: i64,
+        timeout: Duration,
+    ) -> Result<WatchResourceResult, EsError>;
+
+    async fn target_go_away(&self, target: &str) -> Result<bool, EsError>;
+}
+
 /// `Client` is used to send
-pub struct Client {
+pub struct DefaultClient {
     pub(crate) session_manager: Rc<UnsafeCell<SessionManager>>,
     pub(crate) config: Arc<config::Configuration>,
 }
 
-impl Client {
-    pub fn new(config: Arc<config::Configuration>, shutdown: broadcast::Sender<()>) -> Self {
-        let session_manager = Rc::new(UnsafeCell::new(SessionManager::new(&config, shutdown)));
-
-        Self {
-            session_manager,
-            config,
-        }
-    }
-
-    pub async fn allocate_id(&self, host: &str) -> Result<i32, EsError> {
+impl Client for DefaultClient {
+    async fn allocate_id(&self, host: &str) -> Result<i32, EsError> {
         let composite_session = self.get_pd_session().await?;
         let future = composite_session.allocate_id(host, None);
         time::timeout(self.config.client_io_timeout(), future)
@@ -61,7 +122,7 @@ impl Client {
             })
     }
 
-    pub async fn list_ranges(
+    async fn list_ranges(
         &self,
         criteria: ListRangeCriteria,
     ) -> Result<Vec<RangeMetadata>, EsError> {
@@ -89,12 +150,12 @@ impl Client {
     ///
     /// # Returns
     ///
-    pub async fn broadcast_heartbeat(&self, role: ClientRole) {
+    async fn broadcast_heartbeat(&self, role: ClientRole) {
         let session_manager = unsafe { &mut *self.session_manager.get() };
         session_manager.broadcast_heartbeat(role).await;
     }
 
-    pub async fn create_stream(
+    async fn create_stream(
         &self,
         stream_metadata: StreamMetadata,
     ) -> Result<StreamMetadata, EsError> {
@@ -108,7 +169,7 @@ impl Client {
             })?
     }
 
-    pub async fn describe_stream(&self, stream_id: u64) -> Result<StreamMetadata, EsError> {
+    async fn describe_stream(&self, stream_id: u64) -> Result<StreamMetadata, EsError> {
         let composite_session = self.get_pd_session().await?;
         let future = composite_session.describe_stream(stream_id);
         time::timeout(self.config.client_io_timeout(), future)
@@ -119,7 +180,7 @@ impl Client {
             })?
     }
 
-    pub async fn update_stream_epoch(&self, stream_id: u64, epoch: u64) -> Result<(), EsError> {
+    async fn update_stream_epoch(&self, stream_id: u64, epoch: u64) -> Result<(), EsError> {
         let composite_session = self.get_pd_session().await?;
         let future = composite_session.update_stream_epoch(stream_id, epoch);
         time::timeout(self.config.client_io_timeout(), future)
@@ -134,16 +195,13 @@ impl Client {
     }
 
     /// Create a new range by send request to placement driver.
-    pub async fn create_range(
-        &self,
-        range_metadata: RangeMetadata,
-    ) -> Result<RangeMetadata, EsError> {
+    async fn create_range(&self, range_metadata: RangeMetadata) -> Result<RangeMetadata, EsError> {
         let composite_session = self.get_pd_session().await?;
         self.create_range0(composite_session, range_metadata).await
     }
 
     /// Create a new range replica by send request to range server.
-    pub async fn create_range_replica(
+    async fn create_range_replica(
         &self,
         target: &str,
         range_metadata: RangeMetadata,
@@ -156,21 +214,7 @@ impl Client {
             .map(|_| ())
     }
 
-    async fn create_range0(
-        &self,
-        composite_session: Rc<CompositeSession>,
-        range: RangeMetadata,
-    ) -> Result<RangeMetadata, EsError> {
-        let future = composite_session.create_range(range);
-        time::timeout(self.config.client_io_timeout(), future)
-            .await
-            .map_err(|e| {
-                error!("Timeout when create range. {}", e);
-                EsError::new(ErrorCode::RPC_TIMEOUT, "create range rpc timeout")
-            })?
-    }
-
-    pub async fn seal(
+    async fn seal(
         &self,
         target: Option<&str>,
         kind: SealKind,
@@ -224,7 +268,7 @@ impl Client {
     }
 
     /// Append data to a range.
-    pub async fn append(
+    async fn append(
         &self,
         target: &str,
         buf: Vec<Bytes>,
@@ -237,25 +281,8 @@ impl Client {
             .map_err(|_e| EsError::new(ErrorCode::RPC_TIMEOUT, "append rpc timeout"))?
     }
 
-    /// Check if the peer server has notified it would go away for maintenance.
-    ///
-    /// Note that overhead of this method is minimal.
-    ///
-    /// # Return
-    /// * Ok(true) - if the target has already notified its scheduled shutdown;
-    /// * Ok(false) - otherwise.
-    pub async fn target_go_away(&self, target: &str) -> Result<bool, EsError> {
-        let session_manager = unsafe { &mut *self.session_manager.get() };
-        let session = session_manager.get_composite_session(target).await?;
-        Ok(session.go_away())
-    }
-
     /// Fetch data from a range replica.
-    pub async fn fetch(
-        &self,
-        target: &str,
-        request: FetchRequest,
-    ) -> Result<FetchResultSet, EsError> {
+    async fn fetch(&self, target: &str, request: FetchRequest) -> Result<FetchResultSet, EsError> {
         let session_manager = unsafe { &mut *self.session_manager.get() };
         let session = session_manager.get_composite_session(target).await?;
         let future = session.fetch(request);
@@ -271,7 +298,7 @@ impl Client {
     ///
     /// # Returns
     ///
-    pub async fn report_metrics(
+    async fn report_metrics(
         &self,
         target: &str,
         uring_statistics: &UringStatistics,
@@ -293,7 +320,7 @@ impl Client {
             .await
     }
 
-    pub async fn report_range_progress(&self, progress: Vec<RangeProgress>) -> Result<(), EsError> {
+    async fn report_range_progress(&self, progress: Vec<RangeProgress>) -> Result<(), EsError> {
         let composite_session = self.get_pd_session().await?;
         let future = composite_session.report_range_progress(progress);
         time::timeout(self.config.client_io_timeout(), future)
@@ -301,7 +328,7 @@ impl Client {
             .map_err(|_| EsError::new(ErrorCode::RPC_TIMEOUT, "watch resource timeout"))?
     }
 
-    pub async fn commit_object(&self, metadata: ObjectMetadata) -> Result<(), EsError> {
+    async fn commit_object(&self, metadata: ObjectMetadata) -> Result<(), EsError> {
         let composite_session = self.get_pd_session().await?;
         let future = composite_session.commit_object(metadata);
         time::timeout(self.config.client_io_timeout(), future)
@@ -323,7 +350,7 @@ impl Client {
     ///
     /// TODO: Error handling
     ///
-    pub async fn list_resource(
+    async fn list_resource(
         &self,
         types: &[ResourceType],
         limit: i32,
@@ -349,7 +376,7 @@ impl Client {
     ///
     /// TODO: Error handling
     ///
-    pub async fn watch_resource(
+    async fn watch_resource(
         &self,
         types: &[ResourceType],
         version: i64,
@@ -360,6 +387,44 @@ impl Client {
         time::timeout(self.config.client_io_timeout(), future)
             .await
             .map_err(|_| EsError::new(ErrorCode::RPC_TIMEOUT, "watch resource timeout"))?
+    }
+
+    /// Check if the peer server has notified it would go away for maintenance.
+    ///
+    /// Note that overhead of this method is minimal.
+    ///
+    /// # Return
+    /// * Ok(true) - if the target has already notified its scheduled shutdown;
+    /// * Ok(false) - otherwise.
+    async fn target_go_away(&self, target: &str) -> Result<bool, EsError> {
+        let session_manager = unsafe { &mut *self.session_manager.get() };
+        let session = session_manager.get_composite_session(target).await?;
+        Ok(session.go_away())
+    }
+}
+
+impl DefaultClient {
+    pub fn new(config: Arc<config::Configuration>, shutdown: broadcast::Sender<()>) -> Self {
+        let session_manager = Rc::new(UnsafeCell::new(SessionManager::new(&config, shutdown)));
+
+        Self {
+            session_manager,
+            config,
+        }
+    }
+
+    async fn create_range0(
+        &self,
+        composite_session: Rc<CompositeSession>,
+        range: RangeMetadata,
+    ) -> Result<RangeMetadata, EsError> {
+        let future = composite_session.create_range(range);
+        time::timeout(self.config.client_io_timeout(), future)
+            .await
+            .map_err(|e| {
+                error!("Timeout when create range. {}", e);
+                EsError::new(ErrorCode::RPC_TIMEOUT, "create range rpc timeout")
+            })?
     }
 
     async fn get_pd_session(&self) -> Result<Rc<CompositeSession>, EsError> {
@@ -393,7 +458,8 @@ mod tests {
     use std::{error::Error, sync::Arc};
     use tokio::sync::broadcast;
 
-    use crate::Client;
+    use crate::client::Client;
+    use crate::DefaultClient;
 
     #[test]
     fn test_broadcast_heartbeat() -> Result<(), Box<dyn Error>> {
@@ -408,7 +474,7 @@ mod tests {
             config.check_and_apply().unwrap();
             let config = Arc::new(config);
             let (tx, _rx) = broadcast::channel(1);
-            let client = Client::new(Arc::clone(&config), tx);
+            let client = DefaultClient::new(Arc::clone(&config), tx);
             client.broadcast_heartbeat(ClientRole::RangeServer).await;
             Ok(())
         })
@@ -427,7 +493,7 @@ mod tests {
             config.placement_driver = format!("localhost:{}", port);
             let config = Arc::new(config);
             let (tx, _rx) = broadcast::channel(1);
-            let client = Client::new(config, tx);
+            let client = DefaultClient::new(config, tx);
             let id = client.allocate_id("localhost").await?;
             assert_eq!(1, id);
             Ok(())
@@ -447,7 +513,7 @@ mod tests {
             config.placement_driver = format!("localhost:{}", port);
             let config = Arc::new(config);
             let (tx, _rx) = broadcast::channel(1);
-            let client = Client::new(config, tx);
+            let client = DefaultClient::new(config, tx);
             let stream_metadata = client
                 .create_stream(StreamMetadata {
                     stream_id: None,
@@ -480,7 +546,7 @@ mod tests {
             config.placement_driver = format!("localhost:{}", port);
             let config = Arc::new(config);
             let (tx, _rx) = broadcast::channel(1);
-            let client = Client::new(config, tx);
+            let client = DefaultClient::new(config, tx);
 
             let stream_metadata = client
                 .describe_stream(1)
@@ -510,7 +576,7 @@ mod tests {
             let target = config.placement_driver.clone();
             let config = Arc::new(config);
             let (tx, _rx) = broadcast::channel(1);
-            let client = Client::new(config, tx);
+            let client = DefaultClient::new(config, tx);
             let range = RangeMetadata::new(100, 0, 0, 0, None);
             client.create_range_replica(&target, range).await
         })
@@ -537,7 +603,7 @@ mod tests {
 
             let config = Arc::new(config);
             let (tx, _rx) = broadcast::channel(1);
-            let client = Client::new(config, tx);
+            let client = DefaultClient::new(config, tx);
             let range = RangeMetadata::new_range(203, 0, 0, 0, None, 1, 1);
             client.create_range_replica(&target, range).await
         })
@@ -556,7 +622,7 @@ mod tests {
             config.placement_driver = format!("localhost:{}", port);
             let config = Arc::new(config);
             let (tx, _rx) = broadcast::channel(1);
-            let client = Client::new(config, tx);
+            let client = DefaultClient::new(config, tx);
 
             for i in 1..2 {
                 let criteria = ListRangeCriteria::new(None, Some(i as u64));
@@ -588,7 +654,7 @@ mod tests {
             config.placement_driver = format!("localhost:{}", port);
             let config = Arc::new(config);
             let (tx, _rx) = broadcast::channel(1);
-            let client = Client::new(config, tx);
+            let client = DefaultClient::new(config, tx);
 
             for _i in 1..2 {
                 let criteria = ListRangeCriteria::new(None, None);
@@ -622,7 +688,7 @@ mod tests {
             config.check_and_apply().unwrap();
             let config = Arc::new(config);
             let (tx, _rx) = broadcast::channel(1);
-            let client = Client::new(Arc::clone(&config), tx);
+            let client = DefaultClient::new(Arc::clone(&config), tx);
             let range = RangeMetadata::new(0, 0, 0, 0, None);
             let range = client
                 .seal(
@@ -655,7 +721,7 @@ mod tests {
             config.check_and_apply().unwrap();
             let config = Arc::new(config);
             let (tx, _rx) = broadcast::channel(1);
-            let client = Client::new(Arc::clone(&config), tx);
+            let client = DefaultClient::new(Arc::clone(&config), tx);
             let range = RangeMetadata::new(0, 0, 0, 0, Some(1));
             let range = client
                 .seal(
@@ -688,7 +754,7 @@ mod tests {
             config.check_and_apply().unwrap();
             let config = Arc::new(config);
             let (tx, _rx) = broadcast::channel(1);
-            let client = Client::new(Arc::clone(&config), tx);
+            let client = DefaultClient::new(Arc::clone(&config), tx);
             let range = RangeMetadata::new(0, 0, 0, 0, Some(1));
             let range = client
                 .seal(
@@ -720,7 +786,7 @@ mod tests {
             config.check_and_apply().unwrap();
             let config = Arc::new(config);
             let (tx, _rx) = broadcast::channel(1);
-            let client = Client::new(Arc::clone(&config), tx);
+            let client = DefaultClient::new(Arc::clone(&config), tx);
             let stream_id = 0;
             let index = 0;
 
@@ -774,7 +840,7 @@ mod tests {
             config.check_and_apply().unwrap();
             let config = Arc::new(config);
             let (tx, _rx) = broadcast::channel(1);
-            let client = Client::new(Arc::clone(&config), tx);
+            let client = DefaultClient::new(Arc::clone(&config), tx);
             let uring_statistics = UringStatistics::new();
             let range_server_statistics = RangeServerStatistics::new();
             let disk_statistics = DiskStatistics::new();
@@ -805,7 +871,7 @@ mod tests {
             config.check_and_apply().unwrap();
             let config = Arc::new(config);
             let (tx, _rx) = broadcast::channel(1);
-            let client = Client::new(Arc::clone(&config), tx);
+            let client = DefaultClient::new(Arc::clone(&config), tx);
 
             let result = client
                 .list_resource(
@@ -848,7 +914,7 @@ mod tests {
             config.check_and_apply().unwrap();
             let config = Arc::new(config);
             let (tx, _rx) = broadcast::channel(1);
-            let client = Client::new(Arc::clone(&config), tx);
+            let client = DefaultClient::new(Arc::clone(&config), tx);
 
             let version = 100;
             let result = client

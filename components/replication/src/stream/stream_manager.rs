@@ -5,7 +5,7 @@ use std::{
     sync::Arc,
 };
 
-use client::Client;
+use client::{client::Client, DefaultClient};
 use config::Configuration;
 use log::{error, warn};
 use model::{client_role::ClientRole, error::EsError, stream::StreamMetadata};
@@ -26,15 +26,25 @@ use super::{
     cache_stream::CacheStream,
     object_reader::{AsyncObjectReader, DefaultObjectReader},
     object_stream::ObjectStream,
+    replication_range::DefaultReplicationRange,
+    replication_replica::DefaultReplicationReplica,
     FetchDataset, Stream,
 };
 
 // final stream type
-type FStream = CacheStream<ObjectStream<ReplicationStream, DefaultObjectReader>>;
+type FStream = CacheStream<
+    ObjectStream<
+        ReplicationStream<
+            DefaultReplicationRange<DefaultReplicationReplica<DefaultClient>, DefaultClient>,
+            DefaultClient,
+        >,
+        DefaultObjectReader,
+    >,
+>;
 
 /// `StreamManager` is intended to be used in thread-per-core usage case. It is NOT `Send`.
 pub(crate) struct StreamManager {
-    clients: Vec<Rc<Client>>,
+    clients: Vec<Rc<DefaultClient>>,
     round_robin: usize,
     streams: Rc<RefCell<HashMap<u64, Rc<FStream>>>>,
     hot_cache: Rc<HotCache>,
@@ -51,7 +61,7 @@ impl StreamManager {
 
         let mut clients = vec![];
         for _ in 0..config.replication.connection_pool_size {
-            let client = Rc::new(Client::new(Arc::clone(&config), shutdown.clone()));
+            let client = Rc::new(DefaultClient::new(Arc::clone(&config), shutdown.clone()));
             Self::schedule_heartbeat(&client, config.client_heartbeat_interval());
             clients.push(client);
         }
@@ -68,7 +78,7 @@ impl StreamManager {
         }
     }
 
-    fn route_client(&mut self) -> Result<Rc<Client>, EsError> {
+    fn route_client(&mut self) -> Result<Rc<DefaultClient>, EsError> {
         debug_assert!(!self.clients.is_empty(), "Clients should NOT be empty");
         let index = self.round_robin % self.clients.len();
         self.round_robin += 1;
@@ -78,7 +88,7 @@ impl StreamManager {
         ))
     }
 
-    fn schedule_heartbeat(client: &Rc<Client>, interval: std::time::Duration) {
+    fn schedule_heartbeat(client: &Rc<DefaultClient>, interval: std::time::Duration) {
         // Spawn a task to broadcast heartbeat to servers.
         //
         // TODO: watch ctrl-c signal to shutdown timely.
@@ -275,7 +285,7 @@ impl StreamManager {
     fn new_stream(
         stream_id: u64,
         epoch: u64,
-        client: Weak<Client>,
+        client: Weak<DefaultClient>,
         hot_cache: Rc<HotCache>,
         block_cache: Rc<BlockCache>,
         object_reader: Rc<AsyncObjectReader>,

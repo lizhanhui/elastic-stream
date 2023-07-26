@@ -1,5 +1,5 @@
 use crate::error::ServiceError;
-use client::Client;
+use client::{client::Client, DefaultClient};
 use log::{error, trace};
 use model::{range::RangeMetadata, stream::StreamMetadata};
 use std::rc::Rc;
@@ -26,11 +26,11 @@ pub trait PlacementFetcher {
 }
 
 pub(crate) struct PlacementClient {
-    client: Rc<Client>,
+    client: Rc<DefaultClient>,
 }
 
 impl PlacementClient {
-    pub(crate) fn new(client: Rc<Client>) -> Self {
+    pub(crate) fn new(client: Rc<DefaultClient>) -> Self {
         Self { client }
     }
 }

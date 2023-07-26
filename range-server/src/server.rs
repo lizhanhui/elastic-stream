@@ -75,7 +75,7 @@ pub fn launch(
                     };
 
                     let store = Rc::new(BufferedStore::new(store));
-                    let client = Rc::new(client::Client::new(
+                    let client = Rc::new(client::DefaultClient::new(
                         Arc::clone(&server_config),
                         shutdown_tx.clone(),
                     ));
@@ -112,7 +112,7 @@ pub fn launch(
                     primary: true,
                 };
 
-                let client = Rc::new(client::Client::new(
+                let client = Rc::new(client::DefaultClient::new(
                     Arc::clone(&server_config),
                     shutdown_tx.clone(),
                 ));

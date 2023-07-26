@@ -4,37 +4,89 @@ use std::{
     time::Duration,
 };
 
-use super::replication_range::ReplicationRange;
 use bytes::Bytes;
-use client::Client;
+use client::client::Client;
 use log::{error, info, warn};
 use model::{
-    error::EsError, request::fetch::FetchRequest, response::fetch::FetchResultSet, RangeServer,
+    error::EsError, range::RangeMetadata, request::fetch::FetchRequest,
+    response::fetch::FetchResultSet, RangeServer,
 };
 use protocol::rpc::header::ErrorCode;
 use protocol::rpc::header::SealKind;
 use tokio::time::sleep;
 
+pub(crate) trait ReplicationReplica<C>
+where
+    C: Client,
+{
+    fn new(
+        metadata: RangeMetadata,
+        range_server: RangeServer,
+        ack: Box<dyn Fn()>,
+        client: Weak<C>,
+    ) -> Self;
+
+    fn confirm_offset(&self) -> u64;
+
+    fn append(&self, flat_record_batch_bytes: Vec<Bytes>, base_offset: u64, last_offset: u64);
+
+    async fn fetch(
+        &self,
+        start_offset: u64,
+        end_offset: u64,
+        batch_max_bytes: u32,
+    ) -> Result<FetchResultSet, EsError>;
+
+    async fn seal(&self, end_offset: Option<u64>) -> Result<u64, EsError>;
+
+    fn corrupted(&self) -> bool;
+}
+
 /// Replicator is responsible for replicating data to a range-server of range replica.
 ///
 /// It is created by ReplicationRange and is dropped when the range is sealed.
-#[derive(Debug)]
-pub(crate) struct Replicator {
+pub(crate) struct DefaultReplicationReplica<C>
+where
+    C: Client + 'static,
+{
     log_ident: String,
-    range: Weak<ReplicationRange>,
+    metadata: RangeMetadata,
     confirm_offset: Rc<RefCell<u64>>,
     range_server: RangeServer,
     corrupted: Rc<RefCell<bool>>,
+    writable: Rc<RefCell<bool>>,
+    ack_callback: Rc<Box<dyn Fn()>>,
+    client: Weak<C>,
 }
 
-impl Replicator {
+impl<C> DefaultReplicationReplica<C>
+where
+    C: Client + 'static,
+{
+    fn get_client(&self) -> Result<Rc<C>, EsError> {
+        if let Some(client) = self.client.upgrade() {
+            Ok(client)
+        } else {
+            Err(EsError::new(ErrorCode::UNEXPECTED, "client was dropped"))
+        }
+    }
+}
+
+impl<C> ReplicationReplica<C> for DefaultReplicationReplica<C>
+where
+    C: Client + 'static,
+{
     /// Create a new replicator.
     ///
     /// # Arguments
     /// `range` - The replication range.
     /// `range_server` - The target range-server to replicate data to.
-    pub(crate) fn new(range: Rc<ReplicationRange>, range_server: RangeServer) -> Self {
-        let metadata = range.metadata().clone();
+    fn new(
+        metadata: RangeMetadata,
+        range_server: RangeServer,
+        ack: Box<dyn Fn()>,
+        client: Weak<C>,
+    ) -> Self {
         let confirm_offset = metadata.start();
         Self {
             log_ident: format!(
@@ -44,25 +96,23 @@ impl Replicator {
                 range_server.server_id,
                 range_server.advertise_address
             ),
-            range: Rc::downgrade(&range),
+            metadata: metadata.clone(),
             confirm_offset: Rc::new(RefCell::new(confirm_offset)),
             range_server,
             corrupted: Rc::new(RefCell::new(false)),
+            writable: Rc::new(RefCell::new(true)),
+            ack_callback: Rc::new(ack),
+            client,
         }
     }
 
-    pub(crate) fn confirm_offset(&self) -> u64 {
+    fn confirm_offset(&self) -> u64 {
         // only sealed range replica has confirm offset.
         *self.confirm_offset.borrow()
     }
 
-    pub(crate) fn append(
-        &self,
-        flat_record_batch_bytes: Vec<Bytes>,
-        base_offset: u64,
-        last_offset: u64,
-    ) {
-        let (range, client) = match self.get_client() {
+    fn append(&self, flat_record_batch_bytes: Vec<Bytes>, base_offset: u64, last_offset: u64) {
+        let client = match self.get_client() {
             Ok(rst) => rst,
             Err(e) => {
                 error!("{} replica append fail, {}", self.log_ident, e);
@@ -73,18 +123,20 @@ impl Replicator {
         let offset = Rc::clone(&self.confirm_offset);
         let target = self.range_server.advertise_address.clone();
         let corrupted = self.corrupted.clone();
+        let writable = self.writable.clone();
+        let ack = self.ack_callback.clone();
 
         // Spawn a task to replicate data to the target range-server.
         let log_ident = self.log_ident.clone();
         tokio_uring::spawn(async move {
             let mut attempts = 1;
             loop {
-                if range.is_sealed() {
+                if !*writable.borrow() {
                     info!("{}Range is sealed, aborting replication", log_ident);
                     break;
                 }
                 if *corrupted.borrow() {
-                    range.try_ack();
+                    ack();
                     break;
                 }
 
@@ -131,23 +183,23 @@ impl Replicator {
                     }
                 }
             }
-            range.try_ack();
+            ack();
         });
     }
 
-    pub(crate) async fn fetch(
+    async fn fetch(
         &self,
         start_offset: u64,
         end_offset: u64,
         batch_max_bytes: u32,
     ) -> Result<FetchResultSet, EsError> {
-        let (range, client) = self.get_client()?;
+        let client = self.get_client()?;
         client
             .fetch(
                 &self.range_server.advertise_address,
                 FetchRequest {
                     max_wait: std::time::Duration::from_secs(3),
-                    range: range.metadata().clone(),
+                    range: self.metadata.clone(),
                     offset: start_offset,
                     limit: end_offset,
                     min_bytes: None,
@@ -164,9 +216,10 @@ impl Replicator {
     /// Seal the range replica.
     /// - When range is open for write, then end_offset is Some(end_offset).
     /// - When range is created by old stream, then end_offset is None.
-    pub(crate) async fn seal(&self, end_offset: Option<u64>) -> Result<u64, EsError> {
-        let (range, client) = self.get_client()?;
-        let mut metadata = range.metadata().clone();
+    async fn seal(&self, end_offset: Option<u64>) -> Result<u64, EsError> {
+        self.writable.replace(false);
+        let client = self.get_client()?;
+        let mut metadata = self.metadata.clone();
         if let Some(end_offset) = end_offset {
             metadata.set_end(end_offset);
         }
@@ -198,21 +251,7 @@ impl Replicator {
         };
     }
 
-    fn get_client(&self) -> Result<(Rc<ReplicationRange>, Rc<Client>), EsError> {
-        if let Some(range) = self.range.upgrade() {
-            if let Some(client) = range.client() {
-                Ok((range, client))
-            } else {
-                error!("{}Client was dropped", self.log_ident);
-                Err(EsError::new(ErrorCode::UNEXPECTED, "client was dropped"))
-            }
-        } else {
-            warn!("{}Range was dropped", self.log_ident);
-            Err(EsError::new(ErrorCode::UNEXPECTED, "range was dropped"))
-        }
-    }
-
-    pub fn corrupted(&self) -> bool {
+    fn corrupted(&self) -> bool {
         *self.corrupted.borrow()
     }
 }

@@ -11,7 +11,7 @@ use crate::{
     range_manager::{fetcher::FetchRangeTask, RangeManager},
     worker_config::WorkerConfig,
 };
-use client::Client;
+use client::{client::Client, DefaultClient};
 use log::{debug, error, info, warn};
 use model::client_role::ClientRole;
 use observation::metrics::{
@@ -35,7 +35,7 @@ pub(crate) struct Worker<S, M> {
     config: WorkerConfig,
     store: Rc<S>,
     range_manager: Rc<UnsafeCell<M>>,
-    client: Rc<Client>,
+    client: Rc<DefaultClient>,
     #[allow(dead_code)]
     channels: Option<Vec<mpsc::UnboundedReceiver<FetchRangeTask>>>,
 }
@@ -49,7 +49,7 @@ where
         config: WorkerConfig,
         store: Rc<S>,
         range_manager: Rc<UnsafeCell<M>>,
-        client: Rc<Client>,
+        client: Rc<DefaultClient>,
         channels: Option<Vec<mpsc::UnboundedReceiver<FetchRangeTask>>>,
     ) -> Self {
         Self {

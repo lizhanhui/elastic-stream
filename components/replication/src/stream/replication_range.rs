@@ -6,7 +6,7 @@ use std::{
 };
 
 use bytes::{Bytes, BytesMut};
-use client::Client;
+use client::client::Client;
 use itertools::Itertools;
 use log::{debug, error, info, warn};
 
@@ -16,31 +16,76 @@ use model::{error::EsError, range::RangeMetadata};
 use tokio::sync::broadcast;
 
 use super::{
-    cache::HotCache, records_block::RecordsBlock, replication_stream::ReplicationStream,
-    replicator::Replicator, FetchDataset,
+    cache::HotCache, records_block::RecordsBlock, replication_replica::ReplicationReplica,
+    FetchDataset,
 };
 
 use protocol::rpc::header::{ErrorCode, SealKind};
+
+pub(crate) trait ReplicationRange<C>
+where
+    C: Client,
+{
+    async fn create(
+        client: Rc<C>,
+        stream_id: i64,
+        epoch: u64,
+        index: i32,
+        start_offset: u64,
+    ) -> Result<RangeMetadata, EsError>;
+
+    fn new(
+        metadata: RangeMetadata,
+        open_for_write: bool,
+        ack_callback: Box<dyn Fn()>,
+        client: Weak<C>,
+        cache: Rc<HotCache>,
+    ) -> Rc<Self>;
+
+    fn metadata(&self) -> &RangeMetadata;
+
+    fn append(&self, record_batch: &RecordBatch, context: RangeAppendContext);
+
+    async fn fetch(
+        &self,
+        start_offset: u64,
+        end_offset: u64,
+        batch_max_bytes: u32,
+    ) -> Result<FetchDataset, EsError>;
+
+    fn try_ack(&self);
+
+    async fn seal(&self) -> Result<u64, EsError>;
+
+    fn is_sealed(&self) -> bool;
+
+    fn is_writable(&self) -> bool;
+
+    fn start_offset(&self) -> u64;
+
+    fn confirm_offset(&self) -> u64;
+}
 
 const CORRUPTED_FLAG: u32 = 1 << 0;
 const SEALING_FLAG: u32 = 1 << 1;
 const SEALED_FLAG: u32 = 1 << 2;
 
-#[derive(Debug)]
-pub(crate) struct ReplicationRange {
+pub(crate) struct DefaultReplicationRange<Replica, C>
+where
+    Replica: ReplicationReplica<C> + 'static,
+    C: Client + 'static,
+{
     log_ident: String,
 
     weak_self: Weak<Self>,
 
     metadata: RangeMetadata,
 
-    stream: Weak<ReplicationStream>,
-
-    client: Weak<Client>,
+    client: Weak<C>,
 
     cache: Rc<HotCache>,
 
-    replicators: Rc<Vec<Rc<Replicator>>>,
+    replicators: Rc<Vec<Rc<Replica>>>,
 
     /// Exclusive confirm offset.
     confirm_offset: RefCell<u64>,
@@ -50,62 +95,148 @@ pub(crate) struct ReplicationRange {
     /// Range status.
     status: RefCell<u32>,
     seal_task_tx: Rc<broadcast::Sender<Result<u64, Rc<EsError>>>>,
+
+    ack_callback: Box<dyn Fn() + 'static>,
 }
 
-impl ReplicationRange {
-    pub(crate) fn new(
-        metadata: RangeMetadata,
-        open_for_write: bool,
-        stream: Weak<ReplicationStream>,
-        client: Weak<Client>,
-        cache: Rc<HotCache>,
-    ) -> Rc<Self> {
-        let confirm_offset = metadata.end().unwrap_or_else(|| metadata.start());
-        let status = if metadata.end().is_some() {
-            SEALED_FLAG
-        } else {
-            0
-        };
-
-        let (seal_task_tx, _) = broadcast::channel::<Result<u64, Rc<EsError>>>(1);
-
-        let log_ident = format!("Range[{}#{}] ", metadata.stream_id(), metadata.index());
-        let mut this = Rc::new(Self {
-            log_ident,
-            weak_self: Weak::new(),
-            metadata,
-            open_for_write,
-            stream,
-            client,
-            cache,
-            replicators: Rc::new(vec![]),
-            confirm_offset: RefCell::new(confirm_offset),
-            next_offset: RefCell::new(confirm_offset),
-            status: RefCell::new(status),
-            seal_task_tx: Rc::new(seal_task_tx),
-        });
-
-        let mut replicators = Vec::with_capacity(this.metadata.replica().len());
-        for replica_server in this.metadata.replica().iter() {
-            replicators.push(Rc::new(Replicator::new(
-                this.clone(),
-                replica_server.clone(),
-            )));
+impl<Replica, C> DefaultReplicationRange<Replica, C>
+where
+    Replica: ReplicationReplica<C> + 'static,
+    C: Client + 'static,
+{
+    fn calculate_confirm_offset(&self) -> Result<u64, EsError> {
+        if self.replicators.is_empty() {
+            return Err(EsError::new(
+                ErrorCode::REPLICA_NOT_ENOUGH,
+                "cal confirm offset fail, replicas is empty",
+            ));
         }
-        // #Safety: the weak_self/replicators only changed(init) in range new.
-        unsafe {
-            Rc::get_mut_unchecked(&mut this).weak_self = Rc::downgrade(&this);
-            Rc::get_mut_unchecked(&mut this).replicators = Rc::new(replicators);
-        }
-        info!(
-            "Load range with metadata: {:?} open_for_write={open_for_write}",
-            this.metadata
-        );
-        this
+
+        // Example1: replicas confirmOffset = [1, 2, 3]
+        // - when replica_count=3 and ack_count = 1, then result confirm offset = 3.
+        // - when replica_count=3 and ack_count = 2, then result confirm offset = 2.
+        // - when replica_count=3 and ack_count = 3, then result confirm offset = 1.
+        // Example2: replicas confirmOffset = [1, corrupted, 3]
+        // - when replica_count=3 and ack_count = 1, then result confirm offset = 3.
+        // - when replica_count=3 and ack_count = 2, then result confirm offset = 1.
+        // - when replica_count=3 and ack_count = 3, then result is EsError.
+        let confirm_offset_index = self.metadata.ack_count() - 1;
+        self.replicators
+            .iter()
+            .filter(|r| !r.corrupted())
+            .map(|r| r.confirm_offset())
+            .sorted()
+            .rev() // Descending order
+            .nth(confirm_offset_index as usize)
+            .ok_or(EsError::new(
+                ErrorCode::REPLICA_NOT_ENOUGH,
+                "cal confirm offset fail, replicas is not enough",
+            ))
     }
 
-    pub(crate) async fn create(
-        client: Rc<Client>,
+    async fn placement_driver_seal(&self, end_offset: u64) -> Result<(), EsError> {
+        let client = self.get_client()?;
+        let mut metadata = self.metadata.clone();
+        metadata.set_end(end_offset);
+        match client
+            .seal(None, SealKind::PLACEMENT_DRIVER, metadata)
+            .await
+        {
+            Ok(_) => Ok(()),
+            Err(e) => {
+                error!(
+                    "{}Request pd seal with end_offset[{end_offset}] fail, err: {e}",
+                    self.log_ident
+                );
+                Err(e)
+            }
+        }
+    }
+
+    async fn replicas_seal(
+        log_ident: &String,
+        replicas: Rc<Vec<Rc<Replica>>>,
+        replica_count: u8,
+        ack_count: u8,
+        end_offset: Option<u64>,
+    ) -> Result<u64, EsError> {
+        let end_offsets = Rc::new(RefCell::new(Vec::<u64>::new()));
+        let mut seal_tasks = vec![];
+        let replicas = replicas.clone();
+        for replica in replicas.iter() {
+            let end_offsets = end_offsets.clone();
+            let replica = replica.clone();
+            seal_tasks.push(tokio_uring::spawn(async move {
+                if let Ok(replica_end_offset) = replica.seal(end_offset).await {
+                    (*end_offsets).borrow_mut().push(replica_end_offset);
+                }
+            }));
+        }
+        for task in seal_tasks {
+            let _ = task.await;
+        }
+        // Example1: replicas confirmOffset = [1, 2, 3]
+        // - when replica_count=3 and ack_count = 1, must seal 3 replica success, the result end offset = 3.
+        // - when replica_count=3 and ack_count = 2, must seal 2 replica success, the result end offset = 2.
+        // - when replica_count=3 and ack_count = 3, must seal 1 replica success, the result end offset = 1.
+        // Example2: replicas confirmOffset = [1, corrupted, 3]
+        // - when replica_count=3 and ack_count = 1, must seal 3 replica success, the result is seal fail Err.
+        // - when replica_count=3 and ack_count = 2, must seal 2 replica success, the result end offset = 3.
+        // - when replica_count=3 and ack_count = 3, must seal 1 replica success, the result end offset = 1.
+        // assume the corrupted replica with the largest end offset.
+        let end_offset = end_offsets
+            .borrow()
+            .iter()
+            .sorted()
+            .nth((replica_count - ack_count) as usize)
+            .copied()
+            .ok_or(EsError::new(
+                ErrorCode::REPLICA_NOT_ENOUGH,
+                "seal fail, replica is not enough",
+            ));
+        info!(
+            "{}Replicas seal with end_offsets={end_offsets:?} and final end_offset={end_offset:?}",
+            log_ident
+        );
+        end_offset
+    }
+
+    fn mark_sealed(&self) {
+        *self.status.borrow_mut() |= SEALED_FLAG;
+        self.erase_sealing();
+    }
+
+    fn is_sealing(&self) -> bool {
+        *self.status.borrow() & SEALING_FLAG != 0
+    }
+
+    fn mark_sealing(&self) {
+        *self.status.borrow_mut() |= SEALING_FLAG;
+    }
+
+    fn erase_sealing(&self) {
+        *self.status.borrow_mut() &= !SEALING_FLAG;
+    }
+
+    fn mark_corrupted(&self) {
+        *self.status.borrow_mut() |= CORRUPTED_FLAG;
+    }
+
+    fn get_client(&self) -> Result<Rc<C>, EsError> {
+        self.client.upgrade().ok_or(EsError::new(
+            ErrorCode::UNEXPECTED,
+            "range get client fail, client is dropped",
+        ))
+    }
+}
+
+impl<Replica, C> ReplicationRange<C> for DefaultReplicationRange<Replica, C>
+where
+    Replica: ReplicationReplica<C> + 'static,
+    C: Client + 'static,
+{
+    async fn create(
+        client: Rc<C>,
         stream_id: i64,
         epoch: u64,
         index: i32,
@@ -138,52 +269,71 @@ impl ReplicationRange {
         Ok(metadata)
     }
 
-    pub(crate) fn metadata(&self) -> &RangeMetadata {
+    fn new(
+        metadata: RangeMetadata,
+        open_for_write: bool,
+        ack_callback: Box<dyn Fn()>,
+        client: Weak<C>,
+        cache: Rc<HotCache>,
+    ) -> Rc<Self> {
+        let confirm_offset = metadata.end().unwrap_or_else(|| metadata.start());
+        let status = if metadata.end().is_some() {
+            SEALED_FLAG
+        } else {
+            0
+        };
+
+        let (seal_task_tx, _) = broadcast::channel::<Result<u64, Rc<EsError>>>(1);
+
+        let log_ident = format!("Range[{}#{}] ", metadata.stream_id(), metadata.index());
+        let mut this = Rc::new(Self {
+            log_ident,
+            weak_self: Weak::new(),
+            metadata,
+            open_for_write,
+            client,
+            cache,
+            replicators: Rc::new(vec![]),
+            confirm_offset: RefCell::new(confirm_offset),
+            next_offset: RefCell::new(confirm_offset),
+            status: RefCell::new(status),
+            seal_task_tx: Rc::new(seal_task_tx),
+            ack_callback,
+        });
+
+        let mut replicators = Vec::with_capacity(this.metadata.replica().len());
+        let weak_this = Rc::downgrade(&this);
+        for replica_server in this.metadata.replica().iter() {
+            let weak_this = weak_this.clone();
+            let client = this.client.clone();
+            replicators.push(Rc::new(Replica::new(
+                this.metadata.clone(),
+                replica_server.clone(),
+                Box::new(move || {
+                    if let Some(range) = weak_this.upgrade() {
+                        range.try_ack();
+                    }
+                }),
+                client,
+            )));
+        }
+        // #Safety: the weak_self/replicators only changed(init) in range new.
+        unsafe {
+            Rc::get_mut_unchecked(&mut this).weak_self = Rc::downgrade(&this);
+            Rc::get_mut_unchecked(&mut this).replicators = Rc::new(replicators);
+        }
+        info!(
+            "Load range with metadata: {:?} open_for_write={open_for_write}",
+            this.metadata
+        );
+        this
+    }
+
+    fn metadata(&self) -> &RangeMetadata {
         &self.metadata
     }
 
-    pub(crate) fn client(&self) -> Option<Rc<Client>> {
-        self.client.upgrade()
-    }
-
-    fn get_client(&self) -> Result<Rc<Client>, EsError> {
-        self.client.upgrade().ok_or(EsError::new(
-            ErrorCode::UNEXPECTED,
-            "range get client fail, client is dropped",
-        ))
-    }
-
-    fn calculate_confirm_offset(&self) -> Result<u64, EsError> {
-        if self.replicators.is_empty() {
-            return Err(EsError::new(
-                ErrorCode::REPLICA_NOT_ENOUGH,
-                "cal confirm offset fail, replicas is empty",
-            ));
-        }
-
-        // Example1: replicas confirmOffset = [1, 2, 3]
-        // - when replica_count=3 and ack_count = 1, then result confirm offset = 3.
-        // - when replica_count=3 and ack_count = 2, then result confirm offset = 2.
-        // - when replica_count=3 and ack_count = 3, then result confirm offset = 1.
-        // Example2: replicas confirmOffset = [1, corrupted, 3]
-        // - when replica_count=3 and ack_count = 1, then result confirm offset = 3.
-        // - when replica_count=3 and ack_count = 2, then result confirm offset = 1.
-        // - when replica_count=3 and ack_count = 3, then result is EsError.
-        let confirm_offset_index = self.metadata.ack_count() - 1;
-        self.replicators
-            .iter()
-            .filter(|r| !r.corrupted())
-            .map(|r| r.confirm_offset())
-            .sorted()
-            .rev() // Descending order
-            .nth(confirm_offset_index as usize)
-            .ok_or(EsError::new(
-                ErrorCode::REPLICA_NOT_ENOUGH,
-                "cal confirm offset fail, replicas is not enough",
-            ))
-    }
-
-    pub(crate) fn append(&self, record_batch: &RecordBatch, context: RangeAppendContext) {
+    fn append(&self, record_batch: &RecordBatch, context: RangeAppendContext) {
         let base_offset = context.base_offset;
         let last_offset_delta = record_batch.last_offset_delta() as u32;
         let next_offset = *self.next_offset.borrow();
@@ -231,7 +381,7 @@ impl ReplicationRange {
         }
     }
 
-    pub(crate) async fn fetch(
+    async fn fetch(
         &self,
         start_offset: u64,
         end_offset: u64,
@@ -285,7 +435,7 @@ impl ReplicationRange {
     }
 
     /// update range confirm offset and invoke stream#try_ack.
-    pub(crate) fn try_ack(&self) {
+    fn try_ack(&self) {
         if !self.is_writable() {
             return;
         }
@@ -303,9 +453,7 @@ impl ReplicationRange {
                         return;
                     }
                 }
-                if let Some(stream) = self.stream.upgrade() {
-                    stream.try_ack();
-                }
+                (self.ack_callback)();
             }
             Err(err) => {
                 warn!(
@@ -314,14 +462,12 @@ impl ReplicationRange {
                     self.confirm_offset()
                 );
                 self.mark_corrupted();
-                if let Some(stream) = self.stream.upgrade() {
-                    stream.try_ack();
-                }
+                (self.ack_callback)();
             }
         }
     }
 
-    pub(crate) async fn seal(&self) -> Result<u64, EsError> {
+    async fn seal(&self) -> Result<u64, EsError> {
         if self.is_sealed() {
             // if range is already sealed, return confirm offset.
             return Ok(*(self.confirm_offset.borrow()));
@@ -424,107 +570,19 @@ impl ReplicationRange {
         }
     }
 
-    async fn placement_driver_seal(&self, end_offset: u64) -> Result<(), EsError> {
-        let client = self.get_client()?;
-        let mut metadata = self.metadata.clone();
-        metadata.set_end(end_offset);
-        match client
-            .seal(None, SealKind::PLACEMENT_DRIVER, metadata)
-            .await
-        {
-            Ok(_) => Ok(()),
-            Err(e) => {
-                error!(
-                    "{}Request pd seal with end_offset[{end_offset}] fail, err: {e}",
-                    self.log_ident
-                );
-                Err(e)
-            }
-        }
-    }
-
-    async fn replicas_seal(
-        log_ident: &String,
-        replicas: Rc<Vec<Rc<Replicator>>>,
-        replica_count: u8,
-        ack_count: u8,
-        end_offset: Option<u64>,
-    ) -> Result<u64, EsError> {
-        let end_offsets = Rc::new(RefCell::new(Vec::<u64>::new()));
-        let mut seal_tasks = vec![];
-        let replicas = replicas.clone();
-        for replica in replicas.iter() {
-            let end_offsets = end_offsets.clone();
-            let replica = replica.clone();
-            seal_tasks.push(tokio_uring::spawn(async move {
-                if let Ok(replica_end_offset) = replica.seal(end_offset).await {
-                    (*end_offsets).borrow_mut().push(replica_end_offset);
-                }
-            }));
-        }
-        for task in seal_tasks {
-            let _ = task.await;
-        }
-        // Example1: replicas confirmOffset = [1, 2, 3]
-        // - when replica_count=3 and ack_count = 1, must seal 3 replica success, the result end offset = 3.
-        // - when replica_count=3 and ack_count = 2, must seal 2 replica success, the result end offset = 2.
-        // - when replica_count=3 and ack_count = 3, must seal 1 replica success, the result end offset = 1.
-        // Example2: replicas confirmOffset = [1, corrupted, 3]
-        // - when replica_count=3 and ack_count = 1, must seal 3 replica success, the result is seal fail Err.
-        // - when replica_count=3 and ack_count = 2, must seal 2 replica success, the result end offset = 3.
-        // - when replica_count=3 and ack_count = 3, must seal 1 replica success, the result end offset = 1.
-        // assume the corrupted replica with the largest end offset.
-        let end_offset = end_offsets
-            .borrow()
-            .iter()
-            .sorted()
-            .nth((replica_count - ack_count) as usize)
-            .copied()
-            .ok_or(EsError::new(
-                ErrorCode::REPLICA_NOT_ENOUGH,
-                "seal fail, replica is not enough",
-            ));
-        info!(
-            "{}Replicas seal with end_offsets={end_offsets:?} and final end_offset={end_offset:?}",
-            log_ident
-        );
-        end_offset
-    }
-
-    pub(crate) fn is_sealed(&self) -> bool {
+    fn is_sealed(&self) -> bool {
         *self.status.borrow() & SEALED_FLAG != 0
     }
 
-    pub(crate) fn mark_sealed(&self) {
-        *self.status.borrow_mut() |= SEALED_FLAG;
-        self.erase_sealing();
-    }
-
-    pub(crate) fn is_sealing(&self) -> bool {
-        *self.status.borrow() & SEALING_FLAG != 0
-    }
-
-    pub(crate) fn mark_sealing(&self) {
-        *self.status.borrow_mut() |= SEALING_FLAG;
-    }
-
-    pub(crate) fn erase_sealing(&self) {
-        *self.status.borrow_mut() &= !SEALING_FLAG;
-    }
-
-    pub(crate) fn mark_corrupted(&self) {
-        *self.status.borrow_mut() |= CORRUPTED_FLAG;
-    }
-
-    pub(crate) fn is_writable(&self) -> bool {
+    fn is_writable(&self) -> bool {
         *self.status.borrow() == 0 && self.open_for_write
     }
 
-    pub(crate) fn start_offset(&self) -> u64 {
+    fn start_offset(&self) -> u64 {
         self.metadata.start()
     }
 
-    pub(crate) fn confirm_offset(&self) -> u64 {
+    fn confirm_offset(&self) -> u64 {
         *(self.confirm_offset.borrow())
     }
 }

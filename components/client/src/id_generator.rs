@@ -4,7 +4,7 @@ use log::{error, trace};
 use std::sync::Arc;
 use tokio::sync::{broadcast, oneshot};
 
-use crate::{error::ClientError, Client};
+use crate::{client::Client, error::ClientError, DefaultClient};
 
 /// A trait that generates unique ID.
 pub trait IdGenerator {
@@ -31,7 +31,7 @@ impl IdGenerator for PlacementDriverIdGenerator {
         let config = Arc::clone(&self.config);
         tokio_uring::start(async {
             let (shutdown_tx, _shutdown_rx) = broadcast::channel(1);
-            let client = Client::new(config, shutdown_tx);
+            let client = DefaultClient::new(config, shutdown_tx);
 
             match client.allocate_id(&self.config.server.advertise_addr).await {
                 Ok(id) => {
