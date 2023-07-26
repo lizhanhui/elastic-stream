@@ -137,6 +137,30 @@ mod tests {
         Ok(())
     }
 
+    #[test]
+    fn test_display() -> Result<(), Box<dyn Error>> {
+        let metadata = RangeMetadata::new(0, 0, 0, 0, None);
+        let mut range = super::Range::new(metadata);
+
+        let expected = "Range[stream-id=0, range-index=0], committed=0, next=0";
+        assert_eq!(expected, format!("{}", range));
+
+        match range.window_mut() {
+            Some(win) => {
+                win.check_barrier(&Foo { offset: 0, len: 42 })?;
+            }
+            None => {
+                panic!("Window should not be None");
+            }
+        }
+        range.commit(0)?;
+
+        let expected = "Range[stream-id=0, range-index=0], committed=42, next=42";
+        assert_eq!(expected, format!("{}", range));
+
+        Ok(())
+    }
+
     #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
     struct Foo {
         offset: u64,
