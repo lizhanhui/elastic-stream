@@ -1,5 +1,8 @@
 use super::{lb_policy::LbPolicy, session::Session};
-use crate::{invocation_context::InvocationContext, request::Request, response::Response};
+use crate::{
+    invocation_context::InvocationContext, request::Request, response::Response,
+    state::SessionState,
+};
 use bytes::Bytes;
 use itertools::Itertools;
 use local_sync::oneshot;
@@ -40,7 +43,7 @@ use tokio::{
 };
 use tokio_uring::net::TcpStream;
 
-use crate::{request, response, NodeState};
+use crate::{request, response, NodeRole};
 
 pub(crate) struct CompositeSession {
     target: String,
@@ -145,10 +148,10 @@ impl CompositeSession {
                         .iter()
                         .find(|&entry| *entry.0 == addr)
                     {
-                        session.set_state(if node.leader {
-                            NodeState::Leader
+                        session.set_role(if node.leader {
+                            NodeRole::Leader
                         } else {
-                            NodeState::Follower
+                            NodeRole::Follower
                         })
                     }
                 });
@@ -265,9 +268,9 @@ impl CompositeSession {
                 trace!(
                     "State of session to {} is {:?}",
                     session.target,
-                    session.state()
+                    session.role()
                 );
-                session.state() == NodeState::Leader
+                session.role() == NodeRole::Leader
             })
             .map(|(_, session)| session.clone())
             .next()
@@ -1057,10 +1060,7 @@ impl CompositeSession {
                     "Failed to send request to {}. Cause: {:?}",
                     self.target, ctx
                 );
-                return Err(EsError::new(
-                    ErrorCode::CONNECT_REFUSED,
-                    &format!("{:?}", self.target),
-                ));
+                return Err(EsError::new(ErrorCode::CONNECT_REFUSED, &self.target));
             }
 
             let response = rx.await.map_err(|e| {
@@ -1080,6 +1080,15 @@ impl CompositeSession {
             }
             return Ok(response);
         }
+    }
+
+    pub fn go_away(&self) -> bool {
+        for (_, session) in self.sessions.borrow().iter() {
+            if session.state() == SessionState::GoAway {
+                return true;
+            }
+        }
+        false
     }
 }
 

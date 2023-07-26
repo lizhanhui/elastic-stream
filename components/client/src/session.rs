@@ -1,8 +1,8 @@
-use crate::{request, response, NodeState};
+use crate::{request, response, state::SessionState, NodeRole};
 use codec::{error::FrameError, frame::Frame};
 
 use model::client_role::ClientRole;
-use protocol::rpc::header::OperationCode;
+use protocol::rpc::header::{GoAwayFlags, OperationCode};
 use transport::connection::Connection;
 
 use local_sync::oneshot;
@@ -34,7 +34,16 @@ pub(crate) struct Session {
 
     idle_since: Rc<RefCell<Instant>>,
 
-    state: Rc<RefCell<NodeState>>,
+    /// Role of the peer node in its cluster.
+    role: Rc<RefCell<NodeRole>>,
+
+    /// State of the current session.
+    ///
+    /// By default, it is `Active`. Once it received `GoAway` frame from peer server, will mark itself as
+    /// `GoAway`.
+    ///
+    /// Session at `GoAway` state should close itself as soon as possible.
+    state: Rc<RefCell<SessionState>>,
 }
 
 impl Session {
@@ -43,6 +52,7 @@ impl Session {
         connection: Rc<Connection>,
         inflight_requests: Rc<UnsafeCell<HashMap<u32, InvocationContext>>>,
         sessions: Weak<RefCell<HashMap<SocketAddr, Session>>>,
+        state: Rc<RefCell<SessionState>>,
         target: SocketAddr,
         mut shutdown: broadcast::Receiver<()>,
     ) {
@@ -107,6 +117,13 @@ impl Session {
                                 let inflight = unsafe { &mut *inflight_requests.get() };
                                 if frame.is_response() {
                                     Session::handle_response(inflight, frame, target);
+                                } else if frame.operation_code == OperationCode::GOAWAY {
+                                    debug_assert_eq!(frame.stream_id, 0);
+                                    *state.borrow_mut() = SessionState::GoAway;
+                                    let reason = if frame.has_go_away_flag(GoAwayFlags::SERVER_MAINTENANCE) {
+                                        "server maintenance"
+                                    } else {"connection being idle"};
+                                    info!("Peer server[{}] has notified to go-away due to {}.", target, reason);
                                 } else {
                                     warn!( "Received an unexpected request frame from target={}", target);
                                 }
@@ -152,10 +169,13 @@ impl Session {
         let connection = Rc::new(Connection::new(stream, endpoint));
         let inflight = Rc::new(UnsafeCell::new(HashMap::new()));
 
+        let state = Rc::new(RefCell::new(SessionState::Active));
+
         Self::spawn_read_loop(
             Rc::clone(&connection),
             Rc::clone(&inflight),
             sessions,
+            Rc::clone(&state),
             target,
             shutdown.subscribe(),
         );
@@ -166,7 +186,8 @@ impl Session {
             connection,
             inflight_requests: inflight,
             idle_since: Rc::new(RefCell::new(Instant::now())),
-            state: Rc::new(RefCell::new(NodeState::Unknown)),
+            role: Rc::new(RefCell::new(NodeRole::Unknown)),
+            state,
         }
     }
 
@@ -326,19 +347,23 @@ impl Session {
         }
     }
 
-    pub(crate) fn state(&self) -> NodeState {
-        *self.state.borrow()
+    pub(crate) fn role(&self) -> NodeRole {
+        *self.role.borrow()
     }
 
-    pub(crate) fn set_state(&self, state: NodeState) {
-        let current = *self.state.borrow();
+    pub(crate) fn set_role(&self, state: NodeRole) {
+        let current = *self.role.borrow();
         if current != state {
             info!(
                 "Node-state of {} is changed: {:?} --> {:?}",
                 self.target, current, state
             );
-            *self.state.borrow_mut() = state;
+            *self.role.borrow_mut() = state;
         }
+    }
+
+    pub fn state(&self) -> SessionState {
+        *self.state.borrow()
     }
 
     fn handle_response(
@@ -484,6 +509,7 @@ impl Clone for Session {
             connection: Rc::clone(&self.connection),
             inflight_requests: Rc::clone(&self.inflight_requests),
             idle_since: Rc::clone(&self.idle_since),
+            role: Rc::clone(&self.role),
             state: Rc::clone(&self.state),
         }
     }

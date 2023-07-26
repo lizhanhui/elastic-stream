@@ -237,6 +237,19 @@ impl Client {
             .map_err(|_e| EsError::new(ErrorCode::RPC_TIMEOUT, "append rpc timeout"))?
     }
 
+    /// Check if the peer server has notified it would go away for maintenance.
+    ///
+    /// Note that overhead of this method is minimal.
+    ///
+    /// # Return
+    /// * Ok(true) - if the target has already notified its scheduled shutdown;
+    /// * Ok(false) - otherwise.
+    pub async fn target_go_away(&self, target: &str) -> Result<bool, EsError> {
+        let session_manager = unsafe { &mut *self.session_manager.get() };
+        let session = session_manager.get_composite_session(target).await?;
+        Ok(session.go_away())
+    }
+
     /// Fetch data from a range replica.
     pub async fn fetch(
         &self,
