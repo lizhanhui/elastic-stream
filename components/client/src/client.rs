@@ -348,9 +348,7 @@ impl Client for DefaultClient {
     /// * `continuation` - Optional. Continuation token from previous list.
     ///
     /// # Returns
-    /// * `ListResourceResult.resources` - List of resources.
-    /// * `ListResourceResult.version` - Resource version of the resource list, which can be used for watch.
-    /// * `ListResourceResult.continuation` - Continuation token for next list. If empty, no more resources.
+    /// * `ListResourceResult` - List of resources, and a continuation token if the result is truncated.
     ///
     /// TODO: Error handling
     ///
@@ -375,8 +373,7 @@ impl Client for DefaultClient {
     /// * `timeout` - If no resource change after this timeout, the watch will be cancelled.
     ///
     /// # Returns
-    /// * `WatchResourceResult.events` - List of resource events, including add, modify and delete.
-    /// * `WatchResourceResult.version` - Resource version when the request is processed. This version can be used for next watch.
+    /// * `WatchResourceResult` - List of resource events.
     ///
     /// TODO: Error handling
     ///
@@ -388,7 +385,8 @@ impl Client for DefaultClient {
     ) -> Result<WatchResourceResult, EsError> {
         let composite_session = self.get_pd_session().await?;
         let future = composite_session.watch_resource(types, version, timeout);
-        time::timeout(self.config.client_io_timeout(), future)
+        // Use the watch timeout instead of client timeout, as this is a long polling request
+        time::timeout(timeout, future)
             .await
             .map_err(|_| EsError::new(ErrorCode::RPC_TIMEOUT, "watch resource timeout"))?
     }

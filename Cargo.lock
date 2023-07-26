@@ -2628,8 +2628,17 @@ dependencies = [
 name = "pd-client"
 version = "0.2.7"
 dependencies = [
+ "client",
+ "config",
  "env_logger",
  "log",
+ "mock-server",
+ "model",
+ "protocol",
+ "tokio",
+ "tokio-uring",
+ "tokio-util",
+ "ulog",
 ]
 
 [[package]]

@@ -1,66 +1,31 @@
-#![feature(fn_traits)]
+#![feature(async_fn_in_trait)]
 
-#[allow(clippy::type_complexity)]
-pub struct PlacementDriverClient<'a> {
-    listeners: Vec<Box<dyn FnMut(&str) + 'a>>,
-}
+pub mod pd_client;
 
-impl<'a> PlacementDriverClient<'a> {
-    pub fn new() -> Self {
-        Self { listeners: vec![] }
-    }
+use client::error::ClientError;
+use model::resource::ResourceEvent;
+use protocol::rpc::header::ResourceType;
+use tokio::sync::mpsc::Receiver;
 
-    pub fn add_listener<T>(&mut self, listener: T)
-    where
-        T: FnMut(&str) + 'a,
-    {
-        let listener = Box::new(listener);
-        self.listeners.push(listener);
-    }
-
-    #[allow(dead_code)]
-    fn apply(&mut self, change: &str) {
-        self.listeners.iter_mut().for_each(|listener| {
-            listener.call_mut((change,));
-        })
-    }
-}
-
-impl<'a> Default for PlacementDriverClient<'a> {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use log::debug;
-    use std::error::Error;
-
-    #[test]
-    fn test_pd_client_listener() -> Result<(), Box<dyn Error>> {
-        env_logger::try_init()?;
-
-        let mut v = 0;
-
-        let mut pd_client = PlacementDriverClient::new();
-        let listener = |change: &str| {
-            debug!("Hello {}", change);
-            // Note v is captured by mutable reference
-            v += 1;
-        };
-        pd_client.add_listener(listener);
-
-        let listener = |change: &str| {
-            debug!("Hi {}", change);
-        };
-        pd_client.add_listener(listener);
-
-        pd_client.apply("Janet");
-
-        drop(pd_client);
-        assert_eq!(v, 1, "The first listener should have increment v by 1");
-        Ok(())
-    }
+pub trait PlacementDriverClient {
+    /// List all resources of the given types, then watch the changes of them.
+    ///
+    /// # Arguments
+    /// * `types` - The types of resources to list and watch. If empty, panic.
+    ///
+    /// # Returns
+    /// * `Receiver` - The receiver of resource events.
+    /// Firstly, the receiver will receive multiple [`ResourceEvent`]s with  [`LISTED`], indicating the resources that are already there before the watch starts.
+    /// Then, the receiver will receive multiple [`ResourceEvent`]s with [`ADDED`], [`MODIFIED`] or [`DELETED`], indicating the changes of the resources.
+    /// Once the returned receiver is dropped, the operation will be cancelled and related resources will be released.
+    ///
+    /// [`LISTED`]: model::resource::EventType::LISTED
+    /// [`ADDED`]: model::resource::EventType::ADDED
+    /// [`MODIFIED`]: model::resource::EventType::MODIFIED
+    /// [`DELETED`]: model::resource::EventType::DELETED
+    ///
+    fn list_and_watch_resource(
+        &self,
+        types: &[ResourceType],
+    ) -> Receiver<Result<ResourceEvent, ClientError>>;
 }

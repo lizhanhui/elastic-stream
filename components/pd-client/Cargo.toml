@@ -8,7 +8,16 @@ license = { workspace = true }
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+client = { path = "../client" }
 log = { workspace = true }
+model = { path = "../model" }
+protocol = { path = "../protocol" }
+tokio = { workspace = true }
+tokio-uring = { workspace = true }
+tokio-util = { workspace = true }
 
 [dev-dependencies]
+config = { path = "../config" }
 env_logger = { workspace = true }
+mock-server = { path = "../mock-server" }
+ulog = { path = "../ulog", features = ["env"] }
