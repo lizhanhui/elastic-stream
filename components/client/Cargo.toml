@@ -19,7 +19,7 @@ gethostname = { workspace = true }
 itertools = { workspace = true }
 local-sync = { workspace = true }
 log = { workspace = true }
-mockall = { workspace = true }
+mockall = { workspace = true, optional = true }
 model = { path = "../model" }
 observation = { path = "../observation" }
 ordinal = { workspace = true }
@@ -39,4 +39,5 @@ ulog = { path = "../ulog", features = ["env"] }
 util = { path = "../util" }
 
 [features]
-mock = []
+default = []
+mock = ["mockall"]

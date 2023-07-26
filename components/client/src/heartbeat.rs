@@ -11,3 +11,23 @@ impl HeartbeatData {
         self.state = Some(state);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use protocol::rpc::header::{ClientRole, RangeServerState};
+
+    use super::HeartbeatData;
+
+    #[test]
+    fn test_set_state() {
+        let mut data = HeartbeatData {
+            role: ClientRole::CLIENT_ROLE_RANGE_SERVER,
+            state: None,
+        };
+        data.set_state(RangeServerState::RANGE_SERVER_STATE_OFFLINE);
+        assert_eq!(
+            Some(RangeServerState::RANGE_SERVER_STATE_OFFLINE),
+            data.state
+        );
+    }
+}

@@ -15,6 +15,7 @@ mod worker;
 mod worker_config;
 pub use crate::cli::Cli;
 pub(crate) mod connection_handler;
+pub(crate) mod heartbeat;
 mod metrics;
 pub(crate) mod profiling;
 pub(crate) mod session;

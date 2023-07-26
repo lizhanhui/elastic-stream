@@ -53,6 +53,7 @@ util = { path = "../components/util" }
 tikv-jemallocator = "0.5"
 
 [dev-dependencies]
+client = { path = "../components/client", features = ["mock"] }
 env_logger = { workspace = true }
 mock-server = { path = "../components/mock-server" }
 mockall = { workspace = true }
