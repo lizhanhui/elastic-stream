@@ -1,0 +1,49 @@
+[package]
+name = "alloc"
+version = "0.1.0"
+edition = "2021"
+authors = ["Brian Anderson <andersrb@gmail.com>"]
+publish = false
+
+[features]
+jemalloc = ["tikv-jemallocator", "tikv-jemalloc-ctl", "tikv-jemalloc-sys"]
+
+# Build jemalloc's profiling features. Without this
+# certain profile functions will return nothing.
+mem-profiling = ["tikv-jemallocator/profiling"]
+snmalloc = ["snmalloc-rs"]
+
+[dependencies]
+lazy_static = { workspace = true }
+libc = { workspace = true }
+rustc-hash = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
+[dependencies.mimalloc]
+version = "0.1.25"
+optional = true
+
+[dependencies.snmalloc-rs]
+version = "0.2"
+optional = true
+
+[dependencies.tcmalloc]
+version = "0.3.0"
+optional = true
+features = ["bundled"]
+
+[dependencies.tikv-jemalloc-ctl]
+version = "0.5.0"
+optional = true
+
+[dependencies.tikv-jemalloc-sys]
+version = "0.5.0"
+optional = true
+features = ["stats"]
+
+[dependencies.tikv-jemallocator]
+version = "0.5.0"
+optional = true
+features = ["unprefixed_malloc_on_supported_platforms", "stats"]
