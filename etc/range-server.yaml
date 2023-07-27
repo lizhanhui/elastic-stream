@@ -83,7 +83,7 @@ store:
     # Create column families if missing
     create-if-missing: true
     # Flush index entries of record-batch every `flush_threshold`
-    flush-threshold: 32768
+    flush-threshold: 655360
     # cpu-set for RocksDB threads to run on, sample value: "0-2,4-6,8"
     cpu-set: "0"
 

@@ -620,7 +620,7 @@ mod tests {
         let config: Configuration = serde_yaml::from_str(&content)?;
         assert_eq!("1", config.server.worker_cpu_set);
         assert_eq!(128, config.server.uring.queue_depth);
-        assert_eq!(32768, config.store.rocksdb.flush_threshold);
+        assert_eq!(655360, config.store.rocksdb.flush_threshold);
 
         assert_eq!(2, config.replication.connection_pool_size);
         Ok(())

@@ -14,13 +14,15 @@ struct Args {
     #[arg(short, long, default_value_t = 16)]
     stream: usize,
 
-    /// Number of iterations to append to each stream
-    #[arg(short, long, default_value_t = 128)]
+    /// Number of seconds to keep the workload
+    #[arg(short, long, default_value_t = 180)]
     time: usize,
 
+    /// Concurrency of each stream, aka, number of inflight append requests
     #[arg(short, long, default_value_t = 16)]
     batch_size: usize,
 
+    /// Append request payload size in bytes
     #[arg(short, long, default_value_t = 1024)]
     payload_size: usize,
 }

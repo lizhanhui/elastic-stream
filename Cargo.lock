@@ -3744,6 +3744,7 @@ dependencies = [
  "protocol",
  "rand",
  "rocksdb",
+ "rustc-hash",
  "tempfile",
  "thiserror",
  "tokio",

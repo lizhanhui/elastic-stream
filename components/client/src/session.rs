@@ -117,7 +117,6 @@ impl Session {
                                 if frame.is_response() {
                                     Session::handle_response(inflight, frame, target);
                                 } else if frame.operation_code == OperationCode::GOAWAY {
-                                    debug_assert_eq!(frame.stream_id, 0);
                                     *state.borrow_mut() = SessionState::GoAway;
                                     let reason = if frame.has_go_away_flag(GoAwayFlags::SERVER_MAINTENANCE) {
                                         "server maintenance"

@@ -43,8 +43,6 @@ impl ConnectionTracker {
     pub(crate) fn go_away(&mut self) {
         self.connections.iter().for_each(|(peer_address, sender)| {
             let mut frame = Frame::new(OperationCode::GOAWAY);
-            // Go away frame has stream_id == 0.
-            frame.stream_id = 0;
             frame.flag_go_away(GoAwayFlags::SERVER_MAINTENANCE);
             match sender.send(frame) {
                 Ok(_) => {

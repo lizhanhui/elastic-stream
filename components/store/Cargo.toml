@@ -34,6 +34,7 @@ prometheus = { workspace = true }
 protocol = { path = "../protocol" }
 rand = { workspace = true }
 rocksdb = { workspace = true }
+rustc-hash = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 tokio-uring = { workspace = true }

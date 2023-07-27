@@ -18,6 +18,7 @@ use observation::metrics::uring_metrics::{
     UringStatistics, COMPLETED_READ_IO, COMPLETED_WRITE_IO, INFLIGHT_IO, IO_DEPTH, PENDING_TASK,
     READ_BYTES_TOTAL, READ_IO_LATENCY, WRITE_BYTES_TOTAL, WRITE_IO_LATENCY,
 };
+use rustc_hash::{FxHashMap, FxHashSet};
 use std::collections::{BTreeMap, HashSet};
 use std::io;
 use std::sync::Arc;
@@ -107,12 +108,12 @@ pub(crate) struct IO {
     inflight_read_tasks: BTreeMap<u64, VecDeque<ReadTask>>,
 
     /// Offsets of blocks that are partially filled with data and are still inflight.
-    barrier: RefCell<HashSet<u64>>,
+    barrier: RefCell<FxHashSet<u64>>,
 
     /// Block the concurrent write IOs to the same page.
     /// The uring instance doesn't provide the ordering guarantee for the IOs,
     /// so we use this mechanism to avoid memory corruption.
-    blocked: HashMap<u64, (*mut Context, squeue::Entry)>,
+    blocked: FxHashMap<u64, (*mut Context, squeue::Entry)>,
 
     /// Collects the SQEs that need to be re-submitted.
     resubmit_sqes: VecDeque<squeue::Entry>,
@@ -222,8 +223,8 @@ impl IO {
             pending_data_tasks: VecDeque::new(),
             inflight_write_tasks: BTreeMap::new(),
             inflight_read_tasks: BTreeMap::new(),
-            barrier: RefCell::new(HashSet::new()),
-            blocked: HashMap::new(),
+            barrier: RefCell::new(FxHashSet::default()),
+            blocked: FxHashMap::default(),
             resubmit_sqes: VecDeque::new(),
             indexer,
             disk_stats: super::disk_stats::DiskStats::new(Duration::from_secs(1), u32::MAX as u64),
