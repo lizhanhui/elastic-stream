@@ -243,7 +243,7 @@ where
                     ErrorCode::UNEXPECTED,
                     "expect seal response contain end_offset",
                 ))?;
-                warn!(
+                info!(
                     "{}Seal replica success with end_offset {end_offset}",
                     self.log_ident
                 );
@@ -259,5 +259,136 @@ where
 
     fn corrupted(&self) -> bool {
         *self.corrupted.borrow()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::error::Error;
+
+    use bytes::BytesMut;
+    use chrono;
+    use client::client::MockClient;
+    use model::{AppendResultEntry, Status};
+    use protocol::rpc::header::RangeServerState;
+    use tokio::sync::mpsc;
+
+    use super::*;
+
+    #[test]
+    fn test_append() -> Result<(), Box<dyn Error>> {
+        tokio_uring::start(async move {
+            let metadata = RangeMetadata::new_range(0, 1, 2, 233, None, 1, 1);
+            let client = MockClient::default();
+            let mut client = Rc::new(client);
+            let (tx, mut rx) = mpsc::unbounded_channel();
+            let ack_callback = Box::new(move || {
+                let _ = tx.send(()).unwrap();
+            });
+            let replica = DefaultReplicationReplica::new(
+                metadata,
+                RangeServer::new(233, "addr", RangeServerState::RANGE_SERVER_STATE_READ_WRITE),
+                ack_callback,
+                Rc::downgrade(&client),
+            );
+
+            unsafe {
+                let client = Rc::get_mut_unchecked(&mut client);
+                client.expect_append().times(1).returning(|_, _| {
+                    Ok(vec![AppendResultEntry {
+                        status: Status::ok(),
+                        timestamp: chrono::offset::Utc::now(),
+                    }])
+                });
+            }
+
+            replica.append(vec![BytesMut::zeroed(1).freeze()], 233, 234);
+            let _ = rx.recv().await.unwrap();
+            assert_eq!(234, replica.confirm_offset());
+
+            unsafe {
+                let client = Rc::get_mut_unchecked(&mut client);
+                client.expect_append().times(3).returning(|_, _| {
+                    Ok(vec![AppendResultEntry {
+                        status: Status::unspecified(),
+                        timestamp: chrono::offset::Utc::now(),
+                    }])
+                });
+            }
+            assert_eq!(false, replica.corrupted());
+            replica.append(vec![BytesMut::zeroed(1).freeze()], 234, 250);
+            let _ = rx.recv().await.unwrap();
+            assert_eq!(true, replica.corrupted());
+            assert_eq!(234, replica.confirm_offset());
+        });
+        Ok(())
+    }
+
+    #[test]
+    fn test_fetch() -> Result<(), Box<dyn Error>> {
+        tokio_uring::start(async move {
+            let metadata = RangeMetadata::new_range(0, 1, 2, 233, None, 1, 1);
+            let client = MockClient::default();
+            let mut client = Rc::new(client);
+            let ack_callback = Box::new(move || {});
+            let replica = DefaultReplicationReplica::new(
+                metadata,
+                RangeServer::new(233, "addr", RangeServerState::RANGE_SERVER_STATE_READ_WRITE),
+                ack_callback,
+                Rc::downgrade(&client),
+            );
+
+            unsafe {
+                let client = Rc::get_mut_unchecked(&mut client);
+                client.expect_fetch().times(1).returning(|_, r| {
+                    assert_eq!(240, r.offset);
+                    assert_eq!(250, r.limit);
+                    assert_eq!(Some(1000), r.max_bytes);
+                    Err(EsError::unexpected("test mock error"))
+                });
+            }
+            let rst = replica.fetch(240, 250, 1000).await;
+            assert!(rst.is_err());
+        });
+        Ok(())
+    }
+
+    #[test]
+    fn test_seal() -> Result<(), Box<dyn Error>> {
+        tokio_uring::start(async move {
+            let metadata = RangeMetadata::new_range(0, 1, 2, 233, None, 1, 1);
+            let client = MockClient::default();
+            let mut client = Rc::new(client);
+            let ack_callback = Box::new(move || {});
+            let replica = DefaultReplicationReplica::new(
+                metadata,
+                RangeServer::new(233, "addr", RangeServerState::RANGE_SERVER_STATE_READ_WRITE),
+                ack_callback,
+                Rc::downgrade(&client),
+            );
+
+            unsafe {
+                let client = Rc::get_mut_unchecked(&mut client);
+                client.expect_seal().times(1).returning(|_, _, m| {
+                    assert_eq!(Some(250), m.end());
+                    let mut m = m.clone();
+                    m.set_end(240);
+                    Ok(m)
+                });
+            }
+            let end_offset = replica.seal(Some(250)).await.unwrap();
+            assert_eq!(240, end_offset);
+            assert_eq!(240, replica.confirm_offset());
+
+            unsafe {
+                let client = Rc::get_mut_unchecked(&mut client);
+                client
+                    .expect_seal()
+                    .times(1)
+                    .returning(|_, _, _m| Err(EsError::unexpected("test mock error")));
+            }
+            assert!(replica.seal(Some(250)).await.is_err());
+        });
+        Ok(())
     }
 }

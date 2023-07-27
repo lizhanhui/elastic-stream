@@ -27,6 +27,7 @@ tokio = { workspace = true }
 tokio-uring = { workspace = true }
 
 [dev-dependencies]
+chrono = { workspace = true }
 client = { path = "../client", features = ["mock"] }
 lazy_static = { workspace = true }
 mockall = { workspace = true }
