@@ -18,7 +18,6 @@ itertools = { workspace = true }
 local-sync = { workspace = true }
 log = { workspace = true }
 lru = { workspace = true }
-mockall = { workspace = true }
 model = { path = "../model" }
 opendal = { workspace = true }
 protocol = { path = "../protocol" }
@@ -29,3 +28,5 @@ tokio-uring = { workspace = true }
 
 [dev-dependencies]
 client = { path = "../client", features = ["mock"] }
+lazy_static = { workspace = true }
+mockall = { workspace = true }

@@ -93,7 +93,7 @@ where
             let range_metadata =
                 R::create(client, self.id, self.epoch, range_index, start_offset).await?;
             let weak_this = self.weak_self.borrow().clone();
-            let range = R::build(
+            let range = R::new(
                 range_metadata,
                 true,
                 Box::new(move || {
@@ -319,7 +319,7 @@ where
                 let this = self.weak_self.borrow().clone();
                 self.ranges.borrow_mut().insert(
                     range.start(),
-                    R::build(
+                    R::new(
                         range,
                         false,
                         Box::new(move || {
@@ -601,15 +601,17 @@ mod tests {
                 ])
             });
             let client = Rc::new(client);
-            let range_with_context = MockReplicationRange::build_context();
-            range_with_context.expect().returning(|m, _, _, _, _| {
+            let range_new_context = MockReplicationRange::new_context();
+            range_new_context.expect().returning(|m, _, _, _, _| {
                 if m.index() == 0 {
-                    let mut range0: MockReplicationRange<MockClient> = MockReplicationRange::new();
+                    let mut range0: MockReplicationRange<MockClient> =
+                        MockReplicationRange::default();
                     range0.expect_metadata().times(0).return_const(m);
                     range0.expect_seal().times(0);
                     Rc::new(range0)
                 } else if m.index() == 1 {
-                    let mut range1: MockReplicationRange<MockClient> = MockReplicationRange::new();
+                    let mut range1: MockReplicationRange<MockClient> =
+                        MockReplicationRange::default();
                     range1.expect_metadata().times(1).return_const(m);
                     range1.expect_seal().times(2).returning(|| Ok(200));
                     range1.expect_confirm_offset().times(1).returning(|| 200);
@@ -774,7 +776,7 @@ mod tests {
             ))
         }
 
-        fn build(
+        fn new(
             metadata: RangeMetadata,
             open_for_write: bool,
             ack_callback: AckCallback,

@@ -40,7 +40,7 @@ where
         start_offset: u64,
     ) -> Result<RangeMetadata, EsError>;
 
-    fn build(
+    fn new(
         metadata: RangeMetadata,
         open_for_write: bool,
         ack_callback: AckCallback,
@@ -91,7 +91,7 @@ where
 
     cache: Rc<HotCache>,
 
-    replicators: Rc<Vec<Rc<Replica>>>,
+    replicas: Rc<Vec<Rc<Replica>>>,
 
     /// Exclusive confirm offset.
     confirm_offset: RefCell<u64>,
@@ -102,6 +102,8 @@ where
     status: RefCell<u32>,
     seal_task_tx: Rc<broadcast::Sender<Result<u64, Rc<EsError>>>>,
 
+    sticky_read_index: RefCell<u64>,
+
     ack_callback: Box<dyn Fn() + 'static>,
 }
 
@@ -111,7 +113,14 @@ where
     C: Client + 'static,
 {
     fn calculate_confirm_offset(&self) -> Result<u64, EsError> {
-        if self.replicators.is_empty() {
+        Self::calculate_confirm_offset0(&self.replicas, &self.metadata)
+    }
+
+    fn calculate_confirm_offset0(
+        replicas: &Rc<Vec<Rc<Replica>>>,
+        metadata: &RangeMetadata,
+    ) -> Result<u64, EsError> {
+        if replicas.is_empty() {
             return Err(EsError::new(
                 ErrorCode::REPLICA_NOT_ENOUGH,
                 "cal confirm offset fail, replicas is empty",
@@ -126,8 +135,8 @@ where
         // - when replica_count=3 and ack_count = 1, then result confirm offset = 3.
         // - when replica_count=3 and ack_count = 2, then result confirm offset = 1.
         // - when replica_count=3 and ack_count = 3, then result is EsError.
-        let confirm_offset_index = self.metadata.ack_count() - 1;
-        self.replicators
+        let confirm_offset_index = metadata.ack_count() - 1;
+        replicas
             .iter()
             .filter(|r| !r.corrupted())
             .map(|r| r.confirm_offset())
@@ -181,30 +190,8 @@ where
         for task in seal_tasks {
             let _ = task.await;
         }
-        // Example1: replicas confirmOffset = [1, 2, 3]
-        // - when replica_count=3 and ack_count = 1, must seal 3 replica success, the result end offset = 3.
-        // - when replica_count=3 and ack_count = 2, must seal 2 replica success, the result end offset = 2.
-        // - when replica_count=3 and ack_count = 3, must seal 1 replica success, the result end offset = 1.
-        // Example2: replicas confirmOffset = [1, corrupted, 3]
-        // - when replica_count=3 and ack_count = 1, must seal 3 replica success, the result is seal fail Err.
-        // - when replica_count=3 and ack_count = 2, must seal 2 replica success, the result end offset = 3.
-        // - when replica_count=3 and ack_count = 3, must seal 1 replica success, the result end offset = 1.
-        // assume the corrupted replica with the largest end offset.
-        let end_offset = end_offsets
-            .borrow()
-            .iter()
-            .sorted()
-            .nth((replica_count - ack_count) as usize)
-            .copied()
-            .ok_or(EsError::new(
-                ErrorCode::REPLICA_NOT_ENOUGH,
-                "seal fail, replica is not enough",
-            ));
-        info!(
-            "{}Replicas seal with end_offsets={end_offsets:?} and final end_offset={end_offset:?}",
-            log_ident
-        );
-        end_offset
+        let end_offsets = end_offsets.take();
+        replicas_seal0(&end_offsets, replica_count, ack_count, log_ident)
     }
 
     fn mark_sealed(&self) {
@@ -234,6 +221,37 @@ where
             "range get client fail, client is dropped",
         ))
     }
+}
+
+fn replicas_seal0(
+    end_offsets: &Vec<u64>,
+    replica_count: u8,
+    ack_count: u8,
+    log_ident: &String,
+) -> Result<u64, EsError> {
+    // Example1: replicas confirmOffset = [1, 2, 3]
+    // - when replica_count=3 and ack_count = 1, must seal 3 replica success, the result end offset = 3.
+    // - when replica_count=3 and ack_count = 2, must seal 2 replica success, the result end offset = 2.
+    // - when replica_count=3 and ack_count = 3, must seal 1 replica success, the result end offset = 1.
+    // Example2: replicas confirmOffset = [1, corrupted, 3]
+    // - when replica_count=3 and ack_count = 1, must seal 3 replica success, the result is seal fail Err.
+    // - when replica_count=3 and ack_count = 2, must seal 2 replica success, the result end offset = 3.
+    // - when replica_count=3 and ack_count = 3, must seal 1 replica success, the result end offset = 1.
+    // assume the corrupted replica with the largest end offset.
+    let end_offset = end_offsets
+        .iter()
+        .sorted()
+        .nth((replica_count - ack_count) as usize)
+        .copied()
+        .ok_or(EsError::new(
+            ErrorCode::REPLICA_NOT_ENOUGH,
+            "seal fail, replica is not enough",
+        ));
+    info!(
+        "{}Replicas seal with end_offsets={end_offsets:?} and final end_offset={end_offset:?}",
+        log_ident
+    );
+    end_offset
 }
 
 impl<Replica, C> ReplicationRange<C> for DefaultReplicationRange<Replica, C>
@@ -275,7 +293,7 @@ where
         Ok(metadata)
     }
 
-    fn build(
+    fn new(
         metadata: RangeMetadata,
         open_for_write: bool,
         ack_callback: Box<dyn Fn()>,
@@ -299,11 +317,12 @@ where
             open_for_write,
             client,
             cache,
-            replicators: Rc::new(vec![]),
+            replicas: Rc::new(vec![]),
             confirm_offset: RefCell::new(confirm_offset),
             next_offset: RefCell::new(confirm_offset),
             status: RefCell::new(status),
             seal_task_tx: Rc::new(seal_task_tx),
+            sticky_read_index: RefCell::new(0),
             ack_callback,
         });
 
@@ -326,7 +345,7 @@ where
         // #Safety: the weak_self/replicators only changed(init) in range new.
         unsafe {
             Rc::get_mut_unchecked(&mut this).weak_self = Rc::downgrade(&this);
-            Rc::get_mut_unchecked(&mut this).replicators = Rc::new(replicators);
+            Rc::get_mut_unchecked(&mut this).replicas = Rc::new(replicators);
         }
         info!(
             "Load range with metadata: {:?} open_for_write={open_for_write}",
@@ -365,7 +384,7 @@ where
             // will be reused in future appends.
             vec![vec_bytes_to_bytes(&flat_record_batch_bytes)],
         );
-        for replica in (*self.replicators).iter() {
+        for replica in (*self.replicas).iter() {
             replica.append(
                 flat_record_batch_bytes.clone(),
                 base_offset,
@@ -381,20 +400,26 @@ where
         batch_max_bytes: u32,
     ) -> Result<FetchDataset, EsError> {
         let now = Instant::now();
-        // TODO: select replica strategy.
-        // - balance the read traffic.
-        // - isolate unreadable (data less than expected, unaccessible) replica.
-        for replicator in self.replicators.iter() {
-            if replicator.corrupted() {
-                continue;
+        let mut read_times = 0;
+        let replicas_len = self.replicas.len();
+        let mut last_read_err = None;
+        loop {
+            read_times += 1;
+            if read_times > replicas_len {
+                break;
             }
-            let result = replicator
+            let read_index = *self.sticky_read_index.borrow() % replicas_len as u64;
+            let replica = &self.replicas[read_index as usize];
+
+            let result = replica
                 .fetch(start_offset, end_offset, batch_max_bytes)
                 .await;
             let fetch_result = match result {
                 Ok(rs) => rs,
                 Err(e) => {
                     warn!("{}Fetch [{start_offset}, {end_offset}) with batch_max_bytes={batch_max_bytes} fail, err: {e}", self.log_ident);
+                    last_read_err = Some(Err(e));
+                    *self.sticky_read_index.borrow_mut() += 1;
                     continue;
                 }
             };
@@ -405,13 +430,18 @@ where
             // range server local records
             let local_records = fetch_result.payload.unwrap_or_default();
             let blocks = if !local_records.is_empty() {
-                RecordsBlock::parse(local_records, 1024 * 1024, false).map_err(|e| {
-                    error!(
-                        "{}Fetch [{}, {}) decode fail, err: {}",
-                        self.log_ident, start_offset, end_offset, e
-                    );
-                    EsError::new(ErrorCode::RECORDS_PARSE_ERROR, "parse records fail")
-                })?
+                RecordsBlock::parse(local_records, 1024 * 1024, false)
+                    .map_err(|e| {
+                        error!(
+                            "{}Fetch [{}, {}) decode fail, err: {}",
+                            self.log_ident, start_offset, end_offset, e
+                        );
+                        EsError::new(ErrorCode::RECORDS_PARSE_ERROR, "parse records fail")
+                    })
+                    .map_err(|e| {
+                        *self.sticky_read_index.borrow_mut() += 1;
+                        e
+                    })?
             } else {
                 vec![RecordsBlock::empty_block(end_offset)]
             };
@@ -421,10 +451,12 @@ where
                 Ok(FetchDataset::Full(blocks))
             };
         }
-        Err(EsError::new(
-            ErrorCode::ALL_REPLICAS_FETCH_FAILED,
-            "all replicas fetch fail",
-        ))
+        last_read_err.unwrap_or_else(|| {
+            Err(EsError::new(
+                ErrorCode::ALL_REPLICAS_FETCH_FAILED,
+                "all replicas fetch fail",
+            ))
+        })
     }
 
     /// update range confirm offset and invoke stream#try_ack.
@@ -493,7 +525,7 @@ where
                         self.mark_sealed();
                         let _ = self.seal_task_tx.send(Ok(end_offset));
                         // 2. spawn task to async seal range replicas
-                        let replicas = self.replicators.clone();
+                        let replicas = self.replicas.clone();
                         let replica_count = self.metadata.replica_count();
                         let ack_count = self.metadata.ack_count();
                         let log_ident = self.log_ident.clone();
@@ -526,7 +558,7 @@ where
                 }
             } else {
                 // the range is created by old stream, it need to calculate end offset from replicas.
-                let replicas = self.replicators.clone();
+                let replicas = self.replicas.clone();
                 // 1. seal range replicas and calculate end offset.
                 match Self::replicas_seal(
                     &self.log_ident,
@@ -629,4 +661,374 @@ pub(crate) fn record_batch_to_bytes(
     let flat_record_batch: FlatRecordBatch = Into::into(record_batch);
     let (flat_record_batch_bytes, _) = flat_record_batch.encode();
     flat_record_batch_bytes
+}
+
+#[cfg(test)]
+mod tests {
+    use std::error::Error;
+
+    use client::client::MockClient;
+    use model::{range_server::RangeServer, response::fetch::FetchResultSet};
+    use protocol::rpc::header::RangeServerState;
+
+    use crate::stream::replication_replica::MockReplicationReplica;
+
+    use super::*;
+
+    use lazy_static::lazy_static;
+    use std::sync::{Mutex, MutexGuard};
+
+    lazy_static! {
+        static ref MTX: Mutex<()> = Mutex::new(());
+    }
+
+    fn get_lock(m: &'static Mutex<()>) -> MutexGuard<'static, ()> {
+        match m.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        }
+    }
+
+    type Range = DefaultReplicationRange<MockReplicationReplica<MockClient>, MockClient>;
+
+    #[test]
+    pub fn test_calculate_confirm_offset() -> Result<(), Box<dyn Error>> {
+        let metadata = RangeMetadata::new_range(0, 1, 2, 0, None, 3, 2);
+        let replicas = vec![
+            new_replica(1, false),
+            new_replica(2, false),
+            new_replica(3, false),
+        ];
+        let replicas = Rc::new(replicas.into_iter().map(|r| Rc::new(r)).collect());
+        assert_eq!(
+            2,
+            DefaultReplicationRange::<MockReplicationReplica<MockClient>, MockClient>::calculate_confirm_offset0(&replicas, &metadata).unwrap()
+        );
+
+        let replicas = vec![
+            new_replica(1, false),
+            new_replica(2, true),
+            new_replica(3, false),
+        ];
+        let replicas = Rc::new(replicas.into_iter().map(|r| Rc::new(r)).collect());
+        assert_eq!(
+            1,
+            DefaultReplicationRange::<MockReplicationReplica<MockClient>, MockClient>::calculate_confirm_offset0(&replicas, &metadata).unwrap()
+        );
+
+        let replicas = vec![
+            new_replica(1, true),
+            new_replica(2, true),
+            new_replica(3, false),
+        ];
+        let replicas = Rc::new(replicas.into_iter().map(|r| Rc::new(r)).collect());
+        assert_eq!(ErrorCode::REPLICA_NOT_ENOUGH, DefaultReplicationRange::<MockReplicationReplica<MockClient>, MockClient>::calculate_confirm_offset0(&replicas, &metadata).unwrap_err().code);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_try_ack() {
+        let metadata = RangeMetadata::new_range(0, 1, 2, 233, None, 1, 1);
+        let ack_callback_invoke_times = Rc::new(RefCell::new(0));
+        let mut range = new_range(
+            metadata,
+            true,
+            ack_callback_invoke_times.clone(),
+            Rc::new(MockClient::default()),
+        );
+        {
+            let replica = get_replica(&mut range, 0);
+            replica.expect_corrupted().times(1).returning(|| false);
+            replica
+                .expect_confirm_offset()
+                .times(1)
+                .returning(|| 250 as u64);
+        }
+        assert_eq!(233, range.start_offset());
+        assert_eq!(233, range.confirm_offset());
+        assert_eq!(true, range.is_writable());
+        assert_eq!(0, *ack_callback_invoke_times.borrow());
+        range.try_ack();
+        assert_eq!(250, range.confirm_offset());
+        assert_eq!(1, *ack_callback_invoke_times.borrow());
+
+        // confirm offset rewind back
+        {
+            let replica = get_replica(&mut range, 0);
+            replica.expect_corrupted().times(1).returning(|| false);
+            replica
+                .expect_confirm_offset()
+                .times(1)
+                .returning(|| 240 as u64);
+        }
+        range.try_ack();
+        assert_eq!(250, range.confirm_offset());
+        assert_eq!(1, *ack_callback_invoke_times.borrow());
+
+        // corrupted
+        {
+            let replica = get_replica(&mut range, 0);
+            replica.expect_corrupted().times(1).returning(|| true);
+        }
+        assert_eq!(true, range.is_writable());
+        range.try_ack();
+        assert_eq!(250, range.confirm_offset());
+        assert_eq!(2, *ack_callback_invoke_times.borrow());
+        assert_eq!(false, range.is_writable());
+    }
+
+    #[test]
+    fn test_append() {
+        let metadata = RangeMetadata::new_range(0, 1, 2, 233, None, 1, 1);
+        let ack_callback_invoke_times = Rc::new(RefCell::new(0));
+        let mut range = new_range(
+            metadata,
+            true,
+            ack_callback_invoke_times.clone(),
+            Rc::new(MockClient::default()),
+        );
+
+        {
+            let replica = get_replica(&mut range, 0);
+            replica.expect_append().times(1).return_const(());
+        }
+
+        let record_batch = new_record(233, 10);
+        range.append(&record_batch, RangeAppendContext::new(233));
+        assert_eq!(243, *range.next_offset.borrow());
+        {
+            let replica = get_replica(&mut range, 0);
+            replica.checkpoint();
+        }
+    }
+
+    #[test]
+    fn test_fetch() -> Result<(), Box<dyn Error>> {
+        tokio_uring::start(async move {
+            let metadata = RangeMetadata::new_range(0, 1, 2, 233, None, 2, 2);
+            let ack_callback_invoke_times = Rc::new(RefCell::new(0));
+            let mut range = new_range(
+                metadata,
+                true,
+                ack_callback_invoke_times,
+                Rc::new(MockClient::default()),
+            );
+
+            assert_eq!(0, *range.sticky_read_index.borrow());
+
+            // replica0 fetch fail, replica fetch success
+            {
+                let replica0 = get_replica(&mut range, 0);
+                replica0
+                    .expect_fetch()
+                    .times(1)
+                    .returning(|_, _, _| Err(EsError::unexpected("test mock error")));
+                let replica1 = get_replica(&mut range, 1);
+                replica1.expect_fetch().times(1).returning(|_, _, _| {
+                    let record = new_record(233, 10);
+                    let payload =
+                        record_batch_to_bytes(&record, &RangeAppendContext::new(233), 0, 1);
+                    let rst = FetchResultSet {
+                        throttle: None,
+                        object_metadata_list: None,
+                        payload: Some(vec_bytes_to_bytes(&payload)),
+                    };
+                    Ok(rst)
+                });
+            }
+
+            let dataset = range.fetch(233, 240, 1234).await.unwrap();
+            assert_eq!(1, *range.sticky_read_index.borrow());
+            if let FetchDataset::Full(blocks) = dataset {
+                assert_eq!(1, blocks.len());
+                assert_eq!(233, blocks[0].start_offset());
+                assert_eq!(243, blocks[0].end_offset());
+            } else {
+                panic!("fetch dataset is not full");
+            }
+
+            // replica1 return corrupted data
+            {
+                let replica1 = get_replica(&mut range, 1);
+                replica1.expect_fetch().times(1).returning(|_, _, _| {
+                    let rst = FetchResultSet {
+                        throttle: None,
+                        object_metadata_list: None,
+                        payload: Some(BytesMut::zeroed(10).freeze()),
+                    };
+                    Ok(rst)
+                });
+            }
+            let rst = range.fetch(233, 240, 1234).await;
+            assert_eq!(2, *range.sticky_read_index.borrow());
+            assert_eq!(ErrorCode::RECORDS_PARSE_ERROR, rst.unwrap_err().code);
+        });
+        Ok(())
+    }
+
+    #[test]
+    fn test_seal_with_range_created_by_current_stream() -> Result<(), Box<dyn Error>> {
+        tokio_uring::start(async move {
+            let metadata = RangeMetadata::new_range(0, 1, 2, 233, None, 1, 1);
+            let ack_callback_invoke_times = Rc::new(RefCell::new(0));
+            let mut client = MockClient::default();
+            client
+                .expect_seal()
+                .times(1)
+                .returning(|_target, kind, meta| match kind {
+                    SealKind::PLACEMENT_DRIVER => {
+                        assert_eq!(240, meta.end().unwrap());
+                        Ok(meta)
+                    }
+                    _ => panic!("unexpected seal kind: {:?}", kind),
+                });
+            let client = Rc::new(client);
+            let mut range = new_range(metadata, true, ack_callback_invoke_times, client.clone());
+            {
+                let replica = get_replica(&mut range, 0);
+                replica
+                    .expect_seal()
+                    .returning(|_| Err(EsError::unexpected("test mock error")));
+            }
+            *range.confirm_offset.borrow_mut() = 240;
+            assert_eq!(240, range.seal().await.unwrap());
+            assert_eq!(true, range.is_sealed());
+            assert_eq!(false, range.is_writable());
+            // repeated seal
+            assert_eq!(240, range.seal().await.unwrap());
+        });
+        Ok(())
+    }
+
+    #[test]
+    fn test_seal_with_range_created_by_old_stream() -> Result<(), Box<dyn Error>> {
+        tokio_uring::start(async move {
+            let metadata = RangeMetadata::new_range(0, 1, 2, 233, None, 1, 1);
+            let ack_callback_invoke_times = Rc::new(RefCell::new(0));
+            let mut client = MockClient::default();
+            client
+                .expect_seal()
+                .times(1)
+                .returning(|_target, kind, meta| match kind {
+                    SealKind::PLACEMENT_DRIVER => {
+                        assert_eq!(240, meta.end().unwrap());
+                        Ok(meta)
+                    }
+                    _ => panic!("unexpected seal kind: {:?}", kind),
+                });
+            let client = Rc::new(client);
+            let mut range = new_range(metadata, false, ack_callback_invoke_times, client.clone());
+            {
+                let replica = get_replica(&mut range, 0);
+                replica
+                    .expect_seal()
+                    .times(1)
+                    .returning(|_| Err(EsError::unexpected("test mock error")));
+            }
+            let rst = range.seal().await;
+            assert_eq!(ErrorCode::REPLICA_NOT_ENOUGH, rst.unwrap_err().code);
+            assert_eq!(false, range.is_sealed());
+
+            {
+                let replica = get_replica(&mut range, 0);
+                replica.expect_seal().times(1).returning(|_| Ok(240));
+            }
+            assert_eq!(240, range.seal().await.unwrap());
+            assert_eq!(true, range.is_sealed());
+            assert_eq!(false, range.is_writable());
+        });
+        Ok(())
+    }
+
+    #[test]
+    fn test_replica_seal0() {
+        // Example1: replicas confirmOffset = [1, 2, 3]
+        // - when replica_count=3 and ack_count = 1, must seal 3 replica success, the result end offset = 3.
+        // - when replica_count=3 and ack_count = 2, must seal 2 replica success, the result end offset = 2.
+        // - when replica_count=3 and ack_count = 3, must seal 1 replica success, the result end offset = 1.
+        // Example2: replicas confirmOffset = [1, corrupted, 3]
+        // - when replica_count=3 and ack_count = 1, must seal 3 replica success, the result is seal fail Err.
+        // - when replica_count=3 and ack_count = 2, must seal 2 replica success, the result end offset = 3.
+        // - when replica_count=3 and ack_count = 3, must seal 1 replica success, the result end offset = 1.
+        // assume the corrupted replica with the largest end offset.
+        let test_ident = "test_ident".to_string();
+        assert_eq!(
+            3,
+            replicas_seal0(&vec![1, 2, 3], 3, 1, &test_ident).unwrap()
+        );
+        assert_eq!(
+            2,
+            replicas_seal0(&vec![1, 2, 3], 3, 2, &test_ident).unwrap()
+        );
+        assert_eq!(
+            1,
+            replicas_seal0(&vec![1, 2, 3], 3, 3, &test_ident).unwrap()
+        );
+        assert_eq!(
+            ErrorCode::REPLICA_NOT_ENOUGH,
+            replicas_seal0(&vec![1, 3], 3, 1, &test_ident)
+                .unwrap_err()
+                .code
+        );
+        assert_eq!(3, replicas_seal0(&vec![1, 3], 3, 2, &test_ident).unwrap());
+        assert_eq!(1, replicas_seal0(&vec![1, 3], 3, 3, &test_ident).unwrap());
+    }
+
+    fn new_range(
+        mut metadata: RangeMetadata,
+        open_for_write: bool,
+        ack_callback_invoke_times: Rc<RefCell<i32>>,
+        client: Rc<MockClient>,
+    ) -> Rc<Range> {
+        // static method invoke must protected by synchronization, see https://docs.rs/mockall/latest/mockall/#static-methods
+        let _m = get_lock(&MTX);
+        let new_context = MockReplicationReplica::new_context();
+        new_context
+            .expect()
+            .returning(|_, _, _, _| MockReplicationReplica::<MockClient>::default());
+        for i in 0..metadata.replica_count() {
+            metadata.replica_mut().push(RangeServer::new(
+                233 + i as i32,
+                "addr",
+                RangeServerState::RANGE_SERVER_STATE_READ_WRITE,
+            ));
+        }
+        DefaultReplicationRange::<MockReplicationReplica<MockClient>, MockClient>::new(
+            metadata,
+            open_for_write,
+            Box::new(move || {
+                *ack_callback_invoke_times.borrow_mut() += 1;
+            }),
+            Rc::downgrade(&client),
+            Rc::new(HotCache::new(1024 * 1024)),
+        )
+    }
+
+    fn get_replica(range: &mut Rc<Range>, index: u32) -> &mut MockReplicationReplica<MockClient> {
+        unsafe {
+            let range = Rc::get_mut_unchecked(range);
+            let replicas = Rc::get_mut_unchecked(&mut range.replicas);
+            let replica = Rc::get_mut_unchecked(&mut replicas[index as usize]);
+            replica
+        }
+    }
+
+    fn new_replica(confirm_offset: u64, corrupted: bool) -> MockReplicationReplica<MockClient> {
+        let mut replica = MockReplicationReplica::default();
+        replica.expect_corrupted().return_const(corrupted);
+        replica.expect_confirm_offset().return_const(confirm_offset);
+        replica
+    }
+
+    fn new_record(base_offset: u64, count: u32) -> RecordBatch {
+        RecordBatch::new_builder()
+            .with_stream_id(0)
+            .with_range_index(0)
+            .with_base_offset(base_offset as i64)
+            .with_last_offset_delta(count as i32)
+            .with_payload(BytesMut::zeroed(1).freeze())
+            .build()
+            .unwrap()
+    }
 }

@@ -3159,6 +3159,7 @@ dependencies = [
  "envy",
  "flatbuffers",
  "itertools 0.11.0",
+ "lazy_static",
  "local-sync",
  "log",
  "lru",

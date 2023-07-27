@@ -39,6 +39,7 @@ pub(crate) trait Stream {
     async fn trim(&self, _new_start_offset: u64) -> Result<(), EsError>;
 }
 
+#[derive(Debug)]
 pub(crate) enum FetchDataset {
     // The dataset is exactly the same as request.
     Full(Vec<RecordsBlock>),
