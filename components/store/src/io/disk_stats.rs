@@ -29,20 +29,21 @@ impl DiskStats {
         self.last.elapsed() >= self.interval
     }
 
-    pub(crate) fn report(&mut self) {
+    pub(crate) fn report(&mut self, title: &str) {
         self.last = minstant::Instant::now();
         if self.histogram.is_empty() {
             return;
         }
         info!(
-            "Disk Stats(us): [{}, {}, {}, {}, {}]",
+            "{}: [{}, {}, {}, {}, {}]",
+            title,
             self.histogram.mean(),
             self.histogram.value_at_percentile(90.0),
             self.histogram.value_at_percentile(99.0),
             self.histogram.value_at_percentile(99.9),
             self.histogram.max(),
         );
-        self.histogram.clear();
+        self.histogram.reset();
     }
 }
 
@@ -63,7 +64,7 @@ mod tests {
         std::thread::sleep(Duration::from_millis(100));
         assert!(stats.is_ready());
 
-        stats.report();
+        stats.report("Test");
 
         assert!(!stats.is_ready());
         Ok(())

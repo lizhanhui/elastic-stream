@@ -1433,7 +1433,9 @@ impl IO {
                 if !io.borrow().disk_stats.is_ready() {
                     continue;
                 }
-                io.borrow_mut().disk_stats.report();
+                io.borrow_mut()
+                    .disk_stats
+                    .report("Disk I/O Latency Statistics(us)");
             }
         }
         info!("Main loop quit");
