@@ -267,7 +267,7 @@ mod tests {
     use std::error::Error;
 
     use bytes::BytesMut;
-    use chrono;
+
     use client::client::MockClient;
     use model::{AppendResultEntry, Status};
     use protocol::rpc::header::RangeServerState;
@@ -283,7 +283,7 @@ mod tests {
             let mut client = Rc::new(client);
             let (tx, mut rx) = mpsc::unbounded_channel();
             let ack_callback = Box::new(move || {
-                let _ = tx.send(()).unwrap();
+                tx.send(()).unwrap();
             });
             let replica = DefaultReplicationReplica::new(
                 metadata,
@@ -303,7 +303,7 @@ mod tests {
             }
 
             replica.append(vec![BytesMut::zeroed(1).freeze()], 233, 234);
-            let _ = rx.recv().await.unwrap();
+            rx.recv().await.unwrap();
             assert_eq!(234, replica.confirm_offset());
 
             unsafe {
@@ -315,10 +315,10 @@ mod tests {
                     }])
                 });
             }
-            assert_eq!(false, replica.corrupted());
+            assert!(!replica.corrupted());
             replica.append(vec![BytesMut::zeroed(1).freeze()], 234, 250);
-            let _ = rx.recv().await.unwrap();
-            assert_eq!(true, replica.corrupted());
+            rx.recv().await.unwrap();
+            assert!(replica.corrupted());
             assert_eq!(234, replica.confirm_offset());
         });
         Ok(())

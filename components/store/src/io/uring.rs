@@ -1642,14 +1642,14 @@ mod tests {
             info!("Module io stopped");
         });
 
-        if let Err(_) = recovery_completion_rx.blocking_recv() {
+        if recovery_completion_rx.blocking_recv().is_err() {
             panic!("Failed to await recovery completion");
         }
         let sender: Sender<IoTask> = rx
             .blocking_recv()
             .map_err(|_| StoreError::Internal("Internal error".to_owned()))?;
 
-        return Ok((handle, sender));
+        Ok((handle, sender))
     }
 
     #[test]
@@ -1665,7 +1665,6 @@ mod tests {
 
         // Send IoTask to channel
         (0..16)
-            .into_iter()
             .flat_map(|_| {
                 let (tx, _rx) = oneshot::channel();
                 let io_task = IoTask::Write(WriteTask {
@@ -1692,8 +1691,8 @@ mod tests {
 
         io.receive_io_tasks();
 
-        assert_eq!(true, io.pending_data_tasks.is_empty());
-        assert_eq!(true, io.channel_disconnected);
+        assert!(io.pending_data_tasks.is_empty());
+        assert!(io.channel_disconnected);
 
         Ok(())
     }
@@ -1807,7 +1806,6 @@ mod tests {
 
         // Send IoTask to channel
         (0..16)
-            .into_iter()
             .map(|n| {
                 let (tx, _rx) = oneshot::channel();
                 IoTask::Write(WriteTask {
@@ -1836,7 +1834,6 @@ mod tests {
         crate::log::try_init_log();
         let (handle, sender) = create_and_run_io(create_default_io)?;
         let records: Vec<_> = (0..16)
-            .into_iter()
             .map(|_| {
                 let mut rng = rand::thread_rng();
                 let random_size = rand::Rng::gen_range(&mut rng, 2..128);
@@ -1858,7 +1855,6 @@ mod tests {
         // Will cost at least 4K * 1024 = 4M bytes, which means at least 4 segments will be allocated
         // And the cache reclaim will be triggered since a small io only has 1M cache
         let records: Vec<_> = (0..4096)
-            .into_iter()
             .map(|_| {
                 let mut rng = rand::thread_rng();
                 let random_size = rand::Rng::gen_range(&mut rng, 4096..8192);
@@ -1908,7 +1904,7 @@ mod tests {
             info!("Module io stopped");
         });
 
-        if let Err(_) = recovery_completion_rx.blocking_recv() {
+        if recovery_completion_rx.blocking_recv().is_err() {
             panic!("Failed to wait store recovery completion");
         }
 
@@ -1935,7 +1931,7 @@ mod tests {
         let buffer = buffer.freeze();
         assert_eq!(buffer.len(), total as usize);
 
-        let records: Vec<_> = (0..16).into_iter().map(|_| buffer.clone()).collect();
+        let records: Vec<_> = (0..16).map(|_| buffer.clone()).collect();
 
         send_and_receive_with_records(sender.clone(), 0, 0, records);
 
@@ -1957,25 +1953,26 @@ mod tests {
     fn test_multiple_run_with_random_bytes() -> Result<(), Box<dyn Error>> {
         crate::log::try_init_log();
         let (handle, sender) = create_and_run_io(create_small_io)?;
-        let mut records: Vec<_> = vec![];
-        records.push(create_random_bytes(4096 - 8));
-        records.push(create_random_bytes(4096 - 8));
-        records.push(create_random_bytes(4096 - 8));
-        records.push(create_random_bytes(4096));
-        records.push(create_random_bytes(4096 - 8 - 8));
-        records.push(create_random_bytes(4096 - 8));
-        records.push(create_random_bytes(4096 - 8 - 24));
+        let records: Vec<_> = vec![
+            create_random_bytes(4096 - 8),
+            create_random_bytes(4096 - 8),
+            create_random_bytes(4096 - 8),
+            create_random_bytes(4096),
+            create_random_bytes(4096 - 8 - 8),
+            create_random_bytes(4096 - 8),
+            create_random_bytes(4096 - 8 - 24),
+        ];
         send_and_receive_with_records(sender.clone(), 0, 0, records);
-        let mut records: Vec<_> = vec![];
-        records.push(create_random_bytes(4096 - 8));
+        let records: Vec<_> = vec![create_random_bytes(4096 - 8)];
         send_and_receive_with_records(sender.clone(), 0, 7, records);
-        let mut records: Vec<_> = vec![];
-        records.push(create_random_bytes(4096 - 8));
-        records.push(create_random_bytes(4096 - 8));
-        records.push(create_random_bytes(4096));
-        records.push(create_random_bytes(4096 - 8 - 8));
-        records.push(create_random_bytes(4096 - 8));
-        records.push(create_random_bytes(4096 - 8 - 24));
+        let records: Vec<_> = vec![
+            create_random_bytes(4096 - 8),
+            create_random_bytes(4096 - 8),
+            create_random_bytes(4096),
+            create_random_bytes(4096 - 8 - 8),
+            create_random_bytes(4096 - 8),
+            create_random_bytes(4096 - 8 - 24),
+        ];
         send_and_receive_with_records(sender.clone(), 0, 8, records);
         drop(sender);
         handle.join().map_err(|_| StoreError::AllocLogSegment)?;
@@ -1988,7 +1985,7 @@ mod tests {
         let (handle, sender) = create_and_run_io(create_small_io)?;
         let mut records: Vec<_> = vec![];
         let count = 1000;
-        (0..count).into_iter().for_each(|_| {
+        (0..count).for_each(|_| {
             let mut rng = rand::thread_rng();
             let random_size = rand::Rng::gen_range(&mut rng, 1000..9000);
             records.push(create_random_bytes(random_size));
@@ -2014,7 +2011,7 @@ mod tests {
                 let (tx, rx) = oneshot::channel();
                 receivers.push(rx);
                 IoTask::Write(WriteTask {
-                    stream_id: stream_id,
+                    stream_id,
                     range: 0,
                     offset: start_offset + i as i64,
                     len: 1,

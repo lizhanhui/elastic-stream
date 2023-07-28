@@ -111,7 +111,7 @@ mod tests {
             let port = run_listener().await;
             let target = format!("127.0.0.1:{}", port);
             let addr = target.parse::<SocketAddr>().unwrap();
-            let stream = TcpStream::connect(addr.clone()).await.unwrap();
+            let stream = TcpStream::connect(addr).await.unwrap();
             let connection = Rc::new(Connection::new(stream, &target));
             let conn_tracker = Rc::new(RefCell::new(ConnectionTracker::new()));
             let handler = super::IdleHandler::new(
@@ -125,11 +125,11 @@ mod tests {
             assert!(handler.write_idle(), "Write should be idle");
 
             handler.on_read();
-            assert_eq!(false, handler.read_idle(), "Read should NOT be idle");
+            assert!(!handler.read_idle(), "Read should NOT be idle");
             assert!(handler.write_idle(), "Write should be idle");
 
             handler.on_write();
-            assert_eq!(false, handler.write_idle(), "Read should NOT be idle");
+            assert!(!handler.write_idle(), "Read should NOT be idle");
 
             Ok(())
         })

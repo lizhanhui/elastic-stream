@@ -198,13 +198,15 @@ mod tests {
         ulog::try_init_log();
         tokio_uring::start(async {
             let port = run_listener().await;
-            let mut config = config::Configuration::default();
-            config.placement_driver = format!("localhost:{}", port);
+            let config = config::Configuration {
+                placement_driver: format!("127.0.0.1:{}", port),
+                ..Default::default()
+            };
             let (tx, _rx) = broadcast::channel(1);
             let client = DefaultClient::new(Arc::new(config), tx);
             let pd_client = DefaultPlacementDriverClient::new(Rc::new(client));
 
-            let mut receiver = pd_client.list_and_watch_resource(&vec![
+            let mut receiver = pd_client.list_and_watch_resource(&[
                 ResourceType::RANGE_SERVER,
                 ResourceType::STREAM,
                 ResourceType::RANGE,

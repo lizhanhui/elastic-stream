@@ -176,7 +176,7 @@ mod tests {
 
     impl PartialOrd for Foo {
         fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-            other.offset.partial_cmp(&self.offset)
+            Some(self.cmp(other))
         }
     }
 

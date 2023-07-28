@@ -286,21 +286,21 @@ mod tests {
         assert_eq!(0, buf_writer.max_allocated_wal_offset());
 
         buf_writer.reserve_to(ALIGNMENT as u64, 16384)?;
-        assert_eq!(buf_writer.remaining(), ALIGNMENT as usize);
+        assert_eq!(buf_writer.remaining(), { ALIGNMENT });
         assert_eq!(ALIGNMENT as u64, buf_writer.max_allocated_wal_offset());
         assert_eq!(0, buf_writer.cursor);
 
         buf_writer.reserve_to(ALIGNMENT as u64, 16384)?;
-        assert_eq!(buf_writer.remaining(), ALIGNMENT as usize);
+        assert_eq!(buf_writer.remaining(), { ALIGNMENT });
         assert_eq!(ALIGNMENT as u64, buf_writer.max_allocated_wal_offset());
         assert_eq!(0, buf_writer.cursor);
 
         buf_writer.reserve_to((ALIGNMENT + 1) as u64, 16384)?;
-        assert_eq!(buf_writer.remaining(), (ALIGNMENT * 2) as usize);
+        assert_eq!(buf_writer.remaining(), { ALIGNMENT * 2 });
         assert_eq!(ALIGNMENT as u64 * 2, buf_writer.max_allocated_wal_offset());
 
         buf_writer.reserve_to(ALIGNMENT as u64 * 2 - 1, 16384)?;
-        assert_eq!(buf_writer.remaining(), (ALIGNMENT * 2) as usize);
+        assert_eq!(buf_writer.remaining(), { ALIGNMENT * 2 });
         assert_eq!(ALIGNMENT as u64 * 2, buf_writer.max_allocated_wal_offset());
         Ok(())
     }

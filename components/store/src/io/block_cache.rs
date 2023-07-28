@@ -539,7 +539,6 @@ mod tests {
 
         // Case one: add 16 entries, and merge to one range.
         let mut missed_entries: Vec<_> = (0..16)
-            .into_iter()
             .map(|n| super::EntryRange {
                 wal_offset: n * block_size as u64,
                 len: block_size,
@@ -555,7 +554,6 @@ mod tests {
 
         // Case two: add 16 entries, and merge to two ranges.
         let mut missed_entries: Vec<_> = (0..8)
-            .into_iter()
             .map(|n| super::EntryRange {
                 wal_offset: n * block_size as u64,
                 len: block_size,
@@ -563,7 +561,7 @@ mod tests {
             .collect();
 
         let start_wal_offset = 1024 * block_size as u64;
-        (0..8).into_iter().for_each(|n| {
+        (0..8).for_each(|n| {
             missed_entries.push(super::EntryRange {
                 wal_offset: start_wal_offset + n * block_size as u64,
                 len: block_size,
@@ -581,7 +579,6 @@ mod tests {
 
         // Case three: no merge
         let mut missed_entries: Vec<_> = (0..8)
-            .into_iter()
             .map(|n| super::EntryRange {
                 wal_offset: n * 3 * block_size as u64,
                 len: block_size,
@@ -591,20 +588,19 @@ mod tests {
         missed_entries.shuffle(&mut rng);
         let merged = missed_entries.merge();
         assert_eq!(8, merged.len());
-        (0..8).into_iter().for_each(|n| {
+        (0..8).for_each(|n| {
             assert_eq!(n * 3 * block_size as u64, merged[n as usize].wal_offset);
         });
 
         // Case four: discard the redundant range.
         let mut missed_entries: Vec<_> = (0..8)
-            .into_iter()
             .map(|n| super::EntryRange {
                 wal_offset: n * block_size as u64,
                 len: block_size,
             })
             .collect();
 
-        (0..8).into_iter().for_each(|n| {
+        (0..8).for_each(|n| {
             missed_entries.push(super::EntryRange {
                 wal_offset: n * block_size as u64,
                 len: block_size,
@@ -618,28 +614,28 @@ mod tests {
         assert_eq!(8 * block_size, merged[0].len);
 
         // Case five: handle the case that the ranges are overlapped.
-        let mut missed_entries: Vec<_> = vec![];
-
-        // Add a range [0, 2 * block_size)
-        missed_entries.push(super::EntryRange {
-            wal_offset: 0,
-            len: 2 * block_size,
-        });
-        // Add a range [block_size, 3 * block_size)
-        missed_entries.push(super::EntryRange {
-            wal_offset: block_size as u64,
-            len: 3 * block_size,
-        });
-        // Add a range [1 * block_size, 2* block_size)
-        missed_entries.push(super::EntryRange {
-            wal_offset: block_size as u64,
-            len: 2 * block_size,
-        });
-        // Add a range [3 * block_size, 3 * block_size)
-        missed_entries.push(super::EntryRange {
-            wal_offset: 3 * block_size as u64,
-            len: 3 * block_size,
-        });
+        let mut missed_entries: Vec<_> = vec![
+            // Add a range [0, 2 * block_size)
+            super::EntryRange {
+                wal_offset: 0,
+                len: 2 * block_size,
+            },
+            // Add a range [block_size, 3 * block_size)
+            super::EntryRange {
+                wal_offset: block_size as u64,
+                len: 3 * block_size,
+            },
+            // Add a range [1 * block_size, 2* block_size)
+            super::EntryRange {
+                wal_offset: block_size as u64,
+                len: 2 * block_size,
+            },
+            // Add a range [3 * block_size, 3 * block_size)
+            super::EntryRange {
+                wal_offset: 3 * block_size as u64,
+                len: 3 * block_size,
+            },
+        ];
 
         missed_entries.shuffle(&mut rng);
         let merged = missed_entries.merge();
@@ -656,7 +652,7 @@ mod tests {
         let config = Arc::new(cfg);
         let mut block_cache = super::BlockCache::new(&config, start_wal_offset);
         let block_size = 4096;
-        for n in (0..16).into_iter() {
+        for n in 0..16 {
             let buf = Arc::new(
                 AlignedBuf::new(
                     start_wal_offset + n * block_size as u64,
@@ -683,7 +679,7 @@ mod tests {
     fn test_score_cached_entries() {
         let block_size = 4096;
         let mut entries = vec![];
-        for n in (0..16).into_iter() {
+        for n in 0..16 {
             let buf =
                 Arc::new(AlignedBuf::new(n * block_size as u64, block_size, block_size).unwrap());
             buf.limit.store(block_size, Ordering::Relaxed);
@@ -701,8 +697,8 @@ mod tests {
         });
 
         // Assert the entries are sorted by score.
-        for n in (0..16).into_iter() {
-            assert_eq!(n, entries[n as usize].hit);
+        for (n, entry) in entries.iter().enumerate().take(16) {
+            assert_eq!(n, entry.hit);
         }
     }
 
@@ -714,7 +710,7 @@ mod tests {
         let mut block_cache = super::BlockCache::new(&config, 0);
         let block_size = 4096;
         let total = 16;
-        for n in (0..total).into_iter() {
+        for n in 0..total {
             let buf =
                 Arc::new(AlignedBuf::new(n * block_size as u64, block_size, block_size).unwrap());
             buf.limit.store(block_size, Ordering::Relaxed);
@@ -843,12 +839,12 @@ mod tests {
 
         // Try add loading entry
         hit.iter().for_each(|r| {
-            block_cache.add_loading_entry(r.clone());
+            block_cache.add_loading_entry(*r);
         });
 
         let pending_hit = block_cache.try_get_entries(target_entry);
-        assert_eq!(true, pending_hit.is_ok());
-        assert_eq!(true, pending_hit.unwrap().is_none());
+        assert!(pending_hit.is_ok());
+        assert!(pending_hit.unwrap().is_none());
 
         // Complete the loading entry
         hit.iter().for_each(|r| {

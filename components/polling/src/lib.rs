@@ -45,11 +45,9 @@ mod tests {
         }
 
         fn drain(&mut self, stream_id: u64, offset: u64) -> Option<Vec<ClientCall<Observer>>> {
-            if let Some(v) = self.entries.get_mut(&stream_id) {
-                Some(v.extract_if(|call| call.ready(offset)).collect())
-            } else {
-                None
-            }
+            self.entries
+                .get_mut(&stream_id)
+                .map(|v| v.extract_if(|call| call.ready(offset)).collect())
         }
 
         fn drain_if<F>(&mut self, pred: F) -> Vec<ClientCall<Observer>>

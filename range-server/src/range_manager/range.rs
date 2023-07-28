@@ -209,7 +209,7 @@ mod tests {
         range.seal(&mut metadata);
 
         assert_eq!(range.committed(), Some(1));
-        assert_eq!(false, range.data_complete(), "Data should not be complete");
+        assert!(!range.data_complete(), "Data should not be complete");
 
         Ok(())
     }

@@ -804,7 +804,7 @@ mod tests {
             *self.next_offset.borrow_mut() =
                 context.base_offset + record_batch.last_offset_delta() as u64;
             let flat_record_batch_bytes = record_batch_to_bytes(
-                &record_batch,
+                record_batch,
                 &context,
                 self.metadata().stream_id() as u64,
                 self.metadata().index() as u32,

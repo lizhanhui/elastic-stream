@@ -1,5 +1,5 @@
 codecov:
-  token: 60f6825c-fb96-44d0-a3a3-e1924cd241d2
+  token: 14d9c2d5-0c86-4623-8f3c-08d069667b7c
 
 ignore:
   - "pd/pkg/util/testutil/"

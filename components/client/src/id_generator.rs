@@ -80,8 +80,10 @@ mod tests {
 
         let port = port_rx.blocking_recv().unwrap();
 
-        let mut cfg = config::Configuration::default();
-        cfg.placement_driver = format!("localhost:{}", port);
+        let cfg = config::Configuration {
+            placement_driver: format!("127.0.0.1:{}", port),
+            ..Default::default()
+        };
         let config = Arc::new(cfg);
         let generator = PlacementDriverIdGenerator::new(&config);
         let id = generator.generate()?;

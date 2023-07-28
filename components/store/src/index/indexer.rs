@@ -788,8 +788,7 @@ mod tests {
         let range = 0;
         const CNT: u64 = 1024;
         (1..CNT)
-            .into_iter()
-            .map(|n| {
+            .flat_map(|n| {
                 let ptr = RecordHandle {
                     wal_offset: n * 128,
                     len: 128,
@@ -797,7 +796,6 @@ mod tests {
                 };
                 indexer.index(0, range, n * 10, &ptr)
             })
-            .flatten()
             .count();
 
         // The record handle physical offset is 128, 256, 384, ...
@@ -805,7 +803,7 @@ mod tests {
 
         // Case one: scan from a exist key
         let handles = indexer.scan_record_handles_left_shift(0, range, 10, 100, 128 * 2)?;
-        assert_eq!(true, handles.is_some());
+        assert!(handles.is_some());
         let handles = handles.unwrap();
         assert_eq!(2, handles.len());
 
@@ -817,7 +815,7 @@ mod tests {
 
         // Case two: scan from a left key
         let handles = indexer.scan_record_handles_left_shift(0, range, 12, 100, 128 * 2)?;
-        assert_eq!(true, handles.is_some());
+        assert!(handles.is_some());
         let handles = handles.unwrap();
         assert_eq!(2, handles.len());
 
@@ -829,7 +827,7 @@ mod tests {
 
         // Case three: scan from a key smaller than the smallest key
         let handles = indexer.scan_record_handles_left_shift(0, range, 1, 100, 128 * 2)?;
-        assert_eq!(true, handles.is_some());
+        assert!(handles.is_some());
         let handles = handles.unwrap();
         assert_eq!(2, handles.len());
 
@@ -842,12 +840,12 @@ mod tests {
         // Case four: scan from a key bigger than the biggest key
 
         let handles = indexer.scan_record_handles_left_shift(0, range, CNT * 11, 100, 128 * 2)?;
-        assert_eq!(true, handles.is_none());
+        assert!(handles.is_none());
 
         // Case five: scan with a max offset
         let handles = indexer.scan_record_handles_left_shift(0, range, 10, 40, 128 * 10)?;
         // Three records are scanned
-        assert_eq!(true, handles.is_some());
+        assert!(handles.is_some());
         let handles = handles.unwrap();
         assert_eq!(3, handles.len());
         assert_eq!(handles[0].wal_offset, 128);
@@ -863,8 +861,7 @@ mod tests {
         let range = 0;
         const CNT: u64 = 1024;
         (0..CNT)
-            .into_iter()
-            .map(|n| {
+            .flat_map(|n| {
                 let ptr = RecordHandle {
                     wal_offset: n,
                     len: 128,
@@ -872,12 +869,11 @@ mod tests {
                 };
                 indexer.index(0, range, n, &ptr)
             })
-            .flatten()
             .count();
 
         // Case one: scan ten records from the indexer
         let handles = indexer.scan_record_handles(0, range, 0, 10 * 128)?;
-        assert_eq!(true, handles.is_some());
+        assert!(handles.is_some());
         let handles = handles.unwrap();
         assert_eq!(10, handles.len());
         handles.into_iter().enumerate().for_each(|(i, handle)| {
@@ -888,11 +884,11 @@ mod tests {
 
         // Case two: scan 0 bytes from the indexer
         let handles = indexer.scan_record_handles(0, range, 0, 0)?;
-        assert_eq!(true, handles.is_none());
+        assert!(handles.is_none());
 
         // Case three: return at least one record even if the bytes is not enough
         let handles = indexer.scan_record_handles(0, range, 0, 5)?;
-        assert_eq!(true, handles.is_some());
+        assert!(handles.is_some());
         let handles = handles.unwrap();
         assert_eq!(1, handles.len());
 
@@ -916,8 +912,7 @@ mod tests {
         let range = 0;
         const CNT: u64 = 1024;
         (0..CNT)
-            .into_iter()
-            .map(|n| {
+            .flat_map(|n| {
                 let ptr = RecordHandle {
                     wal_offset: n,
                     len: 128,
@@ -925,7 +920,6 @@ mod tests {
                 };
                 indexer.index(0, range, n, &ptr)
             })
-            .flatten()
             .count();
 
         indexer.flush(true)?;

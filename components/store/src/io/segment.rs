@@ -620,7 +620,7 @@ mod tests {
         let wal_offset = 1024 * 1024;
 
         // Generate some random data
-        let buf_w = AlignedBuf::new(wal_offset, 4 * alignment as usize, alignment).unwrap();
+        let buf_w = AlignedBuf::new(wal_offset, 4 * alignment, alignment).unwrap();
 
         rand::thread_rng().fill_bytes(buf_w.slice_mut(..));
         buf_w.increase_written(buf_w.capacity);
@@ -632,7 +632,7 @@ mod tests {
             &config,
             wal_offset,
             1024 * 1024,
-            &segment_file_path.as_path(),
+            segment_file_path.as_path(),
         )
         .unwrap();
         segment.open().unwrap();
@@ -648,10 +648,7 @@ mod tests {
         segment
             .read_exact_at(&mut buf, alignment as u64 + 2)
             .unwrap();
-        assert_eq!(
-            &buf,
-            &buf_w.slice((alignment + 2) as usize..(alignment + 2 + 5) as usize)[..]
-        );
+        assert_eq!(&buf, &buf_w.slice((alignment + 2)..(alignment + 2 + 5))[..]);
 
         let buf_v = segment
             .block_cache
@@ -665,10 +662,10 @@ mod tests {
         assert_eq!(buf_v.len(), 1);
         let buf = buf_v.first().unwrap();
         assert_eq!(buf.wal_offset, segment.wal_offset + alignment as u64);
-        assert_eq!(buf.limit(), alignment as usize);
+        assert_eq!(buf.limit(), { alignment });
         assert_eq!(
             buf.slice(..),
-            buf_w.slice(alignment as usize..(alignment + alignment) as usize)
+            buf_w.slice(alignment..(alignment + alignment))
         );
 
         // Read some bytes cross the page boundary, and test whether the whole two pages is cached.
@@ -678,7 +675,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             &buf,
-            &buf_w.slice((alignment * 3 - 2) as usize..(alignment * 3 - 2 + 5) as usize)[..]
+            &buf_w.slice((alignment * 3 - 2)..(alignment * 3 - 2 + 5))[..]
         );
 
         let buf_v = segment
@@ -692,10 +689,7 @@ mod tests {
             .unwrap();
         assert_eq!(buf_v.len(), 1);
         let buf = buf_v.first().unwrap();
-        assert_eq!(
-            buf.slice(..),
-            buf_w.slice((alignment * 2) as usize..(alignment * 4) as usize)
-        );
+        assert_eq!(buf.slice(..), buf_w.slice((alignment * 2)..(alignment * 4)));
         Ok(())
     }
 
@@ -736,10 +730,10 @@ mod tests {
             // Case one: the last page is already cached individually.
             segment.written = 4 * alignment as u64;
             // Load the first three pages.
-            let mut buf = [0u8; 3 * 4096 as usize];
+            let mut buf = [0u8; 3 * 4096_usize];
             segment.read_exact_at(&mut buf, 0).unwrap();
             // Load the last page
-            let mut buf = [0u8; 4096 as usize];
+            let mut buf = [0u8; 4096_usize];
             segment
                 .read_exact_at(&mut buf, 3 * alignment as u64)
                 .unwrap();
@@ -755,7 +749,7 @@ mod tests {
             assert_eq!(buf_v.len(), 1);
             let buf = buf_v.first().unwrap();
             assert_eq!(buf.wal_offset, wal_offset);
-            assert_eq!(buf.limit(), alignment as usize * 3);
+            assert_eq!(buf.limit(), alignment * 3);
 
             let buf_v = segment
                 .block_cache
@@ -768,8 +762,8 @@ mod tests {
                 .unwrap();
             assert_eq!(buf_v.len(), 1);
             let buf = buf_v.first().unwrap();
-            assert_eq!(buf.limit(), alignment as usize);
-            assert_eq!(buf.capacity, alignment as usize);
+            assert_eq!(buf.limit(), { alignment });
+            assert_eq!(buf.capacity, { alignment });
 
             // Clear the cache
             segment.block_cache.remove(|t| t.wal_offset() >= wal_offset);
@@ -778,10 +772,10 @@ mod tests {
         {
             // Case two: the last page is already cached individually, but some dirty cache is loaded.
             // Load the first three pages.
-            let mut buf = [0u8; 3 * 4096 as usize];
+            let mut buf = [0u8; 3 * 4096_usize];
             segment.read_exact_at(&mut buf, 0).unwrap();
             // Load the last page and a dirty page
-            let mut buf = [0u8; 4096 * 2 as usize];
+            let mut buf = [0u8; 4096 * 2_usize];
             segment
                 .read_exact_at(&mut buf, 3 * alignment as u64)
                 .unwrap();
@@ -797,13 +791,13 @@ mod tests {
             assert_eq!(buf_v.len(), 1);
             let buf = buf_v.first().unwrap();
             assert_eq!(buf.wal_offset, wal_offset);
-            assert_eq!(buf.limit(), alignment as usize * 3);
+            assert_eq!(buf.limit(), alignment * 3);
 
             let buf_v = segment
                 .block_cache
                 .try_get_entries(EntryRange::new(
                     wal_offset + 3 * alignment as u64,
-                    1 as u32,
+                    1_u32,
                     alignment,
                 ))
                 .unwrap()
@@ -811,8 +805,8 @@ mod tests {
             assert_eq!(buf_v.len(), 1);
             let buf = buf_v.first().unwrap();
             assert_eq!(buf.wal_offset, wal_offset + 3 * alignment as u64);
-            assert_eq!(buf.limit(), alignment as usize - 1024);
-            assert_eq!(buf.capacity, alignment as usize);
+            assert_eq!(buf.limit(), alignment - 1024);
+            assert_eq!(buf.capacity, { alignment });
 
             // Clear the cache
             segment.block_cache.remove(|t| t.wal_offset() >= wal_offset);
@@ -821,7 +815,7 @@ mod tests {
         {
             // Case three: the last page should be splitted, with dirty cache.
             // Load the all the four pages.
-            let mut buf = [0u8; 4 * 4096 as usize];
+            let mut buf = [0u8; 4 * 4096_usize];
             segment.read_exact_at(&mut buf, 0).unwrap();
 
             segment.written = 3 * alignment as u64 + 1024;
@@ -835,21 +829,21 @@ mod tests {
             assert_eq!(buf_v.len(), 1);
             let buf = buf_v.first().unwrap();
             assert_eq!(buf.wal_offset, wal_offset);
-            assert_eq!(buf.limit(), alignment as usize * 3);
+            assert_eq!(buf.limit(), alignment * 3);
 
             let buf_v = segment
                 .block_cache
                 .try_get_entries(EntryRange::new(
                     wal_offset + 3 * alignment as u64,
-                    1024 as u32,
+                    1024_u32,
                     alignment,
                 ))
                 .unwrap()
                 .unwrap();
             assert_eq!(buf_v.len(), 1);
             let buf = buf_v.first().unwrap();
-            assert_eq!(buf.limit(), 1024 as usize);
-            assert_eq!(buf.capacity, alignment as usize);
+            assert_eq!(buf.limit(), 1024_usize);
+            assert_eq!(buf.capacity, { alignment });
 
             // Clear the cache
             segment.block_cache.remove(|t| t.wal_offset() >= wal_offset);

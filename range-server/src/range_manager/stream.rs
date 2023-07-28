@@ -149,7 +149,6 @@ mod tests {
         let mut stream = super::Stream::new(stream_metadata);
 
         let range = RangeMetadata::new(1, 0, 0, 0, None);
-        let range = RangeMetadata::from(range);
         stream.create_range(range);
 
         assert_eq!(stream.ranges.len(), 1);
@@ -183,7 +182,6 @@ mod tests {
         let mut stream = super::Stream::new(stream_metadata);
 
         let range = RangeMetadata::new(1, 0, 0, 0, None);
-        let range = RangeMetadata::from(range);
         stream.create_range(range);
 
         let range = stream
@@ -203,8 +201,7 @@ mod tests {
 
         let committed = stream
             .ranges
-            .iter()
-            .nth(0)
+            .get(0)
             .expect("The first range should exist")
             .committed();
         assert_eq!(committed, Some(100));

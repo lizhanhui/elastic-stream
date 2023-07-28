@@ -34,14 +34,13 @@ fn main() {
         let memory_object_manager: MemoryObjectManager = MemoryObjectManager::new(&config.cluster);
         let object_manager = memory_object_manager;
         let object_store = DefaultObjectStorage::new(&config, range_fetcher, object_manager);
-        let mut end_offset = 1;
+        let mut _end_offset = 1;
         loop {
             object_store.new_commit(1, 2, 128 * 1024);
-            end_offset = end_offset + 1;
+            _end_offset += 1;
             sleep(Duration::from_millis(args.send_interval_millis)).await;
         }
     });
-    return;
 }
 
 #[derive(Parser, Debug)]

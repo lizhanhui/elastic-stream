@@ -794,7 +794,7 @@ mod tests {
 
     #[test]
     fn test_load_wals() -> Result<(), StoreError> {
-        let store_base = tempfile::tempdir().map_err(|e| StoreError::IO(e))?;
+        let store_base = tempfile::tempdir().map_err(StoreError::IO)?;
         let mut cfg = config::Configuration::default();
         cfg.store.path.set_base(store_base.path().to_str().unwrap());
         cfg.check_and_apply()
@@ -808,7 +808,7 @@ mod tests {
     }
     #[test]
     fn test_expand_wals() -> Result<(), StoreError> {
-        let store_base = tempfile::tempdir().map_err(|e| StoreError::IO(e))?;
+        let store_base = tempfile::tempdir().map_err(StoreError::IO)?;
         let mut cfg = config::Configuration::default();
         cfg.store.path.set_base(store_base.path().to_str().unwrap());
         cfg.check_and_apply()
@@ -817,7 +817,6 @@ mod tests {
         let segment_sum = cfg.store.total_segment_file_size / cfg.store.segment_size;
         let config = Arc::new(cfg);
         let files: Vec<_> = (0..10)
-            .into_iter()
             .map(|i| {
                 let f = config
                     .store
@@ -837,7 +836,7 @@ mod tests {
 
     #[test]
     fn test_alloc_segment() -> Result<(), StoreError> {
-        let wal_dir = tempfile::tempdir().map_err(|e| StoreError::IO(e))?;
+        let wal_dir = tempfile::tempdir().map_err(StoreError::IO)?;
         let mut cfg = config::Configuration::default();
         cfg.store.path.set_wal(wal_dir.path().to_str().unwrap());
         let config = Arc::new(cfg);
@@ -854,7 +853,7 @@ mod tests {
 
     #[test]
     fn test_writable_segment_count() -> Result<(), StoreError> {
-        let wal_dir = tempfile::tempdir().map_err(|e| StoreError::IO(e))?;
+        let wal_dir = tempfile::tempdir().map_err(StoreError::IO)?;
         let mut cfg = config::Configuration::default();
         cfg.store.path.set_wal(wal_dir.path().to_str().unwrap());
         let config = Arc::new(cfg);
@@ -875,7 +874,7 @@ mod tests {
 
     #[test]
     fn test_segment_file_of() -> Result<(), StoreError> {
-        let wal_dir = tempfile::tempdir().map_err(|e| StoreError::IO(e))?;
+        let wal_dir = tempfile::tempdir().map_err(StoreError::IO)?;
         let mut cfg = config::Configuration::default();
         cfg.store.path.set_wal(wal_dir.path().to_str().unwrap());
         let config = Arc::new(cfg);
@@ -907,7 +906,7 @@ mod tests {
 
     #[test]
     fn test_delete_segments() -> Result<(), Box<dyn Error>> {
-        let wal_dir = tempfile::tempdir().map_err(|e| StoreError::IO(e))?;
+        let wal_dir = tempfile::tempdir().map_err(StoreError::IO)?;
         let mut cfg = config::Configuration::default();
         cfg.store.path.set_wal(wal_dir.path().to_str().unwrap());
         let config = Arc::new(cfg);
@@ -932,14 +931,13 @@ mod tests {
     /// Test try_reclaim_segments
     #[test]
     fn test_try_reclaim_segments() -> Result<(), StoreError> {
-        let wal_dir = tempfile::tempdir().map_err(|e| StoreError::IO(e))?;
+        let wal_dir = tempfile::tempdir().map_err(StoreError::IO)?;
         let mut cfg = config::Configuration::default();
         cfg.store.path.set_wal(wal_dir.path().to_str().unwrap());
         let config = Arc::new(cfg);
         let mut wal = create_wal(&config)?;
 
         (0..2)
-            .into_iter()
             .map(|_| wal.open_segment_directly())
             .collect::<Result<Vec<()>, StoreError>>()?;
 

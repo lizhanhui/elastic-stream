@@ -467,10 +467,10 @@ mod tests {
             #[allow(unused_variables)]
             let port = 2378;
             let port = run_listener().await;
-            let mut config = config::Configuration::default();
-            config.placement_driver = format!("127.0.0.1:{}", port);
-            config.server.addr = "127.0.0.1:10911".to_owned();
-            config.server.advertise_addr = "127.0.0.1:10911".to_owned();
+            let mut config = config::Configuration {
+                placement_driver: format!("127.0.0.1:{}", port),
+                ..Default::default()
+            };
             config.check_and_apply().unwrap();
             let config = Arc::new(config);
             let (tx, _rx) = broadcast::channel(1);
@@ -491,10 +491,10 @@ mod tests {
             #[allow(unused_variables)]
             let port = 2378;
             let port = run_listener().await;
-            let mut config = config::Configuration::default();
-            config.server.addr = "127.0.0.1:10911".to_owned();
-            config.server.advertise_addr = "127.0.0.1:10911".to_owned();
-            config.placement_driver = format!("localhost:{}", port);
+            let config = config::Configuration {
+                placement_driver: format!("127.0.0.1:{}", port),
+                ..Default::default()
+            };
             let config = Arc::new(config);
             let (tx, _rx) = broadcast::channel(1);
             let client = DefaultClient::new(config, tx);
@@ -511,10 +511,10 @@ mod tests {
             #[allow(unused_variables)]
             let port = 12378;
             let port = run_listener().await;
-            let mut config = config::Configuration::default();
-            config.server.addr = "127.0.0.1:10911".to_owned();
-            config.server.advertise_addr = "127.0.0.1:10911".to_owned();
-            config.placement_driver = format!("localhost:{}", port);
+            let config = config::Configuration {
+                placement_driver: format!("127.0.0.1:{}", port),
+                ..Default::default()
+            };
             let config = Arc::new(config);
             let (tx, _rx) = broadcast::channel(1);
             let client = DefaultClient::new(config, tx);
@@ -544,10 +544,10 @@ mod tests {
             #[allow(unused_variables)]
             let port = 12378;
             let port = run_listener().await;
-            let mut config = config::Configuration::default();
-            config.server.addr = "127.0.0.1:10911".to_owned();
-            config.server.advertise_addr = "127.0.0.1:10911".to_owned();
-            config.placement_driver = format!("localhost:{}", port);
+            let config = config::Configuration {
+                placement_driver: format!("127.0.0.1:{}", port),
+                ..Default::default()
+            };
             let config = Arc::new(config);
             let (tx, _rx) = broadcast::channel(1);
             let client = DefaultClient::new(config, tx);
@@ -573,10 +573,10 @@ mod tests {
             #[allow(unused_variables)]
             let port = 12378;
             let port = run_listener().await;
-            let mut config = config::Configuration::default();
-            config.server.addr = "127.0.0.1:10911".to_owned();
-            config.server.advertise_addr = "127.0.0.1:10911".to_owned();
-            config.placement_driver = format!("localhost:{}", port);
+            let config = config::Configuration {
+                placement_driver: format!("127.0.0.1:{}", port),
+                ..Default::default()
+            };
             let target = config.placement_driver.clone();
             let config = Arc::new(config);
             let (tx, _rx) = broadcast::channel(1);
@@ -598,10 +598,10 @@ mod tests {
             let range_server_port = 10911;
             let range_server_port = run_listener().await;
 
-            let mut config = config::Configuration::default();
-            config.server.addr = "127.0.0.1:10911".to_owned();
-            config.server.advertise_addr = "127.0.0.1:10911".to_owned();
-            config.placement_driver = format!("127.0.0.1:{}", placement_driver_port);
+            let config = config::Configuration {
+                placement_driver: format!("127.0.0.1:{}", placement_driver_port),
+                ..Default::default()
+            };
 
             let target = format!("127.0.0.1:{}", range_server_port);
 
@@ -620,10 +620,10 @@ mod tests {
             #[allow(unused_variables)]
             let port = 2378;
             let port = run_listener().await;
-            let mut config = config::Configuration::default();
-            config.server.addr = "127.0.0.1:10911".to_owned();
-            config.server.advertise_addr = "127.0.0.1:10911".to_owned();
-            config.placement_driver = format!("localhost:{}", port);
+            let config = config::Configuration {
+                placement_driver: format!("127.0.0.1:{}", port),
+                ..Default::default()
+            };
             let config = Arc::new(config);
             let (tx, _rx) = broadcast::channel(1);
             let client = DefaultClient::new(config, tx);
@@ -631,9 +631,8 @@ mod tests {
             for i in 1..2 {
                 let criteria = ListRangeCriteria::new(None, Some(i as u64));
                 let ranges = client.list_ranges(criteria).await.unwrap();
-                assert_eq!(
-                    false,
-                    ranges.is_empty(),
+                assert!(
+                    !ranges.is_empty(),
                     "Test server should have fed some mocking ranges"
                 );
                 for range in ranges.iter() {
@@ -652,10 +651,10 @@ mod tests {
             #[allow(unused_variables)]
             let port = 2378;
             let port = run_listener().await;
-            let mut config = config::Configuration::default();
-            config.server.addr = "127.0.0.1:10911".to_owned();
-            config.server.advertise_addr = "127.0.0.1:10911".to_owned();
-            config.placement_driver = format!("localhost:{}", port);
+            let config = config::Configuration {
+                placement_driver: format!("127.0.0.1:{}", port),
+                ..Default::default()
+            };
             let config = Arc::new(config);
             let (tx, _rx) = broadcast::channel(1);
             let client = DefaultClient::new(config, tx);
@@ -663,9 +662,8 @@ mod tests {
             for _i in 1..2 {
                 let criteria = ListRangeCriteria::new(None, None);
                 let ranges = client.list_ranges(criteria).await.unwrap();
-                assert_eq!(
-                    false,
-                    ranges.is_empty(),
+                assert!(
+                    !ranges.is_empty(),
                     "Test server should have fed some mocking ranges"
                 );
                 for range in ranges.iter() {
@@ -685,10 +683,10 @@ mod tests {
             #[allow(unused_variables)]
             let port = 2378;
             let port = run_listener().await;
-            let mut config = config::Configuration::default();
-            config.placement_driver = format!("localhost:{}", port);
-            config.server.addr = "127.0.0.1:10911".to_owned();
-            config.server.advertise_addr = "127.0.0.1:10911".to_owned();
+            let mut config = config::Configuration {
+                placement_driver: format!("127.0.0.1:{}", port),
+                ..Default::default()
+            };
             config.check_and_apply().unwrap();
             let config = Arc::new(config);
             let (tx, _rx) = broadcast::channel(1);
@@ -718,10 +716,10 @@ mod tests {
             #[allow(unused_variables)]
             let port = 2378;
             let port = run_listener().await;
-            let mut config = config::Configuration::default();
-            config.placement_driver = format!("localhost:{}", port);
-            config.server.addr = "127.0.0.1:10911".to_owned();
-            config.server.advertise_addr = "127.0.0.1:10911".to_owned();
+            let mut config = config::Configuration {
+                placement_driver: format!("127.0.0.1:{}", port),
+                ..Default::default()
+            };
             config.check_and_apply().unwrap();
             let config = Arc::new(config);
             let (tx, _rx) = broadcast::channel(1);
@@ -751,10 +749,10 @@ mod tests {
             #[allow(unused_variables)]
             let port = 2378;
             let port = run_listener().await;
-            let mut config = config::Configuration::default();
-            config.placement_driver = format!("localhost:{}", port);
-            config.server.addr = "127.0.0.1:10911".to_owned();
-            config.server.advertise_addr = "127.0.0.1:10911".to_owned();
+            let mut config = config::Configuration {
+                placement_driver: format!("127.0.0.1:{}", port),
+                ..Default::default()
+            };
             config.check_and_apply().unwrap();
             let config = Arc::new(config);
             let (tx, _rx) = broadcast::channel(1);
@@ -783,10 +781,10 @@ mod tests {
             #[allow(unused_variables)]
             let port = 2378;
             let port = run_listener().await;
-            let mut config = config::Configuration::default();
-            config.placement_driver = format!("localhost:{}", port);
-            config.server.addr = "127.0.0.1:10911".to_owned();
-            config.server.advertise_addr = "127.0.0.1:10911".to_owned();
+            let mut config = config::Configuration {
+                placement_driver: format!("127.0.0.1:{}", port),
+                ..Default::default()
+            };
             config.check_and_apply().unwrap();
             let config = Arc::new(config);
             let (tx, _rx) = broadcast::channel(1);
@@ -837,10 +835,10 @@ mod tests {
             #[allow(unused_variables)]
             let port = 2378;
             let port = run_listener().await;
-            let mut config = config::Configuration::default();
-            config.placement_driver = format!("localhost:{}", port);
-            config.server.addr = "127.0.0.1:10911".to_owned();
-            config.server.advertise_addr = "127.0.0.1:10911".to_owned();
+            let mut config = config::Configuration {
+                placement_driver: format!("127.0.0.1:{}", port),
+                ..Default::default()
+            };
             config.check_and_apply().unwrap();
             let config = Arc::new(config);
             let (tx, _rx) = broadcast::channel(1);
@@ -868,10 +866,10 @@ mod tests {
             #[allow(unused_variables)]
             let port = 2378;
             let port = run_listener().await;
-            let mut config = config::Configuration::default();
-            config.placement_driver = format!("localhost:{}", port);
-            config.server.addr = "127.0.0.1:10911".to_owned();
-            config.server.advertise_addr = "127.0.0.1:10911".to_owned();
+            let mut config = config::Configuration {
+                placement_driver: format!("127.0.0.1:{}", port),
+                ..Default::default()
+            };
             config.check_and_apply().unwrap();
             let config = Arc::new(config);
             let (tx, _rx) = broadcast::channel(1);
@@ -911,10 +909,10 @@ mod tests {
             #[allow(unused_variables)]
             let port = 2378;
             let port = run_listener().await;
-            let mut config = config::Configuration::default();
-            config.placement_driver = format!("localhost:{}", port);
-            config.server.addr = "127.0.0.1:10911".to_owned();
-            config.server.advertise_addr = "127.0.0.1:10911".to_owned();
+            let mut config = config::Configuration {
+                placement_driver: format!("127.0.0.1:{}", port),
+                ..Default::default()
+            };
             config.check_and_apply().unwrap();
             let config = Arc::new(config);
             let (tx, _rx) = broadcast::channel(1);

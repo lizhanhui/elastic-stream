@@ -239,7 +239,7 @@ mod tests {
     fn test_aligned_buf() -> Result<(), Box<dyn Error>> {
         let alignment = 4096;
         let buf = AlignedBuf::new(0, 128, alignment)?;
-        assert_eq!(alignment as usize, buf.remaining());
+        assert_eq!({ alignment }, buf.remaining());
         let v = 1;
         buf.write_u32(0, 1);
         assert_eq!(buf.remaining(), 4096 - size_of::<u32>());

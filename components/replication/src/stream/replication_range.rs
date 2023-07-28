@@ -699,7 +699,7 @@ mod tests {
             new_replica(2, false),
             new_replica(3, false),
         ];
-        let replicas = Rc::new(replicas.into_iter().map(|r| Rc::new(r)).collect());
+        let replicas = Rc::new(replicas.into_iter().map(Rc::new).collect());
         assert_eq!(
             2,
             DefaultReplicationRange::<MockReplicationReplica<MockClient>, MockClient>::calculate_confirm_offset0(&replicas, &metadata).unwrap()
@@ -710,7 +710,7 @@ mod tests {
             new_replica(2, true),
             new_replica(3, false),
         ];
-        let replicas = Rc::new(replicas.into_iter().map(|r| Rc::new(r)).collect());
+        let replicas = Rc::new(replicas.into_iter().map(Rc::new).collect());
         assert_eq!(
             1,
             DefaultReplicationRange::<MockReplicationReplica<MockClient>, MockClient>::calculate_confirm_offset0(&replicas, &metadata).unwrap()
@@ -721,7 +721,7 @@ mod tests {
             new_replica(2, true),
             new_replica(3, false),
         ];
-        let replicas = Rc::new(replicas.into_iter().map(|r| Rc::new(r)).collect());
+        let replicas = Rc::new(replicas.into_iter().map(Rc::new).collect());
         assert_eq!(ErrorCode::REPLICA_NOT_ENOUGH, DefaultReplicationRange::<MockReplicationReplica<MockClient>, MockClient>::calculate_confirm_offset0(&replicas, &metadata).unwrap_err().code);
 
         Ok(())
@@ -743,11 +743,11 @@ mod tests {
             replica
                 .expect_confirm_offset()
                 .times(1)
-                .returning(|| 250 as u64);
+                .returning(|| 250_u64);
         }
         assert_eq!(233, range.start_offset());
         assert_eq!(233, range.confirm_offset());
-        assert_eq!(true, range.is_writable());
+        assert!(range.is_writable());
         assert_eq!(0, *ack_callback_invoke_times.borrow());
         range.try_ack();
         assert_eq!(250, range.confirm_offset());
@@ -760,7 +760,7 @@ mod tests {
             replica
                 .expect_confirm_offset()
                 .times(1)
-                .returning(|| 240 as u64);
+                .returning(|| 240_u64);
         }
         range.try_ack();
         assert_eq!(250, range.confirm_offset());
@@ -771,11 +771,11 @@ mod tests {
             let replica = get_replica(&mut range, 0);
             replica.expect_corrupted().times(1).returning(|| true);
         }
-        assert_eq!(true, range.is_writable());
+        assert!(range.is_writable());
         range.try_ack();
         assert_eq!(250, range.confirm_offset());
         assert_eq!(2, *ack_callback_invoke_times.borrow());
-        assert_eq!(false, range.is_writable());
+        assert!(!range.is_writable());
     }
 
     #[test]
@@ -893,8 +893,8 @@ mod tests {
             }
             *range.confirm_offset.borrow_mut() = 240;
             assert_eq!(240, range.seal().await.unwrap());
-            assert_eq!(true, range.is_sealed());
-            assert_eq!(false, range.is_writable());
+            assert!(range.is_sealed());
+            assert!(!range.is_writable());
             // repeated seal
             assert_eq!(240, range.seal().await.unwrap());
         });
@@ -928,15 +928,15 @@ mod tests {
             }
             let rst = range.seal().await;
             assert_eq!(ErrorCode::REPLICA_NOT_ENOUGH, rst.unwrap_err().code);
-            assert_eq!(false, range.is_sealed());
+            assert!(!range.is_sealed());
 
             {
                 let replica = get_replica(&mut range, 0);
                 replica.expect_seal().times(1).returning(|_| Ok(240));
             }
             assert_eq!(240, range.seal().await.unwrap());
-            assert_eq!(true, range.is_sealed());
-            assert_eq!(false, range.is_writable());
+            assert!(range.is_sealed());
+            assert!(!range.is_writable());
         });
         Ok(())
     }

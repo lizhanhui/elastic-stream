@@ -75,7 +75,6 @@ fn main() -> Result<(), Box<dyn Error + 'static>> {
         });
 
         let handles = (0..args.stream)
-            .into_iter()
             .map(|_| {
                 let frontend = Rc::clone(&frontend);
                 let stats = Rc::clone(&stats);
@@ -118,7 +117,7 @@ fn main() -> Result<(), Box<dyn Error + 'static>> {
                                 let buf_ = buf.clone();
                                 let stats = Rc::clone(&stats);
                                 tokio_uring::spawn(async move {
-                                    if let Err(_) = stream_.append(buf_).await {
+                                    if stream_.append(buf_).await.is_err() {
                                         stats.borrow_mut().inc_failure();
                                         error!("Failed to append");
                                     } else {

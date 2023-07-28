@@ -129,8 +129,10 @@ mod tests {
 
         let port = port_rx.blocking_recv().unwrap();
         let pd_address = format!("localhost:{}", port);
-        let mut config = config::Configuration::default();
-        config.placement_driver = pd_address;
+        let mut config = config::Configuration {
+            placement_driver: pd_address,
+            ..Default::default()
+        };
         config
             .check_and_apply()
             .expect("Failed to check-and-apply configuration");

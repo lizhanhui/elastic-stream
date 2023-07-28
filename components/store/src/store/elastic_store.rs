@@ -439,8 +439,10 @@ mod tests {
     use tokio::sync::oneshot;
 
     fn build_store(pd_address: &str, store_path: &str) -> ElasticStore {
-        let mut config = config::Configuration::default();
-        config.placement_driver = pd_address.to_owned();
+        let mut config = config::Configuration {
+            placement_driver: pd_address.to_owned(),
+            ..Default::default()
+        };
         config.store.path.set_base(store_path);
         config.check_and_apply().expect("Configuration is invalid");
         let (tx, rx) = oneshot::channel();
@@ -478,7 +480,7 @@ mod tests {
         let _ = std::thread::spawn(move || {
             let store = build_store(&pd_address, store_path.as_str());
             let send_r = tx.send(store);
-            if let Err(_) = send_r {
+            if send_r.is_err() {
                 panic!("Failed to send store");
             }
         });
@@ -487,7 +489,6 @@ mod tests {
         let options = WriteOptions::default();
         let mut append_fs = vec![];
         (0..1024)
-            .into_iter()
             .map(|i| AppendRecordRequest {
                 stream_id: 1,
                 range_index: 0,
