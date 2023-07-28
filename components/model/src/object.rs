@@ -88,6 +88,9 @@ impl ObjectMetadata {
                     break;
                 }
             }
+            if index_position < start_position {
+                continue;
+            }
             if index_position - start_position >= size_hint {
                 end_position = index_position;
                 break;

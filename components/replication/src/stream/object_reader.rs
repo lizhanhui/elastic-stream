@@ -1,4 +1,4 @@
-use std::{cell::RefCell, collections::BTreeMap, ops::Bound, rc::Rc};
+use std::rc::Rc;
 
 use bytes::Bytes;
 use log::{debug, info, warn};
@@ -12,7 +12,7 @@ use protocol::rpc::header::ErrorCode;
 use serde::Deserialize;
 use tokio::sync::oneshot;
 
-use super::records_block::RecordsBlock;
+use super::{object_stream::ObjectMetadataManager, records_block::RecordsBlock};
 
 #[cfg(test)]
 use mockall::automock;
@@ -191,67 +191,5 @@ impl AsyncObjectReader {
             };
             let _ = tx.send(rst);
         });
-    }
-}
-
-#[derive(Debug)]
-pub(crate) struct ObjectMetadataManager {
-    metadata_map: RefCell<BTreeMap<u64, ObjectMetadata>>,
-    // TODO: clean
-    // start_offset -> object position hint map
-    offset_to_position: RefCell<BTreeMap<u64, u32>>,
-}
-
-impl ObjectMetadataManager {
-    pub(crate) fn new() -> Self {
-        Self {
-            metadata_map: RefCell::new(BTreeMap::new()),
-            offset_to_position: RefCell::new(BTreeMap::new()),
-        }
-    }
-
-    pub(crate) fn add_object_metadata(&self, metadata: &ObjectMetadata) {
-        let mut metadata_map = self.metadata_map.borrow_mut();
-        metadata_map
-            .entry(metadata.start_offset)
-            .or_insert_with(|| metadata.clone());
-    }
-
-    fn add_position_hint(&self, start_offset: u64, position: u32) {
-        let mut offset_to_position = self.offset_to_position.borrow_mut();
-        offset_to_position
-            .entry(start_offset)
-            .or_insert_with(|| position);
-    }
-
-    fn find_first(
-        &self,
-        start_offset: u64,
-        end_offset: Option<u64>,
-        size_hint: u32,
-    ) -> Option<(ObjectMetadata, (u32, u32))> {
-        let metadata_map = self.metadata_map.borrow();
-        let cursor = metadata_map.upper_bound(Bound::Included(&start_offset));
-
-        let object = cursor.value()?;
-
-        let object_end_offset = object.start_offset + object.end_offset_delta as u64;
-        if object_end_offset <= start_offset {
-            // object is before start_offset
-            return None;
-        }
-        let position = self
-            .offset_to_position
-            .borrow()
-            .upper_bound(Bound::Included(&start_offset))
-            .key_value()
-            .filter(|(offset, _)| *offset >= &object.start_offset) // filter offset in current object
-            .map(|(_, position)| position)
-            .cloned();
-        if let Some(range) = object.find_bound(start_offset, end_offset, size_hint, position) {
-            Some((object.clone(), range))
-        } else {
-            panic!("object#find_bound should not return None");
-        }
     }
 }

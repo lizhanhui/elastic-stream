@@ -1,16 +1,12 @@
-use std::{cmp::min, rc::Rc};
+use std::{cell::RefCell, cmp::min, collections::BTreeMap, ops::Bound, rc::Rc};
 
 use log::error;
-use model::error::EsError;
+use model::{error::EsError, object::ObjectMetadata};
 use protocol::rpc::header::ErrorCode;
 
 use crate::stream::FetchDataset;
 
-use super::{
-    object_reader::{ObjectMetadataManager, ObjectReader},
-    records_block::RecordsBlock,
-    Stream,
-};
+use super::{object_reader::ObjectReader, records_block::RecordsBlock, Stream};
 
 pub(crate) struct ObjectStream<S, R> {
     stream: Rc<S>,
@@ -180,11 +176,73 @@ where
     }
 }
 
+#[derive(Debug)]
+pub(crate) struct ObjectMetadataManager {
+    metadata_map: RefCell<BTreeMap<u64, ObjectMetadata>>,
+    // TODO: clean
+    // start_offset -> object position hint map
+    offset_to_position: RefCell<BTreeMap<u64, u32>>,
+}
+
+impl ObjectMetadataManager {
+    pub(crate) fn new() -> Self {
+        Self {
+            metadata_map: RefCell::new(BTreeMap::new()),
+            offset_to_position: RefCell::new(BTreeMap::new()),
+        }
+    }
+
+    pub(crate) fn add_object_metadata(&self, metadata: &ObjectMetadata) {
+        let mut metadata_map = self.metadata_map.borrow_mut();
+        metadata_map
+            .entry(metadata.start_offset)
+            .or_insert_with(|| metadata.clone());
+    }
+
+    pub(crate) fn add_position_hint(&self, start_offset: u64, position: u32) {
+        let mut offset_to_position = self.offset_to_position.borrow_mut();
+        offset_to_position
+            .entry(start_offset)
+            .or_insert_with(|| position);
+    }
+
+    pub(crate) fn find_first(
+        &self,
+        start_offset: u64,
+        end_offset: Option<u64>,
+        size_hint: u32,
+    ) -> Option<(ObjectMetadata, (u32, u32))> {
+        let metadata_map = self.metadata_map.borrow();
+        let cursor = metadata_map.upper_bound(Bound::Included(&start_offset));
+
+        let object = cursor.value()?;
+
+        let object_end_offset = object.start_offset + object.end_offset_delta as u64;
+        if object_end_offset <= start_offset {
+            // object is before start_offset
+            return None;
+        }
+        let position = self
+            .offset_to_position
+            .borrow()
+            .upper_bound(Bound::Included(&start_offset))
+            .key_value()
+            .filter(|(offset, _)| *offset >= &object.start_offset) // filter offset in current object
+            .map(|(_, position)| position)
+            .cloned();
+        if let Some(range) = object.find_bound(start_offset, end_offset, size_hint, position) {
+            Some((object.clone(), range))
+        } else {
+            panic!("object#find_bound should not return None");
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::error::Error;
 
-    use bytes::BytesMut;
+    use bytes::{BufMut, Bytes, BytesMut};
     use mockall::predicate::{self, eq};
 
     use crate::stream::{object_reader::MockObjectReader, records_block::BlockRecord, MockStream};
@@ -315,6 +373,34 @@ mod tests {
         Ok(())
     }
 
+    #[test]
+    fn test_find_first() {
+        let om = ObjectMetadataManager::new();
+        let mut object_metadata = ObjectMetadata::new(1, 2, 3, 100);
+        object_metadata.end_offset_delta = 10;
+        object_metadata.data_len = 1000;
+        object_metadata.sparse_index = sparse_index(vec![(5, 300), (8, 700)]);
+        om.add_object_metadata(&object_metadata);
+
+        let (obj, (start_pos, end_pos)) = om.find_first(105, Some(106), 1000).unwrap();
+        assert_eq!(100, obj.start_offset);
+        assert_eq!(300, start_pos);
+        assert_eq!(700, end_pos);
+
+        let (_obj, (start_pos, end_pos)) = om.find_first(105, None, 1000).unwrap();
+        assert_eq!(300, start_pos);
+        assert_eq!(1000, end_pos);
+
+        om.add_position_hint(106, 500);
+        let (_obj, (start_pos, end_pos)) = om.find_first(107, None, 1000).unwrap();
+        assert_eq!(500, start_pos);
+        assert_eq!(1000, end_pos);
+
+        let (_obj, (start_pos, end_pos)) = om.find_first(107, None, 100).unwrap();
+        assert_eq!(500, start_pos);
+        assert_eq!(700, end_pos);
+    }
+
     fn new_records_block(start_offset: u64, end_offset: u64, size: usize) -> RecordsBlock {
         let data = BytesMut::zeroed(size).freeze();
         RecordsBlock::new(vec![BlockRecord {
@@ -322,5 +408,14 @@ mod tests {
             end_offset_delta: (end_offset - start_offset) as u32,
             data: vec![data],
         }])
+    }
+
+    fn sparse_index(offset_position_vec: Vec<(u32, u32)>) -> Bytes {
+        let mut bytes = BytesMut::with_capacity(offset_position_vec.len() * 8);
+        for (offset, position) in offset_position_vec.into_iter() {
+            bytes.put_u32(offset);
+            bytes.put_u32(position);
+        }
+        bytes.freeze()
     }
 }
