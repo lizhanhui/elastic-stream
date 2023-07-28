@@ -1,4 +1,4 @@
-use bytes::{Buf, Bytes};
+use bytes::{Buf, BufMut, Bytes, BytesMut};
 use protocol::rpc::header::{ObjT, ObjectMetadataT};
 
 pub const BLOCK_DELIMITER: u8 = 0x66;
@@ -178,4 +178,18 @@ impl From<&ObjectMetadata> for ObjT {
         t.sparse_index = Some(m.sparse_index.to_vec());
         t
     }
+}
+
+/// footer                => fix size, 48 bytes
+///   sparse index pos    => u32
+///   sparse index size   => u32
+///   padding
+///   magic               => u64
+pub fn gen_footer(data_len: u32, index_len: u32) -> Bytes {
+    let mut footer = BytesMut::with_capacity(48);
+    footer.put_u32(data_len + 1 /* delimiter magic */);
+    footer.put_u32(index_len);
+    footer.put_bytes(0, 40 - 8);
+    footer.put_u64(FOOTER_MAGIC);
+    footer.freeze()
 }

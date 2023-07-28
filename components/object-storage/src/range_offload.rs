@@ -7,9 +7,9 @@ use log::debug;
 use log::warn;
 use mockall::lazy_static;
 use model::error::DecodeError;
+use model::object::gen_footer;
 use model::object::gen_object_key;
 use model::object::BLOCK_DELIMITER;
-use model::object::FOOTER_MAGIC;
 use model::record::flat_record::RecordMagic;
 use observation::metrics::object_metrics;
 use opendal::Operator;
@@ -514,23 +514,9 @@ fn gen_sparse_index(
     Ok((sparse_index_bytes.freeze(), end_offset, pass_through_size))
 }
 
-/// footer                => fix size, 48 bytes
-///   sparse index pos    => u32
-///   sparse index size   => u32
-///   padding
-///   magic               => u64
-fn gen_footer(data_len: u32, index_len: u32) -> Bytes {
-    let mut footer = BytesMut::with_capacity(48);
-    footer.put_u32(data_len + 1 /* delimiter magic */);
-    footer.put_u32(index_len);
-    footer.put_bytes(0, 40 - 8);
-    footer.put_u64(FOOTER_MAGIC);
-    footer.freeze()
-}
-
 #[cfg(test)]
 mod tests {
-    use model::{record::flat_record::FlatRecordBatch, RecordBatch};
+    use model::{object::FOOTER_MAGIC, record::flat_record::FlatRecordBatch, RecordBatch};
     use opendal::services::Fs;
 
     use crate::MockObjectManager;
