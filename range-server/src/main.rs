@@ -3,13 +3,6 @@ use log::info;
 use range_server::{cli::Commands, Cli};
 use tokio::sync::broadcast;
 
-#[cfg(not(target_env = "msvc"))]
-use tikv_jemallocator::Jemalloc;
-
-#[cfg(not(target_env = "msvc"))]
-#[global_allocator]
-static GLOBAL: Jemalloc = Jemalloc;
-
 fn main() {
     let cli = Cli::parse();
 

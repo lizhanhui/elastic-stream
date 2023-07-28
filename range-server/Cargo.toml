@@ -8,6 +8,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+alloc = { path = "../components/alloc" }
 anyhow = { workspace = true }
 built = { workspace = true, features = ["chrono", "semver"] }
 byteorder = { workspace = true }
@@ -48,9 +49,6 @@ tokio = { workspace = true }
 tokio-uring = { workspace = true }
 transport = { path = "../components/transport" }
 util = { path = "../components/util" }
-
-[target.'cfg(not(target_env = "msvc"))'.dependencies]
-tikv-jemallocator = "0.5"
 
 [dev-dependencies]
 client = { path = "../components/client", features = ["mock"] }

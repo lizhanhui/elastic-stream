@@ -4,6 +4,7 @@
 # will _not_ propagate the feature `x` into `cmd`'s direct dependencies.
 resolver = "2"
 members = [
+    "components/alloc",
     "components/client",
     "components/codec",
     "components/config",
