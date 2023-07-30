@@ -11,6 +11,7 @@
 #![feature(hash_extract_if)]
 #![feature(extract_if)]
 #![feature(async_fn_in_trait)]
+#![feature(impl_trait_in_assoc_type)]
 
 pub mod client;
 pub(crate) mod composite_session;

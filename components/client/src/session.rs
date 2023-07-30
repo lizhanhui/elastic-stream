@@ -1,7 +1,16 @@
-use crate::{heartbeat::HeartbeatData, request, response, state::SessionState, NodeRole};
+use crate::{
+    error::ClientError,
+    heartbeat::HeartbeatData,
+    request::{self, Request},
+    response::{self, Response},
+    state::SessionState,
+    NodeRole,
+};
 use codec::{error::FrameError, frame::Frame};
 
+use futures::Future;
 use protocol::rpc::header::{ClientRole, GoAwayFlags, OperationCode, RangeServerState};
+use tower::Service;
 use transport::connection::Connection;
 
 use local_sync::oneshot;
@@ -12,6 +21,7 @@ use std::{
     net::SocketAddr,
     rc::{Rc, Weak},
     sync::Arc,
+    task::{Context, Poll},
     time::Instant,
 };
 use tokio::sync::broadcast::{self, error::RecvError};
@@ -513,6 +523,34 @@ impl Clone for Session {
             idle_since: Rc::clone(&self.idle_since),
             role: Rc::clone(&self.role),
             state: Rc::clone(&self.state),
+        }
+    }
+}
+
+/// A `tower::Service` implementation for `Session`.
+///
+/// # Note feature `GAT` and `type-alias-impl-trait` are required.
+impl Service<Request> for Session {
+    type Response = Response;
+
+    type Error = ClientError;
+
+    type Future = impl Future<Output = Result<Self::Response, Self::Error>>;
+
+    fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        Poll::Ready(Ok(()))
+    }
+
+    fn call(&mut self, req: Request) -> Self::Future {
+        let this = self.clone();
+        async move {
+            let (tx, rx) = oneshot::channel();
+            if let Err(_e) = this.write(req, tx).await {
+                return Err(ClientError::BadRequest);
+            }
+            rx.await.map_err(|_| {
+                ClientError::ChannelClosing("Underlying connection is closed".to_owned())
+            })
         }
     }
 }
