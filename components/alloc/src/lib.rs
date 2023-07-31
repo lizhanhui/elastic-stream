@@ -1,21 +1,10 @@
 // Copyright 2019 TiKV Project Authors. Licensed under Apache-2.0.
 
-//! This crate controls the global allocator used by TiKV.
+//! This crate controls the global allocator used by ElasticStream.
 //!
-//! As of now TiKV always turns on jemalloc on Unix, though libraries
-//! generally shouldn't be opinionated about their allocators like
-//! this. It's easier to do this in one place than to have all our
-//! bins turn it on themselves.
-//!
-//! Writing `extern crate tikv_alloc;` will link it to jemalloc when
-//! appropriate. The TiKV library itself links to `tikv_alloc` to
-//! ensure that any binary linking to it will use jemalloc.
-//!
-//! With few exceptions, _every binary and project in the TiKV workspace
-//! should link (perhaps transitively) to tikv_alloc_. This is to ensure
-//! that tests and benchmarks run with the production allocator. In other
-//! words, binaries and projects that don't link to `tikv` should link
-//! to `tikv_alloc`.
+//! With few exceptions, _every binary and project in the workspace
+//! should link (perhaps transitively) to _alloc_. This is to ensure
+//! that tests and benchmarks run with the production allocator.
 //!
 //! At present all Unixes use jemalloc, and others don't. Whichever
 //! allocator is used, this crate presents the same API, and some
@@ -36,10 +25,6 @@
 //!
 //! - snmalloc - compiles snmalloc
 //!
-//! cfg `fuzzing` is defined by `run_libfuzzer` in `fuzz/cli.rs` and
-//! is passed to rustc directly with `--cfg`; in other words it's not
-//! controlled through a crate feature.
-//!
 //! Ideally there should be no jemalloc-specific code outside this
 //! crate.
 //!
@@ -48,7 +33,7 @@
 //! Profiling with jemalloc requires both build-time and run-time
 //! configuration. At build time cargo needs the `--mem-profiling`
 //! feature, and at run-time jemalloc needs to set the `opt.prof`
-//! option to true, ala `MALLOC_CONF="opt.prof:true".
+//! option to true, aka `MALLOC_CONF="opt.prof:true"`.
 //!
 //! In production you might also set `opt.prof_active` to `false` to
 //! keep profiling off until there's an incident. Jemalloc has
@@ -61,7 +46,7 @@
 //!
 //! ```notrust
 //! export MALLOC_CONF="prof:true,prof_active:false,prof_prefix:$(pwd)/jeprof"
-//! cargo test --features mem-profiling -p tikv_alloc -- --ignored
+//! cargo test --features mem-profiling -p alloc -- --ignored
 //! ```
 //!
 //! (In practice you might write this as a single statement, setting
@@ -76,10 +61,7 @@
 //! ```
 //!
 //! This is normal - they are being emitting by the jemalloc in cargo
-//! and rustc, which are both configured without profiling. TiKV's
-//! jemalloc is configured for profiling if you pass
-//! `--features=mem-profiling` to cargo for either `tikv_alloc` or
-//! `tikv`.
+//! and rustc, which are both configured without profiling.
 
 #![cfg_attr(test, feature(test))]
 #![cfg_attr(test, feature(custom_test_frameworks))]
@@ -93,27 +75,26 @@ extern crate lazy_static;
 pub mod error;
 pub mod trace;
 
-#[cfg(not(all(unix, not(fuzzing), feature = "jemalloc")))]
+#[cfg(not(all(unix, feature = "jemalloc")))]
 mod default;
 
 pub type AllocStats = Vec<(&'static str, usize)>;
 
 // Allocators
-#[cfg(all(unix, not(fuzzing), feature = "jemalloc"))]
+#[cfg(all(unix, feature = "jemalloc"))]
 #[path = "jemalloc.rs"]
 mod imp;
-#[cfg(all(unix, not(fuzzing), feature = "tcmalloc"))]
+#[cfg(all(unix, feature = "tcmalloc"))]
 #[path = "tcmalloc.rs"]
 mod imp;
-#[cfg(all(unix, not(fuzzing), feature = "mimalloc"))]
+#[cfg(all(unix, feature = "mimalloc"))]
 #[path = "mimalloc.rs"]
 mod imp;
-#[cfg(all(unix, not(fuzzing), feature = "snmalloc"))]
+#[cfg(all(unix, feature = "snmalloc"))]
 #[path = "snmalloc.rs"]
 mod imp;
 #[cfg(not(all(
     unix,
-    not(fuzzing),
     any(
         feature = "jemalloc",
         feature = "tcmalloc",
