@@ -67,15 +67,15 @@ struct Objects(BTreeMap<ObjectKey, Object>);
 
 impl Objects {
     /// Get a list of objects that
-    /// * continuous (object_i.start_offset + object_i.end_offset_delta == object_i+1.start_offset)
-    /// * start from `start_offset` (object_0.start_offset <= start_offset, if object_0 exists)
-    /// * cover the request range (start_offset, end_offset)
-    ///   or exceed the size hint (object_1.data_len + object_2.data_len + ... >= size_hint)
+    /// * continuous (`object[i].start_offset` + `object[i].end_offset_delta` == `object[i+1].start_offset`)
+    /// * start from `start_offset` (`object[0].start_offset` <= `start_offset`, if `object[0]` exists)
+    /// * cover the request range (`start_offset`, `end_offset`)
+    ///   or exceed the size hint (`object[1].data_len` + `object[2].data_len` + ... >= `size_hint`)
     ///
     /// Return a list of objects and whether the objects cover the request range.
-    /// If end_offset is None, the range is not limited by end_offset.
-    /// If size_hint is None, the range is not limited by size.
-    /// If end_offset <= start_offset, return the first object that covers `start_offset`, if exists.
+    /// If `end_offset` is None, the range is not limited by `end_offset`.
+    /// If `size_hint` is None, the range is not limited by size.
+    /// If `end_offset` <= `start_offset`, return the first object that covers `start_offset`, if exists.
     ///
     /// Note: the returned objects' `stream_id` and `range_index` are not set.
     fn get_continuous_objects(
@@ -88,8 +88,8 @@ impl Objects {
         let mut objects = vec![];
         let mut size = 0;
 
-        let epoch_min = self.0.keys().next().map(|k| k.epoch).unwrap_or(u16::MAX);
-        let epoch_max = self.0.keys().last().map(|k| k.epoch).unwrap_or(u16::MIN);
+        let epoch_min = self.0.keys().next().map_or(u16::MAX, |k| k.epoch);
+        let epoch_max = self.0.keys().last().map_or(u16::MIN, |k| k.epoch);
 
         let mut epoch = epoch_min;
         // find the first object that covers `start_offset`
@@ -107,7 +107,7 @@ impl Objects {
                 )
                 .last()
             {
-                let end_offset = key.start_offset + object.end_offset_delta as u64;
+                let end_offset = key.start_offset + u64::from(object.end_offset_delta);
                 // check whether the object covers `start_offset`
                 if key.start_offset <= current_offset && end_offset > current_offset {
                     current_offset = end_offset;
@@ -127,7 +127,7 @@ impl Objects {
                 epoch,
                 start_offset: current_offset,
             }) {
-                current_offset = key.start_offset + object.end_offset_delta as u64;
+                current_offset = key.start_offset + u64::from(object.end_offset_delta);
                 objects.push(gen_object_metadata(key, object));
                 size += object.data_len;
             } else {
@@ -160,8 +160,7 @@ impl OffloadingObjects {
             .get_continuous_objects(self.start_offset, None, None)
             .0
             .last()
-            .map(|object| object.end_offset())
-            .unwrap_or(self.start_offset)
+            .map_or(self.start_offset, ObjectMetadata::end_offset)
     }
 }
 
@@ -224,16 +223,15 @@ impl Metadata {
             .get(key)
             .map(|o| &o.objects)
             .or(self.other.get(key))
-            .map(|objects| {
+            .map_or((vec![], false), |objects| {
                 let (mut objects, cover_all) =
                     objects.get_continuous_objects(start_offset, Some(end_offset), Some(size_hint));
-                objects.iter_mut().for_each(|o| {
+                for o in &mut objects {
                     o.stream_id = key.stream_id;
                     o.range_index = key.range_index;
-                });
+                }
                 (objects, cover_all)
             })
-            .unwrap_or((vec![], false))
     }
 }
 
@@ -285,16 +283,16 @@ where
                             let metadata = metadata.clone();
                             match event.event_type {
                                 EventType::LISTED  => {
-                                    Self::handle_added_resource(&event.resource, server_id, metadata, true);
+                                    Self::handle_added_resource(&event.resource, server_id, &metadata, true);
                                 }
                                 EventType::ADDED => {
-                                    Self::handle_added_resource(&event.resource, server_id, metadata, false);
+                                    Self::handle_added_resource(&event.resource, server_id, &metadata, false);
                                 }
                                 EventType::MODIFIED => {
-                                    Self::handle_modified_resource(&event.resource, metadata);
+                                    Self::handle_modified_resource(&event.resource, &metadata);
                                 }
                                 EventType::DELETED => {
-                                    Self::handle_deleted_resource(&event.resource, metadata);
+                                    Self::handle_deleted_resource(&event.resource, &metadata);
                                 }
                                 EventType::NONE => (),
                             }
@@ -313,7 +311,7 @@ where
     fn handle_added_resource(
         resource: &Resource,
         server_id: i32,
-        metadata: Rc<RefCell<Metadata>>,
+        metadata: &Rc<RefCell<Metadata>>,
         listed: bool,
     ) {
         match resource {
@@ -338,11 +336,11 @@ where
         }
     }
 
-    fn handle_modified_resource(_resource: &Resource, _metadata: Rc<RefCell<Metadata>>) {
+    fn handle_modified_resource(_resource: &Resource, _metadata: &Rc<RefCell<Metadata>>) {
         // TODO: handle modified resource
     }
 
-    fn handle_deleted_resource(_resource: &Resource, _metadata: Rc<RefCell<Metadata>>) {
+    fn handle_deleted_resource(_resource: &Resource, _metadata: &Rc<RefCell<Metadata>>) {
         // TODO: handle deleted resource
     }
 }
@@ -356,12 +354,15 @@ where
             .borrow()
             .offloading
             .get(&RangeKey::new(stream_id, range_index))
-            .and_then(|o| match o.owner {
-                true => Some(Owner {
-                    epoch: o.epoch,
-                    start_offset: o.offload_offset(),
-                }),
-                false => None,
+            .and_then(|o| {
+                if o.owner {
+                    Some(Owner {
+                        start_offset: o.offload_offset(),
+                        epoch: o.epoch,
+                    })
+                } else {
+                    None
+                }
             })
     }
 
@@ -390,7 +391,7 @@ where
             .borrow()
             .offloading
             .keys()
-            .cloned()
+            .copied()
             .collect::<Vec<_>>()
     }
 }
@@ -454,7 +455,7 @@ impl ObjectManager for MemoryObjectManager {
                 .iter()
                 .filter(|meta| {
                     meta.start_offset < end_offset
-                        && (meta.end_offset_delta as u64 + meta.start_offset) >= start_offset
+                        && (u64::from(meta.end_offset_delta) + meta.start_offset) >= start_offset
                 })
                 .map(|meta| {
                     let mut meta = meta.clone();
@@ -484,7 +485,7 @@ impl ObjectManager for MemoryObjectManager {
 }
 
 /// Check whether objects cover the request range.
-/// Note: expect objects is sorted by start_offset and overlap the request range.
+/// Note: expect objects is sorted by `start_offset` and overlap the request range.
 fn is_cover_all(
     mut start_offset: u64,
     end_offset: u64,
@@ -492,7 +493,7 @@ fn is_cover_all(
     objects: &Vec<ObjectMetadata>,
 ) -> bool {
     for object in objects {
-        let object_end_offset = object.start_offset + object.end_offset_delta as u64;
+        let object_end_offset = object.start_offset + u64::from(object.end_offset_delta);
         if object.start_offset <= start_offset && start_offset < object_end_offset {
             if start_offset == object.start_offset {
                 size_hint -= min(object.data_len, size_hint);
@@ -552,12 +553,13 @@ mod tests {
         size: u32,
     ) -> ObjectMetadata {
         let mut obj = ObjectMetadata::new(0, 0, epoch, start_offset);
-        obj.end_offset_delta = (end_offset - start_offset) as u32;
+        obj.end_offset_delta = u32::try_from(end_offset - start_offset).unwrap();
         obj.data_len = size;
         obj
     }
 
     #[test]
+    #[allow(clippy::too_many_lines)]
     fn test_objects_get_continuous_objects() {
         struct Args {
             start_offset: u64,
@@ -874,8 +876,8 @@ mod tests {
                 .is_ok());
 
             // test `get_objects`
-            let (objects, cover_all) = object_manager.get_objects(1, 2, 150, 250, 1);
-            assert_eq!(vec![object1, object2], objects);
+            let (object_list, cover_all) = object_manager.get_objects(1, 2, 150, 250, 1);
+            assert_eq!(vec![object1, object2], object_list);
             assert!(cover_all);
 
             // test `get_offloading_range`

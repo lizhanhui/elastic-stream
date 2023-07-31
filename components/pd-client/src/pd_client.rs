@@ -55,11 +55,10 @@ where
         let client = self.client.clone();
         let token = self.token.child_token();
         tokio_uring::spawn(async move {
-            let version = match Self::list_resource(&token, &client, &types, &tx).await {
-                Some(v) => v,
-                None => return,
+            let Some(version) = Self::list_resource(&token, &client, &types, &tx).await else {
+                return;
             };
-            _ = Self::watch_resource(&token, &client, &types, version, &tx).await
+            _ = Self::watch_resource(&token, &client, &types, version, &tx).await;
         });
 
         rx
@@ -155,6 +154,7 @@ where
                         }
                     }
                 }
+                #[allow(clippy::single_match_else)]
                 Err(e) => match e.code {
                     ErrorCode::RPC_TIMEOUT => continue,
                     _ => {
@@ -202,7 +202,7 @@ mod tests {
         tokio_uring::start(async {
             let port = run_listener().await;
             let config = config::Configuration {
-                placement_driver: format!("127.0.0.1:{}", port),
+                placement_driver: format!("127.0.0.1:{port}"),
                 ..Default::default()
             };
             let (tx, _rx) = broadcast::channel(1);

@@ -39,6 +39,7 @@
         "NONFIXED",
         "nonoverlapping",
         "oneshot",
+        "opendal",
         "overcommit",
         "Readahead",
         "rocksdb",

@@ -95,7 +95,7 @@ impl DefaultRangeAccumulator {
         range: RangeKey,
         start_offset: u64,
         range_fetcher: Rc<F>,
-        config: ObjectStorageConfig,
+        config: &ObjectStorageConfig,
         range_offload: Rc<RangeOffload<M>>,
         shutdown_rx: ShutdownRx,
     ) -> Self {
@@ -168,19 +168,16 @@ impl DefaultRangeAccumulator {
                                     }
                                     next_offset = range_offload.write(next_offset, records.payload).await;
                                 }
-                                Err(e) => match e {
-                                    FetchError::NoRecord => {
-                                        break;
-                                    }
-                                    _ => {
-                                        log::error!(
-                                            "fetch range{stream_id}#{range_index} failed, retry later, {}",
-                                            e
-                                        );
-                                        sleep(Duration::from_secs(1)).await;
-                                        continue;
-                                    }
-                                },
+                                Err(e) => if let FetchError::NoRecord = e {
+                                    break;
+                                } else {
+                                    log::error!(
+                                        "fetch range{stream_id}#{range_index} failed, retry later, {}",
+                                        e
+                                    );
+                                    sleep(Duration::from_secs(1)).await;
+                                    continue;
+                                }
                             }
                         }
                         if force_flush {

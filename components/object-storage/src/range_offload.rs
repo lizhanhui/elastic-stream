@@ -88,7 +88,7 @@ where
     }
 
     pub async fn write(&self, start_offset: u64, payload: Vec<Bytes>) -> u64 {
-        let payload_length: usize = payload.iter().map(|p| p.len()).sum();
+        let payload_length: usize = payload.iter().map(Bytes::len).sum();
         let payload_length = payload_length as u32;
         let key = gen_object_key(
             &self.cluster,
@@ -192,7 +192,7 @@ impl MultiPartObject {
 
     pub fn write(&self, part: Vec<Bytes>) -> (bool, u64) {
         let mut size = self.size.borrow_mut();
-        let part_length: usize = part.iter().map(|p| p.len()).sum();
+        let part_length: usize = part.iter().map(Bytes::len).sum();
         *size += part_length as u32;
 
         let (index, new_end_offset, remain_pass_through_size) = gen_sparse_index(
@@ -201,7 +201,7 @@ impl MultiPartObject {
             *self.last_pass_through_size.borrow(),
             SPARSE_SIZE,
         )
-        .unwrap_or_else(|_| panic!("parse record fail {:?}", part));
+        .unwrap_or_else(|_| panic!("parse record fail {part:?}"));
         *self.last_pass_through_size.borrow_mut() = remain_pass_through_size;
         let _ = self.tx.send(MultiPartWriteEvent {
             data: part,
@@ -263,10 +263,10 @@ impl MultiPartObject {
                         let writer = writer.as_mut().unwrap();
 
                         // write part or complete object.
-                        let payload_length: usize = data.iter().map(|p| p.len()).sum();
+                        let payload_length: usize = data.iter().map(Bytes::len).sum();
                         data_len += payload_length;
                         let mut bytes = BytesMut::with_capacity(payload_length);
-                        for b in data.iter() {
+                        for b in &data {
                             bytes.extend_from_slice(b);
                         }
                         let bytes = bytes.freeze();
@@ -295,11 +295,10 @@ impl MultiPartObject {
                             }
                             drop(permit);
                             return;
-                        } else {
-                            Self::write_part(writer, &key, &bytes).await;
-                            if let Some(tx) = tx {
-                                let _ = tx.send(());
-                            }
+                        }
+                        Self::write_part(writer, &key, &bytes).await;
+                        if let Some(tx) = tx {
+                            let _ = tx.send(());
                         }
                     }
                     None => {
@@ -387,15 +386,15 @@ where
         let object_manager = self.object_manager.clone();
         let (sparse_index, end_offset, _) =
             gen_sparse_index(object_metadata.start_offset, &payload, 0, sparse_size)
-                .unwrap_or_else(|_| panic!("parse record fail {:?}", payload));
+                .unwrap_or_else(|_| panic!("parse record fail {payload:?}"));
         let join_handle = tokio_uring::spawn(async move {
             object_metadata.end_offset_delta = (end_offset - object_metadata.start_offset) as u32;
             // data block
-            let payload_length: usize = payload.iter().map(|p| p.len()).sum();
+            let payload_length: usize = payload.iter().map(Bytes::len).sum();
             object_metadata.data_len = payload_length as u32;
             let mut bytes =
                 BytesMut::with_capacity(payload_length + 256 /* sparse index + footer */);
-            for b in payload.iter() {
+            for b in &payload {
                 bytes.extend_from_slice(b);
             }
             // delimiter

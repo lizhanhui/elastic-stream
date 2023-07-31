@@ -1,5 +1,11 @@
 #![feature(async_fn_in_trait)]
 #![feature(map_try_insert)]
+#![warn(clippy::pedantic)]
+#![allow(clippy::cast_possible_truncation)]
+#![allow(clippy::cast_possible_wrap)]
+#![allow(clippy::cast_sign_loss)]
+#![allow(clippy::module_name_repetitions)]
+#![allow(clippy::must_use_candidate)]
 
 pub mod object_manager;
 pub mod object_storage;
@@ -11,7 +17,7 @@ use std::cell::UnsafeCell;
 
 use model::{error::EsError, object::ObjectMetadata};
 
-use mockall::{automock, predicate::*};
+use mockall::automock;
 
 use tokio::sync::{broadcast, mpsc};
 
@@ -73,9 +79,9 @@ impl RangeKey {
     }
 }
 
-/// New Shutdown channel (ShutdownTx, ShutdownRx).
-/// - ShutdownTx: send shutdown signal to all task and await task complete(detected by all ShutdownRx are dropped).
-/// - ShutdownRx: subscribe shutdown signal.
+/// New Shutdown channel (`ShutdownTx`, `ShutdownRx`).
+/// - `ShutdownTx`: send shutdown signal to all task and await task complete(detected by all `ShutdownRx` are dropped).
+/// - `ShutdownRx`: subscribe shutdown signal.
 ///
 /// # Example:
 ///

@@ -154,7 +154,7 @@ where
     F: RangeFetcher + 'static,
     M: ObjectManager + 'static,
 {
-    fn add_range(&self, stream_id: u64, range_index: u32, owner: Owner) {
+    fn add_range(&self, stream_id: u64, range_index: u32, owner: &Owner) {
         let op = if let Some(op) = self.op.as_ref() {
             op.clone()
         } else {
@@ -181,7 +181,7 @@ where
                 range,
                 owner.start_offset,
                 self.range_fetcher.clone(),
-                self.config.clone(),
+                &self.config,
                 range_offload,
                 shutdown_rx,
             )),
@@ -211,7 +211,7 @@ where
         let mut range = self.ranges.borrow().get(&range_key).cloned();
         if let Some(owner) = owner {
             if range.is_none() {
-                self.add_range(stream_id, range_index, owner);
+                self.add_range(stream_id, range_index, &owner);
                 range = self.ranges.borrow().get(&range_key).cloned();
             }
         } else if range.is_some() {
@@ -221,7 +221,7 @@ where
         if let Some(range) = range {
             let (size_change, is_part_full) = range.accumulate(record_size);
             let mut cache_size = self.cache_size.borrow_mut();
-            *cache_size += size_change as i64;
+            *cache_size += i64::from(size_change);
             if (*cache_size as u64) < self.config.max_cache_size {
                 if is_part_full {
                     // if range accumulate size is large than a part, then add it to part_full_ranges.
@@ -231,16 +231,16 @@ where
                 }
             } else {
                 if is_part_full {
-                    *cache_size += range.try_offload_part() as i64;
+                    *cache_size += i64::from(range.try_offload_part());
                 }
                 // try offload ranges in part_full_ranges util cache_size under cache_low_watermark.
                 let mut part_full_ranges = self.part_full_ranges.borrow_mut();
                 let part_full_ranges_length = part_full_ranges.len();
                 if part_full_ranges_length > 0 {
                     let mut remove_keys = Vec::with_capacity(part_full_ranges_length);
-                    for range_key in part_full_ranges.iter() {
+                    for range_key in &*part_full_ranges {
                         if let Some(range) = self.ranges.borrow().get(range_key) {
-                            *cache_size += range.try_offload_part() as i64;
+                            *cache_size += i64::from(range.try_offload_part());
                             remove_keys.push(*range_key);
                             if *cache_size < self.config.cache_low_watermark as i64 {
                                 break;
@@ -275,7 +275,7 @@ where
         info!("object storage closing");
         drop(self.shutdown_rx.borrow_mut().take());
         self.shutdown_tx.shutdown().await;
-        info!("object storage closed")
+        info!("object storage closed");
     }
 }
 
@@ -284,6 +284,9 @@ where
     F: RangeFetcher + 'static,
     M: ObjectManager + 'static,
 {
+    ///
+    /// # Panics
+    /// * Failed to build [`opendal::Operator`]
     pub fn new(config: &ObjectStorageConfig, range_fetcher: F, object_manager: M) -> Rc<Self> {
         let op = if config.endpoint.starts_with("fs://") {
             let mut builder = Fs::default();
@@ -350,7 +353,7 @@ where
                     }
                 }
             }
-            info!("object storage force flush task shutdown")
+            info!("object storage force flush task shutdown");
         });
     }
 }

@@ -1,4 +1,5 @@
 #![feature(async_fn_in_trait)]
+#![warn(clippy::pedantic)]
 
 pub mod pd_client;
 
@@ -7,7 +8,7 @@ use protocol::rpc::header::ResourceType;
 use tokio::sync::mpsc::Receiver;
 
 #[cfg(any(test, feature = "mock"))]
-use mockall::{automock, predicate::*};
+use mockall::automock;
 
 #[cfg_attr(any(test, feature = "mock"), automock)]
 pub trait PlacementDriverClient {
