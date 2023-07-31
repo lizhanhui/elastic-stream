@@ -117,6 +117,9 @@ func (c *RaftCluster) ListResource(ctx context.Context, types []rpcfb.ResourceTy
 			return nil, 0, nil, errors.Wrap(err, "marshal continuation string")
 		}
 	}
+	for _, resource := range resources {
+		c.fillResourceInfo(resource)
+	}
 	return resources, continuation.ResourceVersion, newContinueStr, nil
 }
 
@@ -141,7 +144,16 @@ func (c *RaftCluster) WatchResource(ctx context.Context, rv int64, types []rpcfb
 		return nil, 0, err
 	}
 
+	for _, ev := range evs {
+		c.fillResourceInfo(ev.Resource)
+	}
 	return evs, newRV, nil
+}
+
+func (c *RaftCluster) fillResourceInfo(resource *rpcfb.ResourceT) {
+	if resource.Type == rpcfb.ResourceTypeRANGE {
+		c.fillRangeServersInfo(resource.Range.Servers)
+	}
 }
 
 func checkResourceType(types []rpcfb.ResourceType) error {
