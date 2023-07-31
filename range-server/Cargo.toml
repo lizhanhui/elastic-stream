@@ -62,5 +62,11 @@ ulog = { path = "../components/ulog", features = ["env"] }
 built = { workspace = true, features = ["git2", "chrono", "semver"] }
 
 [features]
+default = ["jemalloc"]
 paranoid = []
 object-first = []
+jemalloc = ["alloc/jemalloc"]
+mem-prof = ["alloc/jemalloc", "alloc/mem-profiling"]
+tcmalloc = ["alloc/tcmalloc"]
+mimalloc = ["alloc/mimalloc"]
+snmalloc = ["alloc/snmalloc-rs"]
