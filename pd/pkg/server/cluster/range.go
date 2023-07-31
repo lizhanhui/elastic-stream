@@ -57,6 +57,8 @@ func (c *RaftCluster) ListRange(ctx context.Context, criteria *rpcfb.ListRangeCr
 	case !byStream && byRangeServer:
 		ranges, err = c.listRangeOnRangeServer(ctx, criteria.ServerId)
 	default:
+		// do not support list all ranges
+		ranges = make([]*rpcfb.RangeT, 0)
 	}
 	if errors.Is(err, kv.ErrTxnFailed) {
 		err = ErrNotLeader

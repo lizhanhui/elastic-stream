@@ -328,16 +328,21 @@ impl CompositeSession {
     async fn refresh_leadership_on_demand(&self, status: &model::Status) -> bool {
         if let Some(ref details) = status.details {
             if !details.is_empty() {
-                if let Ok(cluster) = flatbuffers::root::<PlacementDriverCluster>(&details[..]) {
-                    let nodes = cluster
-                        .unpack()
-                        .nodes
-                        .iter()
-                        .map(Into::<PlacementDriverNode>::into)
-                        .collect::<Vec<_>>();
-                    if !nodes.is_empty() {
-                        self.refresh_sessions(&nodes).await;
-                        return true;
+                match flatbuffers::root::<PlacementDriverCluster>(&details[..]) {
+                    Ok(cluster) => {
+                        let nodes = cluster
+                            .unpack()
+                            .nodes
+                            .iter()
+                            .map(Into::<PlacementDriverNode>::into)
+                            .collect::<Vec<_>>();
+                        if !nodes.is_empty() {
+                            self.refresh_leadership(&nodes);
+                            return true;
+                        }
+                    }
+                    Err(e) => {
+                        error!("Failed to decode `PlacementDriverCluster` using flatbuffers. Cause: {e}");
                     }
                 }
             }

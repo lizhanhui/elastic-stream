@@ -162,19 +162,24 @@ impl Response {
 
     pub fn on_list_ranges(&mut self, frame: &Frame) {
         if let Some(ref buf) = frame.header {
-            if let Ok(response) = flatbuffers::root::<ListRangeResponse>(buf) {
-                self.status = Into::<Status>::into(&response.status().unpack());
-                if self.status.code != ErrorCode::OK {
-                    return;
+            match flatbuffers::root::<ListRangeResponse>(buf) {
+                Ok(response) => {
+                    self.status = Into::<Status>::into(&response.status().unpack());
+                    if self.status.code != ErrorCode::OK {
+                        return;
+                    }
+                    let range = response
+                        .ranges()
+                        .iter()
+                        .map(|item| Into::<RangeMetadata>::into(&item.unpack()))
+                        .collect::<Vec<_>>();
+                    self.headers = Some(Headers::ListRange {
+                        ranges: Some(range),
+                    });
                 }
-                let range = response
-                    .ranges()
-                    .iter()
-                    .map(|item| Into::<RangeMetadata>::into(&item.unpack()))
-                    .collect::<Vec<_>>();
-                self.headers = Some(Headers::ListRange {
-                    ranges: Some(range),
-                });
+                Err(e) => {
+                    error!("Failed to decode `ListRangeResponse` using FlatBuffers. Cause: {e}");
+                }
             }
         }
     }
