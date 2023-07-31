@@ -48,6 +48,7 @@ where
         tokio_uring::spawn(async move {
             let mut interval = tokio::time::interval(this.config.client_heartbeat_interval());
             let mut heartbeat_data = HeartbeatData {
+                mandatory: false,
                 role: ClientRole::CLIENT_ROLE_RANGE_SERVER,
                 state: Some(*this.state.borrow()),
             };
@@ -61,6 +62,7 @@ where
                         *this.state.borrow_mut() = RangeServerState::RANGE_SERVER_STATE_OFFLINE;
                         // Refresh range sever state of heartbeat data
                         heartbeat_data.set_state(RangeServerState::RANGE_SERVER_STATE_OFFLINE);
+                        heartbeat_data.make_mandatory();
                         // Notify placement driver that this range server is now
                         let _ = this.client.broadcast_heartbeat(&heartbeat_data).await;
                         break;

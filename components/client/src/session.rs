@@ -314,7 +314,7 @@ impl Session {
 
     pub(crate) async fn heartbeat(&self, data: &HeartbeatData) {
         let last = *self.idle_since.borrow();
-        if Instant::now() - last < self.config.client_heartbeat_interval() {
+        if !data.mandatory() && Instant::now() - last < self.config.client_heartbeat_interval() {
             return;
         }
 

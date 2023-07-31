@@ -479,6 +479,7 @@ mod tests {
             let (tx, _rx) = broadcast::channel(1);
             let client = DefaultClient::new(Arc::clone(&config), tx);
             let heartbeat_data = HeartbeatData {
+                mandatory: false,
                 role: ClientRole::CLIENT_ROLE_RANGE_SERVER,
                 state: Some(RangeServerState::RANGE_SERVER_STATE_READ_WRITE),
             };

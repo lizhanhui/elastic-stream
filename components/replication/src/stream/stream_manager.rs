@@ -107,10 +107,7 @@ impl StreamManager {
         let client = Rc::clone(client);
         tokio_uring::spawn(async move {
             let mut interval = tokio::time::interval(interval);
-            let heartbeat_data = HeartbeatData {
-                role: ClientRole::CLIENT_ROLE_FRONTEND,
-                state: None,
-            };
+            let heartbeat_data = HeartbeatData::new(ClientRole::CLIENT_ROLE_FRONTEND);
 
             loop {
                 interval.tick().await;
