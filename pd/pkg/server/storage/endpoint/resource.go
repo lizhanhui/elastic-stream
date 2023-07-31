@@ -44,9 +44,13 @@ func (e *Endpoint) ListResource(ctx context.Context, rv int64, token ContinueTok
 		return nil, 0, ContinueToken{}, errors.Wrap(err, "list resources")
 	}
 
-	token.StartKey = kvs[len(kvs)-1].Key[len(keyPrefix):] // remove the prefix
-	token.StartKey = append(token.StartKey, 0)            // start immediately after the last key
 	token.More = more
+	if !more {
+		token.StartKey = nil
+	} else {
+		token.StartKey = kvs[len(kvs)-1].Key[len(keyPrefix):] // remove the prefix
+		token.StartKey = append(token.StartKey, 0)            // start immediately after the last key
+	}
 
 	resources := make([]*rpcfb.ResourceT, len(kvs))
 	for i, keyValue := range kvs {
@@ -166,7 +170,7 @@ type ContinueToken struct {
 
 func (t ContinueToken) ZapFields() []zap.Field {
 	return []zap.Field{
-		zap.Stringer("resource-type", t.ResourceType),
-		zap.ByteString("start-key", t.StartKey),
+		zap.Stringer("token-resource-type", t.ResourceType),
+		zap.ByteString("token-start-key", t.StartKey),
 	}
 }
