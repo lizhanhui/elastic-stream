@@ -142,11 +142,11 @@ impl RecordsBlock {
             } else {
                 bytes.slice(relative_position..(relative_position + record_len))
             };
-            block.records.push(BlockRecord {
+            block.records.push(BlockRecord::new(
                 start_offset,
                 end_offset_delta,
-                data: vec![record_bytes],
-            });
+                vec![record_bytes],
+            ));
 
             relative_position += record_len;
             block_length += record_len as u32;
@@ -172,6 +172,14 @@ pub(crate) struct BlockRecord {
 }
 
 impl BlockRecord {
+    pub fn new(start_offset: u64, end_offset_delta: u32, data: Vec<Bytes>) -> Self {
+        Self {
+            start_offset,
+            end_offset_delta,
+            data,
+        }
+    }
+
     pub(crate) fn size(&self) -> u32 {
         self.data.iter().map(|d| d.len()).sum::<usize>() as u32
     }

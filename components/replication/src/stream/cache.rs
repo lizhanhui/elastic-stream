@@ -206,6 +206,16 @@ impl BlockCache {
 
         let mut readahead = Self::gen_readahead(&blocks, stream_cache);
 
+        let blocks: Vec<RecordsBlock> = blocks
+            .into_iter()
+            .filter(|b| {
+                let (given_block_kick_out, kicked_out_size) =
+                    kick_out_covered_block(stream_cache, b);
+                *self.cache_size.borrow_mut() -= kicked_out_size;
+                !given_block_kick_out
+            })
+            .collect();
+
         let mut reading_lru = self.reading_lru.borrow_mut();
         for block in blocks.iter().rev() {
             reading_lru.push(
@@ -412,6 +422,46 @@ pub(crate) fn block_size_align(size: u32) -> u32 {
     }
 }
 
+/// Kick out the blocks in cache which are covered by the given block.
+/// return:
+/// - whether the block is covered by cache
+/// - the total size of kicked out blocks
+fn kick_out_covered_block(stream_cache: &mut StreamCache, block: &RecordsBlock) -> (bool, u64) {
+    let block_start_offset = block.start_offset();
+    let block_end_offset = block.end_offset();
+    let mut cache_block_cursor = stream_cache
+        .cache_map
+        .upper_bound(Bound::Included(&block_start_offset));
+    let mut cache_block_wait_remove = vec![];
+    let mut given_block_covered = false;
+    while let Some((cache_block_start_offset, (cache_block, _))) = cache_block_cursor.key_value() {
+        let cache_block_end_offset = cache_block.end_offset();
+        if block_start_offset <= *cache_block_start_offset
+            && cache_block_end_offset <= block_end_offset
+        {
+            // the given block covers the cache block.
+            cache_block_wait_remove.push(*cache_block_start_offset);
+        } else if *cache_block_start_offset <= block_start_offset
+            && block_end_offset <= cache_block_end_offset
+        {
+            // the cache block covers the given block.
+            given_block_covered = true;
+            break;
+        } else if block_end_offset < *cache_block_start_offset {
+            // the given block is before the cache block.
+            break;
+        }
+        cache_block_cursor.move_next();
+    }
+    let mut kicked_out_size = 0;
+    for cache_block_start_offset in cache_block_wait_remove {
+        if let Some((cache_block, _)) = stream_cache.cache_map.remove(&cache_block_start_offset) {
+            kicked_out_size += cache_block.size() as u64
+        }
+    }
+    (given_block_covered, kicked_out_size)
+}
+
 #[cfg(test)]
 mod test {
     use crate::stream::{
@@ -421,7 +471,7 @@ mod test {
     use bytes::{Bytes, BytesMut};
     use std::error::Error;
 
-    use super::BlockCache;
+    use super::{kick_out_covered_block, BlockCache, StreamCache};
 
     #[test]
     fn test_hot_cache_insert_get() -> Result<(), Box<dyn Error>> {
@@ -560,6 +610,85 @@ mod test {
         assert_eq!(1024 * 1024, readahead.size_hint);
 
         Ok(())
+    }
+
+    #[test]
+    fn test_kick_out_covered_block() {
+        let mut stream_cache = StreamCache::new();
+        stream_cache.cache_map.insert(
+            100,
+            (
+                RecordsBlock::new(vec![BlockRecord::new(
+                    100,
+                    100,
+                    vec![BytesMut::zeroed(1024).freeze()],
+                )]),
+                None,
+            ),
+        );
+        {
+            // given block is covered by current cache.
+            // cache: [100, 200)
+            // given_block: [160, 180)
+            let given_block = RecordsBlock::new(vec![BlockRecord::new(
+                160,
+                20,
+                vec![BytesMut::zeroed(128).freeze()],
+            )]);
+            let (given_block_kick_out, kick_out_size) =
+                kick_out_covered_block(&mut stream_cache, &given_block);
+            assert!(given_block_kick_out);
+            assert_eq!(0, kick_out_size);
+        }
+
+        {
+            // given block only overlap the cache block.
+            // cache: [100, 200)
+            // given_block: [160, 220)
+            let given_block = RecordsBlock::new(vec![BlockRecord::new(
+                160,
+                60,
+                vec![BytesMut::zeroed(128).freeze()],
+            )]);
+            let (given_block_kick_out, kick_out_size) =
+                kick_out_covered_block(&mut stream_cache, &given_block);
+            assert!(!given_block_kick_out);
+            assert_eq!(0, kick_out_size);
+        }
+
+        {
+            // given block cover the cache block.
+            // cache: [100, 200)
+            // given_block: [100, 220)
+            let given_block = RecordsBlock::new(vec![BlockRecord::new(
+                100,
+                120,
+                vec![BytesMut::zeroed(128).freeze()],
+            )]);
+            let (given_block_kick_out, kick_out_size) =
+                kick_out_covered_block(&mut stream_cache, &given_block);
+            assert!(!given_block_kick_out);
+            assert_eq!(1024, kick_out_size);
+            assert_eq!(0, stream_cache.cache_map.len());
+        }
+    }
+
+    #[test]
+    fn test_get_overlap() {
+        let block_cache = BlockCache::new(4096);
+        for i in 0..2 {
+            block_cache.insert(
+                0,
+                vec![RecordsBlock::new(vec![
+                    BlockRecord::new(i * 10, 10, vec![BytesMut::zeroed(128).freeze()]),
+                    BlockRecord::new(i * 10 + 10, 10, vec![BytesMut::zeroed(128).freeze()]),
+                ])],
+            )
+        }
+        let (records_block, _) = block_cache.get_block(0, 10, 30, 4096);
+        assert_eq!(10, records_block.start_offset());
+        assert_eq!(30, records_block.end_offset());
+        assert_eq!(128 * 2, records_block.size());
     }
 
     fn new_block(start_offset: u64) -> RecordsBlock {
