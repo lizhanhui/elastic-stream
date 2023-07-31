@@ -3,6 +3,7 @@ use std::{
     collections::HashMap,
     rc::{Rc, Weak},
     sync::Arc,
+    time::Duration,
 };
 
 use client::{client::Client, heartbeat::HeartbeatData, DefaultClient};
@@ -10,7 +11,10 @@ use config::Configuration;
 use log::{error, warn};
 use model::{error::EsError, stream::StreamMetadata};
 use protocol::rpc::header::{ClientRole, ErrorCode};
-use tokio::sync::{broadcast, oneshot};
+use tokio::{
+    sync::{broadcast, oneshot},
+    time::{sleep, Instant},
+};
 
 use crate::{
     request::{
@@ -24,6 +28,7 @@ use crate::{
 use super::{
     cache::{BlockCache, HotCache},
     cache_stream::CacheStream,
+    metrics::METRICS,
     object_reader::{AsyncObjectReader, DefaultObjectReader},
     object_stream::ObjectStream,
     replication_range::DefaultReplicationRange,
@@ -44,12 +49,12 @@ type FStream = CacheStream<
 
 /// `StreamManager` is intended to be used in thread-per-core usage case. It is NOT `Send`.
 pub(crate) struct StreamManager {
-    clients: Vec<Rc<DefaultClient>>,
     round_robin: usize,
     streams: Rc<RefCell<HashMap<u64, Rc<FStream>>>>,
     hot_cache: Rc<HotCache>,
     block_cache: Rc<BlockCache>,
     object_reader: Rc<AsyncObjectReader>,
+    clients: Vec<Rc<DefaultClient>>,
 }
 
 impl StreamManager {
@@ -68,13 +73,20 @@ impl StreamManager {
 
         let object_reader = Rc::new(AsyncObjectReader::new());
 
+        tokio_uring::spawn(async move {
+            loop {
+                sleep(Duration::from_secs(60)).await;
+                report_metrics();
+            }
+        });
+
         Self {
-            clients,
             round_robin: 0,
             streams,
             hot_cache: cache,
             object_reader,
             block_cache,
+            clients,
         }
     }
 
@@ -88,7 +100,7 @@ impl StreamManager {
         ))
     }
 
-    fn schedule_heartbeat(client: &Rc<DefaultClient>, interval: std::time::Duration) {
+    fn schedule_heartbeat(client: &Rc<DefaultClient>, interval: Duration) {
         // Spawn a task to broadcast heartbeat to servers.
         //
         // TODO: watch ctrl-c signal to shutdown timely.
@@ -115,11 +127,13 @@ impl StreamManager {
         let stream = self.streams.borrow().get(&request.stream_id).map(Rc::clone);
         if let Some(stream) = stream {
             tokio_uring::spawn(async move {
+                let start = Instant::now();
                 let result = stream
                     .append(request.record_batch)
                     .await
                     .map(|offset| AppendResponse { offset });
                 let _ = tx.send(result);
+                METRICS.with(|m| m.record_append(start.elapsed().as_micros() as u64));
             });
         } else {
             let _ = tx.send(Err(stream_not_exist(request.stream_id)));
@@ -134,6 +148,7 @@ impl StreamManager {
         let stream = self.streams.borrow().get(&request.stream_id).map(Rc::clone);
         if let Some(stream) = stream {
             tokio_uring::spawn(async move {
+                let start = Instant::now();
                 let result = stream
                     .fetch(
                         request.start_offset,
@@ -163,6 +178,7 @@ impl StreamManager {
                         "Fetch dataset should be full",
                     )));
                 }
+                METRICS.with(|m| m.record_fetch(start.elapsed().as_micros() as u64));
             });
         } else {
             let _ = tx.send(Err(stream_not_exist(request.stream_id)));
@@ -322,4 +338,8 @@ fn stream_not_exist(stream_id: u64) -> EsError {
         ErrorCode::STREAM_NOT_EXIST,
         &format!("Stream {} does not exist", stream_id),
     )
+}
+
+fn report_metrics() {
+    METRICS.with(|m| m.report());
 }

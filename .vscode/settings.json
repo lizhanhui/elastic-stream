@@ -22,6 +22,7 @@
         "GETEVENTS",
         "GOAWAY",
         "Hasher",
+        "hdrhistogram",
         "IOPOLL",
         "IORING",
         "jemalloc",

@@ -7,6 +7,7 @@ use mockall::automock;
 
 pub(crate) mod cache;
 pub(crate) mod cache_stream;
+pub(crate) mod metrics;
 pub(crate) mod object_reader;
 pub(crate) mod object_stream;
 pub(crate) mod records_block;

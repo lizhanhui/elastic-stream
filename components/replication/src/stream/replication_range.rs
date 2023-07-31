@@ -16,8 +16,8 @@ use model::{error::EsError, range::RangeMetadata};
 use tokio::sync::broadcast;
 
 use super::{
-    cache::HotCache, records_block::RecordsBlock, replication_replica::ReplicationReplica,
-    FetchDataset,
+    cache::HotCache, metrics::METRICS, records_block::RecordsBlock,
+    replication_replica::ReplicationReplica, FetchDataset,
 };
 
 use protocol::rpc::header::{ErrorCode, SealKind};
@@ -399,7 +399,7 @@ where
         end_offset: u64,
         batch_max_bytes: u32,
     ) -> Result<FetchDataset, EsError> {
-        let now = Instant::now();
+        let now: Instant = Instant::now();
         let mut read_times = 0;
         let replicas_len = self.replicas.len();
         let mut last_read_err = None;
@@ -423,10 +423,7 @@ where
                     continue;
                 }
             };
-            let elapse = now.elapsed().as_millis();
-            if elapse > 10 {
-                warn!("{}Fetch [{start_offset}, {end_offset}) with batch_max_bytes[{batch_max_bytes}] cost too much time, elapse: {elapse}ms", self.log_ident);
-            }
+            METRICS.with(|m| m.record_fetch_stream(now.elapsed().as_micros() as u64));
             // range server local records
             let local_records = fetch_result.payload.unwrap_or_default();
             let blocks = if !local_records.is_empty() {

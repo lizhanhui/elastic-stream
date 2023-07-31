@@ -1,4 +1,4 @@
-use std::{cmp::min, rc::Rc};
+use std::{cmp::min, rc::Rc, time::Instant};
 
 use bytes::{BufMut, BytesMut};
 use log::{debug, info, warn};
@@ -11,6 +11,8 @@ use protocol::rpc::header::ErrorCode;
 
 use serde::Deserialize;
 use tokio::sync::oneshot;
+
+use crate::stream::metrics::METRICS;
 
 use super::{object_stream::ObjectMetadataManager, records_block::RecordsBlock};
 
@@ -47,6 +49,7 @@ impl ObjectReader for DefaultObjectReader {
         size_hint: u32,
         object_metadata_manager: &ObjectMetadataManager,
     ) -> Result<Vec<RecordsBlock>, EsError> {
+        let start = Instant::now();
         let (object, range) = if let Some((object, range)) =
             object_metadata_manager.find_first(start_offset, end_offset, size_hint)
         {
@@ -58,6 +61,7 @@ impl ObjectReader for DefaultObjectReader {
             ));
         };
         let mut position = range.0;
+        let size = range.1 - range.0;
         debug!("fetch {:?} blocks in range {:?}", object.key, range);
         let mut object_blocks = self.object_reader.read(&object, range).await?;
         if object_blocks.is_empty() {
@@ -82,6 +86,7 @@ impl ObjectReader for DefaultObjectReader {
             object_metadata_manager.add_position_hint(end_offset, position);
             position += block.size();
         }
+        METRICS.with(|m| m.record_fetch_object(size, start.elapsed().as_micros() as u64));
         // TODO: double check block continuous.
         Ok(object_blocks)
     }
