@@ -5,7 +5,7 @@ use std::{
     rc::Rc,
 };
 
-use crate::{ObjectManager, Owner, RangeKey};
+use crate::{ObjectManager, Owner, OwnerEvent, RangeKey};
 use bytes::Bytes;
 use model::{
     error::EsError,
@@ -14,7 +14,7 @@ use model::{
 };
 use pd_client::PlacementDriverClient;
 use protocol::rpc::header::ResourceType;
-use tokio::sync::mpsc::Receiver;
+use tokio::sync::mpsc::{unbounded_channel, Receiver, UnboundedReceiver, UnboundedSender};
 use tokio_util::sync::CancellationToken;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -162,17 +162,32 @@ impl OffloadingObjects {
             .last()
             .map_or(self.start_offset, ObjectMetadata::end_offset)
     }
+
+    fn owner(&self) -> Option<Owner> {
+        if self.owner {
+            Some(Owner {
+                start_offset: self.offload_offset(),
+                epoch: self.epoch,
+            })
+        } else {
+            None
+        }
+    }
 }
 
 #[derive(Debug, Default)]
 struct Metadata {
-    /// Ranges held by this server and not offloaded yet
+    /// Ranges held by this server and not offloaded yet.
     offloading: HashMap<RangeKey, OffloadingObjects>,
 
     /// Ranges held by this server and already offloaded
     /// or
-    /// Ranges not held by this server
+    /// Ranges not held by this server.
     other: HashMap<RangeKey, Objects>,
+
+    /// Senders of owner change event.
+    /// Owner changes in [`offloading`] will be sent to these senders.
+    owner_event_senders: Vec<UnboundedSender<OwnerEvent>>,
 }
 
 impl Metadata {
@@ -323,6 +338,17 @@ where
                     objects.owner = range.offload_owner().server_id == server_id;
                     objects.epoch = range.offload_owner().epoch as u16;
                     objects.start_offset = range.start();
+
+                    // send owner change event
+                    let owner = objects.owner();
+                    metadata.owner_event_senders.retain(|sender| {
+                        sender
+                            .send(OwnerEvent {
+                                range_key: key,
+                                owner,
+                            })
+                            .is_ok()
+                    });
                 } else {
                     _ = metadata.other.entry(key).or_default();
                 }
@@ -349,21 +375,25 @@ impl<C> ObjectManager for DefaultObjectManager<C>
 where
     C: PlacementDriverClient + 'static,
 {
+    fn owner_watcher(&mut self) -> UnboundedReceiver<OwnerEvent> {
+        let (tx, rx) = unbounded_channel();
+        let mut metadata = self.metadata.borrow_mut();
+        for (key, offloading) in &mut metadata.offloading {
+            _ = tx.send(OwnerEvent {
+                range_key: *key,
+                owner: offloading.owner(),
+            });
+        }
+        metadata.owner_event_senders.push(tx);
+        rx
+    }
+
     fn is_owner(&self, stream_id: u64, range_index: u32) -> Option<Owner> {
         self.metadata
             .borrow()
             .offloading
             .get(&RangeKey::new(stream_id, range_index))
-            .and_then(|o| {
-                if o.owner {
-                    Some(Owner {
-                        start_offset: o.offload_offset(),
-                        epoch: o.epoch,
-                    })
-                } else {
-                    None
-                }
-            })
+            .and_then(OffloadingObjects::owner)
     }
 
     async fn commit_object(&self, object_metadata: ObjectMetadata) -> Result<(), EsError> {
@@ -420,6 +450,10 @@ impl MemoryObjectManager {
 }
 
 impl ObjectManager for MemoryObjectManager {
+    fn owner_watcher(&mut self) -> UnboundedReceiver<OwnerEvent> {
+        unimplemented!()
+    }
+
     fn is_owner(&self, _stream_id: u64, _range_index: u32) -> Option<Owner> {
         Some(Owner {
             epoch: 0,
@@ -778,6 +812,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::too_many_lines)]
     fn test_default_object_manager() {
         tokio_uring::start(async {
             const CHANNEL_SIZE: usize = 16;
@@ -794,10 +829,11 @@ mod tests {
                 .withf(|object| object.start_offset == 300)
                 .times(1)
                 .returning(|_| Ok(()));
-            let object_manager = DefaultObjectManager::<pd_client::MockPlacementDriverClient>::new(
-                Rc::new(mock_pd_client),
-                42,
-            );
+            let mut object_manager =
+                DefaultObjectManager::<pd_client::MockPlacementDriverClient>::new(
+                    Rc::new(mock_pd_client),
+                    42,
+                );
 
             // a listed range
             let mut range_t = RangeT::default();
@@ -859,6 +895,19 @@ mod tests {
                 }
                 tokio::time::sleep(Duration::from_millis(10)).await;
             }
+
+            // test `owner_watcher`
+            let mut owner_watcher = object_manager.owner_watcher();
+            assert_eq!(
+                Some(OwnerEvent {
+                    range_key: RangeKey::new(1, 2),
+                    owner: Some(Owner {
+                        epoch: 3,
+                        start_offset: 300
+                    })
+                }),
+                owner_watcher.recv().await
+            );
 
             // test `is_owner`
             assert_eq!(

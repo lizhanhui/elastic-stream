@@ -42,6 +42,12 @@ pub trait ObjectStorage {
 
 #[cfg_attr(test, automock)]
 pub trait ObjectManager {
+    /// Returns a channel that receives the owner change event.
+    /// Firstly, the channel will receive the ownership status of all ranges on the range server in a random order.
+    /// Then, the channel will receive owner change events in time order.
+    /// The channel will be closed when the object manager is closed.
+    fn owner_watcher(&mut self) -> mpsc::UnboundedReceiver<OwnerEvent>;
+
     fn is_owner(&self, stream_id: u64, range_index: u32) -> Option<Owner>;
 
     async fn commit_object(&self, object_metadata: ObjectMetadata) -> Result<(), EsError>;
@@ -58,13 +64,13 @@ pub trait ObjectManager {
     fn get_offloading_range(&self) -> Vec<RangeKey>;
 }
 
-#[derive(Debug, PartialEq, PartialOrd)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Owner {
     pub start_offset: u64,
     pub epoch: u16,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct RangeKey {
     pub stream_id: u64,
     pub range_index: u32,
@@ -77,6 +83,17 @@ impl RangeKey {
             range_index,
         }
     }
+}
+
+/// The event of owner change.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct OwnerEvent {
+    /// The key of the range that the owner changed.
+    pub range_key: RangeKey,
+
+    /// The new owner of the range.
+    /// If `None`, it indicates that the ownership of the range has been removed.
+    pub owner: Option<Owner>,
 }
 
 /// New Shutdown channel (`ShutdownTx`, `ShutdownRx`).
