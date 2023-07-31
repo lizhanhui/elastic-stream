@@ -142,6 +142,7 @@ where
     fn report_metrics(&self, mut shutdown_rx: broadcast::Receiver<()>) {
         let client = Rc::clone(&self.client);
         let config = Arc::clone(&self.config.server_config);
+        let state = Rc::clone(&self.state);
         tokio_uring::spawn(async move {
             // TODO: Modify it to client report metrics interval, instead of config.client_heartbeat_interval()
             let mut interval = tokio::time::interval(config.client_heartbeat_interval());
@@ -160,8 +161,10 @@ where
                         range_server_statistics.record();
                         disk_statistics.record();
                         memory_statistics.record();
+                        let state = *state.borrow();
                         let _ = client
-                        .report_metrics(&config.placement_driver, &uring_statistics,&range_server_statistics, &disk_statistics, &memory_statistics)
+                        .report_metrics(
+                            &config.placement_driver, state, &uring_statistics, &range_server_statistics, &disk_statistics, &memory_statistics)
                         .await;
                     }
 

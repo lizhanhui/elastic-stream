@@ -26,7 +26,7 @@ use observation::metrics::{
     sys_metrics::{DiskStatistics, MemoryStatistics},
     uring_metrics::UringStatistics,
 };
-use protocol::rpc::header::{ErrorCode, PlacementDriverCluster, ResourceType};
+use protocol::rpc::header::{ErrorCode, PlacementDriverCluster, RangeServerState, ResourceType};
 use protocol::rpc::header::{OperationCode, SealKind};
 use std::{
     cell::RefCell,
@@ -835,6 +835,7 @@ impl CompositeSession {
 
     pub(crate) async fn report_metrics(
         &self,
+        state: RangeServerState,
         uring_statistics: &UringStatistics,
         range_server_statistics: &RangeServerStatistics,
         disk_statistics: &DiskStatistics,
@@ -849,8 +850,10 @@ impl CompositeSession {
         }
 
         // TODO: add disk_unindexed_data_size, range_missing_replica_cnt, range_active_cnt
+        let mut range_server = self.config.server.range_server();
+        range_server.state = state;
         let extension = request::Headers::ReportMetrics {
-            range_server: self.config.server.range_server(),
+            range_server,
             disk_in_rate: disk_statistics.get_disk_in_rate(),
             disk_out_rate: disk_statistics.get_disk_out_rate(),
             disk_free_space: disk_statistics.get_disk_free_space(),

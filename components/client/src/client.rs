@@ -22,7 +22,7 @@ use observation::metrics::{
     sys_metrics::{DiskStatistics, MemoryStatistics},
     uring_metrics::UringStatistics,
 };
-use protocol::rpc::header::{ErrorCode, ResourceType, SealKind};
+use protocol::rpc::header::{ErrorCode, RangeServerState, ResourceType, SealKind};
 use std::{cell::UnsafeCell, rc::Rc, sync::Arc, time::Duration};
 use tokio::{sync::broadcast, time};
 
@@ -74,6 +74,7 @@ pub trait Client {
     async fn report_metrics(
         &self,
         target: &str,
+        state: RangeServerState,
         uring_statistics: &UringStatistics,
         range_server_statistics: &RangeServerStatistics,
         disk_statistics: &DiskStatistics,
@@ -305,6 +306,7 @@ impl Client for DefaultClient {
     async fn report_metrics(
         &self,
         target: &str,
+        state: RangeServerState,
         uring_statistics: &UringStatistics,
         range_server_statistics: &RangeServerStatistics,
         disk_statistics: &DiskStatistics,
@@ -316,6 +318,7 @@ impl Client for DefaultClient {
 
         composite_session
             .report_metrics(
+                state,
                 uring_statistics,
                 range_server_statistics,
                 disk_statistics,
@@ -850,6 +853,7 @@ mod tests {
             client
                 .report_metrics(
                     &config.placement_driver,
+                    RangeServerState::RANGE_SERVER_STATE_READ_WRITE,
                     &uring_statistics,
                     &range_server_statistics,
                     &disk_statistics,
