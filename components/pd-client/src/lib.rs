@@ -2,11 +2,14 @@
 
 pub mod pd_client;
 
-use client::error::ClientError;
-use model::resource::ResourceEvent;
+use model::{error::EsError, object::ObjectMetadata, resource::ResourceEvent};
 use protocol::rpc::header::ResourceType;
 use tokio::sync::mpsc::Receiver;
 
+#[cfg(any(test, feature = "mock"))]
+use mockall::{automock, predicate::*};
+
+#[cfg_attr(any(test, feature = "mock"), automock)]
 pub trait PlacementDriverClient {
     /// List all resources of the given types, then watch the changes of them.
     ///
@@ -27,5 +30,7 @@ pub trait PlacementDriverClient {
     fn list_and_watch_resource(
         &self,
         types: &[ResourceType],
-    ) -> Receiver<Result<ResourceEvent, ClientError>>;
+    ) -> Receiver<Result<ResourceEvent, EsError>>;
+
+    async fn commit_object(&self, metadata: ObjectMetadata) -> Result<(), EsError>;
 }

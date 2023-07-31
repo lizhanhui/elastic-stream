@@ -17,8 +17,13 @@ mockall = { workspace = true }
 model = { path = "../model" }
 observation = { path = "../observation" }
 opendal = { workspace = true }
+pd-client = { path = "../pd-client" }
 protocol = { path = "../protocol" }
 store = { path = "../store" }
 tokio = { workspace = true }
 tokio-uring = { workspace = true }
+tokio-util = { workspace = true }
 util = { path = "../util" }
+
+[dev-dependencies]
+pd-client = { path = "../pd-client", features = ["mock"] }

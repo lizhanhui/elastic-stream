@@ -4,7 +4,7 @@ use protocol::rpc::header::{ObjT, ObjectMetadataT};
 pub const BLOCK_DELIMITER: u8 = 0x66;
 pub const FOOTER_MAGIC: u64 = 0x88e241b785f4cff7;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ObjectMetadata {
     pub stream_id: u64,
     pub range_index: u32,
@@ -98,6 +98,10 @@ impl ObjectMetadata {
         }
 
         Some((start_position, end_position))
+    }
+
+    pub fn end_offset(&self) -> u64 {
+        self.start_offset + self.end_offset_delta as u64
     }
 }
 

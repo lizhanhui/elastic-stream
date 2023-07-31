@@ -407,7 +407,7 @@ where
             bytes.extend_from_slice(&gen_footer(payload_length as u32, sparse_index_len as u32));
             let bytes = bytes.freeze();
             Self::write_object(&op, &key, &bytes).await;
-            object_manager.commit_object(object_metadata);
+            _ = object_manager.commit_object(object_metadata).await;
             // explicit ref permit in async function to force move permit to async block.
             drop(permit);
         });
@@ -579,7 +579,7 @@ mod tests {
             object_manager
                 .expect_commit_object()
                 .times(1)
-                .returning(|_| ());
+                .returning(|_| Ok(()));
 
             let obj = Object {
                 key: "test_object_write".to_string(),

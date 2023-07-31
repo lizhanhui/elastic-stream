@@ -2,9 +2,39 @@ use std::fmt::{self, Display, Formatter};
 
 use derivative::Derivative;
 use log::info;
-use protocol::rpc::header::{RangeServerT, RangeT};
+use protocol::rpc::header::{OffloadOwnerT, RangeServerT, RangeT};
 
 use crate::range_server::RangeServer;
+
+/// The owner of the range which offloads the data to the object storage.
+#[derive(Debug, PartialEq, Clone)]
+pub struct OffloadOwner {
+    /// The owner's [`server_id`].
+    ///
+    /// [`server_id`]: RangeServer::server_id
+    pub server_id: i32,
+
+    /// The epoch of the owner, which is used to check the validity of the owner.
+    pub epoch: i16,
+}
+
+impl From<&OffloadOwner> for OffloadOwnerT {
+    fn from(value: &OffloadOwner) -> Self {
+        let mut owner = OffloadOwnerT::default();
+        owner.server_id = value.server_id;
+        owner.epoch = value.epoch;
+        owner
+    }
+}
+
+impl From<&OffloadOwnerT> for OffloadOwner {
+    fn from(value: &OffloadOwnerT) -> Self {
+        Self {
+            server_id: value.server_id,
+            epoch: value.epoch,
+        }
+    }
+}
 
 /// Representation of a stream range in form of `[start, end)` in which `start` is inclusive and `end` is exclusive.
 /// If `start` == `end`, there will be no valid records in the range.
@@ -39,6 +69,9 @@ pub struct RangeMetadata {
     /// The range replica ack count, only success ack >= ack_count, then the write is success.
     /// For seal range, success seal range must seal replica count >= (replica_count - ack_count + 1)
     ack_count: u8,
+
+    /// The owner of the range which offloads the data to the object storage.
+    offload_owner: OffloadOwner,
 }
 
 impl RangeMetadata {
@@ -53,6 +86,10 @@ impl RangeMetadata {
             replica: vec![],
             replica_count: 0,
             ack_count: 0,
+            offload_owner: OffloadOwner {
+                server_id: 0,
+                epoch: 0,
+            },
         }
     }
 
@@ -74,6 +111,10 @@ impl RangeMetadata {
             replica: vec![],
             replica_count,
             ack_count,
+            offload_owner: OffloadOwner {
+                server_id: 0,
+                epoch: 0,
+            },
         }
     }
 
@@ -83,6 +124,11 @@ impl RangeMetadata {
 
     pub fn replica_mut(&mut self) -> &mut Vec<RangeServer> {
         &mut self.replica
+    }
+
+    /// Whether the range is held by the given server or not.
+    pub fn held_by(&self, server_id: i32) -> bool {
+        self.replica.iter().any(|s| s.server_id == server_id)
     }
 
     /// Test if the given offset is within the range.
@@ -124,6 +170,10 @@ impl RangeMetadata {
 
     pub fn ack_count(&self) -> u8 {
         self.ack_count
+    }
+
+    pub fn offload_owner(&self) -> &OffloadOwner {
+        &self.offload_owner
     }
 
     pub fn has_end(&self) -> bool {
@@ -172,6 +222,7 @@ impl From<&RangeMetadata> for RangeT {
         }
         range.replica_count = value.replica_count as i8;
         range.ack_count = value.ack_count as i8;
+        range.offload_owner = Box::new(OffloadOwnerT::from(&value.offload_owner));
         range
     }
 }
@@ -196,6 +247,7 @@ impl From<&RangeT> for RangeMetadata {
             replica,
             replica_count: value.replica_count as u8,
             ack_count: value.ack_count as u8,
+            offload_owner: OffloadOwner::from(&*value.offload_owner),
         }
     }
 }

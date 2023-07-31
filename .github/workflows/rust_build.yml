@@ -108,8 +108,9 @@ jobs:
         env:
           RUST_BACKTRACE: 1
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v3
+        uses: codecov/codecov-action@v2
         with:
           files: codecov.json
           fail_ci_if_error: true
           verbose: true
+          version: "v0.1.15"

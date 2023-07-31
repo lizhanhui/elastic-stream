@@ -9,7 +9,7 @@ mod range_offload;
 
 use std::cell::UnsafeCell;
 
-use model::object::ObjectMetadata;
+use model::{error::EsError, object::ObjectMetadata};
 
 use mockall::{automock, predicate::*};
 
@@ -38,7 +38,7 @@ pub trait ObjectStorage {
 pub trait ObjectManager {
     fn is_owner(&self, stream_id: u64, range_index: u32) -> Option<Owner>;
 
-    fn commit_object(&self, object_metadata: ObjectMetadata);
+    async fn commit_object(&self, object_metadata: ObjectMetadata) -> Result<(), EsError>;
 
     fn get_objects(
         &self,
@@ -52,9 +52,10 @@ pub trait ObjectManager {
     fn get_offloading_range(&self) -> Vec<RangeKey>;
 }
 
+#[derive(Debug, PartialEq, PartialOrd)]
 pub struct Owner {
-    pub epoch: u16,
     pub start_offset: u64,
+    pub epoch: u16,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

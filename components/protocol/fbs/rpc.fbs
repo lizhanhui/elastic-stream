@@ -475,7 +475,7 @@ table Range {
     ack_count: int8 = -1 (id: 7);
 
     // The owner of the range which offloads the data to the object storage.
-    offload_owner: OffloadOwner (id: 8);
+    offload_owner: OffloadOwner (id: 8, required);
 }
 
 table CreateRangeRequest {

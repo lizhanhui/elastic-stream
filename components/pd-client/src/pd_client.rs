@@ -1,8 +1,9 @@
 use std::{rc::Rc, time::Duration};
 
-use client::{client::Client, error::ClientError};
+use client::client::Client;
 use model::{
     error::EsError,
+    object::ObjectMetadata,
     resource::{EventType, ResourceEvent},
 };
 use protocol::rpc::header::{ErrorCode, ResourceType};
@@ -39,7 +40,7 @@ where
     fn list_and_watch_resource(
         &self,
         types: &[ResourceType],
-    ) -> Receiver<Result<ResourceEvent, ClientError>> {
+    ) -> Receiver<Result<ResourceEvent, EsError>> {
         let types = types
             .iter()
             .copied()
@@ -47,9 +48,7 @@ where
             .filter(|&t| t.0 <= ResourceType::ENUM_MAX)
             .filter(|&t| t != ResourceType::UNKNOWN)
             .collect::<Vec<_>>();
-        if types.is_empty() {
-            panic!("resource types must not be empty");
-        }
+        assert!(!types.is_empty(), "resource types must not be empty");
 
         let (tx, rx) = channel(LIST_PAGE_SIZE as usize); // one page size is enough
 
@@ -65,6 +64,10 @@ where
 
         rx
     }
+
+    async fn commit_object(&self, metadata: ObjectMetadata) -> Result<(), EsError> {
+        self.client.commit_object(metadata.clone()).await
+    }
 }
 
 impl<C> DefaultPlacementDriverClient<C>
@@ -75,7 +78,7 @@ where
         token: &CancellationToken,
         client: &Rc<C>,
         types: &[ResourceType],
-        tx: &Sender<Result<ResourceEvent, ClientError>>,
+        tx: &Sender<Result<ResourceEvent, EsError>>,
     ) -> Option<i64> {
         let mut continuation = None;
         let mut version;
@@ -130,7 +133,7 @@ where
         client: &Rc<C>,
         types: &[ResourceType],
         start_version: i64,
-        tx: &Sender<Result<ResourceEvent, ClientError>>,
+        tx: &Sender<Result<ResourceEvent, EsError>>,
     ) -> Result<(), EsError> {
         let mut version = start_version;
         loop {

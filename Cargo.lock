@@ -2522,10 +2522,12 @@ dependencies = [
  "model",
  "observation",
  "opendal",
+ "pd-client",
  "protocol",
  "store",
  "tokio",
  "tokio-uring",
+ "tokio-util",
  "util",
 ]
 
@@ -2690,6 +2692,7 @@ dependencies = [
  "env_logger",
  "log",
  "mock-server",
+ "mockall",
  "model",
  "protocol",
  "tokio",

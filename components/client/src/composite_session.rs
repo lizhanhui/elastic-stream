@@ -931,9 +931,7 @@ impl CompositeSession {
     pub async fn commit_object(&self, metadata: ObjectMetadata) -> Result<(), EsError> {
         let request = request::Request {
             timeout: self.config.client_io_timeout(),
-            headers: request::Headers::CommitObject {
-                metadata: metadata.clone(),
-            },
+            headers: request::Headers::CommitObject { metadata },
             body: None,
         };
         let response = self.request(request).await?;
