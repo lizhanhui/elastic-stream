@@ -9,6 +9,7 @@ edition = "2021"
 [dependencies]
 bytes = { workspace = true }
 clap = { workspace = true }
+client = { path = "../client" }
 config = { path = "../config" }
 env_logger = { workspace = true }
 flatbuffers = { workspace = true }

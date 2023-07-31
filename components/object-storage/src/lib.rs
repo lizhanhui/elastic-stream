@@ -46,9 +46,7 @@ pub trait ObjectManager {
     /// Firstly, the channel will receive the ownership status of all ranges on the range server in a random order.
     /// Then, the channel will receive owner change events in time order.
     /// The channel will be closed when the object manager is closed.
-    fn owner_watcher(&mut self) -> mpsc::UnboundedReceiver<OwnerEvent>;
-
-    fn is_owner(&self, stream_id: u64, range_index: u32) -> Option<Owner>;
+    fn owner_watcher(&self) -> mpsc::UnboundedReceiver<OwnerEvent>;
 
     async fn commit_object(&self, object_metadata: ObjectMetadata) -> Result<(), EsError>;
 

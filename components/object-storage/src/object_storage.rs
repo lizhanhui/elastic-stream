@@ -1,9 +1,12 @@
-use config::ObjectStorageConfig;
-use log::info;
+use client::DefaultClient;
+use config::{Configuration, ObjectStorageConfig};
+use log::{debug, info};
 use model::object::ObjectMetadata;
 use opendal::services::{Fs, S3};
 use opendal::Operator;
+use pd_client::pd_client::DefaultPlacementDriverClient;
 use std::rc::Rc;
+use std::sync::Arc;
 use std::time::Duration;
 use std::{
     cell::RefCell,
@@ -11,14 +14,14 @@ use std::{
 };
 use std::{env, thread};
 use store::Store;
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{broadcast, mpsc, oneshot};
 use tokio::time::sleep;
 
-use crate::object_manager::MemoryObjectManager;
+use crate::object_manager::DefaultObjectManager;
 use crate::range_accumulator::{DefaultRangeAccumulator, RangeAccumulator};
 use crate::range_fetcher::{DefaultRangeFetcher, RangeFetcher};
 use crate::range_offload::RangeOffload;
-use crate::{shutdown_chan, ObjectManager, ObjectStorage, ShutdownRx, ShutdownTx};
+use crate::{shutdown_chan, ObjectManager, ObjectStorage, OwnerEvent, ShutdownRx, ShutdownTx};
 use crate::{Owner, RangeKey};
 
 #[derive(Clone)]
@@ -27,7 +30,7 @@ pub struct AsyncObjectStorage {
 }
 
 impl AsyncObjectStorage {
-    pub fn new<S>(config: &ObjectStorageConfig, store: S) -> Self
+    pub fn new<S>(config: &Configuration, store: S) -> Self
     where
         S: Store + Send + Sync + 'static,
     {
@@ -37,10 +40,19 @@ impl AsyncObjectStorage {
             .name("ObjectStorage".to_owned())
             .spawn(move || {
                 tokio_uring::start(async move {
+                    let (shutdown_tx, _shutdown_rx) = broadcast::channel(1);
                     let range_fetcher = DefaultRangeFetcher::new(Rc::new(store));
-                    let object_manager = MemoryObjectManager::new(&config.cluster);
-                    let object_storage =
-                        DefaultObjectStorage::new(&config, range_fetcher, object_manager);
+                    let client = Rc::new(DefaultClient::new(
+                        Arc::new(config.clone()),
+                        shutdown_tx.clone(),
+                    ));
+                    let client = Rc::new(DefaultPlacementDriverClient::new(client));
+                    let object_manager = DefaultObjectManager::new(client, config.server.server_id);
+                    let object_storage = DefaultObjectStorage::new(
+                        &config.object_storage,
+                        range_fetcher,
+                        object_manager,
+                    );
                     while let Some(task) = rx.recv().await {
                         match task {
                             Task::NewCommit(stream_id, range_index, record_size) => {
@@ -71,6 +83,7 @@ impl AsyncObjectStorage {
                             Task::Close(_) => {
                                 let object_storage = object_storage.clone();
                                 object_storage.close().await;
+                                let _ = shutdown_tx.send(());
                                 break;
                             }
                         }
@@ -160,6 +173,7 @@ where
         } else {
             return;
         };
+        debug!("add range {stream_id}#{range_index} offload owner {owner:?}");
         let range = RangeKey::new(stream_id, range_index);
         let range_offload = Rc::new(RangeOffload::new(
             stream_id,
@@ -192,6 +206,7 @@ where
         if self.op.is_none() {
             return;
         }
+        debug!("remove range {stream_id}#{range_index} offload owner");
         let range = RangeKey::new(stream_id, range_index);
         let _ = self.ranges.borrow_mut().remove(&range);
     }
@@ -206,18 +221,8 @@ where
         if self.op.is_none() {
             return;
         }
-        let owner = self.object_manager.is_owner(stream_id, range_index);
         let range_key = RangeKey::new(stream_id, range_index);
-        let mut range = self.ranges.borrow().get(&range_key).cloned();
-        if let Some(owner) = owner {
-            if range.is_none() {
-                self.add_range(stream_id, range_index, &owner);
-                range = self.ranges.borrow().get(&range_key).cloned();
-            }
-        } else if range.is_some() {
-            self.remove_range(stream_id, range_index);
-            return;
-        }
+        let range = self.ranges.borrow().get(&range_key).cloned();
         if let Some(range) = range {
             let (size_change, is_part_full) = range.accumulate(record_size);
             let mut cache_size = self.cache_size.borrow_mut();
@@ -326,12 +331,44 @@ where
             shutdown_tx,
             shutdown_rx: RefCell::new(Some(shutdown_rx.clone())),
         });
+        Self::listen_owner_change(this.clone(), shutdown_rx.clone());
         Self::run_force_flush_task(
             this.ranges.clone(),
             Duration::from_secs(force_flush_secs),
             shutdown_rx,
         );
         this
+    }
+
+    fn listen_owner_change(object_storage: Rc<Self>, shutdown_rx: ShutdownRx) {
+        let mut rx = object_storage.object_manager.owner_watcher();
+        tokio_uring::spawn(async move {
+            let mut notify_shutdown_rx = shutdown_rx.subscribe();
+            loop {
+                tokio::select! {
+                    _ = notify_shutdown_rx.recv() => {
+                        break;
+                    },
+                    owner_event = rx.recv() => {
+                        if let Some(owner_event) = owner_event {
+                            Self::handle_owner_event(&object_storage, owner_event);
+                        } else {
+                            break;
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    fn handle_owner_event(object_storage: &Rc<Self>, owner_event: OwnerEvent) {
+        let stream_id = owner_event.range_key.stream_id;
+        let range_index = owner_event.range_key.range_index;
+        if let Some(owner) = owner_event.owner {
+            object_storage.add_range(stream_id, range_index, &owner);
+        } else {
+            object_storage.remove_range(stream_id, range_index);
+        }
     }
 
     pub fn run_force_flush_task(

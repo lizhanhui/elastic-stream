@@ -288,7 +288,7 @@ impl MultiPartObject {
                             object_metadata.end_offset_delta =
                                 (end_offset - object_metadata.start_offset) as u32;
                             object_metadata.data_len = data_len as u32;
-                            object_manager.commit_object(object_metadata);
+                            let _ = object_manager.commit_object(object_metadata).await;
 
                             if let Some(tx) = tx {
                                 let _ = tx.send(());

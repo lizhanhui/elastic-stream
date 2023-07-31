@@ -375,7 +375,7 @@ impl<C> ObjectManager for DefaultObjectManager<C>
 where
     C: PlacementDriverClient + 'static,
 {
-    fn owner_watcher(&mut self) -> UnboundedReceiver<OwnerEvent> {
+    fn owner_watcher(&self) -> UnboundedReceiver<OwnerEvent> {
         let (tx, rx) = unbounded_channel();
         let mut metadata = self.metadata.borrow_mut();
         for (key, offloading) in &mut metadata.offloading {
@@ -386,14 +386,6 @@ where
         }
         metadata.owner_event_senders.push(tx);
         rx
-    }
-
-    fn is_owner(&self, stream_id: u64, range_index: u32) -> Option<Owner> {
-        self.metadata
-            .borrow()
-            .offloading
-            .get(&RangeKey::new(stream_id, range_index))
-            .and_then(OffloadingObjects::owner)
     }
 
     async fn commit_object(&self, object_metadata: ObjectMetadata) -> Result<(), EsError> {
@@ -450,15 +442,8 @@ impl MemoryObjectManager {
 }
 
 impl ObjectManager for MemoryObjectManager {
-    fn owner_watcher(&mut self) -> UnboundedReceiver<OwnerEvent> {
+    fn owner_watcher(&self) -> UnboundedReceiver<OwnerEvent> {
         unimplemented!()
-    }
-
-    fn is_owner(&self, _stream_id: u64, _range_index: u32) -> Option<Owner> {
-        Some(Owner {
-            epoch: 0,
-            start_offset: 0,
-        })
     }
 
     async fn commit_object(&self, object_metadata: ObjectMetadata) -> Result<(), EsError> {
@@ -829,11 +814,10 @@ mod tests {
                 .withf(|object| object.start_offset == 300)
                 .times(1)
                 .returning(|_| Ok(()));
-            let mut object_manager =
-                DefaultObjectManager::<pd_client::MockPlacementDriverClient>::new(
-                    Rc::new(mock_pd_client),
-                    42,
-                );
+            let object_manager = DefaultObjectManager::<pd_client::MockPlacementDriverClient>::new(
+                Rc::new(mock_pd_client),
+                42,
+            );
 
             // a listed range
             let mut range_t = RangeT::default();
@@ -907,15 +891,6 @@ mod tests {
                     })
                 }),
                 owner_watcher.recv().await
-            );
-
-            // test `is_owner`
-            assert_eq!(
-                Some(Owner {
-                    epoch: 3,
-                    start_offset: 300
-                }),
-                object_manager.is_owner(1, 2),
             );
 
             // test `commit_object`

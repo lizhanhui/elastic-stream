@@ -38,7 +38,7 @@ pub fn launch(
     }
 
     // Load object storage service
-    let object_storage = AsyncObjectStorage::new(&config.object_storage, store.clone());
+    let object_storage = AsyncObjectStorage::new(&config, store.clone());
 
     recovery_completion_rx.blocking_recv()?;
 
