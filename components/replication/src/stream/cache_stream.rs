@@ -1,8 +1,9 @@
-use std::{cmp::min, rc::Rc};
+use std::{cell::RefCell, cmp::min, collections::HashMap, rc::Rc};
 
 use log::{debug, error, warn};
 use model::{error::EsError, RecordBatch};
 use protocol::rpc::header::ErrorCode;
+use tokio::sync::broadcast;
 
 use super::{
     cache::{block_size_align, BlockCache, HotCache, Readahead},
@@ -13,6 +14,8 @@ use super::{
 pub(crate) struct CacheStream<S> {
     stream_id: u64,
     stream: Rc<S>,
+    inflight_readahead: Rc<RefCell<HashMap<u64, broadcast::Sender<()>>>>,
+
     hot_cache: Rc<HotCache>,
     block_cache: Rc<BlockCache>,
 }
@@ -30,6 +33,7 @@ where
         Rc::new(Self {
             stream_id,
             stream,
+            inflight_readahead: Rc::new(RefCell::new(HashMap::new())),
             hot_cache,
             block_cache,
         })
@@ -37,9 +41,9 @@ where
 
     async fn fetch0(
         &self,
-        mut start_offset: u64,
+        start_offset: u64,
         end_offset: u64,
-        mut batch_max_bytes: u32,
+        batch_max_bytes: u32,
     ) -> Result<FetchDataset, EsError> {
         let stream_start_offset = self.start_offset();
         let stream_end_offset = self.confirm_offset();
@@ -52,48 +56,107 @@ where
             ));
         }
 
-        let mut blocks = vec![];
+        loop {
+            let mut next_start_offset = start_offset;
+            let mut next_batch_max_bytes = batch_max_bytes;
 
+            let mut blocks = vec![];
+
+            // 1. try read from hot cache.
+            let readahead = self.read_from_cache(
+                &mut next_start_offset,
+                end_offset,
+                &mut next_batch_max_bytes,
+                &mut blocks,
+            );
+            // 1.1 trigger background readahead.
+            if let Some(readahead) = readahead {
+                self.background_readahead(readahead);
+            }
+            if next_start_offset >= end_offset || next_batch_max_bytes == 0 {
+                // fullfil by block cache.
+                return Ok(FetchDataset::Full(blocks));
+            }
+
+            // 2. read from stream.
+            // double the end_offset and size to readahead.
+            let inflight_read_rx = self
+                .inflight_readahead
+                .borrow()
+                .get(&next_start_offset)
+                .map(|tx| tx.subscribe());
+            if let Some(mut inflight_read_rx) = inflight_read_rx {
+                // await inflight readahead to fill the cache, and retry fetch0.
+                let _ = inflight_read_rx.recv().await;
+                continue;
+            }
+            let readahead_end_offset = min(
+                stream_end_offset,
+                next_start_offset + (end_offset - next_start_offset) * 2,
+            );
+            let readahead_batch_max_bytes = block_size_align(next_batch_max_bytes * 2);
+            return self
+                .read_from_stream(
+                    next_start_offset,
+                    end_offset,
+                    next_batch_max_bytes,
+                    readahead_end_offset,
+                    readahead_batch_max_bytes,
+                    blocks,
+                )
+                .await;
+        }
+    }
+
+    fn read_from_cache(
+        &self,
+        next_start_offset: &mut u64,
+        end_offset: u64,
+        next_batch_max_bytes: &mut u32,
+        blocks: &mut Vec<RecordsBlock>,
+    ) -> Option<Readahead> {
         // 1. try read from hot cache.
-        let hot_block =
-            self.hot_cache
-                .get_block(self.stream_id, start_offset, end_offset, batch_max_bytes);
-        start_offset = hot_block.end_offset();
-        batch_max_bytes -= min(hot_block.size(), batch_max_bytes);
+        let hot_block = self.hot_cache.get_block(
+            self.stream_id,
+            *next_start_offset,
+            end_offset,
+            *next_batch_max_bytes,
+        );
+        *next_start_offset = hot_block.end_offset();
+        *next_batch_max_bytes -= min(hot_block.size(), *next_batch_max_bytes);
 
-        blocks.push(hot_block);
-        if start_offset >= end_offset || batch_max_bytes == 0 {
+        if !hot_block.is_empty() {
+            blocks.push(hot_block);
+        }
+        if *next_start_offset >= end_offset || *next_batch_max_bytes == 0 {
             // fullfil by hot cache.
-            return Ok(FetchDataset::Full(blocks));
+            return None;
         }
 
         // 2. try read from block cache
-        let (block, readahead) =
-            self.block_cache
-                .get_block(self.stream_id, start_offset, end_offset, batch_max_bytes);
-        start_offset = block.end_offset();
-        batch_max_bytes -= min(block.size(), batch_max_bytes);
+        let (block, readahead) = self.block_cache.get_block(
+            self.stream_id,
+            *next_start_offset,
+            end_offset,
+            *next_batch_max_bytes,
+        );
+        *next_start_offset = block.end_offset();
+        *next_batch_max_bytes -= min(block.size(), *next_batch_max_bytes);
         if !block.is_empty() {
             blocks.push(block);
         }
+        readahead
+    }
 
-        // 2.1 trigger background readahead.
-        if let Some(readahead) = readahead {
-            self.background_readahead(readahead);
-        }
-        if start_offset >= end_offset || batch_max_bytes == 0 {
-            // fullfil by block cache.
-            return Ok(FetchDataset::Full(blocks));
-        }
-
-        // 3. read from stream.
-        // double the end_offset and size to readahead.
-        let readahead_end_offset = min(
-            stream_end_offset,
-            start_offset + (end_offset - start_offset) * 2,
-        );
-        let readahead_batch_max_bytes = block_size_align(batch_max_bytes * 2);
-
+    async fn read_from_stream(
+        &self,
+        start_offset: u64,
+        end_offset: u64,
+        batch_max_bytes: u32,
+        readahead_end_offset: u64,
+        readahead_batch_max_bytes: u32,
+        mut blocks: Vec<RecordsBlock>,
+    ) -> Result<FetchDataset, EsError> {
         let dataset = self
             .stream
             .fetch(
@@ -135,8 +198,18 @@ where
         let stream_id = self.stream_id;
         let stream = self.stream.clone();
         let block_cache = self.block_cache.clone();
+        let inflight_readahead = self.inflight_readahead.clone();
+
+        let start_offset = readahead.start_offset;
+        let (tx, _rx) = broadcast::channel(1);
+        inflight_readahead
+            .borrow_mut()
+            .insert(start_offset, tx.clone());
+
         tokio_uring::spawn(async move {
             Self::background_readahead0(readahead, stream_id, stream, block_cache).await;
+            let _ = tx.send(());
+            inflight_readahead.borrow_mut().remove(&start_offset);
         });
     }
 
@@ -241,7 +314,7 @@ mod tests {
             mock_stream
                 .expect_fetch()
                 .times(1)
-                .with(eq(14), eq(16), eq(1048576))
+                .with(eq(14), eq(18), eq(1048576))
                 .returning(|_, _, _| {
                     let records_block = RecordsBlock::new(vec![
                         BlockRecord {
@@ -295,16 +368,13 @@ mod tests {
             let dataset = cache_stream.fetch(11, 15, 100).await.unwrap();
             match dataset {
                 FetchDataset::Full(blocks) => {
-                    assert_eq!(blocks.len(), 3);
+                    assert_eq!(blocks.len(), 2);
                     assert_eq!(blocks[0].size(), 1);
                     assert_eq!(blocks[0].start_offset(), 11);
                     assert_eq!(blocks[0].end_offset(), 13);
-                    assert_eq!(blocks[1].size(), 1);
+                    assert_eq!(blocks[1].size(), 3);
                     assert_eq!(blocks[1].start_offset(), 13);
-                    assert_eq!(blocks[1].end_offset(), 14);
-                    assert_eq!(blocks[2].size(), 2);
-                    assert_eq!(blocks[2].start_offset(), 14);
-                    assert_eq!(blocks[2].end_offset(), 16);
+                    assert_eq!(blocks[1].end_offset(), 16);
                 }
                 _ => panic!("not full dataset"),
             }
@@ -361,6 +431,54 @@ mod tests {
             assert_eq!(block.start_offset(), 14);
             assert_eq!(block.end_offset(), 16);
         });
+        Ok(())
+    }
+
+    #[test]
+    fn test_read_reuse() -> Result<(), Box<dyn Error>> {
+        tokio_uring::start(async move {
+            let mut mock_stream = MockStream::default();
+
+            mock_stream.expect_start_offset().returning(|| 10);
+            mock_stream.expect_confirm_offset().returning(|| 18);
+
+            mock_stream
+                .expect_fetch()
+                .times(1)
+                .with(eq(14), eq(18), eq(5))
+                .returning(|_, _, _| {
+                    let records_block = RecordsBlock::new(vec![BlockRecord {
+                        start_offset: 14,
+                        end_offset_delta: 2,
+                        data: vec![BytesMut::zeroed(10).freeze()],
+                    }]);
+                    Ok(FetchDataset::Overflow(vec![records_block]))
+                });
+            let mock_stream = Rc::new(mock_stream);
+            let cache_stream = CacheStream::new(
+                1,
+                mock_stream,
+                Rc::new(HotCache::new(4096)),
+                Rc::new(BlockCache::new(4096)),
+            );
+
+            cache_stream.background_readahead(Readahead {
+                start_offset: 14,
+                end_offset: None,
+                size_hint: 5,
+                timestamp: Instant::now(),
+            });
+            match cache_stream.fetch(14, 18, 5).await.unwrap() {
+                FetchDataset::Full(blocks) => {
+                    assert_eq!(1, blocks.len());
+                    assert_eq!(10, blocks[0].size());
+                    assert_eq!(14, blocks[0].start_offset());
+                    assert_eq!(16, blocks[0].end_offset());
+                }
+                _ => panic!("not full dataset"),
+            }
+        });
+
         Ok(())
     }
 }
