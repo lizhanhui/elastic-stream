@@ -559,8 +559,10 @@ impl Service<Request> for Session {
 mod tests {
 
     use super::*;
+    use log::debug;
     use mock_server::run_listener;
-    use std::error::Error;
+    use std::{error::Error, time::Duration};
+    use tower::timeout::Timeout;
 
     /// Verify it's OK to create a new session.
     #[test]
@@ -581,6 +583,120 @@ mod tests {
                 tx,
             );
 
+            Ok(())
+        })
+    }
+
+    /// Verify it's OK to wrap `Session` into `Timeout` tower middleware.
+    #[test]
+    fn test_session_service() -> Result<(), Box<dyn Error>> {
+        ulog::try_init_log();
+        tokio_uring::start(async {
+            let port = run_listener().await;
+            let target = format!("127.0.0.1:{}", port);
+            let stream = TcpStream::connect(target.parse()?).await?;
+            let config = Arc::new(config::Configuration::default());
+            let sessions = Rc::new(RefCell::new(HashMap::new()));
+            let (tx, _rx) = broadcast::channel(1);
+            let session = Session::new(
+                target.parse()?,
+                stream,
+                &target,
+                &config,
+                Rc::downgrade(&sessions),
+                tx,
+            );
+
+            let mut timeout_session = Timeout::new(session, Duration::from_secs(1));
+            let req = crate::request::Request {
+                timeout: Duration::from_secs(1),
+                headers: request::Headers::Heartbeat {
+                    client_id: "test".to_owned(),
+                    role: ClientRole::CLIENT_ROLE_FRONTEND,
+                    range_server: None,
+                },
+                body: None,
+            };
+            match timeout_session.call(req).await {
+                Ok(_resp) => {
+                    panic!("Should not receive a heartbeat response");
+                }
+                Err(e) => {
+                    assert_eq!(&e.to_string(), "request timed out");
+                }
+            }
+            Ok(())
+        })
+    }
+
+    struct LogService<S> {
+        inner: S,
+    }
+
+    impl<S, Request> tower::Service<Request> for LogService<S>
+    where
+        S: tower::Service<Request> + Clone,
+    {
+        type Response = S::Response;
+        type Error = S::Error;
+        type Future = impl Future<Output = Result<Self::Response, Self::Error>>;
+
+        fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+            self.inner.poll_ready(cx)
+        }
+
+        fn call(&mut self, req: Request) -> Self::Future {
+            let mut svc = self.inner.clone();
+            async move {
+                debug!("Before calling inner service");
+                let res = svc.call(req).await;
+                debug!("After calling inner service");
+                res
+            }
+        }
+    }
+
+    /// Verify it's OK to wrap `Session` into `LogService` tower middleware.
+    #[test]
+    fn test_session_service_with_timeout_and_logging() -> Result<(), Box<dyn Error>> {
+        ulog::try_init_log();
+        tokio_uring::start(async {
+            let port = run_listener().await;
+            let target = format!("127.0.0.1:{}", port);
+            let stream = TcpStream::connect(target.parse()?).await?;
+            let config = Arc::new(config::Configuration::default());
+            let sessions = Rc::new(RefCell::new(HashMap::new()));
+            let (tx, _rx) = broadcast::channel(1);
+            let session = Session::new(
+                target.parse()?,
+                stream,
+                &target,
+                &config,
+                Rc::downgrade(&sessions),
+                tx,
+            );
+
+            let timeout_session = Timeout::new(session, Duration::from_secs(1));
+            let req = crate::request::Request {
+                timeout: Duration::from_secs(1),
+                headers: request::Headers::Heartbeat {
+                    client_id: "test".to_owned(),
+                    role: ClientRole::CLIENT_ROLE_FRONTEND,
+                    range_server: None,
+                },
+                body: None,
+            };
+            let mut svc = LogService {
+                inner: timeout_session,
+            };
+            match svc.call(req).await {
+                Ok(_resp) => {
+                    panic!("Should not receive a heartbeat response");
+                }
+                Err(e) => {
+                    assert_eq!(&e.to_string(), "request timed out");
+                }
+            }
             Ok(())
         })
     }
