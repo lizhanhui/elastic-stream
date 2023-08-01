@@ -239,12 +239,12 @@ mod tests {
     #[test]
     fn test_read_first_object_blocks() -> Result<(), Box<dyn Error>> {
         tokio_uring::start(async move {
-            let data_len = write_object("test").await;
+            let data_len = write_object("test_read_first_object_blocks").await;
             env::set_var("ES_OBJ_ENDPOINT", "fs://");
 
             let object_metadata_manager = ObjectMetadataManager::new();
             let mut object_metadata = ObjectMetadata::new(1, 2, 3, 100);
-            object_metadata.key = Some("test".to_owned());
+            object_metadata.key = Some("test_read_first_object_blocks".to_owned());
             object_metadata.data_len = data_len;
             object_metadata.end_offset_delta = 278;
             object_metadata_manager.add_object_metadata(&object_metadata);
@@ -269,11 +269,11 @@ mod tests {
     fn test_async_object_reader_read() -> Result<(), Box<dyn Error>> {
         // mock object data with size 200
         tokio_uring::start(async move {
-            let data_len = write_object("test").await;
+            let data_len = write_object("test_async_object_reader_read").await;
             env::set_var("ES_OBJ_ENDPOINT", "fs://");
             let obj_reader = AsyncObjectReader::new();
             let mut object_metadata = ObjectMetadata::new(1, 2, 3, 100);
-            object_metadata.key = Some("test".to_owned());
+            object_metadata.key = Some("test_async_object_reader_read".to_owned());
             object_metadata.data_len = data_len;
             let rst = obj_reader.read(&object_metadata, (0, 100)).await.unwrap();
             assert_eq!(1, rst.len());

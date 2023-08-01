@@ -106,12 +106,17 @@ fn merge_blocks(blocks: Vec<RecordsBlock>) -> RecordsBlock {
     if blocks.is_empty() {
         return RecordsBlock::empty_block(u64::MAX);
     }
+    let end_offset = blocks.last().unwrap().end_offset();
     let records_count = blocks.iter().map(|b| b.records.len()).sum();
     let mut records = Vec::with_capacity(records_count);
     for mut block in blocks.into_iter() {
         records.append(&mut block.records);
     }
-    RecordsBlock::new(records)
+    if records.is_empty() {
+        RecordsBlock::empty_block(end_offset)
+    } else {
+        RecordsBlock::new(records)
+    }
 }
 
 fn check_records_sequence(blocks: &[RecordsBlock]) -> Result<(), EsError> {
@@ -399,6 +404,24 @@ mod tests {
         let (_obj, (start_pos, end_pos)) = om.find_first(107, None, 100).unwrap();
         assert_eq!(500, start_pos);
         assert_eq!(700, end_pos);
+    }
+
+    #[test]
+    fn test_merge_blocks() {
+        // merge continuous blocks
+        let blocks = vec![new_records_block(10, 20, 1), new_records_block(20, 30, 1)];
+        let block = merge_blocks(blocks);
+        assert_eq!(10, block.start_offset());
+        assert_eq!(30, block.end_offset());
+        assert_eq!(2, block.size());
+
+        // merge empty blocks
+        let blocks = vec![RecordsBlock::empty_block(30)];
+        let block = merge_blocks(blocks);
+        assert_eq!(30, block.start_offset());
+        assert_eq!(30, block.end_offset());
+        assert_eq!(0, block.size());
+        assert!(block.is_empty());
     }
 
     fn new_records_block(start_offset: u64, end_offset: u64, size: usize) -> RecordsBlock {

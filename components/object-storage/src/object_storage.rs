@@ -47,7 +47,11 @@ impl AsyncObjectStorage {
                         shutdown_tx.clone(),
                     ));
                     let client = Rc::new(DefaultPlacementDriverClient::new(client));
-                    let object_manager = DefaultObjectManager::new(client, config.server.server_id);
+                    let object_manager = DefaultObjectManager::new(
+                        &config.object_storage.cluster,
+                        client,
+                        config.server.server_id,
+                    );
                     let object_storage = DefaultObjectStorage::new(
                         &config.object_storage,
                         range_fetcher,

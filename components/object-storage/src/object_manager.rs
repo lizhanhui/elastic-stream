@@ -9,7 +9,7 @@ use crate::{ObjectManager, Owner, OwnerEvent, RangeKey};
 use bytes::Bytes;
 use model::{
     error::EsError,
-    object::{gen_object_key, ObjectMetadata},
+    object::ObjectMetadata,
     resource::{EventType, Resource, ResourceEvent},
 };
 use pd_client::PlacementDriverClient;
@@ -254,6 +254,7 @@ pub struct DefaultObjectManager<C>
 where
     C: PlacementDriverClient + 'static,
 {
+    cluster: String,
     token: CancellationToken,
     pd_client: Rc<C>,
     metadata: Rc<RefCell<Metadata>>,
@@ -263,7 +264,7 @@ impl<C> DefaultObjectManager<C>
 where
     C: PlacementDriverClient + 'static,
 {
-    pub fn new(pd_client: Rc<C>, server_id: i32) -> Self {
+    pub fn new(cluster: &str, pd_client: Rc<C>, server_id: i32) -> Self {
         let token = CancellationToken::new();
         let metadata = Rc::new(RefCell::new(Metadata::default()));
         let rx = pd_client.list_and_watch_resource(&[ResourceType::RANGE, ResourceType::OBJECT]);
@@ -275,6 +276,7 @@ where
         });
 
         Self {
+            cluster: cluster.to_owned(),
             token,
             pd_client,
             metadata,
@@ -405,12 +407,16 @@ where
         end_offset: u64,
         size_hint: u32,
     ) -> (Vec<ObjectMetadata>, bool) {
-        self.metadata.borrow().get_objects(
+        let (mut objects, cover_all) = self.metadata.borrow().get_objects(
             &RangeKey::new(stream_id, range_index),
             start_offset,
             end_offset,
             size_hint,
-        )
+        );
+        for m in &mut objects {
+            m.gen_object_key(&self.cluster);
+        }
+        (objects, cover_all)
     }
 
     fn get_offloading_range(&self) -> Vec<RangeKey> {
@@ -483,14 +489,7 @@ impl ObjectManager for MemoryObjectManager {
                 })
                 .map(|meta| {
                     let mut meta = meta.clone();
-                    let key = gen_object_key(
-                        &self.cluster,
-                        stream_id,
-                        range_index,
-                        meta.epoch,
-                        meta.start_offset,
-                    );
-                    meta.key = Some(key);
+                    meta.gen_object_key(&self.cluster);
                     meta
                 })
                 .collect();
@@ -820,6 +819,7 @@ mod tests {
                 .times(1)
                 .returning(|_| Ok(()));
             let object_manager = DefaultObjectManager::<pd_client::MockPlacementDriverClient>::new(
+                "testcluster",
                 Rc::new(mock_pd_client),
                 42,
             );
@@ -848,7 +848,8 @@ mod tests {
             let mut object = new_object_with_epoch(1, 100, 200, 1);
             object.stream_id = 1;
             object.range_index = 2;
-            let object1 = object.clone();
+            let mut object1 = object.clone();
+            object1.gen_object_key("testcluster");
             tx.send(Ok(ResourceEvent {
                 event_type: EventType::LISTED,
                 resource: Resource::Object(object),
@@ -869,7 +870,8 @@ mod tests {
             let mut object = new_object_with_epoch(2, 200, 300, 1);
             object.stream_id = 1;
             object.range_index = 2;
-            let object2 = object.clone();
+            let mut object2 = object.clone();
+            object2.gen_object_key("testcluster");
             tx.send(Ok(ResourceEvent {
                 event_type: EventType::ADDED,
                 resource: Resource::Object(object),

@@ -288,7 +288,7 @@ impl MultiPartObject {
                             object_metadata.end_offset_delta =
                                 (end_offset - object_metadata.start_offset) as u32;
                             object_metadata.data_len = data_len as u32;
-                            let _ = object_manager.commit_object(object_metadata).await;
+                            commit_object(&object_manager, object_metadata).await;
 
                             if let Some(tx) = tx {
                                 let _ = tx.send(());
@@ -406,7 +406,7 @@ where
             bytes.extend_from_slice(&gen_footer(payload_length as u32, sparse_index_len as u32));
             let bytes = bytes.freeze();
             Self::write_object(&op, &key, &bytes).await;
-            _ = object_manager.commit_object(object_metadata).await;
+            commit_object(&object_manager, object_metadata).await;
             // explicit ref permit in async function to force move permit to async block.
             drop(permit);
         });
@@ -511,6 +511,20 @@ fn gen_sparse_index(
     let metadata = flatbuffers::root::<RecordBatchMeta>(&metadata_slice)?;
     let end_offset = metadata.base_offset() as u64 + metadata.last_offset_delta() as u64;
     Ok((sparse_index_bytes.freeze(), end_offset, pass_through_size))
+}
+
+async fn commit_object<M: ObjectManager>(object_manager: &Rc<M>, object_metadata: ObjectMetadata) {
+    loop {
+        match object_manager.commit_object(object_metadata.clone()).await {
+            Ok(_) => {
+                return;
+            }
+            Err(e) => {
+                warn!("commit object {object_metadata:?} fail, {e}");
+                sleep(Duration::from_secs(3)).await;
+            }
+        }
+    }
 }
 
 #[cfg(test)]

@@ -56,6 +56,7 @@ where
             ));
         }
 
+        let mut waited_cache = false;
         loop {
             let mut next_start_offset = start_offset;
             let mut next_batch_max_bytes = batch_max_bytes;
@@ -80,15 +81,18 @@ where
 
             // 2. read from stream.
             // double the end_offset and size to readahead.
-            let inflight_read_rx = self
-                .inflight_readahead
-                .borrow()
-                .get(&next_start_offset)
-                .map(|tx| tx.subscribe());
-            if let Some(mut inflight_read_rx) = inflight_read_rx {
-                // await inflight readahead to fill the cache, and retry fetch0.
-                let _ = inflight_read_rx.recv().await;
-                continue;
+            if !waited_cache {
+                waited_cache = true;
+                let inflight_read_rx = self
+                    .inflight_readahead
+                    .borrow()
+                    .get(&next_start_offset)
+                    .map(|tx| tx.subscribe());
+                if let Some(mut inflight_read_rx) = inflight_read_rx {
+                    // await inflight readahead to fill the cache, and retry fetch0.
+                    let _ = inflight_read_rx.recv().await;
+                    continue;
+                }
             }
             let readahead_end_offset = min(
                 stream_end_offset,
@@ -198,9 +202,12 @@ where
         let stream_id = self.stream_id;
         let stream = self.stream.clone();
         let block_cache = self.block_cache.clone();
-        let inflight_readahead = self.inflight_readahead.clone();
-
         let start_offset = readahead.start_offset;
+        let inflight_readahead = self.inflight_readahead.clone();
+        if inflight_readahead.borrow().contains_key(&start_offset) {
+            return;
+        }
+
         let (tx, _rx) = broadcast::channel(1);
         inflight_readahead
             .borrow_mut()
@@ -297,7 +304,7 @@ mod tests {
     use std::{error::Error, time::Instant};
 
     use bytes::BytesMut;
-    use mockall::predicate::eq;
+    use mockall::predicate::{always, eq};
 
     use crate::stream::{records_block::BlockRecord, MockStream};
 
@@ -314,7 +321,7 @@ mod tests {
             mock_stream
                 .expect_fetch()
                 .times(1)
-                .with(eq(14), eq(18), eq(1048576))
+                .with(eq(14), eq(18), always())
                 .returning(|_, _, _| {
                     let records_block = RecordsBlock::new(vec![
                         BlockRecord {

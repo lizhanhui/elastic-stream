@@ -103,6 +103,16 @@ impl ObjectMetadata {
     pub fn end_offset(&self) -> u64 {
         self.start_offset + self.end_offset_delta as u64
     }
+
+    pub fn gen_object_key(&mut self, cluster: &str) {
+        self.key = Some(gen_object_key(
+            cluster,
+            self.stream_id,
+            self.range_index,
+            self.epoch,
+            self.start_offset,
+        ));
+    }
 }
 
 pub fn gen_object_key(
