@@ -3,6 +3,13 @@
     "configurations": [
         {
             "type": "java",
+            "name": "StreamBench",
+            "request": "launch",
+            "mainClass": "com.automq.elasticstream.client.examples.benchmark.StreamBench",
+            "projectName": "examples"
+        },
+        {
+            "type": "java",
             "name": "Main",
             "request": "launch",
             "mainClass": "com.automq.elasticstream.client.examples.Main",
@@ -20,10 +27,10 @@
                 "ES_ADVERTISE_ADDR": "127.0.0.1:10911",
                 "ES_PD": "127.0.0.1:12378",
                 "ES_CONFIG": "${workspaceFolder}/etc/range-server.yaml",
-                "ES_LOG_CONFIG": "${workspaceFolder}/etc/range-server-log.yaml",
+                "ES_LOG_CONFIG": "${workspaceFolder}/etc/range-server-log.yaml"
             },
             "args": [
-                "start",
+                "start"
             ]
         },
         {

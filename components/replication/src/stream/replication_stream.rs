@@ -35,7 +35,7 @@ where
     next_offset: RefCell<u64>,
     last_range: RefCell<Option<Rc<R>>>,
     /// #append send StreamAppendRequest to tx.
-    append_requests_tx: mpsc::bounded::Tx<StreamAppendRequest>,
+    append_requests_tx: mpsc::unbounded::Tx<StreamAppendRequest>,
     /// send by range ack / delay retry to trigger append task loop next round.
     append_tasks_tx: mpsc::unbounded::Tx<()>,
     // send when stream close.
@@ -51,7 +51,7 @@ where
     C: Client + 'static,
 {
     pub(crate) fn new(id: i64, epoch: u64, client: Weak<C>, cache: Rc<HotCache>) -> Rc<Self> {
-        let (append_requests_tx, append_requests_rx) = mpsc::bounded::channel(1024);
+        let (append_requests_tx, append_requests_rx) = mpsc::unbounded::channel();
         let (append_tasks_tx, append_tasks_rx) = mpsc::unbounded::channel();
         let (shutdown_signal_tx, shutdown_signal_rx) = broadcast::channel(1);
         let this = Rc::new(Self {
@@ -104,7 +104,7 @@ where
                 self.client.clone(),
                 self.cache.clone(),
             );
-            info!("{}Create new range: {:?}", range.metadata(), self.log_ident);
+            info!("{}Create new range: {:?}", self.log_ident, range.metadata());
             self.ranges.borrow_mut().insert(start_offset, range.clone());
             *self.last_range.borrow_mut() = Some(range.clone());
             Ok(range)
@@ -126,7 +126,7 @@ where
 
     async fn append_task(
         stream: Weak<Self>,
-        mut append_requests_rx: mpsc::bounded::Rx<StreamAppendRequest>,
+        mut append_requests_rx: mpsc::unbounded::Rx<StreamAppendRequest>,
         mut append_tasks_rx: mpsc::unbounded::Rx<()>,
         mut shutdown_signal_rx: broadcast::Receiver<()>,
         closed: Rc<RefCell<bool>>,
@@ -417,7 +417,6 @@ where
                 record_batch,
                 append_tx,
             ))
-            .await
             .is_err()
         {
             warn!("{}Send to append request channel fail.", self.log_ident);

@@ -27,9 +27,12 @@ import java.util.function.Consumer;
  * 1. cd sdks/; ./build.sh; cd frontend-java
  * 2.
  * SDK_BENCHMARK_ENDPOINT=127.0.0.1 \
- * SDK_BENCHMARK_CONFIG=throughput=1,recordSize=1048576,duration=1,taskCount=1,streamPerThread=1,replicaCount=1 \
- * SDK_FETCH_CONFIG=fetchSize=65536,taskCount=1 \
- * java --add-opens=java.base/java.nio=ALL-UNNAMED -cp examples/target/examples-1.0-SNAPSHOT-jar-with-dependencies.jar com.automq.elasticstream.client.examples.benchmark.StreamBench
+ * SDK_BENCHMARK_CONFIG=throughput=1,recordSize=1048576,duration=1,taskCount=1,streamPerThread=1,replicaCount=1
+ * \
+ * SDK_FETCH_CONFIG=fetchSize=65536,taskCount=1,delay=0 \
+ * java --add-opens=java.base/java.nio=ALL-UNNAMED -cp
+ * examples/target/examples-1.0-SNAPSHOT-jar-with-dependencies.jar
+ * com.automq.elasticstream.client.examples.benchmark.StreamBench
  */
 class StreamBench {
     private final StreamClient streamClient;
@@ -52,25 +55,35 @@ class StreamBench {
     public static void main(String... args) throws Exception {
         String endpoint = System.getenv("SDK_BENCHMARK_ENDPOINT");
 
-        AppendTaskConfig appendTaskConfig = AppendTaskConfig.parse(System.getenv("SDK_BENCHMARK_CONFIG"));
-        FetchTaskConfig fetchTaskConfig = FetchTaskConfig.parse(System.getenv("SDK_FETCH_CONFIG"));
+        AppendTaskConfig appendTaskConfig =
+        AppendTaskConfig.parse(System.getenv("SDK_BENCHMARK_CONFIG"));
+        FetchTaskConfig fetchTaskConfig =
+        FetchTaskConfig.parse(System.getenv("SDK_FETCH_CONFIG"));
         if (fetchTaskConfig.isFetchOn()) {
-            if (fetchTaskConfig.taskCount < appendTaskConfig.taskCount || fetchTaskConfig.taskCount % appendTaskConfig.taskCount != 0) {
-                throw new IllegalArgumentException("invalid config: SDK_FETCH_CONFIG.taskCount should be multiple of SDK_BENCHMARK_CONFIG.taskCount");
+            if (fetchTaskConfig.taskCount < appendTaskConfig.taskCount
+                    || fetchTaskConfig.taskCount % appendTaskConfig.taskCount != 0) {
+                throw new IllegalArgumentException(
+                        "invalid config: SDK_FETCH_CONFIG.taskCount should be multiple of SDK_BENCHMARK_CONFIG.taskCount");
             }
-            if (fetchTaskConfig.taskCount > appendTaskConfig.streamCount || appendTaskConfig.streamCount % fetchTaskConfig.taskCount != 0) {
-                throw new IllegalArgumentException("invalid config: SDK_BENCHMARK_CONFIG.streamPerThread should be multiple of SDK_FETCH_CONFIG.taskCount");
+            if (fetchTaskConfig.taskCount > appendTaskConfig.streamCount
+                    || appendTaskConfig.streamCount % fetchTaskConfig.taskCount != 0) {
+                throw new IllegalArgumentException(
+                        "invalid config: SDK_BENCHMARK_CONFIG.streamPerThread should be multiple of SDK_FETCH_CONFIG.taskCount");
             }
         }
         new StreamBench(endpoint, appendTaskConfig, fetchTaskConfig);
     }
 
-    private void runTask(int taskIndex, AppendTaskConfig appendTaskConfig, FetchTaskConfig fetchTaskConfig) throws Exception {
+    private void runTask(int taskIndex, AppendTaskConfig appendTaskConfig, FetchTaskConfig fetchTaskConfig)
+            throws Exception {
         System.out.println("task-" + taskIndex + " start");
         List<Stream> streams = new ArrayList<>(appendTaskConfig.streamCount);
         AtomicBoolean doneSignal = new AtomicBoolean();
         for (int i = 0; i < appendTaskConfig.streamCount; i++) {
-            streams.add(streamClient.createAndOpenStream(CreateStreamOptions.newBuilder().replicaCount(appendTaskConfig.replicaCount).build()).get());
+            streams.add(streamClient
+                    .createAndOpenStream(
+                            CreateStreamOptions.newBuilder().replicaCount(appendTaskConfig.replicaCount).build())
+                    .get());
         }
         Consumer<ConfirmEvent> confirmEventListener;
         if (fetchTaskConfig.isFetchOn()) {
@@ -84,7 +97,8 @@ class StreamBench {
 
             for (int i = 0; i < fetchForTaskCount; i++) {
                 String taskId = taskIndex + "#" + i;
-                List<Stream> fetchStreams = streams.subList(i * fetchStreamSplitFactor, (i + 1) * fetchStreamSplitFactor);
+                List<Stream> fetchStreams = streams.subList(i * fetchStreamSplitFactor,
+                        (i + 1) * fetchStreamSplitFactor);
                 BlockingQueue<ConfirmEvent> confirmEventQueue = streamConfirmQueues.get(i);
                 new Thread(() -> {
                     try {
@@ -95,17 +109,19 @@ class StreamBench {
                 }).start();
             }
             confirmEventListener = event -> {
-                //noinspection ResultOfMethodCallIgnored
+                // noinspection ResultOfMethodCallIgnored
                 streamConfirmQueues.get(event.streamIndex / fetchStreamSplitFactor).offer(event);
             };
         } else {
-            confirmEventListener = event -> {};
+            confirmEventListener = event -> {
+            };
         }
 
         runAppendTask(taskIndex, streams, confirmEventListener, doneSignal, appendTaskConfig);
     }
 
-    private void runFetchTask(String taskId, List<Stream> streams, BlockingQueue<ConfirmEvent> confirmEventQueue, AtomicBoolean doneSignal, FetchTaskConfig fetchTaskConfig) throws InterruptedException, ExecutionException {
+    private void runFetchTask(String taskId, List<Stream> streams, BlockingQueue<ConfirmEvent> confirmEventQueue,
+            AtomicBoolean doneSignal, FetchTaskConfig fetchTaskConfig) throws InterruptedException, ExecutionException {
         int streamIndex = 0;
         Map<Stream, AtomicLong> confirmOffsets = new HashMap<>();
         Map<Stream, AtomicLong> nextPullOffsets = new HashMap<>();
@@ -120,7 +136,19 @@ class StreamBench {
         AtomicLong count = new AtomicLong();
         AtomicLong costNanos = new AtomicLong();
         AtomicLong throughput = new AtomicLong();
-        while (!doneSignal.get()) {
+        long start = System.currentTimeMillis();
+        while (true) {
+            if (doneSignal.get() && check_fetch_complete(nextPullOffsets, confirmOffsets)) {
+                long now = System.currentTimeMillis();
+                if (count.get() != 0 && now - lastLogTimestamp != 0) {
+                    System.out.println(now + " fetch task-" + taskId + " done with last avg="
+                            + costNanos.get() / count.get() / 1000
+                            + "us, fetchRequestCount=" + count.get() + " throughput="
+                            + (throughput.get() / 1024 * 1000 / (now - lastLogTimestamp))
+                            + "KB/s");
+                }
+                break;
+            }
             while (true) {
                 ConfirmEvent event = confirmEventQueue.poll();
                 if (event == null) {
@@ -131,13 +159,19 @@ class StreamBench {
                     confirmOffset.set(event.confirmOffset);
                 }
             }
+            if ((System.currentTimeMillis() - start) / 1000 <= fetchTaskConfig.delay) {
+                // noinspection BusyWait
+                Thread.sleep(10);
+                continue;
+            }
+
             Stream stream = streams.get(Math.abs(streamIndex++ % streams.size()));
             AtomicLong nextPullOffsetRef = nextPullOffsets.get(stream);
             long nextPullOffset = nextPullOffsetRef.get();
             long confirmOffset = confirmOffsets.get(stream).get();
             if (confirmOffset == nextPullOffset) {
                 if (++emptyRound > streams.size()) {
-                    //noinspection BusyWait
+                    // noinspection BusyWait
                     Thread.sleep(10);
                     emptyRound = 0;
                 }
@@ -148,7 +182,8 @@ class StreamBench {
             emptyRound = 0;
             long costNanosValue = costNanos.addAndGet(System.nanoTime() - startNanos);
             long countValue = count.incrementAndGet();
-            long fetchResultSize = fetchResult.recordBatchList().stream().mapToLong(r -> r.rawPayload().remaining()).sum();
+            long fetchResultSize = fetchResult.recordBatchList().stream().mapToLong(r -> r.rawPayload().remaining())
+                    .sum();
             long throughputValue = throughput.addAndGet(fetchResultSize);
 
             RecordBatchWithContext last = fetchResult.recordBatchList().get(fetchResult.recordBatchList().size() - 1);
@@ -158,7 +193,9 @@ class StreamBench {
             long now = System.currentTimeMillis();
             if (now - lastLogTimestamp > 1000) {
                 if (countValue != 0) {
-                    System.out.println(now + " fetch task-" + taskId + " avg=" + costNanosValue / countValue / 1000 + "us, fetchRequestCount=" + countValue + " throughput=" + (throughputValue / 1024) + "KB/s");
+                    System.out.println(now + " fetch task-" + taskId + " avg=" + costNanosValue / countValue / 1000
+                            + "us, fetchRequestCount=" + countValue + " throughput=" + (throughputValue / 1024)
+                            + "KB/s");
                     costNanos.set(0);
                     count.set(0);
                     throughput.set(0);
@@ -168,11 +205,23 @@ class StreamBench {
         }
     }
 
-    private void runAppendTask(int taskIndex, List<Stream> streams, Consumer<ConfirmEvent> confirmEventListener, AtomicBoolean doneSignal, AppendTaskConfig appendTaskConfig) {
+    private boolean check_fetch_complete(Map<Stream, AtomicLong> nextPullOffsets,
+            Map<Stream, AtomicLong> confirmOffsets) {
+        for (Map.Entry<Stream, AtomicLong> entry : nextPullOffsets.entrySet()) {
+            if (entry.getValue().get() != confirmOffsets.get(entry.getKey()).get()) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private void runAppendTask(int taskIndex, List<Stream> streams, Consumer<ConfirmEvent> confirmEventListener,
+            AtomicBoolean doneSignal, AppendTaskConfig appendTaskConfig) {
         System.out.println("append task-" + taskIndex + " start");
         int streamIndex = 0;
         ByteBuffer payload = ByteBuffer.wrap(new byte[appendTaskConfig.recordSize]);
-        int intervalNanos = 1000 * 1000 * 1000 / (Math.max(appendTaskConfig.throughput / appendTaskConfig.recordSize, 1));
+        int intervalNanos = 1000 * 1000 * 1000
+                / (Math.max(appendTaskConfig.throughput / appendTaskConfig.recordSize, 1));
         long lastTimestamp = System.nanoTime();
         long lastLogTimestamp = System.currentTimeMillis();
         long taskStartTimestamp = System.currentTimeMillis();
@@ -200,11 +249,12 @@ class StreamBench {
                 long costNanosValue = costNanos.getAndSet(0);
                 long maxCostNanoValue = maxCostNanos.getAndSet(0);
                 if (countValue != 0) {
-                    System.out.println(now + " append task-" + taskIndex + " avg=" + costNanosValue / countValue / 1000 + "us, max=" + maxCostNanoValue / 1000 + "us, count=" + countValue + " throughput=" + (countValue * appendTaskConfig.recordSize / 1024) + "KB/s");
+                    System.out.println(now + " append task-" + taskIndex + " avg=" + costNanosValue / countValue / 1000
+                            + "us, max=" + maxCostNanoValue / 1000 + "us, count=" + countValue + " throughput="
+                            + (countValue * appendTaskConfig.recordSize / 1024) + "KB/s");
                 }
                 lastLogTimestamp = now;
             }
-
 
             int currentStreamIndex = Math.abs(streamIndex++ % appendTaskConfig.streamCount);
             Stream stream = streams.get(currentStreamIndex);
@@ -221,7 +271,8 @@ class StreamBench {
                             maxCostNanos.compareAndSet(maxCost, cost);
                         }
 
-                        confirmEventListener.accept(new ConfirmEvent(stream, currentStreamIndex, rst.baseOffset() + 10));
+                        confirmEventListener
+                                .accept(new ConfirmEvent(stream, currentStreamIndex, rst.baseOffset() + 10));
                     });
         }
         doneSignal.set(true);
@@ -247,7 +298,8 @@ class StreamBench {
         public final int replicaCount;
         public final int taskCount;
 
-        public AppendTaskConfig(int throughput, int recordSize, long duration, int streamCount, int replicaCount, int appendTaskCount) {
+        public AppendTaskConfig(int throughput, int recordSize, long duration, int streamCount, int replicaCount,
+                int appendTaskCount) {
             this.throughput = throughput;
             this.recordSize = recordSize;
             this.duration = duration;
@@ -258,11 +310,13 @@ class StreamBench {
 
         public static AppendTaskConfig parse(String str) {
             if (str == null || str.isEmpty()) {
-                throw new IllegalArgumentException("invalid config: " + str + ", should be throughput(MB),recordSize(byte),duration(minute),threadCount,streamCountPerThread,replicaCount");
+                throw new IllegalArgumentException("invalid config: " + str
+                        + ", should be throughput(MB),recordSize(byte),duration(minute),threadCount,streamCountPerThread,replicaCount");
             }
             String[] parts = str.split(",");
             if (parts.length != 6) {
-                throw new IllegalArgumentException("invalid config: " + str + ", should be throughput(MB),recordSize(byte),duration(minute),threadCount,streamCountPerThread,replicaCount");
+                throw new IllegalArgumentException("invalid config: " + str
+                        + ", should be throughput(MB),recordSize(byte),duration(minute),threadCount,streamCountPerThread,replicaCount");
             }
             int throughput = Integer.parseInt(parts[0].split("=")[1]) * 1024 * 1024; // MB to byte
             int recordSize = Integer.parseInt(parts[1].split("=")[1]); // byte
@@ -270,17 +324,20 @@ class StreamBench {
             int appendTaskCount = Integer.parseInt(parts[3].split("=")[1]);
             int streamCount = Integer.parseInt(parts[4].split("=")[1]);
             int replicaCount = Integer.parseInt(parts[5].split("=")[1]);
-            return new AppendTaskConfig(throughput / appendTaskCount, recordSize, duration, streamCount, replicaCount, appendTaskCount);
+            return new AppendTaskConfig(throughput / appendTaskCount, recordSize, duration, streamCount, replicaCount,
+                    appendTaskCount);
         }
     }
 
     static class FetchTaskConfig {
         private final int fetchSize; // byte
         private final int taskCount;
+        private final int delay; // secs
 
-        public FetchTaskConfig(int fetchSize, int taskCount) {
+        public FetchTaskConfig(int fetchSize, int taskCount, int delay) {
             this.fetchSize = fetchSize;
             this.taskCount = taskCount;
+            this.delay = delay;
         }
 
         public boolean isFetchOn() {
@@ -289,15 +346,18 @@ class StreamBench {
 
         public static FetchTaskConfig parse(String str) {
             if (str == null || str.isEmpty()) {
-                throw new IllegalArgumentException("invalid config: " + str + ", should be fetchSize(byte),fetchTaskCount(the fetchTaskCount must be a multiple of appendTaskCount)");
+                throw new IllegalArgumentException("invalid config: " + str
+                        + ", should be fetchSize(byte),fetchTaskCount(the fetchTaskCount must be a multiple of appendTaskCount)");
             }
             String[] parts = str.split(",");
-            if (parts.length != 2) {
-                throw new IllegalArgumentException("invalid config: " + str + ", should be fetchSize(byte),fetchTaskCount(the fetchTaskCount must be a multiple of appendTaskCount)");
+            if (parts.length != 3) {
+                throw new IllegalArgumentException("invalid config: " + str
+                        + ", should be fetchSize(byte),fetchTaskCount(the fetchTaskCount must be a multiple of appendTaskCount),delay(seconds)");
             }
             int fetchSize = Integer.parseInt(parts[0].split("=")[1]);
             int taskCount = Integer.parseInt(parts[1].split("=")[1]);
-            return new FetchTaskConfig(fetchSize, taskCount);
+            int delay = Integer.parseInt(parts[2].split("=")[1]);
+            return new FetchTaskConfig(fetchSize, taskCount, delay);
         }
     }
 }
