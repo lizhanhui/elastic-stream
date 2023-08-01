@@ -54,8 +54,12 @@ var (
 			},
 		},
 		rpcfb.OperationCodeLIST_RANGE: {
-			newReq:  func() protocol.InRequest { return &protocol.ListRangeRequest{} },
-			newResp: func() protocol.OutResponse { return &protocol.ListRangeResponse{} },
+			newReq: func() protocol.InRequest { return &protocol.ListRangeRequest{} },
+			newResp: func() protocol.OutResponse {
+				resp := &protocol.ListRangeResponse{}
+				resp.Ranges = make([]*rpcfb.RangeT, 0)
+				return resp
+			},
 			act: func(handler Handler, req protocol.InRequest, resp protocol.OutResponse) {
 				handler.ListRange(req.(*protocol.ListRangeRequest), resp.(*protocol.ListRangeResponse))
 			},
@@ -110,8 +114,13 @@ var (
 			},
 		},
 		rpcfb.OperationCodeDESCRIBE_PLACEMENT_DRIVER: {
-			newReq:  func() protocol.InRequest { return &protocol.DescribePDClusterRequest{} },
-			newResp: func() protocol.OutResponse { return &protocol.DescribePDClusterResponse{} },
+			newReq: func() protocol.InRequest { return &protocol.DescribePDClusterRequest{} },
+			newResp: func() protocol.OutResponse {
+				resp := &protocol.DescribePDClusterResponse{}
+				resp.Cluster = &rpcfb.PlacementDriverClusterT{}
+				resp.Cluster.Nodes = make([]*rpcfb.PlacementDriverNodeT, 0)
+				return resp
+			},
 			act: func(handler Handler, req protocol.InRequest, resp protocol.OutResponse) {
 				handler.DescribePDCluster(req.(*protocol.DescribePDClusterRequest), resp.(*protocol.DescribePDClusterResponse))
 			},
@@ -124,15 +133,23 @@ var (
 			},
 		},
 		rpcfb.OperationCodeLIST_RESOURCE: {
-			newReq:  func() protocol.InRequest { return &protocol.ListResourceRequest{} },
-			newResp: func() protocol.OutResponse { return &protocol.ListResourceResponse{} },
+			newReq: func() protocol.InRequest { return &protocol.ListResourceRequest{} },
+			newResp: func() protocol.OutResponse {
+				resp := &protocol.ListResourceResponse{}
+				resp.Resources = make([]*rpcfb.ResourceT, 0)
+				return resp
+			},
 			act: func(handler Handler, req protocol.InRequest, resp protocol.OutResponse) {
 				handler.ListResource(req.(*protocol.ListResourceRequest), resp.(*protocol.ListResourceResponse))
 			},
 		},
 		rpcfb.OperationCodeWATCH_RESOURCE: {
-			newReq:  func() protocol.InRequest { return &protocol.WatchResourceRequest{} },
-			newResp: func() protocol.OutResponse { return &protocol.WatchResourceResponse{} },
+			newReq: func() protocol.InRequest { return &protocol.WatchResourceRequest{} },
+			newResp: func() protocol.OutResponse {
+				resp := &protocol.WatchResourceResponse{}
+				resp.Events = make([]*rpcfb.ResourceEventT, 0)
+				return resp
+			},
 			act: func(handler Handler, req protocol.InRequest, resp protocol.OutResponse) {
 				handler.WatchResource(req.(*protocol.WatchResourceRequest), resp.(*protocol.WatchResourceResponse))
 			},

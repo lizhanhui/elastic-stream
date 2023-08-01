@@ -634,7 +634,7 @@ fn mock_range() -> ResourceT {
     let mut owner = OffloadOwnerT::default();
     owner.server_id = 42;
     owner.epoch = 1;
-    range.offload_owner = Box::new(owner);
+    range.offload_owner = Some(Box::new(owner));
     let mut range_t = ResourceT::default();
     range_t.type_ = ResourceType::RANGE;
     range_t.range = Some(Box::new(range));

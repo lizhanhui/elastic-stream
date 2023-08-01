@@ -149,9 +149,6 @@ type ListRangeResponse struct {
 }
 
 func (lr *ListRangeResponse) marshalFlatBuffer() ([]byte, error) {
-	if lr.Ranges == nil {
-		lr.Ranges = make([]*rpcfb.RangeT, 0)
-	}
 	return fbutil.Marshal(&lr.ListRangeResponseT), nil
 }
 
@@ -392,9 +389,6 @@ type ListResourceResponse struct {
 }
 
 func (lr *ListResourceResponse) marshalFlatBuffer() ([]byte, error) {
-	if lr.Resources == nil {
-		lr.Resources = make([]*rpcfb.ResourceT, 0)
-	}
 	return fbutil.Marshal(&lr.ListResourceResponseT), nil
 }
 
@@ -419,9 +413,6 @@ type WatchResourceResponse struct {
 }
 
 func (wr *WatchResourceResponse) marshalFlatBuffer() ([]byte, error) {
-	if wr.Events == nil {
-		wr.Events = make([]*rpcfb.ResourceEventT, 0)
-	}
 	return fbutil.Marshal(&wr.WatchResourceResponseT), nil
 }
 

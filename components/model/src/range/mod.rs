@@ -71,7 +71,8 @@ pub struct RangeMetadata {
     ack_count: u8,
 
     /// The owner of the range which offloads the data to the object storage.
-    offload_owner: OffloadOwner,
+    /// If [`replica`] is empty, [`offload_owner`] will be None.
+    offload_owner: Option<OffloadOwner>,
 }
 
 impl RangeMetadata {
@@ -86,10 +87,10 @@ impl RangeMetadata {
             replica: vec![],
             replica_count: 0,
             ack_count: 0,
-            offload_owner: OffloadOwner {
+            offload_owner: Some(OffloadOwner {
                 server_id: 0,
                 epoch: 0,
-            },
+            }),
         }
     }
 
@@ -111,10 +112,10 @@ impl RangeMetadata {
             replica: vec![],
             replica_count,
             ack_count,
-            offload_owner: OffloadOwner {
+            offload_owner: Some(OffloadOwner {
                 server_id: 0,
                 epoch: 0,
-            },
+            }),
         }
     }
 
@@ -172,7 +173,7 @@ impl RangeMetadata {
         self.ack_count
     }
 
-    pub fn offload_owner(&self) -> &OffloadOwner {
+    pub fn offload_owner(&self) -> &Option<OffloadOwner> {
         &self.offload_owner
     }
 
@@ -222,7 +223,10 @@ impl From<&RangeMetadata> for RangeT {
         }
         range.replica_count = value.replica_count as i8;
         range.ack_count = value.ack_count as i8;
-        range.offload_owner = Box::new(OffloadOwnerT::from(&value.offload_owner));
+        range.offload_owner = value
+            .offload_owner
+            .as_ref()
+            .map(|o| Box::new(OffloadOwnerT::from(o)));
         range
     }
 }
@@ -247,7 +251,10 @@ impl From<&RangeT> for RangeMetadata {
             replica,
             replica_count: value.replica_count as u8,
             ack_count: value.ack_count as u8,
-            offload_owner: OffloadOwner::from(&*value.offload_owner),
+            offload_owner: value
+                .offload_owner
+                .as_ref()
+                .map(|o| OffloadOwner::from(o.as_ref())),
         }
     }
 }

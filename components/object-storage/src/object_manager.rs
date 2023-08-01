@@ -334,21 +334,26 @@ where
                 let mut metadata = metadata.borrow_mut();
                 let key = RangeKey::new(range.stream_id() as u64, range.index() as u32);
                 if range.held_by(server_id) {
-                    let objects = metadata.offloading.entry(key).or_default();
-                    objects.owner = range.offload_owner().server_id == server_id;
-                    objects.epoch = range.offload_owner().epoch as u16;
-                    objects.start_offset = range.start();
+                    if let Some(owner) = range.offload_owner() {
+                        let objects = metadata.offloading.entry(key).or_default();
+                        objects.owner = owner.server_id == server_id;
+                        objects.epoch = owner.epoch as u16;
+                        objects.start_offset = range.start();
 
-                    // send owner change event
-                    let owner = objects.owner();
-                    metadata.owner_event_senders.retain(|sender| {
-                        sender
-                            .send(OwnerEvent {
-                                range_key: key,
-                                owner,
-                            })
-                            .is_ok()
-                    });
+                        // send owner change event
+                        let owner = objects.owner();
+                        metadata.owner_event_senders.retain(|sender| {
+                            sender
+                                .send(OwnerEvent {
+                                    range_key: key,
+                                    owner,
+                                })
+                                .is_ok()
+                        });
+                    } else {
+                        // Skip if the owner is none, which should not happen.
+                        log::warn!("range {key:?} has no owner");
+                    }
                 } else {
                     _ = metadata.other.entry(key).or_default();
                 }
@@ -831,7 +836,7 @@ mod tests {
             let mut offload_owner_t = OffloadOwnerT::default();
             offload_owner_t.server_id = 42;
             offload_owner_t.epoch = 3;
-            range_t.offload_owner = Box::new(offload_owner_t);
+            range_t.offload_owner = Some(Box::new(offload_owner_t));
             tx.send(Ok(ResourceEvent {
                 event_type: EventType::LISTED,
                 resource: Resource::Range(RangeMetadata::from(&range_t)),
