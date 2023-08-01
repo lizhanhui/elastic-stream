@@ -513,6 +513,7 @@ func preHeartbeat(tb testing.TB, h *Handler, serverID int32) {
 		RangeServer: &rpcfb.RangeServerT{
 			ServerId:      serverID,
 			AdvertiseAddr: fmt.Sprintf("addr-%d", serverID),
+			State:         rpcfb.RangeServerStateRANGE_SERVER_STATE_READ_WRITE,
 		}}}
 	resp := &protocol.HeartbeatResponse{}
 
@@ -633,7 +634,11 @@ func fmtRangeServers(r *rpcfb.RangeT) {
 }
 
 func fillRangeInfo(r *rpcfb.RangeT) {
-	r.Servers = []*rpcfb.RangeServerT{{ServerId: 0}, {ServerId: 1}, {ServerId: 2}}
+	r.Servers = []*rpcfb.RangeServerT{
+		{ServerId: 0, State: rpcfb.RangeServerStateRANGE_SERVER_STATE_READ_WRITE},
+		{ServerId: 1, State: rpcfb.RangeServerStateRANGE_SERVER_STATE_READ_WRITE},
+		{ServerId: 2, State: rpcfb.RangeServerStateRANGE_SERVER_STATE_READ_WRITE},
+	}
 	r.ReplicaCount = 3
 	r.AckCount = 3
 }

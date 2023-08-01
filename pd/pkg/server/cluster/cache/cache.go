@@ -101,22 +101,28 @@ func (c *Cache) RangeServer(serverID int32) *RangeServer {
 	return rangeServer
 }
 
-// ActiveRangeServers returns all active range servers which are not in the blacklist.
-func (c *Cache) ActiveRangeServers(timeout time.Duration, blackServerIDs map[int32]struct{}) []*RangeServer {
-	rangeServers := make([]*RangeServer, 0)
+// ActiveRangeServers returns all active range servers.
+// It returns two lists, the first one is the white list, the second one is the gray list.
+func (c *Cache) ActiveRangeServers(timeout time.Duration, grayServerIDs map[int32]struct{}) (white []*RangeServer, gray []*RangeServer) {
+	white = make([]*RangeServer, 0)
+	gray = make([]*RangeServer, 0)
 	c.rangeServers.IterCb(func(_ int32, rangeServer *RangeServer) {
 		if rangeServer.LastActiveTime.IsZero() || time.Since(rangeServer.LastActiveTime) > timeout {
+			return
+		}
+		if rangeServer.RangeServerT.State != rpcfb.RangeServerStateRANGE_SERVER_STATE_READ_WRITE {
 			return
 		}
 		if rangeServer.Metrics != nil && rangeServer.Metrics.DiskFreeSpace == 0 {
 			return
 		}
-		if _, ok := blackServerIDs[rangeServer.ServerId]; ok {
-			return
+		if _, ok := grayServerIDs[rangeServer.ServerId]; ok {
+			gray = append(gray, rangeServer)
+		} else {
+			white = append(white, rangeServer)
 		}
-		rangeServers = append(rangeServers, rangeServer)
 	})
-	return rangeServers
+	return
 }
 
 // RangeServerCount returns the count of range servers in the cache.
@@ -126,5 +132,6 @@ func (c *Cache) RangeServerCount() int {
 
 func isRangeServerEqual(a, b rpcfb.RangeServerT) bool {
 	return a.ServerId == b.ServerId &&
-		a.AdvertiseAddr == b.AdvertiseAddr
+		a.AdvertiseAddr == b.AdvertiseAddr &&
+		a.State == b.State
 }

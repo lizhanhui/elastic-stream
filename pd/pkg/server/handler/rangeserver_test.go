@@ -22,6 +22,7 @@ func TestHandler_Heartbeat(t *testing.T) {
 		RangeServer: &rpcfb.RangeServerT{
 			ServerId:      42,
 			AdvertiseAddr: fmt.Sprintf("addr-%d", 42),
+			State:         rpcfb.RangeServerStateRANGE_SERVER_STATE_READ_WRITE,
 		}}}
 	resp := &protocol.HeartbeatResponse{}
 	h.Heartbeat(req, resp)

@@ -1,6 +1,7 @@
 package cache
 
 import (
+	"reflect"
 	"testing"
 
 	"github.com/brianvoe/gofakeit/v6"
@@ -20,6 +21,9 @@ func Test_isRangeServerEqual(t *testing.T) {
 
 	rangeServer2.ServerId = rangeServer1.ServerId
 	rangeServer2.AdvertiseAddr = rangeServer1.AdvertiseAddr
+	rangeServer2.State = rangeServer1.State
 
+	// If this test fails, please update the `isRangeServerEqual` function
+	re.True(reflect.DeepEqual(rangeServer1, rangeServer2))
 	re.True(isRangeServerEqual(rangeServer1, rangeServer2))
 }

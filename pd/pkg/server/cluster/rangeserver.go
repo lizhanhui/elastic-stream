@@ -90,31 +90,31 @@ func (c *RaftCluster) Metrics(ctx context.Context, rangeServer *rpcfb.RangeServe
 }
 
 // chooseRangeServers selects `cnt` number of range servers from the available range servers for a range.
-// If `blackServerIDs` is not nil, the range servers with the ids in `blackServerIDs` will not be selected, unless there are no other available range servers.
+// If `grayServerIDs` is not nil, the range servers with the ids in `grayServerIDs` will not be selected, unless there are no other available range servers.
 // Only RangeServerT.ServerId is filled in the returned RangeServerT.
 // It returns ErrNotEnoughRangeServers if there are not enough range servers to allocate.
-func (c *RaftCluster) chooseRangeServers(cnt int, blackServerIDs map[int32]struct{}) ([]*rpcfb.RangeServerT, error) {
+func (c *RaftCluster) chooseRangeServers(cnt int, grayServerIDs map[int32]struct{}) ([]*rpcfb.RangeServerT, error) {
 	if cnt <= 0 {
 		return nil, nil
 	}
 
 	chose := make([]*rpcfb.RangeServerT, 0, cnt)
-	rangeServers := c.cache.ActiveRangeServers(c.cfg.RangeServerTimeout, blackServerIDs)
+	wRangeServers, gRangeServers := c.cache.ActiveRangeServers(c.cfg.RangeServerTimeout, grayServerIDs)
 
-	// If there are not enough range servers, use the black list.
-	for k := range blackServerIDs {
-		if cnt > len(rangeServers) {
+	if cnt > len(wRangeServers)+len(gRangeServers) {
+		return nil, errors.Wrapf(ErrNotEnoughRangeServers, "required %d, available %d", cnt, len(wRangeServers)+len(gRangeServers))
+	}
+
+	// If there are not enough range servers, use the gray list.
+	for _, rs := range gRangeServers {
+		if cnt > len(wRangeServers) {
 			chose = append(chose, &rpcfb.RangeServerT{
-				ServerId: k,
+				ServerId: rs.ServerId,
 			})
 			cnt--
 		} else {
 			break
 		}
-	}
-	// After using the black list, there are still not enough range servers.
-	if cnt > len(rangeServers) {
-		return nil, errors.Wrapf(ErrNotEnoughRangeServers, "required %d, available %d", cnt, len(rangeServers))
 	}
 
 	// TODO: use a better algorithm to choose range servers
@@ -137,9 +137,9 @@ func (c *RaftCluster) chooseRangeServers(cnt int, blackServerIDs map[int32]struc
 	// round-robin
 	idx := c.rangeServerIdx.Add(uint64(cnt))
 	for i := 0; i < cnt; i++ {
-		serverIdx := (idx - uint64(i)) % uint64(len(rangeServers))
+		serverIdx := (idx - uint64(i)) % uint64(len(wRangeServers))
 		chose = append(chose, &rpcfb.RangeServerT{
-			ServerId: rangeServers[serverIdx].ServerId,
+			ServerId: wRangeServers[serverIdx].ServerId,
 		})
 	}
 
@@ -162,17 +162,14 @@ func (c *RaftCluster) fillRangeServerInfo(rangeServer *rpcfb.RangeServerT) {
 		return
 	}
 	rangeServer.AdvertiseAddr = rs.AdvertiseAddr
+	rangeServer.State = rs.State
 }
 
-func eraseRangeServersInfo(o []*rpcfb.RangeServerT) (rs []*rpcfb.RangeServerT) {
-	if o == nil {
-		return
-	}
-	rs = make([]*rpcfb.RangeServerT, len(o))
-	for i, rangeServer := range o {
-		rs[i] = &rpcfb.RangeServerT{
-			ServerId: rangeServer.ServerId,
-			State:    rangeServer.State,
+func eraseRangeServersInfo(in []*rpcfb.RangeServerT) (out []*rpcfb.RangeServerT) {
+	out = make([]*rpcfb.RangeServerT, len(in))
+	for i, rs := range in {
+		out[i] = &rpcfb.RangeServerT{
+			ServerId: rs.ServerId,
 		}
 	}
 	return
