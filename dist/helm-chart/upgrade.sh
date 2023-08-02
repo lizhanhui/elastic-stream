@@ -12,3 +12,9 @@ helm upgrade --force range-server range-server \
     --reuse-values \
     --kubeconfig ./config \
     --wait --timeout 10m
+
+helm upgrade --force long-running long-running \
+    -n elastic-stream-long-running \
+    --reuse-values \
+    --kubeconfig ./config \
+    --wait --timeout 10m

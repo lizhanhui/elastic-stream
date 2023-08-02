@@ -1,0 +1,79 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "long-running.fullname" . }}
+  labels:
+    {{- include "long-running.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "long-running.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "long-running.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      initContainers:
+        - name: sysctl
+          image: busybox
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command:
+            - /bin/sh
+            - -c
+            - |
+              sysctl fs.inotify.max_user_instances=8192
+          securityContext:
+            privileged: true
+      containers:
+        - name: {{ .Chart.Name }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            - name: END_POINT
+              value: "{{ .Values.longRunning.endPoint }}"
+            - name: KV_END_POINT
+              value: "{{ .Values.longRunning.kvEndPoint }}"
+            - name: REPLICA_COUNT
+              value: "{{ .Values.longRunning.replicaCount }}"
+            - name: APPEND_INTERVAL
+              value: "{{ .Values.longRunning.appendInterval }}"
+            - name: PAYLOAD_SIZE_MIN
+              value: "{{ .Values.longRunning.payloadSizeMin }}"
+            - name: PAYLOAD_SIZE_MAX
+              value: "{{ .Values.longRunning.payloadSizeMax }}"
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          {{- if .Values.promtail.promtailSidecar }}
+          volumeMounts:
+            - name: client-log
+              mountPath: /logs
+          {{- end }}
+        {{- if .Values.promtail.promtailSidecar }}
+        - name: protail
+          image: grafana/promtail:main
+          args:
+            - "-config.expand-env=true"
+            - "-config.file=/etc/promtail/promtail.yaml"
+            - "-client.url={{ .Values.promtail.clientUrl }}"
+          env:
+            - name: NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          volumeMounts:
+            - name: client-log
+              mountPath: /logs
+            - name: client-promtail-config
+              mountPath: /etc/promtail
+      volumes:
+        - name: client-log
+          emptyDir: {}
+        - name: client-promtail-config
+          configMap:
+            name: client-promtail-sidecar-conf
+        {{- end }}
