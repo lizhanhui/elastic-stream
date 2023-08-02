@@ -25,6 +25,7 @@ crossbeam = { workspace = true }
 ctrlc = { workspace = true }
 flatbuffers = { workspace = true }
 futures = { workspace = true }
+gethostname = { workspace = true }
 io-uring = { workspace = true }
 lazy_static = { version = "1.4.0" }
 local-sync = { workspace = true }
@@ -40,6 +41,8 @@ polling = { path = "../components/polling" }
 pprof = { workspace = true }
 prometheus = { workspace = true }
 protocol = { path = "../components/protocol" }
+pyroscope = { workspace = true }
+pyroscope_pprofrs = { workspace = true }
 replication = { path = "../components/replication" }
 serde = { workspace = true, features = ["derive"] }
 serde_yaml = { workspace = true }

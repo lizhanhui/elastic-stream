@@ -103,6 +103,9 @@ impl Default for Client {
 pub struct Profiling {
     pub enable: bool,
 
+    #[serde(rename = "server-endpoint")]
+    pub server_endpoint: String,
+
     #[serde(rename = "sampling-frequency")]
     pub sampling_frequency: i32,
 
@@ -122,6 +125,7 @@ impl Default for Profiling {
     fn default() -> Self {
         Self {
             enable: true,
+            server_endpoint: "".to_owned(),
             sampling_frequency: 1000,
             report_interval: 300,
             report_path: "flamegraph".to_owned(),

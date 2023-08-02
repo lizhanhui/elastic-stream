@@ -1,4 +1,5 @@
 use crate::{
+    built_info,
     range_manager::{
         fetcher::{DelegatePlacementClient, PlacementClient},
         manager::DefaultRangeManager,
@@ -9,6 +10,8 @@ use crate::{
 use config::Configuration;
 use log::{error, info};
 use object_storage::object_storage::AsyncObjectStorage;
+use pyroscope::PyroscopeAgent;
+use pyroscope_pprofrs::{pprof_backend, PprofConfig};
 use std::{cell::UnsafeCell, error::Error, os::fd::AsRawFd, rc::Rc, sync::Arc, thread};
 use store::{BufferedStore, ElasticStore, Store};
 
@@ -33,8 +36,44 @@ pub fn launch(
     let config = store.config();
 
     if config.server.profiling.enable {
-        crate::profiling::generate_flame_graph(Arc::clone(&config), shutdown.subscribe());
-        info!("Continuous profiling starts");
+        let server_endpoint = config.server.profiling.server_endpoint.clone();
+        if server_endpoint.is_empty() {
+            crate::profiling::generate_flame_graph(Arc::clone(&config), shutdown.subscribe());
+            info!("Continuous profiling starts, generate flame graph locally");
+        } else {
+            let hostname = gethostname::gethostname()
+                .into_string()
+                .unwrap_or(String::from("unknown"));
+
+            let mut tag_vec = vec![
+                ("hostname", hostname.as_str()),
+                ("version", built_info::PKG_VERSION),
+            ];
+
+            if let Some(commit_hash) = built_info::GIT_COMMIT_HASH {
+                tag_vec.push(("git_commit_hash", commit_hash))
+            }
+
+            if let Some(head_ref) = built_info::GIT_HEAD_REF {
+                tag_vec.push(("git_head_ref", head_ref))
+            }
+
+            PyroscopeAgent::builder(
+                server_endpoint.clone(),
+                "elastic-stream.range-server".to_string(),
+            )
+            .backend(pprof_backend(
+                PprofConfig::new()
+                    .sample_rate(config.server.profiling.sampling_frequency as u32)
+                    .report_thread_name(),
+            ))
+            .tags(tag_vec)
+            .build()
+            .expect("build pyroscope agent failed")
+            .start()
+            .expect("start pyroscope agent failed");
+            info!("Continuous profiling starts, report to {}", server_endpoint);
+        }
     }
 
     // Load object storage service

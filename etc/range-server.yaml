@@ -28,6 +28,8 @@ server:
   grace-period: 120
   profiling:
     enable: false
+    # pyroscope server endpoint
+    server-endpoint: ""
     # profiler sampling frequency
     sampling-frequency: 1000
     # Generate flamegraph interval in seconds
