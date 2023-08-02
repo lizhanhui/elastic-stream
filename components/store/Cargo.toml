@@ -35,6 +35,7 @@ protocol = { path = "../protocol" }
 rand = { workspace = true }
 rocksdb = { workspace = true }
 rustc-hash = { workspace = true }
+skiplist = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 tokio-uring = { workspace = true }

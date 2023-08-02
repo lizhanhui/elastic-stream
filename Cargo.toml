@@ -123,6 +123,7 @@ local-sync = "0.1"
 tempfile = "3"
 
 lru = "0.11.0"
+skiplist = "0.5"
 
 hdrhistogram = "7.5.2"
 

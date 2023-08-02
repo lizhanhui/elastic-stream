@@ -273,6 +273,9 @@ pub struct Store {
     #[serde(rename = "max-cache-size")]
     pub max_cache_size: u64,
 
+    #[serde(rename = "cache-high-watermark")]
+    pub cache_high_watermark: usize,
+
     // Device block size
     #[serde(default)]
     pub alignment: usize,
@@ -308,6 +311,7 @@ impl Default for Store {
             path: Path::default(),
             segment_size: 1048576,
             max_cache_size: 1048576,
+            cache_high_watermark: 80,
             alignment: 4096,
             blocks: 0,
             read_block_size: 131072,
