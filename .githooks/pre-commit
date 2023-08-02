@@ -1,4 +1,5 @@
 #!/bin/sh
+set -e
 
 # Redirect output to stderr.
 exec 1>&2
@@ -16,4 +17,12 @@ if ! git diff --cached --diff-filter=ACMR --quiet -- 'components/protocol/fbs/rp
 	echo "Running flatc for Golang..."
 	(cd pd; make flatc)
 	git add pd/api/rpcfb/rpcfb
+fi
+
+# Run fmt check and clippy
+if ! git diff --cached --diff-filter=ACMR --quiet -- '*.rs'; then
+  echo "Running fmt check for Rust..."
+  cargo fmt --all -- --check
+  echo "Running clippy for Rust..."
+  cargo clippy --all-targets --features=jemalloc -- -D warnings
 fi
