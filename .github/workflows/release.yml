@@ -43,7 +43,7 @@ jobs:
             ${{matrix.platform}}-${{matrix.go-version}}-pd-
       - name: Install flatc
         run: |
-          ../scripts/try_install_flatc.sh
+          ./scripts/try_install_flatc.sh
       - name: Build Placement Driver Debian Packages
         working-directory: ./pd
         run: make all-deb GO_VERSION=${{ matrix.go-version }}
