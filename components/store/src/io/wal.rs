@@ -1,4 +1,3 @@
-use std::time::Instant;
 use std::{
     cmp,
     collections::{HashMap, VecDeque},
@@ -429,13 +428,11 @@ impl Wal {
     /// # Returns
     /// The reclaimed bytes and the current cache size.
     pub(crate) fn try_reclaim(&mut self, min_free_bytes: u32) -> (u64, u64) {
-        let timer = Instant::now();
         // Calculate the current cache size of all the segments.
         let mut cache_size = 0u64;
         for segment in self.segments.iter() {
             cache_size += segment.block_cache.cache_size() as u64;
         }
-        let calculate_cache_size_time = timer.elapsed().as_micros();
 
         // Calculate the bytes to reclaim, based on the configured `high_watermark`.
         let high_percent = Percentage::from(self.wal_cache.high_watermark);
@@ -465,14 +462,11 @@ impl Wal {
         self.segments.iter_mut().for_each(|segment| {
             let score = segment.block_cache.min_score();
             if score > 0 {
-                score_list.insert((segment, score))
+                score_list.insert((segment, score));
             }
         });
 
-        let calculate_score_time = timer.elapsed().as_micros();
-
-        // Key is the wal offset of the segment, value is the wal offset of the entry.
-        let mut to_reclaim_entries: HashMap<u64, Vec<u64>> = HashMap::new();
+        // Reclaim the cache entries from the segment with lowest score.
         loop {
             if reclaimed >= to_reclaim || score_list.is_empty() {
                 break;
@@ -482,51 +476,24 @@ impl Wal {
             let last_wal_offset = segment.block_cache.wal_offset_of_last_cache_entry();
             let entry = segment.block_cache.remove_by_score();
 
-            if entry.is_none() {
-                warn!(
-                    "try to reclaim cache entry from segment: {}, but the segment has empty cache",
-                    segment
-                );
-                continue;
-            }
-
-            let entry = entry.unwrap();
-            if entry.is_strong_referenced() {
-                continue;
-            }
-
-            // The last writable entry should not be reclaimed.
-            if segment.status == Status::ReadWrite {
-                // Skip the last writable entry.
-                if entry.wal_offset() == last_wal_offset {
-                    continue;
+            if let Some(entry) = entry {
+                // The last writable entry should not be reclaimed.
+                if segment.status == Status::ReadWrite {
+                    // Skip the last writable entry.
+                    if entry.wal_offset() == last_wal_offset {
+                        continue;
+                    }
                 }
-            }
-            let size = entry.capacity();
-            to_reclaim_entries
-                .entry(segment.wal_offset)
-                .or_default()
-                .push(entry.wal_offset());
 
-            reclaimed += size as u64;
-        }
-        drop(score_list);
+                reclaimed += entry.capacity() as u64;
 
-        let filter_entries_time = timer.elapsed().as_micros();
-
-        // Reclaim the cache entries.
-        for (segment_offset, entry_offsets) in to_reclaim_entries {
-            if let Some(segment) = self.segment_file_of(segment_offset) {
-                for entry_offset in entry_offsets {
-                    segment.block_cache.remove_by(entry_offset);
+                // put the segment into the score list if it still has cache entries.
+                let score = segment.block_cache.min_score();
+                if score > 0 {
+                    score_list.insert((segment, score));
                 }
             }
         }
-
-        let reclaim_entries_time = timer.elapsed().as_micros();
-
-        info!("try_reclaim: do reclaim total cost {:?}μs, calculate cache size cost: {:?}μs, calculate score cost: {:?}μs, filter entries cost: {:?}μs, reclaim entries cost: {:?}μs",
-            reclaim_entries_time, calculate_cache_size_time, calculate_score_time - calculate_cache_size_time, filter_entries_time - calculate_score_time, reclaim_entries_time - filter_entries_time);
 
         self.wal_cache.current_cache_size = cache_size - reclaimed;
         (

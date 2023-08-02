@@ -479,11 +479,11 @@ impl BlockCache {
             return 0;
         }
 
-        for i in 0..self.score_list.len() {
-            let entry = unsafe { &*self.score_list.get(i).unwrap().get() };
-            if !entry.is_strong_referenced() {
-                return entry.score();
-            }
+        // pending hit will refresh the score
+        // so that the front entry is strong referenced, other elements should be the same.
+        let entry = unsafe { &*self.score_list.front().unwrap().get() };
+        if !entry.is_strong_referenced() {
+            return entry.score();
         }
         0
     }
@@ -499,22 +499,12 @@ impl BlockCache {
             return None;
         }
 
-        // let mut entry_to_remove = Some(unsafe { &*self.score_list.front().unwrap().get() });
-        let mut entry_to_remove = None;
-
-        for i in 0..self.score_list.len() {
-            let entry = unsafe { &*self.score_list.get(i).unwrap().get() };
-            if !entry.is_strong_referenced() {
-                entry_to_remove = Some(entry);
-                break;
-            }
+        let entry = unsafe { &*self.score_list.front().unwrap().get() };
+        if !entry.is_strong_referenced() {
+            return self.remove_by(entry.wal_offset());
         }
 
-        if let Some(entry) = entry_to_remove {
-            self.remove_by(entry.wal_offset());
-        }
-
-        entry_to_remove
+        None
     }
 
     /// Remove a specific entry from the cache.
