@@ -1,0 +1,143 @@
+kind: Schedule
+apiVersion: chaos-mesh.org/v1alpha1
+metadata:
+  namespace: elastic-stream-long-running
+  name: range-server-network-duplicate
+spec:
+  schedule: 0 * * * *
+  startingDeadlineSeconds: null
+  concurrencyPolicy: Forbid
+  historyLimit: 1
+  type: NetworkChaos
+  networkChaos:
+    selector:
+      namespaces:
+        - elastic-stream-long-running
+      labelSelectors:
+        app.kubernetes.io/name: long-running
+    mode: one
+    action: duplicate
+    duration: 5m
+    duplicate:
+      duplicate: '50'
+      correlation: '100'
+    direction: to
+---
+kind: Schedule
+apiVersion: chaos-mesh.org/v1alpha1
+metadata:
+  namespace: elastic-stream-long-running
+  name: range-server-network-delay
+spec:
+  schedule: 10 * * * *
+  startingDeadlineSeconds: null
+  concurrencyPolicy: Forbid
+  historyLimit: 1
+  type: NetworkChaos
+  networkChaos:
+    selector:
+      namespaces:
+        - elastic-stream-long-running
+      labelSelectors:
+        app.kubernetes.io/name: range-server
+    mode: one
+    action: delay
+    duration: 5m
+    delay:
+      latency: 100ms
+      correlation: '100'
+      jitter: 0ms
+    direction: to
+---
+kind: Schedule
+apiVersion: chaos-mesh.org/v1alpha1
+metadata:
+  namespace: elastic-stream-long-running
+  name: range-server-pod-failure
+spec:
+  schedule: '20 * * * *'
+  startingDeadlineSeconds: null
+  concurrencyPolicy: Forbid
+  historyLimit: 1
+  type: PodChaos
+  podChaos:
+    selector:
+      namespaces:
+        - elastic-stream-long-running
+      labelSelectors:
+        app.kubernetes.io/name: range-server
+    mode: one
+    action: pod-failure
+    duration: 5m
+---
+kind: Schedule
+apiVersion: chaos-mesh.org/v1alpha1
+metadata:
+  namespace: elastic-stream-long-running
+  name: range-server-network-loss
+spec:
+  schedule: '30 * * * *'
+  startingDeadlineSeconds: null
+  concurrencyPolicy: Forbid
+  historyLimit: 1
+  type: NetworkChaos
+  networkChaos:
+    selector:
+      namespaces:
+        - elastic-stream-long-running
+      labelSelectors:
+        app.kubernetes.io/name: range-server
+    mode: one
+    action: loss
+    duration: 5m
+    loss:
+      loss: '50'
+      correlation: '100'
+    direction: to
+---
+kind: Schedule
+apiVersion: chaos-mesh.org/v1alpha1
+metadata:
+  namespace: elastic-stream-long-running
+  name: range-server-network-partion
+spec:
+  schedule: '40 * * * *'
+  startingDeadlineSeconds: null
+  concurrencyPolicy: Forbid
+  historyLimit: 1
+  type: NetworkChaos
+  networkChaos:
+    selector:
+      namespaces:
+        - elastic-stream-long-running
+      labelSelectors:
+        app.kubernetes.io/name: range-server
+    mode: one
+    action: partition
+    duration: 5m
+    direction: both
+---
+kind: Schedule
+apiVersion: chaos-mesh.org/v1alpha1
+metadata:
+  namespace: elastic-stream-long-running
+  name: range-server-network-corrupt
+spec:
+  schedule: 50 * * * *
+  startingDeadlineSeconds: null
+  concurrencyPolicy: Forbid
+  historyLimit: 1
+  type: NetworkChaos
+  networkChaos:
+    selector:
+      namespaces:
+        - elastic-stream-long-running
+      labelSelectors:
+        app.kubernetes.io/name: range-server
+    mode: one
+    action: corrupt
+    duration: 5m
+    corrupt:
+      corrupt: '50'
+      correlation: '100'
+    direction: to

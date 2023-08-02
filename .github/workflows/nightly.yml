@@ -113,3 +113,16 @@ jobs:
           KUBE_CONFIG_DATA: ${{ secrets.DEV_KUBE_CONFIG_DATA }}
         run: |
           ./upgrade.sh
+
+  upgrade-chaos-mesh:
+    name: Upgrade chaos mesh on private k3s
+    runs-on: private-k3s
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      - name: Upgrade chaos-mesh
+        working-directory: ./dist/chaos-mesh
+        env:
+          KUBE_CONFIG_DATA: ${{ secrets.DEV_KUBE_CONFIG_DATA }}
+        run: |
+          ./upgrade.sh
