@@ -14,7 +14,11 @@ pub struct Args {
     #[arg(short, long, default_value_t = 4096)]
     pub bs: u16,
 
+    /// I/O size in block-size
+    #[arg(short, long, default_value_t = 64)]
+    pub io_size: usize,
+
     /// File size in Gigabytes
     #[arg(short, long, default_value_t = 1)]
-    pub size: usize,
+    pub file_size: usize,
 }

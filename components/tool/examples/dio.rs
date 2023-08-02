@@ -65,7 +65,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         eprintln!("TSC is NOT available");
     }
 
-    let file_size = args.size * 1024 * 1024 * 1024;
+    let file_size = args.file_size * 1024 * 1024 * 1024;
 
     let mut control_ring = io_uring::IoUring::builder()
         .dontfork()
@@ -80,7 +80,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let file_path = args.path;
     let c_file_path = CString::new(file_path.clone()).unwrap();
     let sqe = opcode::OpenAt::new(types::Fd(libc::AT_FDCWD), c_file_path.as_ptr())
-        .flags(libc::O_CREAT | libc::O_RDWR | libc::O_DIRECT | libc::O_DSYNC)
+        .flags(libc::O_CREAT | libc::O_RDWR | libc::O_DIRECT)
         .mode(libc::S_IRWXU | libc::S_IRWXG)
         .build()
         .user_data(0);
@@ -126,7 +126,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         .build(args.qd)?;
 
     let alignment = args.bs as usize;
-    let buf_size = alignment * 4;
+    let buf_size = alignment * args.io_size;
 
     let layout = Layout::from_size_align(buf_size, alignment)?;
     let ptr = unsafe { alloc::alloc(layout) };
@@ -175,7 +175,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             writes += 1;
         }
 
-        let _ = uring.submit_and_wait(1)?;
+        let _ = uring.submit_and_wait(0)?;
 
         let mut cq = uring.completion();
         loop {
