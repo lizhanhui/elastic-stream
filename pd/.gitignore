@@ -28,3 +28,7 @@
 /covprofile
 /.distribution
 /distribution/*.deb
+/.flatc
+
+# Generated Golang files
+/api/rpcfb/rpcfb

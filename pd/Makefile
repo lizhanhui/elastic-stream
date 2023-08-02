@@ -199,7 +199,7 @@ $(STAMPS): go-build
 	fi
 
 # This runs the actual `go build` which updates all binaries.
-go-build: | $(BUILD_DIRS)
+go-build: .flatc | $(BUILD_DIRS)
 	echo "# building for $(OS)/$(ARCH)"
 	docker run                                                  \
 	    -i                                                      \
@@ -225,7 +225,7 @@ go-build: | $(BUILD_DIRS)
 
 # Example: make shell CMD="-c 'date > datefile'"
 shell: # @HELP launches a shell in the containerized build environment
-shell: | $(BUILD_DIRS)
+shell: .flatc | $(BUILD_DIRS)
 	echo "# launching a shell in the containerized build environment"
 	docker run                                                  \
 	    -ti                                                     \
@@ -251,7 +251,7 @@ shell: | $(BUILD_DIRS)
 
 LICENSES = .licenses
 
-$(LICENSES): | $(BUILD_DIRS)
+$(LICENSES): .flatc | $(BUILD_DIRS)
 	# Don't assume that `go` is available locally.
 	docker run                                 \
 	    -i                                     \
@@ -453,7 +453,7 @@ version:
 	echo $(VERSION)
 
 test: # @HELP runs tests, as defined in ./build/test.sh
-test: | $(BUILD_DIRS)
+test: .flatc | $(BUILD_DIRS)
 	docker run                                                  \
 	    -i                                                      \
 	    --rm                                                    \
@@ -478,7 +478,7 @@ test: | $(BUILD_DIRS)
 	    ./build/test.sh ./...
 
 lint: # @HELP runs golangci-lint
-lint: | $(BUILD_DIRS)
+lint: .flatc | $(BUILD_DIRS)
 	docker run                                                  \
 	    -i                                                      \
 	    --rm                                                    \
@@ -526,7 +526,9 @@ fmt: | $(BUILD_DIRS)
 	    ./build/fmt.sh
 
 flatc: # @HELP runs flatc to generate go code from flatbuffers schema
-flatc:
+flatc: .flatc
+
+.flatc: $(shell find $$(pwd)/../components/protocol/fbs -type f)
 	if [ -z "$(FLATC)" ]; then \
 	    echo "flatc not found"; \
 	    exit 1; \
@@ -542,12 +544,13 @@ flatc:
 	    --gen-compare \
 	    -o $$(pwd)/api/rpcfb \
 	    $$(pwd)/../components/protocol/fbs/rpc.fbs
+	date > $@
 
 $(BUILD_DIRS):
 	mkdir -p $@
 
 clean: # @HELP removes built binaries and temporary files
-clean: container-clean bin-clean deb-clean
+clean: container-clean bin-clean deb-clean flatc-clean
 
 container-clean:
 	rm -rf .container-* .dockerfile-* .push-* .buildx-initialized $(LICENSES)
@@ -558,6 +561,10 @@ bin-clean:
 
 deb-clean:
 	rm -rf .distribution distribution/*.deb
+
+flatc-clean:
+	rm -f .flatc
+	rm -rf api/rpcfb/rpcfb
 
 help: # @HELP prints this message
 help:
