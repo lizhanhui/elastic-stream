@@ -156,3 +156,26 @@ func TestAll_Timeout(t *testing.T) {
 		})
 	}
 }
+
+func TestAll_LongPoll(t *testing.T) {
+	longPollReqs := map[string]struct{}{
+		reflect.TypeOf(&WatchResourceRequest{}).String(): {},
+	}
+
+	for _, req := range _inRequests {
+		req := req
+		t.Run(reflect.TypeOf(req).String(), func(t *testing.T) {
+			t.Parallel()
+			re := require.New(t)
+
+			// mock
+			err := gofakeit.Struct(req)
+			re.NoError(err)
+			if _, ok := longPollReqs[reflect.TypeOf(req).String()]; ok {
+				re.True(req.LongPoll())
+			} else {
+				re.False(req.LongPoll())
+			}
+		})
+	}
+}

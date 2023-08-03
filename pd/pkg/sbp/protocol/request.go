@@ -27,6 +27,9 @@ type request interface {
 type InRequest interface {
 	request
 	unmarshaler
+
+	// LongPoll returns true if the request is a long poll request.
+	LongPoll() bool
 }
 
 type OutRequest interface {
@@ -57,10 +60,17 @@ func (req *baseRequest) Context() context.Context {
 	return req.ctx
 }
 
+type nonLongPollRequest struct{}
+
+func (n nonLongPollRequest) LongPoll() bool {
+	return false
+}
+
 // EmptyRequest is an empty request, used for unrecognized requests
 type EmptyRequest struct {
 	baseRequest
 	baseUnmarshaler
+	nonLongPollRequest
 }
 
 func (e EmptyRequest) Unmarshal(_ codec.Format, _ []byte) error {
@@ -73,6 +83,7 @@ type HeartbeatRequest struct {
 	baseRequest
 	baseMarshaller
 	baseUnmarshaler
+	nonLongPollRequest
 
 	rpcfb.HeartbeatRequestT
 }
@@ -102,6 +113,7 @@ func (hr *HeartbeatRequest) Operation() rpcfb.OperationCode {
 type IDAllocationRequest struct {
 	baseRequest
 	baseUnmarshaler
+	nonLongPollRequest
 
 	rpcfb.IdAllocationRequestT
 }
@@ -123,6 +135,7 @@ func (ia *IDAllocationRequest) Timeout() int32 {
 type ListRangeRequest struct {
 	baseRequest
 	baseUnmarshaler
+	nonLongPollRequest
 
 	rpcfb.ListRangeRequestT
 }
@@ -144,6 +157,7 @@ func (lr *ListRangeRequest) Timeout() int32 {
 type SealRangeRequest struct {
 	baseRequest
 	baseUnmarshaler
+	nonLongPollRequest
 
 	rpcfb.SealRangeRequestT
 }
@@ -165,6 +179,7 @@ func (sr *SealRangeRequest) Timeout() int32 {
 type CreateRangeRequest struct {
 	baseRequest
 	baseUnmarshaler
+	nonLongPollRequest
 
 	rpcfb.CreateRangeRequestT
 }
@@ -186,6 +201,7 @@ func (cr *CreateRangeRequest) Timeout() int32 {
 type CreateStreamRequest struct {
 	baseRequest
 	baseUnmarshaler
+	nonLongPollRequest
 
 	rpcfb.CreateStreamRequestT
 }
@@ -207,6 +223,7 @@ func (cs *CreateStreamRequest) Timeout() int32 {
 type DeleteStreamRequest struct {
 	baseRequest
 	baseUnmarshaler
+	nonLongPollRequest
 
 	rpcfb.DeleteStreamRequestT
 }
@@ -228,6 +245,7 @@ func (ds *DeleteStreamRequest) Timeout() int32 {
 type UpdateStreamRequest struct {
 	baseRequest
 	baseUnmarshaler
+	nonLongPollRequest
 
 	rpcfb.UpdateStreamRequestT
 }
@@ -249,6 +267,7 @@ func (us *UpdateStreamRequest) Timeout() int32 {
 type DescribeStreamRequest struct {
 	baseRequest
 	baseUnmarshaler
+	nonLongPollRequest
 
 	rpcfb.DescribeStreamRequestT
 }
@@ -270,6 +289,7 @@ func (ds *DescribeStreamRequest) Timeout() int32 {
 type ReportMetricsRequest struct {
 	baseRequest
 	baseUnmarshaler
+	nonLongPollRequest
 
 	rpcfb.ReportMetricsRequestT
 }
@@ -287,6 +307,7 @@ func (rm *ReportMetricsRequest) Unmarshal(fmt codec.Format, data []byte) error {
 type DescribePDClusterRequest struct {
 	baseRequest
 	baseUnmarshaler
+	nonLongPollRequest
 
 	rpcfb.DescribePlacementDriverClusterRequestT
 }
@@ -308,6 +329,7 @@ func (dpd *DescribePDClusterRequest) Timeout() int32 {
 type CommitObjectRequest struct {
 	baseRequest
 	baseUnmarshaler
+	nonLongPollRequest
 
 	rpcfb.CommitObjectRequestT
 }
@@ -329,6 +351,7 @@ func (co *CommitObjectRequest) Timeout() int32 {
 type ListResourceRequest struct {
 	baseRequest
 	baseUnmarshaler
+	nonLongPollRequest
 
 	rpcfb.ListResourceRequestT
 }
@@ -365,4 +388,8 @@ func (wr *WatchResourceRequest) Unmarshal(fmt codec.Format, data []byte) error {
 
 func (wr *WatchResourceRequest) Timeout() int32 {
 	return wr.TimeoutMs
+}
+
+func (wr *WatchResourceRequest) LongPoll() bool {
+	return true
 }

@@ -468,10 +468,10 @@ func (c *conn) generateAct(f *codec.DataFrame, action *Action) (ctx context.Cont
 
 		used := time.Since(start)
 		switch {
-		case used > 800*time.Millisecond:
+		case used > 800*time.Millisecond && !req.LongPoll():
 			logger.Error("handle request too slow", zap.Any("request", req), zap.String("request-type", fmt.Sprintf("%T", req)),
 				zap.String("response-type", fmt.Sprintf("%T", resp)), zap.Duration("used", used))
-		case used > 200*time.Millisecond:
+		case used > 200*time.Millisecond && !req.LongPoll():
 			logger.Warn("handle request slow", zap.Any("request", req), zap.String("request-type", fmt.Sprintf("%T", req)),
 				zap.String("response-type", fmt.Sprintf("%T", resp)), zap.Duration("used", used))
 		case debug:
