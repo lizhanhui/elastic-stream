@@ -16,7 +16,6 @@ use opendal::Operator;
 use opendal::Writer;
 use protocol::flat_model::records::RecordBatchMeta;
 use std::cell::RefCell;
-use std::io::IoSlice;
 use std::rc::Rc;
 use std::time::Duration;
 use std::time::Instant;
@@ -27,10 +26,10 @@ use tokio::sync::Semaphore;
 use tokio::sync::SemaphorePermit;
 use tokio::task::JoinHandle;
 use tokio::time::sleep;
+use util::bytes::vec_bytes_to_bytes;
 
 use crate::ObjectManager;
 use model::object::ObjectMetadata;
-use util::bytes::BytesSliceCursor;
 
 const SPARSE_SIZE: u32 = 16 * 1024 * 1024;
 lazy_static! {
@@ -448,11 +447,9 @@ fn gen_sparse_index(
     init_pass_through_size: u32,
     sparse_size: u32,
 ) -> Result<(Bytes, u64, u32), DecodeError> {
-    let mut slices = payload
-        .iter()
-        .map(|b| IoSlice::new(&b[..]))
-        .collect::<Vec<_>>();
-    let mut cursor = BytesSliceCursor::new(&mut slices);
+    // TODO: refactor this function to avoid copy payload.
+    let payload = vec_bytes_to_bytes(payload);
+    let mut cursor = &payload[..];
     let mut sparse_index_bytes = BytesMut::with_capacity(payload.len() / sparse_size as usize);
     let mut pass_through_size = init_pass_through_size;
     let mut record_position = 0;
@@ -499,11 +496,7 @@ fn gen_sparse_index(
         }
     }
     // get last record end_offset
-    let mut slices = payload
-        .iter()
-        .map(|b| IoSlice::new(&b[..]))
-        .collect::<Vec<_>>();
-    let mut cursor = BytesSliceCursor::new(&mut slices);
+    let mut cursor = &payload[..];
     cursor.advance((record_position + 1) as usize);
     let metadata_len = cursor.get_i32() as usize;
     let mut metadata_slice = BytesMut::zeroed(metadata_len);

@@ -72,7 +72,7 @@ impl Objects {
     /// * cover the request range (`start_offset`, `end_offset`)
     ///   or exceed the size hint (`object[1].data_len` + `object[2].data_len` + ... >= `size_hint`)
     ///
-    /// Return a list of objects and whether the objects cover the request range.
+    /// Return a list of objects and whether the objects cover the request range or exceed the size hint.
     /// If `end_offset` is None, the range is not limited by `end_offset`.
     /// If `size_hint` is None, the range is not limited by size.
     /// If `end_offset` <= `start_offset`, return the first object that covers `start_offset`, if exists.
@@ -135,7 +135,9 @@ impl Objects {
             }
         }
 
-        (objects, current_offset >= end_offset.unwrap_or(u64::MAX))
+        let cover_all = current_offset >= end_offset.unwrap_or(u64::MAX)
+            || size >= size_hint.unwrap_or(u32::MAX);
+        (objects, cover_all)
     }
 }
 
@@ -623,6 +625,27 @@ mod tests {
                 },
             },
             Test {
+                name: "base case 02".to_string(),
+                fields: vec![
+                    new_object_with_epoch(0, 0, 100, 1),
+                    new_object_with_epoch(0, 100, 200, 1),
+                    new_object_with_epoch(0, 200, 300, 1),
+                    new_object_with_epoch(0, 300, 400, 1),
+                ],
+                args: Args {
+                    start_offset: 0,
+                    end_offset: Some(600),
+                    size_hint: Some(1),
+                },
+                want: Want {
+                    objects: vec![
+                        new_object_with_epoch(0, 0, 100, 1),
+                        new_object_with_epoch(0, 100, 200, 1),
+                    ],
+                    cover_all: true,
+                },
+            },
+            Test {
                 name: "limit by end offset".to_string(),
                 fields: vec![
                     new_object_with_epoch(0, 0, 100, 1),
@@ -661,7 +684,7 @@ mod tests {
                         new_object_with_epoch(0, 100, 200, 1),
                         new_object_with_epoch(0, 200, 300, 1),
                     ],
-                    cover_all: false,
+                    cover_all: true,
                 },
             },
             Test {

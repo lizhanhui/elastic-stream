@@ -47,6 +47,18 @@ pub fn advance_bytes(bufs: &mut [Bytes], mut n: usize) -> Bytes {
     advanced_buf.freeze()
 }
 
+pub fn vec_bytes_to_bytes(vec_bytes: &Vec<Bytes>) -> Bytes {
+    let mut size = 0;
+    for bytes in vec_bytes.iter() {
+        size += bytes.len();
+    }
+    let mut bytes_mut = BytesMut::with_capacity(size);
+    for bytes in vec_bytes {
+        bytes_mut.extend_from_slice(&bytes[..]);
+    }
+    bytes_mut.freeze()
+}
+
 #[cfg(test)]
 mod tests {
     use bytes::Bytes;
