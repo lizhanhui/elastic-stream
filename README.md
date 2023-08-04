@@ -79,11 +79,3 @@ Sometimes you have to deal with low-level operations, for example, interacting w
 RUSTFLAGS=-Zsanitizer=address cargo test test_layout -Zbuild-std --target x86_64-unknown-linux-gnu
 ```
 Read the [following link](https://doc.rust-lang.org/beta/unstable-book/compiler-flags/sanitizer.html) for more advanced usage.
-
-
-## Run
-
-### Launch Range Server
-```sh
-cargo run --bin range-server -- start --log etc/range-server-log.yaml
-```

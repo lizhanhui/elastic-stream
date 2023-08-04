@@ -1,8 +1,8 @@
 #!/bin/bash
 
 if [ ! -f /usr/local/bin/flatc ]; then
-    sudo apt-get update
-    sudo apt-get install -y unzip clang
+    apt-get update
+    apt-get install -y unzip clang
     arch=$(uname -m)
     if [ "$arch" == "aarch64" ]; then
         echo "Host arch is aarch64"
@@ -15,7 +15,7 @@ if [ ! -f /usr/local/bin/flatc ]; then
         exit 1
     fi
     unzip flatc.zip
-    sudo mv flatc /usr/local/bin/
+    mv flatc /usr/local/bin/
     rm flatc.zip
 else
     echo "flatc exists"
