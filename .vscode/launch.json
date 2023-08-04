@@ -3,6 +3,13 @@
     "configurations": [
         {
             "type": "java",
+            "name": "LongRunning",
+            "request": "launch",
+            "mainClass": "com.automq.elasticstream.client.examples.longrunning.LongRunning",
+            "projectName": "examples"
+        },
+        {
+            "type": "java",
             "name": "StreamBench",
             "request": "launch",
             "mainClass": "com.automq.elasticstream.client.examples.benchmark.StreamBench",

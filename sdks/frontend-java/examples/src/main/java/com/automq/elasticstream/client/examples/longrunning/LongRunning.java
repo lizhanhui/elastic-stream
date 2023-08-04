@@ -1,5 +1,7 @@
 package com.automq.elasticstream.client.examples.longrunning;
 
+import org.apache.log4j.Logger;
+
 import java.nio.ByteBuffer;
 import java.util.Collections;
 import java.util.concurrent.BlockingQueue;
@@ -17,31 +19,32 @@ import com.automq.elasticstream.client.api.Stream;
 import java.util.Random;
 
 public class LongRunning {
+
+    private static Logger log = Logger.getLogger(LongRunning.class.getClass());
+
     public static void main(String[] args) throws Exception {
         LongRunningOption option = new LongRunningOption();
-        System.out.println("EndPoint: " + option.getEndPoint() + ", KvEndPoint: " + option.getKvEndPoint()
+        log.info("EndPoint: " + option.getEndPoint() + ", KvEndPoint: " + option.getKvEndPoint()
                 + ", ReplicaCount: " + option.getReplicaCount() + ", AppendInterval: " + option.getInterval()
                 + ", PayloadSizeMin: "
                 + option.getMin() + ", PayloadSizeMax: " + option.getMax());
-
         Client client = Client.builder().endpoint(option.getEndPoint()).kvEndpoint(option.getKvEndPoint()).build();
         Stream stream = client.streamClient()
                 .createAndOpenStream(
                         CreateStreamOptions.newBuilder().replicaCount(option.getReplicaCount()).build())
                 .get();
         long streamId = stream.streamId();
-        System.out.println("Created Stream, StreamID: " + streamId);
+        log.info("Created Stream, StreamID: " + streamId);
         BlockingQueue<Elem> crcQueue = new LinkedBlockingQueue<>(1024);
         Thread producerThread = new Thread(
                 new Producer(crcQueue, stream, option.getInterval(), option.getMin(), option.getMax()));
-        Thread consumerThread = new Thread(new Consumer(crcQueue, producerThread, stream));
+        Thread consumerThread = new Thread(new Consumer(crcQueue, stream));
         producerThread.start();
         consumerThread.start();
 
         producerThread.join();
         consumerThread.join();
         stream.close().get();
-
     }
 }
 
@@ -149,6 +152,7 @@ class Producer implements Runnable {
     private long interval;
     private int min;
     private int max;
+    private static Logger log = Logger.getLogger(Producer.class.getClass());
 
     public Producer(BlockingQueue<Elem> crcQueue, Stream stream, long interval, int min, int max) {
         this.crcQueue = crcQueue;
@@ -160,10 +164,12 @@ class Producer implements Runnable {
 
     @Override
     public void run() {
-        try {
-            while (true) {
+        log.info("Producer thread started");
+        while (true) {
+            try {
                 byte[] payload = Utils.generateRandomByteArray(this.min, this.max);
                 long crc32 = Utils.calculateCRC32(payload);
+                log.info("crc32: " + crc32);
                 ByteBuffer buffer = ByteBuffer.wrap(payload);
                 CompletableFuture<AppendResult> cf = stream
                         .append(new DefaultRecordBatch(10, 0, Collections.emptyMap(), buffer));
@@ -173,38 +179,39 @@ class Producer implements Runnable {
                         try {
                             crcQueue.put(new Elem(crc32, offset));
                         } catch (InterruptedException e) {
-                            e.printStackTrace();
+                            log.error(e.toString());
+                            return;
                         }
-                        System.out.println(
-                                "Append a record batch, offset: " + offset);
+                        log.info("Append a record batch, offset: " + offset);
+                    } else {
+                        log.error(ex.toString());
                     }
                 });
                 Thread.sleep(this.interval);
+            } catch (InterruptedException e) {
+                log.error(e.toString());
+                continue;
             }
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
         }
     }
 }
 
 class Consumer implements Runnable {
     private final BlockingQueue<Elem> crcQueue;
-    private final Thread producerThread;
     private Stream stream;
 
-    public Consumer(BlockingQueue<Elem> crcQueue, Thread producerThread, Stream stream) {
+    private static Logger log = Logger.getLogger(Consumer.class.getClass());
+
+    public Consumer(BlockingQueue<Elem> crcQueue, Stream stream) {
         this.crcQueue = crcQueue;
-        this.producerThread = producerThread;
         this.stream = stream;
     }
 
     @Override
     public void run() {
-        try {
-            while (true) {
-                if (crcQueue.isEmpty() && !producerThread.isAlive()) {
-                    return;
-                }
+        log.info("Consumer thread started");
+        while (true) {
+            try {
                 Elem elem = crcQueue.take();
                 FetchResult fetchResult = stream.fetch(elem.getOffset(), elem.getOffset() +
                         10, Integer.MAX_VALUE)
@@ -215,14 +222,15 @@ class Consumer implements Runnable {
                 long crc0 = elem.getCrc();
                 long crc = Utils.calculateCRC32(rawPayload);
                 if (crc != crc0) {
-                    System.out.println("Fetch Error!");
-                    return;
+                    log.error("Fetch error, offset: " + elem.getOffset() + ", crc: " + crc + ", crc0: " + crc0);
+                    continue;
                 }
-                System.out.println("Fetch a record batch, offset: " + elem.getOffset());
+                log.info("Fetch a record batch, offset: " + elem.getOffset());
                 fetchResult.free();
+            } catch (InterruptedException | ExecutionException e) {
+                log.error(e.toString());
+                continue;
             }
-        } catch (InterruptedException | ExecutionException e) {
-            Thread.currentThread().interrupt();
         }
     }
 }
