@@ -299,6 +299,58 @@ impl Wal {
         Ok(pos)
     }
 
+    /// Queue and submit a single SQE to the SQ of control io-uring.
+    #[inline]
+    fn enqueue_and_submit_entry(
+        &mut self,
+        entry: &squeue::Entry,
+        entry_name: &str,
+    ) -> Result<(), StoreError> {
+        unsafe {
+            self.control_ring.submission().push(entry).map_err(|e| {
+                error!("Failed to push {} SQE to SQ: {}", entry_name, e.to_string());
+                StoreError::IoUring
+            })
+        }?;
+        let _ = self.control_ring.submit().map_err(|e| {
+            error!(
+                "Failed to submit {} SQE to SQ: {}",
+                entry_name,
+                e.to_string()
+            );
+            StoreError::IoUring
+        })?;
+        Ok(())
+    }
+
+    /// Enqueue and submit multiple SQEs to the SQ of control io-uring.
+    #[inline]
+    fn enqueue_and_submit_entries(&mut self, entries: &[squeue::Entry]) -> Result<(), StoreError> {
+        if entries.is_empty() {
+            return Ok(());
+        }
+        unsafe {
+            self.control_ring
+                .submission()
+                .push_multiple(entries)
+                .map_err(|e| {
+                    error!(
+                        "Failed to push multiple submission queue entries: {}",
+                        e.to_string()
+                    );
+                    StoreError::IoUring
+                })
+        }?;
+        let _ = self.control_ring.submit().map_err(|e| {
+            error!(
+                "Failed to submit multiple submission queue entries: {}",
+                e.to_string()
+            );
+            StoreError::IoUring
+        })?;
+        Ok(())
+    }
+
     /// New a segment, and then open it in the uring driver.
     pub(crate) fn try_open_segment(&mut self) -> Result<(), StoreError> {
         let mut segment = self.alloc_segment()?;
@@ -327,12 +379,7 @@ impl Wal {
             )
             .build()
             .user_data(offset);
-            unsafe {
-                self.control_ring.submission().push(&sqe).map_err(|e| {
-                    error!("Failed to push RenameAt SQE to submission queue: {:?}", e);
-                    StoreError::IoUring
-                })?
-            };
+            self.enqueue_and_submit_entry(&sqe, "RenameAt")?;
             self.segments.push_back(segment);
             Ok(())
         } else {
@@ -343,12 +390,7 @@ impl Wal {
                 .mode(libc::S_IRUSR | libc::S_IWUSR | libc::S_IRGRP | libc::S_IWGRP)
                 .build()
                 .user_data(offset);
-            unsafe {
-                self.control_ring.submission().push(&sqe).map_err(|e| {
-                    error!("Failed to push OpenAt SQE to submission queue: {:?}", e);
-                    StoreError::IoUring
-                })?
-            };
+            self.enqueue_and_submit_entry(&sqe, "OpenAt")?;
             self.segments.push_back(segment);
             Ok(())
         }
@@ -385,6 +427,8 @@ impl Wal {
             })
             .collect();
 
+        let mut entries = vec![];
+
         for segment in to_close {
             self.inflight_control_tasks
                 .insert(segment.wal_offset, segment.status);
@@ -393,20 +437,11 @@ impl Wal {
                     .build()
                     .user_data(segment.wal_offset);
                 info!("About to close LogSegmentFile: {}", segment);
-                unsafe {
-                    self.control_ring.submission().push(&sqe).map_err(|e| {
-                        error!("Failed to submit close SQE to SQ: {:?}", e);
-                        StoreError::IoUring
-                    })
-                }?;
+                entries.push(sqe);
             }
         }
 
-        self.control_ring.submit().map_err(|e| {
-            error!("io_uring_enter failed when submit: {:?}", e);
-            StoreError::IoUring
-        })?;
-
+        self.enqueue_and_submit_entries(&entries)?;
         Ok(())
     }
 

@@ -21,7 +21,7 @@ server:
   worker-cpu-set: "1"
   uring:
     # Network io_uring queue depth
-    queue-depth: 128
+    queue-depth: 32768
   # Connection idle duration in ticks
   connection-idle-duration: 60
   # grace period in ticks, after this period of time, disconnect lingering client connections
@@ -60,18 +60,18 @@ store:
   # Preferred IO read size: 128KiB
   read-block-size: 131072
   # Pre-allocated number of segment files
-  pre-allocate-segment-file-number: 2
+  pre-allocate-segment-file-number: 5
   # The total size of Status::Read segment files
   # 100GiB
   total-segment-file-size: 10737418240
   # Policy to reclaim segment files
-  reclaim-policy: "Delete"
+  reclaim-policy: "Recycle"
   io-cpu: 2
   # io_uring setup
   uring:
     polling: true
     # IO io_uring queue depth
-    queue-depth: 1024
+    queue-depth: 65536
     # Kernel SQ Poll thread will quit if it remains idle for 2 seconds.
     sqpoll-idle-ms: 2000
     # Bind the kernel's poll thread to the specified cpu.
