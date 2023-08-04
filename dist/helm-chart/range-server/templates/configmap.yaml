@@ -12,10 +12,12 @@ data:
         - targets:
           - localhost
           labels:
+            pod: ${NAME}
             job: ${NAME}-range-server-log
             __path__: /root/logs/range-server.log
         - targets:
           - localhost
           labels:
+            pod: ${NAME}
             job: ${NAME}-store-log
             __path__: /root/logs/store.log

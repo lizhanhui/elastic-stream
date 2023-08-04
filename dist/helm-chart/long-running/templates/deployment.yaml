@@ -75,5 +75,5 @@ spec:
           emptyDir: {}
         - name: client-promtail-config
           configMap:
-            name: client-promtail-sidecar-conf
+            name: {{ include "long-running.fullname" . }}-client-promtail-sidecar-conf
         {{- end }}

@@ -1,9 +1,9 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: client-promtail-sidecar-conf
+  name: {{ include "long-running.fullname" . }}-client-promtail-sidecar-conf
   labels:
-    app: client-promtail-sidecar
+    app: {{ include "long-running.fullname" . }}-client-promtail-sidecar
 data:
   promtail.yaml: |
     scrape_configs:
@@ -12,10 +12,12 @@ data:
         - targets:
           - localhost
           labels:
+            pod: ${NAME}
             job: ${NAME}-replication-log
             __path__: /logs/replication.log
         - targets:
           - localhost
           labels:
+            pod: ${NAME}
             job: ${NAME}-client-log
             __path__: /logs/client.log
