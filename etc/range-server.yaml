@@ -46,6 +46,8 @@ store:
   # Store directory
   path:
     # Base path of the store, containing lock, immutable properties and other configuration files
+    # It could be absolute or relative to the current working directory
+    # It could be overridden by argument `--store-path` or environment variable `ES_STORE_PATH`
     base: "/data/store"
     # Directory of WAL segment files. It could be absolute or relative to `base`
     wal: "wal"
@@ -71,7 +73,7 @@ store:
   uring:
     polling: true
     # IO io_uring queue depth
-    queue-depth: 65536
+    queue-depth: 32768
     # Kernel SQ Poll thread will quit if it remains idle for 2 seconds.
     sqpoll-idle-ms: 2000
     # Bind the kernel's poll thread to the specified cpu.

@@ -32,6 +32,13 @@ pub struct StartArgs {
     #[arg(long, env = "ES_PD")]
     pd: Option<String>,
 
+    /// Base path of the store, containing lock, immutable properties and other configuration files
+    /// It could be absolute or relative to the current working directory
+    ///
+    /// Default value: `/data/store`
+    #[arg(long, env = "ES_STORE_PATH")]
+    store_path: Option<String>,
+
     /// Path to the configuration file in YAML format.
     #[arg(long, env = "ES_CONFIG")]
     config: Option<String>,
@@ -102,6 +109,12 @@ impl StartArgs {
                 configuration.server.advertise_addr = configuration.server.addr.clone();
             }
         }
+
+        let base_path = match &self.store_path {
+            Some(store_path) => store_path.clone(),
+            None => String::from("/data/store"),
+        };
+        configuration.store.path.set_base(&base_path);
 
         configuration.check_and_apply()?;
         Ok(configuration)
