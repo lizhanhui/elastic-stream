@@ -155,7 +155,11 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut writes = 0;
     let mut offset = 0;
     let anchor = minstant::Anchor::new();
+    let mut bytes_written = 0;
+    let mut sec = 0;
+    let start_ts = minstant::Instant::now();
     loop {
+        // Generate workload as much as io-uring queue depth allows.
         loop {
             if writes >= args.qd {
                 break;
@@ -186,11 +190,20 @@ fn main() -> Result<(), Box<dyn Error>> {
             #[allow(clippy::while_let_on_iterator)]
             while let Some(entry) = cq.next() {
                 writes -= 1;
+                bytes_written += buf_size;
                 let start = entry.user_data();
                 let elapsed = minstant::Instant::now().as_unix_nanos(&anchor) - start;
                 observe(&mut histogram, elapsed);
             }
             cq.sync();
+        }
+
+        let current_sec = start_ts.elapsed().as_secs();
+        if current_sec != sec {
+            sec = current_sec;
+            let mb = (bytes_written / 1024) as f64 / 1024_f64;
+            println!("Wrote {mb:.2}MiB/s");
+            bytes_written = 0;
         }
 
         if offset >= file_size && writes == 0 {
