@@ -37,6 +37,7 @@ num_cpus = { workspace = true }
 num_enum = { workspace = true }
 object-storage = { path = "../components/object-storage" }
 observation = { path = "../components/observation" }
+pd-client = { path = "../components/pd-client" }
 polling = { path = "../components/polling" }
 pprof = { workspace = true }
 prometheus = { workspace = true }

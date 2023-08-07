@@ -3238,6 +3238,7 @@ dependencies = [
  "num_enum",
  "object-storage",
  "observation",
+ "pd-client",
  "polling 0.2.8",
  "pprof",
  "prometheus",

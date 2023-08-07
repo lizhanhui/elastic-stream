@@ -9,6 +9,7 @@ use std::{
 use crate::{
     connection_tracker::ConnectionTracker,
     heartbeat::Heartbeat,
+    metadata::MetadataWatcher,
     range_manager::{fetcher::FetchRangeTask, RangeManager},
     worker_config::WorkerConfig,
 };
@@ -19,6 +20,7 @@ use observation::metrics::{
     sys_metrics::{DiskStatistics, MemoryStatistics},
     uring_metrics::UringStatistics,
 };
+use pd_client::PlacementDriverClient;
 use protocol::rpc::header::RangeServerState;
 use store::Store;
 use tokio::sync::{broadcast, mpsc};
@@ -32,11 +34,13 @@ use util::metrics::http_serve;
 /// and communication with the placement driver.
 ///
 /// Inter-worker communications are achieved via channels.
-pub(crate) struct Worker<S, M> {
+pub(crate) struct Worker<S, M, P, W> {
     config: WorkerConfig,
     store: Rc<S>,
     range_manager: Rc<UnsafeCell<M>>,
     client: Rc<DefaultClient>,
+    pd_client: Rc<P>,
+    metadata_watcher: Option<W>,
 
     state: Rc<RefCell<RangeServerState>>,
 
@@ -44,16 +48,20 @@ pub(crate) struct Worker<S, M> {
     channels: Option<Vec<mpsc::UnboundedReceiver<FetchRangeTask>>>,
 }
 
-impl<S, M> Worker<S, M>
+impl<S, M, P, W> Worker<S, M, P, W>
 where
     S: Store + 'static,
     M: RangeManager + 'static,
+    P: PlacementDriverClient + 'static,
+    W: MetadataWatcher + 'static,
 {
     pub fn new(
         config: WorkerConfig,
         store: Rc<S>,
         range_manager: Rc<UnsafeCell<M>>,
         client: Rc<DefaultClient>,
+        pd_client: Rc<P>,
+        metadata_watcher: Option<W>,
         channels: Option<Vec<mpsc::UnboundedReceiver<FetchRangeTask>>>,
     ) -> Self {
         Self {
@@ -61,6 +69,8 @@ where
             store,
             range_manager,
             client,
+            pd_client,
+            metadata_watcher,
             state: Rc::new(RefCell::new(
                 RangeServerState::RANGE_SERVER_STATE_READ_WRITE,
             )),
@@ -91,6 +101,9 @@ where
                     .setup_attach_wq(self.config.sharing_uring),
             )
             .start(async {
+                if let Some(watcher) = self.metadata_watcher.as_ref() {
+                    watcher.start(self.pd_client.clone());
+                }
                 let bind_address = &self.config.server_config.server.addr;
                 let listener =
                     match TcpListener::bind(bind_address.parse().expect("Failed to bind")) {

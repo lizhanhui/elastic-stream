@@ -195,8 +195,11 @@ fn read_option(option: &mut ReadOptions, objects_cover_all: bool) {
 #[cfg(test)]
 mod tests {
 
-    use crate::range_manager::{
-        fetcher::MockPlacementFetcher, manager::DefaultRangeManager, RangeManager,
+    use crate::{
+        metadata::MockMetadataManager,
+        range_manager::{
+            fetcher::MockPlacementFetcher, manager::DefaultRangeManager, RangeManager,
+        },
     };
     use codec::frame::Frame;
     use model::stream::StreamMetadata;
@@ -259,12 +262,16 @@ mod tests {
             .expect_get_objects()
             .returning(|_, _, _, _, _| (vec![], false));
 
+        let mut metadata_manager = MockMetadataManager::default();
+        metadata_manager.expect_start().return_const(());
+
         tokio_uring::start(async move {
             let store = Rc::new(mock_store);
             let range_manager = Rc::new(UnsafeCell::new(DefaultRangeManager::new(
                 mock_fetcher,
                 Rc::clone(&store),
                 Rc::new(object_storage),
+                metadata_manager,
             )));
 
             let sm = unsafe { &mut *range_manager.get() };

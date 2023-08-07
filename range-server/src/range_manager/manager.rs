@@ -12,11 +12,11 @@ use model::{
 use object_storage::ObjectStorage;
 use store::{error::AppendError, Store};
 
-use crate::error::ServiceError;
+use crate::{error::ServiceError, metadata::MetadataManager};
 
 use super::{fetcher::PlacementFetcher, range::Range, stream::Stream, RangeManager};
 
-pub(crate) struct DefaultRangeManager<S, F, O> {
+pub(crate) struct DefaultRangeManager<S, F, O, M> {
     streams: HashMap<i64, Stream>,
 
     fetcher: F,
@@ -24,20 +24,30 @@ pub(crate) struct DefaultRangeManager<S, F, O> {
     store: Rc<S>,
 
     object_storage: Rc<O>,
+
+    #[allow(dead_code)]
+    metadata_manager: M,
 }
 
-impl<S, F, O> DefaultRangeManager<S, F, O>
+impl<S, F, O, M> DefaultRangeManager<S, F, O, M>
 where
     S: Store,
     F: PlacementFetcher,
     O: ObjectStorage,
+    M: MetadataManager,
 {
-    pub(crate) fn new(fetcher: F, store: Rc<S>, object_storage: Rc<O>) -> Self {
+    pub(crate) fn new(
+        fetcher: F,
+        store: Rc<S>,
+        object_storage: Rc<O>,
+        metadata_manager: M,
+    ) -> Self {
         Self {
             streams: HashMap::new(),
             fetcher,
             store,
             object_storage,
+            metadata_manager,
         }
     }
 
@@ -46,6 +56,7 @@ where
     /// # Panic
     /// If failed to access store to acquire max offset of the stream with mutable range.
     async fn bootstrap(&mut self) -> Result<(), ServiceError> {
+        self.metadata_manager.start().await;
         let ranges = self
             .fetcher
             .bootstrap(self.store.config().server.server_id as u32)
@@ -109,11 +120,12 @@ where
     }
 }
 
-impl<S, F, O> RangeManager for DefaultRangeManager<S, F, O>
+impl<S, F, O, M> RangeManager for DefaultRangeManager<S, F, O, M>
 where
     S: Store,
     F: PlacementFetcher,
     O: ObjectStorage,
+    M: MetadataManager,
 {
     async fn start(&mut self) -> Result<(), ServiceError> {
         self.bootstrap().await?;

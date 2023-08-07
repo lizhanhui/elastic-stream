@@ -1,5 +1,6 @@
 use crate::{
     built_info,
+    metadata::{manager::DefaultMetadataManager, watcher::DefaultMetadataWatcher, MetadataWatcher},
     range_manager::{
         fetcher::{DelegatePlacementClient, PlacementClient},
         manager::DefaultRangeManager,
@@ -10,6 +11,7 @@ use crate::{
 use config::Configuration;
 use log::{error, info};
 use object_storage::object_storage::AsyncObjectStorage;
+use pd_client::pd_client::DefaultPlacementDriverClient;
 use pyroscope::PyroscopeAgent;
 use pyroscope_pprofrs::{pprof_backend, PprofConfig};
 use std::{cell::UnsafeCell, error::Error, os::fd::AsRawFd, rc::Rc, sync::Arc, thread};
@@ -81,6 +83,8 @@ pub fn launch(
 
     recovery_completion_rx.blocking_recv()?;
 
+    let mut metadata_watcher = DefaultMetadataWatcher::new();
+
     let mut channels = vec![];
 
     let worker_core_ids = config::parse_cpu_set(&config.server.worker_cpu_set);
@@ -103,6 +107,7 @@ pub fn launch(
             channels.push(rx);
 
             let shutdown_tx = shutdown.clone();
+            let metadata_watcher_rx = metadata_watcher.watch().expect("watch metadata success");
             thread::Builder::new()
                 .name("RangeServer".to_owned())
                 .spawn(move || {
@@ -120,12 +125,27 @@ pub fn launch(
                     ));
 
                     let fetcher = DelegatePlacementClient::new(tx);
+
+                    let metadata_manager = DefaultMetadataManager::new(
+                        metadata_watcher_rx,
+                        server_config.server.server_id,
+                    );
+
                     let range_manager = Rc::new(UnsafeCell::new(DefaultRangeManager::new(
                         fetcher,
                         Rc::clone(&store),
                         Rc::new(object_storage),
+                        metadata_manager,
                     )));
-                    let mut worker = Worker::new(worker_config, store, range_manager, client, None);
+                    let mut worker = Worker::new(
+                        worker_config,
+                        store,
+                        range_manager,
+                        client.clone(),
+                        Rc::new(DefaultPlacementDriverClient::new(client)),
+                        None::<DefaultMetadataWatcher>,
+                        None,
+                    );
                     worker.serve(shutdown_tx)
                 })
         })
@@ -158,14 +178,29 @@ pub fn launch(
                 let fetcher = PlacementClient::new(Rc::clone(&client));
                 let store = Rc::new(BufferedStore::new(store));
 
+                let metadata_watcher_rx = metadata_watcher.watch().expect("watch metadata success");
+                let metadata_manager = DefaultMetadataManager::new(
+                    metadata_watcher_rx,
+                    server_config.server.server_id,
+                );
+                let pd_client = Rc::new(DefaultPlacementDriverClient::new(client.clone()));
+
                 let range_manager = Rc::new(UnsafeCell::new(DefaultRangeManager::new(
                     fetcher,
                     Rc::clone(&store),
                     Rc::new(object_storage),
+                    metadata_manager,
                 )));
 
-                let mut worker =
-                    Worker::new(worker_config, store, range_manager, client, Some(channels));
+                let mut worker = Worker::new(
+                    worker_config,
+                    store,
+                    range_manager,
+                    client,
+                    pd_client,
+                    Some(metadata_watcher),
+                    Some(channels),
+                );
                 worker.serve(shutdown_tx)
             });
         handles.push(handle);
