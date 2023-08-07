@@ -941,13 +941,13 @@ mod tests {
 
             assert_eq!(version + 3, result.version);
             assert_eq!(4, result.events.len());
-            assert_eq!(EventType::ADDED, result.events[0].event_type);
+            assert_eq!(EventType::Added, result.events[0].event_type);
             check_range_server(&result.events[0].resource);
-            assert_eq!(EventType::MODIFIED, result.events[1].event_type);
+            assert_eq!(EventType::Modified, result.events[1].event_type);
             check_stream(&result.events[1].resource);
-            assert_eq!(EventType::DELETED, result.events[2].event_type);
+            assert_eq!(EventType::Deleted, result.events[2].event_type);
             check_range(&result.events[2].resource);
-            assert_eq!(EventType::ADDED, result.events[3].event_type);
+            assert_eq!(EventType::Added, result.events[3].event_type);
             check_object(&result.events[3].resource);
             Ok(())
         })

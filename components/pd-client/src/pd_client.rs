@@ -15,6 +15,11 @@ use crate::PlacementDriverClient;
 const LIST_PAGE_SIZE: i32 = 1024;
 const WATCH_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 
+enum ListAndWatchError {
+    Es(EsError),
+    Cancelled,
+}
+
 pub struct DefaultPlacementDriverClient<C>
 where
     C: Client + 'static,
@@ -37,10 +42,7 @@ impl<C> PlacementDriverClient for DefaultPlacementDriverClient<C>
 where
     C: Client + 'static,
 {
-    fn list_and_watch_resource(
-        &self,
-        types: &[ResourceType],
-    ) -> Receiver<Result<ResourceEvent, EsError>> {
+    fn list_and_watch_resource(&self, types: &[ResourceType]) -> Receiver<ResourceEvent> {
         let types = types
             .iter()
             .copied()
@@ -55,10 +57,39 @@ where
         let client = self.client.clone();
         let token = self.token.child_token();
         tokio_uring::spawn(async move {
-            let Some(version) = Self::list_resource(&token, &client, &types, &tx).await else {
-                return;
-            };
-            _ = Self::watch_resource(&token, &client, &types, version, &tx).await;
+            loop {
+                let version = match Self::list_resource(&token, &client, &types, &tx).await {
+                    Ok(v) => v,
+                    Err(ListAndWatchError::Cancelled) => {
+                        return;
+                    }
+                    Err(ListAndWatchError::Es(_)) => {
+                        if tx.send(ResourceEvent::reset()).await.is_err() {
+                            // receiver dropped, stop to list and watch resource
+                            return;
+                        }
+                        continue;
+                    }
+                };
+
+                if tx.send(ResourceEvent::list_finished()).await.is_err() {
+                    // receiver dropped, stop to list and watch resource
+                    return;
+                }
+
+                match Self::watch_resource(&token, &client, &types, version, &tx).await {
+                    ListAndWatchError::Cancelled => {
+                        return;
+                    }
+                    ListAndWatchError::Es(_) => {
+                        if tx.send(ResourceEvent::reset()).await.is_err() {
+                            // receiver dropped, stop to list and watch resource
+                            return;
+                        }
+                        continue;
+                    }
+                };
+            }
         });
 
         rx
@@ -73,14 +104,15 @@ impl<C> DefaultPlacementDriverClient<C>
 where
     C: Client + 'static,
 {
+    /// List all resources of the given types.
+    /// It returns the version of the resources if the list operation succeeds.
     async fn list_resource(
         token: &CancellationToken,
         client: &Rc<C>,
         types: &[ResourceType],
-        tx: &Sender<Result<ResourceEvent, EsError>>,
-    ) -> Option<i64> {
+        tx: &Sender<ResourceEvent>,
+    ) -> Result<i64, ListAndWatchError> {
         let mut continuation = None;
-        let mut version;
         loop {
             match client
                 .list_resource(types, LIST_PAGE_SIZE, &continuation)
@@ -89,27 +121,26 @@ where
                 Ok(result) => {
                     log::trace!("list resource success. result: {:?}", result);
                     continuation = result.continuation;
-                    version = Some(result.version);
                     for resource in result.resources {
                         let event = ResourceEvent {
                             resource,
-                            event_type: EventType::LISTED,
+                            event_type: EventType::Listed,
                         };
                         tokio::select! {
                             _ = token.cancelled() => {
-                                return None;
+                                return Err(ListAndWatchError::Cancelled);
                             }
-                            sent = tx.send(Ok(event)) => {
+                            sent = tx.send(event) => {
                                 if sent.is_err() {
                                     log::debug!("receiver dropped, stop to list resource. types: {:?}, continuation: {:?}", types, continuation);
-                                    return None;
+                                    return Err(ListAndWatchError::Cancelled);
                                 }
                             }
                         }
                     }
                     if continuation.is_none() {
                         log::trace!("no more resources to list. types: {:?}", types);
-                        break;
+                        return Ok(result.version);
                     }
                 }
                 Err(e) => {
@@ -120,35 +151,35 @@ where
                         continuation,
                         e
                     );
-                    return None;
+                    return Err(ListAndWatchError::Es(e));
                 }
             }
         }
-        version
     }
 
+    /// Watch the changes of the resources.
     async fn watch_resource(
         token: &CancellationToken,
         client: &Rc<C>,
         types: &[ResourceType],
         start_version: i64,
-        tx: &Sender<Result<ResourceEvent, EsError>>,
-    ) -> Result<(), EsError> {
+        tx: &Sender<ResourceEvent>,
+    ) -> ListAndWatchError {
         let mut version = start_version;
         loop {
             match client.watch_resource(types, version, WATCH_TIMEOUT).await {
                 Ok(result) => {
-                    log::trace!("watch resource success. result: {:?}", result);
+                    log::trace!("watch resource success. result: {result:?}");
                     version = result.version;
                     for event in result.events {
                         tokio::select! {
                             _ = token.cancelled() => {
-                                return Ok(());
+                                return ListAndWatchError::Cancelled;
                             }
-                            sent = tx.send(Ok(event)) => {
+                            sent = tx.send(event) => {
                                 if sent.is_err() {
-                                    log::debug!("receiver dropped, stop to watch resource. types: {:?}, version: {:?}", types, version);
-                                    return Ok(());
+                                    log::debug!("receiver dropped, stop to watch resource. types: {types:?}, version: {version:?}");
+                                    return ListAndWatchError::Cancelled;
                                 }
                             }
                         }
@@ -160,12 +191,9 @@ where
                     _ => {
                         // TODO: handle error
                         log::error!(
-                            "watch resource failed. types: {:?}, version: {:?}, err: {:?}",
-                            types,
-                            version,
-                            e
+                            "watch resource failed. types: {types:?}, version: {version:?}, err: {e:?}"
                         );
-                        return Err(EsError::unexpected("todo"));
+                        return ListAndWatchError::Es(e);
                     }
                 },
             }
@@ -216,28 +244,33 @@ mod tests {
                 ResourceType::OBJECT,
             ]);
             let mut events = Vec::new();
-            for _ in 0..8 {
-                let event = receiver.recv().await.unwrap().unwrap();
+            for _ in 0..9 {
+                let event = receiver.recv().await.unwrap();
                 events.push(event);
             }
 
-            assert_eq!(model::resource::EventType::LISTED, events[0].event_type);
+            assert_eq!(model::resource::EventType::Listed, events[0].event_type);
             assert!(matches!(events[0].resource, Resource::RangeServer(_)));
-            assert_eq!(model::resource::EventType::LISTED, events[1].event_type);
+            assert_eq!(model::resource::EventType::Listed, events[1].event_type);
             assert!(matches!(events[1].resource, Resource::Stream(_)));
-            assert_eq!(model::resource::EventType::LISTED, events[2].event_type);
+            assert_eq!(model::resource::EventType::Listed, events[2].event_type);
             assert!(matches!(events[2].resource, Resource::Range(_)));
-            assert_eq!(model::resource::EventType::LISTED, events[3].event_type);
+            assert_eq!(model::resource::EventType::Listed, events[3].event_type);
             assert!(matches!(events[3].resource, Resource::Object(_)));
 
-            assert_eq!(model::resource::EventType::ADDED, events[4].event_type);
-            assert!(matches!(events[4].resource, Resource::RangeServer(_)));
-            assert_eq!(model::resource::EventType::MODIFIED, events[5].event_type);
-            assert!(matches!(events[5].resource, Resource::Stream(_)));
-            assert_eq!(model::resource::EventType::DELETED, events[6].event_type);
-            assert!(matches!(events[6].resource, Resource::Range(_)));
-            assert_eq!(model::resource::EventType::ADDED, events[7].event_type);
-            assert!(matches!(events[7].resource, Resource::Object(_)));
+            assert_eq!(
+                model::resource::EventType::ListFinished,
+                events[4].event_type
+            );
+
+            assert_eq!(model::resource::EventType::Added, events[5].event_type);
+            assert!(matches!(events[5].resource, Resource::RangeServer(_)));
+            assert_eq!(model::resource::EventType::Modified, events[6].event_type);
+            assert!(matches!(events[6].resource, Resource::Stream(_)));
+            assert_eq!(model::resource::EventType::Deleted, events[7].event_type);
+            assert!(matches!(events[7].resource, Resource::Range(_)));
+            assert_eq!(model::resource::EventType::Added, events[8].event_type);
+            assert!(matches!(events[8].resource, Resource::Object(_)));
             Ok(())
         })
     }

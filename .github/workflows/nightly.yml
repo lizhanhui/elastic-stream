@@ -73,7 +73,7 @@ jobs:
           env-vars: ""
       - name: Install Deps
         run: |
-          ./scripts/install_deps.sh
+          sudo ./scripts/install_deps.sh
           cargo install cross --git https://github.com/cross-rs/cross
       - name: Build Range Server Debian Packages
         run: |

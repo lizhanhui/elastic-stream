@@ -250,6 +250,11 @@ impl Metadata {
                 (objects, cover_all)
             })
     }
+
+    fn reset(&mut self) {
+        self.offloading.clear();
+        self.other.clear();
+    }
 }
 
 pub struct DefaultObjectManager<C>
@@ -287,7 +292,7 @@ where
 
     async fn list_and_watch(
         token: CancellationToken,
-        mut rx: Receiver<Result<ResourceEvent, EsError>>,
+        mut rx: Receiver<ResourceEvent>,
         server_id: i32,
         metadata: Rc<RefCell<Metadata>>,
     ) {
@@ -297,30 +302,25 @@ where
                     return;
                 }
                 Some(event) = rx.recv() => {
-                    match event {
-                        Ok(event) => {
-                            let metadata = metadata.clone();
-                            match event.event_type {
-                                EventType::LISTED  => {
-                                    Self::handle_added_resource(&event.resource, server_id, &metadata, true);
-                                }
-                                EventType::ADDED => {
-                                    Self::handle_added_resource(&event.resource, server_id, &metadata, false);
-                                }
-                                EventType::MODIFIED => {
-                                    Self::handle_modified_resource(&event.resource, &metadata);
-                                }
-                                EventType::DELETED => {
-                                    Self::handle_deleted_resource(&event.resource, &metadata);
-                                }
-                                EventType::NONE => (),
-                            }
+                    let metadata = metadata.clone();
+                    match event.event_type {
+                        EventType::Listed  => {
+                            Self::handle_added_resource(&event.resource, server_id, &metadata, true);
                         }
-                        Err(e) => {
-                            // TODO: handle error
-                            log::error!("receive resource event error: {:?}", e);
-                            return;
+                        EventType::Added => {
+                            Self::handle_added_resource(&event.resource, server_id, &metadata, false);
                         }
+                        EventType::Modified => {
+                            Self::handle_modified_resource(&event.resource, &metadata);
+                        }
+                        EventType::Deleted => {
+                            Self::handle_deleted_resource(&event.resource, &metadata);
+                        }
+                        EventType::Reset => {
+                            metadata.borrow_mut().reset();
+                        }
+                        // TODO: handle list finished
+                        EventType::None | EventType::ListFinished => (),
                     }
                 }
             }
@@ -860,10 +860,10 @@ mod tests {
             offload_owner_t.server_id = 42;
             offload_owner_t.epoch = 3;
             range_t.offload_owner = Some(Box::new(offload_owner_t));
-            tx.send(Ok(ResourceEvent {
-                event_type: EventType::LISTED,
+            tx.send(ResourceEvent {
+                event_type: EventType::Listed,
                 resource: Resource::Range(RangeMetadata::from(&range_t)),
-            }))
+            })
             .await
             .unwrap();
 
@@ -873,19 +873,19 @@ mod tests {
             object.range_index = 2;
             let mut object1 = object.clone();
             object1.gen_object_key("testcluster");
-            tx.send(Ok(ResourceEvent {
-                event_type: EventType::LISTED,
+            tx.send(ResourceEvent {
+                event_type: EventType::Listed,
                 resource: Resource::Object(object),
-            }))
+            })
             .await
             .unwrap();
             let mut object = new_object_with_epoch(1, 300, 400, 1);
             object.stream_id = 1;
             object.range_index = 2;
-            tx.send(Ok(ResourceEvent {
-                event_type: EventType::LISTED,
+            tx.send(ResourceEvent {
+                event_type: EventType::Listed,
                 resource: Resource::Object(object),
-            }))
+            })
             .await
             .unwrap();
 
@@ -895,10 +895,10 @@ mod tests {
             object.range_index = 2;
             let mut object2 = object.clone();
             object2.gen_object_key("testcluster");
-            tx.send(Ok(ResourceEvent {
-                event_type: EventType::ADDED,
+            tx.send(ResourceEvent {
+                event_type: EventType::Added,
                 resource: Resource::Object(object),
-            }))
+            })
             .await
             .unwrap();
 

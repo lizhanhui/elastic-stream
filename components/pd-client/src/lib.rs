@@ -19,19 +19,20 @@ pub trait PlacementDriverClient {
     ///
     /// # Returns
     /// * `Receiver` - The receiver of resource events.
-    /// Firstly, the receiver will receive multiple [`ResourceEvent`]s with  [`LISTED`], indicating the resources that are already there before the watch starts.
-    /// Then, the receiver will receive multiple [`ResourceEvent`]s with [`ADDED`], [`MODIFIED`] or [`DELETED`], indicating the changes of the resources.
+    /// Firstly, the receiver will receive multiple [`ResourceEvent`]s with [`Listed`], indicating the resources that are already there before the watch starts.
+    /// Then, the receiver will receive one [`ResourceEvent`] with [`ListFinished`], indicating that all resources have been listed.
+    /// After that, the receiver will receive multiple [`ResourceEvent`]s with [`Added`], [`Modified`] or [`Deleted`], indicating the changes of the resources.
+    /// If an error occurs during list or watch (for example, compacted), the receiver will receive one [`ResourceEvent`] with [`Reset`], then all resources will be re-listed and re-watched.
     /// Once the returned receiver is dropped, the operation will be cancelled and related resources will be released.
     ///
-    /// [`LISTED`]: model::resource::EventType::LISTED
-    /// [`ADDED`]: model::resource::EventType::ADDED
-    /// [`MODIFIED`]: model::resource::EventType::MODIFIED
-    /// [`DELETED`]: model::resource::EventType::DELETED
+    /// [`Listed`]: model::resource::EventType::Listed
+    /// [`ListFinished`]: model::resource::EventType::ListFinished
+    /// [`Added`]: model::resource::EventType::Added
+    /// [`Modified`]: model::resource::EventType::Modified
+    /// [`Deleted`]: model::resource::EventType::Deleted
+    /// [`Reset`]: model::resource::EventType::Reset
     ///
-    fn list_and_watch_resource(
-        &self,
-        types: &[ResourceType],
-    ) -> Receiver<Result<ResourceEvent, EsError>>;
+    fn list_and_watch_resource(&self, types: &[ResourceType]) -> Receiver<ResourceEvent>;
 
     async fn commit_object(&self, metadata: ObjectMetadata) -> Result<(), EsError>;
 }
