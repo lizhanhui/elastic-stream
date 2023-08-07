@@ -528,6 +528,7 @@ mod tests {
                     replica: 1,
                     ack_count: 1,
                     retention_period: std::time::Duration::from_secs(1),
+                    start_offset: 0,
                 })
                 .await?;
             dbg!(&stream_metadata);

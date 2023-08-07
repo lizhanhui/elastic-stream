@@ -543,6 +543,8 @@ table Stream {
 
     // The time to live of records in the stream in milliseconds.
     retention_period_ms: int64 (id: 3);
+
+    start_offset: int64 (id: 4);
 }
 
 // The create stream request is used to create a batch of streams.

@@ -146,6 +146,7 @@ where
                     replica: 0,
                     ack_count: 0,
                     retention_period: Duration::from_secs(1),
+                    start_offset: 0,
                 };
                 let mut stream = Stream::new(metadata);
                 stream.create_range(range);
@@ -192,6 +193,7 @@ where
                 replica: 0,
                 ack_count: 0,
                 retention_period: Duration::from_secs(1),
+                start_offset: 0,
             };
             let mut stream = Stream::new(stream_metadata);
             stream.create_range(range.clone());

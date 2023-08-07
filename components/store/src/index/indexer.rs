@@ -11,7 +11,7 @@ use std::{
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use config::Configuration;
 use log::{error, info, trace, warn};
-use model::range::RangeMetadata;
+use model::range::{RangeLifecycleEvent, RangeMetadata};
 use rocksdb::{
     BlockBasedOptions, ColumnFamilyDescriptor, DBCompressionType, FlushOptions, IteratorMode,
     Options, ReadOptions, WriteOptions, DB,
@@ -620,6 +620,10 @@ impl super::LocalRangeManager for Indexer {
                 METADATA_COLUMN_FAMILY
             )))
         }
+    }
+
+    async fn handle_range_lifecycle_event(&self, _event: Vec<RangeLifecycleEvent>) {
+        todo!()
     }
 }
 

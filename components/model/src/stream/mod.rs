@@ -18,6 +18,8 @@ pub struct StreamMetadata {
     pub ack_count: u8,
 
     pub retention_period: Duration,
+
+    pub start_offset: u64,
 }
 
 /// Converter from `StreamT` to `Stream`.
@@ -32,6 +34,7 @@ impl From<&StreamT> for StreamMetadata {
             replica: stream.replica as u8,
             ack_count: stream.ack_count as u8,
             retention_period: Duration::from_millis(stream.retention_period_ms as u64),
+            start_offset: stream.start_offset as u64,
         }
     }
 }
@@ -44,6 +47,7 @@ impl From<&StreamMetadata> for StreamT {
         stream_t.replica = stream.replica as i8;
         stream_t.retention_period_ms = stream.retention_period.as_millis() as i64;
         stream_t.ack_count = stream.ack_count as i8;
+        stream_t.start_offset = stream.start_offset as i64;
         stream_t
     }
 }

@@ -259,6 +259,20 @@ impl From<&RangeT> for RangeMetadata {
     }
 }
 
+pub type StreamId = u64;
+pub type RangeIndex = u32;
+pub type Range = (StreamId, RangeIndex);
+
+type StartOffset = u64;
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum RangeLifecycleEvent {
+    // Data before start offset is deletable.
+    OffsetMove(Range, StartOffset),
+    // The range is deleted.
+    Del(Range),
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

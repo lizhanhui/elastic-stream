@@ -1,5 +1,5 @@
 use crate::error::StoreError;
-use model::range::RangeMetadata;
+use model::range::{RangeLifecycleEvent, RangeMetadata};
 use tokio::sync::mpsc;
 
 pub(crate) mod compaction;
@@ -27,4 +27,6 @@ pub trait LocalRangeManager {
     fn seal(&self, stream_id: i64, range: &RangeMetadata) -> Result<(), StoreError>;
 
     fn add(&self, stream_id: i64, range: &RangeMetadata) -> Result<(), StoreError>;
+
+    async fn handle_range_lifecycle_event(&self, event: Vec<RangeLifecycleEvent>);
 }
