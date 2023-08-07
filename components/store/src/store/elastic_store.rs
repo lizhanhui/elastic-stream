@@ -46,7 +46,7 @@ pub struct ElasticStore {
     ///
     /// For sending a message from async to sync, you should use the standard library unbounded channel or crossbeam.
     /// https://docs.rs/tokio/latest/tokio/sync/mpsc/index.html#communicating-between-sync-and-async-code
-    io_tx: Sender<IoTask>,
+    sq_tx: Sender<IoTask>,
 
     /// The reference to index driver, which is used to communicate with index module.
     indexer: Arc<IndexDriver>,
@@ -90,26 +90,23 @@ impl ElasticStore {
         // Copy a indexer
         let indexer_cp = Arc::clone(&indexer);
         let cfg = Arc::clone(&config);
+        let (sq_tx, sq_rx) = crossbeam::channel::unbounded();
         let _io_thread_handle = Self::with_thread("IO", move || {
             if !core_affinity::set_for_current(core_affinity::CoreId {
                 id: cfg.store.io_cpu,
             }) {
                 error!("Failed to set affinity for IO thread");
             }
-            let mut io = io::IO::new(&cfg, indexer_cp)?;
+            let io = io::IO::new(&cfg, indexer_cp, sq_rx)?;
             let sharing_uring = io.as_raw_fd();
-            let tx = io
-                .sender
-                .take()
-                .ok_or(StoreError::Configuration("IO channel".to_owned()))?;
 
             let io = RefCell::new(io);
-            if let Err(_e) = sender.send((tx, sharing_uring)) {
+            if let Err(_e) = sender.send(sharing_uring) {
                 error!("Failed to expose sharing_uring and task channel sender");
             }
             io::IO::run(io, recovery_completion_tx)
         })?;
-        let (tx, sharing_uring) = receiver
+        let sharing_uring = receiver
             .blocking_recv()
             .map_err(|_e| StoreError::Internal("Start".to_owned()))?;
 
@@ -119,7 +116,7 @@ impl ElasticStore {
         let store = Self {
             config,
             lock,
-            io_tx: tx,
+            sq_tx,
             indexer,
             wal_offset_manager,
             sharing_uring,
@@ -165,7 +162,7 @@ impl ElasticStore {
             written_len: None,
         };
         let io_task = Write(task);
-        if let Err(e) = self.io_tx.send(io_task) {
+        if let Err(e) = self.sq_tx.send(io_task) {
             if let Write(task) = e.0 {
                 if let Err(e) = task.observer.send(Err(AppendError::SubmissionQueue)) {
                     error!("Failed to propagate error: {:?}", e);
@@ -213,7 +210,7 @@ impl Store for ElasticStore {
             index_tx,
         );
 
-        let io_tx_cp = self.io_tx.clone();
+        let io_tx_cp = self.sq_tx.clone();
         let scan_res = match index_rx.await.map_err(|_e| FetchError::TranslateIndex) {
             Ok(res) => res.map_err(|_e| FetchError::TranslateIndex),
             Err(e) => Err(e),

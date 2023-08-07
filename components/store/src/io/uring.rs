@@ -8,7 +8,7 @@ use crate::io::task::WriteTask;
 use crate::io::wal::Wal;
 use crate::io::write_window::WriteWindow;
 use crate::AppendResult;
-use crossbeam::channel::{Receiver, Sender, TryRecvError};
+use crossbeam::channel::{Receiver, TryRecvError};
 use io_uring::types::{SubmitArgs, Timespec};
 use io_uring::{opcode, squeue, types};
 use io_uring::{register, Parameters};
@@ -57,15 +57,10 @@ pub(crate) struct IO {
     /// `Fallocate64`, for some unknown reason, is not working either.
     data_ring: io_uring::IoUring,
 
-    /// Sender of the IO task channel.
-    ///
-    /// Assumed to be taken by wrapping structs, which will offer APIs with semantics of choice.
-    pub(crate) sender: Option<Sender<IoTask>>,
-
     /// Receiver of the IO task channel.
     ///
     /// According to our design, there is only one instance.
-    receiver: Receiver<IoTask>,
+    sq_rx: Receiver<IoTask>,
 
     /// A WAL instance that manages the lifecycle of write-ahead-log segments.
     ///
@@ -167,6 +162,7 @@ impl IO {
     pub(crate) fn new(
         config: &Arc<config::Configuration>,
         indexer: Arc<IndexDriver>,
+        sq_rx: crossbeam::channel::Receiver<IoTask>,
     ) -> Result<Self, StoreError> {
         let control_ring = io_uring::IoUring::builder().dontfork().build(32).map_err(|e| {
             error!("Failed to build I/O Uring instance for write-ahead-log segment file management: {:?}", e);
@@ -208,13 +204,10 @@ impl IO {
 
         trace!("I/O Uring instances created");
 
-        let (sender, receiver) = crossbeam::channel::unbounded();
-
         Ok(Self {
             options: config.clone(),
             data_ring,
-            sender: Some(sender),
-            receiver,
+            sq_rx,
             write_window: WriteWindow::new(0),
             buf_writer: UnsafeCell::new(AlignedBufWriter::new(0, config.store.alignment)),
             wal: Wal::new(control_ring, config),
@@ -358,7 +351,7 @@ impl IO {
             {
                 debug!("Block IO thread until IO tasks are received from channel");
                 // Block the thread until at least one IO task arrives
-                match self.receiver.recv() {
+                match self.sq_rx.recv() {
                     Ok(io_task) => {
                         self.add_pending_task(io_task, &mut received);
                     }
@@ -371,7 +364,7 @@ impl IO {
             } else {
                 // Poll IO-task channel in non-blocking manner for more tasks given that greater IO depth exploits potential of
                 // modern storage products like NVMe SSD.
-                match self.receiver.try_recv() {
+                match self.sq_rx.try_recv() {
                     Ok(io_task) => {
                         self.add_pending_task(io_task, &mut received);
                     }
@@ -1551,7 +1544,7 @@ mod tests {
     use crate::io::ReadTask;
     use crate::offset_manager::WalOffsetManager;
     use bytes::BytesMut;
-    use crossbeam::channel::Sender;
+    use crossbeam::channel::{Receiver, Sender};
     use log::{info, trace};
     use model::record::flat_record::FlatRecordBatch;
     use model::record::RecordBatchBuilder;
@@ -1565,17 +1558,18 @@ mod tests {
 
     struct IOBuilder {
         cfg: config::Configuration,
+        sq_rx: Receiver<IoTask>,
     }
 
     impl IOBuilder {
-        fn new(store_dir: PathBuf) -> Self {
+        fn new(store_dir: PathBuf, sq_rx: Receiver<IoTask>) -> Self {
             let mut cfg = config::Configuration::default();
             cfg.store
                 .path
                 .set_base(store_dir.as_path().to_str().unwrap());
             cfg.check_and_apply()
                 .expect("Failed to check-and-apply configuration");
-            Self { cfg }
+            Self { cfg, sq_rx }
         }
 
         fn segment_size(mut self, segment_size: u64) -> Self {
@@ -1601,16 +1595,19 @@ mod tests {
                 128,
             )?);
 
-            super::IO::new(&config, indexer)
+            super::IO::new(&config, indexer, self.sq_rx)
         }
     }
 
-    fn create_default_io(store_dir: &Path) -> Result<super::IO, StoreError> {
-        IOBuilder::new(store_dir.to_path_buf()).build()
+    fn create_default_io(
+        store_dir: &Path,
+        sq_rx: Receiver<IoTask>,
+    ) -> Result<super::IO, StoreError> {
+        IOBuilder::new(store_dir.to_path_buf(), sq_rx).build()
     }
 
-    fn create_small_io(store_dir: &Path) -> Result<super::IO, StoreError> {
-        IOBuilder::new(store_dir.to_path_buf())
+    fn create_small_io(store_dir: &Path, sq_rx: Receiver<IoTask>) -> Result<super::IO, StoreError> {
+        IOBuilder::new(store_dir.to_path_buf(), sq_rx)
             .segment_size(1024 * 1024)
             .max_cache_size(1024 * 1024)
             .build()
@@ -1620,24 +1617,16 @@ mod tests {
         io_creator: IoCreator,
     ) -> Result<(JoinHandle<()>, Sender<IoTask>), Box<dyn Error>>
     where
-        IoCreator: Fn(&Path) -> Result<super::IO, StoreError> + Send + 'static,
+        IoCreator:
+            FnOnce(&Path, Receiver<IoTask>) -> Result<super::IO, StoreError> + Send + 'static,
     {
-        let (tx, rx) = oneshot::channel();
         let (recovery_completion_tx, recovery_completion_rx) = oneshot::channel();
-
+        let (sq_tx, sq_rx) = crossbeam::channel::unbounded();
         let handle = std::thread::spawn(move || {
             let tmp_dir = tempfile::tempdir().unwrap();
             let store_dir = tmp_dir.path();
-            let mut io = io_creator(store_dir).unwrap();
-
-            let sender = io
-                .sender
-                .take()
-                .ok_or(StoreError::Configuration("IO channel".to_owned()))
-                .unwrap();
-            let _ = tx.send(sender);
+            let io = io_creator(store_dir, sq_rx).unwrap();
             let io = RefCell::new(io);
-
             let _ = super::IO::run(io, recovery_completion_tx);
             info!("Module io stopped");
         });
@@ -1645,11 +1634,8 @@ mod tests {
         if recovery_completion_rx.blocking_recv().is_err() {
             panic!("Failed to await recovery completion");
         }
-        let sender: Sender<IoTask> = rx
-            .blocking_recv()
-            .map_err(|_| StoreError::Internal("Internal error".to_owned()))?;
 
-        Ok((handle, sender))
+        Ok((handle, sq_tx))
     }
 
     #[test]
@@ -1657,8 +1643,8 @@ mod tests {
         crate::log::try_init_log();
         let tmp_dir = tempfile::tempdir()?;
         let store_dir = tmp_dir.path();
-        let mut io = create_default_io(store_dir)?;
-        let sender = io.sender.take().unwrap();
+        let (sq_tx, sq_rx) = crossbeam::channel::unbounded();
+        let mut io = create_default_io(store_dir, sq_rx)?;
         let mut buffer = BytesMut::with_capacity(128);
         buffer.resize(128, 65);
         let buffer = buffer.freeze();
@@ -1676,7 +1662,7 @@ mod tests {
                     observer: tx,
                     written_len: None,
                 });
-                sender.send(io_task)
+                sq_tx.send(io_task)
             })
             .count();
 
@@ -1684,7 +1670,7 @@ mod tests {
         assert_eq!(16, io.pending_data_tasks.len());
         io.pending_data_tasks.clear();
 
-        drop(sender);
+        drop(sq_tx);
 
         // Mock that some in-flight IO tasks were reaped
         io.inflight = 0;
@@ -1706,9 +1692,9 @@ mod tests {
     fn test_reserve_write_buffers() -> Result<(), Box<dyn Error>> {
         crate::log::try_init_log();
         let store_path = tempfile::tempdir()?;
-
+        let (_sq_tx, sq_rx) = crossbeam::channel::unbounded();
         let file_size = 1024 * 1024;
-        let mut io = IOBuilder::new(store_path.path().to_path_buf())
+        let mut io = IOBuilder::new(store_path.path().to_path_buf(), sq_rx)
             .segment_size(file_size)
             .max_cache_size(file_size)
             .build()?;
@@ -1795,7 +1781,8 @@ mod tests {
         crate::log::try_init_log();
         let tmp_dir = tempfile::tempdir()?;
         let store_dir = tmp_dir.path();
-        let mut io = create_default_io(store_dir)?;
+        let (_sq_tx, sq_rx) = crossbeam::channel::unbounded();
+        let mut io = create_default_io(store_dir, sq_rx)?;
 
         io.wal.open_segment_directly()?;
 
@@ -1881,23 +1868,16 @@ mod tests {
     #[test]
     fn test_recover() -> Result<(), Box<dyn Error>> {
         crate::log::try_init_log();
-        let (tx, rx) = oneshot::channel();
         let tmp_dir = tempfile::tempdir()?;
         let store_dir = tmp_dir.path();
         // Delete the directory after restart and verification of `recover`.
         let store_path = store_dir.as_os_str().to_os_string();
 
         let (recovery_completion_tx, recovery_completion_rx) = oneshot::channel();
-
+        let (sq_tx, sq_rx) = crossbeam::channel::unbounded();
         let handle = std::thread::spawn(move || {
             let store_dir = Path::new(&store_path);
-            let mut io = create_default_io(store_dir).unwrap();
-            let sender = io
-                .sender
-                .take()
-                .ok_or(StoreError::Configuration("IO channel".to_owned()))
-                .unwrap();
-            let _ = tx.send(sender);
+            let io = create_default_io(store_dir, sq_rx).unwrap();
             let io = RefCell::new(io);
 
             let _ = super::IO::run(io, recovery_completion_tx);
@@ -1907,10 +1887,6 @@ mod tests {
         if recovery_completion_rx.blocking_recv().is_err() {
             panic!("Failed to wait store recovery completion");
         }
-
-        let sender = rx
-            .blocking_recv()
-            .map_err(|_| StoreError::Internal("Internal error".to_owned()))?;
 
         let mut payload = BytesMut::with_capacity(1024);
         payload.resize(1024, 65);
@@ -1932,14 +1908,13 @@ mod tests {
         assert_eq!(buffer.len(), total as usize);
 
         let records: Vec<_> = (0..16).map(|_| buffer.clone()).collect();
-
-        send_and_receive_with_records(sender.clone(), 0, 0, records);
-
-        drop(sender);
+        send_and_receive_with_records(sq_tx.clone(), 0, 0, records);
+        drop(sq_tx);
         handle.join().map_err(|_| StoreError::AllocLogSegment)?;
 
         {
-            let mut io = create_default_io(store_dir).unwrap();
+            let (_sq_tx, sq_rx) = crossbeam::channel::unbounded();
+            let mut io = create_default_io(store_dir, sq_rx).unwrap();
             io.load()?;
             let pos = io.indexer.get_wal_checkpoint()?;
             io.recover(pos)?;
