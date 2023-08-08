@@ -57,6 +57,8 @@ store:
   segment-size: 1073741824
   # Max block cache size
   max-cache-size: 1073741824
+  # Optimal I/O size
+  io-size: 262144
   # High watermark of block cache, the value range is 0~100
   cache-high-watermark: 80
   # Preferred IO read size: 128KiB

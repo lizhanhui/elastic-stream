@@ -282,7 +282,12 @@ impl IO {
     }
 
     #[inline]
-    fn add_pending_task(&mut self, mut io_task: IoTask, received: &mut usize) {
+    fn add_pending_task(
+        &mut self,
+        mut io_task: IoTask,
+        received: &mut usize,
+        buffered: &mut usize,
+    ) {
         if !IO::validate_io_task(&mut io_task) {
             IO::on_bad_request(io_task);
             return;
@@ -295,6 +300,7 @@ impl IO {
                     write_task.stream_id,
                     write_task.offset
                 );
+                *buffered += write_task.buffer.len();
             }
             IoTask::Read(read_task) => {
                 trace!(
@@ -313,6 +319,7 @@ impl IO {
 
     fn receive_io_tasks(&mut self) -> usize {
         let mut received = 0;
+        let mut buffered = 0;
         let io_depth = self.data_ring.params().sq_entries() as usize;
         IO_DEPTH.set(io_depth as i64);
         loop {
@@ -337,6 +344,10 @@ impl IO {
             // Amazon EBS splits I/O operations larger than the maximum 256 KiB into smaller operations.
             // For example, if the I/O size is 500 KiB, Amazon EBS splits the operation into 2 IOPS.
             // The first one is 256 KiB and the second one is 244 KiB.
+            if buffered >= self.options.store.io_size {
+                break received;
+            }
+
             if self.inflight + received >= io_depth {
                 break received;
             }
@@ -353,7 +364,7 @@ impl IO {
                 // Block the thread until at least one IO task arrives
                 match self.sq_rx.recv() {
                     Ok(io_task) => {
-                        self.add_pending_task(io_task, &mut received);
+                        self.add_pending_task(io_task, &mut received, &mut buffered);
                     }
                     Err(_e) => {
                         info!("Channel for submitting IO task disconnected");
@@ -366,7 +377,7 @@ impl IO {
                 // modern storage products like NVMe SSD.
                 match self.sq_rx.try_recv() {
                     Ok(io_task) => {
-                        self.add_pending_task(io_task, &mut received);
+                        self.add_pending_task(io_task, &mut received, &mut buffered);
                     }
                     Err(TryRecvError::Empty) => {
                         break received;

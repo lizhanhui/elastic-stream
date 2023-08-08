@@ -284,6 +284,9 @@ pub struct Store {
     #[serde(default)]
     pub alignment: usize,
 
+    #[serde(rename = "io-size")]
+    pub io_size: usize,
+
     // Total number of blocks of the device that backs store-base.
     #[serde(default)]
     pub blocks: u64,
@@ -317,6 +320,7 @@ impl Default for Store {
             max_cache_size: 1048576,
             cache_high_watermark: 80,
             alignment: 4096,
+            io_size: 1024 * 256,
             blocks: 0,
             read_block_size: 131072,
             pre_allocate_segment_file_number: 2,
