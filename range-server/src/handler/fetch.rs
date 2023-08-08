@@ -155,7 +155,7 @@ impl<'a> Fetch<'a> {
                 offset,
                 max_offset: limit as u64,
                 max_wait_ms: self.fetch_request.max_wait_ms(),
-                max_bytes: self.fetch_request.max_wait_ms(),
+                max_bytes: self.fetch_request.max_bytes(),
             })
         } else {
             Err(FetchError::RangeNotFound)
