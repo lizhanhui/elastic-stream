@@ -1,10 +1,3 @@
-use std::{
-    cell::RefCell,
-    os::fd::{AsRawFd, RawFd},
-    sync::Arc,
-    thread::{Builder, JoinHandle},
-};
-
 use super::lock::Lock;
 use crate::{
     error::{AppendError, FetchError, StoreError},
@@ -25,22 +18,28 @@ use crate::{
 };
 use bytes::Buf;
 use client::PlacementDriverIdGenerator;
-use crossbeam::channel::Sender;
+use crossbeam::channel::{Receiver, Sender, TryRecvError};
 use futures::future::join_all;
-use log::{error, trace};
+use log::{error, trace, warn};
 use model::range::RangeMetadata;
 use observation::metrics::store_metrics::{
     RangeServerStatistics, STORE_APPEND_BYTES_COUNT, STORE_APPEND_COUNT,
     STORE_APPEND_LATENCY_HISTOGRAM, STORE_FAILED_APPEND_COUNT, STORE_FAILED_FETCH_COUNT,
     STORE_FETCH_BYTES_COUNT, STORE_FETCH_COUNT, STORE_FETCH_LATENCY_HISTOGRAM,
 };
+use std::{
+    cell::{RefCell, UnsafeCell},
+    collections::VecDeque,
+    os::fd::{AsRawFd, RawFd},
+    rc::Rc,
+    sync::Arc,
+    thread::{Builder, JoinHandle},
+    time::Duration,
+};
 use tokio::sync::{mpsc, oneshot};
 
-#[derive(Clone)]
-pub struct ElasticStore {
-    config: Arc<config::Configuration>,
-
-    lock: Arc<Lock>,
+struct Shared {
+    lock: Lock,
 
     /// The channel for server layer to communicate with io module.
     ///
@@ -59,7 +58,18 @@ pub struct ElasticStore {
     sharing_uring: RawFd,
 
     #[allow(dead_code)]
-    join_handles: Arc<util::HandleJoiner>,
+    join_handles: util::HandleJoiner,
+}
+
+type InflightAppends = VecDeque<local_sync::oneshot::Sender<Result<AppendResult, AppendError>>>;
+type Rx = Receiver<Result<AppendResult, AppendError>>;
+
+pub struct ElasticStore {
+    config: Arc<config::Configuration>,
+    shared: Arc<Shared>,
+    cq_tx: Sender<Result<AppendResult, AppendError>>,
+    cq_rx: Rc<Rx>,
+    inflight_appends: Rc<UnsafeCell<InflightAppends>>,
 }
 
 impl ElasticStore {
@@ -69,7 +79,7 @@ impl ElasticStore {
     ) -> Result<Self, StoreError> {
         let id_generator = Box::new(PlacementDriverIdGenerator::new(&config));
 
-        let lock = Arc::new(Lock::new(&config, id_generator)?);
+        let lock = Lock::new(&config, id_generator)?;
 
         // Fill server_id
         config.server.server_id = lock.id();
@@ -84,20 +94,18 @@ impl ElasticStore {
             config.store.rocksdb.flush_threshold,
         )?);
 
-        let (sender, receiver) = oneshot::channel();
-
-        // IO thread will be left in detached state.
-        // Copy a indexer
-        let indexer_cp = Arc::clone(&indexer);
+        // Clone indexer for IO thread
+        let indexer_ = Arc::clone(&indexer);
         let cfg = Arc::clone(&config);
         let (sq_tx, sq_rx) = crossbeam::channel::unbounded();
-        let _io_thread_handle = Self::with_thread("IO", move || {
+        let (sender, receiver) = oneshot::channel();
+        let io_thread_handle = Self::with_thread("IO", move || {
             if !core_affinity::set_for_current(core_affinity::CoreId {
                 id: cfg.store.io_cpu,
             }) {
                 error!("Failed to set affinity for IO thread");
             }
-            let io = io::IO::new(&cfg, indexer_cp, sq_rx)?;
+            let io = io::IO::new(&cfg, indexer_, sq_rx)?;
             let sharing_uring = io.as_raw_fd();
 
             let io = RefCell::new(io);
@@ -111,16 +119,25 @@ impl ElasticStore {
             .map_err(|_e| StoreError::Internal("Start".to_owned()))?;
 
         let mut handle_joiner = util::HandleJoiner::new();
-        handle_joiner.push(_io_thread_handle);
+        handle_joiner.push(io_thread_handle);
 
-        let store = Self {
-            config,
+        let shared = Arc::new(Shared {
             lock,
             sq_tx,
             indexer,
             wal_offset_manager,
             sharing_uring,
-            join_handles: Arc::new(handle_joiner),
+            join_handles: handle_joiner,
+        });
+
+        let (cq_tx, cq_rx) = crossbeam::channel::unbounded();
+
+        let store = Self {
+            config,
+            shared,
+            cq_tx,
+            cq_rx: Rc::new(cq_rx),
+            inflight_appends: Rc::new(UnsafeCell::new(VecDeque::new())),
         };
         trace!("ElasticStore launched");
         Ok(store)
@@ -147,22 +164,18 @@ impl ElasticStore {
     ///
     /// * `request` - Append record request, which includes target stream_id, logical offset and serialized `Record` data.
     /// * `observer` - Oneshot sender, used to return `AppendResult` or propagate error.
-    fn do_append(
-        &self,
-        request: AppendRecordRequest,
-        observer: oneshot::Sender<Result<AppendResult, AppendError>>,
-    ) {
+    fn do_append(&self, request: AppendRecordRequest) {
         let task = WriteTask {
             stream_id: request.stream_id,
             range: request.range_index as u32,
             offset: request.offset,
             len: request.len,
             buffer: request.buffer,
-            observer,
+            observer: self.cq_tx.clone(),
             written_len: None,
         };
         let io_task = Write(task);
-        if let Err(e) = self.sq_tx.send(io_task) {
+        if let Err(e) = self.shared.sq_tx.send(io_task) {
             if let Write(task) = e.0 {
                 if let Err(e) = task.observer.send(Err(AppendError::SubmissionQueue)) {
                     error!("Failed to propagate error: {:?}", e);
@@ -173,16 +186,57 @@ impl ElasticStore {
 }
 
 impl Store for ElasticStore {
+    fn start(&self) {
+        let cq = Rc::clone(&self.cq_rx);
+        let inflight = Rc::clone(&self.inflight_appends);
+        tokio_uring::spawn(async move {
+            let appends = unsafe { &mut *inflight.get() };
+            'main: loop {
+                // Try to reap append result as many as possible.
+                loop {
+                    match cq.try_recv() {
+                        Ok(res) => {
+                            trace!("Received append result {:?}", res);
+                            if let Some(tx) = appends.pop_front() {
+                                match tx.send(res) {
+                                    Ok(_) => {
+                                        trace!("Notify append result OK");
+                                    }
+                                    Err(e) => {
+                                        warn!("Failed to notify append result {:?}", e);
+                                    }
+                                }
+                            }
+                        }
+                        Err(TryRecvError::Empty) => {
+                            trace!("AppendResultCQ is empty");
+                            break;
+                        }
+
+                        Err(TryRecvError::Disconnected) => {
+                            break 'main;
+                        }
+                    }
+                }
+
+                // This spinning task shall not take up too much run time of the executor.
+                tokio::time::sleep(Duration::from_millis(1)).await;
+            }
+        });
+    }
+
     async fn append(
         &self,
         _options: &WriteOptions,
         request: AppendRecordRequest,
     ) -> Result<AppendResult, AppendError> {
         let now = std::time::Instant::now();
-        let (sender, receiver) = oneshot::channel();
         let len = request.buffer.len();
-        self.do_append(request, sender);
-        match receiver.await.map_err(|_e| AppendError::ChannelRecv) {
+        let (tx, rx) = local_sync::oneshot::channel();
+        let inflight = unsafe { &mut *self.inflight_appends.get() };
+        inflight.push_back(tx);
+        self.do_append(request);
+        match rx.await.map_err(|_e| AppendError::ChannelRecv) {
             Ok(res) => {
                 let latency = now.elapsed();
                 STORE_APPEND_LATENCY_HISTOGRAM.observe(latency.as_micros() as f64);
@@ -201,7 +255,7 @@ impl Store for ElasticStore {
     async fn fetch(&self, options: ReadOptions) -> Result<FetchResult, FetchError> {
         let now = std::time::Instant::now();
         let (index_tx, index_rx) = oneshot::channel();
-        self.indexer.scan_record_handles(
+        self.shared.indexer.scan_record_handles(
             options.stream_id,
             options.range,
             options.offset as u64,
@@ -210,7 +264,7 @@ impl Store for ElasticStore {
             index_tx,
         );
 
-        let io_tx_cp = self.sq_tx.clone();
+        let io_tx_cp = self.shared.sq_tx.clone();
         let scan_res = match index_rx.await.map_err(|_e| FetchError::TranslateIndex) {
             Ok(res) => res.map_err(|_e| FetchError::TranslateIndex),
             Err(e) => Err(e),
@@ -332,7 +386,7 @@ impl Store for ElasticStore {
         F: Fn(&RangeMetadata) -> bool,
     {
         let (tx, mut rx) = mpsc::unbounded_channel();
-        self.indexer.list_ranges(tx);
+        self.shared.indexer.list_ranges(tx);
 
         let mut ranges = vec![];
         while let Some(range) = rx.recv().await {
@@ -356,7 +410,7 @@ impl Store for ElasticStore {
         F: Fn(&RangeMetadata) -> bool,
     {
         let (tx, mut rx) = mpsc::unbounded_channel();
-        self.indexer.list_ranges_by_stream(stream_id, tx);
+        self.shared.indexer.list_ranges_by_stream(stream_id, tx);
         let mut ranges = vec![];
         while let Some(range) = rx.recv().await {
             debug_assert_eq!(stream_id, range.stream_id());
@@ -376,7 +430,7 @@ impl Store for ElasticStore {
     /// and integral replica.
     async fn seal(&self, range: RangeMetadata) -> Result<(), StoreError> {
         let (tx, rx) = oneshot::channel();
-        self.indexer.seal_range(range, tx);
+        self.shared.indexer.seal_range(range, tx);
         rx.await
             .map_err(|_e| StoreError::Internal("Channel error".to_owned()))
             .flatten()
@@ -384,7 +438,7 @@ impl Store for ElasticStore {
 
     async fn create(&self, range: RangeMetadata) -> Result<(), StoreError> {
         let (tx, rx) = oneshot::channel();
-        self.indexer.create_range(range, tx);
+        self.shared.indexer.create_range(range, tx);
         rx.await
             .map_err(|_e| StoreError::Internal("Channel error".to_owned()))
             .flatten()
@@ -397,13 +451,14 @@ impl Store for ElasticStore {
     /// `Some(u64)` - If the max record offset is found;
     /// `None` - If there is no record of the given stream;
     fn max_record_offset(&self, stream_id: i64, range: u32) -> Result<Option<u64>, StoreError> {
-        self.indexer
+        self.shared
+            .indexer
             .retrieve_max_key(stream_id, range)
             .map(|buf| buf.map(|entry| entry.max_offset()))
     }
 
     fn id(&self) -> i32 {
-        self.lock.id()
+        self.shared.lock.id()
     }
 
     fn config(&self) -> Arc<config::Configuration> {
@@ -414,9 +469,30 @@ impl Store for ElasticStore {
 impl AsRawFd for ElasticStore {
     /// FD of the underlying I/O Uring instance, for the purpose of sharing worker pool with other I/O Uring instances.
     fn as_raw_fd(&self) -> RawFd {
-        self.sharing_uring
+        self.shared.sharing_uring
     }
 }
+
+impl Clone for ElasticStore {
+    fn clone(&self) -> Self {
+        let (cq_tx, cq_rx) = crossbeam::channel::unbounded();
+        Self {
+            config: Arc::clone(&self.config),
+            shared: Arc::clone(&self.shared),
+            cq_tx,
+            cq_rx: Rc::new(cq_rx),
+            inflight_appends: Rc::new(UnsafeCell::new(VecDeque::new())),
+        }
+    }
+}
+
+/// Safety: Given that we implement a custom `Clone` and shared parts are immutable, `ElasticStore` is safe
+/// to be marked as `Send`.
+///
+/// Warning `ElasticStore` is not thread-safe because `append` and `run` may concurrently modify `inflight_appends` otherwise.
+///
+/// `ElasticStore` is supposed to be used in a single thread runtime like `tokio-uring` or `monoio`, following thread-per-core design pattern.
+unsafe impl Send for ElasticStore {}
 
 /// Some tests for ElasticStore.
 #[cfg(test)]
@@ -454,13 +530,11 @@ mod tests {
     }
 
     /// Test the basic append and fetch operations.
-    #[tokio::test]
-    async fn test_run_store() -> Result<(), Box<dyn Error>> {
+    #[test]
+    fn test_run_store() -> Result<(), Box<dyn Error>> {
         crate::log::try_init_log();
         let store_dir = tempfile::tempdir()?;
         let store_path = store_dir.path().to_str().unwrap().to_owned();
-
-        let (tx, rx) = oneshot::channel();
 
         let (stop_tx, stop_rx) = oneshot::channel();
         let (port_tx, port_rx) = oneshot::channel();
@@ -472,104 +546,102 @@ mod tests {
                 let _ = stop_rx.await;
             });
         });
-        let port = port_rx.await.unwrap();
+
+        let port = port_rx.blocking_recv()?;
         let pd_address = format!("localhost:{}", port);
-        let _ = std::thread::spawn(move || {
-            let store = build_store(&pd_address, store_path.as_str());
-            let send_r = tx.send(store);
-            if send_r.is_err() {
-                panic!("Failed to send store");
-            }
-        });
+        let store = build_store(&pd_address, store_path.as_str());
 
-        let store = rx.await.unwrap();
-        let options = WriteOptions::default();
-        let mut append_fs = vec![];
-        (0..1024)
-            .map(|i| AppendRecordRequest {
-                stream_id: 1,
-                range_index: 0,
-                offset: i,
-                len: 1,
-                buffer: Bytes::from(format!("{}-{}", "hello, world", i)),
-            })
-            .for_each(|req| {
-                let append_f = store.append(&options, req);
-                append_fs.push(append_f)
-            });
-
-        let append_rs: Vec<Result<AppendResult, AppendError>> = join_all(append_fs).await;
-
-        // Case One: Fetch all records one by one.
-        {
-            let mut fetch_futures = vec![];
-            append_rs.iter().for_each(|res| {
-                // Log the append result
-                match res {
-                    Ok(res) => {
-                        trace!("Append result: {:?}", res);
-                        let options = ReadOptions {
-                            stream_id: 1,
-                            range: 0,
-                            offset: res.offset,
-                            max_offset: 1024,
-                            max_bytes: 1,
-                            max_wait_ms: 1000,
-                        };
-                        let fetch_future = store.fetch(options);
-                        fetch_futures.push(fetch_future);
-                    }
-                    Err(e) => {
-                        panic!("Append error: {:?}", e);
-                    }
-                }
-            });
-
-            let fetch_rs: Vec<Result<FetchResult, FetchError>> = join_all(fetch_futures).await;
-            assert!(fetch_rs.len() == append_rs.len());
-            fetch_rs.iter().for_each(|res| {
-                let res = res.as_ref().expect("Fetch should not fail");
-                let mut res_payload = BytesMut::new();
-                res.results.iter().for_each(|r| {
-                    res_payload.extend_from_slice(&copy_single_fetch_result(r));
+        tokio_uring::start(async move {
+            store.start();
+            let options = WriteOptions::default();
+            let mut append_fs = vec![];
+            (0..1024)
+                .map(|i| AppendRecordRequest {
+                    stream_id: 1,
+                    range_index: 0,
+                    offset: i,
+                    len: 1,
+                    buffer: Bytes::from(format!("{}-{}", "hello, world", i)),
+                })
+                .for_each(|req| {
+                    let append_f = store.append(&options, req);
+                    append_fs.push(append_f)
                 });
 
-                assert_eq!(
-                    Bytes::copy_from_slice(&res_payload[..]),
-                    Bytes::from(format!("{}-{}", "hello, world", res.offset))
-                );
-            });
-        }
+            let append_rs: Vec<Result<AppendResult, AppendError>> = join_all(append_fs).await;
 
-        // Case Two: Fetch all records through a single call
-        {
-            let mut fetch_futures = vec![];
-            let options = ReadOptions {
-                stream_id: 1,
-                range: 0,
-                offset: 0,
-                max_offset: 1024,
-                max_bytes: 1024 * 1024 * 1024,
-                max_wait_ms: 1000,
-            };
-            let fetch_future = store.fetch(options);
-            fetch_futures.push(fetch_future);
-            let fetch_results: Vec<Result<FetchResult, FetchError>> = join_all(fetch_futures).await;
-            assert_eq!(1, fetch_results.len());
-            let fetch_result = fetch_results[0].as_ref().unwrap();
-            fetch_result.results.iter().enumerate().for_each(|(i, r)| {
-                let mut res_payload = BytesMut::new();
-                res_payload.extend_from_slice(&copy_single_fetch_result(r));
-                assert_eq!(
-                    Bytes::copy_from_slice(&res_payload[..]),
-                    Bytes::from(format!("{}-{}", "hello, world", i))
-                );
-            });
-        }
+            // Case One: Fetch all records one by one.
+            {
+                let mut fetch_futures = vec![];
+                append_rs.iter().for_each(|res| {
+                    // Log the append result
+                    match res {
+                        Ok(res) => {
+                            trace!("Append result: {:?}", res);
+                            let options = ReadOptions {
+                                stream_id: 1,
+                                range: 0,
+                                offset: res.offset,
+                                max_offset: 1024,
+                                max_bytes: 1,
+                                max_wait_ms: 1000,
+                            };
+                            let fetch_future = store.fetch(options);
+                            fetch_futures.push(fetch_future);
+                        }
+                        Err(e) => {
+                            panic!("Append error: {:?}", e);
+                        }
+                    }
+                });
 
+                let fetch_rs: Vec<Result<FetchResult, FetchError>> = join_all(fetch_futures).await;
+                assert!(fetch_rs.len() == append_rs.len());
+                fetch_rs.iter().for_each(|res| {
+                    let res = res.as_ref().expect("Fetch should not fail");
+                    let mut res_payload = BytesMut::new();
+                    res.results.iter().for_each(|r| {
+                        res_payload.extend_from_slice(&copy_single_fetch_result(r));
+                    });
+
+                    assert_eq!(
+                        Bytes::copy_from_slice(&res_payload[..]),
+                        Bytes::from(format!("{}-{}", "hello, world", res.offset))
+                    );
+                });
+            }
+
+            // Case Two: Fetch all records through a single call
+            {
+                let mut fetch_futures = vec![];
+                let options = ReadOptions {
+                    stream_id: 1,
+                    range: 0,
+                    offset: 0,
+                    max_offset: 1024,
+                    max_bytes: 1024 * 1024 * 1024,
+                    max_wait_ms: 1000,
+                };
+                let fetch_future = store.fetch(options);
+                fetch_futures.push(fetch_future);
+                let fetch_results: Vec<Result<FetchResult, FetchError>> =
+                    join_all(fetch_futures).await;
+                assert_eq!(1, fetch_results.len());
+                let fetch_result = fetch_results[0].as_ref().unwrap();
+                fetch_result.results.iter().enumerate().for_each(|(i, r)| {
+                    let mut res_payload = BytesMut::new();
+                    res_payload.extend_from_slice(&copy_single_fetch_result(r));
+                    assert_eq!(
+                        Bytes::copy_from_slice(&res_payload[..]),
+                        Bytes::from(format!("{}-{}", "hello, world", i))
+                    );
+                });
+            }
+
+            drop(store);
+        });
         let _ = stop_tx.send(());
         let _ = handle.join();
-        drop(store);
         Ok(())
     }
 

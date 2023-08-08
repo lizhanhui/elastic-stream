@@ -101,6 +101,9 @@ where
                     .setup_attach_wq(self.config.sharing_uring),
             )
             .start(async {
+                // Run dispatching service of Store.
+                self.store.start();
+
                 if let Some(watcher) = self.metadata_watcher.as_ref() {
                     watcher.start(self.pd_client.clone());
                 }

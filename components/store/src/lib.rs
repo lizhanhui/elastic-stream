@@ -51,6 +51,11 @@ use mockall::automock;
 /// Definition of core storage trait.
 #[cfg_attr(any(test, feature = "mock"), automock)]
 pub trait Store {
+    /// Start daemon service of the store.
+    ///
+    /// This method may only be called in async runtime as it usually spawns a task that runs in the background.
+    fn start(&self) {}
+
     /// Append a new record into store.
     ///
     /// * `options` - Write options, specifying how the record is written to persistent medium.

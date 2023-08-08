@@ -32,7 +32,7 @@ pub struct AsyncObjectStorage {
 impl AsyncObjectStorage {
     pub fn new<S>(config: &Configuration, store: S) -> Self
     where
-        S: Store + Send + Sync + 'static,
+        S: Store + Send + 'static,
     {
         let (tx, mut rx) = mpsc::unbounded_channel();
         let config = config.clone();

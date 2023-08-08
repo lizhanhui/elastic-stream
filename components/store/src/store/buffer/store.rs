@@ -82,6 +82,10 @@ impl<S> Store for BufferedStore<S>
 where
     S: Store,
 {
+    fn start(&self) {
+        self.store.start();
+    }
+
     /// Append a new record into store.
     ///
     /// * `options` - Write options, specifying how the record is written to persistent medium.

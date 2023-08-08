@@ -1,4 +1,5 @@
 use bytes::Bytes;
+use crossbeam::channel::Sender;
 use derivative::Derivative;
 use tokio::sync::oneshot;
 
@@ -81,7 +82,7 @@ pub(crate) struct WriteTask {
     /// See `components/store/src/io/record.rs`.
     pub(crate) written_len: Option<u32>,
 
-    pub(crate) observer: oneshot::Sender<Result<AppendResult, AppendError>>,
+    pub(crate) observer: Sender<Result<AppendResult, AppendError>>,
 }
 
 impl WriteTask {

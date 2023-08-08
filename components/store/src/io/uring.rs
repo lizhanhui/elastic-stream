@@ -1644,6 +1644,7 @@ mod tests {
         let tmp_dir = tempfile::tempdir()?;
         let store_dir = tmp_dir.path();
         let (sq_tx, sq_rx) = crossbeam::channel::unbounded();
+        let (cq_tx, _cq_rx) = crossbeam::channel::unbounded();
         let mut io = create_default_io(store_dir, sq_rx)?;
         let mut buffer = BytesMut::with_capacity(128);
         buffer.resize(128, 65);
@@ -1652,14 +1653,13 @@ mod tests {
         // Send IoTask to channel
         (0..16)
             .flat_map(|_| {
-                let (tx, _rx) = oneshot::channel();
                 let io_task = IoTask::Write(WriteTask {
                     stream_id: 0,
                     range: 0,
                     offset: 0,
                     len: 1,
                     buffer: buffer.clone(),
-                    observer: tx,
+                    observer: cq_tx.clone(),
                     written_len: None,
                 });
                 sq_tx.send(io_task)
@@ -1693,6 +1693,7 @@ mod tests {
         crate::log::try_init_log();
         let store_path = tempfile::tempdir()?;
         let (_sq_tx, sq_rx) = crossbeam::channel::unbounded();
+        let (cq_tx, _cq_rx) = crossbeam::channel::unbounded();
         let file_size = 1024 * 1024;
         let mut io = IOBuilder::new(store_path.path().to_path_buf(), sq_rx)
             .segment_size(file_size)
@@ -1709,14 +1710,13 @@ mod tests {
         let bytes = bytes.freeze();
 
         for _ in 0..4 {
-            let (tx, _rx) = oneshot::channel();
             let write_task = WriteTask {
                 stream_id: 0,
                 range: 0,
                 offset: 0,
                 len: 1,
                 buffer: bytes.clone(),
-                observer: tx,
+                observer: cq_tx.clone(),
                 written_len: None,
             };
             let task = IoTask::Write(write_task);
@@ -1730,14 +1730,13 @@ mod tests {
         assert_eq!(0, buf_writer.cursor);
 
         for _ in 0..4 {
-            let (tx, _rx) = oneshot::channel();
             let write_task = WriteTask {
                 stream_id: 0,
                 range: 0,
                 offset: 0,
                 len: 1,
                 buffer: bytes.clone(),
-                observer: tx,
+                observer: cq_tx.clone(),
                 written_len: None,
             };
             let task = IoTask::Write(write_task);
@@ -1751,14 +1750,13 @@ mod tests {
         assert_eq!(0, buf_writer.cursor);
 
         for _ in 0..1024 {
-            let (tx, _rx) = oneshot::channel();
             let write_task = WriteTask {
                 stream_id: 0,
                 range: 0,
                 offset: 0,
                 len: 1,
                 buffer: bytes.clone(),
-                observer: tx,
+                observer: cq_tx.clone(),
                 written_len: None,
             };
             let task = IoTask::Write(write_task);
@@ -1782,6 +1780,7 @@ mod tests {
         let tmp_dir = tempfile::tempdir()?;
         let store_dir = tmp_dir.path();
         let (_sq_tx, sq_rx) = crossbeam::channel::unbounded();
+        let (_cq_tx, _cq_rx) = crossbeam::channel::unbounded();
         let mut io = create_default_io(store_dir, sq_rx)?;
 
         io.wal.open_segment_directly()?;
@@ -1794,14 +1793,13 @@ mod tests {
         // Send IoTask to channel
         (0..16)
             .map(|n| {
-                let (tx, _rx) = oneshot::channel();
                 IoTask::Write(WriteTask {
                     stream_id: 0,
                     range: 0,
                     offset: n,
                     len: 1,
                     buffer: buffer.clone(),
-                    observer: tx,
+                    observer: _cq_tx.clone(),
                     written_len: None,
                 })
             })
@@ -1978,20 +1976,18 @@ mod tests {
         start_offset: i64,
         records: Vec<bytes::Bytes>,
     ) {
-        let mut receivers = vec![];
+        let (cq_tx, cq_rx) = crossbeam::channel::unbounded();
         records
             .iter()
             .enumerate()
             .map(|(i, buf)| {
-                let (tx, rx) = oneshot::channel();
-                receivers.push(rx);
                 IoTask::Write(WriteTask {
                     stream_id,
                     range: 0,
                     offset: start_offset + i as i64,
                     len: 1,
                     buffer: buf.clone(),
-                    observer: tx,
+                    observer: cq_tx.clone(),
                     written_len: None,
                 })
             })
@@ -2000,8 +1996,8 @@ mod tests {
             });
 
         let mut results = Vec::new();
-        for receiver in receivers {
-            let res = receiver.blocking_recv().unwrap().unwrap();
+        while let Ok(res) = cq_rx.recv() {
+            let res = res.unwrap();
             trace!(
                 "{{ stream-id: {}, offset: {} , wal_offset: {}}}",
                 res.stream_id,
@@ -2009,6 +2005,9 @@ mod tests {
                 res.wal_offset
             );
             results.push(res);
+            if results.len() >= records.len() {
+                break;
+            }
         }
 
         // Read the data from store
