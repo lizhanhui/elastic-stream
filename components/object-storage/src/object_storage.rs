@@ -21,7 +21,10 @@ use crate::object_manager::DefaultObjectManager;
 use crate::range_accumulator::{DefaultRangeAccumulator, RangeAccumulator};
 use crate::range_fetcher::{DefaultRangeFetcher, RangeFetcher};
 use crate::range_offload::RangeOffload;
-use crate::{shutdown_chan, ObjectManager, ObjectStorage, OwnerEvent, ShutdownRx, ShutdownTx};
+use crate::{
+    shutdown_chan, ObjectManager, ObjectStorage, OffloadProgressListener, OwnerEvent, ShutdownRx,
+    ShutdownTx,
+};
 use crate::{Owner, RangeKey};
 
 #[derive(Clone)]
@@ -90,6 +93,13 @@ impl AsyncObjectStorage {
                                 let _ = shutdown_tx.send(());
                                 break;
                             }
+                            Task::Watch(tx) => {
+                                let object_storage = object_storage.clone();
+                                tokio_uring::spawn(async move {
+                                    let rst = object_storage.watch_offload_progress().await;
+                                    let _ = tx.send(rst);
+                                });
+                            }
                         }
                     }
                 });
@@ -136,6 +146,12 @@ impl ObjectStorage for AsyncObjectStorage {
         let _ = self.tx.send(Task::Close(tx));
         let _ = rx.await;
     }
+
+    async fn watch_offload_progress(&self) -> OffloadProgressListener {
+        let (tx, rx) = oneshot::channel();
+        let _ = self.tx.send(Task::Watch(tx));
+        rx.await.unwrap()
+    }
 }
 
 enum Task {
@@ -143,6 +159,7 @@ enum Task {
     GetObjects(GetObjectsTask),
     GetOffloadingRange(oneshot::Sender<Vec<RangeKey>>),
     Close(oneshot::Sender<()>),
+    Watch(oneshot::Sender<OffloadProgressListener>),
 }
 
 struct GetObjectsTask {
@@ -285,6 +302,10 @@ where
         drop(self.shutdown_rx.borrow_mut().take());
         self.shutdown_tx.shutdown().await;
         info!("object storage closed");
+    }
+
+    async fn watch_offload_progress(&self) -> OffloadProgressListener {
+        self.object_manager.watch_offload_progress()
     }
 }
 

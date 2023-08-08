@@ -21,6 +21,9 @@ use mockall::automock;
 
 use tokio::sync::{broadcast, mpsc};
 
+pub type OffloadProgress = Vec<((u64, u32), u64)>;
+pub type OffloadProgressListener = mpsc::UnboundedReceiver<OffloadProgress>;
+
 #[automock]
 pub trait ObjectStorage {
     /// new record commit notify
@@ -37,8 +40,12 @@ pub trait ObjectStorage {
 
     async fn get_offloading_range(&self) -> Vec<RangeKey>;
 
+    async fn watch_offload_progress(&self) -> OffloadProgressListener;
+
     async fn close(&self);
 }
+
+pub type OwnerListener = mpsc::UnboundedReceiver<OwnerEvent>;
 
 #[cfg_attr(test, automock)]
 pub trait ObjectManager {
@@ -46,7 +53,7 @@ pub trait ObjectManager {
     /// Firstly, the channel will receive the ownership status of all ranges on the range server in a random order.
     /// Then, the channel will receive owner change events in time order.
     /// The channel will be closed when the object manager is closed.
-    fn owner_watcher(&self) -> mpsc::UnboundedReceiver<OwnerEvent>;
+    fn owner_watcher(&self) -> OwnerListener;
 
     async fn commit_object(&self, object_metadata: ObjectMetadata) -> Result<(), EsError>;
 
@@ -60,6 +67,9 @@ pub trait ObjectManager {
     ) -> (Vec<ObjectMetadata>, bool);
 
     fn get_offloading_range(&self) -> Vec<RangeKey>;
+
+    /// Watch the range offload progress which range is held by current server.
+    fn watch_offload_progress(&self) -> OffloadProgressListener;
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]

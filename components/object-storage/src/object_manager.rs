@@ -1,11 +1,10 @@
 use std::{
     cell::RefCell,
-    cmp::min,
     collections::{BTreeMap, HashMap},
     rc::Rc,
 };
 
-use crate::{ObjectManager, Owner, OwnerEvent, RangeKey};
+use crate::{ObjectManager, OffloadProgress, OffloadProgressListener, Owner, OwnerEvent, RangeKey};
 use bytes::Bytes;
 use model::{
     error::EsError,
@@ -14,7 +13,7 @@ use model::{
 };
 use pd_client::PlacementDriverClient;
 use protocol::rpc::header::ResourceType;
-use tokio::sync::mpsc::{unbounded_channel, Receiver, UnboundedReceiver, UnboundedSender};
+use tokio::sync::mpsc::{self, unbounded_channel, Receiver, UnboundedReceiver, UnboundedSender};
 use tokio_util::sync::CancellationToken;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -142,7 +141,7 @@ impl Objects {
 }
 
 #[derive(Debug, Default)]
-struct OffloadingObjects {
+struct ManagedObjects {
     objects: Objects,
 
     /// This server is the owner of the range or not
@@ -153,9 +152,11 @@ struct OffloadingObjects {
 
     /// The start offset of the range
     start_offset: u64,
+
+    offloaded: bool,
 }
 
-impl OffloadingObjects {
+impl ManagedObjects {
     fn offload_offset(&self) -> u64 {
         // TODO: cache the offload offset
         self.objects
@@ -179,33 +180,29 @@ impl OffloadingObjects {
 
 #[derive(Debug, Default)]
 struct Metadata {
-    /// Ranges held by this server and not offloaded yet.
-    offloading: HashMap<RangeKey, OffloadingObjects>,
+    /// Ranges held by this server.
+    managed: HashMap<RangeKey, ManagedObjects>,
 
-    /// Ranges held by this server and already offloaded
-    /// or
     /// Ranges not held by this server.
     other: HashMap<RangeKey, Objects>,
 
     /// Senders of owner change event.
     /// Owner changes in [`offloading`] will be sent to these senders.
     owner_event_senders: Vec<UnboundedSender<OwnerEvent>>,
+
+    /// Listeners of range offload progress.
+    offload_progress_listeners: Vec<mpsc::UnboundedSender<OffloadProgress>>,
 }
 
 impl Metadata {
     /// Save object metadata.
-    /// If `need_flush` is true, flush the offload offset of the range.
-    fn add_object(&mut self, object: &ObjectMetadata, need_flush: bool) {
+    /// return offload offset.
+    fn add_object(&mut self, object: &ObjectMetadata) -> Option<u64> {
         let key = RangeKey::new(object.stream_id, object.range_index);
-        match self.offloading.get_mut(&key) {
-            Some(offloading) => {
-                offloading.objects.0.insert(object.into(), object.into());
-
-                // TODO: flush offload offset
-                let _ = need_flush;
-                if 0 == 1 {
-                    self.archive_objects(&key);
-                }
+        match self.managed.get_mut(&key) {
+            Some(managed) => {
+                managed.objects.0.insert(object.into(), object.into());
+                return Some(managed.offload_offset());
             }
             None => {
                 // range not held by this server
@@ -216,17 +213,7 @@ impl Metadata {
                     .insert(object.into(), object.into());
             }
         }
-    }
-
-    /// Move objects from `offloading` to `other`.
-    fn archive_objects(&mut self, key: &RangeKey) {
-        if let Some(offloading) = self.offloading.remove(key) {
-            self.other
-                .entry(*key)
-                .or_default()
-                .0
-                .extend(offloading.objects.0);
-        }
+        None
     }
 
     fn get_objects(
@@ -236,7 +223,7 @@ impl Metadata {
         end_offset: u64,
         size_hint: u32,
     ) -> (Vec<ObjectMetadata>, bool) {
-        self.offloading
+        self.managed
             .get(key)
             .map(|o| &o.objects)
             .or(self.other.get(key))
@@ -252,7 +239,7 @@ impl Metadata {
     }
 
     fn reset(&mut self) {
-        self.offloading.clear();
+        self.managed.clear();
         self.other.clear();
     }
 }
@@ -304,11 +291,8 @@ where
                 Some(event) = rx.recv() => {
                     let metadata = metadata.clone();
                     match event.event_type {
-                        EventType::Listed  => {
-                            Self::handle_added_resource(&event.resource, server_id, &metadata, true);
-                        }
-                        EventType::Added => {
-                            Self::handle_added_resource(&event.resource, server_id, &metadata, false);
+                        EventType::Listed  | EventType::Added=> {
+                            Self::handle_added_resource(&event.resource, server_id, &metadata);
                         }
                         EventType::Modified => {
                             Self::handle_modified_resource(&event.resource, &metadata);
@@ -331,15 +315,16 @@ where
         resource: &Resource,
         server_id: i32,
         metadata: &Rc<RefCell<Metadata>>,
-        listed: bool,
     ) {
         match resource {
             Resource::Range(range) => {
                 let mut metadata = metadata.borrow_mut();
-                let key = RangeKey::new(range.stream_id() as u64, range.index() as u32);
+                let stream_id = range.stream_id() as u64;
+                let range_index = range.index() as u32;
+                let key = RangeKey::new(stream_id, range_index);
                 if range.held_by(server_id) {
                     if let Some(owner) = range.offload_owner() {
-                        let objects = metadata.offloading.entry(key).or_default();
+                        let objects = metadata.managed.entry(key).or_default();
                         objects.owner = owner.server_id == server_id;
                         objects.epoch = owner.epoch as u16;
                         objects.start_offset = range.start();
@@ -363,9 +348,17 @@ where
                 }
             }
             Resource::Object(object) => {
+                let stream_id = object.stream_id;
+                let range_index = object.range_index;
                 let mut metadata = metadata.borrow_mut();
                 // When listing objects, objects do not come by time order.
-                metadata.add_object(object, !listed);
+                if let Some(offload_offset) = metadata.add_object(object) {
+                    metadata.offload_progress_listeners.retain(|listener| {
+                        listener
+                            .send(vec![((stream_id, range_index), offload_offset)])
+                            .is_ok()
+                    });
+                }
             }
             _ => (),
         }
@@ -387,7 +380,7 @@ where
     fn owner_watcher(&self) -> UnboundedReceiver<OwnerEvent> {
         let (tx, rx) = unbounded_channel();
         let mut metadata = self.metadata.borrow_mut();
-        for (key, offloading) in &mut metadata.offloading {
+        for (key, offloading) in &mut metadata.managed {
             _ = tx.send(OwnerEvent {
                 range_key: *key,
                 owner: offloading.owner(),
@@ -424,10 +417,31 @@ where
     fn get_offloading_range(&self) -> Vec<RangeKey> {
         self.metadata
             .borrow()
-            .offloading
-            .keys()
+            .managed
+            .iter()
+            .filter(|o| !o.1.offloaded)
+            .map(|o| o.0)
             .copied()
             .collect::<Vec<_>>()
+    }
+
+    fn watch_offload_progress(&self) -> OffloadProgressListener {
+        let (tx, rx) = mpsc::unbounded_channel();
+        let mut metadata = self.metadata.borrow_mut();
+
+        let offload_progress = metadata
+            .managed
+            .iter()
+            .map(|(range_key, objects)| {
+                (
+                    (range_key.stream_id, range_key.range_index),
+                    objects.offload_offset(),
+                )
+            })
+            .collect();
+        let _ = tx.send(offload_progress);
+        metadata.offload_progress_listeners.push(tx);
+        rx
     }
 }
 
@@ -440,100 +454,6 @@ where
     }
 }
 
-pub struct MemoryObjectManager {
-    cluster: String,
-    map: RefCell<HashMap<RangeKey, Vec<ObjectMetadata>>>,
-}
-
-impl MemoryObjectManager {
-    pub fn new(cluster: &str) -> Self {
-        Self {
-            cluster: cluster.to_string(),
-            map: RefCell::new(HashMap::new()),
-        }
-    }
-}
-
-impl ObjectManager for MemoryObjectManager {
-    fn owner_watcher(&self) -> UnboundedReceiver<OwnerEvent> {
-        unimplemented!()
-    }
-
-    async fn commit_object(&self, object_metadata: ObjectMetadata) -> Result<(), EsError> {
-        let key = RangeKey::new(object_metadata.stream_id, object_metadata.range_index);
-        let mut map = self.map.borrow_mut();
-        let metas = if let Some(metas) = map.get_mut(&key) {
-            metas
-        } else {
-            let metas = vec![];
-            map.insert(key, metas);
-            map.get_mut(&key).unwrap()
-        };
-        metas.push(object_metadata);
-        Ok(())
-    }
-
-    fn get_objects(
-        &self,
-        stream_id: u64,
-        range_index: u32,
-        start_offset: u64,
-        end_offset: u64,
-        size_hint: u32,
-    ) -> (Vec<ObjectMetadata>, bool) {
-        let key = RangeKey::new(stream_id, range_index);
-        if let Some(metas) = self.map.borrow().get(&key) {
-            let objects = metas
-                .iter()
-                .filter(|meta| {
-                    meta.start_offset < end_offset
-                        && (u64::from(meta.end_offset_delta) + meta.start_offset) >= start_offset
-                })
-                .map(|meta| {
-                    let mut meta = meta.clone();
-                    meta.gen_object_key(&self.cluster);
-                    meta
-                })
-                .collect();
-
-            let cover_all = is_cover_all(start_offset, end_offset, size_hint, &objects);
-            (objects, cover_all)
-        } else {
-            (vec![], false)
-        }
-    }
-
-    fn get_offloading_range(&self) -> Vec<RangeKey> {
-        // TODO: replay meta event, get offloading range.
-        vec![]
-    }
-}
-
-/// Check whether objects cover the request range.
-/// Note: expect objects is sorted by `start_offset` and overlap the request range.
-fn is_cover_all(
-    mut start_offset: u64,
-    end_offset: u64,
-    mut size_hint: u32,
-    objects: &Vec<ObjectMetadata>,
-) -> bool {
-    for object in objects {
-        let object_end_offset = object.start_offset + u64::from(object.end_offset_delta);
-        if object.start_offset <= start_offset && start_offset < object_end_offset {
-            if start_offset == object.start_offset {
-                size_hint -= min(object.data_len, size_hint);
-            }
-            start_offset = object_end_offset;
-            if start_offset >= end_offset || size_hint == 0 {
-                return true;
-            }
-        } else {
-            return false;
-        }
-    }
-    false
-}
-
 #[cfg(test)]
 mod tests {
 
@@ -543,33 +463,6 @@ mod tests {
     use model::{object::ObjectMetadata, range::RangeMetadata};
     use protocol::rpc::header::{OffloadOwnerT, RangeServerT, RangeT};
     use tokio::sync::mpsc;
-
-    #[test]
-    fn test_is_cover_all() {
-        // sequence objects
-        let objects = vec![
-            new_object(100, 150, 10),
-            new_object(150, 200, 100),
-            new_object(200, 300, 100),
-        ];
-        // range match
-        assert!(is_cover_all(100, 300, 100, &objects));
-        assert!(is_cover_all(110, 250, 100, &objects));
-
-        // size match
-        assert!(is_cover_all(100, 1000, 210, &objects));
-        assert!(is_cover_all(110, 1000, 200, &objects));
-        // size not match
-        assert!(!is_cover_all(110, 1000, 210, &objects));
-
-        // hollow objects
-        let objects = vec![new_object(100, 150, 10), new_object(200, 300, 100)];
-        assert!(!is_cover_all(100, 300, 100, &objects));
-    }
-
-    fn new_object(start_offset: u64, end_offset: u64, size: u32) -> ObjectMetadata {
-        new_object_with_epoch(0, start_offset, end_offset, size)
-    }
 
     fn new_object_with_epoch(
         epoch: u16,
@@ -939,6 +832,22 @@ mod tests {
                 vec![RangeKey::new(1, 2)],
                 object_manager.get_offloading_range()
             );
+
+            // test `watch_offload_progress`
+            let mut object_rx = object_manager.watch_offload_progress();
+            let events = object_rx.recv().await.unwrap();
+            assert_eq!(vec![((1, 2), 300)], events);
+            let mut object = new_object_with_epoch(2, 300, 400, 1);
+            object.stream_id = 1;
+            object.range_index = 2;
+            tx.send(ResourceEvent {
+                event_type: EventType::Listed,
+                resource: Resource::Object(object),
+            })
+            .await
+            .unwrap();
+            let events = object_rx.recv().await.unwrap();
+            assert_eq!(vec![((1, 2), 400)], events);
         });
     }
 

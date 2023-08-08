@@ -6,7 +6,7 @@ use pd_client::PlacementDriverClient;
 use protocol::rpc::header::ResourceType;
 use tokio::sync::mpsc;
 
-use super::MetadataWatcher;
+use super::{MetadataListener, MetadataWatcher};
 
 pub(crate) struct DefaultMetadataWatcher {
     listeners: Vec<mpsc::UnboundedSender<ResourceEvent>>,
@@ -59,7 +59,7 @@ impl MetadataWatcher for DefaultMetadataWatcher {
         });
     }
 
-    fn watch(&mut self) -> Result<mpsc::UnboundedReceiver<ResourceEvent>, EsError> {
+    fn watch(&mut self) -> Result<MetadataListener, EsError> {
         if *self.started.borrow() {
             return Err(EsError::unexpected("watcher already started"));
         }

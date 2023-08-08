@@ -9,8 +9,9 @@ use crate::{
     worker_config::WorkerConfig,
 };
 use config::Configuration;
+use futures::executor::block_on;
 use log::{error, info};
-use object_storage::object_storage::AsyncObjectStorage;
+use object_storage::{object_storage::AsyncObjectStorage, ObjectStorage};
 use pd_client::pd_client::DefaultPlacementDriverClient;
 use pyroscope::PyroscopeAgent;
 use pyroscope_pprofrs::{pprof_backend, PprofConfig};
@@ -128,6 +129,7 @@ pub fn launch(
 
                     let metadata_manager = DefaultMetadataManager::new(
                         metadata_watcher_rx,
+                        None,
                         server_config.server.server_id,
                     );
 
@@ -181,6 +183,7 @@ pub fn launch(
                 let metadata_watcher_rx = metadata_watcher.watch().expect("watch metadata success");
                 let metadata_manager = DefaultMetadataManager::new(
                     metadata_watcher_rx,
+                    Some(block_on(object_storage.watch_offload_progress())),
                     server_config.server.server_id,
                 );
                 let pd_client = Rc::new(DefaultPlacementDriverClient::new(client.clone()));
