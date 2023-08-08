@@ -7,7 +7,10 @@ use model::{
     resource::{EventType, ResourceEvent},
 };
 use protocol::rpc::header::{ErrorCode, ResourceType};
-use tokio::sync::mpsc::{channel, Receiver, Sender};
+use tokio::{
+    sync::mpsc::{channel, Receiver, Sender},
+    time,
+};
 use tokio_util::sync::CancellationToken;
 
 use crate::PlacementDriverClient;
@@ -68,6 +71,7 @@ where
                             // receiver dropped, stop to list and watch resource
                             return;
                         }
+                        time::sleep(Duration::from_secs(1)).await;
                         continue;
                     }
                 };
@@ -86,6 +90,7 @@ where
                             // receiver dropped, stop to list and watch resource
                             return;
                         }
+                        time::sleep(Duration::from_secs(1)).await;
                         continue;
                     }
                 };
