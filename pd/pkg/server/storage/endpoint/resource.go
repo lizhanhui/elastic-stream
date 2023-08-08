@@ -164,8 +164,8 @@ func newResource(typ rpcfb.ResourceType, data []byte) *rpcfb.ResourceT {
 type ContinueToken struct {
 	ResourceType rpcfb.ResourceType `json:"rt"`
 	// StartKey is the key to start listing from. If empty, start from the beginning.
-	StartKey []byte `json:"start"`
-	More     bool   `json:"more"`
+	StartKey []byte `json:"start,omitempty"`
+	More     bool   `json:"more,omitempty"`
 }
 
 func (t ContinueToken) ZapFields() []zap.Field {

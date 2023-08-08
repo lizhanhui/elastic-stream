@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"fmt"
 	"sort"
 	"testing"
 
@@ -497,54 +496,6 @@ func TestHandler_CreateRange(t *testing.T) {
 			re.Equal(tt.want.after, lResp.Ranges)
 		})
 	}
-}
-
-func preHeartbeats(tb testing.TB, h *Handler, serverIDs ...int32) {
-	for _, serverID := range serverIDs {
-		preHeartbeat(tb, h, serverID)
-	}
-}
-
-func preHeartbeat(tb testing.TB, h *Handler, serverID int32) {
-	re := require.New(tb)
-
-	req := &protocol.HeartbeatRequest{HeartbeatRequestT: rpcfb.HeartbeatRequestT{
-		ClientRole: rpcfb.ClientRoleCLIENT_ROLE_RANGE_SERVER,
-		RangeServer: &rpcfb.RangeServerT{
-			ServerId:      serverID,
-			AdvertiseAddr: fmt.Sprintf("addr-%d", serverID),
-			State:         rpcfb.RangeServerStateRANGE_SERVER_STATE_READ_WRITE,
-		}}}
-	resp := &protocol.HeartbeatResponse{}
-
-	h.Heartbeat(req, resp)
-	re.Equal(rpcfb.ErrorCodeOK, resp.Status.Code, resp.Status.Message)
-}
-
-func preCreateStreams(tb testing.TB, h *Handler, replica int8, cnt int) (streamIDs []int64) {
-	streamIDs = make([]int64, 0, cnt)
-	for i := 0; i < cnt; i++ {
-		stream := preCreateStream(tb, h, replica)
-		streamIDs = append(streamIDs, stream.StreamId)
-	}
-	return
-}
-
-func preCreateStream(tb testing.TB, h *Handler, replica int8) *rpcfb.StreamT {
-	re := require.New(tb)
-
-	req := &protocol.CreateStreamRequest{CreateStreamRequestT: rpcfb.CreateStreamRequestT{
-		Stream: &rpcfb.StreamT{
-			Replica:  replica,
-			AckCount: replica,
-		},
-	}}
-	resp := &protocol.CreateStreamResponse{}
-
-	h.CreateStream(req, resp)
-	re.Equal(rpcfb.ErrorCodeOK, resp.Status.Code, resp.Status.Message)
-
-	return resp.Stream
 }
 
 func preNewRange(tb testing.TB, h *Handler, streamID int64, sealed bool, length ...int64) (r *rpcfb.RangeT) {

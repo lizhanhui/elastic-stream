@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -9,6 +10,7 @@ import (
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"go.uber.org/zap"
 
+	"github.com/AutoMQ/pd/api/rpcfb/rpcfb"
 	sbpClient "github.com/AutoMQ/pd/pkg/sbp/client"
 	"github.com/AutoMQ/pd/pkg/sbp/protocol"
 	"github.com/AutoMQ/pd/pkg/server/cluster"
@@ -106,4 +108,78 @@ func startSbpHandler(tb testing.TB, sbpClient sbpClient.Client, isLeader bool) (
 	h := NewHandler(c, zap.NewNop())
 
 	return h, func() { _ = c.Stop(); closeFunc() }
+}
+
+func preHeartbeats(tb testing.TB, h *Handler, serverIDs ...int32) {
+	for _, serverID := range serverIDs {
+		preHeartbeat(tb, h, serverID)
+	}
+}
+
+func preHeartbeat(tb testing.TB, h *Handler, serverID int32) {
+	re := require.New(tb)
+
+	req := &protocol.HeartbeatRequest{HeartbeatRequestT: rpcfb.HeartbeatRequestT{
+		ClientRole: rpcfb.ClientRoleCLIENT_ROLE_RANGE_SERVER,
+		RangeServer: &rpcfb.RangeServerT{
+			ServerId:      serverID,
+			AdvertiseAddr: fmt.Sprintf("addr-%d", serverID),
+			State:         rpcfb.RangeServerStateRANGE_SERVER_STATE_READ_WRITE,
+		}}}
+	resp := &protocol.HeartbeatResponse{}
+
+	h.Heartbeat(req, resp)
+	re.Equal(rpcfb.ErrorCodeOK, resp.Status.Code, resp.Status.Message)
+}
+
+func preCreateStreams(tb testing.TB, h *Handler, replica int8, cnt int) (streamIDs []int64) {
+	streamIDs = make([]int64, 0, cnt)
+	for i := 0; i < cnt; i++ {
+		stream := preCreateStream(tb, h, replica)
+		streamIDs = append(streamIDs, stream.StreamId)
+	}
+	return
+}
+
+func preCreateStream(tb testing.TB, h *Handler, replica int8) *rpcfb.StreamT {
+	re := require.New(tb)
+
+	req := &protocol.CreateStreamRequest{CreateStreamRequestT: rpcfb.CreateStreamRequestT{
+		Stream: &rpcfb.StreamT{
+			Replica:  replica,
+			AckCount: replica,
+		},
+	}}
+	resp := &protocol.CreateStreamResponse{}
+
+	h.CreateStream(req, resp)
+	re.Equal(rpcfb.ErrorCodeOK, resp.Status.Code, resp.Status.Message)
+
+	return resp.Stream
+}
+
+type preObject struct {
+	streamID    int64
+	rangeIndex  int32
+	epoch       int16
+	startOffset int64
+	endOffset   int64
+	dataLen     int32
+}
+
+func preNewObject(tb testing.TB, h *Handler, object preObject) {
+	re := require.New(tb)
+
+	req := &protocol.CommitObjectRequest{CommitObjectRequestT: rpcfb.CommitObjectRequestT{Object: &rpcfb.ObjT{
+		StreamId:       object.streamID,
+		RangeIndex:     object.rangeIndex,
+		Epoch:          object.epoch,
+		StartOffset:    object.startOffset,
+		EndOffsetDelta: int32(object.endOffset - object.startOffset),
+		DataLen:        object.dataLen,
+	}}}
+	resp := &protocol.CommitObjectResponse{}
+
+	h.CommitObject(req, resp)
+	re.Equal(rpcfb.ErrorCodeOK, resp.Status.Code, resp.Status.Message)
 }

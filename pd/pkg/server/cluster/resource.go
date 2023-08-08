@@ -36,8 +36,8 @@ type ResourceService interface {
 	// It returns ErrInvalidContinuation if the continuation string is invalid.
 	ListResource(ctx context.Context, types []rpcfb.ResourceType, limit int32, continueStr []byte) (resources []*rpcfb.ResourceT, resourceVersion int64, newContinueStr []byte, err error)
 	// WatchResource watches resources of given types from the given resource version.
-	// If rv is 0, it watches resources with the latest resource version.
-	// If rv is greater than 0, the returned events happen AFTER the given resource version.
+	// If rv is -1, it watches resources with the latest resource version.
+	// If rv is equal to or greater than 0, the returned events happen AFTER the given resource version.
 	// It returns ErrCompacted if the requested resource version has been compacted.
 	// It returns ErrInvalidResourceType if the requested resource type is invalid.
 	WatchResource(ctx context.Context, rv int64, types []rpcfb.ResourceType) ([]*rpcfb.ResourceEventT, int64, error)
@@ -47,7 +47,7 @@ func (c *RaftCluster) ListResource(ctx context.Context, types []rpcfb.ResourceTy
 	logger := c.lg.With(zap.Stringers("resource-types", types), zap.Int32("limit", limit), zap.ByteString("continue", continueStr), traceutil.TraceLogField(ctx))
 
 	if ok, dup := typeutil.IsUnique(types); !ok {
-		return nil, 0, nil, errors.Errorf("duplicate resource type %s", dup)
+		return nil, 0, nil, errors.Wrapf(ErrInvalidResourceType, "duplicate resource type %s", dup)
 	}
 	err := checkResourceType(types)
 	if err != nil {
@@ -79,6 +79,12 @@ func (c *RaftCluster) ListResource(ctx context.Context, types []rpcfb.ResourceTy
 	}
 
 	var resources []*rpcfb.ResourceT
+	currentLimit := func() int32 {
+		if limit <= 0 {
+			return 0
+		}
+		return limit - int32(len(resources))
+	}
 	for i := range continuation.Tokens {
 		token := continuation.Tokens[i]
 		if !token.More {
@@ -87,7 +93,7 @@ func (c *RaftCluster) ListResource(ctx context.Context, types []rpcfb.ResourceTy
 
 		logger := logger.With(token.ZapFields()...)
 		logger.Debug("start to list resources")
-		res, newRV, newToken, err := c.storage.ListResource(ctx, continuation.ResourceVersion, token, limit)
+		res, newRV, newToken, err := c.storage.ListResource(ctx, continuation.ResourceVersion, token, currentLimit())
 		logger.Debug("finish listing resources", zap.Int("count", len(res)), zap.Int64("new-rv", newRV), zap.Reflect("new-token", newToken), zap.Error(err))
 		if err != nil {
 			switch {
@@ -104,8 +110,7 @@ func (c *RaftCluster) ListResource(ctx context.Context, types []rpcfb.ResourceTy
 
 		continuation.ResourceVersion = newRV
 		continuation.Tokens[i] = newToken
-		limit -= int32(len(res))
-		if limit <= 0 {
+		if limit > 0 && len(resources) >= int(limit) {
 			break
 		}
 	}

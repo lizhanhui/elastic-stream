@@ -13,6 +13,7 @@ func (h *Handler) ListResource(req *protocol.ListResourceRequest, resp *protocol
 
 	if len(req.ResourceType) == 0 {
 		resp.Error(&rpcfb.StatusT{Code: rpcfb.ErrorCodeBAD_REQUEST, Message: "resource type is empty"})
+		return
 	}
 
 	resources, rv, cont, err := h.c.ListResource(ctx, req.ResourceType, req.Limit, req.Continuation)
@@ -43,6 +44,7 @@ func (h *Handler) WatchResource(req *protocol.WatchResourceRequest, resp *protoc
 
 	if len(req.ResourceType) == 0 {
 		resp.Error(&rpcfb.StatusT{Code: rpcfb.ErrorCodeBAD_REQUEST, Message: "resource type is empty"})
+		return
 	}
 
 	events, rv, err := h.c.WatchResource(ctx, req.ResourceVersion, req.ResourceType)
