@@ -92,7 +92,7 @@ pub(crate) struct SegmentDescriptor {
 /// Write-ahead-log segment file status.
 ///
 /// `Status` indicates the opcode allowed on it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Status {
     // Once a `LogSegmentFile` is constructed, there is no file in fs yet.
     // Need to `open` with `O_CREATE` flag.
@@ -120,7 +120,7 @@ pub(crate) enum Status {
     Recycled,
 
     // Rename the recycled segment file.
-    RenameAt,
+    RenameAt(CString),
 }
 
 impl Display for LogSegment {
@@ -161,7 +161,7 @@ impl Display for Status {
             Self::Recycled => {
                 write!(f, "recycled")
             }
-            Self::RenameAt => {
+            Self::RenameAt(..) => {
                 write!(f, "rename")
             }
         }

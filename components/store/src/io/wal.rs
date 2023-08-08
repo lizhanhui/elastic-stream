@@ -272,6 +272,18 @@ impl Wal {
         indexer: Arc<IndexDriver>,
     ) -> Result<u64, StoreError> {
         let mut pos = offset;
+
+        // Scan, at most, from the first segment
+        if let Some(segment) = self.segments.front() {
+            if pos < segment.wal_offset {
+                warn!(
+                    "WAL checkpoint {pos} is less than beginning WAL offset of the first segment file: {}",
+                    segment.wal_offset
+                );
+                pos = segment.wal_offset;
+            }
+        }
+
         info!("Start to recover WAL segment files from {pos}");
         let mut need_scan = true;
         for segment in self.segments.iter_mut() {
@@ -357,23 +369,26 @@ impl Wal {
         let offset = segment.wal_offset;
         debug_assert_eq!(segment.status, Status::OpenAt);
         info!("About to create/open LogSegmentFile: `{}`", segment);
-        let exist_recycled_segment_file = self
+        let has_recyclable_segment = self
             .segments
             .front()
             .filter(|segment| segment.status == Status::Recycled)
             .is_some();
 
-        if self.config.store.reclaim_policy.is_recycle() && exist_recycled_segment_file {
+        if self.config.store.reclaim_policy.is_recycle() && has_recyclable_segment {
             // Since there exists a recycled segment file, we can reuse it by renaming it.
-            segment.status = Status::RenameAt;
-
             let recycled_segment = self.segments.pop_front().unwrap();
-            let old_segment_path = recycled_segment.path.clone();
-
-            self.inflight_control_tasks.insert(offset, Status::RenameAt);
+            segment.status = Status::RenameAt(recycled_segment.path.clone());
+            let old_path = if let Status::RenameAt(ref s) = segment.status {
+                s.as_ptr()
+            } else {
+                unreachable!()
+            };
+            self.inflight_control_tasks
+                .insert(offset, segment.status.clone());
             let sqe = opcode::RenameAt::new(
                 types::Fd(libc::AT_FDCWD),
-                old_segment_path.into_raw(),
+                old_path,
                 types::Fd(libc::AT_FDCWD),
                 segment.path.as_ptr(),
             )
@@ -383,7 +398,7 @@ impl Wal {
             self.segments.push_back(segment);
             Ok(())
         } else {
-            let status = segment.status;
+            let status = segment.status.clone();
             self.inflight_control_tasks.insert(offset, status);
             let sqe = opcode::OpenAt::new(types::Fd(libc::AT_FDCWD), segment.path.as_ptr())
                 .flags(libc::O_CREAT | libc::O_RDWR | libc::O_DIRECT)
@@ -431,7 +446,7 @@ impl Wal {
 
         for segment in to_close {
             self.inflight_control_tasks
-                .insert(segment.wal_offset, segment.status);
+                .insert(segment.wal_offset, segment.status.clone());
             if let Some(sd) = segment.sd.as_ref() {
                 let sqe = opcode::Close::new(types::Fd(sd.fd))
                     .build()
@@ -756,7 +771,7 @@ impl Wal {
                     info!("LogSegmentFile: `{}` is deleted", segment);
                     to_remove.push(offset)
                 }
-                Status::RenameAt => {
+                Status::RenameAt(..) => {
                     info!("LogSegmentFile: `{}` is renamed", segment);
                     segment.status = Status::OpenAt;
                     let sqe = opcode::OpenAt::new(types::Fd(libc::AT_FDCWD), segment.path.as_ptr())
