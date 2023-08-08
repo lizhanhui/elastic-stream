@@ -78,3 +78,57 @@ func TestSortAndUnique(t *testing.T) {
 		})
 	}
 }
+
+func TestIsUnique(t *testing.T) {
+	type args[T comparable] struct {
+		l []T
+	}
+	type want[T comparable] struct {
+		ok  bool
+		dup T
+	}
+	type testCase[T comparable] struct {
+		name string
+		args args[T]
+		want want[T]
+	}
+	tests := []testCase[int]{
+		{
+			name: "normal case",
+			args: args[int]{
+				l: []int{1, 2, 3, 4, 5, 6, 7, 8, 9},
+			},
+			want: want[int]{
+				ok: true,
+			},
+		},
+		{
+			name: "not unique",
+			args: args[int]{
+				l: []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 9},
+			},
+			want: want[int]{
+				ok:  false,
+				dup: 9,
+			},
+		},
+		{
+			name: "empty slice",
+			args: args[int]{
+				l: []int{},
+			},
+			want: want[int]{
+				ok: true,
+			},
+		},
+	}
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			re := require.New(t)
+			ok, dup := IsUnique(tt.args.l)
+			re.Equal(tt.want.ok, ok)
+			re.Equal(tt.want.dup, dup)
+		})
+	}
+}

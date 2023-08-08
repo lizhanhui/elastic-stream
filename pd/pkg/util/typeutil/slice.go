@@ -19,10 +19,6 @@ func FilterZero[T comparable](l []T) (res []T) {
 
 // SortAndUnique sorts the slice and removes all duplicate elements.
 // NOTE: the input slice will be modified and should not be used afterwards.
-// Use like this:
-//
-//	l := []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 9}
-//	l = SortAndUnique(l, func(i, j int) bool { return i > j })
 func SortAndUnique[T comparable](l []T, less func(i, j T) bool) []T {
 	if len(l) < 2 {
 		return l
@@ -35,4 +31,22 @@ func SortAndUnique[T comparable](l []T, less func(i, j T) bool) []T {
 		}
 	}
 	return l
+}
+
+// IsUnique checks if all elements in the slice are unique.
+// It returns false and the first duplicated element if there are duplicates.
+// It returns true and a zero value if the slice is empty or all elements are unique.
+func IsUnique[T comparable](l []T) (bool, T) {
+	var n T
+	if len(l) < 2 {
+		return true, n
+	}
+	m := make(map[T]struct{}, len(l))
+	for _, t := range l {
+		if _, ok := m[t]; ok {
+			return false, t
+		}
+		m[t] = struct{}{}
+	}
+	return true, n
 }

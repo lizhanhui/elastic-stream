@@ -28,6 +28,7 @@ type ResourceService interface {
 	// It returns a continuation token if there are more resources to return. The token can be used to continue the listing.
 	// In a pagination request, the first request lists resources with the latest resource version, and the following requests use the same resource version.
 	// If limit is 0, it returns all resources without pagination.
+	// The returned resources are in the same order as the given types.
 	// If the returned token is nil, it means the listing is finished.
 	// It returns ErrNotLeader if the current PD node is not the leader.
 	// It returns ErrCompacted if the requested resource version has been compacted.
@@ -44,8 +45,10 @@ type ResourceService interface {
 
 func (c *RaftCluster) ListResource(ctx context.Context, types []rpcfb.ResourceType, limit int32, continueStr []byte) ([]*rpcfb.ResourceT, int64, []byte, error) {
 	logger := c.lg.With(zap.Stringers("resource-types", types), zap.Int32("limit", limit), zap.ByteString("continue", continueStr), traceutil.TraceLogField(ctx))
-	types = typeutil.SortAndUnique[rpcfb.ResourceType](types, func(i, j rpcfb.ResourceType) bool { return i < j })
 
+	if ok, dup := typeutil.IsUnique(types); !ok {
+		return nil, 0, nil, errors.Errorf("duplicate resource type %s", dup)
+	}
 	err := checkResourceType(types)
 	if err != nil {
 		logger.Error("invalid resource type", zap.Error(err))
