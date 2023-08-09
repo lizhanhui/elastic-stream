@@ -1,5 +1,6 @@
 use bytes::{Buf, BufMut, BytesMut};
 use derivative::Derivative;
+use log::error;
 use nix::fcntl;
 use std::{
     cmp::Ordering,
@@ -225,9 +226,12 @@ impl LogSegment {
                     .map_err(|e| StoreError::InvalidPath(e.to_string()))?,
             ))?;
         let metadata = file.metadata()?;
+        let file_len = metadata.len();
 
-        let status = if self.size != metadata.len() {
-            debug_assert!(0 == metadata.len(), "LogSegmentFile is corrupted");
+        let status = if self.size == file_len {
+            // We assume the log segment file is read-only. The recovery procedure would update status accordingly.
+            Status::Read
+        } else if 0 == file_len {
             fcntl::fallocate(
                 file.as_raw_fd(),
                 fcntl::FallocateFlags::empty(),
@@ -237,8 +241,11 @@ impl LogSegment {
             .map_err(|errno| StoreError::System(errno as i32))?;
             Status::ReadWrite
         } else {
-            // We assume the log segment file is read-only. The recovery/apply procedure would update status accordingly.
-            Status::Read
+            error!(
+                "Unexpected WAL segment file length: expecting {}, actual: {file_len}; Did you modified 'store.segment-size'?",
+                self.size
+            );
+            return Err(StoreError::DataCorrupted);
         };
 
         self.status = status;

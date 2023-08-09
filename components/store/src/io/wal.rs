@@ -2,6 +2,7 @@ use std::{
     cmp,
     collections::{HashMap, VecDeque},
     io,
+    iter::successors,
     sync::Arc,
 };
 
@@ -124,7 +125,7 @@ impl Wal {
             .map(|segment| segment.wal_offset + segment.size)
             .unwrap_or(0);
 
-        let iter = std::iter::successors(Some(next_wal_offset), |&offset| {
+        let iter = successors(Some(next_wal_offset), |&offset| {
             Some(offset + self.config.store.segment_size)
         })
         .take_while(|&offset| {

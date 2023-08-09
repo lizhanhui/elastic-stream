@@ -1408,6 +1408,9 @@ impl IO {
                 trace!("Received {} IO requests from channel", cnt);
 
                 // Convert IO tasks into io_uring entries
+                //
+                // Note: even if `cnt` is 0, we still need to call `build_sqe` because
+                // `buf_writer` might have buffered some data due to queue-depth constraints.
                 io_mut.build_sqe(&mut entries);
             }
 
