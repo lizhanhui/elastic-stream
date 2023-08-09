@@ -450,11 +450,11 @@ impl Store for ElasticStore {
     /// `StoreError` - If something is wrong when accessing RocksDB;
     /// `Some(u64)` - If the max record offset is found;
     /// `None` - If there is no record of the given stream;
-    fn max_record_offset(&self, stream_id: i64, range: u32) -> Result<Option<u64>, StoreError> {
+    fn get_range_end_offset(&self, stream_id: i64, range: u32) -> Result<Option<u64>, StoreError> {
         self.shared
             .indexer
             .retrieve_max_key(stream_id, range)
-            .map(|buf| buf.map(|entry| entry.max_offset()))
+            .map(|buf| buf.map(|entry| entry.end_offset()))
     }
 
     fn id(&self) -> i32 {

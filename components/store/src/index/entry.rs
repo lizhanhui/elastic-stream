@@ -37,10 +37,10 @@ impl IndexEntry {
         buf.freeze()
     }
 
-    /// Max offset of nested entries in the pointed `Record`
-    pub(crate) fn max_offset(&self) -> u64 {
+    /// End offset of nested entries in the pointed `Record`
+    pub(crate) fn end_offset(&self) -> u64 {
         match self.handle.ext {
-            HandleExt::Hash(..) => self.offset,
+            HandleExt::Hash(..) => self.offset + 1,
             HandleExt::BatchSize(len) => self.offset + len as u64,
         }
     }

@@ -183,9 +183,9 @@ where
         self.store.create(range).await
     }
 
-    /// Max record offset in the store of the specified stream.
-    fn max_record_offset(&self, stream_id: i64, range: u32) -> Result<Option<u64>, StoreError> {
-        self.store.max_record_offset(stream_id, range)
+    /// Get range end offset in current range server.
+    fn get_range_end_offset(&self, stream_id: i64, range: u32) -> Result<Option<u64>, StoreError> {
+        self.store.get_range_end_offset(stream_id, range)
     }
 
     fn id(&self) -> i32 {

@@ -195,7 +195,7 @@ mod tests {
                 })
                 .ok()
         });
-        range.commit(0)?;
+        range.commit(100)?;
         let mut metadata = RangeMetadata::new(1, 0, 0, 0, Some(50));
         stream.seal(&mut metadata)?;
 

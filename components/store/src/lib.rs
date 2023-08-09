@@ -95,8 +95,8 @@ pub trait Store {
     /// Create a stream range in metadata.
     async fn create(&self, range: RangeMetadata) -> Result<(), StoreError>;
 
-    /// Max record offset in the store of the specified stream.
-    fn max_record_offset(&self, stream_id: i64, range: u32) -> Result<Option<u64>, StoreError>;
+    /// Get range end offset in current range server.
+    fn get_range_end_offset(&self, stream_id: i64, range: u32) -> Result<Option<u64>, StoreError>;
 
     fn id(&self) -> i32;
 

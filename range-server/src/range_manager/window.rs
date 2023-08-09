@@ -1,7 +1,6 @@
 use crate::error::ServiceError;
-use log::{error, trace, warn};
+use log::{error, warn};
 use model::Batch;
-use std::collections::HashMap;
 
 /// Append Request Window ensures append requests of a stream range are dispatched to store in order.
 ///
@@ -28,9 +27,6 @@ pub(crate) struct Window {
 
     /// The committed offset means all records prior to this offset are already persisted to store.
     committed: u64,
-
-    /// Submitted request offset to batch size.
-    submitted: HashMap<u64, u32>,
 }
 
 impl Window {
@@ -38,7 +34,6 @@ impl Window {
         Self {
             log_ident,
             next,
-            submitted: HashMap::new(),
             // The initial commit offset is the same as the next offset.
             committed: next,
         }
@@ -103,54 +98,30 @@ impl Window {
             );
             return Err(ServiceError::OffsetOutOfOrder);
         }
-
-        self.submitted.insert(request.offset(), request.len());
         // Expected request to be dispatched, just advance the next offset and go.
         self.next += request.len() as u64;
         Ok(())
     }
 
-    #[inline]
-    fn try_commit(&mut self, value: u64) {
-        if value > self.committed {
-            self.committed = value;
-        }
-    }
-
-    /// Commits the request with the given offset, and wakes up the subsequent request if exists.
-    ///
-    /// Note that this method will be called in the bootstrap phase to init the committed and next offset.
+    /// Move the committed offset.
     ///
     /// # Arguments
-    /// * `offset` - the base offset of record batch to be committed.
+    /// * `new_committed` - the records before the new_committed are persisted.
     ///
     /// # Return
     /// * the committed offset.
-    pub(crate) fn commit(&mut self, offset: u64) -> Result<u64, ServiceError> {
-        trace!("{}-Window tries to commit: {}", self.log_ident, offset);
-        match self.submitted.remove(&offset) {
-            Some(len) => {
-                self.try_commit(offset + len as u64);
-            }
-            None => {
-                error!("Try to commit offset={} but no check is found", offset);
-                return Err(ServiceError::NotFound(format!(
-                    "No record found for offset={}",
-                    offset
-                )));
-            }
+    pub(crate) fn commit(&mut self, new_committed: u64) -> u64 {
+        if new_committed > self.committed {
+            self.committed = new_committed;
         }
-        Ok(self.committed)
+        self.committed
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use local_sync::semaphore::Semaphore;
     use model::Batch;
-    use std::{cell::UnsafeCell, cmp::Ordering, error::Error, rc::Rc};
-
-    use crate::error::ServiceError;
+    use std::cmp::Ordering;
 
     #[derive(Debug)]
     struct Foo {
@@ -218,11 +189,14 @@ mod tests {
         // foo1 will be accepted.
         assert!(window.check_barrier(&foo1).is_ok());
         assert_eq!(2, window.next());
+        assert_eq!(0, window.committed());
         // Now, foo2 will be accepted.
         assert!(window.check_barrier(&foo2).is_ok());
+        assert_eq!(0, window.committed());
 
         // Commit foo2, and foo1 will be committed implicitly.
-        assert_eq!(Ok(4), window.commit(2));
+        assert_eq!(4, window.commit(4));
+        assert_eq!(4, window.committed());
 
         // Now, foo1 will be rejected because the offset is already committed, the error is OffsetCommitted.
         assert!(matches!(
@@ -241,43 +215,5 @@ mod tests {
 
         assert!(window.next == 6);
         assert!(window.committed == 4);
-    }
-
-    #[test]
-    fn test_commit_when_window_got_dropped() -> Result<(), Box<dyn Error>> {
-        ulog::try_init_log();
-        tokio_uring::start(async move {
-            let mut window = super::Window::new(String::from(""), 0);
-            let foo = Foo::new(0);
-            let foo1 = Foo::new(2);
-            window.check_barrier(&foo)?;
-            window.check_barrier(&foo1)?;
-            let win = Rc::new(UnsafeCell::new(Some(window)));
-            let win2 = Rc::clone(&win);
-
-            let semaphore = Rc::new(Semaphore::new(1));
-            let permit = Rc::clone(&semaphore).acquire_owned().await?;
-            tokio_uring::spawn(async move {
-                let win = unsafe { &mut *win2.get() };
-                if let Some(window) = win.as_mut() {
-                    drop(permit);
-                    match window.commit(2) {
-                        Ok(_) => {
-                            panic!("Window should have been dropped");
-                        }
-                        Err(e) => {
-                            assert_eq!(e, ServiceError::AlreadySealed);
-                        }
-                    }
-                }
-            });
-
-            let _ = semaphore.acquire().await?;
-            if let Some(win) = unsafe { &mut *win.get() }.take() {
-                drop(win);
-            }
-
-            Ok(())
-        })
     }
 }

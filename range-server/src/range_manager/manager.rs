@@ -71,8 +71,8 @@ where
         for range in ranges {
             let committed = self
                 .store
-                .max_record_offset(range.stream_id(), range.index() as u32)
-                .expect("Failed to acquire max offset of the range");
+                .get_range_end_offset(range.stream_id(), range.index() as u32)
+                .expect("Failed to acquire end offset of the range");
             let range_index = range.index();
             let entry = self.streams.entry(range.stream_id());
             match entry {
@@ -176,11 +176,11 @@ where
         stream_id: i64,
         range_index: i32,
         offset: u64,
-        _last_offset_delta: u32,
+        last_offset_delta: u32,
         bytes_len: u32,
     ) -> Result<(), ServiceError> {
         if let Some(range) = self.get_range_mut(stream_id, range_index) {
-            range.commit(offset)?;
+            range.commit(offset + last_offset_delta as u64)?;
             self.object_storage
                 .new_commit(stream_id as u64, range_index as u32, bytes_len);
             Ok(())

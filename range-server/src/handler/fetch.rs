@@ -233,7 +233,7 @@ mod tests {
     fn test_fetch_no_new_record() -> Result<(), Box<dyn Error>> {
         let mut mock_store = store::MockStore::new();
         mock_store
-            .expect_max_record_offset()
+            .expect_get_range_end_offset()
             .returning(|_, _| Ok(Some(100)));
         mock_store.expect_id().return_const(0);
         mock_store
