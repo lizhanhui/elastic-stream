@@ -162,6 +162,10 @@ func (l Logger) DeleteByPrefixes(ctx context.Context, prefixes [][]byte) (int64,
 	return deleted, err
 }
 
+func (l Logger) ExecInTxn(ctx context.Context, f func(kv BasicKV) error) error {
+	return l.KV.ExecInTxn(ctx, f)
+}
+
 func (l Logger) GetPrefixRangeEnd(prefix []byte) []byte {
 	return l.KV.GetPrefixRangeEnd(prefix)
 }

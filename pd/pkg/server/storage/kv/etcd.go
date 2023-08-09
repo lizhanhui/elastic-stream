@@ -41,6 +41,8 @@ var (
 	ErrTooManyTxnOps = errors.New("too many txn operations")
 	// ErrCompacted is the error when the requested revision has been compacted.
 	ErrCompacted = errors.New("requested revision has been compacted")
+	// ErrDataModified is the error when the data has been modified when doing transaction.
+	ErrDataModified = errors.New("data has been modified")
 )
 
 // Etcd is a kv based on etcd.
@@ -456,6 +458,17 @@ func (e *Etcd) DeleteByPrefixes(ctx context.Context, prefixes [][]byte) (int64, 
 	return deleted, nil
 }
 
+func (e *Etcd) ExecInTxn(ctx context.Context, f func(kv BasicKV) error) error {
+	txn := e.newEtcdTxn(ctx)
+
+	err := f(txn)
+	if err != nil {
+		return err
+	}
+
+	return txn.Commit()
+}
+
 func (e *Etcd) GetPrefixRangeEnd(p []byte) []byte {
 	prefix := e.addPrefix(p)
 	end := []byte(clientv3.GetPrefixRangeEnd(string(prefix)))
@@ -464,6 +477,12 @@ func (e *Etcd) GetPrefixRangeEnd(p []byte) []byte {
 
 func (e *Etcd) Logger() *zap.Logger {
 	return e.lg
+}
+
+type prefixHandler interface {
+	addPrefix(k []byte) []byte
+	trimPrefix(k []byte) []byte
+	hasPrefix(k []byte) bool
 }
 
 func (e *Etcd) addPrefix(k []byte) []byte {
@@ -481,7 +500,7 @@ func (e *Etcd) hasPrefix(k []byte) bool {
 }
 
 type watchChan struct {
-	e *Etcd
+	prefixHandler
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -496,13 +515,13 @@ type watchChan struct {
 func (e *Etcd) newWatchChan(ctx context.Context, ch clientv3.WatchChan, filter Filter, logger *zap.Logger) *watchChan {
 	ctx, cancel := context.WithCancel(ctx)
 	return &watchChan{
-		e:          e,
-		ctx:        ctx,
-		cancel:     cancel,
-		ch:         ch,
-		filter:     filter,
-		resultChan: make(chan Events, _watchChanCap),
-		lg:         logger,
+		prefixHandler: e,
+		ctx:           ctx,
+		cancel:        cancel,
+		ch:            ch,
+		filter:        filter,
+		resultChan:    make(chan Events, _watchChanCap),
+		lg:            logger,
 	}
 }
 
@@ -604,23 +623,150 @@ func (w *watchChan) parseEvent(e *clientv3.Event) (Event, error) {
 		}
 		ret = Event{
 			Type:  Deleted,
-			Key:   w.e.trimPrefix(e.Kv.Key),
+			Key:   w.trimPrefix(e.Kv.Key),
 			Value: e.PrevKv.Value,
 		}
 	case e.IsCreate():
 		ret = Event{
 			Type:  Added,
-			Key:   w.e.trimPrefix(e.Kv.Key),
+			Key:   w.trimPrefix(e.Kv.Key),
 			Value: e.Kv.Value,
 		}
 	case e.IsModify():
 		ret = Event{
 			Type:  Modified,
-			Key:   w.e.trimPrefix(e.Kv.Key),
+			Key:   w.trimPrefix(e.Kv.Key),
 			Value: e.Kv.Value,
 		}
 	default:
 		// Should never happen as etcd clientv3.Event has no other types.
 	}
 	return ret, nil
+}
+
+func (e *Etcd) newEtcdTxn(ctx context.Context) *etcdTxn {
+	logger := e.lg.With(traceutil.TraceLogField(ctx))
+	return &etcdTxn{
+		prefixHandler: e,
+		kv:            e,
+		txn:           e.newTxnFunc(ctx),
+		lg:            logger,
+	}
+}
+
+// etcdTxn is a wrapper of BasicKV.
+// It stores the results of all read operations in cs.
+// It stores requests for all write operations in ops.
+// When Commit is called, cs and ops are wrapped and executed within the same transaction.
+// In other words, write operations are only executed if the data read remains unmodified.
+type etcdTxn struct {
+	prefixHandler
+	kv BasicKV
+
+	txn clientv3.Txn
+	cs  []clientv3.Cmp
+	ops []clientv3.Op
+
+	lg *zap.Logger
+}
+
+func (et *etcdTxn) Get(ctx context.Context, k []byte) ([]byte, error) {
+	if len(k) == 0 {
+		return nil, nil
+	}
+
+	v, err := et.kv.Get(ctx, k)
+	if err != nil {
+		return nil, err
+	}
+
+	var c clientv3.Cmp
+	if v == nil {
+		// key does not exist
+		c = clientv3.Compare(clientv3.CreateRevision(string(et.addPrefix(k))), "=", 0)
+	} else {
+		c = clientv3.Compare(clientv3.Value(string(et.addPrefix(k))), "=", string(v))
+	}
+	et.cs = append(et.cs, c)
+
+	return v, nil
+}
+
+func (et *etcdTxn) Put(_ context.Context, k, v []byte, _ bool) ([]byte, error) {
+	if len(k) == 0 {
+		return nil, nil
+	}
+
+	op := clientv3.OpPut(string(et.addPrefix(k)), string(v))
+	et.ops = append(et.ops, op)
+
+	return nil, nil
+}
+
+func (et *etcdTxn) Delete(_ context.Context, k []byte, _ bool) ([]byte, error) {
+	if len(k) == 0 {
+		return nil, nil
+	}
+
+	op := clientv3.OpDelete(string(et.addPrefix(k)))
+	et.ops = append(et.ops, op)
+
+	return nil, nil
+}
+
+func (et *etcdTxn) Commit() error {
+	if len(et.ops) == 0 {
+		return nil
+	}
+
+	txn := et.txn.Then(clientv3.OpTxn(et.cs, et.ops, nil))
+	resp, err := txn.Commit()
+	if err == nil {
+		if !resp.Succeeded {
+			// Not leader now
+			err = ErrTxnFailed
+		} else if !resp.Responses[0].GetResponseTxn().Succeeded {
+			// When the transaction succeeds, the number of responses is always 1 and is always a txn response.
+			// The data read has been modified
+			err = ErrDataModified
+		}
+	}
+
+	logger := et.lg
+	if logger.Core().Enabled(zap.DebugLevel) {
+		var fields []zap.Field
+		for i, c := range et.cs {
+			fields = append(fields,
+				zap.ByteString(fmt.Sprintf("cmp-%d-key", i), c.KeyBytes()),
+				zap.Binary(fmt.Sprintf("cmp-%d-value", i), c.ValueBytes()),
+			)
+		}
+		for i, op := range et.ops {
+			fields = append(fields, opFields(op, i)...)
+		}
+		fields = append(fields, zap.Error(err))
+		logger.Debug("commit etcd txn", fields...)
+	}
+
+	return err
+}
+
+func opFields(op clientv3.Op, index int) []zap.Field {
+	switch {
+	case op.IsPut():
+		return []zap.Field{
+			zap.String(fmt.Sprintf("op-%d-value", index), "PUT"),
+			zap.ByteString(fmt.Sprintf("op-%d-key", index), op.KeyBytes()),
+			zap.Binary(fmt.Sprintf("op-%d-value", index), op.ValueBytes()),
+		}
+	case op.IsDelete():
+		return []zap.Field{
+			zap.String(fmt.Sprintf("op-%d-value", index), "DELETE"),
+			zap.ByteString(fmt.Sprintf("op-%d-key", index), op.KeyBytes()),
+		}
+	default:
+		return []zap.Field{
+			zap.String(fmt.Sprintf("op-%d-type", index), "unknown"),
+		}
+	}
 }

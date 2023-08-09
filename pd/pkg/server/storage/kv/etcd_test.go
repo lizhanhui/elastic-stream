@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"go.etcd.io/etcd/server/v3/embed"
@@ -1603,6 +1604,207 @@ func TestEtcd_DeleteByPrefix(t *testing.T) {
 			} else {
 				re.NoError(err)
 				re.Equal(tt.want, got)
+			}
+			resp, err := kv.Get(context.Background(), "/test", clientv3.WithPrefix())
+			re.NoError(err)
+			re.Equal(len(tt.after), len(resp.Kvs))
+			for _, kvs := range resp.Kvs {
+				re.Equal(tt.after[string(kvs.Key)], string(kvs.Value))
+			}
+		})
+	}
+}
+
+func TestEtcd_ExecInTxn(t *testing.T) {
+	getAndPut := func(tb testing.TB, kv BasicKV, key string, oldValue []byte, newValue string) {
+		re := require.New(tb)
+		v, err := kv.Get(context.Background(), []byte(key))
+		re.NoError(err)
+		re.Equal(oldValue, v)
+		v, err = kv.Put(context.Background(), []byte(key), []byte(newValue), false)
+		re.NoError(err)
+		re.Nil(v)
+	}
+	getAndDelete := func(tb testing.TB, kv BasicKV, key string, oldValue []byte) {
+		re := require.New(tb)
+		v, err := kv.Get(context.Background(), []byte(key))
+		re.NoError(err)
+		re.Equal(oldValue, v)
+		v, err = kv.Delete(context.Background(), []byte(key), false)
+		re.NoError(err)
+		re.Nil(v)
+	}
+
+	type fields struct {
+		newCmpFunc func() clientv3.Cmp
+	}
+	type args struct {
+		txnFunc func(testing.TB, clientv3.KV, BasicKV) error
+	}
+	tests := []struct {
+		name    string
+		preset  map[string]string
+		fields  fields
+		args    args
+		after   map[string]string
+		wantErr bool
+		errMsg  string
+	}{
+		{
+			name: "normal case",
+			preset: map[string]string{
+				"/test/key1": "val1",
+				"/test/key2": "val2",
+			},
+			args: args{func(tb testing.TB, _ clientv3.KV, basicKV BasicKV) error {
+				// get a non-existent key and put it
+				getAndPut(tb, basicKV, "key0", nil, "val0")
+				// get an existent key and modify it
+				getAndPut(tb, basicKV, "key1", []byte("val1"), "val11")
+				// get an existent key and delete it
+				getAndDelete(tb, basicKV, "key2", []byte("val2"))
+				return nil
+			}},
+			after: map[string]string{
+				"/test/key0": "val0",
+				"/test/key1": "val11",
+			},
+		},
+		{
+			name: "empty keys",
+			preset: map[string]string{
+				"/test/key1": "val1",
+				"/test/key2": "val2",
+			},
+			args: args{func(tb testing.TB, _ clientv3.KV, basicKV BasicKV) error {
+				getAndPut(tb, basicKV, "", nil, "bar")
+				getAndDelete(tb, basicKV, "", nil)
+				return nil
+			}},
+			after: map[string]string{
+				"/test/key1": "val1",
+				"/test/key2": "val2",
+			},
+		},
+		{
+			name: "do nothing",
+			preset: map[string]string{
+				"/test/key1": "val1",
+				"/test/key2": "val2",
+			},
+			args: args{func(tb testing.TB, _ clientv3.KV, basicKV BasicKV) error {
+				return nil
+			}},
+			after: map[string]string{
+				"/test/key1": "val1",
+				"/test/key2": "val2",
+			},
+		},
+		{
+			name: "data modified by other",
+			preset: map[string]string{
+				"/test/key1": "val1",
+				"/test/key2": "val2",
+			},
+			args: args{func(tb testing.TB, kv clientv3.KV, basicKV BasicKV) error {
+				getAndPut(tb, basicKV, "key0", nil, "val0")
+				_, err := kv.Put(context.Background(), "/test/key0", "val00")
+				require.NoError(tb, err)
+				return nil
+			}},
+			after: map[string]string{
+				"/test/key0": "val00",
+				"/test/key1": "val1",
+				"/test/key2": "val2",
+			},
+			wantErr: true,
+			errMsg:  "data has been modified",
+		},
+		{
+			name: "pass the error returned by f",
+			preset: map[string]string{
+				"/test/key1": "val1",
+				"/test/key2": "val2",
+			},
+			args: args{func(tb testing.TB, _ clientv3.KV, basicKV BasicKV) error {
+				return errors.New("returned by user")
+			}},
+			after: map[string]string{
+				"/test/key1": "val1",
+				"/test/key2": "val2",
+			},
+			wantErr: true,
+			errMsg:  "returned by user",
+		},
+		{
+			name: "not leader when get",
+			preset: map[string]string{
+				"/test/key1": "val1",
+				"/test/key2": "val2",
+			},
+			fields: fields{alwaysFailedTxnFunc},
+			args: args{func(tb testing.TB, _ clientv3.KV, basicKV BasicKV) error {
+				_, err := basicKV.Get(context.Background(), []byte("key1"))
+				return err
+			}},
+			after: map[string]string{
+				"/test/key1": "val1",
+				"/test/key2": "val2",
+			},
+			wantErr: true,
+			errMsg:  "etcd transaction failed",
+		},
+		{
+			name: "not leader when commit",
+			preset: map[string]string{
+				"/test/key1": "val1",
+				"/test/key2": "val2",
+			},
+			fields: fields{alwaysFailedTxnFunc},
+			args: args{func(tb testing.TB, _ clientv3.KV, basicKV BasicKV) error {
+				_, err := basicKV.Delete(context.Background(), []byte("key2"), false)
+				require.NoError(tb, err)
+				return nil
+			}},
+			after: map[string]string{
+				"/test/key1": "val1",
+				"/test/key2": "val2",
+			},
+			wantErr: true,
+			errMsg:  "etcd transaction failed",
+		},
+	}
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			re := require.New(t)
+			_, client, closeFunc := testutil.StartEtcd(t, nil)
+			defer closeFunc()
+
+			etcd := Logger{NewEtcd(EtcdParam{
+				Client:   client,
+				RootPath: "/test",
+				CmpFunc:  tt.fields.newCmpFunc,
+			}, zap.NewNop())}
+
+			// prepare
+			kv := client.KV
+			for k, v := range tt.preset {
+				_, err := kv.Put(context.Background(), k, v)
+				re.NoError(err)
+			}
+
+			// run
+			err := etcd.ExecInTxn(context.Background(), func(kv BasicKV) error {
+				return tt.args.txnFunc(t, client, kv)
+			})
+
+			// check
+			if tt.wantErr {
+				re.ErrorContains(err, tt.errMsg)
+			} else {
+				re.NoError(err)
 			}
 			resp, err := kv.Get(context.Background(), "/test", clientv3.WithPrefix())
 			re.NoError(err)
