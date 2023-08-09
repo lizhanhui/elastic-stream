@@ -209,7 +209,7 @@ func (e *Etcd) GetByRange(ctx context.Context, r Range, rev int64, limit int64, 
 		return nil, 0, false, errors.Wrap(ErrTxnFailed, "kv get by range")
 	}
 
-	// when the transaction succeeds, the number of responses is always 1 and is always a range response.
+	// When the transaction succeeds, the number of responses is always 1 and is always a range response.
 	rangeResp := resp.Responses[0].GetResponseRange()
 
 	kvs := make([]KeyValue, 0, len(rangeResp.Kvs))
@@ -306,6 +306,7 @@ func (e *Etcd) BatchPut(ctx context.Context, kvs []KeyValue, prevKV bool, inTxn 
 			ops = append(ops, clientv3.OpPut(string(key), string(kv.Value), opts...))
 		}
 
+		// TODO: skip empty ops
 		txn := e.newTxnFunc(ctx).Then(ops...)
 		resp, err := txn.Commit()
 		if err != nil {
@@ -421,6 +422,38 @@ func (e *Etcd) BatchDelete(ctx context.Context, keys [][]byte, prevKV bool, inTx
 	}
 
 	return prevKVs, nil
+}
+
+func (e *Etcd) DeleteByPrefixes(ctx context.Context, prefixes [][]byte) (int64, error) {
+	ops := make([]clientv3.Op, 0, len(prefixes))
+	for _, p := range prefixes {
+		if len(p) == 0 {
+			continue
+		}
+		key := e.addPrefix(p)
+		ops = append(ops, clientv3.OpDelete(string(key), clientv3.WithPrefix()))
+	}
+
+	if len(ops) == 0 {
+		return 0, nil
+	}
+
+	txn := e.newTxnFunc(ctx).Then(ops...)
+	resp, err := txn.Commit()
+	if err != nil {
+		return 0, errors.Wrap(err, "kv delete by prefix")
+	}
+	if !resp.Succeeded {
+		return 0, errors.Wrap(ErrTxnFailed, "kv delete by prefix")
+	}
+
+	deleted := int64(0)
+	for _, resp := range resp.Responses {
+		deleteResp := resp.GetResponseDeleteRange()
+		deleted += deleteResp.Deleted
+	}
+
+	return deleted, nil
 }
 
 func (e *Etcd) GetPrefixRangeEnd(p []byte) []byte {

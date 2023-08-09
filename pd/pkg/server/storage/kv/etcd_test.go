@@ -87,10 +87,10 @@ func TestEtcd_Get(t *testing.T) {
 			_, client, closeFunc := testutil.StartEtcd(t, nil)
 			defer closeFunc()
 
-			etcd := NewEtcd(EtcdParam{
+			etcd := Logger{NewEtcd(EtcdParam{
 				Client:   client,
 				RootPath: "/test",
-			}, zap.NewNop())
+			}, zap.NewNop())}
 
 			// prepare
 			kv := client.KV
@@ -232,12 +232,12 @@ func TestEtcd_BatchGet(t *testing.T) {
 			_, client, closeFunc := testutil.StartEtcd(t, cfg)
 			defer closeFunc()
 
-			etcd := NewEtcd(EtcdParam{
+			etcd := Logger{NewEtcd(EtcdParam{
 				Client:    client,
 				RootPath:  "/test",
 				CmpFunc:   tt.fields.newCmpFunc,
 				MaxTxnOps: tt.fields.maxTxnOps,
-			}, zap.NewNop())
+			}, zap.NewNop())}
 
 			// prepare
 			kv := client.KV
@@ -376,11 +376,11 @@ func TestEtcd_GetByRange(t *testing.T) {
 			_, client, closeFunc := testutil.StartEtcd(t, nil)
 			defer closeFunc()
 
-			etcd := NewEtcd(EtcdParam{
+			etcd := Logger{NewEtcd(EtcdParam{
 				Client:   client,
 				RootPath: "/test",
 				CmpFunc:  tt.fields.newCmpFunc,
-			}, zap.NewNop())
+			}, zap.NewNop())}
 
 			// prepare
 			kv := client.KV
@@ -577,10 +577,10 @@ func TestEtcd_Watch(t *testing.T) {
 			_, client, closeFunc := testutil.StartEtcd(t, nil)
 			defer closeFunc()
 
-			etcd := NewEtcd(EtcdParam{
+			etcd := Logger{NewEtcd(EtcdParam{
 				Client:   client,
 				RootPath: "/test",
-			}, zap.NewNop())
+			}, zap.NewNop())}
 
 			// prepare
 			kv := client.KV
@@ -647,10 +647,10 @@ func TestEtcd_WatchCompacted(t *testing.T) {
 	_, client, closeFunc := testutil.StartEtcd(t, nil)
 	defer closeFunc()
 
-	etcd := NewEtcd(EtcdParam{
+	etcd := Logger{NewEtcd(EtcdParam{
 		Client:   client,
 		RootPath: "/test",
-	}, zap.NewNop())
+	}, zap.NewNop())}
 
 	// put keys and compact
 	kv := client.KV
@@ -801,10 +801,10 @@ func TestEtcd_Put(t *testing.T) {
 			_, client, closeFunc := testutil.StartEtcd(t, nil)
 			defer closeFunc()
 
-			etcd := NewEtcd(EtcdParam{
+			etcd := Logger{NewEtcd(EtcdParam{
 				Client:   client,
 				RootPath: "/test",
-			}, zap.NewNop())
+			}, zap.NewNop())}
 
 			// prepare
 			kv := client.KV
@@ -1114,12 +1114,12 @@ func TestEtcd_BatchPut(t *testing.T) {
 			_, client, closeFunc := testutil.StartEtcd(t, cfg)
 			defer closeFunc()
 
-			etcd := NewEtcd(EtcdParam{
+			etcd := Logger{NewEtcd(EtcdParam{
 				Client:    client,
 				RootPath:  "/test",
 				CmpFunc:   tt.fields.newCmpFunc,
 				MaxTxnOps: tt.fields.maxTxnOps,
-			}, zap.NewNop())
+			}, zap.NewNop())}
 
 			// prepare
 			kv := client.KV
@@ -1235,10 +1235,10 @@ func TestEtcd_Delete(t *testing.T) {
 			_, client, closeFunc := testutil.StartEtcd(t, nil)
 			defer closeFunc()
 
-			etcd := NewEtcd(EtcdParam{
+			etcd := Logger{NewEtcd(EtcdParam{
 				Client:   client,
 				RootPath: "/test",
-			}, zap.NewNop())
+			}, zap.NewNop())}
 
 			// prepare
 			kv := client.KV
@@ -1453,12 +1453,12 @@ func TestEtcd_BatchDelete(t *testing.T) {
 			_, client, closeFunc := testutil.StartEtcd(t, cfg)
 			defer closeFunc()
 
-			etcd := NewEtcd(EtcdParam{
+			etcd := Logger{NewEtcd(EtcdParam{
 				Client:    client,
 				RootPath:  "/test",
 				CmpFunc:   tt.fields.newCmpFunc,
 				MaxTxnOps: tt.fields.maxTxnOps,
-			}, zap.NewNop())
+			}, zap.NewNop())}
 
 			// prepare
 			kv := client.KV
@@ -1473,6 +1473,133 @@ func TestEtcd_BatchDelete(t *testing.T) {
 			// check
 			if tt.wantErr {
 				re.ErrorContains(err, tt.errMsg)
+			} else {
+				re.NoError(err)
+				re.Equal(tt.want, got)
+			}
+			resp, err := kv.Get(context.Background(), "/test", clientv3.WithPrefix())
+			re.NoError(err)
+			re.Equal(len(tt.after), len(resp.Kvs))
+			for _, kvs := range resp.Kvs {
+				re.Equal(tt.after[string(kvs.Key)], string(kvs.Value))
+			}
+		})
+	}
+}
+
+func TestEtcd_DeleteByPrefix(t *testing.T) {
+	type args struct {
+		prefixes [][]byte
+	}
+	tests := []struct {
+		name    string
+		preset  map[string]string
+		args    args
+		want    int64
+		after   map[string]string
+		wantErr bool
+	}{
+		{
+			name: "normal case",
+			preset: map[string]string{
+				"/test/foo1/key1": "val1",
+				"/test/foo1/key2": "val2",
+				"/test/foo2/key3": "val3",
+				"/test/foo2/key4": "val4",
+				"/test/bar/key5":  "val5",
+				"/test/bar/key6":  "val6",
+			},
+			args: args{
+				prefixes: [][]byte{[]byte("foo1/"), []byte("foo2/")},
+			},
+			want: 4,
+			after: map[string]string{
+				"/test/bar/key5": "val5",
+				"/test/bar/key6": "val6",
+			},
+		},
+		{
+			name: "delete specific key",
+			preset: map[string]string{
+				"/test/foo/key1": "val1",
+				"/test/foo/key2": "val2",
+			},
+			args: args{
+				prefixes: [][]byte{[]byte("foo/key1")},
+			},
+			want: 1,
+			after: map[string]string{
+				"/test/foo/key2": "val2",
+			},
+		},
+		{
+			name: "nonexistent prefix",
+			preset: map[string]string{
+				"/test/foo/key1": "val1",
+				"/test/foo/key2": "val2",
+			},
+			args: args{
+				prefixes: [][]byte{[]byte("bar/")},
+			},
+			want: 0,
+			after: map[string]string{
+				"/test/foo/key1": "val1",
+				"/test/foo/key2": "val2",
+			},
+		},
+		{
+			name: "empty key",
+			preset: map[string]string{
+				"/test/foo/key1": "val1",
+			},
+			args: args{
+				prefixes: [][]byte{[]byte("")},
+			},
+			want: 0,
+			after: map[string]string{
+				"/test/foo/key1": "val1",
+			},
+		},
+		{
+			name: "nil key",
+			preset: map[string]string{
+				"/test/foo/key1": "val1",
+			},
+			args: args{
+				prefixes: [][]byte{nil},
+			},
+			want: 0,
+			after: map[string]string{
+				"/test/foo/key1": "val1",
+			},
+		},
+	}
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			re := require.New(t)
+			_, client, closeFunc := testutil.StartEtcd(t, nil)
+			defer closeFunc()
+
+			etcd := Logger{NewEtcd(EtcdParam{
+				Client:   client,
+				RootPath: "/test",
+			}, zap.NewNop())}
+
+			// prepare
+			kv := client.KV
+			for k, v := range tt.preset {
+				_, err := kv.Put(context.Background(), k, v)
+				re.NoError(err)
+			}
+
+			// run
+			got, err := etcd.DeleteByPrefixes(context.Background(), tt.args.prefixes)
+
+			// check
+			if tt.wantErr {
+				re.Error(err)
 			} else {
 				re.NoError(err)
 				re.Equal(tt.want, got)

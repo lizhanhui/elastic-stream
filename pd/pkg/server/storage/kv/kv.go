@@ -139,6 +139,11 @@ type KV interface {
 	// If inTxn is true, BatchDelete will try to delete all keys in a single transaction.
 	BatchDelete(ctx context.Context, keys [][]byte, prevKV bool, inTxn bool) ([]KeyValue, error)
 
+	// DeleteByPrefixes removes the key-value pairs associated with the given prefixes in a single transaction.
+	// Any empty prefix will be ignored.
+	// It returns the number of key-value pairs that are deleted.
+	DeleteByPrefixes(ctx context.Context, prefixes [][]byte) (int64, error)
+
 	// GetPrefixRangeEnd returns the end key for a prefix range query.
 	GetPrefixRangeEnd(prefix []byte) []byte
 }

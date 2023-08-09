@@ -68,6 +68,10 @@ func (e *Endpoint) DeleteStream(ctx context.Context, streamID int64) (*rpcfb.Str
 		logger.Warn("stream not found when delete stream")
 		return nil, nil
 	}
+	// TODO: delete ranges asynchronously
+	rangeInStreamPrefix := []byte(fmt.Sprintf(_rangeStreamPrefixFormat, streamID))
+	_, _ = e.KV.DeleteByPrefixes(ctx, [][]byte{rangeInStreamPrefix})
+	// TODO: delete index asynchronously
 
 	return rpcfb.GetRootAsStream(prevV, 0).UnPack(), nil
 }
