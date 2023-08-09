@@ -623,8 +623,9 @@ impl IO {
             });
 
         let writer = self.buf_writer.get_mut();
+        let slots = self.options.store.uring.queue_depth as usize - self.inflight;
         writer
-            .take()
+            .take(slots)
             .into_iter()
             .filter(|buf| {
                 // Accept the last partial buffer only if it contains uncommitted data.
@@ -717,7 +718,7 @@ impl IO {
             return;
         }
 
-        let mut need_write = false;
+        let mut need_write = unsafe { &*self.buf_writer.get() }.buffering();
 
         // Try reclaim the cache space for the upcoming entries.
         let (_, free_bytes) = try_reclaim_from_wal(&mut self.wal, 0);
@@ -1329,13 +1330,17 @@ impl IO {
         }
     }
 
+    /// Number of bytes that are not yet flushed to disk
+    fn buffered(&self) -> u64 {
+        unsafe { &*self.buf_writer.get() }.cursor - self.write_window.committed
+    }
+
     fn should_quit(&self) -> bool {
         0 == self.inflight
             && self.pending_data_tasks.is_empty()
-            && self.inflight_write_tasks.is_empty()
             && self.inflight_read_tasks.is_empty()
-            && self.blocked.is_empty()
             && self.wal.control_task_num() == 0
+            && self.buffered() == 0
             && self.channel_disconnected
     }
 
@@ -1928,7 +1933,7 @@ mod tests {
             io.load()?;
             let pos = io.indexer.get_wal_checkpoint()?;
             io.recover(pos)?;
-            assert!(!io.buf_writer.get_mut().take().is_empty());
+            assert!(!io.buf_writer.get_mut().take(1024).is_empty());
         }
 
         Ok(())
