@@ -74,7 +74,10 @@ func TestSortAndUnique(t *testing.T) {
 			re := require.New(t)
 
 			l := SortAndUnique(tt.args.l, tt.args.less)
-			re.Equal(tt.want, l)
+			re.Len(l, len(tt.want))
+			for i := range l {
+				re.Equal(tt.want[i], l[i])
+			}
 		})
 	}
 }
