@@ -7,12 +7,14 @@ pub(crate) mod window;
 use crate::error::ServiceError;
 #[cfg(test)]
 use mockall::automock;
-use model::{object::ObjectMetadata, range::RangeMetadata, replica::RangeProgress, Batch};
+use model::{
+    error::EsError, object::ObjectMetadata, range::RangeMetadata, replica::RangeProgress, Batch,
+};
 use store::error::AppendError;
 
 #[cfg_attr(test, automock)]
 pub(crate) trait RangeManager {
-    async fn start(&mut self) -> Result<(), ServiceError>;
+    async fn start(&mut self) -> Result<(), EsError>;
 
     /// Create a new range for the specified stream.
     fn create_range(&mut self, range: RangeMetadata) -> Result<(), ServiceError>;

@@ -207,6 +207,7 @@ mod tests {
     use protocol::rpc::header::{ErrorCode, FetchRequestT, FetchResponse, OperationCode, RangeT};
     use std::{cell::UnsafeCell, error::Error, rc::Rc, sync::Arc};
     use store::error::FetchError;
+    use tokio::sync::mpsc;
 
     fn build_fetch_request() -> Frame {
         let mut request = Frame::new(OperationCode::FETCH);
@@ -265,6 +266,10 @@ mod tests {
 
         let mut metadata_manager = MockMetadataManager::default();
         metadata_manager.expect_start().return_const(());
+        metadata_manager.expect_watch().returning(|| {
+            let (_tx, rx) = mpsc::unbounded_channel();
+            Ok(rx)
+        });
 
         tokio_uring::start(async move {
             let store = Rc::new(mock_store);

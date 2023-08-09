@@ -11,7 +11,7 @@ use std::{
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use config::Configuration;
 use log::{error, info, trace, warn};
-use model::range::{RangeLifecycleEvent, RangeMetadata};
+use model::range::RangeMetadata;
 use rocksdb::{
     BlockBasedOptions, ColumnFamilyDescriptor, DBCompressionType, FlushOptions, IteratorMode,
     Options, ReadOptions, WriteOptions, DB,
@@ -20,7 +20,9 @@ use tokio::sync::mpsc;
 
 use crate::error::StoreError;
 
-use super::{entry::IndexEntry, record_handle::RecordHandle, MinOffset};
+use super::{
+    entry::IndexEntry, record_handle::RecordHandle, record_key::RecordKey, Indexer, MinOffset,
+};
 
 const INDEX_COLUMN_FAMILY: &str = "index";
 const METADATA_COLUMN_FAMILY: &str = "metadata";
@@ -33,7 +35,7 @@ const WAL_CHECKPOINT: &str = "wal_checkpoint";
 /// If a range is sealed, its status is changed from `0` to `1` and logical `end` will be appended.
 const RANGE_PREFIX: u8 = b'r';
 
-pub(crate) struct Indexer {
+pub(crate) struct DefaultIndexer {
     /// RocksDB instance
     db: DB,
 
@@ -51,7 +53,7 @@ pub(crate) struct Indexer {
     flush_threshold: usize,
 }
 
-impl Indexer {
+impl DefaultIndexer {
     /// Build RocksDB column family options for index.
     ///
     fn build_index_column_family_options(
@@ -163,71 +165,6 @@ impl Indexer {
         })
     }
 
-    ///
-    /// # Arguments
-    ///
-    /// * `stream_id` - Stream Identifier
-    /// * `range` - Range index
-    /// * `offset` Logical offset within the stream, similar to row-id within a database table.
-    /// * `handle` - Pointer to record-batch in WAL.
-    ///
-    pub(crate) fn index(
-        &self,
-        stream_id: i64,
-        range: u32,
-        offset: u64,
-        handle: &RecordHandle,
-    ) -> Result<(), StoreError> {
-        match self.db.cf_handle(INDEX_COLUMN_FAMILY) {
-            Some(cf) => {
-                let mut key_buf = BytesMut::with_capacity(20);
-                key_buf.put_i64(stream_id);
-                key_buf.put_u32(range);
-                key_buf.put_u64(offset);
-
-                let value_buf = Into::<Bytes>::into(handle);
-
-                self.db
-                    .put_cf_opt(cf, &key_buf[..], &value_buf[..], &self.write_opts)
-                    .map_err(|e| StoreError::RocksDB(e.into_string()))?;
-                self.advance_wal_checkpoint(handle.wal_offset)?;
-                let prev = self.count.fetch_add(1, Ordering::Relaxed);
-                if prev + 1 >= self.flush_threshold {
-                    self.flush(false)?;
-                    info!("Advanced WAL checkpoint to {}", handle.wal_offset);
-                    self.count.store(0, Ordering::Relaxed);
-                }
-                Ok(())
-            }
-            None => Err(StoreError::RocksDB("No column family".to_owned())),
-        }
-    }
-
-    /// The specific offset is not guaranteed to exist,
-    /// because it may have been compacted or point to a intermediate position of a record batch.
-    /// So the `scan_record_handles_left_shift` will left-shift the offset as a lower bound to scan the records
-    pub(crate) fn scan_record_handles_left_shift(
-        &self,
-        stream_id: i64,
-        range: u32,
-        offset: u64,
-        max_offset: u64,
-        max_bytes: u32,
-    ) -> Result<Option<Vec<RecordHandle>>, StoreError> {
-        let left_key_entry = self.retrieve_left_key(stream_id, range, offset)?;
-        let left_key = left_key_entry
-            .map(|entry| entry.key())
-            .unwrap_or(self.build_index_key(stream_id, range, offset));
-        let mut read_opts = ReadOptions::default();
-        read_opts.set_iterate_lower_bound(&left_key[..]);
-        read_opts.set_iterate_upper_bound((stream_id + 1).to_be_bytes());
-
-        let upper_key = self.build_index_key(stream_id, range, max_offset);
-        read_opts.set_iterate_upper_bound(&upper_key[..]);
-
-        self.scan_record_handles_from(read_opts, max_bytes)
-    }
-
     #[cfg(test)]
     pub(crate) fn scan_record_handles(
         &self,
@@ -235,7 +172,7 @@ impl Indexer {
         range: u32,
         offset: u64,
         max_bytes: u32,
-    ) -> Result<Option<Vec<RecordHandle>>, StoreError> {
+    ) -> Result<Option<Vec<(RecordKey, RecordHandle)>>, StoreError> {
         let mut read_opts = ReadOptions::default();
         let lower = self.build_index_key(stream_id, range, offset);
         read_opts.set_iterate_lower_bound(&lower[..]);
@@ -252,11 +189,11 @@ impl Indexer {
         &self,
         read_opts: ReadOptions,
         max_bytes: u32,
-    ) -> Result<Option<Vec<RecordHandle>>, StoreError> {
+    ) -> Result<Option<Vec<(RecordKey, RecordHandle)>>, StoreError> {
         let mut bytes_c = 0_u32;
         match self.db.cf_handle(INDEX_COLUMN_FAMILY) {
             Some(cf) => {
-                let record_handles: Vec<_> = self
+                let indexes: Vec<_> = self
                     .db
                     .iterator_cf_opt(cf, read_opts, IteratorMode::Start)
                     .flatten()
@@ -266,104 +203,27 @@ impl Indexer {
                         }
                         v.len() > 8 /* WAL offset */ + 4 /* length-type */
                     })
-                    .map_while(|(_k, v)| {
+                    .map_while(|(k, v)| {
                         if bytes_c >= max_bytes {
                             return None;
                         }
+                        let key = Into::<RecordKey>::into(&*k);
                         let handle = Into::<RecordHandle>::into(&*v);
                         bytes_c += handle.len;
-                        Some(handle)
+                        Some((key, handle))
                     })
                     .collect();
 
-                if record_handles.is_empty() {
+                if indexes.is_empty() {
                     Ok(None)
                 } else {
-                    Ok(Some(record_handles))
+                    Ok(Some(indexes))
                 }
             }
             None => Err(StoreError::RocksDB(format!(
                 "No column family: `{}`",
                 INDEX_COLUMN_FAMILY
             ))),
-        }
-    }
-
-    /// Returns WAL checkpoint offset.
-    ///
-    /// Note we can call this method as frequently as we need as all operation is memory
-    pub(crate) fn get_wal_checkpoint(&self) -> Result<u64, StoreError> {
-        if let Some(metadata_cf) = self.db.cf_handle(METADATA_COLUMN_FAMILY) {
-            match self
-                .db
-                .get_cf(metadata_cf, WAL_CHECKPOINT)
-                .map_err(|e| StoreError::RocksDB(e.into_string()))?
-            {
-                Some(value) => {
-                    if value.len() < 8 {
-                        error!("Value of wal_checkpoint is corrupted. Expecting 8 bytes in big endian, actual: {:?}", value);
-                        return Err(StoreError::DataCorrupted);
-                    }
-                    let mut cursor = Cursor::new(&value[..]);
-                    let wal_offset = cursor.get_u64();
-                    trace!("Checkpoint WAL-offset={}", wal_offset);
-                    Ok(wal_offset)
-                }
-                None => {
-                    info!("No KV entry for wal_checkpoint yet. Default wal_checkpoint to 0");
-                    Ok(0)
-                }
-            }
-        } else {
-            info!("No column family metadata yet. Default wal_checkpoint to 0");
-            Ok(0)
-        }
-    }
-
-    /// Update checkpoint WAL offset, indicating records prior to it should have been properly indexed.
-    ///
-    /// Note the indexes are possibly stored only in RocksDB memtable. Updated checkpoint WAL is the same.
-    /// We are employing `Atomic Flush` of RocksDB to ensure data consistency without using WAL.
-    pub(crate) fn advance_wal_checkpoint(&self, offset: u64) -> Result<(), StoreError> {
-        let cf = self
-            .db
-            .cf_handle(METADATA_COLUMN_FAMILY)
-            .ok_or(StoreError::RocksDB(
-                "Metadata should have been created as we have create_if_missing enabled".to_owned(),
-            ))?;
-        let mut buf = BytesMut::with_capacity(8);
-        buf.put_u64(offset);
-        self.db
-            .put_cf_opt(cf, WAL_CHECKPOINT, &buf[..], &self.write_opts)
-            .map_err(|e| StoreError::RocksDB(e.into_string()))
-    }
-
-    /// Flush record index in cache into RocksDB using atomic-flush.
-    ///
-    /// Normally, we do not have invoke this function as frequently as insertion of entry, mapping stream offset to WAL
-    /// offset. The reason behind this is that DB is having `AtomicFlush` enabled. As long as we put mapping entries
-    /// first and then update checkpoint `offset` of WAL, integrity of index entries will be guaranteed after recovery
-    /// from `checkpoint` WAL offset.
-    ///
-    /// Once a memtable is full and flushed to SST files, we can guarantee that all mapping entries prior to checkpoint
-    /// `offset` of WAL are already persisted.
-    ///
-    /// To minimize the amount of WAL data to recover, for example, in case of planned reboot, we shall update checkpoint
-    /// offset and invoke this method before stopping.
-    pub(crate) fn flush(&self, wait: bool) -> Result<(), StoreError> {
-        info!("AtomicFlush RocksDB column families");
-        let mut flush_opt = FlushOptions::default();
-        flush_opt.set_wait(wait);
-        if let Some((index, metadata)) = self
-            .db
-            .cf_handle(INDEX_COLUMN_FAMILY)
-            .zip(self.db.cf_handle(METADATA_COLUMN_FAMILY))
-        {
-            self.db
-                .flush_cfs_opt(&[index, metadata], &flush_opt)
-                .map_err(|e| StoreError::RocksDB(e.into_string()))
-        } else {
-            unreachable!("index or metadata column family handle is not found")
         }
     }
 
@@ -372,37 +232,6 @@ impl Indexer {
     pub(crate) fn compact(&self) {
         if let Some(cf) = self.db.cf_handle(INDEX_COLUMN_FAMILY) {
             self.db.compact_range_cf(cf, None::<&[u8]>, None::<&[u8]>);
-        }
-    }
-
-    pub(crate) fn retrieve_max_key(
-        &self,
-        stream_id: i64,
-        range: u32,
-    ) -> Result<Option<IndexEntry>, StoreError> {
-        match self.db.cf_handle(INDEX_COLUMN_FAMILY) {
-            Some(cf) => {
-                let mut read_opts = ReadOptions::default();
-                let mut lower = BytesMut::with_capacity(12);
-                lower.put_i64(stream_id);
-                lower.put_u32(range);
-                read_opts.set_iterate_lower_bound(lower.freeze());
-
-                let mut upper = BytesMut::with_capacity(12);
-                upper.put_i64(stream_id);
-                upper.put_u32(range + 1);
-                read_opts.set_iterate_upper_bound(upper.freeze());
-
-                let mut iter = self.db.iterator_cf_opt(cf, read_opts, IteratorMode::End);
-                iter.next()
-                    .transpose()
-                    .map_err(|e| StoreError::RocksDB(e.into_string()))
-                    .map(|opt| opt.map(|(k, v)| IndexEntry::new(&k, &v)))
-            }
-            None => Err(StoreError::RocksDB(format!(
-                "No column family: `{}`",
-                INDEX_COLUMN_FAMILY
-            ))),
         }
     }
 
@@ -467,7 +296,183 @@ impl Indexer {
     }
 }
 
-impl super::LocalRangeManager for Indexer {
+impl Indexer for DefaultIndexer {
+    ///
+    /// # Arguments
+    ///
+    /// * `stream_id` - Stream Identifier
+    /// * `range` - Range index
+    /// * `offset` Logical offset within the stream, similar to row-id within a database table.
+    /// * `handle` - Pointer to record-batch in WAL.
+    ///
+    fn index(
+        &self,
+        stream_id: i64,
+        range: u32,
+        offset: u64,
+        handle: &RecordHandle,
+    ) -> Result<(), StoreError> {
+        match self.db.cf_handle(INDEX_COLUMN_FAMILY) {
+            Some(cf) => {
+                let mut key_buf = BytesMut::with_capacity(20);
+                key_buf.put_i64(stream_id);
+                key_buf.put_u32(range);
+                key_buf.put_u64(offset);
+
+                let value_buf = Into::<Bytes>::into(handle);
+
+                self.db
+                    .put_cf_opt(cf, &key_buf[..], &value_buf[..], &self.write_opts)
+                    .map_err(|e| StoreError::RocksDB(e.into_string()))?;
+                self.advance_wal_checkpoint(handle.wal_offset)?;
+                let prev = self.count.fetch_add(1, Ordering::Relaxed);
+                if prev + 1 >= self.flush_threshold {
+                    self.flush(false)?;
+                    info!("Advanced WAL checkpoint to {}", handle.wal_offset);
+                    self.count.store(0, Ordering::Relaxed);
+                }
+                Ok(())
+            }
+            None => Err(StoreError::RocksDB("No column family".to_owned())),
+        }
+    }
+
+    /// The specific offset is not guaranteed to exist,
+    /// because it may have been compacted or point to a intermediate position of a record batch.
+    /// So the `scan_record_handles_left_shift` will left-shift the offset as a lower bound to scan the records
+    fn scan_record_handles_left_shift(
+        &self,
+        stream_id: i64,
+        range: u32,
+        offset: u64,
+        max_offset: u64,
+        max_bytes: u32,
+    ) -> Result<Option<Vec<(RecordKey, RecordHandle)>>, StoreError> {
+        let left_key_entry = self.retrieve_left_key(stream_id, range, offset)?;
+        let left_key = left_key_entry
+            .map(|entry| entry.key())
+            .unwrap_or(self.build_index_key(stream_id, range, offset));
+        let mut read_opts = ReadOptions::default();
+        read_opts.set_iterate_lower_bound(&left_key[..]);
+        read_opts.set_iterate_upper_bound((stream_id + 1).to_be_bytes());
+
+        let upper_key = self.build_index_key(stream_id, range, max_offset);
+        read_opts.set_iterate_upper_bound(&upper_key[..]);
+
+        self.scan_record_handles_from(read_opts, max_bytes)
+    }
+
+    /// Returns WAL checkpoint offset.
+    ///
+    /// Note we can call this method as frequently as we need as all operation is memory
+    fn get_wal_checkpoint(&self) -> Result<u64, StoreError> {
+        if let Some(metadata_cf) = self.db.cf_handle(METADATA_COLUMN_FAMILY) {
+            match self
+                .db
+                .get_cf(metadata_cf, WAL_CHECKPOINT)
+                .map_err(|e| StoreError::RocksDB(e.into_string()))?
+            {
+                Some(value) => {
+                    if value.len() < 8 {
+                        error!("Value of wal_checkpoint is corrupted. Expecting 8 bytes in big endian, actual: {:?}", value);
+                        return Err(StoreError::DataCorrupted);
+                    }
+                    let mut cursor = Cursor::new(&value[..]);
+                    let wal_offset = cursor.get_u64();
+                    trace!("Checkpoint WAL-offset={}", wal_offset);
+                    Ok(wal_offset)
+                }
+                None => {
+                    info!("No KV entry for wal_checkpoint yet. Default wal_checkpoint to 0");
+                    Ok(0)
+                }
+            }
+        } else {
+            info!("No column family metadata yet. Default wal_checkpoint to 0");
+            Ok(0)
+        }
+    }
+
+    /// Update checkpoint WAL offset, indicating records prior to it should have been properly indexed.
+    ///
+    /// Note the indexes are possibly stored only in RocksDB memtable. Updated checkpoint WAL is the same.
+    /// We are employing `Atomic Flush` of RocksDB to ensure data consistency without using WAL.
+    fn advance_wal_checkpoint(&self, offset: u64) -> Result<(), StoreError> {
+        let cf = self
+            .db
+            .cf_handle(METADATA_COLUMN_FAMILY)
+            .ok_or(StoreError::RocksDB(
+                "Metadata should have been created as we have create_if_missing enabled".to_owned(),
+            ))?;
+        let mut buf = BytesMut::with_capacity(8);
+        buf.put_u64(offset);
+        self.db
+            .put_cf_opt(cf, WAL_CHECKPOINT, &buf[..], &self.write_opts)
+            .map_err(|e| StoreError::RocksDB(e.into_string()))
+    }
+
+    /// Flush record index in cache into RocksDB using atomic-flush.
+    ///
+    /// Normally, we do not have invoke this function as frequently as insertion of entry, mapping stream offset to WAL
+    /// offset. The reason behind this is that DB is having `AtomicFlush` enabled. As long as we put mapping entries
+    /// first and then update checkpoint `offset` of WAL, integrity of index entries will be guaranteed after recovery
+    /// from `checkpoint` WAL offset.
+    ///
+    /// Once a memtable is full and flushed to SST files, we can guarantee that all mapping entries prior to checkpoint
+    /// `offset` of WAL are already persisted.
+    ///
+    /// To minimize the amount of WAL data to recover, for example, in case of planned reboot, we shall update checkpoint
+    /// offset and invoke this method before stopping.
+    fn flush(&self, wait: bool) -> Result<(), StoreError> {
+        info!("AtomicFlush RocksDB column families");
+        let mut flush_opt = FlushOptions::default();
+        flush_opt.set_wait(wait);
+        if let Some((index, metadata)) = self
+            .db
+            .cf_handle(INDEX_COLUMN_FAMILY)
+            .zip(self.db.cf_handle(METADATA_COLUMN_FAMILY))
+        {
+            self.db
+                .flush_cfs_opt(&[index, metadata], &flush_opt)
+                .map_err(|e| StoreError::RocksDB(e.into_string()))
+        } else {
+            unreachable!("index or metadata column family handle is not found")
+        }
+    }
+
+    fn retrieve_max_key(
+        &self,
+        stream_id: i64,
+        range: u32,
+    ) -> Result<Option<IndexEntry>, StoreError> {
+        match self.db.cf_handle(INDEX_COLUMN_FAMILY) {
+            Some(cf) => {
+                let mut read_opts = ReadOptions::default();
+                let mut lower = BytesMut::with_capacity(12);
+                lower.put_i64(stream_id);
+                lower.put_u32(range);
+                read_opts.set_iterate_lower_bound(lower.freeze());
+
+                let mut upper = BytesMut::with_capacity(12);
+                upper.put_i64(stream_id);
+                upper.put_u32(range + 1);
+                read_opts.set_iterate_upper_bound(upper.freeze());
+
+                let mut iter = self.db.iterator_cf_opt(cf, read_opts, IteratorMode::End);
+                iter.next()
+                    .transpose()
+                    .map_err(|e| StoreError::RocksDB(e.into_string()))
+                    .map(|opt| opt.map(|(k, v)| IndexEntry::new(&k, &v)))
+            }
+            None => Err(StoreError::RocksDB(format!(
+                "No column family: `{}`",
+                INDEX_COLUMN_FAMILY
+            ))),
+        }
+    }
+}
+
+impl super::LocalRangeManager for DefaultIndexer {
     fn list_by_stream(&self, stream_id: i64, tx: mpsc::UnboundedSender<RangeMetadata>) {
         let mut prefix = BytesMut::with_capacity(9);
         prefix.put_u8(RANGE_PREFIX);
@@ -621,10 +626,6 @@ impl super::LocalRangeManager for Indexer {
             )))
         }
     }
-
-    async fn handle_range_lifecycle_event(&self, _event: Vec<RangeLifecycleEvent>) {
-        todo!()
-    }
 }
 
 #[cfg(test)]
@@ -639,7 +640,7 @@ mod tests {
 
     use crate::index::{
         record_handle::{HandleExt, RecordHandle},
-        MinOffset,
+        Indexer, MinOffset,
     };
 
     struct SampleMinOffset {
@@ -658,7 +659,7 @@ mod tests {
         }
     }
 
-    fn new_indexer() -> Result<super::Indexer, Box<dyn Error>> {
+    fn new_indexer() -> Result<super::DefaultIndexer, Box<dyn Error>> {
         let path = tempfile::tempdir()?;
         let mut config = config::Configuration::default();
         config
@@ -669,7 +670,7 @@ mod tests {
         let min_offset = Arc::new(SampleMinOffset {
             min: AtomicU64::new(0),
         });
-        let indexer = super::Indexer::new(&config, min_offset as Arc<dyn MinOffset>, 128)?;
+        let indexer = super::DefaultIndexer::new(&config, min_offset as Arc<dyn MinOffset>, 128)?;
         Ok(indexer)
     }
 
@@ -806,55 +807,64 @@ mod tests {
         // While the logical offset is 10, 20, 30, ..., which means each record batch contains 10 records.
 
         // Case one: scan from a exist key
-        let handles = indexer.scan_record_handles_left_shift(0, range, 10, 100, 128 * 2)?;
-        assert!(handles.is_some());
-        let handles = handles.unwrap();
-        assert_eq!(2, handles.len());
+        let indexes = indexer.scan_record_handles_left_shift(0, range, 10, 100, 128 * 2)?;
+        assert!(indexes.is_some());
+        let indexes = indexes.unwrap();
+        assert_eq!(2, indexes.len());
 
-        handles.into_iter().enumerate().for_each(|(i, handle)| {
-            assert_eq!(((i + 1) * 128) as u64, handle.wal_offset);
-            assert_eq!(128, handle.len);
-            assert_eq!(HandleExt::Hash(10), handle.ext);
-        });
+        indexes
+            .into_iter()
+            .enumerate()
+            .for_each(|(i, (_, handle))| {
+                assert_eq!(((i + 1) * 128) as u64, handle.wal_offset);
+                assert_eq!(128, handle.len);
+                assert_eq!(HandleExt::Hash(10), handle.ext);
+            });
 
         // Case two: scan from a left key
-        let handles = indexer.scan_record_handles_left_shift(0, range, 12, 100, 128 * 2)?;
-        assert!(handles.is_some());
-        let handles = handles.unwrap();
+        let indexes = indexer.scan_record_handles_left_shift(0, range, 12, 100, 128 * 2)?;
+        assert!(indexes.is_some());
+        let handles = indexes.unwrap();
         assert_eq!(2, handles.len());
 
-        handles.into_iter().enumerate().for_each(|(i, handle)| {
-            assert_eq!(((i + 1) * 128) as u64, handle.wal_offset);
-            assert_eq!(128, handle.len);
-            assert_eq!(HandleExt::Hash(10), handle.ext);
-        });
+        handles
+            .into_iter()
+            .enumerate()
+            .for_each(|(i, (_, handle))| {
+                assert_eq!(((i + 1) * 128) as u64, handle.wal_offset);
+                assert_eq!(128, handle.len);
+                assert_eq!(HandleExt::Hash(10), handle.ext);
+            });
 
         // Case three: scan from a key smaller than the smallest key
-        let handles = indexer.scan_record_handles_left_shift(0, range, 1, 100, 128 * 2)?;
-        assert!(handles.is_some());
-        let handles = handles.unwrap();
-        assert_eq!(2, handles.len());
+        let indexes = indexer.scan_record_handles_left_shift(0, range, 1, 100, 128 * 2)?;
+        assert!(indexes.is_some());
+        let indexes = indexes.unwrap();
+        assert_eq!(2, indexes.len());
 
-        handles.into_iter().enumerate().for_each(|(i, handle)| {
-            assert_eq!(((i + 1) * 128) as u64, handle.wal_offset);
-            assert_eq!(128, handle.len);
-            assert_eq!(HandleExt::Hash(10), handle.ext);
-        });
+        indexes
+            .into_iter()
+            .enumerate()
+            .for_each(|(i, (_, handle))| {
+                assert_eq!(((i + 1) * 128) as u64, handle.wal_offset);
+                assert_eq!(128, handle.len);
+                assert_eq!(HandleExt::Hash(10), handle.ext);
+            });
 
         // Case four: scan from a key bigger than the biggest key
 
-        let handles = indexer.scan_record_handles_left_shift(0, range, CNT * 11, 100, 128 * 2)?;
-        assert!(handles.is_none());
+        let indexes = indexer.scan_record_handles_left_shift(0, range, CNT * 11, 100, 128 * 2)?;
+        assert!(indexes.is_none());
 
         // Case five: scan with a max offset
-        let handles = indexer.scan_record_handles_left_shift(0, range, 10, 40, 128 * 10)?;
+        let indexes = indexer.scan_record_handles_left_shift(0, range, 10, 40, 128 * 10)?;
         // Three records are scanned
-        assert!(handles.is_some());
-        let handles = handles.unwrap();
-        assert_eq!(3, handles.len());
-        assert_eq!(handles[0].wal_offset, 128);
-        assert_eq!(handles[1].wal_offset, 256);
-        assert_eq!(handles[2].wal_offset, 384);
+        assert!(indexes.is_some());
+        let indexes = indexes.unwrap();
+        assert_eq!(3, indexes.len());
+        assert_eq!(indexes[0].1.wal_offset, 128);
+        assert_eq!(indexes[1].1.wal_offset, 256);
+        assert_eq!(indexes[2].1.wal_offset, 384);
 
         Ok(())
     }
@@ -876,25 +886,28 @@ mod tests {
             .count();
 
         // Case one: scan ten records from the indexer
-        let handles = indexer.scan_record_handles(0, range, 0, 10 * 128)?;
-        assert!(handles.is_some());
-        let handles = handles.unwrap();
-        assert_eq!(10, handles.len());
-        handles.into_iter().enumerate().for_each(|(i, handle)| {
-            assert_eq!(i as u64, handle.wal_offset);
-            assert_eq!(128, handle.len);
-            assert_eq!(HandleExt::Hash(10), handle.ext);
-        });
+        let indexes = indexer.scan_record_handles(0, range, 0, 10 * 128)?;
+        assert!(indexes.is_some());
+        let indexes = indexes.unwrap();
+        assert_eq!(10, indexes.len());
+        indexes
+            .into_iter()
+            .enumerate()
+            .for_each(|(i, (_, handle))| {
+                assert_eq!(i as u64, handle.wal_offset);
+                assert_eq!(128, handle.len);
+                assert_eq!(HandleExt::Hash(10), handle.ext);
+            });
 
         // Case two: scan 0 bytes from the indexer
-        let handles = indexer.scan_record_handles(0, range, 0, 0)?;
-        assert!(handles.is_none());
+        let indexes = indexer.scan_record_handles(0, range, 0, 0)?;
+        assert!(indexes.is_none());
 
         // Case three: return at least one record even if the bytes is not enough
-        let handles = indexer.scan_record_handles(0, range, 0, 5)?;
-        assert!(handles.is_some());
-        let handles = handles.unwrap();
-        assert_eq!(1, handles.len());
+        let indexes = indexer.scan_record_handles(0, range, 0, 5)?;
+        assert!(indexes.is_some());
+        let indexes = indexes.unwrap();
+        assert_eq!(1, indexes.len());
 
         Ok(())
     }
@@ -911,8 +924,11 @@ mod tests {
         let min_offset = Arc::new(SampleMinOffset {
             min: AtomicU64::new(0),
         });
-        let indexer =
-            super::Indexer::new(&config, Arc::clone(&min_offset) as Arc<dyn MinOffset>, 128)?;
+        let indexer = super::DefaultIndexer::new(
+            &config,
+            Arc::clone(&min_offset) as Arc<dyn MinOffset>,
+            128,
+        )?;
         let range = 0;
         const CNT: u64 = 1024;
         (0..CNT)
@@ -929,12 +945,12 @@ mod tests {
         indexer.flush(true)?;
         indexer.compact();
 
-        let handles = indexer.scan_record_handles(0, range, 0, 10)?.unwrap();
-        assert_eq!(0, handles[0].wal_offset);
+        let indexes = indexer.scan_record_handles(0, range, 0, 10)?.unwrap();
+        assert_eq!(0, indexes[0].1.wal_offset);
         min_offset.set_min(10);
 
         indexer.compact();
-        let _handles = indexer.scan_record_handles(0, range, 0, 10)?.unwrap();
+        let _indexes = indexer.scan_record_handles(0, range, 0, 10)?.unwrap();
         Ok(())
     }
 }

@@ -14,6 +14,17 @@ pub(crate) struct RecordHandle {
     pub(crate) ext: HandleExt,
 }
 
+impl RecordHandle {
+    #[allow(dead_code)]
+    pub(crate) fn new(wal_offset: u64, len: u32, ext: HandleExt) -> Self {
+        Self {
+            wal_offset,
+            len,
+            ext,
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum HandleExt {
     /// Hash of the `Record` tag if it contains a single entry.
@@ -21,6 +32,15 @@ pub(crate) enum HandleExt {
 
     /// Number of the nested entries included in the pointed `Record`.
     BatchSize(u32),
+}
+
+impl HandleExt {
+    pub(crate) fn count(&self) -> u32 {
+        match self {
+            HandleExt::Hash(_) => 1,
+            HandleExt::BatchSize(len) => *len,
+        }
+    }
 }
 
 impl From<&[u8]> for RecordHandle {

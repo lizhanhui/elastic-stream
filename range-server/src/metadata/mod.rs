@@ -25,5 +25,9 @@ pub type RangeEventListener = mpsc::UnboundedReceiver<Vec<RangeLifecycleEvent>>;
 pub(crate) trait MetadataManager {
     async fn start(&self);
 
+    /// Watch range lifecycle event
+    /// - firstly ,the listener will receive all range lifecycle events in a random order.
+    /// - then, the listener will receive incremental event when range lifecycle event happens.
+    /// Note: the watch must happen before #start.
     fn watch(&mut self) -> Result<RangeEventListener, EsError>;
 }

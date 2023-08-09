@@ -1,7 +1,7 @@
 use super::lock::Lock;
 use crate::{
     error::{AppendError, FetchError, StoreError},
-    index::{driver::IndexDriver, MinOffset},
+    index::{driver::IndexDriver, Indexer, MinOffset},
     io::{
         self,
         record::RecordType,
@@ -21,7 +21,7 @@ use client::PlacementDriverIdGenerator;
 use crossbeam::channel::{Receiver, Sender, TryRecvError};
 use futures::future::join_all;
 use log::{error, trace, warn};
-use model::range::RangeMetadata;
+use model::range::{RangeLifecycleEvent, RangeMetadata};
 use observation::metrics::store_metrics::{
     RangeServerStatistics, STORE_APPEND_BYTES_COUNT, STORE_APPEND_COUNT,
     STORE_APPEND_LATENCY_HISTOGRAM, STORE_FAILED_APPEND_COUNT, STORE_FAILED_FETCH_COUNT,
@@ -463,6 +463,19 @@ impl Store for ElasticStore {
 
     fn config(&self) -> Arc<config::Configuration> {
         Arc::clone(&self.config)
+    }
+
+    async fn handle_range_event(&self, events: Vec<RangeLifecycleEvent>) {
+        match self.shared.indexer.handle_range_event(events).await {
+            Ok(deletable_offset) => {
+                self.shared
+                    .wal_offset_manager
+                    .set_deletable_offset(deletable_offset);
+            }
+            Err(e) => {
+                error!("Failed to handle range event: {}", e);
+            }
+        }
     }
 }
 

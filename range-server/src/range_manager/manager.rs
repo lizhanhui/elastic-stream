@@ -6,13 +6,16 @@ use std::{
 
 use log::{error, info, warn};
 use model::{
-    object::ObjectMetadata, range::RangeMetadata, replica::RangeProgress, stream::StreamMetadata,
-    Batch,
+    error::EsError, object::ObjectMetadata, range::RangeMetadata, replica::RangeProgress,
+    stream::StreamMetadata, Batch,
 };
 use object_storage::ObjectStorage;
 use store::{error::AppendError, Store};
 
-use crate::{error::ServiceError, metadata::MetadataManager};
+use crate::{
+    error::ServiceError,
+    metadata::{MetadataManager, RangeEventListener},
+};
 
 use super::{fetcher::PlacementFetcher, range::Range, stream::Stream, RangeManager};
 
@@ -31,7 +34,7 @@ pub(crate) struct DefaultRangeManager<S, F, O, M> {
 
 impl<S, F, O, M> DefaultRangeManager<S, F, O, M>
 where
-    S: Store,
+    S: Store + 'static,
     F: PlacementFetcher,
     O: ObjectStorage,
     M: MetadataManager,
@@ -55,12 +58,15 @@ where
     ///
     /// # Panic
     /// If failed to access store to acquire max offset of the stream with mutable range.
-    async fn bootstrap(&mut self) -> Result<(), ServiceError> {
+    async fn bootstrap(&mut self) -> Result<(), EsError> {
+        let range_event_rx = self.metadata_manager.watch()?;
         self.metadata_manager.start().await;
         let ranges = self
             .fetcher
             .bootstrap(self.store.config().server.server_id as u32)
-            .await?;
+            .await
+            .map_err(|e| EsError::unexpected("pd fetcher bootstrap fail").set_source(e))?;
+        self.start_notify_range_event_task(range_event_rx);
 
         for range in ranges {
             let committed = self
@@ -90,6 +96,15 @@ where
             }
         }
         Ok(())
+    }
+
+    fn start_notify_range_event_task(&self, mut range_event_rx: RangeEventListener) {
+        let store = self.store.clone();
+        tokio_uring::spawn(async move {
+            while let Some(events) = range_event_rx.recv().await {
+                store.handle_range_event(events).await;
+            }
+        });
     }
 
     fn get_range(&self, stream_id: u64, range_index: u32) -> Option<&Range> {
@@ -122,12 +137,12 @@ where
 
 impl<S, F, O, M> RangeManager for DefaultRangeManager<S, F, O, M>
 where
-    S: Store,
+    S: Store + 'static,
     F: PlacementFetcher,
     O: ObjectStorage,
     M: MetadataManager,
 {
-    async fn start(&mut self) -> Result<(), ServiceError> {
+    async fn start(&mut self) -> Result<(), EsError> {
         self.bootstrap().await?;
         Ok(())
     }

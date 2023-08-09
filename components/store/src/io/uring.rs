@@ -1,6 +1,7 @@
 use crate::error::{AppendError, FetchError, StoreError};
 use crate::index::driver::IndexDriver;
 use crate::index::record_handle::{HandleExt, RecordHandle};
+use crate::index::Indexer;
 use crate::io::buf::{AlignedBufReader, AlignedBufWriter};
 use crate::io::context::Context;
 use crate::io::task::IoTask;
@@ -1551,7 +1552,7 @@ mod tests {
     use super::{IoTask, WriteTask};
     use crate::error::StoreError;
     use crate::index::driver::IndexDriver;
-    use crate::index::MinOffset;
+    use crate::index::{Indexer, MinOffset};
     use crate::io::ReadTask;
     use crate::offset_manager::WalOffsetManager;
     use bytes::BytesMut;
