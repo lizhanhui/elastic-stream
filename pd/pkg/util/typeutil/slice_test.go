@@ -32,9 +32,6 @@ func TestFilterZero(t *testing.T) {
 }
 
 func TestSortAndUnique(t *testing.T) {
-	// Because of a bug in Golang 1.19, we should initialize the slice here rather than in the test case.
-	want1 := []int{1, 2, 3, 4, 5, 6, 7, 8, 9}
-	want2 := []int{9, 8, 7, 6, 5, 4, 3, 2, 1}
 	type args[T comparable] struct {
 		l    []T
 		less func(i, j T) bool
@@ -51,7 +48,7 @@ func TestSortAndUnique(t *testing.T) {
 				l:    []int{1, 2, 3, 4, 5, 6, 7, 8, 9},
 				less: func(i, j int) bool { return i < j },
 			},
-			want: want1,
+			want: []int{1, 2, 3, 4, 5, 6, 7, 8, 9},
 		},
 		{
 			name: "sort and unique",
@@ -59,7 +56,7 @@ func TestSortAndUnique(t *testing.T) {
 				l:    []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 9},
 				less: func(i, j int) bool { return i > j },
 			},
-			want: want2,
+			want: []int{9, 8, 7, 6, 5, 4, 3, 2, 1},
 		},
 		{
 			name: "empty slice",
@@ -73,7 +70,6 @@ func TestSortAndUnique(t *testing.T) {
 	for _, tt := range tests {
 		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
 			re := require.New(t)
 
 			l := SortAndUnique(tt.args.l, tt.args.less)
