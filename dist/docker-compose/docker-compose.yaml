@@ -1,17 +1,12 @@
 services:
   range-server:
-    image: "elasticstream/elastic-stream:0.2.5"
-    configs:
-      - source: rs_config
-        target: /etc/range-server/range-server.yaml
-        mode: 0440
+    image: "elasticstream/elastic-stream:0.2.9"
     # https://docs.docker.com/compose/compose-file/05-services/#entrypoint
     entrypoint:
       - /usr/local/bin/range-server
       - start
     environment:
       - ES_ADDR=0.0.0.0:10911
-      - ES_ADVERTISE_ADDR=range-server:10911
       - ES_PD=pd:12378
     ports:
       - "10911:10911"
@@ -22,11 +17,11 @@ services:
     volumes:
       - rs_data:/data
   pd:
-    image: "elasticstream/elastic-stream:0.2.5"
-    configs:
-      - source: pd_config
-        target: /etc/pd/config.yaml
-        mode: 0440
+    image: "elasticstream/elastic-stream:0.2.9"
+    entrypoint:
+      - /usr/local/bin/pd
+      - --client-urls=http://0.0.0.0:12379
+      - --pd-addr=0.0.0.0:12378
     ports:
       - "12378:12378"
       - "12379:12379"
@@ -42,10 +37,3 @@ services:
 volumes:
   rs_data:
     driver: local
-
-# https://docs.docker.com/compose/compose-file/08-configs/
-configs:
-  rs_config:
-    file: ./configs/range-server/range-server.yaml
-  pd_config:
-    file: ./configs/pd/config.yaml

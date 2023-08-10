@@ -38,7 +38,7 @@ const (
 	_defaultDataDirFormat                     = "default.%s"
 	_defaultInitialClusterFormat              = "%s=%s"
 	_defaultInitialClusterToken               = "pd-cluster"
-	_defaultPDAddr                            = "127.0.0.1:12378"
+	_defaultPDAddr                            = "0.0.0.0:12378"
 	_defaultLeaderLease                 int64 = 3
 	_defaultLeaderPriorityCheckInterval       = time.Minute
 

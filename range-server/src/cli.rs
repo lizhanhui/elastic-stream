@@ -104,7 +104,7 @@ impl StartArgs {
 
         configuration.server.addr = match &self.addr {
             Some(addr) => addr.clone(),
-            None => String::from("127.0.0.1:10911"),
+            None => String::from("0.0.0.0:10911"),
         };
 
         let socket_addr = SocketAddr::from_str(&configuration.server.addr)?;
