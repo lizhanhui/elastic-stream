@@ -13,12 +13,13 @@ codec = { path = "../codec" }
 local-sync = { workspace = true }
 log = { workspace = true }
 thiserror = { workspace = true }
-tokio-uring = { workspace = true }
+monoio = { workspace = true }
+libc = { workspace = true }
+flume = { workspace = true }
 
 [dev-dependencies]
 cargo-llvm-cov = { workspace = true }
 chrono = { workspace = true }
 env_logger = { workspace = true }
 protocol = { path = "../protocol" }
-tokio = { workspace = true }
 ulog = { path = "../ulog", features = ["env"] }

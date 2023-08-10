@@ -13,9 +13,7 @@ log = { workspace = true }
 mockall = { workspace = true, optional = true }
 model = { path = "../model" }
 protocol = { path = "../protocol" }
-tokio = { workspace = true }
-tokio-uring = { workspace = true }
-tokio-util = { workspace = true }
+monoio = { workspace = true }
 
 [dev-dependencies]
 config = { path = "../config" }

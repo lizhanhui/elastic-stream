@@ -29,8 +29,7 @@ num_cpus = "1.15.0"
 protocol = { path = "../../components/protocol" }
 replication = { path = "../../components/replication" }
 thiserror = { workspace = true }
-tokio = { workspace = true, features = ["full"] }
-tokio-uring = { workspace = true }
+monoio = { workspace = true }
 util = { path = "../../components/util" }
 
 [dev-dependencies]

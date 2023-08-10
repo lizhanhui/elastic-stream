@@ -21,9 +21,7 @@ opendal = { workspace = true }
 pd-client = { path = "../pd-client" }
 protocol = { path = "../protocol" }
 store = { path = "../store" }
-tokio = { workspace = true }
-tokio-uring = { workspace = true }
-tokio-util = { workspace = true }
+monoio = { workspace = true }
 util = { path = "../util" }
 
 [dev-dependencies]

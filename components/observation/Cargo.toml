@@ -22,8 +22,6 @@ parking_lot = { workspace = true }
 procfs = { workspace = true }
 prometheus = { workspace = true }
 sysinfo = { workspace = true }
-tokio = { workspace = true }
 
 [features]
 trace = ["minitrace/enable"]
-

@@ -14,6 +14,5 @@ flatbuffers = { workspace = true }
 log = { workspace = true }
 model = { path = "../model" }
 protocol = { path = "../protocol" }
-tokio = { workspace = true }
-tokio-uring = { workspace = true }
+monoio = { workspace = true }
 transport = { path = "../transport" }

@@ -24,8 +24,7 @@ opendal = { workspace = true }
 protocol = { path = "../protocol" }
 serde = { workspace = true }
 thiserror = { workspace = true }
-tokio = { workspace = true }
-tokio-uring = { workspace = true }
+monoio = { workspace = true }
 
 [dev-dependencies]
 chrono = { workspace = true }
