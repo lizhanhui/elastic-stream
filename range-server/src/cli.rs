@@ -1,7 +1,13 @@
 use clap::{Args, Parser, Subcommand};
 use config::Configuration;
-use log::info;
-use std::{fs::File, path::Path};
+use log::{info, trace};
+use nix::{errno::Errno, ifaddrs::getifaddrs};
+use std::{
+    fs::File,
+    net::{Ipv4Addr, SocketAddr},
+    path::Path,
+    str::FromStr,
+};
 
 #[derive(Debug, Parser, Clone)]
 #[command(author, about, version, long_about = None)]
@@ -101,12 +107,20 @@ impl StartArgs {
             None => String::from("127.0.0.1:10911"),
         };
 
+        let socket_addr = SocketAddr::from_str(&configuration.server.addr)?;
+        let port = socket_addr.port();
+
         match &self.advertise_addr {
             Some(advertise_addr) => {
                 configuration.server.advertise_addr = advertise_addr.clone();
             }
             None => {
-                configuration.server.advertise_addr = configuration.server.addr.clone();
+                let addr = pick_ip()?;
+                configuration.server.advertise_addr = addr
+                    .map_or(format!("127.0.0.1:{}", port), |addr| {
+                        format!("{}:{}", addr, port)
+                    });
+                info!("Advertise address: {}", configuration.server.advertise_addr);
             }
         }
 
@@ -118,5 +132,83 @@ impl StartArgs {
 
         configuration.check_and_apply()?;
         Ok(configuration)
+    }
+}
+
+/// Pick an address among interfaces
+///
+/// IP addresses are pick in the following order
+/// * Global IP address
+/// * Shared IP address
+/// * Private IP address
+/// * Other IP address kinds
+pub(crate) fn pick_ip() -> Result<Option<Ipv4Addr>, Errno> {
+    let addrs = getifaddrs()?;
+    let mut shared = vec![];
+    let mut private = vec![];
+    let mut other = vec![];
+
+    for ifaddr in addrs {
+        if let Some(address) = ifaddr.address {
+            if let Some(addr) = address.as_sockaddr_in() {
+                let ip = addr.ip();
+                let ipv4_addr = Ipv4Addr::from(ip);
+                if ipv4_addr.is_loopback() {
+                    continue;
+                }
+
+                if ipv4_addr.is_global() {
+                    trace!("Host has a global IP: {addr}");
+                    return Ok(Some(ipv4_addr));
+                }
+
+                if ipv4_addr.is_shared() {
+                    trace!("Host has a shared IP: {addr}");
+                    shared.push(ipv4_addr);
+                    continue;
+                }
+
+                if ipv4_addr.is_private() {
+                    trace!("Host has a private IP: {addr}");
+                    private.push(ipv4_addr);
+                    continue;
+                }
+
+                trace!("Host has an IP: {addr}");
+                other.push(ipv4_addr);
+            }
+        }
+    }
+
+    if !shared.is_empty() {
+        return Ok(shared.pop());
+    }
+
+    if !private.is_empty() {
+        return Ok(private.pop());
+    }
+
+    if !other.is_empty() {
+        return Ok(other.pop());
+    }
+
+    Ok(None)
+}
+
+#[cfg(test)]
+mod tests {
+    use log::debug;
+    use nix::errno::Errno;
+
+    #[test]
+    fn test_pick_ip() -> Result<(), Errno> {
+        ulog::try_init_log();
+        let ip = super::pick_ip()?;
+        if let Some(addr) = ip {
+            debug!("Picked IP: {addr}");
+        } else {
+            panic!("Failed to pick a non-loopback address");
+        }
+        Ok(())
     }
 }

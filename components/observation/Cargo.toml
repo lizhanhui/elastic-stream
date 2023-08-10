@@ -10,6 +10,6 @@ edition = "2021"
 [dependencies]
 lazy_static = { workspace = true }
 log = { workspace = true }
-procfs = "0.15.1"
+procfs = { workspace = true }
 prometheus = { workspace = true }
-sysinfo = "0.29.0"
+sysinfo = { workspace = true }

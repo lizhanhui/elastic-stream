@@ -50,6 +50,7 @@
         "struct",
         "structs",
         "syscall",
+        "sysinfo",
         "tempdir",
         "tempfile",
         "thiserror",

@@ -31,7 +31,6 @@
             "env": {
                 "RUST_LOG": "trace",
                 "ES_ADDR": "0.0.0.0:10911",
-                "ES_ADVERTISE_ADDR": "127.0.0.1:10911",
                 "ES_PD": "127.0.0.1:12378",
                 "ES_CONFIG": "${workspaceFolder}/etc/range-server.yaml",
                 "ES_LOG_CONFIG": "${workspaceFolder}/etc/range-server-log.yaml"

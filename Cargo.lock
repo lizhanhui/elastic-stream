@@ -3234,6 +3234,7 @@ dependencies = [
  "mock-server",
  "mockall",
  "model",
+ "nix",
  "num_cpus",
  "num_enum",
  "object-storage",

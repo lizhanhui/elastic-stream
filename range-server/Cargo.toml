@@ -33,6 +33,7 @@ log = { workspace = true }
 log4rs = { workspace = true }
 minstant = { workspace = true }
 model = { path = "../components/model" }
+nix = { workspace = true }
 num_cpus = { workspace = true }
 num_enum = { workspace = true }
 object-storage = { path = "../components/object-storage" }
