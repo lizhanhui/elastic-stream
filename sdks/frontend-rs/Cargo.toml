@@ -21,7 +21,7 @@ lazy_static = { workspace = true }
 local-sync = { workspace = true }
 log = { workspace = true }
 log4rs = { workspace = true }
-minitrace = { workspace = true }
+minitrace = "0.4.1"
 minitrace-jaeger = "0.4.1"
 minstant = { workspace = true }
 model = { path = "../../components/model" }

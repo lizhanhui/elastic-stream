@@ -1,3 +1,30 @@
+use std::collections::{BTreeMap, HashSet};
+use std::io;
+use std::sync::Arc;
+use std::time::Duration;
+use std::{
+    cell::{RefCell, UnsafeCell},
+    collections::{HashMap, VecDeque},
+    os::fd::AsRawFd,
+};
+
+use crossbeam::channel::{Receiver, TryRecvError};
+use io_uring::types::{SubmitArgs, Timespec};
+use io_uring::{opcode, squeue, types};
+use io_uring::{register, Parameters};
+use log::{debug, error, info, trace, warn};
+#[cfg(feature = "trace")]
+use minitrace::local::LocalCollector;
+use minitrace::local::LocalSpan;
+use minstant::Instant;
+use rustc_hash::{FxHashMap, FxHashSet};
+use tokio::sync::oneshot;
+
+use observation::metrics::uring_metrics::{
+    UringStatistics, COMPLETED_READ_IO, COMPLETED_WRITE_IO, INFLIGHT_IO, IO_DEPTH, PENDING_TASK,
+    READ_BYTES_TOTAL, READ_IO_LATENCY, WRITE_BYTES_TOTAL, WRITE_IO_LATENCY,
+};
+
 use crate::error::{AppendError, FetchError, StoreError};
 use crate::index::driver::IndexDriver;
 use crate::index::record_handle::{HandleExt, RecordHandle};
@@ -9,27 +36,6 @@ use crate::io::task::WriteTask;
 use crate::io::wal::Wal;
 use crate::io::write_window::WriteWindow;
 use crate::AppendResult;
-use crossbeam::channel::{Receiver, TryRecvError};
-use io_uring::types::{SubmitArgs, Timespec};
-use io_uring::{opcode, squeue, types};
-use io_uring::{register, Parameters};
-use log::{debug, error, info, trace, warn};
-use minstant::Instant;
-use observation::metrics::uring_metrics::{
-    UringStatistics, COMPLETED_READ_IO, COMPLETED_WRITE_IO, INFLIGHT_IO, IO_DEPTH, PENDING_TASK,
-    READ_BYTES_TOTAL, READ_IO_LATENCY, WRITE_BYTES_TOTAL, WRITE_IO_LATENCY,
-};
-use rustc_hash::{FxHashMap, FxHashSet};
-use std::collections::{BTreeMap, HashSet};
-use std::io;
-use std::sync::Arc;
-use std::time::Duration;
-use std::{
-    cell::{RefCell, UnsafeCell},
-    collections::{HashMap, VecDeque},
-    os::fd::AsRawFd,
-};
-use tokio::sync::oneshot;
 
 use super::block_cache::{EntryRange, MergeRange};
 use super::buf::AlignedBuf;
@@ -318,6 +324,7 @@ impl IO {
         *received += 1;
     }
 
+    #[minitrace::trace]
     fn receive_io_tasks(&mut self) -> usize {
         let mut received = 0;
         let mut buffered = 0;
@@ -506,6 +513,7 @@ impl IO {
         Ok(())
     }
 
+    #[minitrace::trace]
     fn build_read_sqe(
         &mut self,
         entries: &mut Vec<squeue::Entry>,
@@ -593,9 +601,9 @@ impl IO {
             .any(|(offset, _entry)| !self.barrier.borrow().contains(offset))
     }
 
+    #[minitrace::trace]
     fn build_write_sqe(&mut self, entries: &mut Vec<squeue::Entry>) {
         // Add previously blocked entries.
-
         self.blocked
             .extract_if(|offset, _entry| !self.barrier.borrow().contains(offset))
             .for_each(|(_, entry)| {
@@ -711,6 +719,7 @@ impl IO {
             .count();
     }
 
+    #[minitrace::trace]
     fn build_sqe(&mut self, entries: &mut Vec<squeue::Entry>) {
         let alignment = self.options.store.alignment;
         if let Err(e) = self.reserve_write_buffers() {
@@ -728,6 +737,7 @@ impl IO {
         let mut missed_entries: HashMap<u64, Vec<EntryRange>> = HashMap::new();
         let mut strong_referenced_entries: HashMap<u64, Vec<EntryRange>> = HashMap::new();
 
+        let span = LocalSpan::enter_with_local_parent("process_pending_task");
         'task_loop: while let Some(io_task) = self.pending_data_tasks.pop_front() {
             match io_task {
                 IoTask::Read(task) => {
@@ -860,6 +870,7 @@ impl IO {
                 }
             }
         }
+        drop(span);
         PENDING_TASK.set(self.pending_data_tasks.len() as i64);
         self.build_read_sqe(entries, missed_entries);
 
@@ -886,6 +897,7 @@ impl IO {
         });
     }
 
+    #[minitrace::trace]
     fn await_data_task_completion(&self) {
         if self.inflight == 0 {
             trace!("No inflight data task. Skip `await_data_task_completion`");
@@ -964,6 +976,7 @@ impl IO {
         }
     }
 
+    #[minitrace::trace]
     fn reap_data_tasks(&mut self) {
         if 0 == self.inflight {
             return;
@@ -1344,6 +1357,7 @@ impl IO {
             && self.channel_disconnected
     }
 
+    #[minitrace::trace]
     fn submit_data_tasks(&mut self, entries: &Vec<squeue::Entry>) -> Result<(), StoreError> {
         // Submit io_uring entries into submission queue.
         trace!(
@@ -1386,7 +1400,13 @@ impl IO {
 
         // Main loop
         loop {
+            // initiate the trace stack
+            #[cfg(feature = "trace")]
+            let trace_collector = LocalCollector::start();
+            let root = LocalSpan::enter_with_local_parent("io_loop");
+
             // Check if we need to create a new log segment
+            let build_segment_span = LocalSpan::enter_with_local_parent("build_segment");
             loop {
                 if io.borrow().wal.writable_segment_count() > min_preallocated_segment_files {
                     break;
@@ -1398,6 +1418,7 @@ impl IO {
             {
                 io.borrow_mut().wal.try_close_segment()?;
             }
+            drop(build_segment_span);
 
             let mut entries = vec![];
             {
@@ -1442,6 +1463,7 @@ impl IO {
             }
 
             // Report disk stats
+            let report_disk_stats_span = LocalSpan::enter_with_local_parent("report_disk_stats");
             {
                 if !io.borrow().disk_stats.is_ready() {
                     continue;
@@ -1450,6 +1472,10 @@ impl IO {
                     .disk_stats
                     .report("Disk I/O Latency Statistics(us)");
             }
+            drop(report_disk_stats_span);
+            drop(root);
+            #[cfg(feature = "trace")]
+            observation::trace::report_trace(trace_collector.collect());
         }
         info!("Main loop quit");
 
@@ -1557,24 +1583,28 @@ impl Drop for IO {
 
 #[cfg(test)]
 mod tests {
-    use super::{IoTask, WriteTask};
-    use crate::error::StoreError;
-    use crate::index::driver::IndexDriver;
-    use crate::index::{Indexer, MinOffset};
-    use crate::io::ReadTask;
-    use crate::offset_manager::WalOffsetManager;
-    use bytes::BytesMut;
-    use crossbeam::channel::{Receiver, Sender};
-    use log::{info, trace};
-    use model::record::flat_record::FlatRecordBatch;
-    use model::record::RecordBatchBuilder;
     use std::cell::RefCell;
     use std::error::Error;
     use std::io;
     use std::path::{Path, PathBuf};
     use std::sync::Arc;
     use std::thread::JoinHandle;
+
+    use bytes::BytesMut;
+    use crossbeam::channel::{Receiver, Sender};
+    use log::{info, trace};
     use tokio::sync::oneshot;
+
+    use model::record::flat_record::FlatRecordBatch;
+    use model::record::RecordBatchBuilder;
+
+    use crate::error::StoreError;
+    use crate::index::driver::IndexDriver;
+    use crate::index::{Indexer, MinOffset};
+    use crate::io::ReadTask;
+    use crate::offset_manager::WalOffsetManager;
+
+    use super::{IoTask, WriteTask};
 
     struct IOBuilder {
         cfg: config::Configuration,

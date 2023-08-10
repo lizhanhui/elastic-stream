@@ -478,6 +478,7 @@ impl Wal {
     ///
     /// # Returns
     /// The reclaimed bytes and the current cache size.
+    #[minitrace::trace]
     pub(crate) fn try_reclaim(&mut self, min_free_bytes: u32) -> (u64, u64) {
         // Calculate the current cache size of all the segments.
         let mut cache_size = 0u64;
@@ -597,6 +598,7 @@ impl Wal {
         self.inflight_control_tasks.len()
     }
 
+    #[minitrace::trace]
     pub(crate) fn await_control_task_completion(&self) {
         let now = std::time::Instant::now();
         loop {
@@ -644,6 +646,7 @@ impl Wal {
         }
     }
 
+    #[minitrace::trace]
     pub(crate) fn reap_control_tasks(&mut self) -> Result<(), StoreError> {
         // Map of segment offset to syscall result
         let mut m = HashMap::new();

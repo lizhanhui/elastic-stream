@@ -105,3 +105,10 @@ observation:
     host: "127.0.0.1"
     # Listening port
     port: 9898
+  trace:
+    # OpenTelemetry collector endpoint
+    endpoint: "http://localhost:4317"
+    # OpenTelemetry Protocol, available values: "grpc", "http"
+    protocol: "grpc"
+    # Default max waiting time for the backend to process each signal batch
+    timeout-ms: 3000

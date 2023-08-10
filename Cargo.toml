@@ -111,7 +111,7 @@ ordinal = "0.3"
 criterion = "0.5"
 
 minstant = "0.1"
-minitrace = "0.4"
+minitrace = { git = "https://github.com/AutoMQ/minitrace-rust.git", features = ["enable"] }
 prometheus = "0.13"
 
 serde = "1.0"
@@ -134,6 +134,10 @@ pyroscope_pprofrs = "0.2"
 
 sysinfo = "0.29"
 procfs = "0.15"
+
+opentelemetry = { version = "0.20", features = ["trace"] }
+opentelemetry-otlp = { version = "0.13", features = ["trace"] }
+parking_lot = "0.12.1"
 
 [profile.dev]
 panic = "unwind"

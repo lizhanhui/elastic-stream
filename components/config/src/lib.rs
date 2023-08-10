@@ -408,6 +408,7 @@ impl Default for RocksDB {
 #[derive(Default, Debug, Serialize, Deserialize, Clone)]
 pub struct Observation {
     pub metrics: Metrics,
+    pub trace: Trace,
 }
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Metrics {
@@ -422,6 +423,23 @@ impl Default for Metrics {
         }
     }
 }
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Trace {
+    pub endpoint: String,
+    pub protocol: String,
+    #[serde(rename = "timeout-ms")]
+    pub timeout_ms: u64,
+}
+impl Default for Trace {
+    fn default() -> Self {
+        Self {
+            endpoint: "http:localhost:4317".to_owned(),
+            protocol: "grpc".to_owned(),
+            timeout_ms: 1000,
+        }
+    }
+}
+
 /// Configurable items of the replication layer.
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Replication {

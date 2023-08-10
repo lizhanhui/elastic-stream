@@ -38,6 +38,9 @@ pub fn launch(
     // Acquire a shared ref to full-fledged configuration.
     let config = store.config();
 
+    #[cfg(feature = "trace")]
+    observation::trace::start_trace_exporter(Arc::clone(&config), shutdown.subscribe());
+
     if config.server.profiling.enable {
         let server_endpoint = config.server.profiling.server_endpoint.clone();
         if server_endpoint.is_empty() {

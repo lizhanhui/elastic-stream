@@ -23,6 +23,7 @@ lazy_static = { version = "1.4.0" }
 libc = { workspace = true }
 local-sync = { workspace = true }
 log = { workspace = true }
+minitrace = { workspace = true }
 minstant = { workspace = true }
 mockall = { workspace = true, optional = true }
 model = { path = "../model" }
@@ -57,6 +58,7 @@ uuid = { workspace = true }
 [features]
 default = []
 mock = ["mockall"]
+trace = ["observation/trace", "minitrace/enable"]
 
 [[bench]]
 name = "benchmark"
