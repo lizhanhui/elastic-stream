@@ -89,7 +89,7 @@ where
                             .insert(deletable_physical_offset, ());
                     }
                 }
-                RangeLifecycleEvent::Del(range) => {
+                RangeLifecycleEvent::Del(range) | RangeLifecycleEvent::Offloaded(range) => {
                     if let Some((_, physical_offset)) = self.ranges.remove(&range) {
                         self.range_deletable_physical_offsets
                             .remove(&physical_offset);

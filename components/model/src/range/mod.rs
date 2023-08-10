@@ -265,10 +265,16 @@ pub type Range = (StreamId, RangeIndex);
 
 type StartOffset = u64;
 
+/// RangeLifecycleEvent
+/// Note: Offloaded and Del are necessary, cause of the local replica data's
+/// end_offset may be larger than Range end_offset, we need Offloaded & Del
+/// to force release resource.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum RangeLifecycleEvent {
-    // Data before start offset is deletable.
+    // The data before start offset is deletable.
     OffsetMove(Range, StartOffset),
+    // The data in range is offloaded.
+    Offloaded(Range),
     // The range is deleted.
     Del(Range),
 }

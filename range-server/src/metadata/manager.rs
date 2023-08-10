@@ -8,7 +8,7 @@ use std::{
 use log::info;
 use model::{
     error::EsError,
-    range::{RangeIndex, RangeLifecycleEvent, RangeMetadata, StreamId},
+    range::{Range, RangeIndex, RangeLifecycleEvent, RangeMetadata, StreamId},
     resource::{EventType, Resource, ResourceEvent},
     stream::StreamMetadata,
 };
@@ -267,10 +267,16 @@ impl Stream {
 
     fn add(&mut self, range: RangeMetadata) -> RangeLifecycleEvent {
         let range_index = range.index() as u32;
-        let start = max(self.new_start_offset(range_index), range.start());
-        let event = RangeLifecycleEvent::OffsetMove((range.stream_id() as u64, range_index), start);
-        self.ranges.insert(range_index, (range, start));
-        event
+        let new_start_offset = max(self.new_start_offset(range_index), range.start());
+        let range_key = (self.stream_id, range_index);
+        let range_end_offset = range.end();
+        self.ranges.insert(range_index, (range, new_start_offset));
+        Self::gen_event(
+            range_key,
+            range_end_offset.as_ref(),
+            self.range_offloaded_offsets.get(&range_index),
+            new_start_offset,
+        )
     }
 
     fn del(&mut self, range: &RangeMetadata) -> RangeLifecycleEvent {
@@ -284,14 +290,19 @@ impl Stream {
     fn update_stream(&mut self, metadata: StreamMetadata) -> Vec<RangeLifecycleEvent> {
         self.metadata = Some(metadata);
         let mut events = Vec::new();
-        for (range, last_start_offset) in self.ranges.values() {
-            let range_index = range.index() as u32;
-            let range_key = (range.stream_id() as u64, range_index);
+        let range_indexes: Vec<u32> = self.ranges.keys().copied().collect();
+        for range_index in range_indexes {
+            let range_key = (self.stream_id, range_index);
             let new_start_offset = self.new_start_offset(range_index);
+            let (range, last_start_offset) = self.ranges.get_mut(&range_index).unwrap();
             if new_start_offset != *last_start_offset {
-                events.push(RangeLifecycleEvent::OffsetMove(range_key, new_start_offset));
-                self.range_offloaded_offsets
-                    .insert(range_index, new_start_offset);
+                *last_start_offset = new_start_offset;
+                events.push(Self::gen_event(
+                    range_key,
+                    range.end().as_ref(),
+                    self.range_offloaded_offsets.get(&range_index),
+                    new_start_offset,
+                ));
             }
         }
         events
@@ -300,14 +311,22 @@ impl Stream {
     fn update_offloaded_offset(
         &mut self,
         range_index: RangeIndex,
-        offset: u64,
+        offloaded_offset: u64,
     ) -> RangeLifecycleEvent {
-        self.range_offloaded_offsets.insert(range_index, offset);
-        let start = self.new_start_offset(range_index);
-        if let Some(range) = self.ranges.get_mut(&range_index) {
-            range.1 = start;
+        self.range_offloaded_offsets
+            .insert(range_index, offloaded_offset);
+        let new_start_offset = self.new_start_offset(range_index);
+        let mut range_end_offset = None;
+        if let Some((range, last_start_offset)) = self.ranges.get_mut(&range_index) {
+            *last_start_offset = new_start_offset;
+            range_end_offset = range.end();
         }
-        RangeLifecycleEvent::OffsetMove((self.stream_id, range_index), start)
+        Self::gen_event(
+            (self.stream_id, range_index),
+            range_end_offset.as_ref(),
+            self.range_offloaded_offsets.get(&range_index),
+            new_start_offset,
+        )
     }
 
     fn gen_destroy_events(&self) -> Vec<RangeLifecycleEvent> {
@@ -334,6 +353,23 @@ impl Stream {
 
     fn stream_start_offset(&self) -> u64 {
         self.metadata.as_ref().map(|m| m.start_offset).unwrap_or(0)
+    }
+
+    fn gen_event(
+        range: Range,
+        range_end_offset: Option<&u64>,
+        offloaded_offset: Option<&u64>,
+        new_start_offset: u64,
+    ) -> RangeLifecycleEvent {
+        if offloaded_offset
+            .zip(range_end_offset)
+            .map(|(a, b)| *a >= *b)
+            .unwrap_or(false)
+        {
+            RangeLifecycleEvent::Offloaded(range)
+        } else {
+            RangeLifecycleEvent::OffsetMove(range, new_start_offset)
+        }
     }
 }
 
@@ -413,6 +449,11 @@ mod tests {
                 ..Default::default()
             }),
         );
+        assert_eq!(
+            RangeLifecycleEvent::Offloaded((1, 1)),
+            stream.update_offloaded_offset(1, 50),
+        );
+
         assert_eq!(
             RangeLifecycleEvent::Del((1, 1)),
             stream.del(&RangeMetadata::new(1, 1, 0, 10, Some(50))),
