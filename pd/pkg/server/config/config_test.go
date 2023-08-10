@@ -13,6 +13,8 @@ import (
 	"go.etcd.io/etcd/server/v3/embed"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+
+	"github.com/AutoMQ/pd/pkg/util/netutil"
 )
 
 var (
@@ -378,6 +380,8 @@ func TestConfigFromEnv(t *testing.T) {
 func TestConfig_Adjust(t *testing.T) {
 	hostname, e := os.Hostname()
 	require.NoError(t, e)
+	ip, e := netutil.GetNonLoopbackIP()
+	require.NoError(t, e)
 
 	tests := []struct {
 		name    string
@@ -416,7 +420,7 @@ func TestConfig_Adjust(t *testing.T) {
 				DataDir:                     fmt.Sprintf("default.pd-%s", hostname),
 				InitialCluster:              fmt.Sprintf("pd-%s=http://127.0.0.1:12380", hostname),
 				PDAddr:                      "127.0.0.1:12378",
-				AdvertisePDAddr:             "127.0.0.1:12378",
+				AdvertisePDAddr:             fmt.Sprintf("%s:12378", ip),
 				LeaderLease:                 3,
 				LeaderPriorityCheckInterval: time.Minute,
 			},
@@ -458,7 +462,7 @@ func TestConfig_Adjust(t *testing.T) {
 				DataDir:                     "default.test-name",
 				InitialCluster:              "test-name=http://example.com:12380,test-name=http://10.0.0.1:12380",
 				PDAddr:                      "example.com:12378",
-				AdvertisePDAddr:             "example.com:12378",
+				AdvertisePDAddr:             fmt.Sprintf("%s:12378", ip),
 				LeaderLease:                 3,
 				LeaderPriorityCheckInterval: time.Minute,
 			},

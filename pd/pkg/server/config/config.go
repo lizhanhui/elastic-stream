@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"io"
+	"net"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -14,6 +15,8 @@ import (
 	"github.com/spf13/viper"
 	"go.etcd.io/etcd/server/v3/embed"
 	"go.uber.org/zap"
+
+	"github.com/AutoMQ/pd/pkg/util/netutil"
 )
 
 var (
@@ -161,7 +164,7 @@ func (c *Config) Adjust() error {
 		c.InitialCluster = strings.Join(nodes, URLSeparator)
 	}
 	if c.AdvertisePDAddr == "" {
-		c.AdvertisePDAddr = c.PDAddr
+		c.AdvertisePDAddr = defaultAdvertisePDAddr(c.PDAddr)
 	}
 
 	// set etcd config
@@ -276,7 +279,7 @@ func configure(v *viper.Viper, fs *pflag.FlagSet) {
 	fs.Duration("leader-priority-check-interval", _defaultLeaderPriorityCheckInterval, "time interval for checking the leader's priority")
 	fs.String("etcd-initial-cluster-token", _defaultInitialClusterToken, "set different tokens to prevent communication between PD nodes in different clusters")
 	fs.String("pd-addr", _defaultPDAddr, "the address of PD")
-	fs.String("advertise-pd-addr", "", "advertise address of PD (default '${pd-addr}')")
+	fs.String("advertise-pd-addr", "", "advertise address of PD (default to the first non-loopback ip and the port of 'pd-addr')")
 	_ = v.BindPFlag("name", fs.Lookup("name"))
 	_ = v.BindPFlag("dataDir", fs.Lookup("data-dir"))
 	_ = v.BindPFlag("initialCluster", fs.Lookup("initial-cluster"))
@@ -308,4 +311,17 @@ func parseUrls(s string) ([]url.URL, error) {
 	}
 
 	return urls, nil
+}
+
+func defaultAdvertisePDAddr(pdAddr string) string {
+	_, port, err := net.SplitHostPort(pdAddr)
+	if err != nil {
+		return pdAddr
+	}
+
+	ip, err := netutil.GetNonLoopbackIP()
+	if err != nil {
+		return fmt.Sprintf("127.0.0.1:%s", port)
+	}
+	return fmt.Sprintf("%s:%s", ip, port)
 }
