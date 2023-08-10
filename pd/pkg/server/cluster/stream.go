@@ -8,6 +8,8 @@ import (
 
 	"github.com/AutoMQ/pd/api/rpcfb/rpcfb"
 	"github.com/AutoMQ/pd/pkg/server/id"
+	"github.com/AutoMQ/pd/pkg/server/model"
+	"github.com/AutoMQ/pd/pkg/server/storage/endpoint"
 	"github.com/AutoMQ/pd/pkg/server/storage/kv"
 	"github.com/AutoMQ/pd/pkg/util/traceutil"
 )
@@ -17,15 +19,15 @@ var (
 )
 
 type StreamService interface {
-	CreateStream(ctx context.Context, stream *rpcfb.StreamT) (*rpcfb.StreamT, error)
+	CreateStream(ctx context.Context, param *model.CreateStreamParam) (*rpcfb.StreamT, error)
 	DeleteStream(ctx context.Context, streamID int64) (*rpcfb.StreamT, error)
-	UpdateStream(ctx context.Context, stream *rpcfb.StreamT) (*rpcfb.StreamT, error)
+	UpdateStream(ctx context.Context, param *model.UpdateStreamParam) (*rpcfb.StreamT, error)
 	DescribeStream(ctx context.Context, streamID int64) (*rpcfb.StreamT, error)
 }
 
 // CreateStream creates a stream.
 // It returns ErrNotLeader if the current PD node is not the leader.
-func (c *RaftCluster) CreateStream(ctx context.Context, stream *rpcfb.StreamT) (*rpcfb.StreamT, error) {
+func (c *RaftCluster) CreateStream(ctx context.Context, param *model.CreateStreamParam) (*rpcfb.StreamT, error) {
 	logger := c.lg.With(traceutil.TraceLogField(ctx))
 
 	sid, err := c.sAlloc.Alloc(ctx)
@@ -36,7 +38,15 @@ func (c *RaftCluster) CreateStream(ctx context.Context, stream *rpcfb.StreamT) (
 		}
 		return nil, err
 	}
-	stream.StreamId = int64(sid)
+
+	stream := &rpcfb.StreamT{
+		StreamId:          int64(sid),
+		Replica:           param.Replica,
+		AckCount:          param.AckCount,
+		RetentionPeriodMs: param.RetentionPeriodMs,
+		StartOffset:       0,
+		Epoch:             0,
+	}
 	logger = logger.With(zap.Int64("stream-id", stream.StreamId))
 
 	logger.Info("start to create stream")
@@ -76,15 +86,19 @@ func (c *RaftCluster) DeleteStream(ctx context.Context, streamID int64) (*rpcfb.
 
 // UpdateStream updates the stream.
 // It returns ErrNotLeader if the current PD node is not the leader.
-func (c *RaftCluster) UpdateStream(ctx context.Context, stream *rpcfb.StreamT) (*rpcfb.StreamT, error) {
-	logger := c.lg.With(zap.Int64("stream-id", stream.StreamId), traceutil.TraceLogField(ctx))
+// It returns ErrStreamNotFound if the stream is not found.
+func (c *RaftCluster) UpdateStream(ctx context.Context, param *model.UpdateStreamParam) (*rpcfb.StreamT, error) {
+	logger := c.lg.With(zap.Int64("stream-id", param.StreamID), traceutil.TraceLogField(ctx))
 
 	logger.Info("start to update stream")
-	upStream, err := c.storage.UpdateStream(ctx, stream)
+	upStream, err := c.storage.UpdateStream(ctx, param)
 	logger.Info("finish updating stream", zap.Error(err))
 	if err != nil {
 		if errors.Is(err, kv.ErrTxnFailed) {
 			return nil, ErrNotLeader
+		}
+		if errors.Is(err, endpoint.ErrStreamNotFound) {
+			return nil, errors.Wrapf(ErrStreamNotFound, "stream id %d", param.StreamID)
 		}
 		return nil, err
 	}

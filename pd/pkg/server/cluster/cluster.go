@@ -29,8 +29,8 @@ import (
 	"github.com/AutoMQ/pd/pkg/server/config"
 	"github.com/AutoMQ/pd/pkg/server/id"
 	"github.com/AutoMQ/pd/pkg/server/member"
+	"github.com/AutoMQ/pd/pkg/server/model"
 	"github.com/AutoMQ/pd/pkg/server/storage"
-	"github.com/AutoMQ/pd/pkg/server/storage/endpoint"
 )
 
 const (
@@ -115,9 +115,9 @@ func (c *RaftCluster) Start(s Server) error {
 
 	c.storage = s.Storage()
 	c.runningCtx, c.runningCancel = context.WithCancel(c.ctx)
-	c.sAlloc = s.IDAllocator(_streamIDAllocKey, uint64(endpoint.MinStreamID), _streamIDStep)
-	c.rsAlloc = s.IDAllocator(_rangeServerIDAllocKey, uint64(endpoint.MinRangeServerID), _rangeServerIDStep)
-	c.oAlloc = s.IDAllocator(_objectIDAllocKey, uint64(endpoint.MinObjectID), _objectIDStep)
+	c.sAlloc = s.IDAllocator(_streamIDAllocKey, uint64(model.MinStreamID), _streamIDStep)
+	c.rsAlloc = s.IDAllocator(_rangeServerIDAllocKey, uint64(model.MinRangeServerID), _rangeServerIDStep)
+	c.oAlloc = s.IDAllocator(_objectIDAllocKey, uint64(model.MinObjectID), _objectIDStep)
 	c.client = s.SbpClient()
 	c.sealMus = cmap.NewWithCustomShardingFunction[int64, chan struct{}](func(key int64) uint32 { return uint32(key) })
 

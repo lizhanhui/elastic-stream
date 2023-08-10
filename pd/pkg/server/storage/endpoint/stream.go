@@ -9,6 +9,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/AutoMQ/pd/api/rpcfb/rpcfb"
+	"github.com/AutoMQ/pd/pkg/server/model"
 	"github.com/AutoMQ/pd/pkg/server/storage/kv"
 	"github.com/AutoMQ/pd/pkg/util/fbutil"
 	"github.com/AutoMQ/pd/pkg/util/traceutil"
@@ -26,11 +27,15 @@ const (
 	_streamByRangeLimit = 1e4
 )
 
+var (
+	ErrStreamNotFound = errors.New("stream not found")
+)
+
 // StreamEndpoint defines operations on stream.
 type StreamEndpoint interface {
 	CreateStream(ctx context.Context, stream *rpcfb.StreamT) (*rpcfb.StreamT, error)
 	DeleteStream(ctx context.Context, streamID int64) (*rpcfb.StreamT, error)
-	UpdateStream(ctx context.Context, stream *rpcfb.StreamT) (*rpcfb.StreamT, error)
+	UpdateStream(ctx context.Context, param *model.UpdateStreamParam) (*rpcfb.StreamT, error)
 	GetStream(ctx context.Context, streamID int64) (*rpcfb.StreamT, error)
 	ForEachStream(ctx context.Context, f func(stream *rpcfb.StreamT) error) error
 }
@@ -77,27 +82,41 @@ func (e *Endpoint) DeleteStream(ctx context.Context, streamID int64) (*rpcfb.Str
 }
 
 // UpdateStream updates the stream with the given stream and returns it.
-func (e *Endpoint) UpdateStream(ctx context.Context, stream *rpcfb.StreamT) (*rpcfb.StreamT, error) {
-	logger := e.lg.With(zap.Int64("stream-id", stream.StreamId), traceutil.TraceLogField(ctx))
+// It returns ErrStreamNotFound if the stream does not exist.
+func (e *Endpoint) UpdateStream(ctx context.Context, param *model.UpdateStreamParam) (*rpcfb.StreamT, error) {
+	logger := e.lg.With(zap.Int64("stream-id", param.StreamID), traceutil.TraceLogField(ctx))
 
-	if stream.StreamId < MinStreamID {
-		logger.Error("invalid stream id")
-		return nil, errors.Errorf("invalid stream id: %d < %d", stream.StreamId, MinStreamID)
-	}
+	var newStream *rpcfb.StreamT
+	err := e.KV.ExecInTxn(ctx, func(kv kv.BasicKV) error {
+		key := streamPath(param.StreamID)
 
-	streamInfo := fbutil.Marshal(stream)
-	prevV, err := e.KV.Put(ctx, streamPath(stream.StreamId), streamInfo, true)
-	mcache.Free(streamInfo)
+		v, err := kv.Get(ctx, key)
+		if err != nil {
+			return errors.Wrap(err, "get stream")
+		}
+		if v == nil {
+			logger.Error("stream not found when update stream")
+			return errors.Wrapf(ErrStreamNotFound, "stream %d", param.StreamID)
+		}
+
+		oldStream := rpcfb.GetRootAsStream(v, 0).UnPack()
+		oldStream.Replica = param.Replica
+		oldStream.AckCount = param.AckCount
+		oldStream.RetentionPeriodMs = param.RetentionPeriodMs
+
+		streamInfo := fbutil.Marshal(oldStream)
+		_, _ = kv.Put(ctx, key, streamInfo, true)
+		mcache.Free(streamInfo)
+
+		newStream = oldStream
+		return nil
+	})
 	if err != nil {
 		logger.Error("failed to update stream", zap.Error(err))
 		return nil, errors.Wrap(err, "update stream")
 	}
-	if prevV == nil {
-		logger.Warn("stream not found when update stream, will create it")
-		return nil, nil
-	}
 
-	return stream, nil
+	return newStream, nil
 }
 
 // GetStream gets the stream with the given stream id.
@@ -120,8 +139,8 @@ func (e *Endpoint) GetStream(ctx context.Context, streamID int64) (*rpcfb.Stream
 // ForEachStream calls the given function for every stream in the storage.
 // If f returns an error, the iteration is stopped and the error is returned.
 func (e *Endpoint) ForEachStream(ctx context.Context, f func(stream *rpcfb.StreamT) error) error {
-	var startID = MinStreamID
-	for startID >= MinStreamID {
+	var startID = model.MinStreamID
+	for startID >= model.MinStreamID {
 		nextID, err := e.forEachStreamLimited(ctx, f, startID, _streamByRangeLimit)
 		if err != nil {
 			return err
@@ -138,7 +157,7 @@ func (e *Endpoint) forEachStreamLimited(ctx context.Context, f func(stream *rpcf
 	kvs, _, more, err := e.KV.GetByRange(ctx, kv.Range{StartKey: startKey, EndKey: e.endStreamPath()}, 0, limit, false)
 	if err != nil {
 		logger.Error("failed to get streams", zap.Int64("start-id", startID), zap.Int64("limit", limit), zap.Error(err))
-		return MinStreamID - 1, errors.Wrap(err, "get streams")
+		return model.MinStreamID - 1, errors.Wrap(err, "get streams")
 	}
 
 	for _, streamKV := range kvs {
@@ -146,13 +165,13 @@ func (e *Endpoint) forEachStreamLimited(ctx context.Context, f func(stream *rpcf
 		nextID = stream.StreamId + 1
 		err = f(stream)
 		if err != nil {
-			return MinStreamID - 1, err
+			return model.MinStreamID - 1, err
 		}
 	}
 
 	if !more {
 		// no more streams
-		nextID = MinStreamID - 1
+		nextID = model.MinStreamID - 1
 	}
 	return
 }

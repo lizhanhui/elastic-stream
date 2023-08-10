@@ -9,6 +9,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/AutoMQ/pd/api/rpcfb/rpcfb"
+	"github.com/AutoMQ/pd/pkg/server/model"
 	"github.com/AutoMQ/pd/pkg/server/storage/kv"
 	"github.com/AutoMQ/pd/pkg/util/fbutil"
 	"github.com/AutoMQ/pd/pkg/util/traceutil"
@@ -66,9 +67,9 @@ func (e *Endpoint) CreateObject(ctx context.Context, object Object) error {
 func (e *Endpoint) UpdateObject(ctx context.Context, object Object) (Object, error) {
 	logger := e.lg.With(zap.Int64("stream-id", object.StreamId), zap.Int32("range-index", object.RangeIndex), zap.Int64("object-id", object.ObjectID), traceutil.TraceLogField(ctx))
 
-	if object.ObjectID < MinObjectID {
+	if object.ObjectID < model.MinObjectID {
 		logger.Error("invalid object ID")
-		return Object{}, errors.Errorf("invalid object ID %d < %d", object.ObjectID, MinObjectID)
+		return Object{}, errors.Errorf("invalid object ID %d < %d", object.ObjectID, model.MinObjectID)
 	}
 
 	key := objectPath(object.StreamId, object.RangeIndex, object.ObjectID)
@@ -107,8 +108,8 @@ func (e *Endpoint) GetObjectsByRange(ctx context.Context, rangeID RangeID) ([]Ob
 }
 
 func (e *Endpoint) ForEachObjectInRange(ctx context.Context, rangeID RangeID, f func(object Object) error) error {
-	var startID = MinObjectID
-	for startID >= MinStreamID {
+	var startID = model.MinObjectID
+	for startID >= model.MinStreamID {
 		nextID, err := e.forEachObjectInRangeLimited(ctx, rangeID, f, startID, _objectByRangeLimit)
 		if err != nil {
 			return err
@@ -125,7 +126,7 @@ func (e *Endpoint) forEachObjectInRangeLimited(ctx context.Context, rangeID Rang
 	kvs, _, more, err := e.KV.GetByRange(ctx, kv.Range{StartKey: startKey, EndKey: e.endObjectPathInRange(rangeID)}, 0, limit, false)
 	if err != nil {
 		logger.Error("failed to get objects", zap.Int32("start-id", int32(startID)), zap.Int64("limit", limit), zap.Error(err))
-		return MinObjectID - 1, errors.Wrap(err, "get objects")
+		return model.MinObjectID - 1, errors.Wrap(err, "get objects")
 	}
 
 	for _, objectKV := range kvs {
@@ -133,19 +134,19 @@ func (e *Endpoint) forEachObjectInRangeLimited(ctx context.Context, rangeID Rang
 		oid, err := objectIDFromPath(objectKV.Key)
 		if err != nil {
 			logger.Error("failed to parse object ID", zap.Error(err))
-			return MinObjectID - 1, errors.Wrap(err, "parse object ID")
+			return model.MinObjectID - 1, errors.Wrap(err, "parse object ID")
 		}
 		nextID = oid + 1
 
 		err = f(Object{ObjT: o, ObjectID: oid})
 		if err != nil {
-			return MinObjectID - 1, err
+			return model.MinObjectID - 1, err
 		}
 	}
 
 	if !more {
 		// no more objects
-		nextID = MinObjectID - 1
+		nextID = model.MinObjectID - 1
 	}
 	return
 }

@@ -7,7 +7,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/AutoMQ/pd/api/rpcfb/rpcfb"
-	"github.com/AutoMQ/pd/pkg/server/storage/endpoint"
+	"github.com/AutoMQ/pd/pkg/server/model"
 	"github.com/AutoMQ/pd/pkg/server/storage/kv"
 	"github.com/AutoMQ/pd/pkg/util/traceutil"
 )
@@ -47,8 +47,8 @@ type RangeService interface {
 // 3. a range server and a stream
 // It returns ErrNotLeader if the current PD node is not the leader.
 func (c *RaftCluster) ListRange(ctx context.Context, criteria *rpcfb.ListRangeCriteriaT) (ranges []*rpcfb.RangeT, err error) {
-	byStream := criteria.StreamId >= endpoint.MinStreamID
-	byRangeServer := criteria.ServerId >= endpoint.MinRangeServerID
+	byStream := criteria.StreamId >= model.MinStreamID
+	byRangeServer := criteria.ServerId >= model.MinRangeServerID
 	switch {
 	case byStream && byRangeServer:
 		ranges, err = c.listRangeOnRangeServerInStream(ctx, criteria.StreamId, criteria.ServerId)

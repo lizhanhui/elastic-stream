@@ -545,6 +545,9 @@ table Stream {
     retention_period_ms: int64 (id: 3);
 
     start_offset: int64 (id: 4);
+
+    // The current epoch of the stream, updated by `UPDATE_STREAM_EPOCH`.
+    epoch: int64 = -1 (id: 5);
 }
 
 // The create stream request is used to create a batch of streams.

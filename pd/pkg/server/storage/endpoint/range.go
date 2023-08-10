@@ -9,6 +9,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/AutoMQ/pd/api/rpcfb/rpcfb"
+	"github.com/AutoMQ/pd/pkg/server/model"
 	"github.com/AutoMQ/pd/pkg/server/storage/kv"
 	"github.com/AutoMQ/pd/pkg/util/fbutil"
 	"github.com/AutoMQ/pd/pkg/util/traceutil"
@@ -150,7 +151,7 @@ func (e *Endpoint) GetRanges(ctx context.Context, rangeIDs []*RangeID) ([]*rpcfb
 func (e *Endpoint) GetLastRange(ctx context.Context, streamID int64) (*rpcfb.RangeT, error) {
 	logger := e.lg.With(zap.Int64("stream-id", streamID), traceutil.TraceLogField(ctx))
 
-	kvs, _, _, err := e.KV.GetByRange(ctx, kv.Range{StartKey: rangePathInSteam(streamID, MinRangeIndex), EndKey: e.endRangePathInStream(streamID)}, 0, 1, true)
+	kvs, _, _, err := e.KV.GetByRange(ctx, kv.Range{StartKey: rangePathInSteam(streamID, model.MinRangeIndex), EndKey: e.endRangePathInStream(streamID)}, 0, 1, true)
 	if err != nil {
 		logger.Error("failed to get last range", zap.Error(err))
 		return nil, err
@@ -184,8 +185,8 @@ func (e *Endpoint) GetRangesByStream(ctx context.Context, streamID int64) ([]*rp
 // ForEachRangeInStream calls the given function f for each range in the stream.
 // If f returns an error, the iteration is stopped and the error is returned.
 func (e *Endpoint) ForEachRangeInStream(ctx context.Context, streamID int64, f func(r *rpcfb.RangeT) error) error {
-	var startID = MinRangeIndex
-	for startID >= MinRangeIndex {
+	var startID = model.MinRangeIndex
+	for startID >= model.MinRangeIndex {
 		nextID, err := e.forEachRangeInStreamLimited(ctx, streamID, f, startID, _rangeByRangeLimit)
 		if err != nil {
 			return err
@@ -202,7 +203,7 @@ func (e *Endpoint) forEachRangeInStreamLimited(ctx context.Context, streamID int
 	kvs, _, more, err := e.KV.GetByRange(ctx, kv.Range{StartKey: startKey, EndKey: e.endRangePathInStream(streamID)}, 0, limit, false)
 	if err != nil {
 		logger.Error("failed to get ranges", zap.Int32("start-id", startID), zap.Int64("limit", limit), zap.Error(err))
-		return MinRangeIndex - 1, errors.Wrap(err, "get ranges")
+		return model.MinRangeIndex - 1, errors.Wrap(err, "get ranges")
 	}
 
 	for _, rangeKV := range kvs {
@@ -210,13 +211,13 @@ func (e *Endpoint) forEachRangeInStreamLimited(ctx context.Context, streamID int
 		nextID = r.Index + 1
 		err = f(r)
 		if err != nil {
-			return MinRangeIndex - 1, err
+			return model.MinRangeIndex - 1, err
 		}
 	}
 
 	if !more {
 		// no more ranges
-		nextID = MinRangeIndex - 1
+		nextID = model.MinRangeIndex - 1
 	}
 	return
 }
@@ -271,8 +272,8 @@ func (e *Endpoint) GetRangeIDsByRangeServer(ctx context.Context, rangeServerID i
 // ForEachRangeIDOnRangeServer calls the given function f for each range on the range server.
 // If f returns an error, the iteration is stopped and the error is returned.
 func (e *Endpoint) ForEachRangeIDOnRangeServer(ctx context.Context, rangeServerID int32, f func(rangeID *RangeID) error) error {
-	startID := &RangeID{StreamID: MinStreamID, Index: MinRangeIndex}
-	for startID != nil && startID.StreamID >= MinStreamID && startID.Index >= MinRangeIndex {
+	startID := &RangeID{StreamID: model.MinStreamID, Index: model.MinRangeIndex}
+	for startID != nil && startID.StreamID >= model.MinStreamID && startID.Index >= model.MinRangeIndex {
 		nextID, err := e.forEachRangeIDOnRangeServerLimited(ctx, rangeServerID, f, startID, _rangeByRangeLimit)
 		if err != nil {
 			return err
@@ -320,7 +321,7 @@ func (e *Endpoint) endRangePathOnRangeServer(rangeServerID int32) []byte {
 func (e *Endpoint) GetRangeIDsByRangeServerAndStream(ctx context.Context, streamID int64, rangeServerID int32) ([]*RangeID, error) {
 	logger := e.lg.With(zap.Int64("stream-id", streamID), zap.Int32("range-server-id", rangeServerID), traceutil.TraceLogField(ctx))
 
-	startKey := rangePathOnRangeServer(rangeServerID, streamID, MinRangeIndex)
+	startKey := rangePathOnRangeServer(rangeServerID, streamID, model.MinRangeIndex)
 	kvs, _, _, err := e.KV.GetByRange(ctx, kv.Range{StartKey: startKey, EndKey: e.endRangePathOnRangeServerInStream(rangeServerID, streamID)}, 0, 0, false)
 	if err != nil {
 		logger.Error("failed to get range ids by range server and stream", zap.Error(err))

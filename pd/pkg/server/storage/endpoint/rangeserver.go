@@ -9,6 +9,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/AutoMQ/pd/api/rpcfb/rpcfb"
+	"github.com/AutoMQ/pd/pkg/server/model"
 	"github.com/AutoMQ/pd/pkg/server/storage/kv"
 	"github.com/AutoMQ/pd/pkg/util/fbutil"
 	"github.com/AutoMQ/pd/pkg/util/traceutil"
@@ -35,9 +36,9 @@ type RangeServerEndpoint interface {
 func (e *Endpoint) SaveRangeServer(ctx context.Context, rangeServer *rpcfb.RangeServerT) (*rpcfb.RangeServerT, error) {
 	logger := e.lg.With(zap.Int32("server-id", rangeServer.ServerId), traceutil.TraceLogField(ctx))
 
-	if rangeServer.ServerId < MinRangeServerID {
+	if rangeServer.ServerId < model.MinRangeServerID {
 		logger.Error("invalid range server id")
-		return nil, errors.Errorf("invalid range server id: %d < %d", rangeServer.ServerId, MinRangeServerID)
+		return nil, errors.Errorf("invalid range server id: %d < %d", rangeServer.ServerId, model.MinRangeServerID)
 	}
 
 	key := rangeServerPath(rangeServer.ServerId)
@@ -56,8 +57,8 @@ func (e *Endpoint) SaveRangeServer(ctx context.Context, rangeServer *rpcfb.Range
 // ForEachRangeServer calls the given function for every range server in the storage.
 // If f returns an error, the iteration is stopped and the error is returned.
 func (e *Endpoint) ForEachRangeServer(ctx context.Context, f func(rangeServer *rpcfb.RangeServerT) error) error {
-	var startID = MinRangeServerID
-	for startID >= MinRangeServerID {
+	var startID = model.MinRangeServerID
+	for startID >= model.MinRangeServerID {
 		nextID, err := e.forEachRangeServerLimited(ctx, f, startID, _rangeServerByRangeLimit)
 		if err != nil {
 			return err
@@ -74,7 +75,7 @@ func (e *Endpoint) forEachRangeServerLimited(ctx context.Context, f func(rangeSe
 	kvs, _, more, err := e.KV.GetByRange(ctx, kv.Range{StartKey: startKey, EndKey: e.endRangeServerPath()}, 0, limit, false)
 	if err != nil {
 		logger.Error("failed to get range servers", zap.Int32("start-id", startID), zap.Int64("limit", limit), zap.Error(err))
-		return MinRangeServerID - 1, errors.Wrap(err, "get range servers")
+		return model.MinRangeServerID - 1, errors.Wrap(err, "get range servers")
 	}
 
 	for _, keyValue := range kvs {
@@ -82,13 +83,13 @@ func (e *Endpoint) forEachRangeServerLimited(ctx context.Context, f func(rangeSe
 		nextID = rangeServer.ServerId + 1
 		err = f(rangeServer)
 		if err != nil {
-			return MinRangeServerID - 1, err
+			return model.MinRangeServerID - 1, err
 		}
 	}
 
 	if !more {
 		// no more range servers
-		nextID = MinRangeServerID - 1
+		nextID = model.MinRangeServerID - 1
 	}
 	return
 }

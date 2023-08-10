@@ -159,7 +159,7 @@ type KV interface {
 	// * There is a limitation on the number of write operations, with a default limit of 128.
 	//   Do not attempt to perform too many operations in a single transaction.
 	// * The kv passed to the function is not thread-safe. DO NOT use it in multiple goroutines.
-	// * The flag `prevKV` in Put and Delete will not take effect.
+	// * The flag `prevKV` in Put and Delete will not take effect; Put and Delete will always return nils.
 	ExecInTxn(ctx context.Context, f func(kv BasicKV) error) error
 
 	// GetPrefixRangeEnd returns the end key for a prefix range query.
