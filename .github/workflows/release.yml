@@ -59,6 +59,7 @@ jobs:
           cargo install cross --git https://github.com/cross-rs/cross
       - name: Build Range Server Debian Packages
         run: |
+          git diff --exit-code
           make all-deb PROFILE=release
 
       - name: Release
@@ -77,6 +78,7 @@ jobs:
       - name: Build Docker Image
         working-directory: ./dist/docker
         run: |
+          git diff --exit-code
           ./build.sh
   java-release:
     needs: check-version
