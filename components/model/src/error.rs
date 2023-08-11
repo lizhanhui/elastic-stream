@@ -53,6 +53,16 @@ impl std::error::Error for EsError {
     }
 }
 
+impl Clone for EsError {
+    fn clone(&self) -> Self {
+        Self {
+            code: self.code,
+            message: self.message.clone(),
+            source: None,
+        }
+    }
+}
+
 #[derive(Debug, Error, PartialEq)]
 pub enum RangeError {
     #[error("The range has already been sealed")]

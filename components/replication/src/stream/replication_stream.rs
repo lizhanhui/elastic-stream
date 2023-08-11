@@ -140,10 +140,15 @@ where
         let log_ident = &stream.log_ident;
         let mut inflight: BTreeMap<u64, Rc<StreamAppendRequest>> = BTreeMap::new();
         let mut next_append_start_offset: u64 = 0;
+        let mut append_error = None;
 
         loop {
             tokio::select! {
                 Some(append_request) = append_requests_rx.recv() => {
+                    if append_error.is_some() {
+                        append_request.fail(append_error.clone().take().unwrap());
+                        continue;
+                    }
                     inflight.insert(append_request.base_offset(), Rc::new(append_request));
                 }
                 Some(_) = append_tasks_rx.recv() => {
@@ -169,13 +174,19 @@ where
                 }
                 break;
             }
-            Self::append_task0(
+            let append_rst = Self::append_task0(
                 &stream,
                 log_ident,
                 &mut inflight,
                 &mut next_append_start_offset,
             )
             .await;
+            if let Err(e) = append_rst {
+                append_error = Some(e.clone());
+                for (_, append_request) in inflight.iter() {
+                    append_request.fail(e.clone());
+                }
+            }
         }
     }
 
@@ -184,51 +195,50 @@ where
         log_ident: &str,
         inflight: &mut BTreeMap<u64, Rc<StreamAppendRequest>>,
         next_append_start_offset: &mut u64,
-    ) {
+    ) -> Result<(), EsError> {
         // 1. get writable range.
         let (last_writable_range, rewind_back_next_append_offset) =
-            match Self::get_writable_range(stream).await {
-                Ok(rst) => rst,
-                Err(_e) => {
-                    todo!("deal with fenced error");
-                }
-            };
+            Self::get_writable_range(stream).await?;
         if let Some(rewind) = rewind_back_next_append_offset {
             *next_append_start_offset = rewind;
         }
 
-        if !inflight.is_empty() {
-            let range_index = last_writable_range.metadata().index();
-            // 2. ack success append request, and remove them from inflight.
-            let confirm_offset = last_writable_range.confirm_offset();
-            let mut ack_count = 0;
-            for (base_offset, append_request) in inflight.iter() {
-                if *base_offset < confirm_offset {
-                    // if base offset is less than confirm offset, it means append request is already success.
-                    append_request.success();
-                    ack_count += 1;
-                    trace!("{}Ack append request with base_offset={base_offset}, confirm_offset={confirm_offset}", log_ident);
-                }
-            }
-            for _ in 0..ack_count {
-                inflight.pop_first();
-            }
+        if inflight.is_empty() {
+            // if no inflight request, then just return.
+            return Ok(());
+        }
 
-            // 3. try append request which base_offset >= next_append_start_offset.
-            let mut cursor = inflight.lower_bound(Included(next_append_start_offset));
-            while let Some((base_offset, append_request)) = cursor.key_value() {
-                last_writable_range.append(
-                    &append_request.record_batch,
-                    RangeAppendContext::new(*base_offset),
-                );
-                trace!(
-                    "{}Try append record[{base_offset}] to range[{range_index}]",
-                    log_ident
-                );
-                *next_append_start_offset = base_offset + append_request.count() as u64;
-                cursor.move_next();
+        let range_index = last_writable_range.metadata().index();
+        // 2. ack success append request, and remove them from inflight.
+        let confirm_offset = last_writable_range.confirm_offset();
+        let mut ack_count = 0;
+        for (base_offset, append_request) in inflight.iter() {
+            if *base_offset < confirm_offset {
+                // if base offset is less than confirm offset, it means append request is already success.
+                append_request.success();
+                ack_count += 1;
+                trace!("{}Ack append request with base_offset={base_offset}, confirm_offset={confirm_offset}", log_ident);
             }
         }
+        for _ in 0..ack_count {
+            inflight.pop_first();
+        }
+
+        // 3. try append request which base_offset >= next_append_start_offset.
+        let mut cursor = inflight.lower_bound(Included(next_append_start_offset));
+        while let Some((base_offset, append_request)) = cursor.key_value() {
+            last_writable_range.append(
+                &append_request.record_batch,
+                RangeAppendContext::new(*base_offset),
+            );
+            trace!(
+                "{}Try append record[{base_offset}] to range[{range_index}]",
+                log_ident
+            );
+            *next_append_start_offset = base_offset + append_request.count() as u64;
+            cursor.move_next();
+        }
+        Ok(())
     }
 
     async fn get_writable_range(stream: &Rc<Self>) -> Result<(Rc<R>, Option<u64>), EsError> {
@@ -249,7 +259,9 @@ where
                                 next_append_start_offset = Some(end_offset);
                                 if let Err(e) = stream.new_range(range_index + 1, end_offset).await
                                 {
-                                    // TODO: check fenced EsError
+                                    if e.code == ErrorCode::EXPIRED_STREAM_EPOCH {
+                                        return Err(e);
+                                    }
                                     error!(
                                         "{}Try create a new range fail, retry later, err[{e}]",
                                         log_ident
@@ -258,8 +270,10 @@ where
                                     sleep(Duration::from_millis(1000)).await;
                                 }
                             }
-                            Err(_) => {
-                                // TODO: check fenced EsError
+                            Err(e) => {
+                                if e.code == ErrorCode::EXPIRED_STREAM_EPOCH {
+                                    return Err(e);
+                                }
                                 // delay retry to avoid busy loop
                                 sleep(Duration::from_millis(1000)).await;
                             }
@@ -301,7 +315,11 @@ where
             ErrorCode::UNEXPECTED,
             "open fail, client is dropped",
         ))?;
-        // 1. load all ranges
+        // 1. fence the stream with new epoch.
+        let _ = client
+            .update_stream(self.id as u64, None, None, Some(self.epoch))
+            .await?;
+        // 2. load all ranges
         client
             .list_ranges(model::ListRangeCriteria::new(None, Some(self.id as u64)))
             .await
@@ -332,7 +350,7 @@ where
                     ),
                 );
             });
-        // 2. seal the last range
+        // 3. seal the last range
         let last_range = self
             .ranges
             .borrow_mut()
@@ -343,7 +361,7 @@ where
             let range_index = last_range.metadata().index();
             match last_range.seal().await {
                 Ok(confirm_offset) => {
-                    // 3. set stream next offset to the exclusive end of the last range
+                    // 4. set stream next offset to the exclusive end of the last range
                     *self.next_offset.borrow_mut() = confirm_offset;
                 }
                 Err(e) => {
@@ -578,7 +596,7 @@ mod tests {
 
     use bytes::BytesMut;
     use client::client::MockClient;
-    use model::range::RangeMetadata;
+    use model::{range::RangeMetadata, stream::StreamMetadata};
 
     use crate::stream::{
         records_block::RecordsBlock,
@@ -593,6 +611,9 @@ mod tests {
     fn test_open() -> Result<(), Box<dyn Error>> {
         tokio_uring::start(async move {
             let mut client = MockClient::new();
+            client
+                .expect_update_stream()
+                .returning(|_, _, _, _| Ok(StreamMetadata::default()));
             client.expect_list_ranges().returning(|_| {
                 Ok(vec![
                     RangeMetadata::new(0, 0, 0, 0, Some(100)),
@@ -634,6 +655,9 @@ mod tests {
         tokio_uring::start(async move {
             let mut client = MockClient::new();
             client
+                .expect_update_stream()
+                .returning(|_, _, _, _| Ok(StreamMetadata::default()));
+            client
                 .expect_list_ranges()
                 .returning(|_| Ok(vec![RangeMetadata::new(0, 0, 0, 0, Some(100))]));
             let client = Rc::new(client);
@@ -661,6 +685,27 @@ mod tests {
             assert_eq!(3, stream.ranges.borrow().len());
             assert_eq!(103, stream.confirm_offset());
             assert_eq!(103, stream.next_offset());
+
+            {
+                // fail the last range and fence the stream.
+                stream
+                    .last_range
+                    .borrow()
+                    .as_ref()
+                    .unwrap()
+                    .writable
+                    .replace(false);
+                unsafe { FENCED = true };
+            }
+            assert_eq!(
+                ErrorCode::EXPIRED_STREAM_EPOCH,
+                stream.append(new_record(1)).await.unwrap_err().code
+            );
+            unsafe { FENCED = false };
+            assert_eq!(
+                ErrorCode::EXPIRED_STREAM_EPOCH,
+                stream.append(new_record(1)).await.unwrap_err().code
+            );
         });
         Ok(())
     }
@@ -669,6 +714,9 @@ mod tests {
     fn test_fetch() -> Result<(), Box<dyn Error>> {
         tokio_uring::start(async move {
             let mut client = MockClient::new();
+            client
+                .expect_update_stream()
+                .returning(|_, _, _, _| Ok(StreamMetadata::default()));
             client.expect_list_ranges().returning(|_| Ok(vec![]));
             let client = Rc::new(client);
             let stream: Rc<ReplicationStream<MemoryReplicationRange, MockClient>> =
@@ -758,6 +806,8 @@ mod tests {
         ack: AckCallback,
     }
 
+    static mut FENCED: bool = false;
+
     impl ReplicationRange<MockClient> for MemoryReplicationRange {
         async fn create(
             _client: Rc<MockClient>,
@@ -766,13 +816,20 @@ mod tests {
             index: i32,
             start_offset: u64,
         ) -> Result<RangeMetadata, EsError> {
-            Ok(RangeMetadata::new(
-                stream_id,
-                index,
-                epoch,
-                start_offset,
-                None,
-            ))
+            if unsafe { FENCED } {
+                Err(EsError::new(
+                    ErrorCode::EXPIRED_STREAM_EPOCH,
+                    "test mock error",
+                ))
+            } else {
+                Ok(RangeMetadata::new(
+                    stream_id,
+                    index,
+                    epoch,
+                    start_offset,
+                    None,
+                ))
+            }
         }
 
         fn new(

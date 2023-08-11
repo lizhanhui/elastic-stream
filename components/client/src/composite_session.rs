@@ -1009,7 +1009,7 @@ impl CompositeSession {
         stream_id: u64,
         replica_count: Option<u8>,
         ack_count: Option<u8>,
-        epoch: Option<u8>,
+        epoch: Option<u64>,
     ) -> Result<StreamMetadata, EsError> {
         let request = request::Request {
             timeout: self.config.client_io_timeout(),

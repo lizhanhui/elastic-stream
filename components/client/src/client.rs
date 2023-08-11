@@ -104,7 +104,7 @@ pub trait Client {
         stream_id: u64,
         replica_count: Option<u8>,
         ack_count: Option<u8>,
-        epoch: Option<u8>,
+        epoch: Option<u64>,
     ) -> Result<StreamMetadata, EsError>;
 }
 
@@ -404,7 +404,7 @@ impl Client for DefaultClient {
         stream_id: u64,
         replica_count: Option<u8>,
         ack_count: Option<u8>,
-        epoch: Option<u8>,
+        epoch: Option<u64>,
     ) -> Result<StreamMetadata, EsError> {
         let composite_session = self.get_pd_session().await?;
         let future = composite_session.update_stream(stream_id, replica_count, ack_count, epoch);
