@@ -1,6 +1,6 @@
 ## Cloud Native Design
 
-As technology advances and data continues to explode, traditional messaging and streaming platforms have exhibited their limitations in terms of infrastructure cost and operational management. To address these challenges and make most of technology innovations, now is the time to redesign streaming platform, to meet following desirable expectations:
+As technology advances and data continues to explode, traditional messaging and streaming platforms have exhibited their limitations in terms of infrastructure cost and operational management complexity. To address these challenges and make most of technology innovations, now is the time to redesign streaming platform, to meet following desirable expectations:
 
 * Cost Effective - Spend every dollar on demand for the most cost-effective service in the market;
 * Efficiency - Performance scales linearly with addition of resources, offering response latency in milliseconds;
@@ -74,27 +74,40 @@ This pattern has several advantages:
 * NUMA friendly
 * No lock contention
 
-Thread-per-core architecture is the defacto solution in the storage communities, both kernel solution(io-uring) and kernel-bypass counterpart: DPDK, SPDK. [Research](https://atlarge-research.com/pdfs/2022-systor-apis.pdf) shows both of them can saturate millions of IOPS of NVMe SSD. Further, they [improve tail latencies of applications by up to 71%](https://helda.helsinki.fi//bitstream/handle/10138/313642/tpc_ancs19.pdf?sequence=1).
+Thread-per-core architecture is the shared decision in the storage communities, both kernel solution(io-uring) and kernel-bypass counterpart, SPDK. [Research](https://atlarge-research.com/pdfs/2022-systor-apis.pdf) shows both of them can saturate millions of IOPS of NVMe SSD. Further, they [improve tail latencies of applications by up to 71%](https://helda.helsinki.fi//bitstream/handle/10138/313642/tpc_ancs19.pdf?sequence=1).
 
 
-### Object Storage
-1. Unlimited Storage Capacity
-2. Affordable via EC
-3. SLA(Scalable + Availability + Reliability)
+### Predictable Latency
 
-### Storage Advancements in NVMe SSD
-1. Millions of IOPS
-2. Thread-Per-Core(Run-to-Complete) architecture shifts bottleneck of IO-intensive workload from IO to CPU.
-3. Scale with CPU processors
-   Glommio, SPDK, io-uring, [monoio](https://github.com/bytedance/monoio), [Seastar](http://seastar.io/)
+Messaging, publishing in particular, usually resides at the critical path of application, thus is very sensitive to latency. As a general distributed stream storage, it important to have predictable latency such to meet SLA of various products on top of it.
+
+#### Native Programming Language without GC
+We are targeting latency of 2ms for P99, up to 1 GiB/s traffic for EC2 with a spec around 2C8G. Programming language with a garbage collector is not a good candidate. Thankfully, Rust offers satisfying performance, featuring itself with:
+* Memory safety without garbage collection;
+* Concurrency without data races;
+
+#### Chasing Write
+Chasing write is to cope with abnormal system jitters. Our system frontend can acknowledge application when a majority of replica manages to write data. For example, with a configuration of 2 acks out of 3 replica, it allows frontend client to ack the write request even if the third node suffers packet retransmission caused by temporary network issue. After network recovery, the slow node may chase up with the help of write retries.
+
+#### Hedging Read
+
+To reduce the read latency under dynamic environments, the client sends additional read requests to other nodes as backups before receiving the response of the previously sent read request.
+
+#### Non-stop Write
+Our system runs on commodity hardwares and they fail from time to time. To mitigate impacts of a node failure, frontend client seals the range and report successfully written data length to metadata manager and then create a new range to continue the unfinished data. New range are designed to placed on a new set of nodes, therefore, writes manage to fail over, experimentally within 20ms~50ms.
+
+#### Hierarchy of Cache
+To achieve maximum spatial locality, every component is armed with a cache. Frontend client caches hottest data in memory; Server nodes cache hot data in memory and warm data in SSDs; Frequently access OSS files are also cached in SSD.
 
 ## Separation of Concern
 
-#### Separation of Storage and Compute
+### Separation of Storage and Compute
 Scale Independently
 
-#### Separation of CP and AP
+### Separation of CP and AP
+
 CP = Consistency + Partition
+
 AP = Availability + Partition
 
 Strong consistency while RTO tends to be zero
