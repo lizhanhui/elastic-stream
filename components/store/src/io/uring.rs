@@ -1465,12 +1465,11 @@ impl IO {
             // Report disk stats
             let report_disk_stats_span = LocalSpan::enter_with_local_parent("report_disk_stats");
             {
-                if !io.borrow().disk_stats.is_ready() {
-                    continue;
+                if io.borrow().disk_stats.is_ready() {
+                    io.borrow_mut()
+                        .disk_stats
+                        .report("Disk I/O Latency Statistics(us)");
                 }
-                io.borrow_mut()
-                    .disk_stats
-                    .report("Disk I/O Latency Statistics(us)");
             }
             drop(report_disk_stats_span);
             drop(root);

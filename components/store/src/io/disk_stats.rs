@@ -25,10 +25,12 @@ impl DiskStats {
         }
     }
 
+    #[minitrace::trace]
     pub(crate) fn is_ready(&self) -> bool {
         self.last.elapsed() >= self.interval
     }
 
+    #[minitrace::trace]
     pub(crate) fn report(&mut self, title: &str) {
         self.last = minstant::Instant::now();
         if self.histogram.is_empty() {
