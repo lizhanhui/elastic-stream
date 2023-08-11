@@ -16,7 +16,8 @@ use protocol::rpc::header::{
     ListResourceResponseT, ObjT, OffloadOwnerT, OperationCode, PlacementDriverClusterT,
     PlacementDriverNodeT, RangeServerT, RangeT, ReportMetricsRequest, ReportMetricsResponseT,
     ResourceEventT, ResourceT, ResourceType, SealKind, SealRangeRequest, SealRangeResponseT,
-    StatusT, StreamT, WatchResourceRequest, WatchResourceResponseT,
+    StatusT, StreamT, UpdateStreamRequest, UpdateStreamResponseT, WatchResourceRequest,
+    WatchResourceResponseT,
 };
 
 use tokio::sync::oneshot;
@@ -329,6 +330,21 @@ pub async fn run_listener() -> u16 {
                                     }
                                 }
 
+                                OperationCode::UPDATE_STREAM => {
+                                    response_frame.operation_code = OperationCode::UPDATE_STREAM;
+                                    if let Some(buf) = frame.header.as_ref() {
+                                        if let Ok(req) =
+                                            flatbuffers::root::<UpdateStreamRequest>(buf)
+                                        {
+                                            serve_update_stream(&req, &mut response_frame);
+                                        } else {
+                                            error!(
+                                                "Failed to decode describe-stream-request header"
+                                            );
+                                        }
+                                    }
+                                }
+
                                 _ => {
                                     warn!(
                                         "Unsupported operation code: {}",
@@ -595,6 +611,28 @@ fn server_watch_resource(request: &WatchResourceRequest, frame: &mut Frame) {
     builder.finish(resp, None);
     let buf = builder.finished_data();
     frame.header = Some(Bytes::copy_from_slice(buf));
+}
+
+fn serve_update_stream(_req: &UpdateStreamRequest, response_frame: &mut Frame) {
+    let mut response = UpdateStreamResponseT::default();
+    let mut status = StatusT::default();
+    status.code = ErrorCode::OK;
+    status.message = Some("OK".to_string());
+    response.status = Box::new(status);
+
+    let mut stream = StreamT::default();
+    stream.stream_id = 1;
+    stream.epoch = 1;
+    stream.retention_period_ms = time::Duration::from_secs(3600 * 24).as_millis() as i64;
+
+    response.stream = Box::new(stream);
+
+    let mut builder = flatbuffers::FlatBufferBuilder::new();
+    let resp = response.pack(&mut builder);
+    builder.finish(resp, None);
+    let data = builder.finished_data();
+    response_frame.flag_response();
+    response_frame.header = Some(Bytes::copy_from_slice(data));
 }
 
 fn mock_range_server() -> ResourceT {

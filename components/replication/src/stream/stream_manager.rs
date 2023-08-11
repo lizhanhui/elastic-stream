@@ -193,6 +193,7 @@ impl StreamManager {
             ack_count: request.ack_count,
             retention_period: request.retention_period,
             start_offset: 0,
+            epoch: 0,
         };
 
         let client = match self.route_client() {

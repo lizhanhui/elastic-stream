@@ -274,6 +274,9 @@ impl Session {
             request::Headers::WatchResource { .. } => {
                 frame.operation_code = OperationCode::WATCH_RESOURCE;
             }
+            request::Headers::UpdateStream { .. } => {
+                frame.operation_code = OperationCode::UPDATE_STREAM;
+            }
         };
 
         frame.payload = request.body.clone();
@@ -453,8 +456,7 @@ impl Session {
                         }
 
                         OperationCode::UPDATE_STREAM => {
-                            warn!("Received an unexpected `UpdateStreams` response");
-                            return;
+                            response.on_update_stream(&frame);
                         }
 
                         OperationCode::TRIM_STREAM => todo!(),
@@ -486,7 +488,6 @@ impl Session {
                         OperationCode::WATCH_RESOURCE => {
                             response.on_watch_resource(&frame);
                         }
-
                         _ => {
                             unreachable!("Unsupported operation code");
                         }

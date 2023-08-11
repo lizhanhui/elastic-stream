@@ -98,6 +98,14 @@ pub trait Client {
     ) -> Result<WatchResourceResult, EsError>;
 
     async fn target_go_away(&self, target: &str) -> Result<bool, EsError>;
+
+    async fn update_stream(
+        &self,
+        stream_id: u64,
+        replica_count: Option<u8>,
+        ack_count: Option<u8>,
+        epoch: Option<u8>,
+    ) -> Result<StreamMetadata, EsError>;
 }
 
 /// `Client` is used to send
@@ -390,6 +398,20 @@ impl Client for DefaultClient {
         let session = session_manager.get_composite_session(target).await?;
         Ok(session.go_away())
     }
+
+    async fn update_stream(
+        &self,
+        stream_id: u64,
+        replica_count: Option<u8>,
+        ack_count: Option<u8>,
+        epoch: Option<u8>,
+    ) -> Result<StreamMetadata, EsError> {
+        let composite_session = self.get_pd_session().await?;
+        let future = composite_session.update_stream(stream_id, replica_count, ack_count, epoch);
+        time::timeout(self.config.client_io_timeout(), future)
+            .await
+            .map_err(|_| EsError::new(ErrorCode::RPC_TIMEOUT, "update stream timeout"))?
+    }
 }
 
 impl DefaultClient {
@@ -513,6 +535,7 @@ mod tests {
                     ack_count: 1,
                     retention_period: std::time::Duration::from_secs(1),
                     start_offset: 0,
+                    epoch: 0,
                 })
                 .await?;
             dbg!(&stream_metadata);
@@ -934,6 +957,35 @@ mod tests {
             check_range(&result.events[2].resource);
             assert_eq!(EventType::Added, result.events[3].event_type);
             check_object(&result.events[3].resource);
+            Ok(())
+        })
+    }
+
+    #[test]
+    fn test_update_stream() -> Result<(), EsError> {
+        ulog::try_init_log();
+        tokio_uring::start(async move {
+            #[allow(unused_variables)]
+            let port = 2378;
+            let port = run_listener().await;
+            let config = config::Configuration {
+                placement_driver: format!("127.0.0.1:{}", port),
+                ..Default::default()
+            };
+            let config = Arc::new(config);
+            let (tx, _rx) = broadcast::channel(1);
+            let client = DefaultClient::new(config, tx);
+
+            let stream_metadata = client
+                .update_stream(1, None, None, Some(1))
+                .await
+                .expect("Update stream should not fail");
+            assert_eq!(Some(1), stream_metadata.stream_id);
+            assert_eq!(1, stream_metadata.epoch);
+            assert_eq!(
+                std::time::Duration::from_secs(3600 * 24),
+                stream_metadata.retention_period
+            );
             Ok(())
         })
     }

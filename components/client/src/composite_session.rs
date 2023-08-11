@@ -1004,6 +1004,34 @@ impl CompositeSession {
         }
     }
 
+    pub async fn update_stream(
+        &self,
+        stream_id: u64,
+        replica_count: Option<u8>,
+        ack_count: Option<u8>,
+        epoch: Option<u8>,
+    ) -> Result<StreamMetadata, EsError> {
+        let request = request::Request {
+            timeout: self.config.client_io_timeout(),
+            headers: request::Headers::UpdateStream {
+                stream_id,
+                replica_count,
+                ack_count,
+                epoch,
+            },
+            body: None,
+        };
+        let response = self.request(request).await?;
+        if response.ok() {
+            match response.headers {
+                Some(response::Headers::UpdateStream { metadata }) => Ok(metadata),
+                _ => unreachable!(),
+            }
+        } else {
+            Err(EsError::from(&response))
+        }
+    }
+
     async fn broadcast_to_pd(
         &self,
         request: &Request,

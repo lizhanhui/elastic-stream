@@ -33,6 +33,7 @@ use protocol::rpc::header::SystemError;
 use model::range::RangeMetadata;
 use model::PlacementDriverNode;
 use model::Status;
+use protocol::rpc::header::UpdateStreamResponse;
 use protocol::rpc::header::WatchResourceResponse;
 
 use crate::invocation_context::InvocationContext;
@@ -105,6 +106,10 @@ pub enum Headers {
     WatchResource {
         events: Vec<ResourceEvent>,
         version: i64,
+    },
+
+    UpdateStream {
+        metadata: StreamMetadata,
     },
 }
 
@@ -516,6 +521,24 @@ impl Response {
 
                 Err(e) => {
                     error!("Failed to parse Watch resource response header: {:?}", e);
+                }
+            }
+        }
+    }
+
+    pub fn on_update_stream(&mut self, frame: &Frame) {
+        if let Some(buf) = frame.header.as_ref() {
+            match flatbuffers::root::<UpdateStreamResponse>(buf) {
+                Ok(response) => {
+                    self.status = Into::<Status>::into(&response.status().unpack());
+                    if self.status.code == ErrorCode::OK {
+                        self.headers = Some(Headers::UpdateStream {
+                            metadata: Into::<StreamMetadata>::into(&response.stream().unpack()),
+                        })
+                    }
+                }
+                Err(e) => {
+                    error!("Failed to parse the response header: {:?}", e);
                 }
             }
         }

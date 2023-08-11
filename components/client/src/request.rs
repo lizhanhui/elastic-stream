@@ -10,7 +10,8 @@ use protocol::rpc::header::{
     DescribePlacementDriverClusterRequestT, DescribeStreamRequestT, FetchRequestT,
     HeartbeatRequestT, IdAllocationRequestT, ListRangeCriteriaT, ListRangeRequestT,
     ListResourceRequestT, ObjT, RangeProgressT, RangeServerMetricsT, RangeT, ReportMetricsRequestT,
-    ReportRangeProgressRequestT, ResourceType, SealKind, SealRangeRequestT, WatchResourceRequestT,
+    ReportRangeProgressRequestT, ResourceType, SealKind, SealRangeRequestT, StreamT,
+    UpdateStreamRequestT, WatchResourceRequestT,
 };
 use std::fmt;
 use std::time::Duration;
@@ -110,6 +111,13 @@ pub enum Headers {
     WatchResource {
         resource_type: Vec<ResourceType>,
         version: i64,
+    },
+
+    UpdateStream {
+        stream_id: u64,
+        replica_count: Option<u8>,
+        ack_count: Option<u8>,
+        epoch: Option<u8>,
     },
 }
 
@@ -307,6 +315,23 @@ impl From<&Request> for Bytes {
                 request.timeout_ms = req.timeout.as_millis() as i32;
                 request.resource_type = resource_type.clone();
                 request.resource_version = *version;
+                let request = request.pack(&mut builder);
+                builder.finish(request, None);
+            }
+            Headers::UpdateStream {
+                stream_id,
+                replica_count,
+                ack_count,
+                epoch,
+            } => {
+                let mut request = UpdateStreamRequestT::default();
+                request.timeout_ms = req.timeout.as_millis() as i32;
+                let mut stream = StreamT::default();
+                stream.stream_id = *stream_id as i64;
+                replica_count.map(|c| stream.replica = c as i8);
+                ack_count.map(|c| stream.ack_count = c as i8);
+                epoch.map(|c| stream.epoch = c as i64);
+                request.stream = Box::new(stream);
                 let request = request.pack(&mut builder);
                 builder.finish(request, None);
             }

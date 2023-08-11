@@ -272,6 +272,9 @@ type UpdateStreamResponse struct {
 }
 
 func (us *UpdateStreamResponse) marshalFlatBuffer() ([]byte, error) {
+	if us.Stream == nil {
+		us.Stream = &rpcfb.StreamT{}
+	}
 	return fbutil.Marshal(&us.UpdateStreamResponseT), nil
 }
 

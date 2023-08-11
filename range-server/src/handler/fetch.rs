@@ -257,6 +257,7 @@ mod tests {
                 ack_count: 2,
                 retention_period: std::time::Duration::from_secs(1),
                 start_offset: 0,
+                epoch: 0,
             })
         });
         let mut object_storage = MockObjectStorage::new();

@@ -597,7 +597,7 @@ table UpdateStreamRequest {
     timeout_ms: int32 (id: 0);
 
     // The streams to update.
-    stream: Stream (id: 1);
+    stream: Stream (id: 1, required);
 }
 
 table UpdateStreamResponse {
@@ -607,7 +607,7 @@ table UpdateStreamResponse {
     throttle_time_ms: int32 (id: 1);
 
     // The updated stream
-    stream: Stream (id: 2);
+    stream: Stream (id: 2, required);
 }
 
 table DescribeStreamRequest {
