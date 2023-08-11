@@ -16,6 +16,8 @@ import (
 )
 
 const (
+	_writableRangeEnd int64 = -1
+
 	_rangeIDFormat = _int32Format
 	_rangeIDLen    = _int32Len
 
@@ -41,11 +43,29 @@ type RangeID struct {
 	Index    int32
 }
 
+// ChooseServersFunc is the function to choose range servers.
+// It returns model.ErrNotEnoughRangeServers if there are not enough range servers to allocate.
+type ChooseServersFunc func(replica int8, blackList []*rpcfb.RangeServerT) ([]*rpcfb.RangeServerT, error)
+
 type RangeEndpoint interface {
-	// CreateRange creates the range.
-	CreateRange(ctx context.Context, rangeT *rpcfb.RangeT) error
-	// UpdateRange updates the range and returns the previous range.
-	UpdateRange(ctx context.Context, rangeT *rpcfb.RangeT) (*rpcfb.RangeT, error)
+	// CreateRange creates the range and returns it.
+	// It returns model.ErrStreamNotFound if the stream does not exist.
+	// It returns model.ErrInvalidStreamEpoch if the stream epoch mismatches.
+	// It returns model.ErrCreateRangeTwice and the range if the range is already created with the same parameters.
+	// It returns model.ErrRangeAlreadyExist if the range is already created.
+	// It returns model.ErrInvalidRangeIndex if the range index is invalid.
+	// It returns model.ErrCreateRangeBeforeSeal if the last range is not sealed.
+	// It returns model.ErrInvalidRangeStart if the start offset is invalid.
+	// It returns model.ErrNotEnoughRangeServers if there are not enough range servers to allocate.
+	CreateRange(ctx context.Context, p *model.CreateRangeParam, f ChooseServersFunc) (*rpcfb.RangeT, error)
+	// SealRange seals the range and returns it.
+	// It returns model.ErrStreamNotFound if the steam does not exist.
+	// It returns model.ErrRangeNotFound if the range does not exist.
+	// It returns model.ErrSealRangeTwice and the range if the range is already sealed with the same end offset.
+	// It returns model.ErrRangeAlreadySealed if the range is already sealed.
+	// It returns model.ErrInvalidRangeEnd if the end offset is invalid.
+	// It returns model.ErrInvalidStreamEpoch if the stream epoch mismatches.
+	SealRange(ctx context.Context, p *model.SealRangeParam) (*rpcfb.RangeT, error)
 	// GetRange returns the range by the range ID.
 	GetRange(ctx context.Context, rangeID *RangeID) (*rpcfb.RangeT, error)
 	// GetRanges returns ranges by range IDs.
@@ -67,55 +87,184 @@ type RangeEndpoint interface {
 	GetRangeIDsByRangeServerAndStream(ctx context.Context, streamID int64, rangeServerID int32) ([]*RangeID, error)
 }
 
-func (e *Endpoint) CreateRange(ctx context.Context, rangeT *rpcfb.RangeT) error {
-	logger := e.lg.With(zap.Int64("stream-id", rangeT.StreamId), zap.Int32("range-index", rangeT.Index), traceutil.TraceLogField(ctx))
+func (e *Endpoint) CreateRange(ctx context.Context, p *model.CreateRangeParam, f ChooseServersFunc) (*rpcfb.RangeT, error) {
+	logger := e.lg.With(p.Fields()...).With(traceutil.TraceLogField(ctx))
 
-	kvs := make([]kv.KeyValue, 0, 1+len(rangeT.Servers))
-	r := fbutil.Marshal(rangeT)
-	kvs = append(kvs, kv.KeyValue{
-		Key:   rangePathInSteam(rangeT.StreamId, rangeT.Index),
-		Value: r,
+	var newRange *rpcfb.RangeT
+	err := e.KV.ExecInTxn(ctx, func(kv kv.BasicKV) error {
+		// get and check the stream
+		sk := streamPath(p.StreamID)
+		sv, err := kv.Get(ctx, sk)
+		if err != nil {
+			logger.Error("failed to get stream", zap.Error(err))
+			return errors.Wrapf(err, "get stream %d", p.StreamID)
+		}
+		if sv == nil {
+			logger.Error("stream not found")
+			return errors.Wrapf(model.ErrStreamNotFound, "stream %d", p.StreamID)
+		}
+		s := rpcfb.GetRootAsStream(sv, 0).UnPack()
+		if s.Epoch != p.Epoch {
+			logger.Error("invalid epoch", zap.Int64("stream-epoch", s.Epoch))
+			return errors.Wrapf(model.ErrInvalidStreamEpoch, "range %d-%d epoch %d != %d", p.StreamID, p.Index, p.Epoch, s.Epoch)
+		}
+
+		// make sure the range does not exist
+		rk := rangePathInSteam(p.StreamID, p.Index)
+		rv, err := kv.Get(ctx, rk)
+		if err != nil {
+			logger.Error("failed to get range", zap.Error(err))
+			return errors.Wrapf(err, "get range %d-%d", p.StreamID, p.Index)
+		}
+		if rv != nil {
+			r := rpcfb.GetRootAsRange(rv, 0).UnPack()
+			if r.Epoch == p.Epoch && r.Start == p.Start {
+				logger.Info("create range twice")
+				newRange = r
+				return errors.Wrapf(model.ErrCreateRangeTwice, "range %d-%d", p.StreamID, p.Index)
+			}
+			// try to create the same range with different parameters
+			logger.Error("range already exists")
+			return errors.Wrapf(model.ErrRangeAlreadyExist, "range %d-%d", p.StreamID, p.Index)
+		}
+
+		// check the previous range
+		var pr *rpcfb.RangeT
+		if p.Index == model.MinRangeIndex {
+			// create the first range, mock the previous range
+			pr = &rpcfb.RangeT{
+				StreamId: p.StreamID,
+				Index:    model.MinRangeIndex - 1,
+				End:      0,
+			}
+		} else {
+			prk := rangePathInSteam(p.StreamID, p.Index-1)
+			prv, err := kv.Get(ctx, prk)
+			if err != nil {
+				logger.Error("failed to get previous range", zap.Error(err))
+				return errors.Wrapf(err, "get previous range %d-%d", p.StreamID, p.Index-1)
+			}
+			if prv == nil {
+				logger.Error("previous range not found")
+				return errors.Wrapf(model.ErrInvalidRangeIndex, "previous range %d-%d not found", p.StreamID, p.Index-1)
+			}
+			pr = rpcfb.GetRootAsRange(prv, 0).UnPack()
+		}
+		if pr.End == _writableRangeEnd {
+			logger.Error("create range before sealing the previous range")
+			return errors.Wrapf(model.ErrCreateRangeBeforeSeal, "create range %d-%d before sealing the previous range %d-%d", p.StreamID, p.Index, p.StreamID, p.Index-1)
+		}
+		if p.Start != pr.End {
+			logger.Error("invalid range start", zap.Int64("previous-end", pr.End))
+			return errors.Wrapf(model.ErrInvalidRangeStart, "range %d-%d start %d != %d", p.StreamID, p.Index, p.Start, pr.End)
+		}
+
+		// all check passed, create the range
+		servers, err := f(s.Replica, pr.Servers)
+		if err != nil {
+			logger.Error("failed to choose servers", zap.Error(err))
+			return errors.Wrapf(err, "choose servers for range %d-%d", p.StreamID, p.Index)
+		}
+		newRange = &rpcfb.RangeT{
+			StreamId:     p.StreamID,
+			Epoch:        p.Epoch,
+			Index:        p.Index,
+			Start:        p.Start,
+			End:          _writableRangeEnd,
+			Servers:      servers,
+			ReplicaCount: s.Replica,
+			AckCount:     s.AckCount,
+			// TODO: choose offload owner by some strategy.
+			OffloadOwner: &rpcfb.OffloadOwnerT{ServerId: servers[0].ServerId},
+		}
+		rangeInfo := fbutil.Marshal(newRange)
+		_, _ = kv.Put(ctx, rk, rangeInfo, false)
+		for _, server := range newRange.Servers {
+			_, _ = kv.Put(ctx, rangePathOnRangeServer(server.ServerId, newRange.StreamId, newRange.Index), nil, false)
+		}
+		mcache.Free(rangeInfo)
+
+		return nil
 	})
-	for _, server := range rangeT.Servers {
-		kvs = append(kvs, kv.KeyValue{
-			Key:   rangePathOnRangeServer(server.ServerId, rangeT.StreamId, rangeT.Index),
-			Value: nil,
-		})
-	}
-
-	prevKVs, err := e.KV.BatchPut(ctx, kvs, true, true)
-	mcache.Free(r)
 
 	if err != nil {
-		logger.Error("failed to create range", zap.Error(err))
-		return errors.Wrapf(err, "create range %d-%d", rangeT.StreamId, rangeT.Index)
-	}
-	if len(prevKVs) != 0 {
-		logger.Warn("range already exists when create range")
-		return nil
+		err := errors.Wrapf(err, "create range %d-%d", p.StreamID, p.Index)
+		if errors.Is(err, model.ErrCreateRangeTwice) {
+			return newRange, err
+		}
+		return nil, err
 	}
 
-	return nil
+	return newRange, nil
 }
 
-func (e *Endpoint) UpdateRange(ctx context.Context, rangeT *rpcfb.RangeT) (*rpcfb.RangeT, error) {
-	logger := e.lg.With(zap.Int64("stream-id", rangeT.StreamId), zap.Int32("range-index", rangeT.Index), traceutil.TraceLogField(ctx))
+func (e *Endpoint) SealRange(ctx context.Context, p *model.SealRangeParam) (*rpcfb.RangeT, error) {
+	logger := e.lg.With(p.Fields()...).With(traceutil.TraceLogField(ctx))
 
-	key := rangePathInSteam(rangeT.StreamId, rangeT.Index)
-	value := fbutil.Marshal(rangeT)
+	var sealedRange *rpcfb.RangeT
+	err := e.KV.ExecInTxn(ctx, func(kv kv.BasicKV) error {
+		// get and check the stream
+		sk := streamPath(p.StreamID)
+		sv, err := kv.Get(ctx, sk)
+		if err != nil {
+			logger.Error("failed to get stream", zap.Error(err))
+			return errors.Wrapf(err, "get stream %d", p.StreamID)
+		}
+		if sv == nil {
+			logger.Error("stream not found")
+			return errors.Wrapf(model.ErrStreamNotFound, "stream %d", p.StreamID)
+		}
+		s := rpcfb.GetRootAsStream(sv, 0).UnPack()
+		if s.Epoch != p.Epoch {
+			logger.Error("invalid epoch", zap.Int64("stream-epoch", s.Epoch))
+			return errors.Wrapf(model.ErrInvalidStreamEpoch, "range %d-%d epoch %d != %d", p.StreamID, p.Index, p.Epoch, s.Epoch)
+		}
 
-	prevValue, err := e.KV.Put(ctx, key, value, true)
-	mcache.Free(value)
+		// get and check the range
+		rk := rangePathInSteam(p.StreamID, p.Index)
+		rv, err := kv.Get(ctx, rk)
+		if err != nil {
+			logger.Error("failed to get range", zap.Error(err))
+			return errors.Wrapf(err, "get range %d-%d", p.StreamID, p.Index)
+		}
+		if rv == nil {
+			logger.Error("range not found")
+			return errors.Wrapf(model.ErrRangeNotFound, "range %d-%d", p.StreamID, p.Index)
+		}
+		r := rpcfb.GetRootAsRange(rv, 0).UnPack()
+		if r.End != _writableRangeEnd {
+			if r.End == p.End {
+				logger.Info("seal range twice")
+				sealedRange = r
+				return errors.Wrapf(model.ErrSealRangeTwice, "range %d-%d", p.StreamID, p.Index)
+			}
+			// try to seal a sealed range with different end offset
+			logger.Error("range already sealed", zap.Int64("end", r.End))
+			return errors.Wrapf(model.ErrRangeAlreadySealed, "range %d-%d", p.StreamID, p.Index)
+		}
+		if p.End < r.Start {
+			logger.Error("invalid end offset", zap.Int64("start", r.Start))
+			return errors.Wrapf(model.ErrInvalidRangeEnd, "range %d-%d end %d < start %d", p.StreamID, p.Index, p.End, r.Start)
+		}
+
+		// all check passed, seal the range
+		r.End = p.End
+		sealedRange = r
+		rangeInfo := fbutil.Marshal(sealedRange)
+		_, _ = kv.Put(ctx, rk, rangeInfo, false)
+		mcache.Free(rangeInfo)
+
+		return nil
+	})
 	if err != nil {
-		logger.Error("failed to update range", zap.Error(err))
-		return nil, errors.Wrapf(err, "update range %d-%d", rangeT.StreamId, rangeT.Index)
-	}
-	if prevValue == nil {
-		logger.Warn("range not found when updating")
-		return nil, nil
+		err := errors.Wrapf(err, "seal range %d-%d", p.StreamID, p.Index)
+		if errors.Is(err, model.ErrSealRangeTwice) {
+			return sealedRange, err
+		}
+		return nil, err
 	}
 
-	return rpcfb.GetRootAsRange(prevValue, 0).UnPack(), nil
+	return sealedRange, nil
 }
 
 func (e *Endpoint) GetRange(ctx context.Context, rangeID *RangeID) (*rpcfb.RangeT, error) {

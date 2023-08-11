@@ -11,10 +11,6 @@ import (
 	"github.com/AutoMQ/pd/pkg/util/traceutil"
 )
 
-const (
-	_writableRangeEnd int64 = -1
-)
-
 type RangeService interface {
 	// ListRange lists ranges of
 	// 1. a stream
@@ -24,21 +20,24 @@ type RangeService interface {
 	ListRange(ctx context.Context, criteria *rpcfb.ListRangeCriteriaT) (ranges []*rpcfb.RangeT, err error)
 	// SealRange seals a range. It returns the sealed range if success.
 	// It returns model.ErrPDNotLeader if the current PD node is not the leader.
-	// It returns model.ErrStreamNotFound if the stream does not exist.
+	// It returns model.ErrStreamNotFound if the steam does not exist.
 	// It returns model.ErrRangeNotFound if the range does not exist.
+	// It returns model.ErrSealRangeTwice and the range if the range is already sealed with the same end offset.
 	// It returns model.ErrRangeAlreadySealed if the range is already sealed.
 	// It returns model.ErrInvalidRangeEnd if the end offset is invalid.
-	// It returns model.ErrExpiredRangeEpoch if the range epoch is invalid.
-	SealRange(ctx context.Context, r *rpcfb.RangeT) (*rpcfb.RangeT, error)
+	// It returns model.ErrInvalidStreamEpoch if the stream epoch mismatches.
+	SealRange(ctx context.Context, p *model.SealRangeParam) (*rpcfb.RangeT, error)
 	// CreateRange creates a range. It returns the created range if success.
 	// It returns model.ErrPDNotLeader if the current PD node is not the leader.
 	// It returns model.ErrStreamNotFound if the stream does not exist.
+	// It returns model.ErrInvalidStreamEpoch if the stream epoch mismatches.
+	// It returns model.ErrCreateRangeTwice and the range if the range is already created with the same parameters.
+	// It returns model.ErrRangeAlreadyExist if the range is already created.
 	// It returns model.ErrInvalidRangeIndex if the range index is invalid.
 	// It returns model.ErrCreateRangeBeforeSeal if the last range is not sealed.
 	// It returns model.ErrInvalidRangeStart if the start offset is invalid.
 	// It returns model.ErrNotEnoughRangeServers if there are not enough range servers to allocate.
-	// It returns model.ErrExpiredRangeEpoch if the range epoch is invalid.
-	CreateRange(ctx context.Context, r *rpcfb.RangeT) (*rpcfb.RangeT, error)
+	CreateRange(ctx context.Context, p *model.CreateRangeParam) (*rpcfb.RangeT, error)
 }
 
 func (c *RaftCluster) ListRange(ctx context.Context, criteria *rpcfb.ListRangeCriteriaT) (ranges []*rpcfb.RangeT, err error) {
@@ -60,7 +59,7 @@ func (c *RaftCluster) ListRange(ctx context.Context, criteria *rpcfb.ListRangeCr
 	}
 
 	for _, r := range ranges {
-		c.fillRangeServersInfo(r.Servers)
+		c.fillRangeServersInfo(r)
 	}
 	return
 }
@@ -114,44 +113,10 @@ func (c *RaftCluster) listRangeOnRangeServer(ctx context.Context, rangeServerID 
 	return ranges, nil
 }
 
-func (c *RaftCluster) SealRange(ctx context.Context, r *rpcfb.RangeT) (*rpcfb.RangeT, error) {
-	logger := c.lg.With(zap.Int64("stream-id", r.StreamId), zap.Int32("range-index", r.Index), traceutil.TraceLogField(ctx))
-	lastRange, err := c.getLastRange(ctx, r.StreamId)
-	if err != nil {
-		logger.Error("failed to get last range", zap.Error(err))
-		if errors.Is(err, model.ErrKVTxnFailed) {
-			err = model.ErrPDNotLeader
-		}
-		return nil, err
-	}
+func (c *RaftCluster) SealRange(ctx context.Context, p *model.SealRangeParam) (*rpcfb.RangeT, error) {
+	logger := c.lg.With(p.Fields()...).With(traceutil.TraceLogField(ctx))
 
-	if lastRange == nil {
-		// No range in the stream.
-		logger.Error("no range in the stream")
-		return nil, errors.Wrapf(model.ErrRangeNotFound, "no range in stream %d", r.StreamId)
-	}
-	if r.Index > lastRange.Index {
-		// Range not found.
-		logger.Error("range not found", zap.Int32("last-range-index", lastRange.Index))
-		return nil, errors.Wrapf(model.ErrRangeNotFound, "range %d not found in stream %d", r.Index, r.StreamId)
-	}
-	if r.Index < lastRange.Index || !isWritable(lastRange) {
-		// Range already sealed.
-		logger.Error("range already sealed", zap.Int32("last-range-index", lastRange.Index))
-		return nil, errors.Wrapf(model.ErrRangeAlreadySealed, "range %d already sealed in stream %d", r.Index, r.StreamId)
-	}
-	if r.End < lastRange.Start {
-		logger.Error("invalid end offset", zap.Int64("end", r.End), zap.Int64("start", lastRange.Start))
-		return nil, errors.Wrapf(model.ErrInvalidRangeEnd, "invalid end offset %d (less than start offset %d) for range %d in stream %d",
-			r.End, lastRange.Start, lastRange.Index, lastRange.StreamId)
-	}
-	if r.Epoch < lastRange.Epoch {
-		logger.Error("invalid epoch", zap.Int64("epoch", r.Epoch), zap.Int64("last-epoch", lastRange.Epoch))
-		return nil, errors.Wrapf(model.ErrExpiredRangeEpoch, "invalid epoch %d (less than %d) for range %d in stream %d",
-			r.Epoch, lastRange.Epoch, lastRange.Index, lastRange.StreamId)
-	}
-
-	mu := c.sealMu(r.StreamId)
+	mu := c.sealMu(p.StreamID)
 	select {
 	case mu <- struct{}{}:
 	case <-ctx.Done():
@@ -162,55 +127,20 @@ func (c *RaftCluster) SealRange(ctx context.Context, r *rpcfb.RangeT) (*rpcfb.Ra
 		<-mu
 	}()
 
-	sealedRange, err := c.sealRangeLocked(ctx, lastRange, r.End, r.Epoch)
-	if err != nil {
-		if errors.Is(err, model.ErrKVTxnFailed) {
-			err = model.ErrPDNotLeader
-		}
-		return nil, err
+	logger.Info("start to seal range")
+	sealedRange, err := c.storage.SealRange(ctx, p)
+	logger.Info("finish sealing range", zap.Error(err))
+	if errors.Is(err, model.ErrKVTxnFailed) {
+		err = model.ErrPDNotLeader
 	}
-	c.fillRangeServersInfo(sealedRange.Servers)
-	return sealedRange, nil
+	c.fillRangeServersInfo(sealedRange)
+	return sealedRange, err
 }
 
-func (c *RaftCluster) CreateRange(ctx context.Context, r *rpcfb.RangeT) (*rpcfb.RangeT, error) {
-	logger := c.lg.With(zap.Int64("stream-id", r.StreamId), zap.Int32("range-index", r.Index), traceutil.TraceLogField(ctx))
-	lastRange, err := c.getLastRange(ctx, r.StreamId)
-	if err != nil {
-		logger.Error("failed to get last range", zap.Error(err))
-		if errors.Is(err, model.ErrKVTxnFailed) {
-			err = model.ErrPDNotLeader
-		}
-		return nil, err
-	}
+func (c *RaftCluster) CreateRange(ctx context.Context, p *model.CreateRangeParam) (*rpcfb.RangeT, error) {
+	logger := c.lg.With(p.Fields()...).With(traceutil.TraceLogField(ctx))
 
-	if lastRange == nil {
-		// The stream exists, but no range in it.
-		// Mock it for the following check.
-		lastRange = &rpcfb.RangeT{StreamId: r.StreamId, Index: -1}
-	}
-	if isWritable(lastRange) {
-		// The last range is writable.
-		logger.Error("create range before sealing the last range", zap.Int32("last-range-index", lastRange.Index))
-		return nil, errors.Wrapf(model.ErrCreateRangeBeforeSeal, "create range %d before sealing the last range %d in stream %d", r.Index, lastRange.Index, r.StreamId)
-	}
-	if r.Index != lastRange.Index+1 {
-		// The range index is not continuous.
-		logger.Error("invalid range index", zap.Int32("last-range-index", lastRange.Index))
-		return nil, errors.Wrapf(model.ErrInvalidRangeIndex, "invalid range index %d (should be %d) in stream %d", r.Index, lastRange.Index+1, r.StreamId)
-	}
-	if r.Start != lastRange.End {
-		// The range start is not continuous.
-		logger.Error("invalid range start", zap.Int64("start", r.Start), zap.Int64("end", lastRange.End))
-		return nil, errors.Wrapf(model.ErrInvalidRangeStart, "invalid range start %d (should be %d) for range %d in stream %d", r.Start, lastRange.End, r.Index, r.StreamId)
-	}
-	if r.Epoch < lastRange.Epoch {
-		// The range epoch is invalid.
-		logger.Error("invalid range epoch", zap.Int64("epoch", r.Epoch), zap.Int64("last-epoch", lastRange.Epoch))
-		return nil, errors.Wrapf(model.ErrExpiredRangeEpoch, "invalid range epoch %d (less than %d) for range %d in stream %d", r.Epoch, lastRange.Epoch, r.Index, r.StreamId)
-	}
-
-	mu := c.sealMu(r.StreamId)
+	mu := c.sealMu(p.StreamID)
 	select {
 	case mu <- struct{}{}:
 	case <-ctx.Done():
@@ -221,33 +151,31 @@ func (c *RaftCluster) CreateRange(ctx context.Context, r *rpcfb.RangeT) (*rpcfb.
 		<-mu
 	}()
 
-	newRange, err := c.newRangeLocked(ctx, r, lastRange.Servers)
-	if err != nil {
-		if errors.Is(err, model.ErrKVTxnFailed) {
-			err = model.ErrPDNotLeader
+	var chooseServers = func(replica int8, blackList []*rpcfb.RangeServerT) ([]*rpcfb.RangeServerT, error) {
+		blackServerIDs := make(map[int32]struct{})
+		for _, rs := range blackList {
+			blackServerIDs[rs.ServerId] = struct{}{}
 		}
-		return nil, err
-	}
-	c.fillRangeServersInfo(newRange.Servers)
-	return newRange, nil
-}
-
-func (c *RaftCluster) getLastRange(ctx context.Context, streamID int64) (*rpcfb.RangeT, error) {
-	r, err := c.storage.GetLastRange(ctx, streamID)
-	if err != nil {
-		return nil, err
-	}
-	if r == nil {
-		stream, err := c.storage.GetStream(ctx, streamID)
+		servers, err := c.chooseRangeServers(int(replica), blackServerIDs)
 		if err != nil {
 			return nil, err
 		}
-		if stream == nil {
-			return nil, errors.Wrapf(model.ErrStreamNotFound, "stream %d not found", streamID)
+		ids := make([]int32, 0, len(servers))
+		for _, rs := range servers {
+			ids = append(ids, rs.ServerId)
 		}
-		return nil, nil
+		logger = logger.With(zap.Int32s("server-ids", ids))
+		return servers, nil
 	}
-	return r, nil
+
+	logger.Info("start to create range")
+	newRange, err := c.storage.CreateRange(ctx, p, chooseServers)
+	logger.Info("finish creating range", zap.Error(err))
+	if errors.Is(err, model.ErrKVTxnFailed) {
+		err = model.ErrPDNotLeader
+	}
+	c.fillRangeServersInfo(newRange)
+	return newRange, err
 }
 
 func (c *RaftCluster) sealMu(streamID int64) chan struct{} {
@@ -258,88 +186,4 @@ func (c *RaftCluster) sealMu(streamID int64) chan struct{} {
 		return make(chan struct{}, 1)
 	})
 	return sealMu
-}
-
-// sealRangeLocked seals a range and saves it to the storage.
-// It returns the sealed range if the range is sealed successfully.
-// It should be called with the stream lock held.
-func (c *RaftCluster) sealRangeLocked(ctx context.Context, lastRange *rpcfb.RangeT, end int64, epoch int64) (*rpcfb.RangeT, error) {
-	logger := c.lg.With(zap.Int64("stream-id", lastRange.StreamId), zap.Int32("range-index", lastRange.Index), zap.Int64("end", end), traceutil.TraceLogField(ctx))
-
-	sealedRange := &rpcfb.RangeT{
-		StreamId:     lastRange.StreamId,
-		Epoch:        epoch,
-		Index:        lastRange.Index,
-		Start:        lastRange.Start,
-		End:          end,
-		Servers:      eraseRangeServersInfo(lastRange.Servers),
-		ReplicaCount: lastRange.ReplicaCount,
-		AckCount:     lastRange.AckCount,
-		OffloadOwner: lastRange.OffloadOwner,
-	}
-
-	logger.Info("start to seal range")
-	_, err := c.storage.UpdateRange(ctx, sealedRange)
-	logger.Info("finish sealing range", zap.Error(err))
-	if err != nil {
-		return nil, err
-	}
-
-	return sealedRange, nil
-}
-
-// newRangeLocked creates a new range and saves it to the storage.
-// It returns the new range if the range is created successfully.
-// It should be called with the stream lock held.
-func (c *RaftCluster) newRangeLocked(ctx context.Context, newRange *rpcfb.RangeT, blackList []*rpcfb.RangeServerT) (*rpcfb.RangeT, error) {
-	logger := c.lg.With(zap.Int64("stream-id", newRange.StreamId), zap.Int32("range-index", newRange.Index), zap.Int64("start", newRange.Start), traceutil.TraceLogField(ctx))
-
-	stream, err := c.storage.GetStream(ctx, newRange.StreamId)
-	if err != nil {
-		return nil, err
-	}
-	if stream == nil {
-		return nil, errors.Wrapf(model.ErrStreamNotFound, "stream %d not found", newRange.StreamId)
-	}
-
-	blackServerIDs := make(map[int32]struct{})
-	for _, rs := range blackList {
-		blackServerIDs[rs.ServerId] = struct{}{}
-	}
-	servers, err := c.chooseRangeServers(int(stream.Replica), blackServerIDs)
-	if err != nil {
-		logger.Error("failed to choose range servers", zap.Error(err))
-		return nil, err
-	}
-	ids := make([]int32, 0, len(servers))
-	for _, rs := range servers {
-		ids = append(ids, rs.ServerId)
-	}
-	logger = logger.With(zap.Int32s("server-ids", ids))
-
-	nr := &rpcfb.RangeT{
-		StreamId:     newRange.StreamId,
-		Epoch:        newRange.Epoch,
-		Index:        newRange.Index,
-		Start:        newRange.Start,
-		End:          _writableRangeEnd,
-		Servers:      servers,
-		ReplicaCount: stream.Replica,
-		AckCount:     stream.AckCount,
-		// TODO: choose offload owner by some strategy.
-		OffloadOwner: &rpcfb.OffloadOwnerT{ServerId: servers[0].ServerId},
-	}
-
-	logger.Info("start to create range")
-	err = c.storage.CreateRange(ctx, nr)
-	logger.Info("finish creating range", zap.Error(err))
-	if err != nil {
-		return nil, err
-	}
-
-	return nr, nil
-}
-
-func isWritable(r *rpcfb.RangeT) bool {
-	return r.End == _writableRangeEnd
 }

@@ -141,8 +141,11 @@ func (c *RaftCluster) chooseRangeServers(cnt int, grayServerIDs map[int32]struct
 	return chose, nil
 }
 
-func (c *RaftCluster) fillRangeServersInfo(rangeServers []*rpcfb.RangeServerT) {
-	for _, rangeServer := range rangeServers {
+func (c *RaftCluster) fillRangeServersInfo(r *rpcfb.RangeT) {
+	if r == nil {
+		return
+	}
+	for _, rangeServer := range r.Servers {
 		c.fillRangeServerInfo(rangeServer)
 	}
 }

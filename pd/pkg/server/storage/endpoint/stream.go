@@ -35,7 +35,7 @@ type StreamEndpoint interface {
 	DeleteStream(ctx context.Context, streamID int64) (*rpcfb.StreamT, error)
 	// UpdateStream updates the stream with the given stream and returns it.
 	// It returns model.ErrStreamNotFound if the stream does not exist.
-	// It returns model.ErrExpiredStreamEpoch if the new epoch is less than the old one.
+	// It returns model.ErrInvalidStreamEpoch if the new epoch is less than the old one.
 	UpdateStream(ctx context.Context, param *model.UpdateStreamParam) (*rpcfb.StreamT, error)
 	// GetStream gets the stream with the given stream id.
 	GetStream(ctx context.Context, streamID int64) (*rpcfb.StreamT, error)
@@ -92,6 +92,7 @@ func (e *Endpoint) UpdateStream(ctx context.Context, param *model.UpdateStreamPa
 
 		v, err := kv.Get(ctx, key)
 		if err != nil {
+			logger.Error("failed to get stream", zap.Error(err))
 			return errors.Wrapf(err, "get stream %d", param.StreamID)
 		}
 		if v == nil {
@@ -113,20 +114,19 @@ func (e *Endpoint) UpdateStream(ctx context.Context, param *model.UpdateStreamPa
 		if param.Epoch >= 0 {
 			if param.Epoch < oldStream.Epoch {
 				logger.Error("invalid epoch", zap.Int64("new-epoch", param.Epoch), zap.Int64("old-epoch", oldStream.Epoch))
-				return errors.Wrapf(model.ErrExpiredStreamEpoch, "new epoch %d, old epoch %d", param.Epoch, oldStream.Epoch)
+				return errors.Wrapf(model.ErrInvalidStreamEpoch, "new epoch %d < old epoch %d", param.Epoch, oldStream.Epoch)
 			}
 			oldStream.Epoch = param.Epoch
 		}
 		newStream = oldStream
 
 		streamInfo := fbutil.Marshal(newStream)
-		_, _ = kv.Put(ctx, key, streamInfo, true)
+		_, _ = kv.Put(ctx, key, streamInfo, false)
 		mcache.Free(streamInfo)
 
 		return nil
 	})
 	if err != nil {
-		logger.Error("failed to update stream", zap.Error(err))
 		return nil, errors.Wrapf(err, "update stream %d", param.StreamID)
 	}
 

@@ -32,28 +32,31 @@ var (
 var (
 	// ErrStreamNotFound is returned when the stream is not found.
 	ErrStreamNotFound = errors.New("stream not found")
-	// ErrExpiredStreamEpoch is returned when the stream epoch is expired.
-	ErrExpiredStreamEpoch = errors.New("expired stream epoch")
+	// ErrInvalidStreamEpoch is returned when the stream epoch mismatches.
+	ErrInvalidStreamEpoch = errors.New("invalid stream epoch")
 )
 
 // Range errors
 var (
-	// ErrRangeNotFound is returned when the specified range is not found.
-	ErrRangeNotFound = errors.New("range not found")
-	// ErrExpiredRangeEpoch is returned when the range epoch is invalid.
-	ErrExpiredRangeEpoch = errors.New("expired range epoch")
-
-	// ErrRangeAlreadySealed is returned when the specified range is already sealed.
-	ErrRangeAlreadySealed = errors.New("range already sealed")
-	// ErrInvalidRangeEnd is returned when the end offset is invalid.
-	ErrInvalidRangeEnd = errors.New("invalid range end offset")
-
+	// ErrRangeAlreadyExist is returned when the specified range is already created.
+	ErrRangeAlreadyExist = errors.New("range already created")
+	// ErrCreateRangeTwice is returned when the range is created twice with the same parameters.
+	ErrCreateRangeTwice = errors.New("create range twice")
 	// ErrInvalidRangeIndex is returned when the range index is invalid.
 	ErrInvalidRangeIndex = errors.New("invalid range index")
 	// ErrCreateRangeBeforeSeal is returned when the last range is not sealed.
 	ErrCreateRangeBeforeSeal = errors.New("create range before sealing the previous one")
 	// ErrInvalidRangeStart is returned when the start offset is invalid.
 	ErrInvalidRangeStart = errors.New("invalid range start offset")
+
+	// ErrRangeNotFound is returned when the specified range is not found.
+	ErrRangeNotFound = errors.New("range not found")
+	// ErrRangeAlreadySealed is returned when the specified range is already sealed.
+	ErrRangeAlreadySealed = errors.New("range already sealed")
+	// ErrSealRangeTwice is returned when the range is sealed twice with the same end offset.
+	ErrSealRangeTwice = errors.New("seal range twice")
+	// ErrInvalidRangeEnd is returned when the end offset is invalid.
+	ErrInvalidRangeEnd = errors.New("invalid range end offset")
 )
 
 // Resource errors

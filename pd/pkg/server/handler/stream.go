@@ -75,7 +75,7 @@ func (h *Handler) UpdateStream(req *protocol.UpdateStreamRequest, resp *protocol
 			resp.Error(h.notLeaderError(ctx))
 		case errors.Is(err, model.ErrStreamNotFound):
 			resp.Error(&rpcfb.StatusT{Code: rpcfb.ErrorCodeNOT_FOUND, Message: err.Error()})
-		case errors.Is(err, model.ErrExpiredStreamEpoch):
+		case errors.Is(err, model.ErrInvalidStreamEpoch):
 			resp.Error(&rpcfb.StatusT{Code: rpcfb.ErrorCodeEXPIRED_STREAM_EPOCH, Message: err.Error()})
 		default:
 			resp.Error(&rpcfb.StatusT{Code: rpcfb.ErrorCodePD_INTERNAL_SERVER_ERROR, Message: err.Error()})

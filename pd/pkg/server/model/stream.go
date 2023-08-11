@@ -17,21 +17,21 @@ type CreateStreamParam struct {
 	RetentionPeriodMs int64
 }
 
-func NewCreateStreamParam(t *rpcfb.StreamT) (*CreateStreamParam, error) {
-	if t == nil {
+func NewCreateStreamParam(s *rpcfb.StreamT) (*CreateStreamParam, error) {
+	if s == nil {
 		return nil, errors.New("nil stream")
 	}
-	if t.Replica <= 0 {
-		return nil, errors.Errorf("invalid replica %d", t.Replica)
+	if s.Replica <= 0 {
+		return nil, errors.Errorf("invalid replica %d", s.Replica)
 	}
-	if t.AckCount <= 0 {
-		return nil, errors.Errorf("invalid ack count %d", t.AckCount)
+	if s.AckCount <= 0 {
+		return nil, errors.Errorf("invalid ack count %d", s.AckCount)
 	}
 
 	return &CreateStreamParam{
-		Replica:           t.Replica,
-		AckCount:          t.AckCount,
-		RetentionPeriodMs: t.RetentionPeriodMs,
+		Replica:           s.Replica,
+		AckCount:          s.AckCount,
+		RetentionPeriodMs: s.RetentionPeriodMs,
 	}, nil
 }
 
@@ -45,31 +45,34 @@ type UpdateStreamParam struct {
 	Epoch             int64
 }
 
-func NewUpdateStreamParam(t *rpcfb.StreamT) (*UpdateStreamParam, error) {
-	if t == nil {
+func NewUpdateStreamParam(s *rpcfb.StreamT) (*UpdateStreamParam, error) {
+	if s == nil {
 		return nil, errors.New("nil stream")
 	}
-	if t.StreamId < MinStreamID {
-		return nil, errors.Errorf("invalid stream id: %d < %d", t.StreamId, MinStreamID)
+	if s.StreamId < MinStreamID {
+		return nil, errors.Errorf("invalid stream id: %d < %d", s.StreamId, MinStreamID)
 	}
-	if t.Replica == 0 {
-		return nil, errors.Errorf("invalid replica %d", t.Replica)
+	if s.Replica == 0 {
+		return nil, errors.Errorf("invalid replica %d", s.Replica)
 	}
-	if t.AckCount == 0 {
-		return nil, errors.Errorf("invalid ack count %d", t.AckCount)
+	if s.AckCount == 0 {
+		return nil, errors.Errorf("invalid ack count %d", s.AckCount)
 	}
-	if t.Replica < 0 && t.AckCount < 0 && t.RetentionPeriodMs < 0 && t.Epoch < 0 {
+	if s.StartOffset >= 0 {
+		return nil, errors.Errorf("do not support update start offset %d", s.StartOffset)
+	}
+	if s.Replica < 0 && s.AckCount < 0 && s.RetentionPeriodMs < 0 && s.Epoch < 0 {
 		return nil, errors.New("no change")
 	}
-	if t.Replica > 0 && t.AckCount > 0 && t.Replica < t.AckCount {
-		return nil, errors.Errorf("invalid replica %d < ack count %d", t.Replica, t.AckCount)
+	if s.Replica > 0 && s.AckCount > 0 && s.Replica < s.AckCount {
+		return nil, errors.Errorf("invalid replica %d < ack count %d", s.Replica, s.AckCount)
 	}
 
 	return &UpdateStreamParam{
-		StreamID:          t.StreamId,
-		Replica:           t.Replica,
-		AckCount:          t.AckCount,
-		RetentionPeriodMs: t.RetentionPeriodMs,
-		Epoch:             t.Epoch,
+		StreamID:          s.StreamId,
+		Replica:           s.Replica,
+		AckCount:          s.AckCount,
+		RetentionPeriodMs: s.RetentionPeriodMs,
+		Epoch:             s.Epoch,
 	}, nil
 }

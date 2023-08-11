@@ -22,7 +22,7 @@ type StreamService interface {
 	// UpdateStream updates the stream.
 	// It returns model.ErrPDNotLeader if the current PD node is not the leader.
 	// It returns model.ErrStreamNotFound if the stream is not found.
-	// It returns model.ErrExpiredStreamEpoch if the stream epoch is expired.
+	// It returns model.ErrInvalidStreamEpoch if the stream epoch mismatches.
 	UpdateStream(ctx context.Context, param *model.UpdateStreamParam) (*rpcfb.StreamT, error)
 	// DescribeStream describes the stream.
 	// It returns model.ErrPDNotLeader if the current PD node is not the leader.

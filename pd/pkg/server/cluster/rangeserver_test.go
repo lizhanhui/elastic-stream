@@ -133,7 +133,7 @@ func TestRaftCluster_fillRangeServersInfo(t *testing.T) {
 	rangeServer2 := rpcfb.RangeServerT{
 		ServerId: rangeServer.ServerId,
 	}
-	cluster.fillRangeServersInfo([]*rpcfb.RangeServerT{&rangeServer2})
+	cluster.fillRangeServerInfo(&rangeServer2)
 
 	re.Equal(rangeServer, rangeServer2)
 }

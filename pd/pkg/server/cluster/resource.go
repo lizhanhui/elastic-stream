@@ -151,7 +151,7 @@ func (c *RaftCluster) WatchResource(ctx context.Context, rv int64, types []rpcfb
 
 func (c *RaftCluster) fillResourceInfo(resource *rpcfb.ResourceT) {
 	if resource.Type == rpcfb.ResourceTypeRANGE {
-		c.fillRangeServersInfo(resource.Range.Servers)
+		c.fillRangeServersInfo(resource.Range)
 	}
 }
 

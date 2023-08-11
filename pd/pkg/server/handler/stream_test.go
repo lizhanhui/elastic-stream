@@ -122,17 +122,7 @@ func TestHandler_UpdateStream(t *testing.T) {
 		{
 			name: "normal case",
 			args: args{
-				stream: &rpcfb.StreamT{Replica: 2, AckCount: 2, RetentionPeriodMs: time.Hour.Milliseconds(), Epoch: 10},
-			},
-			want: want{
-				stream: rpcfb.StreamT{Replica: 2, AckCount: 2, RetentionPeriodMs: time.Hour.Milliseconds(), Epoch: 10},
-				after:  rpcfb.StreamT{Replica: 2, AckCount: 2, RetentionPeriodMs: time.Hour.Milliseconds(), Epoch: 10},
-			},
-		},
-		{
-			name: "do not update start offset",
-			args: args{
-				stream: &rpcfb.StreamT{Replica: 2, AckCount: 2, RetentionPeriodMs: time.Hour.Milliseconds(), Epoch: 10, StartOffset: 10},
+				stream: &rpcfb.StreamT{Replica: 2, AckCount: 2, RetentionPeriodMs: time.Hour.Milliseconds(), Epoch: 10, StartOffset: -1},
 			},
 			want: want{
 				stream: rpcfb.StreamT{Replica: 2, AckCount: 2, RetentionPeriodMs: time.Hour.Milliseconds(), Epoch: 10},
@@ -142,7 +132,7 @@ func TestHandler_UpdateStream(t *testing.T) {
 		{
 			name: "update replica only",
 			args: args{
-				stream: &rpcfb.StreamT{Replica: 2, AckCount: -1, RetentionPeriodMs: -1, Epoch: -1},
+				stream: &rpcfb.StreamT{Replica: 2, AckCount: -1, RetentionPeriodMs: -1, Epoch: -1, StartOffset: -1},
 			},
 			want: want{
 				stream: rpcfb.StreamT{Replica: 2, AckCount: 3},
@@ -152,7 +142,7 @@ func TestHandler_UpdateStream(t *testing.T) {
 		{
 			name: "update ack count only",
 			args: args{
-				stream: &rpcfb.StreamT{Replica: -1, AckCount: 2, RetentionPeriodMs: -1, Epoch: -1},
+				stream: &rpcfb.StreamT{Replica: -1, AckCount: 2, RetentionPeriodMs: -1, Epoch: -1, StartOffset: -1},
 			},
 			want: want{
 				stream: rpcfb.StreamT{Replica: 3, AckCount: 2},
@@ -162,7 +152,7 @@ func TestHandler_UpdateStream(t *testing.T) {
 		{
 			name: "update retention period only",
 			args: args{
-				stream: &rpcfb.StreamT{Replica: -1, AckCount: -1, RetentionPeriodMs: time.Hour.Milliseconds(), Epoch: -1},
+				stream: &rpcfb.StreamT{Replica: -1, AckCount: -1, RetentionPeriodMs: time.Hour.Milliseconds(), Epoch: -1, StartOffset: -1},
 			},
 			want: want{
 				stream: rpcfb.StreamT{Replica: 3, AckCount: 3, RetentionPeriodMs: time.Hour.Milliseconds()},
@@ -172,7 +162,7 @@ func TestHandler_UpdateStream(t *testing.T) {
 		{
 			name: "update epoch only",
 			args: args{
-				stream: &rpcfb.StreamT{Replica: -1, AckCount: -1, RetentionPeriodMs: -1, Epoch: 10},
+				stream: &rpcfb.StreamT{Replica: -1, AckCount: -1, RetentionPeriodMs: -1, Epoch: 10, StartOffset: -1},
 			},
 			want: want{
 				stream: rpcfb.StreamT{Replica: 3, AckCount: 3, Epoch: 10},
@@ -192,7 +182,7 @@ func TestHandler_UpdateStream(t *testing.T) {
 		{
 			name: "invalid stream id",
 			args: args{
-				stream: &rpcfb.StreamT{StreamId: -1},
+				stream: &rpcfb.StreamT{StreamId: -1, StartOffset: -1},
 			},
 			want: want{
 				wantErr: true,
@@ -204,7 +194,7 @@ func TestHandler_UpdateStream(t *testing.T) {
 		{
 			name: "invalid replica",
 			args: args{
-				stream: &rpcfb.StreamT{Replica: 0, AckCount: 3},
+				stream: &rpcfb.StreamT{Replica: 0, AckCount: 3, StartOffset: -1},
 			},
 			want: want{
 				wantErr: true,
@@ -216,7 +206,7 @@ func TestHandler_UpdateStream(t *testing.T) {
 		{
 			name: "invalid ack count",
 			args: args{
-				stream: &rpcfb.StreamT{Replica: 3, AckCount: 0},
+				stream: &rpcfb.StreamT{Replica: 3, AckCount: 0, StartOffset: -1},
 			},
 			want: want{
 				wantErr: true,
@@ -226,9 +216,21 @@ func TestHandler_UpdateStream(t *testing.T) {
 			},
 		},
 		{
+			name: "do not support update start offset",
+			args: args{
+				stream: &rpcfb.StreamT{Replica: 2, AckCount: 2, RetentionPeriodMs: time.Hour.Milliseconds(), Epoch: 10, StartOffset: 10},
+			},
+			want: want{
+				wantErr: true,
+				errCode: rpcfb.ErrorCodeBAD_REQUEST,
+				errMsg:  "do not support update start offset",
+				after:   rpcfb.StreamT{Replica: 3, AckCount: 3},
+			},
+		},
+		{
 			name: "no change",
 			args: args{
-				stream: &rpcfb.StreamT{Replica: -1, AckCount: -1, RetentionPeriodMs: -1, Epoch: -1},
+				stream: &rpcfb.StreamT{Replica: -1, AckCount: -1, RetentionPeriodMs: -1, Epoch: -1, StartOffset: -1},
 			},
 			want: want{
 				wantErr: true,
@@ -240,7 +242,7 @@ func TestHandler_UpdateStream(t *testing.T) {
 		{
 			name: "replica < ack count",
 			args: args{
-				stream: &rpcfb.StreamT{Replica: 1, AckCount: 2, RetentionPeriodMs: -1, Epoch: -1},
+				stream: &rpcfb.StreamT{Replica: 1, AckCount: 2, RetentionPeriodMs: -1, Epoch: -1, StartOffset: -1},
 			},
 			want: want{
 				wantErr: true,
@@ -252,7 +254,7 @@ func TestHandler_UpdateStream(t *testing.T) {
 		{
 			name: "stream not found",
 			args: args{
-				stream: &rpcfb.StreamT{StreamId: 1, Replica: 3, AckCount: 3},
+				stream: &rpcfb.StreamT{StreamId: 1, Replica: 3, AckCount: 3, StartOffset: -1},
 			},
 			want: want{
 				wantErr: true,
@@ -384,4 +386,36 @@ func TestHandler_DescribeStream(t *testing.T) {
 			}
 		})
 	}
+}
+
+func getStream(tb testing.TB, h *Handler, streamID int64) *rpcfb.StreamT {
+	re := require.New(tb)
+
+	req := &protocol.DescribeStreamRequest{DescribeStreamRequestT: rpcfb.DescribeStreamRequestT{
+		StreamId: streamID,
+	}}
+	resp := &protocol.DescribeStreamResponse{}
+	h.DescribeStream(req, resp)
+	re.Equal(rpcfb.ErrorCodeOK, resp.Status.Code, resp.Status.Message)
+
+	return resp.Stream
+}
+
+func updateStreamEpoch(tb testing.TB, h *Handler, streamID int64, epoch int64) {
+	re := require.New(tb)
+
+	req := &protocol.UpdateStreamRequest{UpdateStreamRequestT: rpcfb.UpdateStreamRequestT{
+		Stream: &rpcfb.StreamT{
+			StreamId:          streamID,
+			Replica:           -1,
+			AckCount:          -1,
+			RetentionPeriodMs: -1,
+			StartOffset:       -1,
+			Epoch:             epoch,
+		},
+	}}
+	resp := &protocol.UpdateStreamResponse{}
+	h.UpdateStream(req, resp)
+	re.Equal(rpcfb.ErrorCodeOK, resp.Status.Code, resp.Status.Message)
+	re.Equal(epoch, resp.Stream.Epoch)
 }

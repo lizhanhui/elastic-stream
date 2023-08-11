@@ -1,12 +1,12 @@
 package model
 
 import (
-	"reflect"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/AutoMQ/pd/api/rpcfb/rpcfb"
+	"github.com/AutoMQ/pd/pkg/util/testutil"
 )
 
 func TestNoNewFieldsInCreateStreamParam(t *testing.T) {
@@ -18,8 +18,8 @@ func TestNoNewFieldsInCreateStreamParam(t *testing.T) {
 		"StartOffset",
 		"Epoch",
 	}
-	streamFields := getAllFields(rpcfb.StreamT{})
-	createStreamParamFields := getAllFields(CreateStreamParam{})
+	streamFields := testutil.GetAllFields(rpcfb.StreamT{})
+	createStreamParamFields := testutil.GetAllFields(CreateStreamParam{})
 	createStreamParamFields = append(createStreamParamFields, ignoredFields...)
 
 	// If this test fails, please update the `CreateStreamParam` struct or the `ignoredFields`
@@ -33,8 +33,8 @@ func TestNoNewFieldsInUpdateStreamParam(t *testing.T) {
 	ignoredFields := []string{
 		"StartOffset",
 	}
-	streamFields := getAllFields(rpcfb.StreamT{})
-	updateStreamParamFields := getAllFields(UpdateStreamParam{})
+	streamFields := testutil.GetAllFields(rpcfb.StreamT{})
+	updateStreamParamFields := testutil.GetAllFields(UpdateStreamParam{})
 	for i := range updateStreamParamFields {
 		if updateStreamParamFields[i] == "StreamID" {
 			updateStreamParamFields[i] = "StreamId"
@@ -44,12 +44,4 @@ func TestNoNewFieldsInUpdateStreamParam(t *testing.T) {
 
 	// If this test fails, please update the `UpdateStreamParam` struct or the `ignoredFields`
 	re.ElementsMatch(streamFields, updateStreamParamFields)
-}
-
-func getAllFields(i any) (fields []string) {
-	t := reflect.TypeOf(i)
-	for i := 0; i < t.NumField(); i++ {
-		fields = append(fields, t.Field(i).Name)
-	}
-	return
 }

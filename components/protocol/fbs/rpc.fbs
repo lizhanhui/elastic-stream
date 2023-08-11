@@ -48,10 +48,6 @@ enum ErrorCode : int16 {
     APPEND_TO_OVERTAKEN_OFFSET = 1466,
     // Try to create a new range when the last range in the stream is not sealed.
     CREATE_RANGE_BEFORE_SEAL = 1470,
-    // Try to seal a range with an epoch which is smaller than the current range's epoch.
-    // or
-    // Try to create a new range with an epoch that is smaller than the previous range's epoch.
-    EXPIRED_RANGE_EPOCH = 1471,
     // Cannot find the object for the request.
     OBJECT_NOT_FOUND = 1472,
     // Cannot find match records in objects.
@@ -77,6 +73,7 @@ enum ErrorCode : int16 {
     CONNECT_TIMEOUT = 1486,
     CONNECT_DISABLE_NAGLE_FAIL = 1487,
     STREAM_NOT_EXIST = 1488,
+    // Try to seal or create a range with an epoch which not equals to the stream's epoch.
     EXPIRED_STREAM_EPOCH = 1489,
 
     // Server understands the intended operation but it does not support that.

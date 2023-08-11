@@ -39,12 +39,12 @@ func TestHandler_ListResource(t *testing.T) {
 					{Type: rpcfb.ResourceTypeRANGE_SERVER, RangeServer: &rpcfb.RangeServerT{ServerId: 0, AdvertiseAddr: "addr-0", State: rpcfb.RangeServerStateRANGE_SERVER_STATE_READ_WRITE}},
 					{Type: rpcfb.ResourceTypeRANGE_SERVER, RangeServer: &rpcfb.RangeServerT{ServerId: 1, AdvertiseAddr: "addr-1", State: rpcfb.RangeServerStateRANGE_SERVER_STATE_READ_WRITE}},
 					{Type: rpcfb.ResourceTypeRANGE_SERVER, RangeServer: &rpcfb.RangeServerT{ServerId: 2, AdvertiseAddr: "addr-2", State: rpcfb.RangeServerStateRANGE_SERVER_STATE_READ_WRITE}},
-					{Type: rpcfb.ResourceTypeSTREAM, Stream: &rpcfb.StreamT{Replica: 3, AckCount: 3}},
+					{Type: rpcfb.ResourceTypeSTREAM, Stream: &rpcfb.StreamT{Replica: 3, AckCount: 3, Epoch: 1}},
 					{Type: rpcfb.ResourceTypeRANGE, Range: &rpcfb.RangeT{Epoch: 1, End: -1}},
 					{Type: rpcfb.ResourceTypeOBJECT, Object: &rpcfb.ObjT{EndOffsetDelta: 1}},
 					{Type: rpcfb.ResourceTypeOBJECT, Object: &rpcfb.ObjT{StartOffset: 1, EndOffsetDelta: 1}},
 				},
-				rv: 10,
+				rv: 11,
 			},
 		},
 		{
@@ -54,7 +54,7 @@ func TestHandler_ListResource(t *testing.T) {
 			},
 			want: want{
 				resources: []rpcfb.ResourceT{
-					{Type: rpcfb.ResourceTypeSTREAM, Stream: &rpcfb.StreamT{Replica: 3, AckCount: 3}},
+					{Type: rpcfb.ResourceTypeSTREAM, Stream: &rpcfb.StreamT{Replica: 3, AckCount: 3, Epoch: 1}},
 					{Type: rpcfb.ResourceTypeOBJECT, Object: &rpcfb.ObjT{EndOffsetDelta: 1}},
 					{Type: rpcfb.ResourceTypeOBJECT, Object: &rpcfb.ObjT{StartOffset: 1, EndOffsetDelta: 1}},
 					{Type: rpcfb.ResourceTypeRANGE, Range: &rpcfb.RangeT{Epoch: 1, End: -1}},
@@ -62,7 +62,7 @@ func TestHandler_ListResource(t *testing.T) {
 					{Type: rpcfb.ResourceTypeRANGE_SERVER, RangeServer: &rpcfb.RangeServerT{ServerId: 1, AdvertiseAddr: "addr-1", State: rpcfb.RangeServerStateRANGE_SERVER_STATE_READ_WRITE}},
 					{Type: rpcfb.ResourceTypeRANGE_SERVER, RangeServer: &rpcfb.RangeServerT{ServerId: 2, AdvertiseAddr: "addr-2", State: rpcfb.RangeServerStateRANGE_SERVER_STATE_READ_WRITE}},
 				},
-				rv: 10,
+				rv: 11,
 			},
 		},
 		{
@@ -73,12 +73,12 @@ func TestHandler_ListResource(t *testing.T) {
 			},
 			want: want{
 				resources: []rpcfb.ResourceT{
-					{Type: rpcfb.ResourceTypeSTREAM, Stream: &rpcfb.StreamT{Replica: 3, AckCount: 3}},
+					{Type: rpcfb.ResourceTypeSTREAM, Stream: &rpcfb.StreamT{Replica: 3, AckCount: 3, Epoch: 1}},
 					{Type: rpcfb.ResourceTypeRANGE, Range: &rpcfb.RangeT{Epoch: 1, End: -1}},
 					{Type: rpcfb.ResourceTypeOBJECT, Object: &rpcfb.ObjT{EndOffsetDelta: 1}},
 				},
-				rv:           10,
-				continuation: []byte(`{"rv":10,"tokens":[{"rt":2},{"rt":3},{"rt":4,"start":"MDAwMDAwMDAwMDAwMDAwMDAwMDAvMDAwMDAwMDAwMDAvMDAwMDAwMDAwMDAwMDAwMDAwMDAA","more":true}]}`),
+				rv:           11,
+				continuation: []byte(`{"rv":11,"tokens":[{"rt":2},{"rt":3},{"rt":4,"start":"MDAwMDAwMDAwMDAwMDAwMDAwMDAvMDAwMDAwMDAwMDAvMDAwMDAwMDAwMDAwMDAwMDAwMDAA","more":true}]}`),
 			},
 		},
 		{
@@ -86,13 +86,13 @@ func TestHandler_ListResource(t *testing.T) {
 			args: args{
 				types:        []rpcfb.ResourceType{rpcfb.ResourceTypeSTREAM, rpcfb.ResourceTypeRANGE, rpcfb.ResourceTypeOBJECT},
 				limit:        3,
-				continuation: []byte(`{"rv":10,"tokens":[{"rt":2},{"rt":3},{"rt":4,"start":"MDAwMDAwMDAwMDAwMDAwMDAwMDAvMDAwMDAwMDAwMDAvMDAwMDAwMDAwMDAwMDAwMDAwMDAA","more":true}]}`),
+				continuation: []byte(`{"rv":11,"tokens":[{"rt":2},{"rt":3},{"rt":4,"start":"MDAwMDAwMDAwMDAwMDAwMDAwMDAvMDAwMDAwMDAwMDAvMDAwMDAwMDAwMDAwMDAwMDAwMDAA","more":true}]}`),
 			},
 			want: want{
 				resources: []rpcfb.ResourceT{
 					{Type: rpcfb.ResourceTypeOBJECT, Object: &rpcfb.ObjT{StartOffset: 1, EndOffsetDelta: 1}},
 				},
-				rv: 10,
+				rv: 11,
 			},
 		},
 		{
@@ -228,6 +228,7 @@ func TestHandler_WatchResource(t *testing.T) {
 					{Type: rpcfb.EventTypeADDED, Resource: &rpcfb.ResourceT{Type: rpcfb.ResourceTypeRANGE_SERVER, RangeServer: &rpcfb.RangeServerT{ServerId: 1, AdvertiseAddr: "addr-1", State: rpcfb.RangeServerStateRANGE_SERVER_STATE_READ_WRITE}}},
 					{Type: rpcfb.EventTypeADDED, Resource: &rpcfb.ResourceT{Type: rpcfb.ResourceTypeRANGE_SERVER, RangeServer: &rpcfb.RangeServerT{ServerId: 2, AdvertiseAddr: "addr-2", State: rpcfb.RangeServerStateRANGE_SERVER_STATE_READ_WRITE}}},
 					{Type: rpcfb.EventTypeADDED, Resource: &rpcfb.ResourceT{Type: rpcfb.ResourceTypeSTREAM, Stream: &rpcfb.StreamT{Replica: 3, AckCount: 3}}},
+					{Type: rpcfb.EventTypeMODIFIED, Resource: &rpcfb.ResourceT{Type: rpcfb.ResourceTypeSTREAM, Stream: &rpcfb.StreamT{Replica: 3, AckCount: 3, Epoch: 1}}},
 					{Type: rpcfb.EventTypeADDED, Resource: &rpcfb.ResourceT{Type: rpcfb.ResourceTypeRANGE, Range: &rpcfb.RangeT{Epoch: 1, End: -1}}},
 					{Type: rpcfb.EventTypeADDED, Resource: &rpcfb.ResourceT{Type: rpcfb.ResourceTypeOBJECT, Object: &rpcfb.ObjT{EndOffsetDelta: 1}}},
 					{Type: rpcfb.EventTypeADDED, Resource: &rpcfb.ResourceT{Type: rpcfb.ResourceTypeOBJECT, Object: &rpcfb.ObjT{StartOffset: 1, EndOffsetDelta: 1}}},
@@ -243,6 +244,7 @@ func TestHandler_WatchResource(t *testing.T) {
 			want: want{
 				events: []rpcfb.ResourceEventT{
 					{Type: rpcfb.EventTypeADDED, Resource: &rpcfb.ResourceT{Type: rpcfb.ResourceTypeSTREAM, Stream: &rpcfb.StreamT{Replica: 3, AckCount: 3}}},
+					{Type: rpcfb.EventTypeMODIFIED, Resource: &rpcfb.ResourceT{Type: rpcfb.ResourceTypeSTREAM, Stream: &rpcfb.StreamT{Replica: 3, AckCount: 3, Epoch: 1}}},
 					{Type: rpcfb.EventTypeADDED, Resource: &rpcfb.ResourceT{Type: rpcfb.ResourceTypeRANGE, Range: &rpcfb.RangeT{Epoch: 1, End: -1}}},
 					{Type: rpcfb.EventTypeADDED, Resource: &rpcfb.ResourceT{Type: rpcfb.ResourceTypeOBJECT, Object: &rpcfb.ObjT{EndOffsetDelta: 1}}},
 					{Type: rpcfb.EventTypeADDED, Resource: &rpcfb.ResourceT{Type: rpcfb.ResourceTypeOBJECT, Object: &rpcfb.ObjT{StartOffset: 1, EndOffsetDelta: 1}}},
