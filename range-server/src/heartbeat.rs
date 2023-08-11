@@ -45,7 +45,7 @@ where
 
     pub(crate) fn run(&self) {
         let this = self.clone();
-        tokio_uring::spawn(async move {
+        monoio::spawn(async move {
             let mut interval = tokio::time::interval(this.config.client_heartbeat_interval());
             let mut heartbeat_data = HeartbeatData {
                 mandatory: false,

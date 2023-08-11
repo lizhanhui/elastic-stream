@@ -14,7 +14,6 @@ use std::ffi::c_void;
 use std::slice;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::mpsc;
 
 use crate::{Frontend, Stopwatch, Stream, StreamOptions};
 use crossbeam::channel::{unbounded, Sender};
@@ -270,7 +269,7 @@ async fn process_create_stream_command(
 pub extern "system" fn JNI_OnLoad(vm: JavaVM, _: *mut c_void) -> jint {
     crate::init_log();
     let java_vm = Arc::new(vm);
-    let (tx, mut rx) = mpsc::unbounded_channel();
+    let (tx, mut rx) = flume::unbounded();
     let (callback_tx, callback_rx) = unbounded();
     let _ = unsafe { TRACING_SERVICE.set(TracingService::new(Duration::from_millis(1))) };
     // # Safety
@@ -388,15 +387,19 @@ pub extern "system" fn JNI_OnLoad(vm: JavaVM, _: *mut c_void) -> jint {
         .name("Runtime".to_string())
         .spawn(move || {
             trace!("JNI Runtime thread started");
-            tokio_uring::builder().start(async move {
+            let mut rt = monoio::RuntimeBuilder::<monoio::FusionDriver>::new()
+                .enable_all()
+                .build()
+                .unwrap();
+            rt.block_on(async move {
                 trace!("JNI tokio-uring runtime started");
                 loop {
-                    match rx.recv().await {
-                        Some(cmd) => {
+                    match rx.recv_async().await {
+                        Ok(cmd) => {
                             trace!("JNI tokio-uring receive command");
-                            tokio_uring::spawn(async move { process_command(cmd).await });
+                            monoio::spawn(async move { process_command(cmd).await });
                         }
-                        None => {
+                        Err(_e) => {
                             info!("JNI command channel is dropped");
                             break;
                         }

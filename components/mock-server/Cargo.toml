@@ -16,3 +16,4 @@ model = { path = "../model" }
 protocol = { path = "../protocol" }
 monoio = { workspace = true }
 transport = { path = "../transport" }
+local-sync = { workspace = true }

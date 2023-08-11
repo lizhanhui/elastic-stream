@@ -65,7 +65,7 @@ impl IdleHandler {
         config: Arc<Configuration>,
         conn_tracker: Rc<RefCell<ConnectionTracker>>,
     ) {
-        tokio_uring::spawn(async move {
+        monoio::spawn(async move {
             let mut interval = tokio::time::interval(config.connection_idle_duration());
             loop {
                 interval.tick().await;

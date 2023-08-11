@@ -59,21 +59,20 @@ pub(crate) struct StreamManager {
 
 impl StreamManager {
     pub(crate) fn new(config: Arc<Configuration>) -> Self {
-        let (shutdown, _rx) = broadcast::channel(1);
         let streams = Rc::new(RefCell::new(HashMap::new()));
         let cache = Rc::new(HotCache::new(Self::get_max_cache_size() * 2 / 3));
         let block_cache = Rc::new(BlockCache::new(Self::get_max_cache_size() / 3));
 
         let mut clients = vec![];
         for _ in 0..config.replication.connection_pool_size {
-            let client = Rc::new(DefaultClient::new(Arc::clone(&config), shutdown.clone()));
+            let client = Rc::new(DefaultClient::new(Arc::clone(&config)));
             Self::schedule_heartbeat(&client, config.client_heartbeat_interval());
             clients.push(client);
         }
 
         let object_reader = Rc::new(AsyncObjectReader::new());
 
-        tokio_uring::spawn(async move {
+        monoio::spawn(async move {
             loop {
                 sleep(Duration::from_secs(60)).await;
                 report_metrics();
@@ -105,8 +104,8 @@ impl StreamManager {
         //
         // TODO: watch ctrl-c signal to shutdown timely.
         let client = Rc::clone(client);
-        tokio_uring::spawn(async move {
-            let mut interval = tokio::time::interval(interval);
+        monoio::spawn(async move {
+            let mut interval = monoio::time::interval(interval);
             let heartbeat_data = HeartbeatData::new(ClientRole::CLIENT_ROLE_FRONTEND);
 
             loop {
@@ -123,7 +122,7 @@ impl StreamManager {
     ) {
         let stream = self.streams.borrow().get(&request.stream_id).map(Rc::clone);
         if let Some(stream) = stream {
-            tokio_uring::spawn(async move {
+            monoio::spawn(async move {
                 let start = Instant::now();
                 let result = stream
                     .append(request.record_batch)
@@ -144,7 +143,7 @@ impl StreamManager {
     ) {
         let stream = self.streams.borrow().get(&request.stream_id).map(Rc::clone);
         if let Some(stream) = stream {
-            tokio_uring::spawn(async move {
+            monoio::spawn(async move {
                 let start = Instant::now();
                 let result = stream
                     .fetch(
@@ -202,7 +201,7 @@ impl StreamManager {
                 return;
             }
         };
-        tokio_uring::spawn(async move {
+        monoio::spawn(async move {
             let result =
                 client
                     .create_stream(metadata)
@@ -231,7 +230,7 @@ impl StreamManager {
         let hot_cache = self.hot_cache.clone();
         let block_cache = self.block_cache.clone();
         let object_reader = self.object_reader.clone();
-        tokio_uring::spawn(async move {
+        monoio::spawn(async move {
             let client = Rc::downgrade(&client);
             let stream = Self::new_stream(
                 request.stream_id,
@@ -259,7 +258,7 @@ impl StreamManager {
             .remove(&request.stream_id)
             .map(|stream| Rc::clone(&stream));
         if let Some(stream) = stream {
-            tokio_uring::spawn(async move {
+            monoio::spawn(async move {
                 stream.close().await;
                 let _ = tx.send(Ok(()));
             });
@@ -293,7 +292,7 @@ impl StreamManager {
             .remove(&request.stream_id)
             .map(|stream| Rc::clone(&stream));
         if let Some(stream) = stream {
-            tokio_uring::spawn(async move {
+            monoio::spawn(async move {
                 let _ = tx.send(stream.trim(request.new_start_offset).await);
             });
         } else {

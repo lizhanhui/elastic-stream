@@ -116,7 +116,7 @@ impl Drop for Stream {
         let client = self.stream_client.clone();
         let stream_id = self.id;
         info!("Dropping stream[id={}]", stream_id);
-        tokio_uring::spawn(async move {
+        monoio::spawn(async move {
             match client.close_stream(stream_id).await {
                 Ok(_) => {
                     info!("Closed stream[id={stream_id}]");

@@ -8,13 +8,15 @@ use crate::{
 };
 use codec::{error::FrameError, frame::Frame};
 
+use crate::invocation_context::InvocationContext;
 use futures::Future;
-use protocol::rpc::header::{ClientRole, GoAwayFlags, OperationCode, RangeServerState};
-use tower::Service;
-use transport::connection::Connection;
-
 use local_sync::oneshot;
 use log::{error, info, trace, warn};
+use monoio::{
+    io::{AsyncReadRent, Splitable},
+    net::TcpStream,
+};
+use protocol::rpc::header::{ClientRole, GoAwayFlags, OperationCode, RangeServerState};
 use std::{
     cell::{RefCell, UnsafeCell},
     collections::HashMap,
@@ -24,19 +26,15 @@ use std::{
     task::{Context, Poll},
     time::Instant,
 };
-use tokio::sync::broadcast::{self, error::RecvError};
-use tokio_uring::net::TcpStream;
-
-use crate::invocation_context::InvocationContext;
+use tower::Service;
+use transport::connection::{ChannelReader, ChannelWriter};
 
 pub(crate) struct Session {
     pub(crate) target: SocketAddr,
 
     config: Arc<config::Configuration>,
 
-    // Unlike {tokio, monoio}::TcpStream where we need to split underlying TcpStream into two owned mutable,
-    // tokio_uring::TcpStream requires immutable references only to perform read/write.
-    connection: Rc<Connection>,
+    connection: ChannelWriter,
 
     /// In-flight requests.
     inflight_requests: Rc<UnsafeCell<HashMap<u32, InvocationContext>>>,
@@ -57,97 +55,92 @@ pub(crate) struct Session {
 
 impl Session {
     /// Spawn a loop to continuously read responses and server-side requests.
-    fn spawn_read_loop(
-        connection: Rc<Connection>,
+    fn spawn_read_loop<S>(
+        mut connection: ChannelReader<S>,
         inflight_requests: Rc<UnsafeCell<HashMap<u32, InvocationContext>>>,
         sessions: Weak<RefCell<HashMap<SocketAddr, Session>>>,
         state: Rc<RefCell<SessionState>>,
         target: SocketAddr,
-        mut shutdown: broadcast::Receiver<()>,
-    ) {
-        tokio_uring::spawn(async move {
+    ) where
+        S: AsyncReadRent + 'static,
+    {
+        monoio::spawn(async move {
             trace!("Start read loop for session[target={}]", target);
             loop {
-                tokio::select! {
-                    stop = shutdown.recv() => {
-                        match stop {
-                            Ok(_) => {
-                                info!("Received a shutdown signal. Stop session read loop");
-                            },
-                            Err(RecvError::Closed) => {
-                                // should NOT reach here.
-                                info!("Shutdown broadcast channel is closed. Stop session read loop");
-                            },
-                            Err(RecvError::Lagged(_)) => {
-                                // should not reach here.
-                                info!("Shutdown broadcast channel is lagged behind. Stop session read loop");
+                match connection.read_frame().await {
+                    Err(e) => {
+                        match e {
+                            FrameError::Incomplete => {
+                                // More data needed
+                                continue;
+                            }
+                            FrameError::ConnectionReset => {
+                                error!("Connection to {} reset by peer", target);
+                            }
+                            FrameError::BadFrame(message) => {
+                                error!(
+                                    "Read a bad frame from target={}. Cause: {}",
+                                    target, message
+                                );
+                            }
+                            FrameError::TooLongFrame { found, max } => {
+                                error!(
+                                    "Read a frame with excessive length={}, max={}, target={}",
+                                    found, max, target
+                                );
+                            }
+                            FrameError::MagicCodeMismatch { found, expected } => {
+                                error!( "Read a frame with incorrect magic code. Expected={}, actual={}, target={}", expected, found, target);
+                            }
+                            FrameError::TooLongFrameHeader { found, expected } => {
+                                error!( "Read a frame with excessive header length={}, max={}, target={}", found, expected, target);
+                            }
+                            FrameError::PayloadChecksumMismatch { expected, actual } => {
+                                error!( "Read a frame with incorrect payload checksum. Expected={}, actual={}, target={}", expected, actual, target);
+                            }
+                        }
+                        // Close the session
+                        if let Some(sessions) = sessions.upgrade() {
+                            let mut sessions = sessions.borrow_mut();
+                            if let Some(_session) = sessions.remove(&target) {
+                                warn!("Closing session to {}", target);
                             }
                         }
                         break;
-                    },
-                    read = connection.read_frame() => {
-                        match read {
-                            Err(e) => {
-                                match e {
-                                    FrameError::Incomplete => {
-                                        // More data needed
-                                        continue;
-                                    }
-                                    FrameError::ConnectionReset => {
-                                        error!( "Connection to {} reset by peer", target);
-                                    }
-                                    FrameError::BadFrame(message) => {
-                                        error!( "Read a bad frame from target={}. Cause: {}", target, message);
-                                    }
-                                    FrameError::TooLongFrame{found, max} => {
-                                        error!( "Read a frame with excessive length={}, max={}, target={}", found, max, target);
-                                    }
-                                    FrameError::MagicCodeMismatch{found, expected} => {
-                                        error!( "Read a frame with incorrect magic code. Expected={}, actual={}, target={}", expected, found, target);
-                                    }
-                                    FrameError::TooLongFrameHeader{found, expected} => {
-                                        error!( "Read a frame with excessive header length={}, max={}, target={}", found, expected, target);
-                                    }
-                                    FrameError::PayloadChecksumMismatch{expected, actual} => {
-                                        error!( "Read a frame with incorrect payload checksum. Expected={}, actual={}, target={}", expected, actual, target);
-                                    }
-                                }
-                                // Close the session
-                                if let Some(sessions) = sessions.upgrade() {
-                                    let mut sessions = sessions.borrow_mut();
-                                    if let Some(_session) = sessions.remove(&target) {
-                                        warn!( "Closing session to {}", target);
-                                    }
-                                }
-                                break;
-                            }
-                            Ok(Some(frame)) => {
-                                trace!( "Read a frame from channel={}", target);
-                                let inflight = unsafe { &mut *inflight_requests.get() };
-                                if frame.is_response() {
-                                    Session::handle_response(inflight, frame, target);
-                                } else if frame.operation_code == OperationCode::GOAWAY {
-                                    *state.borrow_mut() = SessionState::GoAway;
-                                    let reason = if frame.has_go_away_flag(GoAwayFlags::SERVER_MAINTENANCE) {
-                                        "server maintenance"
-                                    } else {"connection being idle"};
-                                    info!("Peer server[{}] has notified to go-away due to {}.", target, reason);
-                                } else {
-                                    warn!( "Received an unexpected request frame from target={}", target);
-                                }
-                            }
-                            Ok(None) => {
-                                info!( "Connection to {} is closed by peer", target);
-                                if let Some(sessions) = sessions.upgrade() {
-                                    let mut sessions = sessions.borrow_mut();
-                                    if let Some(_session) = sessions.remove(&target) {
-                                        info!( "Remove session to {} from composite-session", target);
-                                    }
-                                }
-                                break;
-                            }
-
+                    }
+                    Ok(Some(frame)) => {
+                        trace!("Read a frame from channel={}", target);
+                        let inflight = unsafe { &mut *inflight_requests.get() };
+                        if frame.is_response() {
+                            Session::handle_response(inflight, frame, target);
+                        } else if frame.operation_code == OperationCode::GOAWAY {
+                            *state.borrow_mut() = SessionState::GoAway;
+                            let reason = if frame.has_go_away_flag(GoAwayFlags::SERVER_MAINTENANCE)
+                            {
+                                "server maintenance"
+                            } else {
+                                "connection being idle"
+                            };
+                            info!(
+                                "Peer server[{}] has notified to go-away due to {}.",
+                                target, reason
+                            );
+                        } else {
+                            warn!(
+                                "Received an unexpected request frame from target={}",
+                                target
+                            );
                         }
+                    }
+                    Ok(None) => {
+                        info!("Connection to {} is closed by peer", target);
+                        if let Some(sessions) = sessions.upgrade() {
+                            let mut sessions = sessions.borrow_mut();
+                            if let Some(_session) = sessions.remove(&target) {
+                                info!("Remove session to {} from composite-session", target);
+                            }
+                        }
+                        break;
                     }
                 }
 
@@ -172,26 +165,26 @@ impl Session {
         endpoint: &str,
         config: &Arc<config::Configuration>,
         sessions: Weak<RefCell<HashMap<SocketAddr, Session>>>,
-        shutdown: broadcast::Sender<()>,
     ) -> Self {
-        let connection = Rc::new(Connection::new(stream, endpoint));
+        let (read_half, write_half) = stream.into_split();
+        let channel_reader = ChannelReader::new(read_half, endpoint.to_string());
+        let channel_writer = ChannelWriter::new(write_half, endpoint.to_string());
         let inflight = Rc::new(UnsafeCell::new(HashMap::new()));
 
         let state = Rc::new(RefCell::new(SessionState::Active));
 
         Self::spawn_read_loop(
-            Rc::clone(&connection),
+            channel_reader,
             Rc::clone(&inflight),
             sessions,
             Rc::clone(&state),
             target,
-            shutdown.subscribe(),
         );
 
         Self {
             config: Arc::clone(config),
             target,
-            connection,
+            connection: channel_writer,
             inflight_requests: inflight,
             idle_since: Rc::new(RefCell::new(Instant::now())),
             role: Rc::new(RefCell::new(NodeRole::Unknown)),
@@ -518,7 +511,7 @@ impl Clone for Session {
         Self {
             target: self.target,
             config: Arc::clone(&self.config),
-            connection: Rc::clone(&self.connection),
+            connection: self.connection.clone(),
             inflight_requests: Rc::clone(&self.inflight_requests),
             idle_since: Rc::clone(&self.idle_since),
             role: Rc::clone(&self.role),

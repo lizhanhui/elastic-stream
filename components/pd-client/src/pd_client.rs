@@ -6,11 +6,9 @@ use model::{
     object::ObjectMetadata,
     resource::{EventType, ResourceEvent},
 };
+use monoio::time;
 use protocol::rpc::header::{ErrorCode, ResourceType};
-use tokio::{
-    sync::mpsc::{channel, Receiver, Sender},
-    time,
-};
+use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tokio_util::sync::CancellationToken;
 
 use crate::PlacementDriverClient;
@@ -59,7 +57,7 @@ where
 
         let client = self.client.clone();
         let token = self.token.child_token();
-        tokio_uring::spawn(async move {
+        monoio::spawn(async move {
             loop {
                 let version = match Self::list_resource(&token, &client, &types, &tx).await {
                     Ok(v) => v,
@@ -131,7 +129,7 @@ where
                             resource,
                             event_type: EventType::Listed,
                         };
-                        tokio::select! {
+                        monoio::select! {
                             _ = token.cancelled() => {
                                 return Err(ListAndWatchError::Cancelled);
                             }
@@ -177,7 +175,7 @@ where
                     log::trace!("watch resource success. result: {result:?}");
                     version = result.version;
                     for event in result.events {
-                        tokio::select! {
+                        monoio::select! {
                             _ = token.cancelled() => {
                                 return ListAndWatchError::Cancelled;
                             }

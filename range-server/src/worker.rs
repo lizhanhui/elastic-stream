@@ -15,6 +15,7 @@ use crate::{
 };
 use client::{client::Client, DefaultClient};
 use log::{debug, error, info, warn};
+use monoio::FusionDriver;
 use observation::metrics::{
     store_metrics::RangeServerStatistics,
     sys_metrics::{DiskStatistics, MemoryStatistics},
@@ -93,73 +94,77 @@ where
             "The number of Submission Queue entries in uring: {}",
             self.config.server_config.server.uring.queue_depth
         );
-        tokio_uring::builder()
-            .entries(self.config.server_config.server.uring.queue_depth)
-            .uring_builder(
-                tokio_uring::uring_builder()
-                    .dontfork()
-                    .setup_attach_wq(self.config.sharing_uring),
-            )
-            .start(async {
-                // Run dispatching service of Store.
-                self.store.start();
+        let uring_builder = io_uring::Builder::default();
 
-                if let Some(watcher) = self.metadata_watcher.as_ref() {
-                    watcher.start(self.pd_client.clone());
+        uring_builder
+            .dontfork()
+            .setup_attach_wq(self.config.sharing_uring);
+
+        let mut rt = monoio::RuntimeBuilder::<FusionDriver>::new()
+            .enable_all()
+            .with_entries(self.config.server_config.server.uring.queue_depth)
+            .uring_builder(uring_builder)
+            .build()
+            .unwrap();
+        rt.block_on(async {
+            // Run dispatching service of Store.
+            self.store.start();
+
+            if let Some(watcher) = self.metadata_watcher.as_ref() {
+                watcher.start(self.pd_client.clone());
+            }
+            let bind_address = &self.config.server_config.server.addr;
+            let listener = match TcpListener::bind(bind_address.parse().expect("Failed to bind")) {
+                Ok(listener) => {
+                    info!("Server starts OK, listening {}", bind_address);
+                    listener
                 }
-                let bind_address = &self.config.server_config.server.addr;
-                let listener =
-                    match TcpListener::bind(bind_address.parse().expect("Failed to bind")) {
-                        Ok(listener) => {
-                            info!("Server starts OK, listening {}", bind_address);
-                            listener
-                        }
-                        Err(e) => {
-                            eprintln!("{}", e);
-                            return;
-                        }
-                    };
-
-                if unsafe { &mut *self.range_manager.get() }
-                    .start()
-                    .await
-                    .is_err()
-                {
-                    eprintln!(
-                        "Failed to bootstrap stream ranges from PD: {}",
-                        self.config.server_config.placement_driver
-                    );
-                    panic!("Failed to retrieve bootstrap stream ranges metadata from PD");
+                Err(e) => {
+                    eprintln!("{}", e);
+                    return;
                 }
+            };
 
-                if self.config.primary {
-                    let port = self.config.server_config.observation.metrics.port;
-                    let host = self.config.server_config.observation.metrics.host.clone();
-                    tokio_uring::spawn(async move {
-                        http_serve(&host, port).await;
-                    });
-                    self.report_metrics(shutdown.subscribe());
+            if unsafe { &mut *self.range_manager.get() }
+                .start()
+                .await
+                .is_err()
+            {
+                eprintln!(
+                    "Failed to bootstrap stream ranges from PD: {}",
+                    self.config.server_config.placement_driver
+                );
+                panic!("Failed to retrieve bootstrap stream ranges metadata from PD");
+            }
+
+            if self.config.primary {
+                let port = self.config.server_config.observation.metrics.port;
+                let host = self.config.server_config.observation.metrics.host.clone();
+                monoio::spawn(async move {
+                    http_serve(&host, port).await;
+                });
+                self.report_metrics(shutdown.subscribe());
+            }
+
+            // TODO: report after pd can handle the request.
+            // self.report_range_progress(shutdown.subscribe());
+
+            self.heartbeat(shutdown.clone(), Rc::clone(&self.state));
+
+            match self.run(listener, shutdown.subscribe()).await {
+                Ok(_) => {}
+                Err(e) => {
+                    error!("Runtime failed. Cause: {}", e.to_string());
                 }
-
-                // TODO: report after pd can handle the request.
-                // self.report_range_progress(shutdown.subscribe());
-
-                self.heartbeat(shutdown.clone(), Rc::clone(&self.state));
-
-                match self.run(listener, shutdown.subscribe()).await {
-                    Ok(_) => {}
-                    Err(e) => {
-                        error!("Runtime failed. Cause: {}", e.to_string());
-                    }
-                }
-            });
+            }
+        });
     }
 
     fn report_metrics(&self, mut shutdown_rx: broadcast::Receiver<()>) {
         let client = Rc::clone(&self.client);
         let config = Arc::clone(&self.config.server_config);
         let state = Rc::clone(&self.state);
-        tokio_uring::spawn(async move {
+        monoio::spawn(async move {
             // TODO: Modify it to client report metrics interval, instead of config.client_heartbeat_interval()
             let mut interval = tokio::time::interval(config.client_heartbeat_interval());
             let mut uring_statistics = UringStatistics::new();
@@ -201,7 +206,7 @@ where
         let client = self.client.clone();
         let config = Arc::clone(&self.config.server_config);
         let range_manager = self.range_manager.clone();
-        tokio_uring::spawn(async move {
+        monoio::spawn(async move {
             let mut interval = tokio::time::interval(config.client_heartbeat_interval());
             loop {
                 tokio::select! {

@@ -2,6 +2,7 @@ use client::DefaultClient;
 use config::{Configuration, ObjectStorageConfig};
 use log::{debug, info};
 use model::object::ObjectMetadata;
+use monoio::time::sleep;
 use opendal::services::{Fs, S3};
 use opendal::Operator;
 use pd_client::pd_client::DefaultPlacementDriverClient;
@@ -14,8 +15,7 @@ use std::{
 };
 use std::{env, thread};
 use store::Store;
-use tokio::sync::{broadcast, mpsc, oneshot};
-use tokio::time::sleep;
+use tokio::sync::{mpsc, oneshot};
 
 use crate::object_manager::DefaultObjectManager;
 use crate::range_accumulator::{DefaultRangeAccumulator, RangeAccumulator};
@@ -42,13 +42,13 @@ impl AsyncObjectStorage {
         let _ = thread::Builder::new()
             .name("ObjectStorage".to_owned())
             .spawn(move || {
-                tokio_uring::start(async move {
-                    let (shutdown_tx, _shutdown_rx) = broadcast::channel(1);
+                let mut rt = monoio::RuntimeBuilder::<monoio::FusionDriver>::new()
+                    .enable_all()
+                    .build()
+                    .unwrap();
+                rt.block_on(async move {
                     let range_fetcher = DefaultRangeFetcher::new(Rc::new(store));
-                    let client = Rc::new(DefaultClient::new(
-                        Arc::new(config.clone()),
-                        shutdown_tx.clone(),
-                    ));
+                    let client = Rc::new(DefaultClient::new(Arc::new(config.clone())));
                     let client = Rc::new(DefaultPlacementDriverClient::new(client));
                     let object_manager = DefaultObjectManager::new(
                         &config.object_storage.cluster,
@@ -67,7 +67,7 @@ impl AsyncObjectStorage {
                             }
                             Task::GetObjects(task) => {
                                 let object_storage = object_storage.clone();
-                                tokio_uring::spawn(async move {
+                                monoio::spawn(async move {
                                     let rst = object_storage
                                         .get_objects(
                                             task.stream_id,
@@ -82,7 +82,7 @@ impl AsyncObjectStorage {
                             }
                             Task::GetOffloadingRange(tx) => {
                                 let object_storage = object_storage.clone();
-                                tokio_uring::spawn(async move {
+                                monoio::spawn(async move {
                                     let rst = object_storage.get_offloading_range().await;
                                     let _ = tx.send(rst);
                                 });
@@ -90,12 +90,11 @@ impl AsyncObjectStorage {
                             Task::Close(_) => {
                                 let object_storage = object_storage.clone();
                                 object_storage.close().await;
-                                let _ = shutdown_tx.send(());
                                 break;
                             }
                             Task::Watch(tx) => {
                                 let object_storage = object_storage.clone();
-                                tokio_uring::spawn(async move {
+                                monoio::spawn(async move {
                                     let rst = object_storage.watch_offload_progress().await;
                                     let _ = tx.send(rst);
                                 });
@@ -367,7 +366,7 @@ where
 
     fn listen_owner_change(object_storage: Rc<Self>, shutdown_rx: ShutdownRx) {
         let mut rx = object_storage.object_manager.owner_watcher();
-        tokio_uring::spawn(async move {
+        monoio::spawn(async move {
             let mut notify_shutdown_rx = shutdown_rx.subscribe();
             loop {
                 tokio::select! {
@@ -401,10 +400,10 @@ where
         max_duration: Duration,
         shutdown_rx: ShutdownRx,
     ) {
-        tokio_uring::spawn(async move {
+        monoio::spawn(async move {
             let mut notify_shutdown_rx = shutdown_rx.subscribe();
             loop {
-                tokio::select! {
+                monoio::select! {
                     _ = notify_shutdown_rx.recv() => {
                         break;
                     }

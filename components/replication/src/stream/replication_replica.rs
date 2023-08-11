@@ -134,7 +134,7 @@ where
 
         // Spawn a task to replicate data to the target range-server.
         let log_ident = self.log_ident.clone();
-        tokio_uring::spawn(async move {
+        monoio::spawn(async move {
             let mut attempts = 1;
             loop {
                 if !*writable.borrow() {

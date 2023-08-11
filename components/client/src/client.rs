@@ -17,6 +17,7 @@ use model::{
     stream::StreamMetadata,
     AppendResultEntry, ListRangeCriteria,
 };
+use monoio::time;
 use observation::metrics::{
     store_metrics::RangeServerStatistics,
     sys_metrics::{DiskStatistics, MemoryStatistics},
@@ -24,7 +25,6 @@ use observation::metrics::{
 };
 use protocol::rpc::header::{ErrorCode, RangeServerState, ResourceType, SealKind};
 use std::{cell::UnsafeCell, rc::Rc, sync::Arc, time::Duration};
-use tokio::{sync::broadcast, time};
 
 #[cfg(any(test, feature = "mock"))]
 use mockall::automock;
@@ -409,8 +409,8 @@ impl Client for DefaultClient {
 }
 
 impl DefaultClient {
-    pub fn new(config: Arc<config::Configuration>, shutdown: broadcast::Sender<()>) -> Self {
-        let session_manager = Rc::new(UnsafeCell::new(SessionManager::new(&config, shutdown)));
+    pub fn new(config: Arc<config::Configuration>) -> Self {
+        let session_manager = Rc::new(UnsafeCell::new(SessionManager::new(&config)));
 
         Self {
             session_manager,
@@ -460,86 +460,76 @@ mod tests {
     };
     use protocol::rpc::header::{ClientRole, RangeServerState, ResourceType, SealKind};
     use std::{error::Error, sync::Arc};
-    use tokio::sync::broadcast;
 
     use crate::{client::Client, heartbeat::HeartbeatData, DefaultClient};
 
-    #[test]
-    fn test_broadcast_heartbeat() -> Result<(), Box<dyn Error>> {
-        tokio_uring::start(async {
-            #[allow(unused_variables)]
-            let port = 2378;
-            let port = run_listener().await;
-            let mut config = config::Configuration {
-                placement_driver: format!("127.0.0.1:{}", port),
-                ..Default::default()
-            };
-            config.check_and_apply().unwrap();
-            let config = Arc::new(config);
-            let (tx, _rx) = broadcast::channel(1);
-            let client = DefaultClient::new(Arc::clone(&config), tx);
-            let heartbeat_data = HeartbeatData {
-                mandatory: false,
-                role: ClientRole::CLIENT_ROLE_RANGE_SERVER,
-                state: Some(RangeServerState::RANGE_SERVER_STATE_READ_WRITE),
-            };
-            client.broadcast_heartbeat(&heartbeat_data).await;
-            Ok(())
-        })
+    #[monoio::test]
+    async fn test_broadcast_heartbeat() -> Result<(), Box<dyn Error>> {
+        #[allow(unused_variables)]
+        let port = 2378;
+        let port = run_listener().await;
+        let mut config = config::Configuration {
+            placement_driver: format!("127.0.0.1:{}", port),
+            ..Default::default()
+        };
+        config.check_and_apply().unwrap();
+        let config = Arc::new(config);
+        let client = DefaultClient::new(Arc::clone(&config));
+        let heartbeat_data = HeartbeatData {
+            mandatory: false,
+            role: ClientRole::CLIENT_ROLE_RANGE_SERVER,
+            state: Some(RangeServerState::RANGE_SERVER_STATE_READ_WRITE),
+        };
+        client.broadcast_heartbeat(&heartbeat_data).await;
+        Ok(())
     }
 
-    #[test]
-    fn test_allocate_id() -> Result<(), Box<dyn Error>> {
+    #[monoio::test]
+    async fn test_allocate_id() -> Result<(), Box<dyn Error>> {
         ulog::try_init_log();
-        tokio_uring::start(async {
-            #[allow(unused_variables)]
-            let port = 2378;
-            let port = run_listener().await;
-            let config = config::Configuration {
-                placement_driver: format!("127.0.0.1:{}", port),
-                ..Default::default()
-            };
-            let config = Arc::new(config);
-            let (tx, _rx) = broadcast::channel(1);
-            let client = DefaultClient::new(config, tx);
-            let id = client.allocate_id("localhost").await?;
-            assert_eq!(1, id);
-            Ok(())
-        })
+        #[allow(unused_variables)]
+        let port = 2378;
+        let port = run_listener().await;
+        let config = config::Configuration {
+            placement_driver: format!("127.0.0.1:{}", port),
+            ..Default::default()
+        };
+        let config = Arc::new(config);
+        let client = DefaultClient::new(config);
+        let id = client.allocate_id("localhost").await?;
+        assert_eq!(1, id);
+        Ok(())
     }
 
-    #[test]
-    fn test_create_stream() -> Result<(), Box<dyn Error>> {
+    #[monoio::test]
+    async fn test_create_stream() -> Result<(), Box<dyn Error>> {
         ulog::try_init_log();
-        tokio_uring::start(async move {
-            #[allow(unused_variables)]
-            let port = 12378;
-            let port = run_listener().await;
-            let config = config::Configuration {
-                placement_driver: format!("127.0.0.1:{}", port),
-                ..Default::default()
-            };
-            let config = Arc::new(config);
-            let (tx, _rx) = broadcast::channel(1);
-            let client = DefaultClient::new(config, tx);
-            let stream_metadata = client
-                .create_stream(StreamMetadata {
-                    stream_id: None,
-                    replica: 1,
-                    ack_count: 1,
-                    retention_period: std::time::Duration::from_secs(1),
-                    start_offset: 0,
-                })
-                .await?;
-            dbg!(&stream_metadata);
-            assert!(stream_metadata.stream_id.is_some());
-            assert_eq!(1, stream_metadata.replica);
-            assert_eq!(
-                std::time::Duration::from_secs(1),
-                stream_metadata.retention_period
-            );
-            Ok(())
-        })
+        #[allow(unused_variables)]
+        let port = 12378;
+        let port = run_listener().await;
+        let config = config::Configuration {
+            placement_driver: format!("127.0.0.1:{}", port),
+            ..Default::default()
+        };
+        let config = Arc::new(config);
+        let client = DefaultClient::new(config);
+        let stream_metadata = client
+            .create_stream(StreamMetadata {
+                stream_id: None,
+                replica: 1,
+                ack_count: 1,
+                retention_period: std::time::Duration::from_secs(1),
+                start_offset: 0,
+            })
+            .await?;
+        dbg!(&stream_metadata);
+        assert!(stream_metadata.stream_id.is_some());
+        assert_eq!(1, stream_metadata.replica);
+        assert_eq!(
+            std::time::Duration::from_secs(1),
+            stream_metadata.retention_period
+        );
+        Ok(())
     }
 
     #[test]
@@ -591,62 +581,57 @@ mod tests {
         })
     }
 
-    #[test]
-    fn test_create_range_range_server() -> Result<(), EsError> {
+    #[monoio::test]
+    async fn test_create_range_range_server() -> Result<(), EsError> {
         ulog::try_init_log();
-        tokio_uring::start(async {
-            #[allow(unused_variables)]
-            let placement_driver_port = 12378;
-            let placement_driver_port = run_listener().await;
+        #[allow(unused_variables)]
+        let placement_driver_port = 12378;
+        let placement_driver_port = run_listener().await;
 
-            #[allow(unused_variables)]
-            let range_server_port = 10911;
-            let range_server_port = run_listener().await;
+        #[allow(unused_variables)]
+        let range_server_port = 10911;
+        let range_server_port = run_listener().await;
 
-            let config = config::Configuration {
-                placement_driver: format!("127.0.0.1:{}", placement_driver_port),
-                ..Default::default()
-            };
+        let config = config::Configuration {
+            placement_driver: format!("127.0.0.1:{}", placement_driver_port),
+            ..Default::default()
+        };
 
-            let target = format!("127.0.0.1:{}", range_server_port);
+        let target = format!("127.0.0.1:{}", range_server_port);
 
-            let config = Arc::new(config);
-            let (tx, _rx) = broadcast::channel(1);
-            let client = DefaultClient::new(config, tx);
-            let range = RangeMetadata::new_range(203, 0, 0, 0, None, 1, 1);
-            client.create_range_replica(&target, range).await
-        })
+        let config = Arc::new(config);
+        let client = DefaultClient::new(config);
+        let range = RangeMetadata::new_range(203, 0, 0, 0, None, 1, 1);
+        client.create_range_replica(&target, range).await
     }
 
-    #[test]
-    fn test_list_range_by_stream() -> Result<(), EsError> {
+    #[monoio::test]
+    async fn test_list_range_by_stream() -> Result<(), EsError> {
         ulog::try_init_log();
-        tokio_uring::start(async {
-            #[allow(unused_variables)]
-            let port = 2378;
-            let port = run_listener().await;
-            let config = config::Configuration {
-                placement_driver: format!("127.0.0.1:{}", port),
-                ..Default::default()
-            };
-            let config = Arc::new(config);
-            let (tx, _rx) = broadcast::channel(1);
-            let client = DefaultClient::new(config, tx);
+        #[allow(unused_variables)]
+        let port = 2378;
+        let port = run_listener().await;
+        let config = config::Configuration {
+            placement_driver: format!("127.0.0.1:{}", port),
+            ..Default::default()
+        };
+        let config = Arc::new(config);
+        let (tx, _rx) = broadcast::channel(1);
+        let client = DefaultClient::new(config, tx);
 
-            for i in 1..2 {
-                let criteria = ListRangeCriteria::new(None, Some(i as u64));
-                let ranges = client.list_ranges(criteria).await.unwrap();
-                assert!(
-                    !ranges.is_empty(),
-                    "Test server should have fed some mocking ranges"
-                );
-                for range in ranges.iter() {
-                    trace!("{}", range)
-                }
+        for i in 1..2 {
+            let criteria = ListRangeCriteria::new(None, Some(i as u64));
+            let ranges = client.list_ranges(criteria).await.unwrap();
+            assert!(
+                !ranges.is_empty(),
+                "Test server should have fed some mocking ranges"
+            );
+            for range in ranges.iter() {
+                trace!("{}", range)
             }
+        }
 
-            Ok(())
-        })
+        Ok(())
     }
 
     #[test]

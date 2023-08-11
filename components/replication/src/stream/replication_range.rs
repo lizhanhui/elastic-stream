@@ -181,7 +181,7 @@ where
         for replica in replicas.iter() {
             let end_offsets = end_offsets.clone();
             let replica = replica.clone();
-            seal_tasks.push(tokio_uring::spawn(async move {
+            seal_tasks.push(monoio::spawn(async move {
                 if let Ok(replica_end_offset) = replica.seal(end_offset).await {
                     (*end_offsets).borrow_mut().push(replica_end_offset);
                 }
@@ -275,7 +275,7 @@ where
             let address = server.advertise_address.clone();
             let metadata = metadata.clone();
             let client = client.clone();
-            create_replica_tasks.push(tokio_uring::spawn(async move {
+            create_replica_tasks.push(monoio::spawn(async move {
                 client
                     .create_range_replica(&address, metadata)
                     .await
@@ -527,7 +527,7 @@ where
                         let ack_count = self.metadata.ack_count();
                         let log_ident = self.log_ident.clone();
                         let range = self.weak_self.upgrade();
-                        tokio_uring::spawn(async move {
+                        monoio::spawn(async move {
                             if Self::replicas_seal(
                                 &log_ident,
                                 replicas,

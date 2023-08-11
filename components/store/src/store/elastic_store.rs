@@ -189,7 +189,7 @@ impl Store for ElasticStore {
     fn start(&self) {
         let cq = Rc::clone(&self.cq_rx);
         let inflight = Rc::clone(&self.inflight_appends);
-        tokio_uring::spawn(async move {
+        monoio::spawn(async move {
             let appends = unsafe { &mut *inflight.get() };
             'main: loop {
                 // Try to reap append result as many as possible.
@@ -220,7 +220,7 @@ impl Store for ElasticStore {
                 }
 
                 // This spinning task shall not take up too much run time of the executor.
-                tokio::time::sleep(Duration::from_millis(1)).await;
+                monoio::time::sleep(Duration::from_millis(1)).await;
             }
         });
     }

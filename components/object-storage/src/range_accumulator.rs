@@ -128,7 +128,7 @@ impl DefaultRangeAccumulator {
         range_offload: Rc<RangeOffload<M>>,
         shutdown_rx: ShutdownRx,
     ) {
-        tokio_uring::spawn(async move {
+        monoio::spawn(async move {
             let stream_id = range.stream_id;
             let range_index = range.range_index;
             let mut next_offset = start_offset;

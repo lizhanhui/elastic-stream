@@ -74,7 +74,7 @@ where
 
         let weak_this = this.weak_self.borrow().clone();
         let closed = this.closed.clone();
-        tokio_uring::spawn(async move {
+        monoio::spawn(async move {
             Self::append_task(
                 weak_this,
                 append_requests_rx,

@@ -11,6 +11,7 @@ use model::object::gen_footer;
 use model::object::gen_object_key;
 use model::object::BLOCK_DELIMITER;
 use model::record::flat_record::RecordMagic;
+use monoio::task::JoinHandle;
 use observation::metrics::object_metrics;
 use opendal::Operator;
 use opendal::Writer;
@@ -24,7 +25,6 @@ use tokio::sync::mpsc;
 use tokio::sync::oneshot;
 use tokio::sync::Semaphore;
 use tokio::sync::SemaphorePermit;
-use tokio::task::JoinHandle;
 use tokio::time::sleep;
 use util::bytes::vec_bytes_to_bytes;
 
@@ -228,7 +228,7 @@ impl MultiPartObject {
         mut rx: mpsc::UnboundedReceiver<MultiPartWriteEvent>,
         permit: SemaphorePermit<'static>,
     ) {
-        tokio_uring::spawn(async move {
+        monoio::spawn(async move {
             // TODO: delay init multi-part object, if there is only one part or several parts is too small. the multi-part object is not necessary.
             // use single Object put instead to save API call.
             let mut data_len = 0;
@@ -386,7 +386,7 @@ where
         let (sparse_index, end_offset, _) =
             gen_sparse_index(object_metadata.start_offset, &payload, 0, sparse_size)
                 .unwrap_or_else(|_| panic!("parse record fail {payload:?}"));
-        let join_handle = tokio_uring::spawn(async move {
+        let join_handle = monoio::spawn(async move {
             object_metadata.end_offset_delta = (end_offset - object_metadata.start_offset) as u32;
             // data block
             let payload_length: usize = payload.iter().map(Bytes::len).sum();

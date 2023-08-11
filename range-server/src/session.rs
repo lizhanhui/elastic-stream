@@ -50,7 +50,7 @@ where
     }
 
     pub(crate) fn process(self) {
-        tokio_uring::spawn(async move {
+        monoio::spawn(async move {
             Self::process0(
                 self.store,
                 self.range_manager,

@@ -177,7 +177,7 @@ impl DefaultMetadataManager {
         stream_map: Rc<RefCell<HashMap<u64, Stream>>>,
         mut listeners: Vec<Listener>,
     ) {
-        tokio_uring::spawn(async move {
+        monoio::spawn(async move {
             loop {
                 match object_rx.recv().await {
                     Some(offload_progress) => {

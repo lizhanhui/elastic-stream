@@ -157,6 +157,7 @@ where
     }
 }
 
+#[derive(Clone)]
 pub struct ChannelWriter {
     peer_address: String,
     tx: mpsc::unbounded::Tx<WriteTask>,
@@ -200,10 +201,17 @@ impl ChannelWriter {
                         }
                     }
                     None => {
-                        log::info!(
-                            "Connection to {} should be closed, stop write coroutine loop",
-                            &target_address
-                        );
+                        match stream.shutdown().await {
+                            Ok(()) => {
+                                info!("Closed write half of connection to {}", &target_address);
+                            }
+                            Err(e) => {
+                                warn!(
+                                    "Failed to close write half of connection to {}",
+                                    &target_address
+                                );
+                            }
+                        }
                         break;
                     }
                 }
@@ -259,6 +267,10 @@ impl ChannelWriter {
                 "Connection is closed",
             ))
         })?
+    }
+
+    pub fn peer_address(&self) -> &str {
+        &self.peer_address
     }
 }
 

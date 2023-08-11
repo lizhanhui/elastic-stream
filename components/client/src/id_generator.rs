@@ -2,7 +2,6 @@
 
 use log::{error, trace};
 use std::sync::Arc;
-use tokio::sync::{broadcast, oneshot};
 
 use crate::{client::Client, error::ClientError, DefaultClient};
 
@@ -27,11 +26,15 @@ impl PlacementDriverIdGenerator {
 
 impl IdGenerator for PlacementDriverIdGenerator {
     fn generate(&self) -> Result<i32, ClientError> {
-        let (tx, rx) = oneshot::channel();
+        let (tx, rx) = flume::bounded(1);
         let config = Arc::clone(&self.config);
-        tokio_uring::start(async {
-            let (shutdown_tx, _shutdown_rx) = broadcast::channel(1);
-            let client = DefaultClient::new(config, shutdown_tx);
+        let mut rt = monoio::RuntimeBuilder::<monoio::FusionDriver>::new()
+            .with_entries(128)
+            .enable_all()
+            .build()
+            .map_err(|_e| ClientError::ClientInternal)?;
+        rt.block_on(async {
+            let client = DefaultClient::new(config);
 
             match client.allocate_id(&self.config.server.advertise_addr).await {
                 Ok(id) => {
@@ -49,7 +52,7 @@ impl IdGenerator for PlacementDriverIdGenerator {
             }
         });
 
-        match rx.blocking_recv() {
+        match rx.recv() {
             Ok(Ok(id)) => Ok(id),
             Ok(Err(_)) => Err(ClientError::ClientInternal),
             Err(_e) => Err(ClientError::ClientInternal),

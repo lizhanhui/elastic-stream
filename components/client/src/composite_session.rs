@@ -37,11 +37,11 @@ use std::{
     sync::Arc,
     time::{Duration, Instant},
 };
-use tokio::{
-    sync::broadcast,
+
+use monoio::{
+    net::TcpStream,
     time::{self, timeout},
 };
-use tokio_uring::net::TcpStream;
 
 use crate::{request, response, NodeRole};
 
@@ -51,7 +51,6 @@ pub(crate) struct CompositeSession {
     lb_policy: LbPolicy,
     endpoints: RefCell<Vec<SocketAddr>>,
     sessions: Rc<RefCell<HashMap<SocketAddr, Session>>>,
-    shutdown: broadcast::Sender<()>,
     refresh_cluster_instant: RefCell<Instant>,
 }
 
@@ -60,7 +59,6 @@ impl CompositeSession {
         target: T,
         config: Arc<Configuration>,
         lb_policy: LbPolicy,
-        shutdown: broadcast::Sender<()>,
     ) -> Result<Self, EsError>
     where
         T: ToSocketAddrs + ToString,
@@ -78,7 +76,6 @@ impl CompositeSession {
                 config.client_connect_timeout(),
                 Arc::clone(&config),
                 Rc::clone(&sessions),
-                shutdown.clone(),
             )
             .await;
             match res {
@@ -100,7 +97,6 @@ impl CompositeSession {
             lb_policy,
             endpoints,
             sessions,
-            shutdown,
             refresh_cluster_instant: RefCell::new(Instant::now()),
         })
     }
@@ -201,7 +197,6 @@ impl CompositeSession {
                 self.config.client_connect_timeout(),
                 Arc::clone(&self.config),
                 Rc::clone(&self.sessions),
-                self.shutdown.clone(),
             )
         });
 
@@ -549,7 +544,6 @@ impl CompositeSession {
                         self.config.client_connect_timeout(),
                         Arc::clone(&self.config),
                         Rc::clone(&self.sessions),
-                        self.shutdown.clone(),
                     )
                     .await?;
                     self.sessions.borrow_mut().insert(*addr, session);
@@ -688,7 +682,6 @@ impl CompositeSession {
                         self.config.client_connect_timeout(),
                         Arc::clone(&self.config),
                         Rc::clone(&self.sessions),
-                        self.shutdown.clone(),
                     )
                 })
                 .collect::<Vec<_>>();
@@ -699,7 +692,7 @@ impl CompositeSession {
             trace!("Reconnecting {} sessions", futures.len());
             let need_await = self.sessions.borrow().is_empty();
             let sessions = Rc::clone(&self.sessions);
-            let handle = tokio_uring::spawn(async move {
+            let handle = monoio::spawn(async move {
                 futures::future::join_all(futures)
                     .await
                     .into_iter()
@@ -725,7 +718,6 @@ impl CompositeSession {
         duration: Duration,
         config: Arc<Configuration>,
         sessions: Rc<RefCell<HashMap<SocketAddr, Session>>>,
-        shutdown: broadcast::Sender<()>,
     ) -> Result<Session, EsError> {
         trace!("Establishing connection to {:?}", addr);
         let endpoint = addr.to_string();
@@ -771,7 +763,6 @@ impl CompositeSession {
             &endpoint,
             &config,
             Rc::downgrade(&sessions),
-            shutdown.clone(),
         ))
     }
 
@@ -1104,17 +1095,14 @@ mod tests {
     use crate::lb_policy::LbPolicy;
     use mock_server::run_listener;
     use std::{error::Error, sync::Arc};
-    use tokio::sync::broadcast;
 
     #[test]
     fn test_new() -> Result<(), Box<dyn Error>> {
         let config = Arc::new(config::Configuration::default());
-        tokio_uring::start(async {
+        monoio::start(async {
             let port = run_listener().await;
             let target = format!("{}:{}", "localhost", port);
-            let (shutdown_tx, _shutdown_rx) = broadcast::channel(1);
-            let _session =
-                CompositeSession::new(&target, config, LbPolicy::PickFirst, shutdown_tx).await?;
+            let _session = CompositeSession::new(&target, config, LbPolicy::PickFirst).await?;
 
             Ok(())
         })
@@ -1129,9 +1117,8 @@ mod tests {
         tokio_uring::start(async {
             let port = run_listener().await;
             let target = format!("{}:{}", "localhost", port);
-            let (shutdown_tx, _shutdown_rx) = broadcast::channel(1);
             let composite_session =
-                CompositeSession::new(&target, config, LbPolicy::PickFirst, shutdown_tx).await?;
+                CompositeSession::new(&target, config, LbPolicy::PickFirst).await?;
             let nodes = composite_session
                 .describe_placement_driver_cluster()
                 .await

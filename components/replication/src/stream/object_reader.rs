@@ -175,7 +175,7 @@ impl AsyncObjectReader {
         tx: oneshot::Sender<Result<Vec<RecordsBlock>, EsError>>,
     ) {
         let op = self.op.as_ref().unwrap().clone();
-        tokio_uring::spawn(async move {
+        monoio::spawn(async move {
             let mut all_bytes = BytesMut::new();
             let mut start_pos = range.0 as u64;
             let mut end_pos = range.1 as u64;

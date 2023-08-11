@@ -2,15 +2,14 @@ use chrono::Local;
 use log::info;
 use minitrace::{local::Guard, prelude::Collector, Span};
 use std::{net::SocketAddr, time::Duration};
-use tokio::sync::mpsc::{self, UnboundedSender};
 
 pub struct Tracer {
     span: Span,
     collector: Option<Collector>,
-    tx: UnboundedSender<Collector>,
+    tx: flume::Sender<Collector>,
 }
 impl Tracer {
-    pub fn new(root: Span, collector: Collector, tx: UnboundedSender<Collector>) -> Self {
+    pub fn new(root: Span, collector: Collector, tx: flume::Sender<Collector>) -> Self {
         Self {
             span: root,
             collector: Some(collector),
@@ -37,11 +36,11 @@ impl Drop for Tracer {
 }
 
 pub struct TracingService {
-    tx: mpsc::UnboundedSender<Collector>,
+    tx: flume::Sender<Collector>,
 }
 impl TracingService {
     pub fn new(threshold: Duration) -> Self {
-        let (tx, mut rx) = mpsc::unbounded_channel::<Collector>();
+        let (tx, mut rx) = flume::unbounded::<Collector>();
         let _ = std::thread::Builder::new()
             .name("TracingServiceReportThread".to_string())
             .spawn(move || {
@@ -49,15 +48,18 @@ impl TracingService {
                 let base_trace_id = now.timestamp_millis() as u64;
                 let datetime_str = now.format("%Y-%m-%d %H:%M:%S").to_string();
                 let service_name = "JNI#".to_owned() + &datetime_str;
-                if let Ok(rt) = tokio::runtime::Builder::new_current_thread().build() {
+                if let Ok(mut rt) = monoio::RuntimeBuilder::<monoio::FusionDriver>::new()
+                    .enable_all()
+                    .build()
+                {
                     let mut trace_id = base_trace_id;
                     rt.block_on(async {
                         loop {
-                            match rx.recv().await {
-                                Some(collector) => {
+                            match rx.recv_async().await {
+                                Ok(collector) => {
                                     trace_id += 1;
                                     let service_name = service_name.clone();
-                                    tokio::spawn(async move {
+                                    monoio::spawn(async move {
                                         Self::report_tracing(
                                             threshold,
                                             collector,
@@ -67,7 +69,7 @@ impl TracingService {
                                         .await;
                                     });
                                 }
-                                None => {
+                                Err(_) => {
                                     info!("tracing service report channel is dropped");
                                     break;
                                 }

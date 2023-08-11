@@ -23,7 +23,12 @@ impl StreamClient {
         let _ = std::thread::Builder::new()
             .name(format!("Runtime-{}", id))
             .spawn(move || {
-                tokio_uring::builder().entries(32768).start(async move {
+                let mut rt = monoio::RuntimeBuilder::<monoio::FusionDriver>::new()
+                    .with_entries(32768)
+                    .enable_all()
+                    .build()
+                    .unwrap();
+                rt.block_on(async move {
                     let stream_manager = StreamManager::new(config);
                     Self::spawn_loop(stream_manager, rx).await;
                 })

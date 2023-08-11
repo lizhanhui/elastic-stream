@@ -19,9 +19,9 @@ use protocol::rpc::header::{
     StatusT, StreamT, WatchResourceRequest, WatchResourceResponseT,
 };
 
-use tokio::sync::oneshot;
-use tokio_uring::net::TcpListener;
-use transport::connection::Connection;
+use local_sync::oneshot;
+use monoio::{io::Splitable, net::TcpListener};
+use transport::connection::{ChannelReader, ChannelWriter};
 
 fn serve_heartbeat(request: &HeartbeatRequest, frame: &mut Frame) {
     debug!("{:?}", request);
@@ -130,21 +130,23 @@ fn serve_report_metrics(request: &ReportMetricsRequest, frame: &mut Frame) {
 /// Once it accepts a connection, it quits immediately.
 pub async fn run_listener() -> u16 {
     let (tx, rx) = oneshot::channel();
-    tokio_uring::spawn(async move {
+    monoio::spawn(async move {
         // We are using dual-stack mode.
         // Binding to "[::]:0", the any address for IPv6, will also listen for IPv4.
-        let listener = TcpListener::bind("[::]:0".parse().unwrap()).unwrap();
+        let listener = TcpListener::bind("[::]:0").unwrap();
         let port = listener.local_addr().unwrap().port();
         debug!("TestServer is up, listening {}", port);
         tx.send(port).unwrap();
         while let Ok((conn, sock_addr)) = listener.accept().await {
             info!("TestServer accepted a connection from {:?}", sock_addr);
-            tokio_uring::spawn(async move {
+            monoio::spawn(async move {
                 let addr = sock_addr.to_string();
-                let channel = Connection::new(conn, &addr);
+                let (read_half, write_half) = conn.into_split();
+                let mut channel_reader = ChannelReader::new(read_half, addr.clone());
+                let channel_writer = ChannelWriter::new(write_half, addr.clone());
 
                 loop {
-                    if let Ok(frame) = channel.read_frame().await {
+                    if let Ok(frame) = channel_reader.read_frame().await {
                         if let Some(frame) = frame {
                             info!(
                                 "TestServer is processing a `{}` request",
@@ -165,7 +167,7 @@ pub async fn run_listener() -> u16 {
                                             flatbuffers::root::<HeartbeatRequest>(buf)
                                         {
                                             trace!("Start to sleep...");
-                                            tokio::time::sleep(Duration::from_millis(500)).await;
+                                            monoio::time::sleep(Duration::from_millis(500)).await;
                                             trace!("Heartbeat sleep completed");
                                             serve_heartbeat(&heartbeat, &mut response_frame);
                                         } else {
@@ -284,7 +286,7 @@ pub async fn run_listener() -> u16 {
                                             flatbuffers::root::<ReportMetricsRequest>(buf)
                                         {
                                             trace!("Start to sleep...");
-                                            tokio::time::sleep(Duration::from_millis(500)).await;
+                                            monoio::time::sleep(Duration::from_millis(500)).await;
                                             trace!("ReportMetrics sleep completed");
                                             serve_report_metrics(
                                                 &reportmetrics,
@@ -342,7 +344,7 @@ pub async fn run_listener() -> u16 {
                             }
 
                             let opcode = response_frame.operation_code;
-                            match channel.write_frame(response_frame).await {
+                            match channel_writer.write_frame(response_frame).await {
                                 Ok(_) => {
                                     trace!(
                                         "TestServer writes the `{}` response back directly",

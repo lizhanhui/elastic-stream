@@ -27,6 +27,8 @@ protocol = { path = "../protocol" }
 thiserror = { workspace = true }
 monoio = { workspace = true }
 transport = { path = "../transport" }
+tower = { workspace = true }
+flume = { workspace = true }
 
 [dev-dependencies]
 cargo-llvm-cov = { workspace = true }

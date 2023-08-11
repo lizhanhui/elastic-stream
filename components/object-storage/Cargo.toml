@@ -23,6 +23,8 @@ protocol = { path = "../protocol" }
 store = { path = "../store" }
 monoio = { workspace = true }
 util = { path = "../util" }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
 
 [dev-dependencies]
 pd-client = { path = "../pd-client", features = ["mock"] }

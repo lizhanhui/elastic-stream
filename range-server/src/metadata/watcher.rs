@@ -31,7 +31,7 @@ impl MetadataWatcher for DefaultMetadataWatcher {
         let mut rx =
             pd_client.list_and_watch_resource(&[ResourceType::STREAM, ResourceType::RANGE]);
         let mut listeners = self.listeners.clone();
-        tokio_uring::spawn(async move {
+        monoio::spawn(async move {
             loop {
                 match rx.recv().await {
                     Some(event) => {
