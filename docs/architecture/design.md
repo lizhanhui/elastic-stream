@@ -1,3 +1,15 @@
+## Concepts
+
+### Record
+
+### Stream
+
+### Range
+
+### Range Server
+
+### Placement Driver
+
 ## Layers
 Each layer scales independently.
 
