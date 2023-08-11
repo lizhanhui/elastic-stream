@@ -40,10 +40,41 @@ Besides innovations in the cloud, modern software and hardware provide capabilit
 | Sequential Write| 6,600 MB/s  |
 | Random Write    | 250K IOPS   |
 
-Fundamentals have changed:
-* SSD serves millions of IOPS while HDD typically have 200 IOPS;
+After comparing with widely known I/O specs of HDDs, apparently, fundamentals have changed:
+* SSD serves millions of IOPS while HDD is generally some 200 IOPS;
 * Sequential throughput, both read and write, is only 2x of their random counterparts for SSD; HDD, however, is generally 100x;
-* High queue depth(some 32) is required to fully utilize its I/O capabilities;
+* High queue depth(some 32) is required to fully utilize I/O capabilities of SSD; while one I/O thread suffices for HDD;
+
+### Thread-per-Core
+
+Moderately complex application has many tasks to perform. For instance, it may need to read data from a database, feed that data into specific business process pipelines, and then call other internal services and aggregate all intermediate results to generate final outcome. Some of those tasks are naturally sequential, but many can be done in parallel. Considering modern hardware offers:
+
+* an increasing number of cores;
+* SSDs with millions of I/O per second;
+* NICs with some 100 GB/s;
+
+it is important to efficiently use them to scale linearly with evolution of the modern hardware. This can mean many things in practice. For instance, moving from one SSD to two should double the number of I/O's per second. Or doubling the number of CPU cores should double the amount of computation possible. Or even doubling the number of NICs should double the network throughput.
+
+The simplest and most traditional way of achieving that goal is by employing threads. Place some shared data onto the heap; protect it with a lock, and then have all threads of execution acquire the lock only when accessing the data. This model has many great properties:
+
+* It's easy to convert single-threaded programs to multi-threaded programs because there is no need to change the data model from the single-threaded version. Adding a lock around the data would suffice.
+
+* The program is easy to develop and maintain. It is a synchronous, imperative list of statements from top to bottom. The scheduler of operating system can interrupt threads, allowing for efficient time-sharing of CPU resources.
+
+Unfortunately, as the number of threads scales up, contention on the lock around the shared data does too.
+Even if there a multiple threading running, just one of these threads will make progress at a time, leaving the rest doing nothing but wait. Every time a thread needs to give way to another thread, there is a context switch. Context switches are expensive, costing around five microseconds. That doesn’t sound expensive, but if we take into account that famed Linux Developer Jens Axboe just recently published results for his new io_uring kernel infrastructure with Storage I/O times below four microseconds, that means that we are now at a point where a context switch between threads is more expensive than an I/O operation!
+
+To get rid of the overhead and achieve goal of scaling linearly with addition of hardware resources, the software's threads of execution must be independent from one another as much as possible. In practice, that means avoiding software locks and even atomic instructions.
+
+Thread-per-core is an architecture that meets this goal. Instead of placing shared data in a global location that all threads access after acquiring a lock, thread-per-core will assign that data to a single thread, which governs a CPU processor and follows run-to-complete paradigm. When a thread wants to access  data of a different thread, it passes a message to the owning thread to perform the operation on its behalf.
+
+This pattern has several advantages:
+* No or minimal context switches
+* cache friendly, including i-cache, d-cache and LLC
+* NUMA friendly
+* No lock contention
+
+Thread-per-core architecture is the defacto solution in the storage communities, both kernel solution(io-uring) and kernel-bypass counterpart: DPDK, SPDK. [Research](https://atlarge-research.com/pdfs/2022-systor-apis.pdf) shows both of them can saturate millions of IOPS of NVMe SSD. Further, they [improve tail latencies of applications by up to 71%](https://helda.helsinki.fi//bitstream/handle/10138/313642/tpc_ancs19.pdf?sequence=1).
 
 
 ### Object Storage
