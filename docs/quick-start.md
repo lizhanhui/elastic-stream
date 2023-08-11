@@ -7,7 +7,7 @@ Download deb file from [latest release](https://github.com/AutoMQ/elastic-stream
 ```shell
 # Please change the file name to match your OS architecture. 
 dpkg -i pd_0.2.8_amd64.deb
-dpkg -i prange-server_0.2.8_amd64.deb
+dpkg -i range-server_0.2.8_amd64.deb
 ```
 
 ## Build from source
