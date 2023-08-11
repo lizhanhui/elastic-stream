@@ -6,7 +6,7 @@ import (
 
 	"github.com/AutoMQ/pd/api/rpcfb/rpcfb"
 	"github.com/AutoMQ/pd/pkg/sbp/protocol"
-	"github.com/AutoMQ/pd/pkg/server/cluster"
+	"github.com/AutoMQ/pd/pkg/server/model"
 	"github.com/AutoMQ/pd/pkg/util/traceutil"
 )
 
@@ -21,7 +21,7 @@ func (h *Handler) Heartbeat(req *protocol.HeartbeatRequest, resp *protocol.Heart
 		err := h.c.Heartbeat(ctx, req.RangeServer)
 		if err != nil {
 			switch {
-			case errors.Is(err, cluster.ErrNotLeader):
+			case errors.Is(err, model.ErrPDNotLeader):
 				// It's ok to ignore this error, as all pd nodes will receive this request.
 				break
 			default:
@@ -40,7 +40,7 @@ func (h *Handler) AllocateID(req *protocol.IDAllocationRequest, resp *protocol.I
 	id, err := h.c.AllocateID(ctx)
 	if err != nil {
 		switch {
-		case errors.Is(err, cluster.ErrNotLeader):
+		case errors.Is(err, model.ErrPDNotLeader):
 			resp.Error(h.notLeaderError(ctx))
 		default:
 			resp.Error(&rpcfb.StatusT{Code: rpcfb.ErrorCodePD_INTERNAL_SERVER_ERROR, Message: err.Error()})
@@ -69,7 +69,7 @@ func (h *Handler) ReportMetrics(req *protocol.ReportMetricsRequest, resp *protoc
 	err := h.c.Metrics(ctx, req.RangeServer, req.Metrics)
 	if err != nil {
 		switch {
-		case errors.Is(err, cluster.ErrNotLeader):
+		case errors.Is(err, model.ErrPDNotLeader):
 			// It's ok to ignore this error, as all pd nodes will receive this request.
 		default:
 			resp.Error(&rpcfb.StatusT{Code: rpcfb.ErrorCodePD_INTERNAL_SERVER_ERROR, Message: err.Error()})

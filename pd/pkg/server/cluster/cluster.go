@@ -42,11 +42,6 @@ const (
 	_objectIDStep          = 100
 )
 
-var (
-	// ErrNotLeader is returned when the current node is not the leader.
-	ErrNotLeader = errors.New("not leader")
-)
-
 // RaftCluster is used for metadata management.
 type RaftCluster struct {
 	ctx context.Context

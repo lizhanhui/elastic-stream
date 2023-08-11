@@ -9,23 +9,22 @@ import (
 
 	"github.com/AutoMQ/pd/api/rpcfb/rpcfb"
 	"github.com/AutoMQ/pd/pkg/server/cluster/cache"
-	"github.com/AutoMQ/pd/pkg/server/storage/kv"
+	"github.com/AutoMQ/pd/pkg/server/model"
 	"github.com/AutoMQ/pd/pkg/util/traceutil"
 )
 
-var (
-	// ErrNotEnoughRangeServers is returned when there are not enough range servers to allocate a range.
-	ErrNotEnoughRangeServers = errors.New("not enough range servers")
-)
-
 type RangeServerService interface {
+	// Heartbeat updates RangeServer's last active time, and save it to storage if its info changed.
+	// It returns model.ErrPDNotLeader if the current PD node is not the leader.
 	Heartbeat(ctx context.Context, rangeServer *rpcfb.RangeServerT) error
+	// AllocateID allocates a range server id from the id allocator.
+	// It returns model.ErrPDNotLeader if the current PD node is not the leader.
 	AllocateID(ctx context.Context) (int32, error)
+	// Metrics receives metrics from range servers.
+	// It returns model.ErrPDNotLeader if the current PD node is not the leader.
 	Metrics(ctx context.Context, rangeServer *rpcfb.RangeServerT, metrics *rpcfb.RangeServerMetricsT) error
 }
 
-// Heartbeat updates RangeServer's last active time, and save it to storage if its info changed.
-// It returns ErrNotLeader if the current PD node is not the leader.
 func (c *RaftCluster) Heartbeat(ctx context.Context, rangeServer *rpcfb.RangeServerT) error {
 	logger := c.lg.With(traceutil.TraceLogField(ctx))
 
@@ -38,8 +37,8 @@ func (c *RaftCluster) Heartbeat(ctx context.Context, rangeServer *rpcfb.RangeSer
 		_, err := c.storage.SaveRangeServer(ctx, rangeServer)
 		logger.Info("finish saving range server", zap.Int32("server-id", rangeServer.ServerId), zap.Error(err))
 		if err != nil {
-			if errors.Is(err, kv.ErrTxnFailed) {
-				return ErrNotLeader
+			if errors.Is(err, model.ErrKVTxnFailed) {
+				return model.ErrPDNotLeader
 			}
 			return err
 		}
@@ -47,16 +46,14 @@ func (c *RaftCluster) Heartbeat(ctx context.Context, rangeServer *rpcfb.RangeSer
 	return nil
 }
 
-// AllocateID allocates a range server id from the id allocator.
-// It returns ErrNotLeader if the current PD node is not the leader.
 func (c *RaftCluster) AllocateID(ctx context.Context) (int32, error) {
 	logger := c.lg.With(traceutil.TraceLogField(ctx))
 
 	id, err := c.rsAlloc.Alloc(ctx)
 	if err != nil {
 		logger.Error("failed to allocate range server id", zap.Error(err))
-		if errors.Is(err, kv.ErrTxnFailed) {
-			err = ErrNotLeader
+		if errors.Is(err, model.ErrKVTxnFailed) {
+			err = model.ErrPDNotLeader
 		}
 		return -1, err
 	}
@@ -64,8 +61,6 @@ func (c *RaftCluster) AllocateID(ctx context.Context) (int32, error) {
 	return int32(id), nil
 }
 
-// Metrics receives metrics from range servers.
-// It returns ErrNotLeader if the current PD node is not the leader.
 func (c *RaftCluster) Metrics(ctx context.Context, rangeServer *rpcfb.RangeServerT, metrics *rpcfb.RangeServerMetricsT) error {
 	logger := c.lg.With(traceutil.TraceLogField(ctx))
 
@@ -79,8 +74,8 @@ func (c *RaftCluster) Metrics(ctx context.Context, rangeServer *rpcfb.RangeServe
 		_, err := c.storage.SaveRangeServer(ctx, rangeServer)
 		logger.Info("finish saving range server", zap.Int32("server-id", rangeServer.ServerId), zap.Error(err))
 		if err != nil {
-			if errors.Is(err, kv.ErrTxnFailed) {
-				return ErrNotLeader
+			if errors.Is(err, model.ErrKVTxnFailed) {
+				return model.ErrPDNotLeader
 			}
 			return err
 		}
@@ -92,7 +87,7 @@ func (c *RaftCluster) Metrics(ctx context.Context, rangeServer *rpcfb.RangeServe
 // chooseRangeServers selects `cnt` number of range servers from the available range servers for a range.
 // If `grayServerIDs` is not nil, the range servers with the ids in `grayServerIDs` will not be selected, unless there are no other available range servers.
 // Only RangeServerT.ServerId is filled in the returned RangeServerT.
-// It returns ErrNotEnoughRangeServers if there are not enough range servers to allocate.
+// It returns model.ErrNotEnoughRangeServers if there are not enough range servers to allocate.
 func (c *RaftCluster) chooseRangeServers(cnt int, grayServerIDs map[int32]struct{}) ([]*rpcfb.RangeServerT, error) {
 	if cnt <= 0 {
 		return nil, nil
@@ -102,7 +97,7 @@ func (c *RaftCluster) chooseRangeServers(cnt int, grayServerIDs map[int32]struct
 	wRangeServers, gRangeServers := c.cache.ActiveRangeServers(c.cfg.RangeServerTimeout, grayServerIDs)
 
 	if cnt > len(wRangeServers)+len(gRangeServers) {
-		return nil, errors.Wrapf(ErrNotEnoughRangeServers, "required %d, available %d", cnt, len(wRangeServers)+len(gRangeServers))
+		return nil, errors.Wrapf(model.ErrNotEnoughRangeServers, "required %d, available %d", cnt, len(wRangeServers)+len(gRangeServers))
 	}
 
 	// If there are not enough range servers, use the gray list.

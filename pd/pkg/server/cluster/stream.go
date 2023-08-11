@@ -7,35 +7,37 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/AutoMQ/pd/api/rpcfb/rpcfb"
-	"github.com/AutoMQ/pd/pkg/server/id"
 	"github.com/AutoMQ/pd/pkg/server/model"
-	"github.com/AutoMQ/pd/pkg/server/storage/endpoint"
-	"github.com/AutoMQ/pd/pkg/server/storage/kv"
 	"github.com/AutoMQ/pd/pkg/util/traceutil"
 )
 
-var (
-	ErrStreamNotFound     = errors.New("stream not found")
-	ErrExpiredStreamEpoch = errors.New("expired stream epoch")
-)
-
 type StreamService interface {
+	// CreateStream creates a stream.
+	// It returns model.ErrPDNotLeader if the current PD node is not the leader.
 	CreateStream(ctx context.Context, param *model.CreateStreamParam) (*rpcfb.StreamT, error)
+	// DeleteStream deletes the stream.
+	// It returns model.ErrPDNotLeader if the current PD node is not the leader.
+	// It returns model.ErrStreamNotFound if the stream is not found.
 	DeleteStream(ctx context.Context, streamID int64) (*rpcfb.StreamT, error)
+	// UpdateStream updates the stream.
+	// It returns model.ErrPDNotLeader if the current PD node is not the leader.
+	// It returns model.ErrStreamNotFound if the stream is not found.
+	// It returns model.ErrExpiredStreamEpoch if the stream epoch is expired.
 	UpdateStream(ctx context.Context, param *model.UpdateStreamParam) (*rpcfb.StreamT, error)
+	// DescribeStream describes the stream.
+	// It returns model.ErrPDNotLeader if the current PD node is not the leader.
+	// It returns model.ErrStreamNotFound if the stream is not found.
 	DescribeStream(ctx context.Context, streamID int64) (*rpcfb.StreamT, error)
 }
 
-// CreateStream creates a stream.
-// It returns ErrNotLeader if the current PD node is not the leader.
 func (c *RaftCluster) CreateStream(ctx context.Context, param *model.CreateStreamParam) (*rpcfb.StreamT, error) {
 	logger := c.lg.With(traceutil.TraceLogField(ctx))
 
 	sid, err := c.sAlloc.Alloc(ctx)
 	if err != nil {
 		logger.Error("failed to allocate a stream id", zap.Error(err))
-		if errors.Is(err, id.ErrTxnFailed) {
-			return nil, ErrNotLeader
+		if errors.Is(err, model.ErrKVTxnFailed) {
+			return nil, model.ErrPDNotLeader
 		}
 		return nil, err
 	}
@@ -54,8 +56,8 @@ func (c *RaftCluster) CreateStream(ctx context.Context, param *model.CreateStrea
 	stream, err = c.storage.CreateStream(ctx, stream)
 	logger.Info("finish creating stream", zap.Error(err))
 	if err != nil {
-		if errors.Is(err, kv.ErrTxnFailed) {
-			return nil, ErrNotLeader
+		if errors.Is(err, model.ErrKVTxnFailed) {
+			return nil, model.ErrPDNotLeader
 		}
 		return nil, err
 	}
@@ -63,9 +65,6 @@ func (c *RaftCluster) CreateStream(ctx context.Context, param *model.CreateStrea
 	return stream, nil
 }
 
-// DeleteStream deletes the stream.
-// It returns ErrNotLeader if the current PD node is not the leader.
-// It returns ErrStreamNotFound if the stream is not found.
 func (c *RaftCluster) DeleteStream(ctx context.Context, streamID int64) (*rpcfb.StreamT, error) {
 	logger := c.lg.With(zap.Int64("stream-id", streamID), traceutil.TraceLogField(ctx))
 
@@ -73,22 +72,18 @@ func (c *RaftCluster) DeleteStream(ctx context.Context, streamID int64) (*rpcfb.
 	stream, err := c.storage.DeleteStream(ctx, streamID)
 	logger.Info("finish deleting stream", zap.Error(err))
 	if err != nil {
-		if errors.Is(err, kv.ErrTxnFailed) {
-			return nil, ErrNotLeader
+		if errors.Is(err, model.ErrKVTxnFailed) {
+			return nil, model.ErrPDNotLeader
 		}
 		return nil, err
 	}
 	if stream == nil {
-		return nil, errors.Wrapf(ErrStreamNotFound, "stream id %d", streamID)
+		return nil, errors.Wrapf(model.ErrStreamNotFound, "stream id %d", streamID)
 	}
 
 	return stream, nil
 }
 
-// UpdateStream updates the stream.
-// It returns ErrNotLeader if the current PD node is not the leader.
-// It returns ErrStreamNotFound if the stream is not found.
-// It returns ErrExpiredStreamEpoch if the stream epoch is expired.
 func (c *RaftCluster) UpdateStream(ctx context.Context, param *model.UpdateStreamParam) (*rpcfb.StreamT, error) {
 	logger := c.lg.With(zap.Int64("stream-id", param.StreamID), traceutil.TraceLogField(ctx))
 
@@ -96,24 +91,15 @@ func (c *RaftCluster) UpdateStream(ctx context.Context, param *model.UpdateStrea
 	upStream, err := c.storage.UpdateStream(ctx, param)
 	logger.Info("finish updating stream", zap.Error(err))
 	if err != nil {
-		switch {
-		case errors.Is(err, kv.ErrTxnFailed):
-			return nil, ErrNotLeader
-		case errors.Is(err, endpoint.ErrStreamNotFound):
-			return nil, errors.Wrapf(ErrStreamNotFound, "stream id %d", param.StreamID)
-		case errors.Is(err, endpoint.ErrExpiredStreamEpoch):
-			return nil, errors.Wrapf(ErrExpiredStreamEpoch, "stream id %d, epoch %d", param.StreamID, param.Epoch)
-		default:
-			return nil, err
+		if errors.Is(err, model.ErrKVTxnFailed) {
+			return nil, model.ErrPDNotLeader
 		}
+		return nil, err
 	}
 
 	return upStream, nil
 }
 
-// DescribeStream describes the stream.
-// It returns ErrNotLeader if the current PD node is not the leader.
-// It returns ErrStreamNotFound if the stream is not found.
 func (c *RaftCluster) DescribeStream(ctx context.Context, streamID int64) (*rpcfb.StreamT, error) {
 	logger := c.lg.With(zap.Int64("stream-id", streamID), traceutil.TraceLogField(ctx))
 
@@ -121,13 +107,13 @@ func (c *RaftCluster) DescribeStream(ctx context.Context, streamID int64) (*rpcf
 	stream, err := c.storage.GetStream(ctx, streamID)
 	logger.Debug("finish describing stream", zap.Error(err))
 	if err != nil {
-		if errors.Is(err, kv.ErrTxnFailed) {
-			return nil, ErrNotLeader
+		if errors.Is(err, model.ErrKVTxnFailed) {
+			return nil, model.ErrPDNotLeader
 		}
 		return nil, err
 	}
 	if stream == nil {
-		return nil, errors.Wrapf(ErrStreamNotFound, "stream id %d", streamID)
+		return nil, errors.Wrapf(model.ErrStreamNotFound, "stream id %d", streamID)
 	}
 
 	return stream, nil

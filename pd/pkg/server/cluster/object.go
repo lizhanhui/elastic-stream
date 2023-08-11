@@ -7,19 +7,18 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/AutoMQ/pd/api/rpcfb/rpcfb"
-	"github.com/AutoMQ/pd/pkg/server/id"
+	"github.com/AutoMQ/pd/pkg/server/model"
 	"github.com/AutoMQ/pd/pkg/server/storage/endpoint"
-	"github.com/AutoMQ/pd/pkg/server/storage/kv"
 	"github.com/AutoMQ/pd/pkg/util/traceutil"
 )
 
 type ObjectService interface {
 	// CommitObject commits an object and returns the committed object.
-	// It returns ErrNotLeader if the current PD node is not the leader.
-	// It returns ErrRangeNotFound if the range does not exist.
+	// It returns model.ErrPDNotLeader if the current PD node is not the leader.
+	// It returns model.ErrRangeNotFound if the range does not exist.
 	CommitObject(ctx context.Context, object *rpcfb.ObjT) (endpoint.Object, error)
 	// ListObjectInRange returns all objects in the range.
-	// It returns ErrNotLeader if the current PD node is not the leader.
+	// It returns model.ErrPDNotLeader if the current PD node is not the leader.
 	ListObjectInRange(ctx context.Context, rangeID endpoint.RangeID) ([]endpoint.Object, error)
 }
 
@@ -28,20 +27,20 @@ func (c *RaftCluster) CommitObject(ctx context.Context, obj *rpcfb.ObjT) (endpoi
 
 	r, err := c.storage.GetRange(ctx, &endpoint.RangeID{StreamID: obj.StreamId, Index: obj.RangeIndex})
 	if err != nil {
-		if errors.Is(err, kv.ErrTxnFailed) {
-			return endpoint.Object{}, ErrNotLeader
+		if errors.Is(err, model.ErrKVTxnFailed) {
+			return endpoint.Object{}, model.ErrPDNotLeader
 		}
 		return endpoint.Object{}, err
 	}
 	if r == nil {
-		return endpoint.Object{}, errors.Wrapf(ErrRangeNotFound, "stream-id %d, range-index %d", obj.StreamId, obj.RangeIndex)
+		return endpoint.Object{}, errors.Wrapf(model.ErrRangeNotFound, "stream-id %d, range-index %d", obj.StreamId, obj.RangeIndex)
 	}
 
 	oid, err := c.oAlloc.Alloc(ctx)
 	if err != nil {
 		logger.Error("failed to allocate an object id", zap.Error(err))
-		if errors.Is(err, id.ErrTxnFailed) {
-			return endpoint.Object{}, ErrNotLeader
+		if errors.Is(err, model.ErrKVTxnFailed) {
+			return endpoint.Object{}, model.ErrPDNotLeader
 		}
 		return endpoint.Object{}, err
 	}
@@ -55,8 +54,8 @@ func (c *RaftCluster) CommitObject(ctx context.Context, obj *rpcfb.ObjT) (endpoi
 	err = c.storage.CreateObject(ctx, object)
 	logger.Info("finish committing object", zap.Error(err))
 	if err != nil {
-		if errors.Is(err, kv.ErrTxnFailed) {
-			return endpoint.Object{}, ErrNotLeader
+		if errors.Is(err, model.ErrKVTxnFailed) {
+			return endpoint.Object{}, model.ErrPDNotLeader
 		}
 		return endpoint.Object{}, err
 	}
@@ -70,8 +69,8 @@ func (c *RaftCluster) ListObjectInRange(ctx context.Context, rangeID endpoint.Ra
 	logger.Debug("start to list objects in range")
 	objects, err := c.storage.GetObjectsByRange(ctx, rangeID)
 	logger.Debug("finish listing objects in range", zap.Error(err))
-	if errors.Is(err, kv.ErrTxnFailed) {
-		return nil, ErrNotLeader
+	if errors.Is(err, model.ErrKVTxnFailed) {
+		return nil, model.ErrPDNotLeader
 	}
 
 	return objects, err

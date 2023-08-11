@@ -238,6 +238,18 @@ func TestHandler_UpdateStream(t *testing.T) {
 			},
 		},
 		{
+			name: "replica < ack count",
+			args: args{
+				stream: &rpcfb.StreamT{Replica: 1, AckCount: 2, RetentionPeriodMs: -1, Epoch: -1},
+			},
+			want: want{
+				wantErr: true,
+				errCode: rpcfb.ErrorCodeBAD_REQUEST,
+				errMsg:  "invalid replica 1 < ack count 2",
+				after:   rpcfb.StreamT{Replica: 3, AckCount: 3},
+			},
+		},
+		{
 			name: "stream not found",
 			args: args{
 				stream: &rpcfb.StreamT{StreamId: 1, Replica: 3, AckCount: 3},

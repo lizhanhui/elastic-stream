@@ -23,6 +23,7 @@ import (
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"go.uber.org/zap"
 
+	"github.com/AutoMQ/pd/pkg/server/model"
 	"github.com/AutoMQ/pd/pkg/util/etcdutil"
 	"github.com/AutoMQ/pd/pkg/util/traceutil"
 	"github.com/AutoMQ/pd/pkg/util/typeutil"
@@ -31,11 +32,6 @@ import (
 const (
 	_keySeparator = "/"
 	_pathPrefix   = "id-alloc"
-)
-
-var (
-	// ErrTxnFailed is the error when etcd transaction failed.
-	ErrTxnFailed = errors.New("etcd transaction failed")
 )
 
 // EtcdAllocator is an allocator based on etcd.
@@ -85,6 +81,7 @@ func NewEtcdAllocator(param *EtcdAllocatorParam, lg *zap.Logger) *EtcdAllocator 
 	return e
 }
 
+// Alloc returns model.ErrKVTxnFailed if EtcdAllocatorParam.CmpFunc evaluates to false.
 func (e *EtcdAllocator) Alloc(ctx context.Context) (uint64, error) {
 	ids, err := e.AllocN(ctx, 1)
 	if err != nil {
@@ -93,6 +90,7 @@ func (e *EtcdAllocator) Alloc(ctx context.Context) (uint64, error) {
 	return ids[0], nil
 }
 
+// AllocN returns model.ErrKVTxnFailed if EtcdAllocatorParam.CmpFunc evaluates to false.
 func (e *EtcdAllocator) AllocN(ctx context.Context, n int) ([]uint64, error) {
 	if n <= 0 {
 		return nil, nil
@@ -164,7 +162,7 @@ func (e *EtcdAllocator) growLocked(ctx context.Context, growth uint64) error {
 		// Currently, there is only one allocator on each key.
 		// So if the transaction fails, it means the EtcdAllocatorParam.CmpFunc is not satisfied. And there is no need to retry.
 		// If we have multiple allocators on the same key, we need to add a retry mechanism.
-		return errors.Wrap(ErrTxnFailed, "update id")
+		return errors.Wrap(model.ErrKVTxnFailed, "update id")
 	}
 
 	e.end = end
@@ -172,6 +170,7 @@ func (e *EtcdAllocator) growLocked(ctx context.Context, growth uint64) error {
 	return nil
 }
 
+// Reset returns model.ErrKVTxnFailed if EtcdAllocatorParam.CmpFunc evaluates to false.
 func (e *EtcdAllocator) Reset(ctx context.Context) error {
 	logger := e.lg.With(traceutil.TraceLogField(ctx))
 
@@ -188,7 +187,7 @@ func (e *EtcdAllocator) Reset(ctx context.Context) error {
 		return errors.Wrap(err, "reset etcd id allocator")
 	}
 	if !resp.Succeeded {
-		return errors.Wrap(ErrTxnFailed, "reset etcd id allocator")
+		return errors.Wrap(model.ErrKVTxnFailed, "reset etcd id allocator")
 	}
 
 	e.base = e.start

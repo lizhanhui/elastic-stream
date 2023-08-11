@@ -13,6 +13,7 @@ import (
 	"go.etcd.io/etcd/server/v3/embed"
 	"go.uber.org/zap"
 
+	"github.com/AutoMQ/pd/pkg/server/model"
 	"github.com/AutoMQ/pd/pkg/util/testutil"
 )
 
@@ -667,7 +668,7 @@ func TestEtcd_WatchCompacted(t *testing.T) {
 	defer watcher.Close()
 
 	event := <-watcher.EventChan()
-	re.ErrorContains(event.Error, ErrCompacted.Error())
+	re.ErrorContains(event.Error, model.ErrKVCompacted.Error())
 }
 
 func TestEtcd_Put(t *testing.T) {

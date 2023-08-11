@@ -27,21 +27,23 @@ const (
 	_streamByRangeLimit = 1e4
 )
 
-var (
-	ErrStreamNotFound     = errors.New("stream not found")
-	ErrExpiredStreamEpoch = errors.New("expired stream epoch")
-)
-
 // StreamEndpoint defines operations on stream.
 type StreamEndpoint interface {
+	// CreateStream creates a new stream based on the given stream and returns it.
 	CreateStream(ctx context.Context, stream *rpcfb.StreamT) (*rpcfb.StreamT, error)
+	// DeleteStream deletes the stream with the given stream id and returns it.
 	DeleteStream(ctx context.Context, streamID int64) (*rpcfb.StreamT, error)
+	// UpdateStream updates the stream with the given stream and returns it.
+	// It returns model.ErrStreamNotFound if the stream does not exist.
+	// It returns model.ErrExpiredStreamEpoch if the new epoch is less than the old one.
 	UpdateStream(ctx context.Context, param *model.UpdateStreamParam) (*rpcfb.StreamT, error)
+	// GetStream gets the stream with the given stream id.
 	GetStream(ctx context.Context, streamID int64) (*rpcfb.StreamT, error)
+	// ForEachStream calls the given function for every stream in the storage.
+	// If f returns an error, the iteration is stopped and the error is returned.
 	ForEachStream(ctx context.Context, f func(stream *rpcfb.StreamT) error) error
 }
 
-// CreateStream creates a new stream based on the given stream and returns it.
 func (e *Endpoint) CreateStream(ctx context.Context, stream *rpcfb.StreamT) (*rpcfb.StreamT, error) {
 	logger := e.lg.With(zap.Int64("stream-id", stream.StreamId), traceutil.TraceLogField(ctx))
 
@@ -52,7 +54,7 @@ func (e *Endpoint) CreateStream(ctx context.Context, stream *rpcfb.StreamT) (*rp
 
 	if err != nil {
 		logger.Error("failed to save stream", zap.Error(err))
-		return nil, errors.Wrap(err, "save stream")
+		return nil, errors.Wrapf(err, "save stream %d", stream.StreamId)
 	}
 	if prevValue != nil {
 		logger.Warn("stream already exist, will override it")
@@ -61,14 +63,13 @@ func (e *Endpoint) CreateStream(ctx context.Context, stream *rpcfb.StreamT) (*rp
 	return stream, nil
 }
 
-// DeleteStream deletes the stream with the given stream id and returns it.
 func (e *Endpoint) DeleteStream(ctx context.Context, streamID int64) (*rpcfb.StreamT, error) {
 	logger := e.lg.With(zap.Int64("stream-id", streamID), traceutil.TraceLogField(ctx))
 
 	prevV, err := e.KV.Delete(ctx, streamPath(streamID), true)
 	if err != nil {
 		logger.Error("failed to delete stream", zap.Error(err))
-		return nil, errors.Wrap(err, "delete stream")
+		return nil, errors.Wrapf(err, "delete stream %d", streamID)
 	}
 	if prevV == nil {
 		logger.Warn("stream not found when delete stream")
@@ -82,9 +83,6 @@ func (e *Endpoint) DeleteStream(ctx context.Context, streamID int64) (*rpcfb.Str
 	return rpcfb.GetRootAsStream(prevV, 0).UnPack(), nil
 }
 
-// UpdateStream updates the stream with the given stream and returns it.
-// It returns ErrStreamNotFound if the stream does not exist.
-// It returns ErrExpiredStreamEpoch if the new epoch is less than the old one.
 func (e *Endpoint) UpdateStream(ctx context.Context, param *model.UpdateStreamParam) (*rpcfb.StreamT, error) {
 	logger := e.lg.With(zap.Int64("stream-id", param.StreamID), traceutil.TraceLogField(ctx))
 
@@ -94,11 +92,11 @@ func (e *Endpoint) UpdateStream(ctx context.Context, param *model.UpdateStreamPa
 
 		v, err := kv.Get(ctx, key)
 		if err != nil {
-			return errors.Wrap(err, "get stream")
+			return errors.Wrapf(err, "get stream %d", param.StreamID)
 		}
 		if v == nil {
 			logger.Error("stream not found when update stream")
-			return errors.Wrapf(ErrStreamNotFound, "stream %d", param.StreamID)
+			return errors.Wrapf(model.ErrStreamNotFound, "stream %d", param.StreamID)
 		}
 
 		oldStream := rpcfb.GetRootAsStream(v, 0).UnPack()
@@ -115,7 +113,7 @@ func (e *Endpoint) UpdateStream(ctx context.Context, param *model.UpdateStreamPa
 		if param.Epoch >= 0 {
 			if param.Epoch < oldStream.Epoch {
 				logger.Error("invalid epoch", zap.Int64("new-epoch", param.Epoch), zap.Int64("old-epoch", oldStream.Epoch))
-				return errors.Wrapf(ErrExpiredStreamEpoch, "new epoch %d, old epoch %d", param.Epoch, oldStream.Epoch)
+				return errors.Wrapf(model.ErrExpiredStreamEpoch, "new epoch %d, old epoch %d", param.Epoch, oldStream.Epoch)
 			}
 			oldStream.Epoch = param.Epoch
 		}
@@ -129,20 +127,19 @@ func (e *Endpoint) UpdateStream(ctx context.Context, param *model.UpdateStreamPa
 	})
 	if err != nil {
 		logger.Error("failed to update stream", zap.Error(err))
-		return nil, errors.Wrap(err, "update stream")
+		return nil, errors.Wrapf(err, "update stream %d", param.StreamID)
 	}
 
 	return newStream, nil
 }
 
-// GetStream gets the stream with the given stream id.
 func (e *Endpoint) GetStream(ctx context.Context, streamID int64) (*rpcfb.StreamT, error) {
 	logger := e.lg.With(zap.Int64("stream-id", streamID), traceutil.TraceLogField(ctx))
 
 	v, err := e.KV.Get(ctx, streamPath(streamID))
 	if err != nil {
 		logger.Error("failed to get stream", zap.Error(err))
-		return nil, errors.Wrap(err, "get stream")
+		return nil, errors.Wrapf(err, "get stream %d", streamID)
 	}
 	if v == nil {
 		logger.Warn("stream not found")
@@ -152,8 +149,6 @@ func (e *Endpoint) GetStream(ctx context.Context, streamID int64) (*rpcfb.Stream
 	return rpcfb.GetRootAsStream(v, 0).UnPack(), nil
 }
 
-// ForEachStream calls the given function for every stream in the storage.
-// If f returns an error, the iteration is stopped and the error is returned.
 func (e *Endpoint) ForEachStream(ctx context.Context, f func(stream *rpcfb.StreamT) error) error {
 	var startID = model.MinStreamID
 	for startID >= model.MinStreamID {

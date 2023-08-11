@@ -7,7 +7,7 @@ import (
 
 	"github.com/AutoMQ/pd/api/rpcfb/rpcfb"
 	"github.com/AutoMQ/pd/pkg/sbp/protocol"
-	"github.com/AutoMQ/pd/pkg/server/cluster"
+	"github.com/AutoMQ/pd/pkg/server/model"
 )
 
 func (h *Handler) ListRange(req *protocol.ListRangeRequest, resp *protocol.ListRangeResponse) {
@@ -21,7 +21,7 @@ func (h *Handler) ListRange(req *protocol.ListRangeRequest, resp *protocol.ListR
 	ranges, err := h.c.ListRange(ctx, req.Criteria)
 	if err != nil {
 		switch {
-		case errors.Is(err, cluster.ErrNotLeader):
+		case errors.Is(err, model.ErrPDNotLeader):
 			resp.Error(h.notLeaderError(ctx))
 		default:
 			resp.Error(&rpcfb.StatusT{Code: rpcfb.ErrorCodePD_INTERNAL_SERVER_ERROR, Message: err.Error()})
@@ -48,17 +48,17 @@ func (h *Handler) SealRange(req *protocol.SealRangeRequest, resp *protocol.SealR
 	r, err := h.c.SealRange(ctx, req.Range)
 	if err != nil {
 		switch {
-		case errors.Is(err, cluster.ErrNotLeader):
+		case errors.Is(err, model.ErrPDNotLeader):
 			resp.Error(h.notLeaderError(ctx))
-		case errors.Is(err, cluster.ErrStreamNotFound):
+		case errors.Is(err, model.ErrStreamNotFound):
 			resp.Error(&rpcfb.StatusT{Code: rpcfb.ErrorCodeNOT_FOUND, Message: err.Error()})
-		case errors.Is(err, cluster.ErrRangeNotFound):
+		case errors.Is(err, model.ErrRangeNotFound):
 			resp.Error(&rpcfb.StatusT{Code: rpcfb.ErrorCodeRANGE_NOT_FOUND, Message: err.Error()})
-		case errors.Is(err, cluster.ErrRangeAlreadySealed):
+		case errors.Is(err, model.ErrRangeAlreadySealed):
 			resp.Error(&rpcfb.StatusT{Code: rpcfb.ErrorCodeRANGE_ALREADY_SEALED, Message: err.Error()})
-		case errors.Is(err, cluster.ErrInvalidEndOffset):
+		case errors.Is(err, model.ErrInvalidRangeEnd):
 			resp.Error(&rpcfb.StatusT{Code: rpcfb.ErrorCodeBAD_REQUEST, Message: err.Error()})
-		case errors.Is(err, cluster.ErrExpiredRangeEpoch):
+		case errors.Is(err, model.ErrExpiredRangeEpoch):
 			resp.Error(&rpcfb.StatusT{Code: rpcfb.ErrorCodeEXPIRED_RANGE_EPOCH, Message: err.Error()})
 		default:
 			resp.Error(&rpcfb.StatusT{Code: rpcfb.ErrorCodePD_INTERNAL_SERVER_ERROR, Message: err.Error()})
@@ -81,19 +81,19 @@ func (h *Handler) CreateRange(req *protocol.CreateRangeRequest, resp *protocol.C
 	r, err := h.c.CreateRange(ctx, req.Range)
 	if err != nil {
 		switch {
-		case errors.Is(err, cluster.ErrNotLeader):
+		case errors.Is(err, model.ErrPDNotLeader):
 			resp.Error(h.notLeaderError(ctx))
-		case errors.Is(err, cluster.ErrStreamNotFound):
+		case errors.Is(err, model.ErrStreamNotFound):
 			resp.Error(&rpcfb.StatusT{Code: rpcfb.ErrorCodeNOT_FOUND, Message: err.Error()})
-		case errors.Is(err, cluster.ErrInvalidRangeIndex):
+		case errors.Is(err, model.ErrInvalidRangeIndex):
 			resp.Error(&rpcfb.StatusT{Code: rpcfb.ErrorCodeBAD_REQUEST, Message: err.Error()})
-		case errors.Is(err, cluster.ErrCreateBeforeSeal):
+		case errors.Is(err, model.ErrCreateRangeBeforeSeal):
 			resp.Error(&rpcfb.StatusT{Code: rpcfb.ErrorCodeCREATE_RANGE_BEFORE_SEAL, Message: err.Error()})
-		case errors.Is(err, cluster.ErrInvalidStartOffset):
+		case errors.Is(err, model.ErrInvalidRangeStart):
 			resp.Error(&rpcfb.StatusT{Code: rpcfb.ErrorCodeBAD_REQUEST, Message: err.Error()})
-		case errors.Is(err, cluster.ErrNotEnoughRangeServers):
+		case errors.Is(err, model.ErrNotEnoughRangeServers):
 			resp.Error(&rpcfb.StatusT{Code: rpcfb.ErrorCodePD_NO_AVAILABLE_RS, Message: err.Error()})
-		case errors.Is(err, cluster.ErrExpiredRangeEpoch):
+		case errors.Is(err, model.ErrExpiredRangeEpoch):
 			resp.Error(&rpcfb.StatusT{Code: rpcfb.ErrorCodeEXPIRED_RANGE_EPOCH, Message: err.Error()})
 		default:
 			resp.Error(&rpcfb.StatusT{Code: rpcfb.ErrorCodePD_INTERNAL_SERVER_ERROR, Message: err.Error()})

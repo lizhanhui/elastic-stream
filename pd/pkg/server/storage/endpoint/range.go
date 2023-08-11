@@ -42,15 +42,28 @@ type RangeID struct {
 }
 
 type RangeEndpoint interface {
+	// CreateRange creates the range.
 	CreateRange(ctx context.Context, rangeT *rpcfb.RangeT) error
+	// UpdateRange updates the range and returns the previous range.
 	UpdateRange(ctx context.Context, rangeT *rpcfb.RangeT) (*rpcfb.RangeT, error)
+	// GetRange returns the range by the range ID.
 	GetRange(ctx context.Context, rangeID *RangeID) (*rpcfb.RangeT, error)
+	// GetRanges returns ranges by range IDs.
 	GetRanges(ctx context.Context, rangeIDs []*RangeID) ([]*rpcfb.RangeT, error)
+	// GetLastRange returns the last range of the given stream.
+	// It returns nil and no error if there is no range in the stream.
 	GetLastRange(ctx context.Context, streamID int64) (*rpcfb.RangeT, error)
+	// GetRangesByStream returns the ranges of the given stream.
 	GetRangesByStream(ctx context.Context, streamID int64) ([]*rpcfb.RangeT, error)
+	// ForEachRangeInStream calls the given function f for each range in the stream.
+	// If f returns an error, the iteration is stopped and the error is returned.
 	ForEachRangeInStream(ctx context.Context, streamID int64, f func(r *rpcfb.RangeT) error) error
+	// GetRangeIDsByRangeServer returns the range IDs on the range server.
 	GetRangeIDsByRangeServer(ctx context.Context, rangeServerID int32) ([]*RangeID, error)
+	// ForEachRangeIDOnRangeServer calls the given function f for each range on the range server.
+	// If f returns an error, the iteration is stopped and the error is returned.
 	ForEachRangeIDOnRangeServer(ctx context.Context, rangeServerID int32, f func(rangeID *RangeID) error) error
+	// GetRangeIDsByRangeServerAndStream returns the range IDs on the range server and the stream.
 	GetRangeIDsByRangeServerAndStream(ctx context.Context, streamID int64, rangeServerID int32) ([]*RangeID, error)
 }
 
@@ -75,7 +88,7 @@ func (e *Endpoint) CreateRange(ctx context.Context, rangeT *rpcfb.RangeT) error 
 
 	if err != nil {
 		logger.Error("failed to create range", zap.Error(err))
-		return errors.Wrap(err, "create range")
+		return errors.Wrapf(err, "create range %d-%d", rangeT.StreamId, rangeT.Index)
 	}
 	if len(prevKVs) != 0 {
 		logger.Warn("range already exists when create range")
@@ -85,7 +98,6 @@ func (e *Endpoint) CreateRange(ctx context.Context, rangeT *rpcfb.RangeT) error 
 	return nil
 }
 
-// UpdateRange updates the range and returns the previous range.
 func (e *Endpoint) UpdateRange(ctx context.Context, rangeT *rpcfb.RangeT) (*rpcfb.RangeT, error) {
 	logger := e.lg.With(zap.Int64("stream-id", rangeT.StreamId), zap.Int32("range-index", rangeT.Index), traceutil.TraceLogField(ctx))
 
@@ -96,7 +108,7 @@ func (e *Endpoint) UpdateRange(ctx context.Context, rangeT *rpcfb.RangeT) (*rpcf
 	mcache.Free(value)
 	if err != nil {
 		logger.Error("failed to update range", zap.Error(err))
-		return nil, errors.Wrap(err, "update range")
+		return nil, errors.Wrapf(err, "update range %d-%d", rangeT.StreamId, rangeT.Index)
 	}
 	if prevValue == nil {
 		logger.Warn("range not found when updating")
@@ -164,7 +176,6 @@ func (e *Endpoint) GetLastRange(ctx context.Context, streamID int64) (*rpcfb.Ran
 	return rpcfb.GetRootAsRange(kvs[0].Value, 0).UnPack(), nil
 }
 
-// GetRangesByStream returns the ranges of the given stream.
 func (e *Endpoint) GetRangesByStream(ctx context.Context, streamID int64) ([]*rpcfb.RangeT, error) {
 	logger := e.lg.With(zap.Int64("stream-id", streamID), traceutil.TraceLogField(ctx))
 
@@ -176,14 +187,12 @@ func (e *Endpoint) GetRangesByStream(ctx context.Context, streamID int64) ([]*rp
 	})
 	if err != nil {
 		logger.Error("failed to get ranges", zap.Error(err))
-		return nil, errors.Wrap(err, "get ranges")
+		return nil, errors.Wrapf(err, "get ranges in stream %d", streamID)
 	}
 
 	return ranges, nil
 }
 
-// ForEachRangeInStream calls the given function f for each range in the stream.
-// If f returns an error, the iteration is stopped and the error is returned.
 func (e *Endpoint) ForEachRangeInStream(ctx context.Context, streamID int64, f func(r *rpcfb.RangeT) error) error {
 	var startID = model.MinRangeIndex
 	for startID >= model.MinRangeIndex {
@@ -263,14 +272,12 @@ func (e *Endpoint) GetRangeIDsByRangeServer(ctx context.Context, rangeServerID i
 	})
 	if err != nil {
 		logger.Error("failed to get range ids by range server", zap.Error(err))
-		return nil, errors.Wrap(err, "get range ids by range server")
+		return nil, errors.Wrapf(err, "get range ids by range server %d", rangeServerID)
 	}
 
 	return rangeIDs, nil
 }
 
-// ForEachRangeIDOnRangeServer calls the given function f for each range on the range server.
-// If f returns an error, the iteration is stopped and the error is returned.
 func (e *Endpoint) ForEachRangeIDOnRangeServer(ctx context.Context, rangeServerID int32, f func(rangeID *RangeID) error) error {
 	startID := &RangeID{StreamID: model.MinStreamID, Index: model.MinRangeIndex}
 	for startID != nil && startID.StreamID >= model.MinStreamID && startID.Index >= model.MinRangeIndex {
@@ -325,7 +332,7 @@ func (e *Endpoint) GetRangeIDsByRangeServerAndStream(ctx context.Context, stream
 	kvs, _, _, err := e.KV.GetByRange(ctx, kv.Range{StartKey: startKey, EndKey: e.endRangePathOnRangeServerInStream(rangeServerID, streamID)}, 0, 0, false)
 	if err != nil {
 		logger.Error("failed to get range ids by range server and stream", zap.Error(err))
-		return nil, errors.Wrap(err, "get range ids by range server and stream")
+		return nil, errors.Wrapf(err, "get range ids by range server %d and stream %d", rangeServerID, streamID)
 	}
 
 	rangeIDs := make([]*RangeID, 0, len(kvs))

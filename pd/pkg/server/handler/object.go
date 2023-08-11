@@ -5,7 +5,7 @@ import (
 
 	"github.com/AutoMQ/pd/api/rpcfb/rpcfb"
 	"github.com/AutoMQ/pd/pkg/sbp/protocol"
-	"github.com/AutoMQ/pd/pkg/server/cluster"
+	"github.com/AutoMQ/pd/pkg/server/model"
 )
 
 func (h *Handler) CommitObject(req *protocol.CommitObjectRequest, resp *protocol.CommitObjectResponse) {
@@ -19,9 +19,9 @@ func (h *Handler) CommitObject(req *protocol.CommitObjectRequest, resp *protocol
 	_, err := h.c.CommitObject(ctx, req.Object)
 	if err != nil {
 		switch {
-		case errors.Is(err, cluster.ErrNotLeader):
+		case errors.Is(err, model.ErrPDNotLeader):
 			resp.Error(h.notLeaderError(ctx))
-		case errors.Is(err, cluster.ErrRangeNotFound):
+		case errors.Is(err, model.ErrRangeNotFound):
 			resp.Error(&rpcfb.StatusT{Code: rpcfb.ErrorCodeRANGE_NOT_FOUND, Message: err.Error()})
 		default:
 			resp.Error(&rpcfb.StatusT{Code: rpcfb.ErrorCodePD_INTERNAL_SERVER_ERROR, Message: err.Error()})

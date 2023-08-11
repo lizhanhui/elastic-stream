@@ -5,7 +5,7 @@ import (
 
 	"github.com/AutoMQ/pd/api/rpcfb/rpcfb"
 	"github.com/AutoMQ/pd/pkg/sbp/protocol"
-	"github.com/AutoMQ/pd/pkg/server/cluster"
+	"github.com/AutoMQ/pd/pkg/server/model"
 )
 
 func (h *Handler) ListResource(req *protocol.ListResourceRequest, resp *protocol.ListResourceResponse) {
@@ -19,13 +19,13 @@ func (h *Handler) ListResource(req *protocol.ListResourceRequest, resp *protocol
 	resources, rv, cont, err := h.c.ListResource(ctx, req.ResourceType, req.Limit, req.Continuation)
 	if err != nil {
 		switch {
-		case errors.Is(err, cluster.ErrNotLeader):
+		case errors.Is(err, model.ErrPDNotLeader):
 			resp.Error(h.notLeaderError(ctx))
-		case errors.Is(err, cluster.ErrCompacted):
+		case errors.Is(err, model.ErrResourceVersionCompacted):
 			resp.Error(&rpcfb.StatusT{Code: rpcfb.ErrorCodePD_COMPACTED, Message: err.Error()})
-		case errors.Is(err, cluster.ErrInvalidResourceType):
+		case errors.Is(err, model.ErrInvalidResourceType):
 			resp.Error(&rpcfb.StatusT{Code: rpcfb.ErrorCodeBAD_REQUEST, Message: err.Error()})
-		case errors.Is(err, cluster.ErrInvalidContinuation):
+		case errors.Is(err, model.ErrInvalidResourceContinuation):
 			resp.Error(&rpcfb.StatusT{Code: rpcfb.ErrorCodeBAD_REQUEST, Message: err.Error()})
 		default:
 			resp.Error(&rpcfb.StatusT{Code: rpcfb.ErrorCodePD_INTERNAL_SERVER_ERROR, Message: err.Error()})
@@ -50,9 +50,9 @@ func (h *Handler) WatchResource(req *protocol.WatchResourceRequest, resp *protoc
 	events, rv, err := h.c.WatchResource(ctx, req.ResourceVersion, req.ResourceType)
 	if err != nil {
 		switch {
-		case errors.Is(err, cluster.ErrCompacted):
+		case errors.Is(err, model.ErrResourceVersionCompacted):
 			resp.Error(&rpcfb.StatusT{Code: rpcfb.ErrorCodePD_COMPACTED, Message: err.Error()})
-		case errors.Is(err, cluster.ErrInvalidResourceType):
+		case errors.Is(err, model.ErrInvalidResourceType):
 			resp.Error(&rpcfb.StatusT{Code: rpcfb.ErrorCodeBAD_REQUEST, Message: err.Error()})
 		default:
 			resp.Error(&rpcfb.StatusT{Code: rpcfb.ErrorCodePD_INTERNAL_SERVER_ERROR, Message: err.Error()})

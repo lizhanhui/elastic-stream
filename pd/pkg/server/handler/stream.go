@@ -7,7 +7,6 @@ import (
 
 	"github.com/AutoMQ/pd/api/rpcfb/rpcfb"
 	"github.com/AutoMQ/pd/pkg/sbp/protocol"
-	"github.com/AutoMQ/pd/pkg/server/cluster"
 	"github.com/AutoMQ/pd/pkg/server/model"
 )
 
@@ -23,7 +22,7 @@ func (h *Handler) CreateStream(req *protocol.CreateStreamRequest, resp *protocol
 	stream, err := h.c.CreateStream(ctx, param)
 	if err != nil {
 		switch {
-		case errors.Is(err, cluster.ErrNotLeader):
+		case errors.Is(err, model.ErrPDNotLeader):
 			resp.Error(h.notLeaderError(ctx))
 		default:
 			resp.Error(&rpcfb.StatusT{Code: rpcfb.ErrorCodePD_INTERNAL_SERVER_ERROR, Message: err.Error()})
@@ -46,9 +45,9 @@ func (h *Handler) DeleteStream(req *protocol.DeleteStreamRequest, resp *protocol
 	stream, err := h.c.DeleteStream(ctx, req.StreamId)
 	if err != nil {
 		switch {
-		case errors.Is(err, cluster.ErrNotLeader):
+		case errors.Is(err, model.ErrPDNotLeader):
 			resp.Error(h.notLeaderError(ctx))
-		case errors.Is(err, cluster.ErrStreamNotFound):
+		case errors.Is(err, model.ErrStreamNotFound):
 			resp.Error(&rpcfb.StatusT{Code: rpcfb.ErrorCodeNOT_FOUND, Message: err.Error()})
 		default:
 			resp.Error(&rpcfb.StatusT{Code: rpcfb.ErrorCodePD_INTERNAL_SERVER_ERROR, Message: err.Error()})
@@ -72,11 +71,11 @@ func (h *Handler) UpdateStream(req *protocol.UpdateStreamRequest, resp *protocol
 	stream, err := h.c.UpdateStream(ctx, param)
 	if err != nil {
 		switch {
-		case errors.Is(err, cluster.ErrNotLeader):
+		case errors.Is(err, model.ErrPDNotLeader):
 			resp.Error(h.notLeaderError(ctx))
-		case errors.Is(err, cluster.ErrStreamNotFound):
+		case errors.Is(err, model.ErrStreamNotFound):
 			resp.Error(&rpcfb.StatusT{Code: rpcfb.ErrorCodeNOT_FOUND, Message: err.Error()})
-		case errors.Is(err, cluster.ErrExpiredStreamEpoch):
+		case errors.Is(err, model.ErrExpiredStreamEpoch):
 			resp.Error(&rpcfb.StatusT{Code: rpcfb.ErrorCodeEXPIRED_STREAM_EPOCH, Message: err.Error()})
 		default:
 			resp.Error(&rpcfb.StatusT{Code: rpcfb.ErrorCodePD_INTERNAL_SERVER_ERROR, Message: err.Error()})
@@ -99,9 +98,9 @@ func (h *Handler) DescribeStream(req *protocol.DescribeStreamRequest, resp *prot
 	stream, err := h.c.DescribeStream(ctx, req.StreamId)
 	if err != nil {
 		switch {
-		case errors.Is(err, cluster.ErrNotLeader):
+		case errors.Is(err, model.ErrPDNotLeader):
 			resp.Error(h.notLeaderError(ctx))
-		case errors.Is(err, cluster.ErrStreamNotFound):
+		case errors.Is(err, model.ErrStreamNotFound):
 			resp.Error(&rpcfb.StatusT{Code: rpcfb.ErrorCodeNOT_FOUND, Message: err.Error()})
 		default:
 			resp.Error(&rpcfb.StatusT{Code: rpcfb.ErrorCodePD_INTERNAL_SERVER_ERROR, Message: err.Error()})

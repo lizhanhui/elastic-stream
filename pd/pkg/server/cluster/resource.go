@@ -8,19 +8,10 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/AutoMQ/pd/api/rpcfb/rpcfb"
+	"github.com/AutoMQ/pd/pkg/server/model"
 	"github.com/AutoMQ/pd/pkg/server/storage/endpoint"
-	"github.com/AutoMQ/pd/pkg/server/storage/kv"
 	"github.com/AutoMQ/pd/pkg/util/traceutil"
 	"github.com/AutoMQ/pd/pkg/util/typeutil"
-)
-
-var (
-	// ErrCompacted is the error when the requested resource version has been compacted.
-	ErrCompacted = errors.New("requested resource version has been compacted")
-	// ErrInvalidResourceType is the error when the requested resource type is invalid (unknown or unsupported).
-	ErrInvalidResourceType = errors.New("invalid resource type")
-	// ErrInvalidContinuation is the error when the continuation string is invalid.
-	ErrInvalidContinuation = errors.New("invalid continue string")
 )
 
 type ResourceService interface {
@@ -30,16 +21,16 @@ type ResourceService interface {
 	// If limit is 0, it returns all resources without pagination.
 	// The returned resources are in the same order as the given types.
 	// If the returned token is nil, it means the listing is finished.
-	// It returns ErrNotLeader if the current PD node is not the leader.
-	// It returns ErrCompacted if the requested resource version has been compacted.
-	// It returns ErrInvalidResourceType if the requested resource type is invalid.
-	// It returns ErrInvalidContinuation if the continuation string is invalid.
+	// It returns model.ErrPDNotLeader if the current PD node is not the leader.
+	// It returns model.ErrResourceVersionCompacted if the requested resource version has been compacted.
+	// It returns model.ErrInvalidResourceType if the requested resource type is invalid.
+	// It returns model.ErrInvalidResourceContinuation if the continuation string is invalid.
 	ListResource(ctx context.Context, types []rpcfb.ResourceType, limit int32, continueStr []byte) (resources []*rpcfb.ResourceT, resourceVersion int64, newContinueStr []byte, err error)
 	// WatchResource watches resources of given types from the given resource version.
 	// If rv is -1, it watches resources with the latest resource version.
 	// If rv is equal to or greater than 0, the returned events happen AFTER the given resource version.
-	// It returns ErrCompacted if the requested resource version has been compacted.
-	// It returns ErrInvalidResourceType if the requested resource type is invalid.
+	// It returns model.ErrResourceVersionCompacted if the requested resource version has been compacted.
+	// It returns model.ErrInvalidResourceType if the requested resource type is invalid.
 	WatchResource(ctx context.Context, rv int64, types []rpcfb.ResourceType) ([]*rpcfb.ResourceEventT, int64, error)
 }
 
@@ -47,7 +38,7 @@ func (c *RaftCluster) ListResource(ctx context.Context, types []rpcfb.ResourceTy
 	logger := c.lg.With(zap.Stringers("resource-types", types), zap.Int32("limit", limit), zap.ByteString("continue", continueStr), traceutil.TraceLogField(ctx))
 
 	if ok, dup := typeutil.IsUnique(types); !ok {
-		return nil, 0, nil, errors.Wrapf(ErrInvalidResourceType, "duplicate resource type %s", dup)
+		return nil, 0, nil, errors.Wrapf(model.ErrInvalidResourceType, "duplicate resource type %s", dup)
 	}
 	err := checkResourceType(types)
 	if err != nil {
@@ -69,12 +60,12 @@ func (c *RaftCluster) ListResource(ctx context.Context, types []rpcfb.ResourceTy
 		err := json.Unmarshal(continueStr, &continuation)
 		if err != nil {
 			logger.Error("failed to unmarshal continuation string", zap.Error(err))
-			return nil, 0, nil, errors.Wrap(ErrInvalidContinuation, "unmarshal continuation string")
+			return nil, 0, nil, errors.Wrapf(model.ErrInvalidResourceContinuation, "unmarshal continuation string %s", continueStr)
 		}
 		err = continuation.check(types)
 		if err != nil {
 			logger.Error("invalid continuation string", zap.Error(err))
-			return nil, 0, nil, errors.Wrap(err, "check continuation string")
+			return nil, 0, nil, errors.Wrapf(err, "check continuation string %s", continueStr)
 		}
 	}
 
@@ -97,10 +88,10 @@ func (c *RaftCluster) ListResource(ctx context.Context, types []rpcfb.ResourceTy
 		logger.Debug("finish listing resources", zap.Int("count", len(res)), zap.Int64("new-rv", newRV), zap.Reflect("new-token", newToken), zap.Error(err))
 		if err != nil {
 			switch {
-			case errors.Is(err, kv.ErrTxnFailed):
-				err = ErrNotLeader
-			case errors.Is(err, kv.ErrCompacted):
-				err = ErrCompacted
+			case errors.Is(err, model.ErrKVTxnFailed):
+				err = model.ErrPDNotLeader
+			case errors.Is(err, model.ErrKVCompacted):
+				err = model.ErrResourceVersionCompacted
 			default:
 				err = errors.Wrap(err, "list resources")
 			}
@@ -146,8 +137,8 @@ func (c *RaftCluster) WatchResource(ctx context.Context, rv int64, types []rpcfb
 	evs, newRV, err := c.storage.WatchResource(ctx, rv, types)
 	logger.Debug("finish watching resources", zap.Int("event-count", len(evs)), zap.Int64("new-rv", newRV), zap.Error(err))
 	if err != nil {
-		if errors.Is(err, kv.ErrCompacted) {
-			err = ErrCompacted
+		if errors.Is(err, model.ErrKVCompacted) {
+			err = model.ErrResourceVersionCompacted
 		}
 		return nil, 0, err
 	}
@@ -167,7 +158,7 @@ func (c *RaftCluster) fillResourceInfo(resource *rpcfb.ResourceT) {
 func checkResourceType(types []rpcfb.ResourceType) error {
 	for _, typ := range types {
 		if typ == rpcfb.ResourceTypeUNKNOWN {
-			return errors.Wrapf(ErrInvalidResourceType, "invalid type %s", typ)
+			return errors.Wrapf(model.ErrInvalidResourceType, "invalid type %s", typ)
 		}
 	}
 	return nil
@@ -180,23 +171,23 @@ type Continuation struct {
 
 func (c Continuation) check(types []rpcfb.ResourceType) error {
 	if c.ResourceVersion <= 0 {
-		return errors.Wrapf(ErrInvalidContinuation, "invalid resource version %d", c.ResourceVersion)
+		return errors.Wrapf(model.ErrInvalidResourceContinuation, "invalid resource version %d", c.ResourceVersion)
 	}
 
 	for i, token := range c.Tokens {
 		if token.ResourceType == rpcfb.ResourceTypeUNKNOWN {
-			return errors.Wrapf(ErrInvalidResourceType, "invalid type %s in token %d", token.ResourceType, i)
+			return errors.Wrapf(model.ErrInvalidResourceType, "invalid type %s in token %d", token.ResourceType, i)
 		}
 	}
 
 	// Check whether the types are the same.
 	// The types are sorted and unique, so we can compare them directly.
 	if len(types) != len(c.Tokens) {
-		return errors.Wrapf(ErrInvalidContinuation, "type count %d != token count %d", len(types), len(c.Tokens))
+		return errors.Wrapf(model.ErrInvalidResourceContinuation, "type count %d != token count %d", len(types), len(c.Tokens))
 	}
 	for i, token := range c.Tokens {
 		if types[i] != token.ResourceType {
-			return errors.Wrapf(ErrInvalidContinuation, "type %s != token %d type %s", types[i], i, token.ResourceType)
+			return errors.Wrapf(model.ErrInvalidResourceContinuation, "type %s != token %d type %s", types[i], i, token.ResourceType)
 		}
 	}
 

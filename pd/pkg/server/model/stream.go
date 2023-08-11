@@ -61,6 +61,9 @@ func NewUpdateStreamParam(t *rpcfb.StreamT) (*UpdateStreamParam, error) {
 	if t.Replica < 0 && t.AckCount < 0 && t.RetentionPeriodMs < 0 && t.Epoch < 0 {
 		return nil, errors.New("no change")
 	}
+	if t.Replica > 0 && t.AckCount > 0 && t.Replica < t.AckCount {
+		return nil, errors.Errorf("invalid replica %d < ack count %d", t.Replica, t.AckCount)
+	}
 
 	return &UpdateStreamParam{
 		StreamID:          t.StreamId,

@@ -55,7 +55,7 @@ func (e *Endpoint) CreateObject(ctx context.Context, object Object) error {
 
 	if err != nil {
 		logger.Error("failed to create object", zap.Error(err))
-		return errors.Wrap(err, "create object")
+		return errors.Wrapf(err, "create object %d", object.ObjectID)
 	}
 	if prevValue != nil {
 		logger.Warn("object already exist, will override it")
@@ -79,7 +79,7 @@ func (e *Endpoint) UpdateObject(ctx context.Context, object Object) (Object, err
 	mcache.Free(value)
 	if err != nil {
 		logger.Error("failed to update object", zap.Error(err))
-		return Object{}, errors.Wrap(err, "update object")
+		return Object{}, errors.Wrapf(err, "update object %d", object.ObjectID)
 	}
 	if prevValue == nil {
 		logger.Warn("object not found when updating")
@@ -101,7 +101,7 @@ func (e *Endpoint) GetObjectsByRange(ctx context.Context, rangeID RangeID) ([]Ob
 	})
 	if err != nil {
 		logger.Error("failed to get objects by range", zap.Error(err))
-		return nil, errors.Wrap(err, "get objects by range")
+		return nil, errors.Wrapf(err, "get objects by range %d-%d", rangeID.StreamID, rangeID.Index)
 	}
 
 	return objects, nil

@@ -28,11 +28,13 @@ const (
 )
 
 type RangeServerEndpoint interface {
+	// SaveRangeServer creates or updates the given range server and returns it.
 	SaveRangeServer(ctx context.Context, rangeServer *rpcfb.RangeServerT) (*rpcfb.RangeServerT, error)
+	// ForEachRangeServer calls the given function for every range server in the storage.
+	// If f returns an error, the iteration is stopped and the error is returned.
 	ForEachRangeServer(ctx context.Context, f func(rangeServer *rpcfb.RangeServerT) error) error
 }
 
-// SaveRangeServer creates or updates the given range server and returns it.
 func (e *Endpoint) SaveRangeServer(ctx context.Context, rangeServer *rpcfb.RangeServerT) (*rpcfb.RangeServerT, error) {
 	logger := e.lg.With(zap.Int32("server-id", rangeServer.ServerId), traceutil.TraceLogField(ctx))
 
@@ -48,14 +50,12 @@ func (e *Endpoint) SaveRangeServer(ctx context.Context, rangeServer *rpcfb.Range
 	_, err := e.KV.Put(ctx, key, value, false)
 	if err != nil {
 		logger.Error("failed to save range server", zap.Error(err))
-		return nil, errors.Wrap(err, "save range server")
+		return nil, errors.Wrapf(err, "save range server %d", rangeServer.ServerId)
 	}
 
 	return rangeServer, nil
 }
 
-// ForEachRangeServer calls the given function for every range server in the storage.
-// If f returns an error, the iteration is stopped and the error is returned.
 func (e *Endpoint) ForEachRangeServer(ctx context.Context, f func(rangeServer *rpcfb.RangeServerT) error) error {
 	var startID = model.MinRangeServerID
 	for startID >= model.MinRangeServerID {

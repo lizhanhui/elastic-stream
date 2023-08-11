@@ -65,7 +65,7 @@ type Events struct {
 
 	// Error is the error if an error occurs, otherwise nil.
 	// If it is not nil, the Events will be nil.
-	// It will be set to ErrCompacted if the revision has been compacted.
+	// It will be set to model.ErrKVCompacted if the revision has been compacted.
 	Error error
 }
 

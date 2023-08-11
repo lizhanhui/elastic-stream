@@ -25,6 +25,7 @@ import (
 	"go.etcd.io/etcd/server/v3/embed"
 	"go.uber.org/zap"
 
+	"github.com/AutoMQ/pd/pkg/server/model"
 	"github.com/AutoMQ/pd/pkg/util/etcdutil"
 	"github.com/AutoMQ/pd/pkg/util/traceutil"
 )
@@ -32,17 +33,6 @@ import (
 const (
 	// A buffer in order to reduce times of context switch.
 	_watchChanCap = 128
-)
-
-var (
-	// ErrTxnFailed is the error when etcd transaction failed.
-	ErrTxnFailed = errors.New("etcd transaction failed")
-	// ErrTooManyTxnOps is the error when the number of operations in a transaction exceeds the limit.
-	ErrTooManyTxnOps = errors.New("too many txn operations")
-	// ErrCompacted is the error when the requested revision has been compacted.
-	ErrCompacted = errors.New("requested revision has been compacted")
-	// ErrDataModified is the error when the data has been modified when doing transaction.
-	ErrDataModified = errors.New("data has been modified")
 )
 
 // Etcd is a kv based on etcd.
@@ -102,7 +92,7 @@ func NewEtcd(param EtcdParam, lg *zap.Logger) *Etcd {
 	return e
 }
 
-// Get returns ErrTxnFailed if EtcdParam.CmpFunc evaluates to false.
+// Get returns model.ErrKVTxnFailed if EtcdParam.CmpFunc evaluates to false.
 func (e *Etcd) Get(ctx context.Context, k []byte) ([]byte, error) {
 	if len(k) == 0 {
 		return nil, nil
@@ -121,15 +111,15 @@ func (e *Etcd) Get(ctx context.Context, k []byte) ([]byte, error) {
 	return nil, nil
 }
 
-// BatchGet returns ErrTxnFailed if EtcdParam.CmpFunc evaluates to false.
-// If inTxn is true, BatchGet returns ErrTooManyTxnOps if the number of keys exceeds EtcdParam.MaxTxnOps.
+// BatchGet returns model.ErrKVTxnFailed if EtcdParam.CmpFunc evaluates to false.
+// If inTxn is true, BatchGet returns model.ErrKVTooManyTxnOps if the number of keys exceeds EtcdParam.MaxTxnOps.
 func (e *Etcd) BatchGet(ctx context.Context, keys [][]byte, inTxn bool) ([]KeyValue, error) {
 	if len(keys) == 0 {
 		return nil, nil
 	}
 	batchSize := int(e.maxTxnOps)
 	if inTxn && len(keys) > batchSize {
-		return nil, errors.Wrap(ErrTooManyTxnOps, "kv batch get")
+		return nil, errors.Wrap(model.ErrKVTooManyTxnOps, "kv batch get")
 	}
 
 	kvs := make([]KeyValue, 0, len(keys))
@@ -156,7 +146,7 @@ func (e *Etcd) BatchGet(ctx context.Context, keys [][]byte, inTxn bool) ([]KeyVa
 			return nil, errors.Wrap(err, "kv batch get")
 		}
 		if !resp.Succeeded {
-			return nil, errors.Wrap(ErrTxnFailed, "kv batch get")
+			return nil, errors.Wrap(model.ErrKVTxnFailed, "kv batch get")
 		}
 
 		for _, resp := range resp.Responses {
@@ -179,8 +169,8 @@ func (e *Etcd) BatchGet(ctx context.Context, keys [][]byte, inTxn bool) ([]KeyVa
 	return kvs, nil
 }
 
-// GetByRange returns ErrTxnFailed if EtcdParam.CmpFunc evaluates to false.
-// GetByRange returns ErrCompacted if the requested revision has been compacted.
+// GetByRange returns model.ErrKVTxnFailed if EtcdParam.CmpFunc evaluates to false.
+// It returns model.ErrKVCompacted if the requested revision has been compacted.
 func (e *Etcd) GetByRange(ctx context.Context, r Range, rev int64, limit int64, desc bool) ([]KeyValue, int64, bool, error) {
 	if len(r.StartKey) == 0 {
 		return nil, 0, false, nil
@@ -203,12 +193,12 @@ func (e *Etcd) GetByRange(ctx context.Context, r Range, rev int64, limit int64, 
 	resp, err := e.newTxnFunc(ctx).Then(clientv3.OpGet(string(startKey), opts...)).Commit()
 	if err != nil {
 		if err == etcdrpc.ErrCompacted {
-			return nil, 0, false, errors.Wrapf(ErrCompacted, "kv get by range, revision %d", rev)
+			return nil, 0, false, errors.Wrapf(model.ErrKVCompacted, "kv get by range, revision %d", rev)
 		}
 		return nil, 0, false, errors.Wrap(err, "kv get by range")
 	}
 	if !resp.Succeeded {
-		return nil, 0, false, errors.Wrap(ErrTxnFailed, "kv get by range")
+		return nil, 0, false, errors.Wrap(model.ErrKVTxnFailed, "kv get by range")
 	}
 
 	// When the transaction succeeds, the number of responses is always 1 and is always a range response.
@@ -249,7 +239,7 @@ func (e *Etcd) Watch(ctx context.Context, prefix []byte, rev int64, filter Filte
 	return watcher
 }
 
-// Put returns ErrTxnFailed if EtcdParam.CmpFunc evaluates to false.
+// Put returns model.ErrKVTxnFailed if EtcdParam.CmpFunc evaluates to false.
 func (e *Etcd) Put(ctx context.Context, k, v []byte, prevKV bool) ([]byte, error) {
 	if len(k) == 0 {
 		return nil, nil
@@ -272,15 +262,15 @@ func (e *Etcd) Put(ctx context.Context, k, v []byte, prevKV bool) ([]byte, error
 	return nil, nil
 }
 
-// BatchPut returns ErrTxnFailed if EtcdParam.CmpFunc evaluates to false.
-// If inTxn is true, BatchPut returns ErrTooManyTxnOps if the number of kvs exceeds EtcdParam.MaxTxnOps.
+// BatchPut returns model.ErrKVTxnFailed if EtcdParam.CmpFunc evaluates to false.
+// If inTxn is true, BatchPut returns model.ErrKVTooManyTxnOps if the number of kvs exceeds EtcdParam.MaxTxnOps.
 func (e *Etcd) BatchPut(ctx context.Context, kvs []KeyValue, prevKV bool, inTxn bool) ([]KeyValue, error) {
 	if len(kvs) == 0 {
 		return nil, nil
 	}
 	batchSize := int(e.maxTxnOps)
 	if inTxn && len(kvs) > batchSize {
-		return nil, errors.Wrap(ErrTooManyTxnOps, "kv batch put")
+		return nil, errors.Wrap(model.ErrKVTooManyTxnOps, "kv batch put")
 	}
 
 	var prevKVs []KeyValue
@@ -315,7 +305,7 @@ func (e *Etcd) BatchPut(ctx context.Context, kvs []KeyValue, prevKV bool, inTxn 
 			return nil, errors.Wrap(err, "kv batch put")
 		}
 		if !resp.Succeeded {
-			return nil, errors.Wrap(ErrTxnFailed, "kv batch put")
+			return nil, errors.Wrap(model.ErrKVTxnFailed, "kv batch put")
 		}
 
 		if !prevKV {
@@ -339,7 +329,7 @@ func (e *Etcd) BatchPut(ctx context.Context, kvs []KeyValue, prevKV bool, inTxn 
 	return prevKVs, nil
 }
 
-// Delete returns ErrTxnFailed if EtcdParam.CmpFunc evaluates to false.
+// Delete returns model.ErrKVTxnFailed if EtcdParam.CmpFunc evaluates to false.
 func (e *Etcd) Delete(ctx context.Context, k []byte, prevKV bool) ([]byte, error) {
 	if len(k) == 0 {
 		return nil, nil
@@ -361,15 +351,15 @@ func (e *Etcd) Delete(ctx context.Context, k []byte, prevKV bool) ([]byte, error
 	return nil, nil
 }
 
-// BatchDelete returns ErrTxnFailed if EtcdParam.CmpFunc evaluates to false.
-// If inTxn is true, BatchDelete returns ErrTooManyTxnOps if the number of keys exceeds EtcdParam.MaxTxnOps.
+// BatchDelete returns model.ErrKVTxnFailed if EtcdParam.CmpFunc evaluates to false.
+// If inTxn is true, BatchDelete returns model.ErrKVTooManyTxnOps if the number of keys exceeds EtcdParam.MaxTxnOps.
 func (e *Etcd) BatchDelete(ctx context.Context, keys [][]byte, prevKV bool, inTxn bool) ([]KeyValue, error) {
 	if len(keys) == 0 {
 		return nil, nil
 	}
 	batchSize := int(e.maxTxnOps)
 	if inTxn && len(keys) > batchSize {
-		return nil, errors.Wrap(ErrTooManyTxnOps, "kv batch delete")
+		return nil, errors.Wrap(model.ErrKVTooManyTxnOps, "kv batch delete")
 	}
 
 	var prevKVs []KeyValue
@@ -403,7 +393,7 @@ func (e *Etcd) BatchDelete(ctx context.Context, keys [][]byte, prevKV bool, inTx
 			return nil, errors.Wrap(err, "kv batch delete")
 		}
 		if !resp.Succeeded {
-			return nil, errors.Wrap(ErrTxnFailed, "kv batch delete")
+			return nil, errors.Wrap(model.ErrKVTxnFailed, "kv batch delete")
 		}
 
 		if !prevKV {
@@ -426,6 +416,7 @@ func (e *Etcd) BatchDelete(ctx context.Context, keys [][]byte, prevKV bool, inTx
 	return prevKVs, nil
 }
 
+// DeleteByPrefixes returns model.ErrKVTxnFailed if EtcdParam.CmpFunc evaluates to false.
 func (e *Etcd) DeleteByPrefixes(ctx context.Context, prefixes [][]byte) (int64, error) {
 	ops := make([]clientv3.Op, 0, len(prefixes))
 	for _, p := range prefixes {
@@ -446,7 +437,7 @@ func (e *Etcd) DeleteByPrefixes(ctx context.Context, prefixes [][]byte) (int64, 
 		return 0, errors.Wrap(err, "kv delete by prefix")
 	}
 	if !resp.Succeeded {
-		return 0, errors.Wrap(ErrTxnFailed, "kv delete by prefix")
+		return 0, errors.Wrap(model.ErrKVTxnFailed, "kv delete by prefix")
 	}
 
 	deleted := int64(0)
@@ -458,6 +449,8 @@ func (e *Etcd) DeleteByPrefixes(ctx context.Context, prefixes [][]byte) (int64, 
 	return deleted, nil
 }
 
+// ExecInTxn returns model.ErrKVTxnFailed if EtcdParam.CmpFunc evaluates to false.
+// It returns model.ErrKVDataModified if any key is modified by others.
 func (e *Etcd) ExecInTxn(ctx context.Context, f func(kv BasicKV) error) error {
 	txn := e.newEtcdTxn(ctx)
 
@@ -577,7 +570,7 @@ func (w *watchChan) run() {
 func (w *watchChan) sendError(err error) {
 	logger := w.lg.With(zap.Error(err))
 	if errors.Is(err, etcdrpc.ErrCompacted) {
-		err = ErrCompacted
+		err = model.ErrKVCompacted
 		logger.Warn("watch chan error: compaction")
 	} else {
 		logger.Error("watch chan error")
@@ -724,11 +717,11 @@ func (et *etcdTxn) Commit() error {
 	if err == nil {
 		if !resp.Succeeded {
 			// Not leader now
-			err = ErrTxnFailed
+			err = model.ErrKVTxnFailed
 		} else if !resp.Responses[0].GetResponseTxn().Succeeded {
 			// When the transaction succeeds, the number of responses is always 1 and is always a txn response.
 			// The data read has been modified
-			err = ErrDataModified
+			err = model.ErrKVDataModified
 		}
 	}
 
