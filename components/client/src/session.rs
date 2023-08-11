@@ -1,21 +1,10 @@
-use crate::{
-    error::ClientError,
-    heartbeat::HeartbeatData,
-    request::{self, Request},
-    response::{self, Response},
-    state::SessionState,
-    NodeRole,
-};
-use codec::{error::FrameError, frame::Frame};
-
 use crate::invocation_context::InvocationContext;
-use futures::Future;
+use crate::{heartbeat::HeartbeatData, state::SessionState, NodeRole};
+use crate::{request, response};
+use codec::{error::FrameError, frame::Frame};
 use local_sync::oneshot;
 use log::{error, info, trace, warn};
-use monoio::{
-    io::{AsyncReadRent, Splitable},
-    net::TcpStream,
-};
+use monoio::io::{AsyncReadRent, AsyncWriteRent, Splitable};
 use protocol::rpc::header::{ClientRole, GoAwayFlags, OperationCode, RangeServerState};
 use std::{
     cell::{RefCell, UnsafeCell},
@@ -23,18 +12,16 @@ use std::{
     net::SocketAddr,
     rc::{Rc, Weak},
     sync::Arc,
-    task::{Context, Poll},
     time::Instant,
 };
-use tower::Service;
 use transport::connection::{ChannelReader, ChannelWriter};
 
-pub(crate) struct Session {
+pub(crate) struct Session<W> {
     pub(crate) target: SocketAddr,
 
     config: Arc<config::Configuration>,
 
-    connection: ChannelWriter,
+    connection: Rc<ChannelWriter<W>>,
 
     /// In-flight requests.
     inflight_requests: Rc<UnsafeCell<HashMap<u32, InvocationContext>>>,
@@ -53,16 +40,19 @@ pub(crate) struct Session {
     state: Rc<RefCell<SessionState>>,
 }
 
-impl Session {
+impl<W> Session<W>
+where
+    W: AsyncWriteRent + 'static,
+{
     /// Spawn a loop to continuously read responses and server-side requests.
-    fn spawn_read_loop<S>(
-        mut connection: ChannelReader<S>,
+    fn spawn_read_loop<R>(
+        mut connection: ChannelReader<R>,
         inflight_requests: Rc<UnsafeCell<HashMap<u32, InvocationContext>>>,
-        sessions: Weak<RefCell<HashMap<SocketAddr, Session>>>,
+        sessions: Weak<RefCell<HashMap<SocketAddr, Session<W>>>>,
         state: Rc<RefCell<SessionState>>,
         target: SocketAddr,
     ) where
-        S: AsyncReadRent + 'static,
+        R: AsyncReadRent + 'static,
     {
         monoio::spawn(async move {
             trace!("Start read loop for session[target={}]", target);
@@ -112,7 +102,7 @@ impl Session {
                         trace!("Read a frame from channel={}", target);
                         let inflight = unsafe { &mut *inflight_requests.get() };
                         if frame.is_response() {
-                            Session::handle_response(inflight, frame, target);
+                            Session::<W>::handle_response(inflight, frame, target);
                         } else if frame.operation_code == OperationCode::GOAWAY {
                             *state.borrow_mut() = SessionState::GoAway;
                             let reason = if frame.has_go_away_flag(GoAwayFlags::SERVER_MAINTENANCE)
@@ -159,13 +149,17 @@ impl Session {
         });
     }
 
-    pub(crate) fn new(
+    pub(crate) fn new<S>(
         target: SocketAddr,
-        stream: TcpStream,
+        stream: S,
         endpoint: &str,
         config: &Arc<config::Configuration>,
-        sessions: Weak<RefCell<HashMap<SocketAddr, Session>>>,
-    ) -> Self {
+        sessions: Weak<RefCell<HashMap<SocketAddr, Session<W>>>>,
+    ) -> Self
+    where
+        S: Splitable<OwnedWrite = W>,
+        <S as Splitable>::OwnedRead: AsyncReadRent + 'static,
+    {
         let (read_half, write_half) = stream.into_split();
         let channel_reader = ChannelReader::new(read_half, endpoint.to_string());
         let channel_writer = ChannelWriter::new(write_half, endpoint.to_string());
@@ -184,7 +178,7 @@ impl Session {
         Self {
             config: Arc::clone(config),
             target,
-            connection: channel_writer,
+            connection: Rc::new(channel_writer),
             inflight_requests: inflight,
             idle_since: Rc::new(RefCell::new(Instant::now())),
             role: Rc::new(RefCell::new(NodeRole::Unknown)),
@@ -506,12 +500,15 @@ impl Session {
     }
 }
 
-impl Clone for Session {
+impl<W> Clone for Session<W>
+where
+    W: AsyncWriteRent,
+{
     fn clone(&self) -> Self {
         Self {
             target: self.target,
             config: Arc::clone(&self.config),
-            connection: self.connection.clone(),
+            connection: Rc::clone(&self.connection),
             inflight_requests: Rc::clone(&self.inflight_requests),
             idle_since: Rc::clone(&self.idle_since),
             role: Rc::clone(&self.role),
@@ -520,177 +517,29 @@ impl Clone for Session {
     }
 }
 
-/// A `tower::Service` implementation for `Session`.
-///
-/// # Note feature `GAT` and `type-alias-impl-trait` are required.
-impl Service<Request> for Session {
-    type Response = Response;
-
-    type Error = ClientError;
-
-    type Future = impl Future<Output = Result<Self::Response, Self::Error>>;
-
-    fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        Poll::Ready(Ok(()))
-    }
-
-    fn call(&mut self, req: Request) -> Self::Future {
-        let this = self.clone();
-        async move {
-            let (tx, rx) = oneshot::channel();
-            if let Err(_e) = this.write(req, tx).await {
-                return Err(ClientError::BadRequest);
-            }
-            rx.await.map_err(|_| {
-                ClientError::ChannelClosing("Underlying connection is closed".to_owned())
-            })
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
 
     use super::*;
-    use log::debug;
     use mock_server::run_listener;
-    use std::{error::Error, time::Duration};
-    use tower::timeout::Timeout;
+    use monoio::net::TcpStream;
+    use std::error::Error;
 
     /// Verify it's OK to create a new session.
-    #[test]
-    fn test_new() -> Result<(), Box<dyn Error>> {
-        tokio_uring::start(async {
-            let port = run_listener().await;
-            let target = format!("127.0.0.1:{}", port);
-            let stream = TcpStream::connect(target.parse()?).await?;
-            let config = Arc::new(config::Configuration::default());
-            let sessions = Rc::new(RefCell::new(HashMap::new()));
-            let (tx, _rx) = broadcast::channel(1);
-            let _session = Session::new(
-                target.parse()?,
-                stream,
-                &target,
-                &config,
-                Rc::downgrade(&sessions),
-                tx,
-            );
-
-            Ok(())
-        })
-    }
-
-    /// Verify it's OK to wrap `Session` into `Timeout` tower middleware.
-    #[test]
-    fn test_session_service() -> Result<(), Box<dyn Error>> {
-        ulog::try_init_log();
-        tokio_uring::start(async {
-            let port = run_listener().await;
-            let target = format!("127.0.0.1:{}", port);
-            let stream = TcpStream::connect(target.parse()?).await?;
-            let config = Arc::new(config::Configuration::default());
-            let sessions = Rc::new(RefCell::new(HashMap::new()));
-            let (tx, _rx) = broadcast::channel(1);
-            let session = Session::new(
-                target.parse()?,
-                stream,
-                &target,
-                &config,
-                Rc::downgrade(&sessions),
-                tx,
-            );
-
-            let mut timeout_session = Timeout::new(session, Duration::from_secs(1));
-            let req = crate::request::Request {
-                timeout: Duration::from_secs(1),
-                headers: request::Headers::Heartbeat {
-                    client_id: "test".to_owned(),
-                    role: ClientRole::CLIENT_ROLE_FRONTEND,
-                    range_server: None,
-                },
-                body: None,
-            };
-            match timeout_session.call(req).await {
-                Ok(_resp) => {
-                    panic!("Should not receive a heartbeat response");
-                }
-                Err(e) => {
-                    assert_eq!(&e.to_string(), "request timed out");
-                }
-            }
-            Ok(())
-        })
-    }
-
-    struct LogService<S> {
-        inner: S,
-    }
-
-    impl<S, Request> tower::Service<Request> for LogService<S>
-    where
-        S: tower::Service<Request> + Clone,
-    {
-        type Response = S::Response;
-        type Error = S::Error;
-        type Future = impl Future<Output = Result<Self::Response, Self::Error>>;
-
-        fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-            self.inner.poll_ready(cx)
-        }
-
-        fn call(&mut self, req: Request) -> Self::Future {
-            let mut svc = self.inner.clone();
-            async move {
-                debug!("Before calling inner service");
-                let res = svc.call(req).await;
-                debug!("After calling inner service");
-                res
-            }
-        }
-    }
-
-    /// Verify it's OK to wrap `Session` into `LogService` tower middleware.
-    #[test]
-    fn test_session_service_with_timeout_and_logging() -> Result<(), Box<dyn Error>> {
-        ulog::try_init_log();
-        tokio_uring::start(async {
-            let port = run_listener().await;
-            let target = format!("127.0.0.1:{}", port);
-            let stream = TcpStream::connect(target.parse()?).await?;
-            let config = Arc::new(config::Configuration::default());
-            let sessions = Rc::new(RefCell::new(HashMap::new()));
-            let (tx, _rx) = broadcast::channel(1);
-            let session = Session::new(
-                target.parse()?,
-                stream,
-                &target,
-                &config,
-                Rc::downgrade(&sessions),
-                tx,
-            );
-
-            let timeout_session = Timeout::new(session, Duration::from_secs(1));
-            let req = crate::request::Request {
-                timeout: Duration::from_secs(1),
-                headers: request::Headers::Heartbeat {
-                    client_id: "test".to_owned(),
-                    role: ClientRole::CLIENT_ROLE_FRONTEND,
-                    range_server: None,
-                },
-                body: None,
-            };
-            let mut svc = LogService {
-                inner: timeout_session,
-            };
-            match svc.call(req).await {
-                Ok(_resp) => {
-                    panic!("Should not receive a heartbeat response");
-                }
-                Err(e) => {
-                    assert_eq!(&e.to_string(), "request timed out");
-                }
-            }
-            Ok(())
-        })
+    #[monoio::test]
+    async fn test_new() -> Result<(), Box<dyn Error>> {
+        let port = run_listener().await;
+        let target = format!("127.0.0.1:{}", port);
+        let stream = TcpStream::connect(&target).await?;
+        let config = Arc::new(config::Configuration::default());
+        let sessions = Rc::new(RefCell::new(HashMap::new()));
+        let _session = Session::new(
+            target.parse()?,
+            stream,
+            &target,
+            &config,
+            Rc::downgrade(&sessions),
+        );
+        Ok(())
     }
 }

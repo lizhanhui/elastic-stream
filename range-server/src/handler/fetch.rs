@@ -229,8 +229,8 @@ mod tests {
         request
     }
 
-    #[test]
-    fn test_fetch_no_new_record() -> Result<(), Box<dyn Error>> {
+    #[monoio::test]
+    async fn test_fetch_no_new_record() -> Result<(), Box<dyn Error>> {
         let mut mock_store = store::MockStore::new();
         mock_store
             .expect_get_range_end_offset()
@@ -271,30 +271,27 @@ mod tests {
             Ok(rx)
         });
 
-        tokio_uring::start(async move {
-            let store = Rc::new(mock_store);
-            let range_manager = Rc::new(UnsafeCell::new(DefaultRangeManager::new(
-                mock_fetcher,
-                Rc::clone(&store),
-                Rc::new(object_storage),
-                metadata_manager,
-            )));
+        let store = Rc::new(mock_store);
+        let range_manager = Rc::new(UnsafeCell::new(DefaultRangeManager::new(
+            mock_fetcher,
+            Rc::clone(&store),
+            Rc::new(object_storage),
+            metadata_manager,
+        )));
 
-            let sm = unsafe { &mut *range_manager.get() };
-            sm.start().await.unwrap();
+        let sm = unsafe { &mut *range_manager.get() };
+        sm.start().await.unwrap();
 
-            let request = build_fetch_request();
-            let mut response = Frame::new(OperationCode::FETCH);
-            let handler =
-                super::Fetch::parse_frame(&request).expect("Failed to parse request frame");
-            handler
-                .apply(Rc::clone(&store), range_manager, &mut response)
-                .await;
-            let header = response.header.unwrap();
-            let fetch_response = flatbuffers::root::<FetchResponse>(&header).unwrap();
-            let status = fetch_response.status();
-            assert_eq!(status.code(), ErrorCode::NO_NEW_RECORD);
-            Ok(())
-        })
+        let request = build_fetch_request();
+        let mut response = Frame::new(OperationCode::FETCH);
+        let handler = super::Fetch::parse_frame(&request).expect("Failed to parse request frame");
+        handler
+            .apply(Rc::clone(&store), range_manager, &mut response)
+            .await;
+        let header = response.header.unwrap();
+        let fetch_response = flatbuffers::root::<FetchResponse>(&header).unwrap();
+        let status = fetch_response.status();
+        assert_eq!(status.code(), ErrorCode::NO_NEW_RECORD);
+        Ok(())
     }
 }

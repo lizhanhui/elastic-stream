@@ -343,8 +343,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_apply() {
+    #[monoio::test]
+    async fn test_apply() {
         let mut store = MockStore::default();
 
         store.expect_append().once().returning(|_opt, _request| {
@@ -373,38 +373,36 @@ mod tests {
 
         let handler = super::Append::parse_frame(&request).expect("Parse shall not raise an error");
         let mut response = Frame::new(OperationCode::APPEND);
-        tokio_uring::start(async move {
-            handler
-                .apply(
-                    Rc::new(store),
-                    Rc::new(UnsafeCell::new(range_manager)),
-                    &mut response,
-                )
-                .await;
+        handler
+            .apply(
+                Rc::new(store),
+                Rc::new(UnsafeCell::new(range_manager)),
+                &mut response,
+            )
+            .await;
 
-            if let Some(ref buf) = response.header {
-                match flatbuffers::root::<AppendResponse>(buf) {
-                    Ok(resp) => {
-                        assert_eq!(resp.status().code(), ErrorCode::OK);
-                        resp.entries()
-                            .iter()
-                            .flat_map(|entries| entries.iter())
-                            .for_each(|e| {
-                                assert_eq!(e.status().code(), ErrorCode::OK);
-                            });
-                    }
-                    Err(_e) => {
-                        panic!("Failed to decode response header using flatbuffer");
-                    }
+        if let Some(ref buf) = response.header {
+            match flatbuffers::root::<AppendResponse>(buf) {
+                Ok(resp) => {
+                    assert_eq!(resp.status().code(), ErrorCode::OK);
+                    resp.entries()
+                        .iter()
+                        .flat_map(|entries| entries.iter())
+                        .for_each(|e| {
+                            assert_eq!(e.status().code(), ErrorCode::OK);
+                        });
                 }
-            } else {
-                panic!("Frame should have an append-response header");
+                Err(_e) => {
+                    panic!("Failed to decode response header using flatbuffer");
+                }
             }
-        })
+        } else {
+            panic!("Frame should have an append-response header");
+        }
     }
 
-    #[test]
-    fn test_apply_when_out_of_order() {
+    #[monoio::test]
+    async fn test_apply_when_out_of_order() {
         let store = MockStore::default();
 
         let mut range_manager = MockRangeManager::default();
@@ -417,36 +415,31 @@ mod tests {
 
         let handler = super::Append::parse_frame(&request).expect("Parse shall not raise an error");
         let mut response = Frame::new(OperationCode::APPEND);
-        tokio_uring::start(async move {
-            handler
-                .apply(
-                    Rc::new(store),
-                    Rc::new(UnsafeCell::new(range_manager)),
-                    &mut response,
-                )
-                .await;
+        handler
+            .apply(
+                Rc::new(store),
+                Rc::new(UnsafeCell::new(range_manager)),
+                &mut response,
+            )
+            .await;
 
-            if let Some(ref buf) = response.header {
-                match flatbuffers::root::<AppendResponse>(buf) {
-                    Ok(resp) => {
-                        assert_eq!(resp.status().code(), ErrorCode::OK);
-                        resp.entries()
-                            .iter()
-                            .flat_map(|entries| entries.iter())
-                            .for_each(|e| {
-                                assert_eq!(
-                                    e.status().code(),
-                                    ErrorCode::APPEND_TO_OVERTAKEN_OFFSET
-                                );
-                            });
-                    }
-                    Err(_e) => {
-                        panic!("Failed to decode response header using flatbuffer");
-                    }
+        if let Some(ref buf) = response.header {
+            match flatbuffers::root::<AppendResponse>(buf) {
+                Ok(resp) => {
+                    assert_eq!(resp.status().code(), ErrorCode::OK);
+                    resp.entries()
+                        .iter()
+                        .flat_map(|entries| entries.iter())
+                        .for_each(|e| {
+                            assert_eq!(e.status().code(), ErrorCode::APPEND_TO_OVERTAKEN_OFFSET);
+                        });
                 }
-            } else {
-                panic!("Frame should have an append-response header");
+                Err(_e) => {
+                    panic!("Failed to decode response header using flatbuffer");
+                }
             }
-        })
+        } else {
+            panic!("Frame should have an append-response header");
+        }
     }
 }

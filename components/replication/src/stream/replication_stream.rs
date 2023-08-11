@@ -589,143 +589,135 @@ mod tests {
 
     use super::*;
 
-    #[test]
-    fn test_open() -> Result<(), Box<dyn Error>> {
-        tokio_uring::start(async move {
-            let mut client = MockClient::new();
-            client.expect_list_ranges().returning(|_| {
-                Ok(vec![
-                    RangeMetadata::new(0, 0, 0, 0, Some(100)),
-                    RangeMetadata::new(0, 1, 1, 100, None),
-                ])
-            });
-            let client = Rc::new(client);
-            let range_new_context = MockReplicationRange::new_context();
-            range_new_context.expect().returning(|m, _, _, _, _| {
-                if m.index() == 0 {
-                    let mut range0: MockReplicationRange<MockClient> =
-                        MockReplicationRange::default();
-                    range0.expect_metadata().times(0).return_const(m);
-                    range0.expect_seal().times(0);
-                    Rc::new(range0)
-                } else if m.index() == 1 {
-                    let mut range1: MockReplicationRange<MockClient> =
-                        MockReplicationRange::default();
-                    range1.expect_metadata().times(1).return_const(m);
-                    range1.expect_seal().times(2).returning(|| Ok(200));
-                    range1.expect_confirm_offset().times(1).returning(|| 200);
-                    Rc::new(range1)
-                } else {
-                    panic!("unexpected range index")
-                }
-            });
-            let stream: Rc<ReplicationStream<MockReplicationRange<MockClient>, MockClient>> =
-                ReplicationStream::new(0, 1, Rc::downgrade(&client), Rc::new(HotCache::new(4096)));
-            stream.open().await.unwrap();
-            assert_eq!(0, stream.start_offset());
-            assert_eq!(200, stream.confirm_offset());
-            stream.close().await;
+    #[monoio::test]
+    async fn test_open() -> Result<(), Box<dyn Error>> {
+        let mut client = MockClient::new();
+        client.expect_list_ranges().returning(|_| {
+            Ok(vec![
+                RangeMetadata::new(0, 0, 0, 0, Some(100)),
+                RangeMetadata::new(0, 1, 1, 100, None),
+            ])
         });
+        let client = Rc::new(client);
+        let range_new_context = MockReplicationRange::new_context();
+        range_new_context.expect().returning(|m, _, _, _, _| {
+            if m.index() == 0 {
+                let mut range0: MockReplicationRange<MockClient> = MockReplicationRange::default();
+                range0.expect_metadata().times(0).return_const(m);
+                range0.expect_seal().times(0);
+                Rc::new(range0)
+            } else if m.index() == 1 {
+                let mut range1: MockReplicationRange<MockClient> = MockReplicationRange::default();
+                range1.expect_metadata().times(1).return_const(m);
+                range1.expect_seal().times(2).returning(|| Ok(200));
+                range1.expect_confirm_offset().times(1).returning(|| 200);
+                Rc::new(range1)
+            } else {
+                panic!("unexpected range index")
+            }
+        });
+        let stream: Rc<ReplicationStream<MockReplicationRange<MockClient>, MockClient>> =
+            ReplicationStream::new(0, 1, Rc::downgrade(&client), Rc::new(HotCache::new(4096)));
+        stream.open().await.unwrap();
+        assert_eq!(0, stream.start_offset());
+        assert_eq!(200, stream.confirm_offset());
+        stream.close().await;
         Ok(())
     }
 
-    #[test]
-    fn test_append() -> Result<(), Box<dyn Error>> {
-        tokio_uring::start(async move {
-            let mut client = MockClient::new();
-            client
-                .expect_list_ranges()
-                .returning(|_| Ok(vec![RangeMetadata::new(0, 0, 0, 0, Some(100))]));
-            let client = Rc::new(client);
-            let stream: Rc<ReplicationStream<MemoryReplicationRange, MockClient>> =
-                ReplicationStream::new(0, 1, Rc::downgrade(&client), Rc::new(HotCache::new(4096)));
-            stream.open().await.unwrap();
-            assert_eq!(1, stream.ranges.borrow().len());
-            let offset = stream.append(new_record(1)).await.unwrap();
-            assert_eq!(100, offset);
-            let offset = stream.append(new_record(1)).await.unwrap();
-            assert_eq!(101, offset);
-            assert_eq!(2, stream.ranges.borrow().len());
-            {
-                // fail the last range.
-                stream
-                    .last_range
-                    .borrow()
-                    .as_ref()
-                    .unwrap()
-                    .writable
-                    .replace(false);
-            }
-            let offset = stream.append(new_record(1)).await.unwrap();
-            assert_eq!(102, offset);
-            assert_eq!(3, stream.ranges.borrow().len());
-            assert_eq!(103, stream.confirm_offset());
-            assert_eq!(103, stream.next_offset());
-        });
+    #[monoio::test]
+    async fn test_append() -> Result<(), Box<dyn Error>> {
+        let mut client = MockClient::new();
+        client
+            .expect_list_ranges()
+            .returning(|_| Ok(vec![RangeMetadata::new(0, 0, 0, 0, Some(100))]));
+        let client = Rc::new(client);
+        let stream: Rc<ReplicationStream<MemoryReplicationRange, MockClient>> =
+            ReplicationStream::new(0, 1, Rc::downgrade(&client), Rc::new(HotCache::new(4096)));
+        stream.open().await.unwrap();
+        assert_eq!(1, stream.ranges.borrow().len());
+        let offset = stream.append(new_record(1)).await.unwrap();
+        assert_eq!(100, offset);
+        let offset = stream.append(new_record(1)).await.unwrap();
+        assert_eq!(101, offset);
+        assert_eq!(2, stream.ranges.borrow().len());
+        {
+            // fail the last range.
+            stream
+                .last_range
+                .borrow()
+                .as_ref()
+                .unwrap()
+                .writable
+                .replace(false);
+        }
+        let offset = stream.append(new_record(1)).await.unwrap();
+        assert_eq!(102, offset);
+        assert_eq!(3, stream.ranges.borrow().len());
+        assert_eq!(103, stream.confirm_offset());
+        assert_eq!(103, stream.next_offset());
         Ok(())
     }
 
-    #[test]
-    fn test_fetch() -> Result<(), Box<dyn Error>> {
-        tokio_uring::start(async move {
-            let mut client = MockClient::new();
-            client.expect_list_ranges().returning(|_| Ok(vec![]));
-            let client = Rc::new(client);
-            let stream: Rc<ReplicationStream<MemoryReplicationRange, MockClient>> =
-                ReplicationStream::new(0, 1, Rc::downgrade(&client), Rc::new(HotCache::new(4096)));
-            stream.open().await.unwrap();
-            let _ = stream.append(new_record(1)).await.unwrap();
-            let _ = stream.append(new_record(1)).await.unwrap();
-            {
-                // fail the last range.
-                stream
-                    .last_range
-                    .borrow()
-                    .as_ref()
-                    .unwrap()
-                    .writable
-                    .replace(false);
-            }
+    #[monoio::test]
+    async fn test_fetch() -> Result<(), Box<dyn Error>> {
+        let mut client = MockClient::new();
+        client.expect_list_ranges().returning(|_| Ok(vec![]));
+        let client = Rc::new(client);
+        let stream: Rc<ReplicationStream<MemoryReplicationRange, MockClient>> =
+            ReplicationStream::new(0, 1, Rc::downgrade(&client), Rc::new(HotCache::new(4096)));
+        stream.open().await.unwrap();
+        let _ = stream.append(new_record(1)).await.unwrap();
+        let _ = stream.append(new_record(1)).await.unwrap();
+        {
+            // fail the last range.
+            stream
+                .last_range
+                .borrow()
+                .as_ref()
+                .unwrap()
+                .writable
+                .replace(false);
+        }
 
-            // slow path
-            let _ = stream.append(new_record(1)).await.unwrap();
-            let rst = stream.fetch(0, 1, 1024).await.unwrap();
-            let blocks = get_records_blocks(rst);
-            assert_eq!(1, blocks.len());
-            assert_eq!(0, blocks[0].start_offset());
-            assert_eq!(1, blocks[0].end_offset());
-            let rst = stream.fetch(0, 2, 1024).await.unwrap();
-            let blocks = get_records_blocks(rst);
-            assert_eq!(1, blocks.len());
-            assert_eq!(0, blocks[0].start_offset());
-            assert_eq!(2, blocks[0].end_offset());
-            // only return first range
-            let rst = stream.fetch(0, 3, 1024).await.unwrap();
-            let blocks = get_records_blocks(rst);
-            assert_eq!(1, blocks.len());
-            assert_eq!(0, blocks[0].start_offset());
-            assert_eq!(2, blocks[0].end_offset());
+        // slow path
+        let _ = stream.append(new_record(1)).await.unwrap();
+        let rst = stream.fetch(0, 1, 1024).await.unwrap();
+        let blocks = get_records_blocks(rst);
+        assert_eq!(1, blocks.len());
+        assert_eq!(0, blocks[0].start_offset());
+        assert_eq!(1, blocks[0].end_offset());
+        let rst = stream.fetch(0, 2, 1024).await.unwrap();
+        let blocks = get_records_blocks(rst);
+        assert_eq!(1, blocks.len());
+        assert_eq!(0, blocks[0].start_offset());
+        assert_eq!(2, blocks[0].end_offset());
+        // only return first range
+        let rst = stream.fetch(0, 3, 1024).await.unwrap();
+        let blocks = get_records_blocks(rst);
+        assert_eq!(1, blocks.len());
+        assert_eq!(0, blocks[0].start_offset());
+        assert_eq!(2, blocks[0].end_offset());
 
-            // fast path
-            let rst = stream.fetch(2, 3, 1024).await.unwrap();
-            let blocks = get_records_blocks(rst);
-            assert_eq!(1, blocks.len());
-            assert_eq!(2, blocks[0].start_offset());
-            assert_eq!(3, blocks[0].end_offset());
+        // fast path
+        let rst = stream.fetch(2, 3, 1024).await.unwrap();
+        let blocks = get_records_blocks(rst);
+        assert_eq!(1, blocks.len());
+        assert_eq!(2, blocks[0].start_offset());
+        assert_eq!(3, blocks[0].end_offset());
 
-            // out of bound
-            if let Err(e) = stream.fetch(0, 4, 1024).await {
-                assert_eq!(ErrorCode::OFFSET_OUT_OF_RANGE_BOUNDS, e.code);
-            } else {
-                panic!("fetch out of bound should fail")
-            }
+        // out of bound
+        if let Err(e) = stream.fetch(0, 4, 1024).await {
+            assert_eq!(ErrorCode::OFFSET_OUT_OF_RANGE_BOUNDS, e.code);
+        } else {
+            panic!("fetch out of bound should fail")
+        }
 
-            if let Err(e) = stream.fetch(4, 10, 1024).await {
-                assert_eq!(ErrorCode::OFFSET_OUT_OF_RANGE_BOUNDS, e.code);
-            } else {
-                panic!("fetch out of bound should fail")
-            }
-        });
+        if let Err(e) = stream.fetch(4, 10, 1024).await {
+            assert_eq!(ErrorCode::OFFSET_OUT_OF_RANGE_BOUNDS, e.code);
+        } else {
+            panic!("fetch out of bound should fail")
+        }
         Ok(())
     }
 

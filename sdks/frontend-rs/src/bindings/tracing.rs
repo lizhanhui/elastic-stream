@@ -40,7 +40,7 @@ pub struct TracingService {
 }
 impl TracingService {
     pub fn new(threshold: Duration) -> Self {
-        let (tx, mut rx) = flume::unbounded::<Collector>();
+        let (tx, rx) = flume::unbounded::<Collector>();
         let _ = std::thread::Builder::new()
             .name("TracingServiceReportThread".to_string())
             .spawn(move || {

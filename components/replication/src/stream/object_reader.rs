@@ -236,50 +236,46 @@ mod tests {
     use super::*;
     use std::{env, error::Error};
 
-    #[test]
-    fn test_read_first_object_blocks() -> Result<(), Box<dyn Error>> {
-        tokio_uring::start(async move {
-            let data_len = write_object("test_read_first_object_blocks").await;
-            env::set_var("ES_OBJ_ENDPOINT", "fs://");
+    #[monoio::test]
+    async fn test_read_first_object_blocks() -> Result<(), Box<dyn Error>> {
+        let data_len = write_object("test_read_first_object_blocks").await;
+        env::set_var("ES_OBJ_ENDPOINT", "fs://");
 
-            let object_metadata_manager = ObjectMetadataManager::new();
-            let mut object_metadata = ObjectMetadata::new(1, 2, 3, 100);
-            object_metadata.key = Some("test_read_first_object_blocks".to_owned());
-            object_metadata.data_len = data_len;
-            object_metadata.end_offset_delta = 278;
-            object_metadata_manager.add_object_metadata(&object_metadata);
+        let object_metadata_manager = ObjectMetadataManager::new();
+        let mut object_metadata = ObjectMetadata::new(1, 2, 3, 100);
+        object_metadata.key = Some("test_read_first_object_blocks".to_owned());
+        object_metadata.data_len = data_len;
+        object_metadata.end_offset_delta = 278;
+        object_metadata_manager.add_object_metadata(&object_metadata);
 
-            let async_reader = Rc::new(AsyncObjectReader::new());
-            let obj_reader = DefaultObjectReader::new(async_reader.clone());
+        let async_reader = Rc::new(AsyncObjectReader::new());
+        let obj_reader = DefaultObjectReader::new(async_reader.clone());
 
-            let blocks = obj_reader
-                .read_first_object_blocks(243, Some(260), 100, &object_metadata_manager)
-                .await
-                .unwrap();
-            assert_eq!(1, blocks.len());
-            assert_eq!(243, blocks[0].start_offset());
-            assert_eq!(263, blocks[0].end_offset());
+        let blocks = obj_reader
+            .read_first_object_blocks(243, Some(260), 100, &object_metadata_manager)
+            .await
+            .unwrap();
+        assert_eq!(1, blocks.len());
+        assert_eq!(243, blocks[0].start_offset());
+        assert_eq!(263, blocks[0].end_offset());
 
-            // TODO: check hint
-        });
+        // TODO: check hint
         Ok(())
     }
 
-    #[test]
-    fn test_async_object_reader_read() -> Result<(), Box<dyn Error>> {
+    #[monoio::test]
+    async fn test_async_object_reader_read() -> Result<(), Box<dyn Error>> {
         // mock object data with size 200
-        tokio_uring::start(async move {
-            let data_len = write_object("test_async_object_reader_read").await;
-            env::set_var("ES_OBJ_ENDPOINT", "fs://");
-            let obj_reader = AsyncObjectReader::new();
-            let mut object_metadata = ObjectMetadata::new(1, 2, 3, 100);
-            object_metadata.key = Some("test_async_object_reader_read".to_owned());
-            object_metadata.data_len = data_len;
-            let rst = obj_reader.read(&object_metadata, (0, 100)).await.unwrap();
-            assert_eq!(1, rst.len());
-            assert_eq!(233, rst[0].start_offset());
-            assert_eq!(243, rst[0].end_offset());
-        });
+        let data_len = write_object("test_async_object_reader_read").await;
+        env::set_var("ES_OBJ_ENDPOINT", "fs://");
+        let obj_reader = AsyncObjectReader::new();
+        let mut object_metadata = ObjectMetadata::new(1, 2, 3, 100);
+        object_metadata.key = Some("test_async_object_reader_read".to_owned());
+        object_metadata.data_len = data_len;
+        let rst = obj_reader.read(&object_metadata, (0, 100)).await.unwrap();
+        assert_eq!(1, rst.len());
+        assert_eq!(233, rst[0].start_offset());
+        assert_eq!(243, rst[0].end_offset());
         Ok(())
     }
 

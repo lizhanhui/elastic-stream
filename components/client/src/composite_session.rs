@@ -39,7 +39,7 @@ use std::{
 };
 
 use monoio::{
-    net::TcpStream,
+    net::{tcp::TcpOwnedWriteHalf, TcpStream},
     time::{self, timeout},
 };
 
@@ -50,7 +50,7 @@ pub(crate) struct CompositeSession {
     config: Arc<Configuration>,
     lb_policy: LbPolicy,
     endpoints: RefCell<Vec<SocketAddr>>,
-    sessions: Rc<RefCell<HashMap<SocketAddr, Session>>>,
+    sessions: Rc<RefCell<HashMap<SocketAddr, Session<TcpOwnedWriteHalf>>>>,
     refresh_cluster_instant: RefCell<Instant>,
 }
 
@@ -200,7 +200,8 @@ impl CompositeSession {
             )
         });
 
-        let res: Vec<Result<Session, EsError>> = futures::future::join_all(futures).await;
+        let res: Vec<Result<Session<TcpOwnedWriteHalf>, EsError>> =
+            futures::future::join_all(futures).await;
         for item in res {
             match item {
                 Ok(session) => {
@@ -232,7 +233,7 @@ impl CompositeSession {
         }
     }
 
-    async fn pick_session(&self, lb_policy: LbPolicy) -> Option<Session> {
+    async fn pick_session(&self, lb_policy: LbPolicy) -> Option<Session<TcpOwnedWriteHalf>> {
         match lb_policy {
             LbPolicy::LeaderOnly => {
                 match self.pick_leader_session() {
@@ -255,7 +256,7 @@ impl CompositeSession {
         }
     }
 
-    fn pick_leader_session(&self) -> Option<Session> {
+    fn pick_leader_session(&self) -> Option<Session<TcpOwnedWriteHalf>> {
         self.sessions
             .borrow()
             .iter()
@@ -717,8 +718,8 @@ impl CompositeSession {
         addr: SocketAddr,
         duration: Duration,
         config: Arc<Configuration>,
-        sessions: Rc<RefCell<HashMap<SocketAddr, Session>>>,
-    ) -> Result<Session, EsError> {
+        sessions: Rc<RefCell<HashMap<SocketAddr, Session<TcpOwnedWriteHalf>>>>,
+    ) -> Result<Session<TcpOwnedWriteHalf>, EsError> {
         trace!("Establishing connection to {:?}", addr);
         let endpoint = addr.to_string();
         let connect = TcpStream::connect(addr);
@@ -1096,36 +1097,30 @@ mod tests {
     use mock_server::run_listener;
     use std::{error::Error, sync::Arc};
 
-    #[test]
-    fn test_new() -> Result<(), Box<dyn Error>> {
+    #[monoio::test]
+    async fn test_new() -> Result<(), Box<dyn Error>> {
         let config = Arc::new(config::Configuration::default());
-        monoio::start(async {
-            let port = run_listener().await;
-            let target = format!("{}:{}", "localhost", port);
-            let _session = CompositeSession::new(&target, config, LbPolicy::PickFirst).await?;
-
-            Ok(())
-        })
+        let port = run_listener().await;
+        let target = format!("{}:{}", "localhost", port);
+        let _session = CompositeSession::new(&target, config, LbPolicy::PickFirst).await?;
+        Ok(())
     }
 
-    #[test]
-    fn test_describe_placement_driver_cluster() -> Result<(), Box<dyn Error>> {
+    #[monoio::test]
+    async fn test_describe_placement_driver_cluster() -> Result<(), Box<dyn Error>> {
         ulog::try_init_log();
         let mut config = config::Configuration::default();
         config.server.server_id = 1;
         let config = Arc::new(config);
-        tokio_uring::start(async {
-            let port = run_listener().await;
-            let target = format!("{}:{}", "localhost", port);
-            let composite_session =
-                CompositeSession::new(&target, config, LbPolicy::PickFirst).await?;
-            let nodes = composite_session
-                .describe_placement_driver_cluster()
-                .await
-                .unwrap()
-                .unwrap();
-            assert_eq!(1, nodes.len());
-            Ok(())
-        })
+        let port = run_listener().await;
+        let target = format!("{}:{}", "localhost", port);
+        let composite_session = CompositeSession::new(&target, config, LbPolicy::PickFirst).await?;
+        let nodes = composite_session
+            .describe_placement_driver_cluster()
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(1, nodes.len());
+        Ok(())
     }
 }

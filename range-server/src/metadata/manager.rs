@@ -68,7 +68,7 @@ impl DefaultMetadataManager {
         let (list_done_tx, list_done_rx) = oneshot::channel();
         let mut list_done_tx = Some(list_done_tx);
         let mut listeners = listeners.clone();
-        tokio_uring::spawn(async move {
+        monoio::spawn(async move {
             let mut list_done_buffer_events = Vec::new();
             let mut list_done = false;
             loop {
@@ -381,44 +381,42 @@ mod tests {
 
     use super::*;
 
-    #[test]
-    fn test_all() -> Result<(), EsError> {
-        tokio_uring::start(async move {
-            let (m_tx, m_rx) = mpsc::unbounded_channel();
-            let (o_tx, o_rx) = mpsc::unbounded_channel();
-            let mut manager = DefaultMetadataManager::new(m_rx, Some(o_rx), 233);
-            let mut events_rx = manager.watch().unwrap();
-            let _ = m_tx.send(ResourceEvent {
-                event_type: EventType::Listed,
-                resource: stream(1, 100),
-            });
-            let _ = m_tx.send(ResourceEvent {
-                event_type: EventType::Listed,
-                resource: range(1, 1, 10, Some(150), 233),
-            });
-            let _ = m_tx.send(ResourceEvent {
-                event_type: EventType::Listed,
-                resource: range(1, 2, 150, None, 233),
-            });
-            let _ = m_tx.send(ResourceEvent {
-                event_type: EventType::ListFinished,
-                resource: Resource::NONE,
-            });
-            assert_eq!(TryRecvError::Empty, events_rx.try_recv().unwrap_err());
-            manager.start().await;
-            let events = events_rx.try_recv().unwrap();
-            assert_eq!(
-                vec![
-                    RangeLifecycleEvent::OffsetMove((1, 1), 100),
-                    RangeLifecycleEvent::OffsetMove((1, 2), 150)
-                ],
-                events
-            );
-
-            o_tx.send(vec![((1, 2), 200)]).unwrap();
-            let events = events_rx.recv().await.unwrap();
-            assert_eq!(vec![RangeLifecycleEvent::OffsetMove((1, 2), 200)], events);
+    #[monoio::test]
+    async fn test_all() -> Result<(), EsError> {
+        let (m_tx, m_rx) = mpsc::unbounded_channel();
+        let (o_tx, o_rx) = mpsc::unbounded_channel();
+        let mut manager = DefaultMetadataManager::new(m_rx, Some(o_rx), 233);
+        let mut events_rx = manager.watch().unwrap();
+        let _ = m_tx.send(ResourceEvent {
+            event_type: EventType::Listed,
+            resource: stream(1, 100),
         });
+        let _ = m_tx.send(ResourceEvent {
+            event_type: EventType::Listed,
+            resource: range(1, 1, 10, Some(150), 233),
+        });
+        let _ = m_tx.send(ResourceEvent {
+            event_type: EventType::Listed,
+            resource: range(1, 2, 150, None, 233),
+        });
+        let _ = m_tx.send(ResourceEvent {
+            event_type: EventType::ListFinished,
+            resource: Resource::NONE,
+        });
+        assert_eq!(TryRecvError::Empty, events_rx.try_recv().unwrap_err());
+        manager.start().await;
+        let events = events_rx.try_recv().unwrap();
+        assert_eq!(
+            vec![
+                RangeLifecycleEvent::OffsetMove((1, 1), 100),
+                RangeLifecycleEvent::OffsetMove((1, 2), 150)
+            ],
+            events
+        );
+
+        o_tx.send(vec![((1, 2), 200)]).unwrap();
+        let events = events_rx.recv().await.unwrap();
+        assert_eq!(vec![RangeLifecycleEvent::OffsetMove((1, 2), 200)], events);
         Ok(())
     }
 

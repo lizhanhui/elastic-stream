@@ -4,8 +4,7 @@ use frontend::{Frontend, StreamOptions};
 use local_sync::semaphore::Semaphore;
 use log::{error, info};
 use model::{record::flat_record::FlatRecordBatch, RecordBatch};
-use std::{cell::RefCell, error::Error, rc::Rc};
-use tokio::time::Duration;
+use std::{cell::RefCell, error::Error, rc::Rc, time::Duration};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -57,88 +56,87 @@ impl Stats {
 }
 
 /// Example program to kickoff append workload.
-fn main() -> Result<(), Box<dyn Error + 'static>> {
+#[monoio::main(enable_timer = true)]
+async fn main() -> Result<(), Box<dyn Error + 'static>> {
     let args = Args::parse();
     frontend::init_log();
-    tokio_uring::start(async {
-        let frontend = Rc::new(Frontend::new("127.0.0.1:12378")?);
-        let stats = Rc::new(RefCell::new(Stats::new()));
+    let frontend = Rc::new(Frontend::new("127.0.0.1:12378")?);
+    let stats = Rc::new(RefCell::new(Stats::new()));
 
-        let log_stat = Rc::clone(&stats);
-        tokio_uring::spawn(async move {
-            let mut interval = tokio::time::interval(Duration::from_secs(1));
-            loop {
-                interval.tick().await;
-                let (success, failure) = log_stat.borrow_mut().reset();
-                info!("Success: {}, Failure: {}", success, failure);
-            }
-        });
-
-        let handles = (0..args.stream)
-            .map(|_| {
-                let frontend = Rc::clone(&frontend);
-                let stats = Rc::clone(&stats);
-                tokio_uring::spawn(async move {
-                    let stream_id = frontend
-                        .create(StreamOptions {
-                            replica: 1,
-                            ack: 1,
-                            retention: Duration::from_secs(3600),
-                        })
-                        .await
-                        .unwrap();
-                    info!("Created stream with id: {}", stream_id);
-                    let stream = Rc::new(frontend.open(stream_id, 0).await.unwrap());
-                    let mut payload = BytesMut::with_capacity(args.payload_size);
-                    payload.resize(args.payload_size, b'x');
-                    let payload = payload.freeze();
-                    debug_assert_eq!(args.payload_size, payload.len());
-                    let semaphore = Rc::new(Semaphore::new(args.batch_size));
-                    let instant = minstant::Instant::now();
-                    let record_batch = RecordBatch::new_builder()
-                        .with_stream_id(stream_id as i64)
-                        .with_range_index(0)
-                        .with_base_offset(0)
-                        .with_last_offset_delta(10)
-                        .with_payload(payload.clone())
-                        .build()
-                        .unwrap();
-                    let flat_record_batch: FlatRecordBatch = Into::into(record_batch);
-                    let (flat_record_batch_bytes, _) = flat_record_batch.encode();
-                    let buf = vec_bytes_to_bytes(flat_record_batch_bytes);
-                    loop {
-                        if instant.elapsed().as_secs() as usize > args.time {
-                            info!("Completed stress test for stream: {}", stream_id);
-                            break;
-                        }
-                        match Rc::clone(&semaphore).acquire_owned().await {
-                            Ok(permit) => {
-                                let stream_ = Rc::clone(&stream);
-                                let buf_ = buf.clone();
-                                let stats = Rc::clone(&stats);
-                                tokio_uring::spawn(async move {
-                                    if stream_.append(buf_).await.is_err() {
-                                        stats.borrow_mut().inc_failure();
-                                        error!("Failed to append");
-                                    } else {
-                                        stats.borrow_mut().inc_success();
-                                    }
-                                    drop(permit);
-                                });
-                            }
-                            Err(_e) => break,
-                        }
-                    }
-                })
-            })
-            .collect::<Vec<_>>();
-
-        for handle in handles {
-            let _ = handle.await;
+    let log_stat = Rc::clone(&stats);
+    monoio::spawn(async move {
+        let mut interval = monoio::time::interval(Duration::from_secs(1));
+        loop {
+            interval.tick().await;
+            let (success, failure) = log_stat.borrow_mut().reset();
+            info!("Success: {}, Failure: {}", success, failure);
         }
+    });
 
-        Ok(())
-    })
+    let handles = (0..args.stream)
+        .map(|_| {
+            let frontend = Rc::clone(&frontend);
+            let stats = Rc::clone(&stats);
+            monoio::spawn(async move {
+                let stream_id = frontend
+                    .create(StreamOptions {
+                        replica: 1,
+                        ack: 1,
+                        retention: Duration::from_secs(3600),
+                    })
+                    .await
+                    .unwrap();
+                info!("Created stream with id: {}", stream_id);
+                let stream = Rc::new(frontend.open(stream_id, 0).await.unwrap());
+                let mut payload = BytesMut::with_capacity(args.payload_size);
+                payload.resize(args.payload_size, b'x');
+                let payload = payload.freeze();
+                debug_assert_eq!(args.payload_size, payload.len());
+                let semaphore = Rc::new(Semaphore::new(args.batch_size));
+                let instant = minstant::Instant::now();
+                let record_batch = RecordBatch::new_builder()
+                    .with_stream_id(stream_id as i64)
+                    .with_range_index(0)
+                    .with_base_offset(0)
+                    .with_last_offset_delta(10)
+                    .with_payload(payload.clone())
+                    .build()
+                    .unwrap();
+                let flat_record_batch: FlatRecordBatch = Into::into(record_batch);
+                let (flat_record_batch_bytes, _) = flat_record_batch.encode();
+                let buf = vec_bytes_to_bytes(flat_record_batch_bytes);
+                loop {
+                    if instant.elapsed().as_secs() as usize > args.time {
+                        info!("Completed stress test for stream: {}", stream_id);
+                        break;
+                    }
+                    match Rc::clone(&semaphore).acquire_owned().await {
+                        Ok(permit) => {
+                            let stream_ = Rc::clone(&stream);
+                            let buf_ = buf.clone();
+                            let stats = Rc::clone(&stats);
+                            monoio::spawn(async move {
+                                if stream_.append(buf_).await.is_err() {
+                                    stats.borrow_mut().inc_failure();
+                                    error!("Failed to append");
+                                } else {
+                                    stats.borrow_mut().inc_success();
+                                }
+                                drop(permit);
+                            });
+                        }
+                        Err(_e) => break,
+                    }
+                }
+            })
+        })
+        .collect::<Vec<_>>();
+
+    for handle in handles {
+        let _ = handle.await;
+    }
+
+    Ok(())
 }
 
 fn vec_bytes_to_bytes(vec_bytes: Vec<Bytes>) -> Bytes {

@@ -39,6 +39,7 @@ mockall = { workspace = true }
 tempfile = { workspace = true }
 ulog = { path = "../ulog", features = ["env"] }
 util = { path = "../util" }
+tokio = { workspace = true }
 
 [features]
 default = []

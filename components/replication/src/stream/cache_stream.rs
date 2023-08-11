@@ -213,7 +213,7 @@ where
             .borrow_mut()
             .insert(start_offset, tx.clone());
 
-            monoio::spawn(async move {
+        monoio::spawn(async move {
             Self::background_readahead0(readahead, stream_id, stream, block_cache).await;
             let _ = tx.send(());
             inflight_readahead.borrow_mut().remove(&start_offset);
@@ -310,181 +310,174 @@ mod tests {
 
     use super::*;
 
-    #[test]
-    fn test_fetch() -> Result<(), Box<dyn Error>> {
-        tokio_uring::start(async move {
-            let mut mock_stream = MockStream::default();
+    #[monoio::test]
+    async fn test_fetch() -> Result<(), Box<dyn Error>> {
+        let mut mock_stream = MockStream::default();
 
-            mock_stream.expect_start_offset().returning(|| 10);
-            mock_stream.expect_confirm_offset().returning(|| 18);
+        mock_stream.expect_start_offset().returning(|| 10);
+        mock_stream.expect_confirm_offset().returning(|| 18);
 
-            mock_stream
-                .expect_fetch()
-                .times(1)
-                .with(eq(14), eq(18), always())
-                .returning(|_, _, _| {
-                    let records_block = RecordsBlock::new(vec![
-                        BlockRecord {
-                            start_offset: 14,
-                            end_offset_delta: 2,
-                            data: vec![BytesMut::zeroed(2).freeze()],
-                        },
-                        BlockRecord {
-                            start_offset: 16,
-                            end_offset_delta: 2,
-                            data: vec![BytesMut::zeroed(1).freeze()],
-                        },
-                    ]);
-                    Ok(FetchDataset::Full(vec![records_block]))
-                });
-            mock_stream
-                .expect_fetch()
-                .returning(|_, _, _| Err(EsError::unexpected("test mock error")));
+        mock_stream
+            .expect_fetch()
+            .times(1)
+            .with(eq(14), eq(18), always())
+            .returning(|_, _, _| {
+                let records_block = RecordsBlock::new(vec![
+                    BlockRecord {
+                        start_offset: 14,
+                        end_offset_delta: 2,
+                        data: vec![BytesMut::zeroed(2).freeze()],
+                    },
+                    BlockRecord {
+                        start_offset: 16,
+                        end_offset_delta: 2,
+                        data: vec![BytesMut::zeroed(1).freeze()],
+                    },
+                ]);
+                Ok(FetchDataset::Full(vec![records_block]))
+            });
+        mock_stream
+            .expect_fetch()
+            .returning(|_, _, _| Err(EsError::unexpected("test mock error")));
 
-            let mock_stream = Rc::new(mock_stream);
+        let mock_stream = Rc::new(mock_stream);
 
-            let hot_cache = HotCache::new(4096);
-            hot_cache.insert(1, 10, 1, vec![BytesMut::zeroed(1).freeze()]);
-            hot_cache.insert(1, 11, 2, vec![BytesMut::zeroed(1).freeze()]);
-            let hot_cache = Rc::new(hot_cache);
+        let hot_cache = HotCache::new(4096);
+        hot_cache.insert(1, 10, 1, vec![BytesMut::zeroed(1).freeze()]);
+        hot_cache.insert(1, 11, 2, vec![BytesMut::zeroed(1).freeze()]);
+        let hot_cache = Rc::new(hot_cache);
 
-            let block_cache = BlockCache::new(4096);
-            let records_block = RecordsBlock::new(vec![
-                BlockRecord {
-                    start_offset: 11,
-                    end_offset_delta: 2,
-                    data: vec![BytesMut::zeroed(1).freeze()],
-                },
-                BlockRecord {
-                    start_offset: 13,
-                    end_offset_delta: 1,
-                    data: vec![BytesMut::zeroed(1).freeze()],
-                },
-            ]);
-            block_cache.insert(1, vec![records_block]);
-            let block_cache = Rc::new(block_cache);
+        let block_cache = BlockCache::new(4096);
+        let records_block = RecordsBlock::new(vec![
+            BlockRecord {
+                start_offset: 11,
+                end_offset_delta: 2,
+                data: vec![BytesMut::zeroed(1).freeze()],
+            },
+            BlockRecord {
+                start_offset: 13,
+                end_offset_delta: 1,
+                data: vec![BytesMut::zeroed(1).freeze()],
+            },
+        ]);
+        block_cache.insert(1, vec![records_block]);
+        let block_cache = Rc::new(block_cache);
 
-            let cache_stream = CacheStream::new(
-                1,
-                mock_stream.clone(),
-                hot_cache.clone(),
-                block_cache.clone(),
-            );
+        let cache_stream = CacheStream::new(
+            1,
+            mock_stream.clone(),
+            hot_cache.clone(),
+            block_cache.clone(),
+        );
 
-            // fetch from hot cache + block cache + under stream.
-            let dataset = cache_stream.fetch(11, 15, 100).await.unwrap();
-            match dataset {
-                FetchDataset::Full(blocks) => {
-                    assert_eq!(blocks.len(), 2);
-                    assert_eq!(blocks[0].size(), 1);
-                    assert_eq!(blocks[0].start_offset(), 11);
-                    assert_eq!(blocks[0].end_offset(), 13);
-                    assert_eq!(blocks[1].size(), 3);
-                    assert_eq!(blocks[1].start_offset(), 13);
-                    assert_eq!(blocks[1].end_offset(), 16);
-                }
-                _ => panic!("not full dataset"),
+        // fetch from hot cache + block cache + under stream.
+        let dataset = cache_stream.fetch(11, 15, 100).await.unwrap();
+        match dataset {
+            FetchDataset::Full(blocks) => {
+                assert_eq!(blocks.len(), 2);
+                assert_eq!(blocks[0].size(), 1);
+                assert_eq!(blocks[0].start_offset(), 11);
+                assert_eq!(blocks[0].end_offset(), 13);
+                assert_eq!(blocks[1].size(), 3);
+                assert_eq!(blocks[1].start_offset(), 13);
+                assert_eq!(blocks[1].end_offset(), 16);
             }
+            _ => panic!("not full dataset"),
+        }
 
-            // fetch out of bound.
-            assert_eq!(
-                ErrorCode::OFFSET_OUT_OF_RANGE_BOUNDS,
-                cache_stream.fetch(11, 19, 100).await.unwrap_err().code
-            );
-        });
-
+        // fetch out of bound.
+        assert_eq!(
+            ErrorCode::OFFSET_OUT_OF_RANGE_BOUNDS,
+            cache_stream.fetch(11, 19, 100).await.unwrap_err().code
+        );
         Ok(())
     }
 
-    #[test]
-    fn test_readahead() -> Result<(), Box<dyn Error>> {
-        tokio_uring::start(async move {
-            let mut mock_stream = MockStream::default();
+    #[monoio::test]
+    async fn test_readahead() -> Result<(), Box<dyn Error>> {
+        let mut mock_stream = MockStream::default();
 
-            mock_stream.expect_start_offset().returning(|| 10);
-            mock_stream.expect_confirm_offset().returning(|| 18);
+        mock_stream.expect_start_offset().returning(|| 10);
+        mock_stream.expect_confirm_offset().returning(|| 18);
 
-            mock_stream
-                .expect_fetch()
-                .times(1)
-                .with(eq(14), eq(18), eq(5))
-                .returning(|_, _, _| {
-                    let records_block = RecordsBlock::new(vec![BlockRecord {
-                        start_offset: 14,
-                        end_offset_delta: 2,
-                        data: vec![BytesMut::zeroed(10).freeze()],
-                    }]);
-                    Ok(FetchDataset::Overflow(vec![records_block]))
-                });
-            let mock_stream = Rc::new(mock_stream);
-
-            let block_cache = Rc::new(BlockCache::new(4096));
-
-            CacheStream::<MockStream>::background_readahead0(
-                Readahead {
+        mock_stream
+            .expect_fetch()
+            .times(1)
+            .with(eq(14), eq(18), eq(5))
+            .returning(|_, _, _| {
+                let records_block = RecordsBlock::new(vec![BlockRecord {
                     start_offset: 14,
-                    end_offset: None,
-                    size_hint: 5,
-                    timestamp: Instant::now(),
-                },
-                1,
-                mock_stream.clone(),
-                block_cache.clone(),
-            )
-            .await;
+                    end_offset_delta: 2,
+                    data: vec![BytesMut::zeroed(10).freeze()],
+                }]);
+                Ok(FetchDataset::Overflow(vec![records_block]))
+            });
+        let mock_stream = Rc::new(mock_stream);
 
-            let (block, _) = block_cache.get_block(1, 14, 18, 1000);
-            assert_eq!(block.size(), 10);
-            assert_eq!(block.start_offset(), 14);
-            assert_eq!(block.end_offset(), 16);
-        });
-        Ok(())
-    }
+        let block_cache = Rc::new(BlockCache::new(4096));
 
-    #[test]
-    fn test_read_reuse() -> Result<(), Box<dyn Error>> {
-        tokio_uring::start(async move {
-            let mut mock_stream = MockStream::default();
-
-            mock_stream.expect_start_offset().returning(|| 10);
-            mock_stream.expect_confirm_offset().returning(|| 18);
-
-            mock_stream
-                .expect_fetch()
-                .times(1)
-                .with(eq(14), eq(18), eq(5))
-                .returning(|_, _, _| {
-                    let records_block = RecordsBlock::new(vec![BlockRecord {
-                        start_offset: 14,
-                        end_offset_delta: 2,
-                        data: vec![BytesMut::zeroed(10).freeze()],
-                    }]);
-                    Ok(FetchDataset::Overflow(vec![records_block]))
-                });
-            let mock_stream = Rc::new(mock_stream);
-            let cache_stream = CacheStream::new(
-                1,
-                mock_stream,
-                Rc::new(HotCache::new(4096)),
-                Rc::new(BlockCache::new(4096)),
-            );
-
-            cache_stream.background_readahead(Readahead {
+        CacheStream::<MockStream>::background_readahead0(
+            Readahead {
                 start_offset: 14,
                 end_offset: None,
                 size_hint: 5,
                 timestamp: Instant::now(),
+            },
+            1,
+            mock_stream.clone(),
+            block_cache.clone(),
+        )
+        .await;
+
+        let (block, _) = block_cache.get_block(1, 14, 18, 1000);
+        assert_eq!(block.size(), 10);
+        assert_eq!(block.start_offset(), 14);
+        assert_eq!(block.end_offset(), 16);
+        Ok(())
+    }
+
+    #[monoio::test]
+    async fn test_read_reuse() -> Result<(), Box<dyn Error>> {
+        let mut mock_stream = MockStream::default();
+
+        mock_stream.expect_start_offset().returning(|| 10);
+        mock_stream.expect_confirm_offset().returning(|| 18);
+
+        mock_stream
+            .expect_fetch()
+            .times(1)
+            .with(eq(14), eq(18), eq(5))
+            .returning(|_, _, _| {
+                let records_block = RecordsBlock::new(vec![BlockRecord {
+                    start_offset: 14,
+                    end_offset_delta: 2,
+                    data: vec![BytesMut::zeroed(10).freeze()],
+                }]);
+                Ok(FetchDataset::Overflow(vec![records_block]))
             });
-            match cache_stream.fetch(14, 18, 5).await.unwrap() {
-                FetchDataset::Full(blocks) => {
-                    assert_eq!(1, blocks.len());
-                    assert_eq!(10, blocks[0].size());
-                    assert_eq!(14, blocks[0].start_offset());
-                    assert_eq!(16, blocks[0].end_offset());
-                }
-                _ => panic!("not full dataset"),
-            }
+        let mock_stream = Rc::new(mock_stream);
+        let cache_stream = CacheStream::new(
+            1,
+            mock_stream,
+            Rc::new(HotCache::new(4096)),
+            Rc::new(BlockCache::new(4096)),
+        );
+
+        cache_stream.background_readahead(Readahead {
+            start_offset: 14,
+            end_offset: None,
+            size_hint: 5,
+            timestamp: Instant::now(),
         });
+        match cache_stream.fetch(14, 18, 5).await.unwrap() {
+            FetchDataset::Full(blocks) => {
+                assert_eq!(1, blocks.len());
+                assert_eq!(10, blocks[0].size());
+                assert_eq!(14, blocks[0].start_offset());
+                assert_eq!(16, blocks[0].end_offset());
+            }
+            _ => panic!("not full dataset"),
+        }
 
         Ok(())
     }

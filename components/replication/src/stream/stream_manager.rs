@@ -12,7 +12,7 @@ use log::{error, warn};
 use model::{error::EsError, stream::StreamMetadata};
 use protocol::rpc::header::{ClientRole, ErrorCode};
 use tokio::{
-    sync::{broadcast, oneshot},
+    sync::oneshot,
     time::{sleep, Instant},
 };
 

@@ -532,53 +532,47 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_describe_stream() -> Result<(), EsError> {
+    #[monoio::test]
+    async fn test_describe_stream() -> Result<(), EsError> {
         ulog::try_init_log();
-        tokio_uring::start(async move {
-            #[allow(unused_variables)]
-            let port = 12378;
-            let port = run_listener().await;
-            let config = config::Configuration {
-                placement_driver: format!("127.0.0.1:{}", port),
-                ..Default::default()
-            };
-            let config = Arc::new(config);
-            let (tx, _rx) = broadcast::channel(1);
-            let client = DefaultClient::new(config, tx);
+        #[allow(unused_variables)]
+        let port = 12378;
+        let port = run_listener().await;
+        let config = config::Configuration {
+            placement_driver: format!("127.0.0.1:{}", port),
+            ..Default::default()
+        };
+        let config = Arc::new(config);
+        let client = DefaultClient::new(config);
 
-            let stream_metadata = client
-                .describe_stream(1)
-                .await
-                .expect("Describe stream should not fail");
-            assert_eq!(Some(1), stream_metadata.stream_id);
-            assert_eq!(1, stream_metadata.replica);
-            assert_eq!(
-                std::time::Duration::from_secs(3600 * 24),
-                stream_metadata.retention_period
-            );
-            Ok(())
-        })
+        let stream_metadata = client
+            .describe_stream(1)
+            .await
+            .expect("Describe stream should not fail");
+        assert_eq!(Some(1), stream_metadata.stream_id);
+        assert_eq!(1, stream_metadata.replica);
+        assert_eq!(
+            std::time::Duration::from_secs(3600 * 24),
+            stream_metadata.retention_period
+        );
+        Ok(())
     }
 
-    #[test]
-    fn test_create_range() -> Result<(), EsError> {
+    #[monoio::test]
+    async fn test_create_range() -> Result<(), EsError> {
         ulog::try_init_log();
-        tokio_uring::start(async {
-            #[allow(unused_variables)]
-            let port = 12378;
-            let port = run_listener().await;
-            let config = config::Configuration {
-                placement_driver: format!("127.0.0.1:{}", port),
-                ..Default::default()
-            };
-            let target = config.placement_driver.clone();
-            let config = Arc::new(config);
-            let (tx, _rx) = broadcast::channel(1);
-            let client = DefaultClient::new(config, tx);
-            let range = RangeMetadata::new(100, 0, 0, 0, None);
-            client.create_range_replica(&target, range).await
-        })
+        #[allow(unused_variables)]
+        let port = 12378;
+        let port = run_listener().await;
+        let config = config::Configuration {
+            placement_driver: format!("127.0.0.1:{}", port),
+            ..Default::default()
+        };
+        let target = config.placement_driver.clone();
+        let config = Arc::new(config);
+        let client = DefaultClient::new(config);
+        let range = RangeMetadata::new(100, 0, 0, 0, None);
+        client.create_range_replica(&target, range).await
     }
 
     #[monoio::test]
@@ -616,8 +610,7 @@ mod tests {
             ..Default::default()
         };
         let config = Arc::new(config);
-        let (tx, _rx) = broadcast::channel(1);
-        let client = DefaultClient::new(config, tx);
+        let client = DefaultClient::new(config);
 
         for i in 1..2 {
             let criteria = ListRangeCriteria::new(None, Some(i as u64));
@@ -634,309 +627,285 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_list_range_by_range_server() -> Result<(), EsError> {
+    #[monoio::test]
+    async fn test_list_range_by_range_server() -> Result<(), EsError> {
         ulog::try_init_log();
-        tokio_uring::start(async {
-            #[allow(unused_variables)]
-            let port = 2378;
-            let port = run_listener().await;
-            let config = config::Configuration {
-                placement_driver: format!("127.0.0.1:{}", port),
-                ..Default::default()
-            };
-            let config = Arc::new(config);
-            let (tx, _rx) = broadcast::channel(1);
-            let client = DefaultClient::new(config, tx);
+        #[allow(unused_variables)]
+        let port = 2378;
+        let port = run_listener().await;
+        let config = config::Configuration {
+            placement_driver: format!("127.0.0.1:{}", port),
+            ..Default::default()
+        };
+        let config = Arc::new(config);
+        let client = DefaultClient::new(config);
 
-            for _i in 1..2 {
-                let criteria = ListRangeCriteria::new(None, None);
-                let ranges = client.list_ranges(criteria).await.unwrap();
-                assert!(
-                    !ranges.is_empty(),
-                    "Test server should have fed some mocking ranges"
-                );
-                for range in ranges.iter() {
-                    trace!("{}", range)
-                }
+        for _i in 1..2 {
+            let criteria = ListRangeCriteria::new(None, None);
+            let ranges = client.list_ranges(criteria).await.unwrap();
+            assert!(
+                !ranges.is_empty(),
+                "Test server should have fed some mocking ranges"
+            );
+            for range in ranges.iter() {
+                trace!("{}", range)
             }
+        }
 
-            Ok(())
-        })
+        Ok(())
     }
 
     /// Test seal range server without end. This RPC is used when the single writer takes over a stream from a failed writer.
-    #[test]
-    fn test_seal_range_server() -> Result<(), EsError> {
+    #[monoio::test]
+    async fn test_seal_range_server() -> Result<(), EsError> {
         ulog::try_init_log();
-        tokio_uring::start(async move {
-            #[allow(unused_variables)]
-            let port = 2378;
-            let port = run_listener().await;
-            let mut config = config::Configuration {
-                placement_driver: format!("127.0.0.1:{}", port),
-                ..Default::default()
-            };
-            config.check_and_apply().unwrap();
-            let config = Arc::new(config);
-            let (tx, _rx) = broadcast::channel(1);
-            let client = DefaultClient::new(Arc::clone(&config), tx);
-            let range = RangeMetadata::new(0, 0, 0, 0, None);
-            let range = client
-                .seal(
-                    Some(&config.placement_driver),
-                    SealKind::RANGE_SERVER,
-                    range,
-                )
-                .await?;
-            assert_eq!(0, range.stream_id());
-            assert_eq!(0, range.index());
-            assert_eq!(0, range.epoch());
-            assert_eq!(0, range.start());
-            assert_eq!(Some(100), range.end());
-            Ok(())
-        })
+        #[allow(unused_variables)]
+        let port = 2378;
+        let port = run_listener().await;
+        let mut config = config::Configuration {
+            placement_driver: format!("127.0.0.1:{}", port),
+            ..Default::default()
+        };
+        config.check_and_apply().unwrap();
+        let config = Arc::new(config);
+        let client = DefaultClient::new(Arc::clone(&config));
+        let range = RangeMetadata::new(0, 0, 0, 0, None);
+        let range = client
+            .seal(
+                Some(&config.placement_driver),
+                SealKind::RANGE_SERVER,
+                range,
+            )
+            .await?;
+        assert_eq!(0, range.stream_id());
+        assert_eq!(0, range.index());
+        assert_eq!(0, range.epoch());
+        assert_eq!(0, range.start());
+        assert_eq!(Some(100), range.end());
+        Ok(())
     }
 
     /// Test seal range server with end. This RPC is used when the single writer takes over a stream from a graceful closed writer.
-    #[test]
-    fn test_seal_range_server_with_end() -> Result<(), EsError> {
+    #[monoio::test]
+    async fn test_seal_range_server_with_end() -> Result<(), EsError> {
         ulog::try_init_log();
-        tokio_uring::start(async move {
-            #[allow(unused_variables)]
-            let port = 2378;
-            let port = run_listener().await;
-            let mut config = config::Configuration {
-                placement_driver: format!("127.0.0.1:{}", port),
-                ..Default::default()
-            };
-            config.check_and_apply().unwrap();
-            let config = Arc::new(config);
-            let (tx, _rx) = broadcast::channel(1);
-            let client = DefaultClient::new(Arc::clone(&config), tx);
-            let range = RangeMetadata::new(0, 0, 0, 0, Some(1));
-            let range = client
-                .seal(
-                    Some(&config.placement_driver),
-                    SealKind::RANGE_SERVER,
-                    range,
-                )
-                .await?;
-            assert_eq!(0, range.stream_id());
-            assert_eq!(0, range.index());
-            assert_eq!(0, range.epoch());
-            assert_eq!(0, range.start());
-            assert_eq!(Some(1), range.end());
-            Ok(())
-        })
+        #[allow(unused_variables)]
+        let port = 2378;
+        let port = run_listener().await;
+        let mut config = config::Configuration {
+            placement_driver: format!("127.0.0.1:{}", port),
+            ..Default::default()
+        };
+        config.check_and_apply().unwrap();
+        let config = Arc::new(config);
+        let client = DefaultClient::new(Arc::clone(&config));
+        let range = RangeMetadata::new(0, 0, 0, 0, Some(1));
+        let range = client
+            .seal(
+                Some(&config.placement_driver),
+                SealKind::RANGE_SERVER,
+                range,
+            )
+            .await?;
+        assert_eq!(0, range.stream_id());
+        assert_eq!(0, range.index());
+        assert_eq!(0, range.epoch());
+        assert_eq!(0, range.start());
+        assert_eq!(Some(1), range.end());
+        Ok(())
     }
 
     /// Test seal placement driver.
-    #[test]
-    fn test_seal_placement_driver() -> Result<(), EsError> {
+    #[monoio::test]
+    async fn test_seal_placement_driver() -> Result<(), EsError> {
         ulog::try_init_log();
-        tokio_uring::start(async move {
-            #[allow(unused_variables)]
-            let port = 2378;
-            let port = run_listener().await;
-            let mut config = config::Configuration {
-                placement_driver: format!("127.0.0.1:{}", port),
-                ..Default::default()
-            };
-            config.check_and_apply().unwrap();
-            let config = Arc::new(config);
-            let (tx, _rx) = broadcast::channel(1);
-            let client = DefaultClient::new(Arc::clone(&config), tx);
-            let range = RangeMetadata::new(0, 0, 0, 0, Some(1));
-            let range = client
-                .seal(
-                    Some(&config.placement_driver),
-                    SealKind::PLACEMENT_DRIVER,
-                    range,
-                )
-                .await?;
-            assert_eq!(0, range.stream_id());
-            assert_eq!(0, range.index());
-            assert_eq!(0, range.epoch());
-            assert_eq!(0, range.start());
-            assert_eq!(Some(1), range.end());
-            Ok(())
-        })
+        #[allow(unused_variables)]
+        let port = 2378;
+        let port = run_listener().await;
+        let mut config = config::Configuration {
+            placement_driver: format!("127.0.0.1:{}", port),
+            ..Default::default()
+        };
+        config.check_and_apply().unwrap();
+        let config = Arc::new(config);
+        let client = DefaultClient::new(Arc::clone(&config));
+        let range = RangeMetadata::new(0, 0, 0, 0, Some(1));
+        let range = client
+            .seal(
+                Some(&config.placement_driver),
+                SealKind::PLACEMENT_DRIVER,
+                range,
+            )
+            .await?;
+        assert_eq!(0, range.stream_id());
+        assert_eq!(0, range.index());
+        assert_eq!(0, range.epoch());
+        assert_eq!(0, range.start());
+        assert_eq!(Some(1), range.end());
+        Ok(())
     }
 
-    #[test]
-    fn test_append() -> Result<(), Box<dyn Error>> {
+    #[monoio::test]
+    async fn test_append() -> Result<(), Box<dyn Error>> {
         ulog::try_init_log();
-        tokio_uring::start(async move {
-            #[allow(unused_variables)]
-            let port = 2378;
-            let port = run_listener().await;
-            let mut config = config::Configuration {
-                placement_driver: format!("127.0.0.1:{}", port),
-                ..Default::default()
-            };
-            config.check_and_apply().unwrap();
-            let config = Arc::new(config);
-            let (tx, _rx) = broadcast::channel(1);
-            let client = DefaultClient::new(Arc::clone(&config), tx);
-            let stream_id = 0;
-            let index = 0;
+        #[allow(unused_variables)]
+        let port = 2378;
+        let port = run_listener().await;
+        let mut config = config::Configuration {
+            placement_driver: format!("127.0.0.1:{}", port),
+            ..Default::default()
+        };
+        config.check_and_apply().unwrap();
+        let config = Arc::new(config);
+        let client = DefaultClient::new(Arc::clone(&config));
+        let stream_id = 0;
+        let index = 0;
 
-            const BATCH: i64 = 100;
-            const PAYLOAD_LENGTH: usize = 1024;
+        const BATCH: i64 = 100;
+        const PAYLOAD_LENGTH: usize = 1024;
 
-            let mut payload = BytesMut::with_capacity(PAYLOAD_LENGTH);
-            payload.resize(PAYLOAD_LENGTH, 65);
-            let payload = payload.freeze();
+        let mut payload = BytesMut::with_capacity(PAYLOAD_LENGTH);
+        payload.resize(PAYLOAD_LENGTH, 65);
+        let payload = payload.freeze();
 
-            let mut buf = BytesMut::new();
-            for i in 0..BATCH {
-                let batch = RecordBatchBuilder::default()
-                    .with_stream_id(stream_id)
-                    .with_base_offset(i * 10)
-                    .with_last_offset_delta(10)
-                    .with_range_index(index)
-                    .with_payload(payload.clone())
-                    .build()?;
-                let flat_batch = Into::<FlatRecordBatch>::into(batch);
-                let (slices, total) = flat_batch.encode();
-                assert_eq!(
-                    total as usize,
-                    slices.iter().map(|s| s.len()).sum::<usize>()
-                );
-                for slice in &slices {
-                    buf.extend_from_slice(slice);
-                }
+        let mut buf = BytesMut::new();
+        for i in 0..BATCH {
+            let batch = RecordBatchBuilder::default()
+                .with_stream_id(stream_id)
+                .with_base_offset(i * 10)
+                .with_last_offset_delta(10)
+                .with_range_index(index)
+                .with_payload(payload.clone())
+                .build()?;
+            let flat_batch = Into::<FlatRecordBatch>::into(batch);
+            let (slices, total) = flat_batch.encode();
+            assert_eq!(
+                total as usize,
+                slices.iter().map(|s| s.len()).sum::<usize>()
+            );
+            for slice in &slices {
+                buf.extend_from_slice(slice);
             }
+        }
 
-            let response = client
-                .append(&config.placement_driver, vec![buf.freeze()])
-                .await?;
+        let response = client
+            .append(&config.placement_driver, vec![buf.freeze()])
+            .await?;
 
-            assert_eq!(response.len(), BATCH as usize);
-            Ok(())
-        })
+        assert_eq!(response.len(), BATCH as usize);
+        Ok(())
     }
 
-    #[test]
-    fn test_report_metrics() -> Result<(), EsError> {
+    #[monoio::test]
+    async fn test_report_metrics() -> Result<(), EsError> {
         ulog::try_init_log();
-        tokio_uring::start(async {
-            #[allow(unused_variables)]
-            let port = 2378;
-            let port = run_listener().await;
-            let mut config = config::Configuration {
-                placement_driver: format!("127.0.0.1:{}", port),
-                ..Default::default()
-            };
-            config.check_and_apply().unwrap();
-            let config = Arc::new(config);
-            let (tx, _rx) = broadcast::channel(1);
-            let client = DefaultClient::new(Arc::clone(&config), tx);
-            let uring_statistics = UringStatistics::new();
-            let range_server_statistics = RangeServerStatistics::new();
-            let disk_statistics = DiskStatistics::new();
-            let memory_statistics = MemoryStatistics::new();
-            client
-                .report_metrics(
-                    &config.placement_driver,
-                    RangeServerState::RANGE_SERVER_STATE_READ_WRITE,
-                    &uring_statistics,
-                    &range_server_statistics,
-                    &disk_statistics,
-                    &memory_statistics,
-                )
-                .await
-        })
+        #[allow(unused_variables)]
+        let port = 2378;
+        let port = run_listener().await;
+        let mut config = config::Configuration {
+            placement_driver: format!("127.0.0.1:{}", port),
+            ..Default::default()
+        };
+        config.check_and_apply().unwrap();
+        let config = Arc::new(config);
+        let client = DefaultClient::new(Arc::clone(&config));
+        let uring_statistics = UringStatistics::new();
+        let range_server_statistics = RangeServerStatistics::new();
+        let disk_statistics = DiskStatistics::new();
+        let memory_statistics = MemoryStatistics::new();
+        client
+            .report_metrics(
+                &config.placement_driver,
+                RangeServerState::RANGE_SERVER_STATE_READ_WRITE,
+                &uring_statistics,
+                &range_server_statistics,
+                &disk_statistics,
+                &memory_statistics,
+            )
+            .await
     }
 
-    #[test]
-    fn test_list_resource() -> Result<(), EsError> {
+    #[monoio::test]
+    async fn test_list_resource() -> Result<(), EsError> {
         ulog::try_init_log();
-        tokio_uring::start(async {
-            #[allow(unused_variables)]
-            let port = 2378;
-            let port = run_listener().await;
-            let mut config = config::Configuration {
-                placement_driver: format!("127.0.0.1:{}", port),
-                ..Default::default()
-            };
-            config.check_and_apply().unwrap();
-            let config = Arc::new(config);
-            let (tx, _rx) = broadcast::channel(1);
-            let client = DefaultClient::new(Arc::clone(&config), tx);
+        #[allow(unused_variables)]
+        let port = 2378;
+        let port = run_listener().await;
+        let mut config = config::Configuration {
+            placement_driver: format!("127.0.0.1:{}", port),
+            ..Default::default()
+        };
+        config.check_and_apply().unwrap();
+        let config = Arc::new(config);
+        let client = DefaultClient::new(Arc::clone(&config));
 
-            let result = client
-                .list_resource(
-                    vec![
-                        ResourceType::RANGE_SERVER,
-                        ResourceType::STREAM,
-                        ResourceType::RANGE,
-                        ResourceType::OBJECT,
-                    ]
-                    .as_ref(),
-                    100,
-                    &Option::None::<Bytes>,
-                )
-                .await
-                .expect("List resource should not fail");
+        let result = client
+            .list_resource(
+                vec![
+                    ResourceType::RANGE_SERVER,
+                    ResourceType::STREAM,
+                    ResourceType::RANGE,
+                    ResourceType::OBJECT,
+                ]
+                .as_ref(),
+                100,
+                &Option::None::<Bytes>,
+            )
+            .await
+            .expect("List resource should not fail");
 
-            assert_eq!(400, result.version);
-            assert_eq!(None, result.continuation);
-            assert_eq!(4, result.resources.len());
-            check_range_server(&result.resources[0]);
-            check_stream(&result.resources[1]);
-            check_range(&result.resources[2]);
-            check_object(&result.resources[3]);
+        assert_eq!(400, result.version);
+        assert_eq!(None, result.continuation);
+        assert_eq!(4, result.resources.len());
+        check_range_server(&result.resources[0]);
+        check_stream(&result.resources[1]);
+        check_range(&result.resources[2]);
+        check_object(&result.resources[3]);
 
-            Ok(())
-        })
+        Ok(())
     }
 
-    #[test]
-    fn test_watch_resource() -> Result<(), EsError> {
+    #[monoio::test]
+    async fn test_watch_resource() -> Result<(), EsError> {
         ulog::try_init_log();
-        tokio_uring::start(async {
-            #[allow(unused_variables)]
-            let port = 2378;
-            let port = run_listener().await;
-            let mut config = config::Configuration {
-                placement_driver: format!("127.0.0.1:{}", port),
-                ..Default::default()
-            };
-            config.check_and_apply().unwrap();
-            let config = Arc::new(config);
-            let (tx, _rx) = broadcast::channel(1);
-            let client = DefaultClient::new(Arc::clone(&config), tx);
+        #[allow(unused_variables)]
+        let port = 2378;
+        let port = run_listener().await;
+        let mut config = config::Configuration {
+            placement_driver: format!("127.0.0.1:{}", port),
+            ..Default::default()
+        };
+        config.check_and_apply().unwrap();
+        let config = Arc::new(config);
+        let client = DefaultClient::new(Arc::clone(&config));
 
-            let version = 100;
-            let result = client
-                .watch_resource(
-                    vec![
-                        ResourceType::RANGE_SERVER,
-                        ResourceType::STREAM,
-                        ResourceType::RANGE,
-                        ResourceType::OBJECT,
-                    ]
-                    .as_ref(),
-                    version,
-                    std::time::Duration::from_secs(100),
-                )
-                .await
-                .expect("Watch resource should not fail");
+        let version = 100;
+        let result = client
+            .watch_resource(
+                vec![
+                    ResourceType::RANGE_SERVER,
+                    ResourceType::STREAM,
+                    ResourceType::RANGE,
+                    ResourceType::OBJECT,
+                ]
+                .as_ref(),
+                version,
+                std::time::Duration::from_secs(100),
+            )
+            .await
+            .expect("Watch resource should not fail");
 
-            assert_eq!(version + 3, result.version);
-            assert_eq!(4, result.events.len());
-            assert_eq!(EventType::Added, result.events[0].event_type);
-            check_range_server(&result.events[0].resource);
-            assert_eq!(EventType::Modified, result.events[1].event_type);
-            check_stream(&result.events[1].resource);
-            assert_eq!(EventType::Deleted, result.events[2].event_type);
-            check_range(&result.events[2].resource);
-            assert_eq!(EventType::Added, result.events[3].event_type);
-            check_object(&result.events[3].resource);
-            Ok(())
-        })
+        assert_eq!(version + 3, result.version);
+        assert_eq!(4, result.events.len());
+        assert_eq!(EventType::Added, result.events[0].event_type);
+        check_range_server(&result.events[0].resource);
+        assert_eq!(EventType::Modified, result.events[1].event_type);
+        check_stream(&result.events[1].resource);
+        assert_eq!(EventType::Deleted, result.events[2].event_type);
+        check_range(&result.events[2].resource);
+        assert_eq!(EventType::Added, result.events[3].event_type);
+        check_object(&result.events[3].resource);
+        Ok(())
     }
 
     fn check_range_server(resource: &Resource) {

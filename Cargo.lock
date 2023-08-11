@@ -811,6 +811,7 @@ dependencies = [
  "protocol",
  "tempfile",
  "thiserror",
+ "tokio",
  "tower",
  "transport",
  "ulog",

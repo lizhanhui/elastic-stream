@@ -8,9 +8,9 @@ use std::{
 use config::Configuration;
 use local_sync::mpsc;
 use log::{info, trace, warn};
+use monoio::{io::Splitable, net::TcpStream};
 use store::Store;
-use tokio_uring::net::TcpStream;
-use transport::connection::Connection;
+use transport::connection::{ChannelReader, ChannelWriter};
 
 use crate::{
     connection_handler, connection_tracker::ConnectionTracker, handler::ServerCall,
@@ -80,22 +80,22 @@ where
         connection_tracker
             .borrow_mut()
             .insert(peer_address, tx.clone());
-        let channel = Rc::new(Connection::new(stream, &peer_address.to_string()));
+        let (read_half, write_half) = stream.into_split();
+        let mut channel_reader = ChannelReader::new(read_half, peer_address.to_string());
+        let channel_writer = Rc::new(ChannelWriter::new(write_half, peer_address.to_string()));
 
         let idle_handler = connection_handler::idle::IdleHandler::new(
-            Rc::downgrade(&channel),
+            Rc::clone(&channel_writer),
             peer_address,
             Arc::clone(&server_config),
             Rc::clone(&connection_tracker),
         );
 
         // Coroutine to read requests from network connection
-        let _channel = Rc::clone(&channel);
         let read_idle_handler = Rc::clone(&idle_handler);
-        tokio_uring::spawn(async move {
-            let channel = _channel;
+        monoio::spawn(async move {
             loop {
-                match channel.read_frame().await {
+                match channel_reader.read_frame().await {
                     Ok(Some(frame)) => {
                         // Update last read instant.
                         read_idle_handler.on_read();
@@ -108,7 +108,7 @@ where
                             store,
                             range_manager,
                         };
-                        tokio_uring::spawn(async move {
+                        monoio::spawn(async move {
                             server_call.call().await;
                         });
                     }
@@ -130,14 +130,14 @@ where
         });
 
         // Coroutine to write responses to network connection
-        tokio_uring::spawn(async move {
-            let peer_address = channel.peer_address().to_owned();
+        monoio::spawn(async move {
+            let peer_address = channel_writer.peer_address().to_owned();
             loop {
                 match rx.recv().await {
                     Some(frame) => {
                         let stream_id = frame.stream_id;
                         let opcode = frame.operation_code;
-                        match channel.write_frame(frame).await {
+                        match channel_writer.write_frame(frame).await {
                             Ok(_) => {
                                 // Update last write instant
                                 idle_handler.on_write();

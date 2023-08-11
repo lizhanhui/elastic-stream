@@ -6,7 +6,9 @@ use codec::frame::Frame;
 use local_sync::{mpsc, oneshot};
 use log::{error, info, trace, warn};
 use monoio::io::{AsyncReadRent, AsyncWriteRent, AsyncWriteRentExt};
+use std::cell::UnsafeCell;
 use std::io::Cursor;
+use std::rc::Rc;
 
 const BUFFER_SIZE: usize = 4 * 1024;
 
@@ -158,20 +160,25 @@ where
 }
 
 #[derive(Clone)]
-pub struct ChannelWriter {
+pub struct ChannelWriter<S> {
     peer_address: String,
     tx: mpsc::unbounded::Tx<WriteTask>,
+    stream: Rc<UnsafeCell<S>>,
 }
 
-impl ChannelWriter {
-    pub fn new<S>(mut stream: S, peer_address: String) -> Self
-    where
-        S: AsyncWriteRent + 'static,
-    {
+impl<S> ChannelWriter<S>
+where
+    S: AsyncWriteRent + 'static,
+{
+    pub fn new(stream: S, peer_address: String) -> Self {
         let (tx, mut rx) = mpsc::unbounded::channel::<WriteTask>();
         let target_address = peer_address.clone();
+        let stream = Rc::new(UnsafeCell::new(stream));
+
+        let stream_ = Rc::clone(&stream);
         monoio::spawn(async move {
             trace!("Start write coroutine loop for {}", &target_address);
+            let stream = unsafe { &mut *stream_.get() };
             loop {
                 match rx.recv().await {
                     Some(task) => {
@@ -181,8 +188,7 @@ impl ChannelWriter {
                             &target_address
                         );
 
-                        if let Err(e) = Self::write(&mut stream, &task.frame, &target_address).await
-                        {
+                        if let Err(e) = Self::write(stream, &task.frame, &target_address).await {
                             match e {
                                 ConnectionError::EncodeFrame(e) => {
                                     error!("Failed to encode frame: {}", e.to_string());
@@ -191,7 +197,7 @@ impl ChannelWriter {
                                 }
 
                                 ConnectionError::Network(e) => {
-                                    error!("Failed to write frame to network due to {}, closing underlying TcpStream", e.to_string());
+                                    error!("Failed to write frame to {} due to {}, closing underlying TcpStream", &target_address, e.to_string());
                                     let _ = stream.shutdown().await;
                                     break;
                                 }
@@ -205,7 +211,7 @@ impl ChannelWriter {
                             Ok(()) => {
                                 info!("Closed write half of connection to {}", &target_address);
                             }
-                            Err(e) => {
+                            Err(_e) => {
                                 warn!(
                                     "Failed to close write half of connection to {}",
                                     &target_address
@@ -218,17 +224,18 @@ impl ChannelWriter {
             }
         });
 
-        Self { peer_address, tx }
+        Self {
+            peer_address,
+            tx,
+            stream,
+        }
     }
 
-    async fn write<S>(
+    async fn write(
         stream: &mut S,
         frame: &Frame,
         peer_address: &str,
-    ) -> Result<(), ConnectionError>
-    where
-        S: AsyncWriteRent,
-    {
+    ) -> Result<(), ConnectionError> {
         let buffers = frame.encode()?;
         let io_vec = buffers
             .iter()
@@ -271,6 +278,11 @@ impl ChannelWriter {
 
     pub fn peer_address(&self) -> &str {
         &self.peer_address
+    }
+
+    pub async fn close(&self) -> Result<(), std::io::Error> {
+        let stream_ = unsafe { &mut *self.stream.get() };
+        stream_.shutdown().await
     }
 }
 
@@ -327,7 +339,7 @@ mod tests {
         let handle = std::thread::Builder::new()
             .name("Test-Server".to_owned())
             .spawn(move || {
-                let rt = monoio::RuntimeBuilder::<monoio::FusionDriver>::new()
+                let mut rt = monoio::RuntimeBuilder::<monoio::FusionDriver>::new()
                     .enable_all()
                     .build()
                     .unwrap();
@@ -339,8 +351,10 @@ mod tests {
                     let (mut stream, _addr) = listener.accept().await.unwrap();
                     let mut read = 0;
                     let mut buf = BytesMut::with_capacity(1024);
-                    while let (res, buf_) = stream.read(buf).await {
+                    loop {
+                        let (res, buf_) = stream.read(buf).await;
                         let n = res.unwrap();
+                        buf = buf_;
                         if 0 == n {
                             break;
                         }
@@ -362,16 +376,16 @@ mod tests {
         let handle = run_server(counter_tx, port_tx).unwrap();
 
         let port = port_rx.recv()?;
-        let rt = monoio::RuntimeBuilder::<monoio::FusionDriver>::new()
+        let mut rt = monoio::RuntimeBuilder::<monoio::FusionDriver>::new()
             .enable_all()
             .build()?;
 
         rt.block_on(async move {
             let address = format!("127.0.0.1:{}", port);
             {
-                let tcp_stream = TcpStream::connect(&address).await.unwrap();
-                tcp_stream.set_nodelay(true).unwrap();
-                let (read_half, write_half) = tcp_stream.into_split();
+                let stream = TcpStream::connect(&address).await.unwrap();
+                stream.set_nodelay(true).unwrap();
+                let (_read_half, write_half) = stream.into_split();
                 let channel_writer = super::ChannelWriter::new(write_half, address.clone());
                 let mut frame = codec::frame::Frame::new(OperationCode::ALLOCATE_ID);
                 let mut payload = vec![];
@@ -381,8 +395,14 @@ mod tests {
                     payload.push(buf.freeze());
                 });
                 frame.payload = Some(payload);
-                channel_writer.write_frame(frame).await.unwrap();
-                drop(channel_writer);
+                channel_writer
+                    .write_frame(frame)
+                    .await
+                    .expect("Writing frame to network should work");
+                channel_writer
+                    .close()
+                    .await
+                    .expect("Connection should be closed");
             }
 
             let total = counter_rx.recv_async().await.unwrap();

@@ -21,7 +21,7 @@ use crossbeam::channel::{unbounded, Sender};
 use super::cmd::{CallbackCommand, Command};
 use super::tracing::{Tracer, TracingService};
 
-static mut TX: OnceCell<mpsc::UnboundedSender<Command>> = OnceCell::new();
+static mut TX: OnceCell<flume::Sender<Command>> = OnceCell::new();
 static mut CALLBACK_TX: OnceCell<Sender<CallbackCommand>> = OnceCell::new();
 static mut STREAM_CLASS_CACHE: OnceCell<GlobalRef> = OnceCell::new();
 static mut STREAM_CTOR_CACHE: OnceCell<JMethodID> = OnceCell::new();
@@ -269,7 +269,7 @@ async fn process_create_stream_command(
 pub extern "system" fn JNI_OnLoad(vm: JavaVM, _: *mut c_void) -> jint {
     crate::init_log();
     let java_vm = Arc::new(vm);
-    let (tx, mut rx) = flume::unbounded();
+    let (tx, rx) = flume::unbounded();
     let (callback_tx, callback_rx) = unbounded();
     let _ = unsafe { TRACING_SERVICE.set(TracingService::new(Duration::from_millis(1))) };
     // # Safety

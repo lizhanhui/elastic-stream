@@ -800,141 +800,134 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_fetch() -> Result<(), Box<dyn Error>> {
-        tokio_uring::start(async move {
-            let metadata = RangeMetadata::new_range(0, 1, 2, 233, None, 2, 2);
-            let ack_callback_invoke_times = Rc::new(RefCell::new(0));
-            let mut range = new_range(
-                metadata,
-                true,
-                ack_callback_invoke_times,
-                Rc::new(MockClient::default()),
-            );
+    #[monoio::test]
+    async fn test_fetch() -> Result<(), Box<dyn Error>> {
+        let metadata = RangeMetadata::new_range(0, 1, 2, 233, None, 2, 2);
+        let ack_callback_invoke_times = Rc::new(RefCell::new(0));
+        let mut range = new_range(
+            metadata,
+            true,
+            ack_callback_invoke_times,
+            Rc::new(MockClient::default()),
+        );
 
-            assert_eq!(0, *range.sticky_read_index.borrow());
+        assert_eq!(0, *range.sticky_read_index.borrow());
 
-            // replica0 fetch fail, replica fetch success
-            {
-                let replica0 = get_replica(&mut range, 0);
-                replica0
-                    .expect_fetch()
-                    .times(1)
-                    .returning(|_, _, _| Err(EsError::unexpected("test mock error")));
-                let replica1 = get_replica(&mut range, 1);
-                replica1.expect_fetch().times(1).returning(|_, _, _| {
-                    let record = new_record(233, 10);
-                    let payload =
-                        record_batch_to_bytes(&record, &RangeAppendContext::new(233), 0, 1);
-                    let rst = FetchResultSet {
-                        throttle: None,
-                        object_metadata_list: None,
-                        payload: Some(vec_bytes_to_bytes(&payload)),
-                    };
-                    Ok(rst)
-                });
-            }
+        // replica0 fetch fail, replica fetch success
+        {
+            let replica0 = get_replica(&mut range, 0);
+            replica0
+                .expect_fetch()
+                .times(1)
+                .returning(|_, _, _| Err(EsError::unexpected("test mock error")));
+            let replica1 = get_replica(&mut range, 1);
+            replica1.expect_fetch().times(1).returning(|_, _, _| {
+                let record = new_record(233, 10);
+                let payload = record_batch_to_bytes(&record, &RangeAppendContext::new(233), 0, 1);
+                let rst = FetchResultSet {
+                    throttle: None,
+                    object_metadata_list: None,
+                    payload: Some(vec_bytes_to_bytes(&payload)),
+                };
+                Ok(rst)
+            });
+        }
 
-            let dataset = range.fetch(233, 240, 1234).await.unwrap();
-            assert_eq!(1, *range.sticky_read_index.borrow());
-            if let FetchDataset::Full(blocks) = dataset {
-                assert_eq!(1, blocks.len());
-                assert_eq!(233, blocks[0].start_offset());
-                assert_eq!(243, blocks[0].end_offset());
-            } else {
-                panic!("fetch dataset is not full");
-            }
+        let dataset = range.fetch(233, 240, 1234).await.unwrap();
+        assert_eq!(1, *range.sticky_read_index.borrow());
+        if let FetchDataset::Full(blocks) = dataset {
+            assert_eq!(1, blocks.len());
+            assert_eq!(233, blocks[0].start_offset());
+            assert_eq!(243, blocks[0].end_offset());
+        } else {
+            panic!("fetch dataset is not full");
+        }
 
-            // replica1 return corrupted data
-            {
-                let replica1 = get_replica(&mut range, 1);
-                replica1.expect_fetch().times(1).returning(|_, _, _| {
-                    let rst = FetchResultSet {
-                        throttle: None,
-                        object_metadata_list: None,
-                        payload: Some(BytesMut::zeroed(10).freeze()),
-                    };
-                    Ok(rst)
-                });
-            }
-            let rst = range.fetch(233, 240, 1234).await;
-            assert_eq!(2, *range.sticky_read_index.borrow());
-            assert_eq!(ErrorCode::RECORDS_PARSE_ERROR, rst.unwrap_err().code);
-        });
+        // replica1 return corrupted data
+        {
+            let replica1 = get_replica(&mut range, 1);
+            replica1.expect_fetch().times(1).returning(|_, _, _| {
+                let rst = FetchResultSet {
+                    throttle: None,
+                    object_metadata_list: None,
+                    payload: Some(BytesMut::zeroed(10).freeze()),
+                };
+                Ok(rst)
+            });
+        }
+        let rst = range.fetch(233, 240, 1234).await;
+        assert_eq!(2, *range.sticky_read_index.borrow());
+        assert_eq!(ErrorCode::RECORDS_PARSE_ERROR, rst.unwrap_err().code);
         Ok(())
     }
 
-    #[test]
-    fn test_seal_with_range_created_by_current_stream() -> Result<(), Box<dyn Error>> {
-        tokio_uring::start(async move {
-            let metadata = RangeMetadata::new_range(0, 1, 2, 233, None, 1, 1);
-            let ack_callback_invoke_times = Rc::new(RefCell::new(0));
-            let mut client = MockClient::default();
-            client
+    #[monoio::test]
+    async fn test_seal_with_range_created_by_current_stream() -> Result<(), Box<dyn Error>> {
+        let metadata = RangeMetadata::new_range(0, 1, 2, 233, None, 1, 1);
+        let ack_callback_invoke_times = Rc::new(RefCell::new(0));
+        let mut client = MockClient::default();
+        client
+            .expect_seal()
+            .times(1)
+            .returning(|_target, kind, meta| match kind {
+                SealKind::PLACEMENT_DRIVER => {
+                    assert_eq!(240, meta.end().unwrap());
+                    Ok(meta)
+                }
+                _ => panic!("unexpected seal kind: {:?}", kind),
+            });
+        let client = Rc::new(client);
+        let mut range = new_range(metadata, true, ack_callback_invoke_times, client.clone());
+        {
+            let replica = get_replica(&mut range, 0);
+            replica
                 .expect_seal()
-                .times(1)
-                .returning(|_target, kind, meta| match kind {
-                    SealKind::PLACEMENT_DRIVER => {
-                        assert_eq!(240, meta.end().unwrap());
-                        Ok(meta)
-                    }
-                    _ => panic!("unexpected seal kind: {:?}", kind),
-                });
-            let client = Rc::new(client);
-            let mut range = new_range(metadata, true, ack_callback_invoke_times, client.clone());
-            {
-                let replica = get_replica(&mut range, 0);
-                replica
-                    .expect_seal()
-                    .returning(|_| Err(EsError::unexpected("test mock error")));
-            }
-            *range.confirm_offset.borrow_mut() = 240;
-            assert_eq!(240, range.seal().await.unwrap());
-            assert!(range.is_sealed());
-            assert!(!range.is_writable());
-            // repeated seal
-            assert_eq!(240, range.seal().await.unwrap());
-        });
+                .returning(|_| Err(EsError::unexpected("test mock error")));
+        }
+        *range.confirm_offset.borrow_mut() = 240;
+        assert_eq!(240, range.seal().await.unwrap());
+        assert!(range.is_sealed());
+        assert!(!range.is_writable());
+        // repeated seal
+        assert_eq!(240, range.seal().await.unwrap());
         Ok(())
     }
 
-    #[test]
-    fn test_seal_with_range_created_by_old_stream() -> Result<(), Box<dyn Error>> {
-        tokio_uring::start(async move {
-            let metadata = RangeMetadata::new_range(0, 1, 2, 233, None, 1, 1);
-            let ack_callback_invoke_times = Rc::new(RefCell::new(0));
-            let mut client = MockClient::default();
-            client
+    #[monoio::test]
+    async fn test_seal_with_range_created_by_old_stream() -> Result<(), Box<dyn Error>> {
+        let metadata = RangeMetadata::new_range(0, 1, 2, 233, None, 1, 1);
+        let ack_callback_invoke_times = Rc::new(RefCell::new(0));
+        let mut client = MockClient::default();
+        client
+            .expect_seal()
+            .times(1)
+            .returning(|_target, kind, meta| match kind {
+                SealKind::PLACEMENT_DRIVER => {
+                    assert_eq!(240, meta.end().unwrap());
+                    Ok(meta)
+                }
+                _ => panic!("unexpected seal kind: {:?}", kind),
+            });
+        let client = Rc::new(client);
+        let mut range = new_range(metadata, false, ack_callback_invoke_times, client.clone());
+        {
+            let replica = get_replica(&mut range, 0);
+            replica
                 .expect_seal()
                 .times(1)
-                .returning(|_target, kind, meta| match kind {
-                    SealKind::PLACEMENT_DRIVER => {
-                        assert_eq!(240, meta.end().unwrap());
-                        Ok(meta)
-                    }
-                    _ => panic!("unexpected seal kind: {:?}", kind),
-                });
-            let client = Rc::new(client);
-            let mut range = new_range(metadata, false, ack_callback_invoke_times, client.clone());
-            {
-                let replica = get_replica(&mut range, 0);
-                replica
-                    .expect_seal()
-                    .times(1)
-                    .returning(|_| Err(EsError::unexpected("test mock error")));
-            }
-            let rst = range.seal().await;
-            assert_eq!(ErrorCode::REPLICA_NOT_ENOUGH, rst.unwrap_err().code);
-            assert!(!range.is_sealed());
+                .returning(|_| Err(EsError::unexpected("test mock error")));
+        }
+        let rst = range.seal().await;
+        assert_eq!(ErrorCode::REPLICA_NOT_ENOUGH, rst.unwrap_err().code);
+        assert!(!range.is_sealed());
 
-            {
-                let replica = get_replica(&mut range, 0);
-                replica.expect_seal().times(1).returning(|_| Ok(240));
-            }
-            assert_eq!(240, range.seal().await.unwrap());
-            assert!(range.is_sealed());
-            assert!(!range.is_writable());
-        });
+        {
+            let replica = get_replica(&mut range, 0);
+            replica.expect_seal().times(1).returning(|_| Ok(240));
+        }
+        assert_eq!(240, range.seal().await.unwrap());
+        assert!(range.is_sealed());
+        assert!(!range.is_writable());
         Ok(())
     }
 

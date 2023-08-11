@@ -74,7 +74,11 @@ mod tests {
         let (port_tx, port_rx) = oneshot::channel();
 
         let handle = std::thread::spawn(move || {
-            tokio_uring::start(async {
+            let mut rt = monoio::RuntimeBuilder::<monoio::FusionDriver>::new()
+                .enable_all()
+                .build()
+                .unwrap();
+            rt.block_on(async {
                 let port = run_listener().await;
                 let _ = port_tx.send(port);
                 let _ = stop_rx.await;

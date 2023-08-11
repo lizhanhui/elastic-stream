@@ -123,10 +123,7 @@ pub fn launch(
                     };
 
                     let store = Rc::new(BufferedStore::new(store));
-                    let client = Rc::new(client::DefaultClient::new(
-                        Arc::clone(&server_config),
-                        shutdown_tx.clone(),
-                    ));
+                    let client = Rc::new(client::DefaultClient::new(Arc::clone(&server_config)));
 
                     let fetcher = DelegatePlacementClient::new(tx);
 
@@ -176,10 +173,7 @@ pub fn launch(
                     primary: true,
                 };
 
-                let client = Rc::new(client::DefaultClient::new(
-                    Arc::clone(&server_config),
-                    shutdown_tx.clone(),
-                ));
+                let client = Rc::new(client::DefaultClient::new(Arc::clone(&server_config)));
                 let fetcher = PlacementClient::new(Rc::clone(&client));
                 let store = Rc::new(BufferedStore::new(store));
 

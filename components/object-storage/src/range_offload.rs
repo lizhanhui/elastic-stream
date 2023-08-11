@@ -563,60 +563,58 @@ mod tests {
         assert_eq!(552, sparse_index.get_u32());
     }
 
-    #[test]
-    fn test_object_write() {
-        tokio_uring::start(async move {
-            let mut fs_builder = Fs::default();
-            fs_builder.root("/tmp/estest/");
-            let op = Operator::new(fs_builder).unwrap().finish();
+    #[monoio::test]
+    async fn test_object_write() {
+        let mut fs_builder = Fs::default();
+        fs_builder.root("/tmp/estest/");
+        let op = Operator::new(fs_builder).unwrap().finish();
 
-            let builder = RecordBatch::new_builder()
-                .with_stream_id(1)
-                .with_range_index(0)
-                .with_base_offset(233)
-                .with_last_offset_delta(10)
-                .with_payload(Bytes::from("test"));
-            let record_batch = builder.build().unwrap();
-            let flat: FlatRecordBatch = record_batch.into();
-            // encoded size = 69
-            let (encoded, _) = flat.encode();
+        let builder = RecordBatch::new_builder()
+            .with_stream_id(1)
+            .with_range_index(0)
+            .with_base_offset(233)
+            .with_last_offset_delta(10)
+            .with_payload(Bytes::from("test"));
+        let record_batch = builder.build().unwrap();
+        let flat: FlatRecordBatch = record_batch.into();
+        // encoded size = 69
+        let (encoded, _) = flat.encode();
 
-            let mut object_manager = MockObjectManager::new();
-            object_manager
-                .expect_commit_object()
-                .times(1)
-                .returning(|_| Ok(()));
+        let mut object_manager = MockObjectManager::new();
+        object_manager
+            .expect_commit_object()
+            .times(1)
+            .returning(|_| Ok(()));
 
-            let obj = Object {
-                key: "test_object_write".to_string(),
-                op: op.clone(),
-                object_manager: Rc::new(object_manager),
-            };
+        let obj = Object {
+            key: "test_object_write".to_string(),
+            op: op.clone(),
+            object_manager: Rc::new(object_manager),
+        };
 
-            let object_metadata = ObjectMetadata::new(1, 0, 0, 233);
-            let (end_offset, join_handle) = obj.write(encoded.clone(), object_metadata).await;
-            assert_eq!(243, end_offset);
-            join_handle.await.unwrap();
+        let object_metadata = ObjectMetadata::new(1, 0, 0, 233);
+        let (end_offset, join_handle) = obj.write(encoded.clone(), object_metadata).await;
+        assert_eq!(243, end_offset);
+        join_handle.await;
 
-            // data
-            let read_data = op.read("test_object_write").await.unwrap();
-            let record_slice = &read_data[0..69];
-            let record_batch =
-                FlatRecordBatch::decode_to_record_batch(&mut Bytes::copy_from_slice(record_slice))
-                    .unwrap();
-            assert_eq!(1, record_batch.stream_id());
-            assert_eq!(0, record_batch.range_index());
-            assert_eq!(233, record_batch.base_offset());
-            assert_eq!(10, record_batch.last_offset_delta());
-            let mut buf = Bytes::copy_from_slice(&read_data[69..]);
-            assert_eq!(BLOCK_DELIMITER, buf.get_u8());
-            // empty index
-            // footer
-            assert_eq!(48, buf.remaining());
-            assert_eq!(70, buf.get_u32());
-            assert_eq!(0, buf.get_u32());
-            buf.advance(32);
-            assert_eq!(FOOTER_MAGIC, buf.get_u64());
-        });
+        // data
+        let read_data = op.read("test_object_write").await.unwrap();
+        let record_slice = &read_data[0..69];
+        let record_batch =
+            FlatRecordBatch::decode_to_record_batch(&mut Bytes::copy_from_slice(record_slice))
+                .unwrap();
+        assert_eq!(1, record_batch.stream_id());
+        assert_eq!(0, record_batch.range_index());
+        assert_eq!(233, record_batch.base_offset());
+        assert_eq!(10, record_batch.last_offset_delta());
+        let mut buf = Bytes::copy_from_slice(&read_data[69..]);
+        assert_eq!(BLOCK_DELIMITER, buf.get_u8());
+        // empty index
+        // footer
+        assert_eq!(48, buf.remaining());
+        assert_eq!(70, buf.get_u32());
+        assert_eq!(0, buf.get_u32());
+        buf.advance(32);
+        assert_eq!(FOOTER_MAGIC, buf.get_u64());
     }
 }

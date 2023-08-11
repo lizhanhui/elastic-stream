@@ -1,14 +1,15 @@
 use std::{
     cell::RefCell,
     net::SocketAddr,
-    rc::{Rc, Weak},
+    rc::Rc,
     sync::Arc,
     time::{Duration, Instant},
 };
 
 use config::Configuration;
 use log::info;
-use transport::connection::Connection;
+use monoio::io::AsyncWriteRent;
+use transport::connection::ChannelWriter;
 
 use crate::connection_tracker::ConnectionTracker;
 
@@ -19,12 +20,15 @@ pub(crate) struct IdleHandler {
 }
 
 impl IdleHandler {
-    pub(crate) fn new(
-        connection: Weak<Connection>,
+    pub(crate) fn new<S>(
+        connection: Rc<ChannelWriter<S>>,
         addr: SocketAddr,
         config: Arc<Configuration>,
         conn_tracker: Rc<RefCell<ConnectionTracker>>,
-    ) -> Rc<Self> {
+    ) -> Rc<Self>
+    where
+        S: AsyncWriteRent + 'static,
+    {
         let handler = Rc::new(Self {
             config: Arc::clone(&config),
             last_read: Rc::new(RefCell::new(Instant::now())),
@@ -58,34 +62,28 @@ impl IdleHandler {
         self.last_write.borrow().elapsed()
     }
 
-    fn run(
+    fn run<S>(
         handler: Rc<Self>,
-        connection: Weak<Connection>,
+        connection: Rc<ChannelWriter<S>>,
         addr: SocketAddr,
         config: Arc<Configuration>,
         conn_tracker: Rc<RefCell<ConnectionTracker>>,
-    ) {
+    ) where
+        S: AsyncWriteRent + 'static,
+    {
         monoio::spawn(async move {
-            let mut interval = tokio::time::interval(config.connection_idle_duration());
+            let mut interval = monoio::time::interval(config.connection_idle_duration());
             loop {
                 interval.tick().await;
-                match connection.upgrade() {
-                    Some(channel) => {
-                        if handler.read_idle() && handler.write_idle() {
-                            conn_tracker.borrow_mut().remove(&addr);
-                            if channel.close().is_ok() {
-                                info!(
-                                    "Close connection to {} since read has been idle for {}ms and write has been idle for {}ms",
-                                    channel.peer_address(),
-                                    handler.read_elapsed().as_millis(),
-                                    handler.write_elapsed().as_millis(),
-                                );
-                            }
-                        }
-                    }
-                    None => {
-                        // If the connection was already destructed, stop idle checking automatically.
-                        break;
+                if handler.read_idle() && handler.write_idle() {
+                    conn_tracker.borrow_mut().remove(&addr);
+                    if let Ok(()) = connection.close().await {
+                        info!(
+                            "Close connection to {} since read has been idle for {}ms and write has been idle for {}ms",
+                            connection.peer_address(),
+                            handler.read_elapsed().as_millis(),
+                            handler.write_elapsed().as_millis(),
+                        );
                     }
                 }
             }
@@ -98,40 +96,39 @@ mod tests {
     use crate::connection_tracker::ConnectionTracker;
     use config::Configuration;
     use mock_server::run_listener;
+    use monoio::{io::Splitable, net::TcpStream};
     use std::{cell::RefCell, error::Error, net::SocketAddr, rc::Rc, sync::Arc};
-    use tokio_uring::net::TcpStream;
-    use transport::connection::Connection;
+    use transport::connection::ChannelWriter;
 
-    #[test]
-    fn test_read_idle() -> Result<(), Box<dyn Error>> {
+    #[monoio::test]
+    async fn test_read_idle() -> Result<(), Box<dyn Error>> {
         let mut config = Configuration::default();
         config.server.connection_idle_duration = 1;
         let config = Arc::new(config);
-        tokio_uring::start(async {
-            let port = run_listener().await;
-            let target = format!("127.0.0.1:{}", port);
-            let addr = target.parse::<SocketAddr>().unwrap();
-            let stream = TcpStream::connect(addr).await.unwrap();
-            let connection = Rc::new(Connection::new(stream, &target));
-            let conn_tracker = Rc::new(RefCell::new(ConnectionTracker::new()));
-            let handler = super::IdleHandler::new(
-                Rc::downgrade(&connection),
-                addr,
-                Arc::clone(&config),
-                conn_tracker,
-            );
-            tokio::time::sleep(config.connection_idle_duration()).await;
-            assert!(handler.read_idle(), "Read should be idle");
-            assert!(handler.write_idle(), "Write should be idle");
+        let port = run_listener().await;
+        let target = format!("127.0.0.1:{}", port);
+        let addr = target.parse::<SocketAddr>().unwrap();
+        let stream = TcpStream::connect(addr).await.unwrap();
+        let (_read_half, write_half) = stream.into_split();
+        let connection = Rc::new(ChannelWriter::new(write_half, target.clone()));
+        let conn_tracker = Rc::new(RefCell::new(ConnectionTracker::new()));
+        let handler = super::IdleHandler::new(
+            Rc::clone(&connection),
+            addr,
+            Arc::clone(&config),
+            conn_tracker,
+        );
+        tokio::time::sleep(config.connection_idle_duration()).await;
+        assert!(handler.read_idle(), "Read should be idle");
+        assert!(handler.write_idle(), "Write should be idle");
 
-            handler.on_read();
-            assert!(!handler.read_idle(), "Read should NOT be idle");
-            assert!(handler.write_idle(), "Write should be idle");
+        handler.on_read();
+        assert!(!handler.read_idle(), "Read should NOT be idle");
+        assert!(handler.write_idle(), "Write should be idle");
 
-            handler.on_write();
-            assert!(!handler.write_idle(), "Read should NOT be idle");
+        handler.on_write();
+        assert!(!handler.write_idle(), "Read should NOT be idle");
 
-            Ok(())
-        })
+        Ok(())
     }
 }

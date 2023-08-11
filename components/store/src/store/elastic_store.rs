@@ -553,7 +553,11 @@ mod tests {
         let (port_tx, port_rx) = oneshot::channel();
 
         let handle = std::thread::spawn(move || {
-            tokio_uring::start(async {
+            let mut rt = monoio::RuntimeBuilder::<monoio::FusionDriver>::new()
+                .enable_all()
+                .build()
+                .unwrap();
+            rt.block_on(async {
                 let port = run_listener().await;
                 let _ = port_tx.send(port);
                 let _ = stop_rx.await;
@@ -563,8 +567,11 @@ mod tests {
         let port = port_rx.blocking_recv()?;
         let pd_address = format!("localhost:{}", port);
         let store = build_store(&pd_address, store_path.as_str());
-
-        tokio_uring::start(async move {
+        let mut rt = monoio::RuntimeBuilder::<monoio::FusionDriver>::new()
+            .enable_all()
+            .build()
+            .unwrap();
+        rt.block_on(async move {
             store.start();
             let options = WriteOptions::default();
             let mut append_fs = vec![];

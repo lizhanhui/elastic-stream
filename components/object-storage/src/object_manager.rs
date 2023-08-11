@@ -716,139 +716,137 @@ mod tests {
         }
     }
 
-    #[test]
+    #[monoio::test]
     #[allow(clippy::too_many_lines)]
-    fn test_default_object_manager() {
-        tokio_uring::start(async {
-            const CHANNEL_SIZE: usize = 16;
-            let (tx, rx) = mpsc::channel(CHANNEL_SIZE);
+    async fn test_default_object_manager() {
+        const CHANNEL_SIZE: usize = 16;
+        let (tx, rx) = mpsc::channel(CHANNEL_SIZE);
 
-            // mock pd client
-            let mut mock_pd_client = pd_client::MockPlacementDriverClient::new();
-            mock_pd_client
-                .expect_list_and_watch_resource()
-                .times(1)
-                .return_once(|_| rx);
-            mock_pd_client
-                .expect_commit_object()
-                .withf(|object| object.start_offset == 300)
-                .times(1)
-                .returning(|_| Ok(()));
-            let object_manager = DefaultObjectManager::<pd_client::MockPlacementDriverClient>::new(
-                "testcluster",
-                Rc::new(mock_pd_client),
-                42,
-            );
+        // mock pd client
+        let mut mock_pd_client = pd_client::MockPlacementDriverClient::new();
+        mock_pd_client
+            .expect_list_and_watch_resource()
+            .times(1)
+            .return_once(|_| rx);
+        mock_pd_client
+            .expect_commit_object()
+            .withf(|object| object.start_offset == 300)
+            .times(1)
+            .returning(|_| Ok(()));
+        let object_manager = DefaultObjectManager::<pd_client::MockPlacementDriverClient>::new(
+            "testcluster",
+            Rc::new(mock_pd_client),
+            42,
+        );
 
-            // a listed range
-            let mut range_t = RangeT::default();
-            range_t.stream_id = 1;
-            range_t.index = 2;
-            range_t.start = 100;
-            range_t.end = 500;
-            let mut range_server_t = RangeServerT::default();
-            range_server_t.server_id = 42;
-            range_t.servers = Some(vec![range_server_t]);
-            let mut offload_owner_t = OffloadOwnerT::default();
-            offload_owner_t.server_id = 42;
-            offload_owner_t.epoch = 3;
-            range_t.offload_owner = Some(Box::new(offload_owner_t));
-            tx.send(ResourceEvent {
-                event_type: EventType::Listed,
-                resource: Resource::Range(RangeMetadata::from(&range_t)),
-            })
-            .await
-            .unwrap();
+        // a listed range
+        let mut range_t = RangeT::default();
+        range_t.stream_id = 1;
+        range_t.index = 2;
+        range_t.start = 100;
+        range_t.end = 500;
+        let mut range_server_t = RangeServerT::default();
+        range_server_t.server_id = 42;
+        range_t.servers = Some(vec![range_server_t]);
+        let mut offload_owner_t = OffloadOwnerT::default();
+        offload_owner_t.server_id = 42;
+        offload_owner_t.epoch = 3;
+        range_t.offload_owner = Some(Box::new(offload_owner_t));
+        tx.send(ResourceEvent {
+            event_type: EventType::Listed,
+            resource: Resource::Range(RangeMetadata::from(&range_t)),
+        })
+        .await
+        .unwrap();
 
-            // two listed objects
-            let mut object = new_object_with_epoch(1, 100, 200, 1);
-            object.stream_id = 1;
-            object.range_index = 2;
-            let mut object1 = object.clone();
-            object1.gen_object_key("testcluster");
-            tx.send(ResourceEvent {
-                event_type: EventType::Listed,
-                resource: Resource::Object(object),
-            })
-            .await
-            .unwrap();
-            let mut object = new_object_with_epoch(1, 300, 400, 1);
-            object.stream_id = 1;
-            object.range_index = 2;
-            tx.send(ResourceEvent {
-                event_type: EventType::Listed,
-                resource: Resource::Object(object),
-            })
-            .await
-            .unwrap();
+        // two listed objects
+        let mut object = new_object_with_epoch(1, 100, 200, 1);
+        object.stream_id = 1;
+        object.range_index = 2;
+        let mut object1 = object.clone();
+        object1.gen_object_key("testcluster");
+        tx.send(ResourceEvent {
+            event_type: EventType::Listed,
+            resource: Resource::Object(object),
+        })
+        .await
+        .unwrap();
+        let mut object = new_object_with_epoch(1, 300, 400, 1);
+        object.stream_id = 1;
+        object.range_index = 2;
+        tx.send(ResourceEvent {
+            event_type: EventType::Listed,
+            resource: Resource::Object(object),
+        })
+        .await
+        .unwrap();
 
-            // a added object
-            let mut object = new_object_with_epoch(2, 200, 300, 1);
-            object.stream_id = 1;
-            object.range_index = 2;
-            let mut object2 = object.clone();
-            object2.gen_object_key("testcluster");
-            tx.send(ResourceEvent {
-                event_type: EventType::Added,
-                resource: Resource::Object(object),
-            })
-            .await
-            .unwrap();
+        // a added object
+        let mut object = new_object_with_epoch(2, 200, 300, 1);
+        object.stream_id = 1;
+        object.range_index = 2;
+        let mut object2 = object.clone();
+        object2.gen_object_key("testcluster");
+        tx.send(ResourceEvent {
+            event_type: EventType::Added,
+            resource: Resource::Object(object),
+        })
+        .await
+        .unwrap();
 
-            // wait for all events processed
-            loop {
-                if tx.capacity() == CHANNEL_SIZE {
-                    break;
-                }
-                tokio::time::sleep(Duration::from_millis(10)).await;
+        // wait for all events processed
+        loop {
+            if tx.capacity() == CHANNEL_SIZE {
+                break;
             }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
 
-            // test `owner_watcher`
-            let mut owner_watcher = object_manager.owner_watcher();
-            assert_eq!(
-                Some(OwnerEvent {
-                    range_key: RangeKey::new(1, 2),
-                    owner: Some(Owner {
-                        epoch: 3,
-                        start_offset: 300
-                    })
-                }),
-                owner_watcher.recv().await
-            );
+        // test `owner_watcher`
+        let mut owner_watcher = object_manager.owner_watcher();
+        assert_eq!(
+            Some(OwnerEvent {
+                range_key: RangeKey::new(1, 2),
+                owner: Some(Owner {
+                    epoch: 3,
+                    start_offset: 300
+                })
+            }),
+            owner_watcher.recv().await
+        );
 
-            // test `commit_object`
-            assert!(object_manager
-                .commit_object(ObjectMetadata::new(1, 2, 3, 300))
-                .await
-                .is_ok());
-
-            // test `get_objects`
-            let (object_list, cover_all) = object_manager.get_objects(1, 2, 150, 250, 1);
-            assert_eq!(vec![object1, object2], object_list);
-            assert!(cover_all);
-
-            // test `get_offloading_range`
-            assert_eq!(
-                vec![RangeKey::new(1, 2)],
-                object_manager.get_offloading_range()
-            );
-
-            // test `watch_offload_progress`
-            let mut object_rx = object_manager.watch_offload_progress();
-            let events = object_rx.recv().await.unwrap();
-            assert_eq!(vec![((1, 2), 300)], events);
-            let mut object = new_object_with_epoch(2, 300, 400, 1);
-            object.stream_id = 1;
-            object.range_index = 2;
-            tx.send(ResourceEvent {
-                event_type: EventType::Listed,
-                resource: Resource::Object(object),
-            })
+        // test `commit_object`
+        assert!(object_manager
+            .commit_object(ObjectMetadata::new(1, 2, 3, 300))
             .await
-            .unwrap();
-            let events = object_rx.recv().await.unwrap();
-            assert_eq!(vec![((1, 2), 400)], events);
-        });
+            .is_ok());
+
+        // test `get_objects`
+        let (object_list, cover_all) = object_manager.get_objects(1, 2, 150, 250, 1);
+        assert_eq!(vec![object1, object2], object_list);
+        assert!(cover_all);
+
+        // test `get_offloading_range`
+        assert_eq!(
+            vec![RangeKey::new(1, 2)],
+            object_manager.get_offloading_range()
+        );
+
+        // test `watch_offload_progress`
+        let mut object_rx = object_manager.watch_offload_progress();
+        let events = object_rx.recv().await.unwrap();
+        assert_eq!(vec![((1, 2), 300)], events);
+        let mut object = new_object_with_epoch(2, 300, 400, 1);
+        object.stream_id = 1;
+        object.range_index = 2;
+        tx.send(ResourceEvent {
+            event_type: EventType::Listed,
+            resource: Resource::Object(object),
+        })
+        .await
+        .unwrap();
+        let events = object_rx.recv().await.unwrap();
+        assert_eq!(vec![((1, 2), 400)], events);
     }
 
     #[test]

@@ -95,38 +95,36 @@ mod tests {
 
     use super::Heartbeat;
 
-    #[test]
-    fn test_heartbeat_run() -> Result<(), Box<dyn Error>> {
+    #[monoio::test]
+    async fn test_heartbeat_run() -> Result<(), Box<dyn Error>> {
         ulog::try_init_log();
-        tokio_uring::start(async move {
-            let mut client = MockClient::default();
+        let mut client = MockClient::default();
 
-            client
-                .expect_broadcast_heartbeat()
-                .times(1..)
-                .returning_st(|_data| {
-                    debug!("Client broadcasts heartbeat: {:?}", _data);
-                });
-            let mut config = Configuration::default();
-            config.client.heartbeat_interval = 1;
+        client
+            .expect_broadcast_heartbeat()
+            .times(1..)
+            .returning_st(|_data| {
+                debug!("Client broadcasts heartbeat: {:?}", _data);
+            });
+        let mut config = Configuration::default();
+        config.client.heartbeat_interval = 1;
 
-            let config = Arc::new(config);
+        let config = Arc::new(config);
 
-            let client = Rc::new(client);
-            let state = Rc::new(RefCell::new(
-                RangeServerState::RANGE_SERVER_STATE_READ_WRITE,
-            ));
-            let (tx, _rx) = broadcast::channel(1);
-            let heartbeat = Heartbeat::new(client, config, Rc::clone(&state), tx.clone());
-            heartbeat.run();
-            sleep(Duration::from_millis(200)).await;
-            tx.send(())?;
-            sleep(Duration::from_millis(500)).await;
-            assert_eq!(
-                *state.borrow(),
-                RangeServerState::RANGE_SERVER_STATE_OFFLINE
-            );
-            Ok(())
-        })
+        let client = Rc::new(client);
+        let state = Rc::new(RefCell::new(
+            RangeServerState::RANGE_SERVER_STATE_READ_WRITE,
+        ));
+        let (tx, _rx) = broadcast::channel(1);
+        let heartbeat = Heartbeat::new(client, config, Rc::clone(&state), tx.clone());
+        heartbeat.run();
+        sleep(Duration::from_millis(200)).await;
+        tx.send(())?;
+        sleep(Duration::from_millis(500)).await;
+        assert_eq!(
+            *state.borrow(),
+            RangeServerState::RANGE_SERVER_STATE_OFFLINE
+        );
+        Ok(())
     }
 }

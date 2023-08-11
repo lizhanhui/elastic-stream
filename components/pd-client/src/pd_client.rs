@@ -215,66 +215,59 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::{error::Error, rc::Rc, sync::Arc};
-
+    use super::DefaultPlacementDriverClient;
+    use crate::PlacementDriverClient;
     use client::DefaultClient;
     use mock_server::run_listener;
     use model::resource::Resource;
     use protocol::rpc::header::ResourceType;
-    use tokio::sync::broadcast;
+    use std::{error::Error, rc::Rc, sync::Arc};
 
-    use crate::PlacementDriverClient;
-
-    use super::DefaultPlacementDriverClient;
-
-    #[test]
-    fn test_list_and_watch_resource() -> Result<(), Box<dyn Error>> {
+    #[monoio::test]
+    async fn test_list_and_watch_resource() -> Result<(), Box<dyn Error>> {
         ulog::try_init_log();
-        tokio_uring::start(async {
-            let port = run_listener().await;
-            let config = config::Configuration {
-                placement_driver: format!("127.0.0.1:{port}"),
-                ..Default::default()
-            };
-            let (tx, _rx) = broadcast::channel(1);
-            let client = DefaultClient::new(Arc::new(config), tx);
-            let pd_client = DefaultPlacementDriverClient::new(Rc::new(client));
+        let port = run_listener().await;
+        let config = config::Configuration {
+            placement_driver: format!("127.0.0.1:{port}"),
+            ..Default::default()
+        };
+        let client = DefaultClient::new(Arc::new(config));
+        let pd_client = DefaultPlacementDriverClient::new(Rc::new(client));
 
-            let mut receiver = pd_client.list_and_watch_resource(&[
-                ResourceType::RANGE_SERVER,
-                ResourceType::STREAM,
-                ResourceType::RANGE,
-                ResourceType::OBJECT,
-            ]);
-            let mut events = Vec::new();
-            for _ in 0..9 {
-                let event = receiver.recv().await.unwrap();
-                events.push(event);
-            }
+        let mut receiver = pd_client.list_and_watch_resource(&[
+            ResourceType::RANGE_SERVER,
+            ResourceType::STREAM,
+            ResourceType::RANGE,
+            ResourceType::OBJECT,
+        ]);
+        let mut events = Vec::new();
+        for _ in 0..9 {
+            let event = receiver.recv().await.unwrap();
+            events.push(event);
+        }
 
-            assert_eq!(model::resource::EventType::Listed, events[0].event_type);
-            assert!(matches!(events[0].resource, Resource::RangeServer(_)));
-            assert_eq!(model::resource::EventType::Listed, events[1].event_type);
-            assert!(matches!(events[1].resource, Resource::Stream(_)));
-            assert_eq!(model::resource::EventType::Listed, events[2].event_type);
-            assert!(matches!(events[2].resource, Resource::Range(_)));
-            assert_eq!(model::resource::EventType::Listed, events[3].event_type);
-            assert!(matches!(events[3].resource, Resource::Object(_)));
+        assert_eq!(model::resource::EventType::Listed, events[0].event_type);
+        assert!(matches!(events[0].resource, Resource::RangeServer(_)));
+        assert_eq!(model::resource::EventType::Listed, events[1].event_type);
+        assert!(matches!(events[1].resource, Resource::Stream(_)));
+        assert_eq!(model::resource::EventType::Listed, events[2].event_type);
+        assert!(matches!(events[2].resource, Resource::Range(_)));
+        assert_eq!(model::resource::EventType::Listed, events[3].event_type);
+        assert!(matches!(events[3].resource, Resource::Object(_)));
 
-            assert_eq!(
-                model::resource::EventType::ListFinished,
-                events[4].event_type
-            );
+        assert_eq!(
+            model::resource::EventType::ListFinished,
+            events[4].event_type
+        );
 
-            assert_eq!(model::resource::EventType::Added, events[5].event_type);
-            assert!(matches!(events[5].resource, Resource::RangeServer(_)));
-            assert_eq!(model::resource::EventType::Modified, events[6].event_type);
-            assert!(matches!(events[6].resource, Resource::Stream(_)));
-            assert_eq!(model::resource::EventType::Deleted, events[7].event_type);
-            assert!(matches!(events[7].resource, Resource::Range(_)));
-            assert_eq!(model::resource::EventType::Added, events[8].event_type);
-            assert!(matches!(events[8].resource, Resource::Object(_)));
-            Ok(())
-        })
+        assert_eq!(model::resource::EventType::Added, events[5].event_type);
+        assert!(matches!(events[5].resource, Resource::RangeServer(_)));
+        assert_eq!(model::resource::EventType::Modified, events[6].event_type);
+        assert!(matches!(events[6].resource, Resource::Stream(_)));
+        assert_eq!(model::resource::EventType::Deleted, events[7].event_type);
+        assert!(matches!(events[7].resource, Resource::Range(_)));
+        assert_eq!(model::resource::EventType::Added, events[8].event_type);
+        assert!(matches!(events[8].resource, Resource::Object(_)));
+        Ok(())
     }
 }

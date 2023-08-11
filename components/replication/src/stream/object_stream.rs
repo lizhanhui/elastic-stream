@@ -254,127 +254,121 @@ mod tests {
 
     use super::*;
 
-    #[test]
-    fn test_fetch_remote_exactly_match() -> Result<(), Box<dyn Error>> {
-        tokio_uring::start(async move {
-            let mut inner_stream = MockStream::new();
-            let object_reader = MockObjectReader::new();
+    #[monoio::test]
+    async fn test_fetch_remote_exactly_match() -> Result<(), Box<dyn Error>> {
+        let mut inner_stream = MockStream::new();
+        let object_reader = MockObjectReader::new();
 
-            inner_stream.expect_fetch().returning(|start_offset, _, _| {
-                if start_offset == 100 {
-                    Ok(FetchDataset::Full(vec![new_records_block(100, 200, 1000)]))
-                } else {
-                    Ok(FetchDataset::Full(vec![new_records_block(300, 400, 10)]))
-                }
-            });
-            let stream = ObjectStream::new(Rc::new(inner_stream), object_reader);
-            // offset match
-            let dataset = stream.fetch(100, 200, 10).await.unwrap();
-            match dataset {
-                FetchDataset::Overflow(blocks) => {
-                    assert_eq!(1, blocks.len());
-                    assert_eq!(100, blocks[0].start_offset());
-                    assert_eq!(200, blocks[0].end_offset());
-                    assert_eq!(1000, blocks[0].size());
-                }
-                _ => panic!("unexpected dataset"),
-            }
-
-            // size match
-            let dataset = stream.fetch(300, 500, 10).await.unwrap();
-            match dataset {
-                FetchDataset::Overflow(blocks) => {
-                    assert_eq!(1, blocks.len());
-                    assert_eq!(300, blocks[0].start_offset());
-                    assert_eq!(400, blocks[0].end_offset());
-                    assert_eq!(10, blocks[0].size());
-                }
-                _ => panic!("unexpected dataset"),
+        inner_stream.expect_fetch().returning(|start_offset, _, _| {
+            if start_offset == 100 {
+                Ok(FetchDataset::Full(vec![new_records_block(100, 200, 1000)]))
+            } else {
+                Ok(FetchDataset::Full(vec![new_records_block(300, 400, 10)]))
             }
         });
+        let stream = ObjectStream::new(Rc::new(inner_stream), object_reader);
+        // offset match
+        let dataset = stream.fetch(100, 200, 10).await.unwrap();
+        match dataset {
+            FetchDataset::Overflow(blocks) => {
+                assert_eq!(1, blocks.len());
+                assert_eq!(100, blocks[0].start_offset());
+                assert_eq!(200, blocks[0].end_offset());
+                assert_eq!(1000, blocks[0].size());
+            }
+            _ => panic!("unexpected dataset"),
+        }
+
+        // size match
+        let dataset = stream.fetch(300, 500, 10).await.unwrap();
+        match dataset {
+            FetchDataset::Overflow(blocks) => {
+                assert_eq!(1, blocks.len());
+                assert_eq!(300, blocks[0].start_offset());
+                assert_eq!(400, blocks[0].end_offset());
+                assert_eq!(10, blocks[0].size());
+            }
+            _ => panic!("unexpected dataset"),
+        }
         Ok(())
     }
 
-    #[test]
-    fn test_fetch_mixin() -> Result<(), Box<dyn Error>> {
-        tokio_uring::start(async move {
-            let mut inner_stream = MockStream::new();
-            let mut object_reader = MockObjectReader::new();
+    #[monoio::test]
+    async fn test_fetch_mixin() -> Result<(), Box<dyn Error>> {
+        let mut inner_stream = MockStream::new();
+        let mut object_reader = MockObjectReader::new();
 
-            inner_stream
-                .expect_fetch()
-                .with(eq(100), eq(200), eq(1000))
-                .times(1)
-                .returning(|_, _, _| Ok(FetchDataset::Full(vec![new_records_block(150, 200, 10)])));
-            object_reader
-                .expect_read_first_object_blocks()
-                .with(eq(100), eq(None), eq(1000), predicate::always())
-                .times(1)
-                .returning(|_, _, _, _| Ok(vec![new_records_block(100, 120, 100)]));
-            object_reader
-                .expect_read_first_object_blocks()
-                .with(eq(120), eq(None), eq(900), predicate::always())
-                .times(1)
-                .returning(|_, _, _, _| Ok(vec![new_records_block(120, 150, 100)]));
-            let stream = ObjectStream::new(Rc::new(inner_stream), object_reader);
+        inner_stream
+            .expect_fetch()
+            .with(eq(100), eq(200), eq(1000))
+            .times(1)
+            .returning(|_, _, _| Ok(FetchDataset::Full(vec![new_records_block(150, 200, 10)])));
+        object_reader
+            .expect_read_first_object_blocks()
+            .with(eq(100), eq(None), eq(1000), predicate::always())
+            .times(1)
+            .returning(|_, _, _, _| Ok(vec![new_records_block(100, 120, 100)]));
+        object_reader
+            .expect_read_first_object_blocks()
+            .with(eq(120), eq(None), eq(900), predicate::always())
+            .times(1)
+            .returning(|_, _, _, _| Ok(vec![new_records_block(120, 150, 100)]));
+        let stream = ObjectStream::new(Rc::new(inner_stream), object_reader);
 
-            let dataset = stream.fetch(100, 200, 1000).await.unwrap();
-            match dataset {
-                FetchDataset::Overflow(blocks) => {
-                    assert_eq!(3, blocks.len());
-                    assert_eq!(100, blocks[0].start_offset());
-                    assert_eq!(120, blocks[0].end_offset());
-                    assert_eq!(100, blocks[0].size());
-                    assert_eq!(120, blocks[1].start_offset());
-                    assert_eq!(150, blocks[1].end_offset());
-                    assert_eq!(100, blocks[1].size());
-                    assert_eq!(150, blocks[2].start_offset());
-                    assert_eq!(200, blocks[2].end_offset());
-                    assert_eq!(10, blocks[2].size());
-                }
-                _ => panic!("unexpected dataset"),
+        let dataset = stream.fetch(100, 200, 1000).await.unwrap();
+        match dataset {
+            FetchDataset::Overflow(blocks) => {
+                assert_eq!(3, blocks.len());
+                assert_eq!(100, blocks[0].start_offset());
+                assert_eq!(120, blocks[0].end_offset());
+                assert_eq!(100, blocks[0].size());
+                assert_eq!(120, blocks[1].start_offset());
+                assert_eq!(150, blocks[1].end_offset());
+                assert_eq!(100, blocks[1].size());
+                assert_eq!(150, blocks[2].start_offset());
+                assert_eq!(200, blocks[2].end_offset());
+                assert_eq!(10, blocks[2].size());
             }
-        });
+            _ => panic!("unexpected dataset"),
+        }
         Ok(())
     }
 
-    #[test]
-    fn test_fetch_object_fulfil_size() -> Result<(), Box<dyn Error>> {
-        tokio_uring::start(async move {
-            let mut inner_stream = MockStream::new();
-            let mut object_reader = MockObjectReader::new();
+    #[monoio::test]
+    async fn test_fetch_object_fulfil_size() -> Result<(), Box<dyn Error>> {
+        let mut inner_stream = MockStream::new();
+        let mut object_reader = MockObjectReader::new();
 
-            inner_stream
-                .expect_fetch()
-                .with(eq(100), eq(200), eq(1000))
-                .times(1)
-                .returning(|_, _, _| Ok(FetchDataset::Full(vec![new_records_block(160, 200, 10)])));
-            object_reader
-                .expect_read_first_object_blocks()
-                .with(eq(100), eq(None), eq(1000), predicate::always())
-                .times(1)
-                .returning(|_, _, _, _| Ok(vec![new_records_block(100, 120, 100)]));
-            object_reader
-                .expect_read_first_object_blocks()
-                .with(eq(120), eq(None), eq(900), predicate::always())
-                .times(1)
-                .returning(|_, _, _, _| Ok(vec![new_records_block(120, 150, 1000)]));
-            let stream = ObjectStream::new(Rc::new(inner_stream), object_reader);
+        inner_stream
+            .expect_fetch()
+            .with(eq(100), eq(200), eq(1000))
+            .times(1)
+            .returning(|_, _, _| Ok(FetchDataset::Full(vec![new_records_block(160, 200, 10)])));
+        object_reader
+            .expect_read_first_object_blocks()
+            .with(eq(100), eq(None), eq(1000), predicate::always())
+            .times(1)
+            .returning(|_, _, _, _| Ok(vec![new_records_block(100, 120, 100)]));
+        object_reader
+            .expect_read_first_object_blocks()
+            .with(eq(120), eq(None), eq(900), predicate::always())
+            .times(1)
+            .returning(|_, _, _, _| Ok(vec![new_records_block(120, 150, 1000)]));
+        let stream = ObjectStream::new(Rc::new(inner_stream), object_reader);
 
-            let dataset = stream.fetch(100, 200, 1000).await.unwrap();
-            match dataset {
-                FetchDataset::Overflow(blocks) => {
-                    assert_eq!(2, blocks.len());
-                    assert_eq!(100, blocks[0].start_offset());
-                    assert_eq!(120, blocks[0].end_offset());
-                    assert_eq!(100, blocks[0].size());
-                    assert_eq!(120, blocks[1].start_offset());
-                    assert_eq!(150, blocks[1].end_offset());
-                    assert_eq!(1000, blocks[1].size());
-                }
-                _ => panic!("unexpected dataset"),
+        let dataset = stream.fetch(100, 200, 1000).await.unwrap();
+        match dataset {
+            FetchDataset::Overflow(blocks) => {
+                assert_eq!(2, blocks.len());
+                assert_eq!(100, blocks[0].start_offset());
+                assert_eq!(120, blocks[0].end_offset());
+                assert_eq!(100, blocks[0].size());
+                assert_eq!(120, blocks[1].start_offset());
+                assert_eq!(150, blocks[1].end_offset());
+                assert_eq!(1000, blocks[1].size());
             }
-        });
+            _ => panic!("unexpected dataset"),
+        }
         Ok(())
     }
 

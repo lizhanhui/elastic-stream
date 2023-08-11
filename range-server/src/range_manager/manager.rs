@@ -100,7 +100,7 @@ where
 
     fn start_notify_range_event_task(&self, mut range_event_rx: RangeEventListener) {
         let store = self.store.clone();
-        tokio_uring::spawn(async move {
+        monoio::spawn(async move {
             while let Some(events) = range_event_rx.recv().await {
                 store.handle_range_event(events).await;
             }

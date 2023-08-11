@@ -15,6 +15,7 @@ use crate::{
 };
 use client::{client::Client, DefaultClient};
 use log::{debug, error, info, warn};
+use monoio::net::TcpListener;
 use monoio::FusionDriver;
 use observation::metrics::{
     store_metrics::RangeServerStatistics,
@@ -25,7 +26,6 @@ use pd_client::PlacementDriverClient;
 use protocol::rpc::header::RangeServerState;
 use store::Store;
 use tokio::sync::{broadcast, mpsc};
-use tokio_uring::net::TcpListener;
 use util::metrics::http_serve;
 
 /// A server aggregates one or more `Worker`s and each `Worker` takes up a dedicated CPU
@@ -94,16 +94,10 @@ where
             "The number of Submission Queue entries in uring: {}",
             self.config.server_config.server.uring.queue_depth
         );
-        let uring_builder = io_uring::Builder::default();
-
-        uring_builder
-            .dontfork()
-            .setup_attach_wq(self.config.sharing_uring);
 
         let mut rt = monoio::RuntimeBuilder::<FusionDriver>::new()
             .enable_all()
             .with_entries(self.config.server_config.server.uring.queue_depth)
-            .uring_builder(uring_builder)
             .build()
             .unwrap();
         rt.block_on(async {
@@ -114,7 +108,7 @@ where
                 watcher.start(self.pd_client.clone());
             }
             let bind_address = &self.config.server_config.server.addr;
-            let listener = match TcpListener::bind(bind_address.parse().expect("Failed to bind")) {
+            let listener = match TcpListener::bind(bind_address) {
                 Ok(listener) => {
                     info!("Server starts OK, listening {}", bind_address);
                     listener

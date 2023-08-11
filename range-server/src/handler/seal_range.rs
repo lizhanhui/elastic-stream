@@ -195,8 +195,8 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_apply() {
+    #[monoio::test]
+    async fn test_apply() {
         let mut store = MockStore::default();
         store.expect_seal().once().returning(|_metadata| Ok(()));
 
@@ -210,27 +210,24 @@ mod tests {
         let mut response = Frame::new(OperationCode::SEAL_RANGE);
         let handler = super::SealRange::parse_frame(&request).expect("Parse frame should be OK");
 
-        tokio_uring::start(async move {
-            handler
-                .apply(
-                    Rc::new(store),
-                    Rc::new(UnsafeCell::new(range_manager)),
-                    &mut response,
-                )
-                .await;
+        handler
+            .apply(
+                Rc::new(store),
+                Rc::new(UnsafeCell::new(range_manager)),
+                &mut response,
+            )
+            .await;
 
-            if let Some(ref buf) = response.header {
-                let resp =
-                    flatbuffers::root::<SealRangeResponse>(buf).expect("Decode should not fail");
-                assert_eq!(resp.status().code(), ErrorCode::OK);
-            } else {
-                panic!("Seal range should succeed");
-            }
-        })
+        if let Some(ref buf) = response.header {
+            let resp = flatbuffers::root::<SealRangeResponse>(buf).expect("Decode should not fail");
+            assert_eq!(resp.status().code(), ErrorCode::OK);
+        } else {
+            panic!("Seal range should succeed");
+        }
     }
 
-    #[test]
-    fn test_apply_when_already_sealed() {
+    #[monoio::test]
+    async fn test_apply_when_already_sealed() {
         let store = MockStore::default();
 
         let mut range_manager = MockRangeManager::default();
@@ -243,27 +240,24 @@ mod tests {
         let mut response = Frame::new(OperationCode::SEAL_RANGE);
         let handler = super::SealRange::parse_frame(&request).expect("Parse frame should be OK");
 
-        tokio_uring::start(async move {
-            handler
-                .apply(
-                    Rc::new(store),
-                    Rc::new(UnsafeCell::new(range_manager)),
-                    &mut response,
-                )
-                .await;
+        handler
+            .apply(
+                Rc::new(store),
+                Rc::new(UnsafeCell::new(range_manager)),
+                &mut response,
+            )
+            .await;
 
-            if let Some(ref buf) = response.header {
-                let resp =
-                    flatbuffers::root::<SealRangeResponse>(buf).expect("Decode should not fail");
-                assert_eq!(resp.status().code(), ErrorCode::RANGE_ALREADY_SEALED);
-            } else {
-                panic!("Seal range should have a header");
-            }
-        });
+        if let Some(ref buf) = response.header {
+            let resp = flatbuffers::root::<SealRangeResponse>(buf).expect("Decode should not fail");
+            assert_eq!(resp.status().code(), ErrorCode::RANGE_ALREADY_SEALED);
+        } else {
+            panic!("Seal range should have a header");
+        }
     }
 
-    #[test]
-    fn test_apply_when_range_not_found() {
+    #[monoio::test]
+    async fn test_apply_when_range_not_found() {
         let store = MockStore::default();
 
         let mut range_manager = MockRangeManager::default();
@@ -276,27 +270,24 @@ mod tests {
         let mut response = Frame::new(OperationCode::SEAL_RANGE);
         let handler = super::SealRange::parse_frame(&request).expect("Parse frame should be OK");
 
-        tokio_uring::start(async move {
-            handler
-                .apply(
-                    Rc::new(store),
-                    Rc::new(UnsafeCell::new(range_manager)),
-                    &mut response,
-                )
-                .await;
+        handler
+            .apply(
+                Rc::new(store),
+                Rc::new(UnsafeCell::new(range_manager)),
+                &mut response,
+            )
+            .await;
 
-            if let Some(ref buf) = response.header {
-                let resp =
-                    flatbuffers::root::<SealRangeResponse>(buf).expect("Decode should not fail");
-                assert_eq!(resp.status().code(), ErrorCode::RANGE_NOT_FOUND);
-            } else {
-                panic!("Seal range should have a header");
-            }
-        });
+        if let Some(ref buf) = response.header {
+            let resp = flatbuffers::root::<SealRangeResponse>(buf).expect("Decode should not fail");
+            assert_eq!(resp.status().code(), ErrorCode::RANGE_NOT_FOUND);
+        } else {
+            panic!("Seal range should have a header");
+        }
     }
 
-    #[test]
-    fn test_apply_when_internal_error() {
+    #[monoio::test]
+    async fn test_apply_when_internal_error() {
         let store = MockStore::default();
 
         let mut range_manager = MockRangeManager::default();
@@ -309,27 +300,24 @@ mod tests {
         let mut response = Frame::new(OperationCode::SEAL_RANGE);
         let handler = super::SealRange::parse_frame(&request).expect("Parse frame should be OK");
 
-        tokio_uring::start(async move {
-            handler
-                .apply(
-                    Rc::new(store),
-                    Rc::new(UnsafeCell::new(range_manager)),
-                    &mut response,
-                )
-                .await;
+        handler
+            .apply(
+                Rc::new(store),
+                Rc::new(UnsafeCell::new(range_manager)),
+                &mut response,
+            )
+            .await;
 
-            if let Some(ref buf) = response.header {
-                let resp =
-                    flatbuffers::root::<SealRangeResponse>(buf).expect("Decode should not fail");
-                assert_eq!(resp.status().code(), ErrorCode::RS_INTERNAL_SERVER_ERROR);
-            } else {
-                panic!("Seal range should have a header");
-            }
-        });
+        if let Some(ref buf) = response.header {
+            let resp = flatbuffers::root::<SealRangeResponse>(buf).expect("Decode should not fail");
+            assert_eq!(resp.status().code(), ErrorCode::RS_INTERNAL_SERVER_ERROR);
+        } else {
+            panic!("Seal range should have a header");
+        }
     }
 
-    #[test]
-    fn test_apply_when_store_error() {
+    #[monoio::test]
+    async fn test_apply_when_store_error() {
         let mut store = MockStore::default();
         store
             .expect_seal()
@@ -346,22 +334,19 @@ mod tests {
         let mut response = Frame::new(OperationCode::SEAL_RANGE);
         let handler = super::SealRange::parse_frame(&request).expect("Parse frame should be OK");
 
-        tokio_uring::start(async move {
-            handler
-                .apply(
-                    Rc::new(store),
-                    Rc::new(UnsafeCell::new(range_manager)),
-                    &mut response,
-                )
-                .await;
+        handler
+            .apply(
+                Rc::new(store),
+                Rc::new(UnsafeCell::new(range_manager)),
+                &mut response,
+            )
+            .await;
 
-            if let Some(ref buf) = response.header {
-                let resp =
-                    flatbuffers::root::<SealRangeResponse>(buf).expect("Decode should not fail");
-                assert_eq!(resp.status().code(), ErrorCode::RS_SEAL_RANGE);
-            } else {
-                panic!("Seal range should have a header");
-            }
-        });
+        if let Some(ref buf) = response.header {
+            let resp = flatbuffers::root::<SealRangeResponse>(buf).expect("Decode should not fail");
+            assert_eq!(resp.status().code(), ErrorCode::RS_SEAL_RANGE);
+        } else {
+            panic!("Seal range should have a header");
+        }
     }
 }

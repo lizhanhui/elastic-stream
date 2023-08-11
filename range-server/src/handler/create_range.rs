@@ -156,8 +156,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_create_range_apply() {
+    #[monoio::test]
+    async fn test_create_range_apply() {
         ulog::try_init_log();
         let mut store = MockStore::default();
         let rm = Rc::new(UnsafeCell::new(MockRangeManager::default()));
@@ -174,22 +174,20 @@ mod tests {
 
         store.expect_create().once().returning(|_metadata| Ok(()));
 
-        tokio_uring::start(async move {
-            let store = Rc::new(store);
-            handler.apply(store, rm, &mut response).await;
+        let store = Rc::new(store);
+        handler.apply(store, rm, &mut response).await;
 
-            if let Some(buf) = &response.header {
-                let resp = flatbuffers::root::<CreateRangeResponse>(buf)
-                    .expect("Should get a valid create-range response");
-                assert_eq!(ErrorCode::OK, resp.status().code());
-            } else {
-                panic!("Create range should not fail");
-            }
-        })
+        if let Some(buf) = &response.header {
+            let resp = flatbuffers::root::<CreateRangeResponse>(buf)
+                .expect("Should get a valid create-range response");
+            assert_eq!(ErrorCode::OK, resp.status().code());
+        } else {
+            panic!("Create range should not fail");
+        }
     }
 
-    #[test]
-    fn test_create_range_apply_when_range_manager_fails() {
+    #[monoio::test]
+    async fn test_create_range_apply_when_range_manager_fails() {
         ulog::try_init_log();
         let store = MockStore::default();
         let rm = Rc::new(UnsafeCell::new(MockRangeManager::default()));
@@ -204,22 +202,20 @@ mod tests {
             .once()
             .returning(|_metadata| Err(ServiceError::Internal("Test".to_owned())));
 
-        tokio_uring::start(async move {
-            let store = Rc::new(store);
-            handler.apply(store, rm, &mut response).await;
+        let store = Rc::new(store);
+        handler.apply(store, rm, &mut response).await;
 
-            if let Some(buf) = &response.header {
-                let resp = flatbuffers::root::<CreateRangeResponse>(buf)
-                    .expect("Should get a valid create-range response");
-                assert_eq!(ErrorCode::RS_INTERNAL_SERVER_ERROR, resp.status().code());
-            } else {
-                panic!("Create range should not fail");
-            }
-        })
+        if let Some(buf) = &response.header {
+            let resp = flatbuffers::root::<CreateRangeResponse>(buf)
+                .expect("Should get a valid create-range response");
+            assert_eq!(ErrorCode::RS_INTERNAL_SERVER_ERROR, resp.status().code());
+        } else {
+            panic!("Create range should not fail");
+        }
     }
 
-    #[test]
-    fn test_create_range_apply_when_store_fails() {
+    #[monoio::test]
+    async fn test_create_range_apply_when_store_fails() {
         ulog::try_init_log();
         let mut store = MockStore::default();
         let rm = Rc::new(UnsafeCell::new(MockRangeManager::default()));
@@ -239,17 +235,15 @@ mod tests {
             Err(StoreError::Internal("Test".to_string()))
         });
 
-        tokio_uring::start(async move {
-            let store = Rc::new(store);
-            handler.apply(store, rm, &mut response).await;
+        let store = Rc::new(store);
+        handler.apply(store, rm, &mut response).await;
 
-            if let Some(buf) = &response.header {
-                let resp = flatbuffers::root::<CreateRangeResponse>(buf)
-                    .expect("Should get a valid create-range response");
-                assert_eq!(ErrorCode::RS_CREATE_RANGE, resp.status().code());
-            } else {
-                panic!("Create range should not fail");
-            }
-        })
+        if let Some(buf) = &response.header {
+            let resp = flatbuffers::root::<CreateRangeResponse>(buf)
+                .expect("Should get a valid create-range response");
+            assert_eq!(ErrorCode::RS_CREATE_RANGE, resp.status().code());
+        } else {
+            panic!("Create range should not fail");
+        }
     }
 }

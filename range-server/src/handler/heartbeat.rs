@@ -113,26 +113,23 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_heartbeat_apply() {
+    #[monoio::test]
+    async fn test_heartbeat_apply() {
         let frame = heartbeat_request();
         let handler = super::Heartbeat::parse_frame(&frame).unwrap();
 
         let mut response = Frame::new(OperationCode::UNKNOWN);
         let store = Rc::new(MockStore::default());
         let rm = Rc::new(UnsafeCell::new(MockRangeManager::default()));
-
-        tokio_uring::start(async move {
-            handler.apply(store, rm, &mut response).await;
-            if let Some(header) = response.header {
-                let resp = flatbuffers::root::<HeartbeatResponse>(&header[..]).unwrap();
-                let ec = resp.status().code();
-                assert_eq!(ec, ErrorCode::OK);
-                assert_eq!(ClientRole::CLIENT_ROLE_FRONTEND, resp.client_role());
-                assert_eq!(resp.client_id(), Some("sample-client-id"));
-            } else {
-                panic!("Should have a valid response header");
-            }
-        })
+        handler.apply(store, rm, &mut response).await;
+        if let Some(header) = response.header {
+            let resp = flatbuffers::root::<HeartbeatResponse>(&header[..]).unwrap();
+            let ec = resp.status().code();
+            assert_eq!(ec, ErrorCode::OK);
+            assert_eq!(ClientRole::CLIENT_ROLE_FRONTEND, resp.client_role());
+            assert_eq!(resp.client_id(), Some("sample-client-id"));
+        } else {
+            panic!("Should have a valid response header");
+        }
     }
 }
