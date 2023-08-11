@@ -707,7 +707,7 @@ impl Wal {
                         "About to fallocate LogSegmentFile: `{}` with FD: {}",
                         segment, result
                     );
-                    let sqe = opcode::Fallocate64::new(types::Fd(result), segment.size as i64)
+                    let sqe = opcode::Fallocate::new(types::Fd(result), segment.size)
                         .offset(0)
                         .mode(libc::FALLOC_FL_ZERO_RANGE)
                         .build()

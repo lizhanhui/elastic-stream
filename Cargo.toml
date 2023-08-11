@@ -54,7 +54,7 @@ derivative = "2.2"
 futures = { version = "0.3" }
 itertools = { version = "0.11" }
 lazy_static = "1.4"
-io-uring = "0.5"
+io-uring = "0.6"
 rustc-hash = "1.1.0"
 tokio-uring = { git = "https://github.com/tokio-rs/tokio-uring.git", branch = "master", features = [
     "bytes",
