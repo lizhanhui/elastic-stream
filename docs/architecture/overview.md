@@ -100,10 +100,10 @@ Our system runs on commodity hardwares and they fail from time to time. To mitig
 To achieve maximum spatial locality, every component is armed with a cache. Frontend client caches hottest data in memory; Server nodes cache hot data in memory and warm data in SSDs; Frequently access OSS files are also cached in SSD.
 
 #### Flatbuffers
-It's true that our system is data-intensive; however, introduction of thread-per-core manages shift bottleneck from I/O to CPU. [Literature]((https://www.usenix.org/conference/fast23/presentation/li-qiang-deployed) shows that serialization and deserialization of RPCs on data path costs about 30% of CPU. Adopting flatbuffers avoids this overhead and results in 59% network throughput gain.
+It's true that our system is data-intensive; however, introduction of thread-per-core manages shift bottleneck from I/O to CPU. [Literature](https://www.usenix.org/conference/fast23/presentation/li-qiang-deployed) shows that serialization and deserialization of RPCs on data path costs about 30% of CPU. Adopting flatbuffers avoids this overhead and results in 59% network throughput gain.
 
 ## Autonomous
-Being autonomous means our system is capable of self-management and self-healing.
+Being autonomous means our system should be capable of self-management and self-healing. They are crucial to reduce operational cost and simplify SRE efforts. Again, we achieve this goal through separation of concerns principle.
 
 ### Separation of Concern
 
