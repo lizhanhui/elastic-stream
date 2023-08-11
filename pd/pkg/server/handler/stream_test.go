@@ -122,21 +122,61 @@ func TestHandler_UpdateStream(t *testing.T) {
 		{
 			name: "normal case",
 			args: args{
-				stream: &rpcfb.StreamT{Replica: 2, AckCount: 2, RetentionPeriodMs: time.Hour.Milliseconds()},
+				stream: &rpcfb.StreamT{Replica: 2, AckCount: 2, RetentionPeriodMs: time.Hour.Milliseconds(), Epoch: 10},
 			},
 			want: want{
-				stream: rpcfb.StreamT{Replica: 2, AckCount: 2, RetentionPeriodMs: time.Hour.Milliseconds()},
-				after:  rpcfb.StreamT{Replica: 2, AckCount: 2, RetentionPeriodMs: time.Hour.Milliseconds()},
+				stream: rpcfb.StreamT{Replica: 2, AckCount: 2, RetentionPeriodMs: time.Hour.Milliseconds(), Epoch: 10},
+				after:  rpcfb.StreamT{Replica: 2, AckCount: 2, RetentionPeriodMs: time.Hour.Milliseconds(), Epoch: 10},
 			},
 		},
 		{
-			name: "do not update start offset or epoch",
+			name: "do not update start offset",
 			args: args{
-				stream: &rpcfb.StreamT{Replica: 3, AckCount: 3, StartOffset: 10, Epoch: 20},
+				stream: &rpcfb.StreamT{Replica: 2, AckCount: 2, RetentionPeriodMs: time.Hour.Milliseconds(), Epoch: 10, StartOffset: 10},
 			},
 			want: want{
-				stream: rpcfb.StreamT{Replica: 3, AckCount: 3},
-				after:  rpcfb.StreamT{Replica: 3, AckCount: 3},
+				stream: rpcfb.StreamT{Replica: 2, AckCount: 2, RetentionPeriodMs: time.Hour.Milliseconds(), Epoch: 10},
+				after:  rpcfb.StreamT{Replica: 2, AckCount: 2, RetentionPeriodMs: time.Hour.Milliseconds(), Epoch: 10},
+			},
+		},
+		{
+			name: "update replica only",
+			args: args{
+				stream: &rpcfb.StreamT{Replica: 2, AckCount: -1, RetentionPeriodMs: -1, Epoch: -1},
+			},
+			want: want{
+				stream: rpcfb.StreamT{Replica: 2, AckCount: 3},
+				after:  rpcfb.StreamT{Replica: 2, AckCount: 3},
+			},
+		},
+		{
+			name: "update ack count only",
+			args: args{
+				stream: &rpcfb.StreamT{Replica: -1, AckCount: 2, RetentionPeriodMs: -1, Epoch: -1},
+			},
+			want: want{
+				stream: rpcfb.StreamT{Replica: 3, AckCount: 2},
+				after:  rpcfb.StreamT{Replica: 3, AckCount: 2},
+			},
+		},
+		{
+			name: "update retention period only",
+			args: args{
+				stream: &rpcfb.StreamT{Replica: -1, AckCount: -1, RetentionPeriodMs: time.Hour.Milliseconds(), Epoch: -1},
+			},
+			want: want{
+				stream: rpcfb.StreamT{Replica: 3, AckCount: 3, RetentionPeriodMs: time.Hour.Milliseconds()},
+				after:  rpcfb.StreamT{Replica: 3, AckCount: 3, RetentionPeriodMs: time.Hour.Milliseconds()},
+			},
+		},
+		{
+			name: "update epoch only",
+			args: args{
+				stream: &rpcfb.StreamT{Replica: -1, AckCount: -1, RetentionPeriodMs: -1, Epoch: 10},
+			},
+			want: want{
+				stream: rpcfb.StreamT{Replica: 3, AckCount: 3, Epoch: 10},
+				after:  rpcfb.StreamT{Replica: 3, AckCount: 3, Epoch: 10},
 			},
 		},
 		{
@@ -182,6 +222,18 @@ func TestHandler_UpdateStream(t *testing.T) {
 				wantErr: true,
 				errCode: rpcfb.ErrorCodeBAD_REQUEST,
 				errMsg:  "invalid ack count",
+				after:   rpcfb.StreamT{Replica: 3, AckCount: 3},
+			},
+		},
+		{
+			name: "no change",
+			args: args{
+				stream: &rpcfb.StreamT{Replica: -1, AckCount: -1, RetentionPeriodMs: -1, Epoch: -1},
+			},
+			want: want{
+				wantErr: true,
+				errCode: rpcfb.ErrorCodeBAD_REQUEST,
+				errMsg:  "no change",
 				after:   rpcfb.StreamT{Replica: 3, AckCount: 3},
 			},
 		},

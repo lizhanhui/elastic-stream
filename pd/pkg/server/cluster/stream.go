@@ -15,7 +15,8 @@ import (
 )
 
 var (
-	ErrStreamNotFound = errors.New("stream not found")
+	ErrStreamNotFound     = errors.New("stream not found")
+	ErrExpiredStreamEpoch = errors.New("expired stream epoch")
 )
 
 type StreamService interface {
@@ -87,6 +88,7 @@ func (c *RaftCluster) DeleteStream(ctx context.Context, streamID int64) (*rpcfb.
 // UpdateStream updates the stream.
 // It returns ErrNotLeader if the current PD node is not the leader.
 // It returns ErrStreamNotFound if the stream is not found.
+// It returns ErrExpiredStreamEpoch if the stream epoch is expired.
 func (c *RaftCluster) UpdateStream(ctx context.Context, param *model.UpdateStreamParam) (*rpcfb.StreamT, error) {
 	logger := c.lg.With(zap.Int64("stream-id", param.StreamID), traceutil.TraceLogField(ctx))
 
@@ -94,13 +96,16 @@ func (c *RaftCluster) UpdateStream(ctx context.Context, param *model.UpdateStrea
 	upStream, err := c.storage.UpdateStream(ctx, param)
 	logger.Info("finish updating stream", zap.Error(err))
 	if err != nil {
-		if errors.Is(err, kv.ErrTxnFailed) {
+		switch {
+		case errors.Is(err, kv.ErrTxnFailed):
 			return nil, ErrNotLeader
-		}
-		if errors.Is(err, endpoint.ErrStreamNotFound) {
+		case errors.Is(err, endpoint.ErrStreamNotFound):
 			return nil, errors.Wrapf(ErrStreamNotFound, "stream id %d", param.StreamID)
+		case errors.Is(err, endpoint.ErrExpiredStreamEpoch):
+			return nil, errors.Wrapf(ErrExpiredStreamEpoch, "stream id %d, epoch %d", param.StreamID, param.Epoch)
+		default:
+			return nil, err
 		}
-		return nil, err
 	}
 
 	return upStream, nil

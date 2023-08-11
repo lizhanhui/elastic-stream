@@ -28,7 +28,8 @@ const (
 )
 
 var (
-	ErrStreamNotFound = errors.New("stream not found")
+	ErrStreamNotFound     = errors.New("stream not found")
+	ErrExpiredStreamEpoch = errors.New("expired stream epoch")
 )
 
 // StreamEndpoint defines operations on stream.
@@ -83,6 +84,7 @@ func (e *Endpoint) DeleteStream(ctx context.Context, streamID int64) (*rpcfb.Str
 
 // UpdateStream updates the stream with the given stream and returns it.
 // It returns ErrStreamNotFound if the stream does not exist.
+// It returns ErrExpiredStreamEpoch if the new epoch is less than the old one.
 func (e *Endpoint) UpdateStream(ctx context.Context, param *model.UpdateStreamParam) (*rpcfb.StreamT, error) {
 	logger := e.lg.With(zap.Int64("stream-id", param.StreamID), traceutil.TraceLogField(ctx))
 
@@ -100,15 +102,29 @@ func (e *Endpoint) UpdateStream(ctx context.Context, param *model.UpdateStreamPa
 		}
 
 		oldStream := rpcfb.GetRootAsStream(v, 0).UnPack()
-		oldStream.Replica = param.Replica
-		oldStream.AckCount = param.AckCount
-		oldStream.RetentionPeriodMs = param.RetentionPeriodMs
+		// Incremental Update
+		if param.Replica > 0 {
+			oldStream.Replica = param.Replica
+		}
+		if param.AckCount > 0 {
+			oldStream.AckCount = param.AckCount
+		}
+		if param.RetentionPeriodMs >= 0 {
+			oldStream.RetentionPeriodMs = param.RetentionPeriodMs
+		}
+		if param.Epoch >= 0 {
+			if param.Epoch < oldStream.Epoch {
+				logger.Error("invalid epoch", zap.Int64("new-epoch", param.Epoch), zap.Int64("old-epoch", oldStream.Epoch))
+				return errors.Wrapf(ErrExpiredStreamEpoch, "new epoch %d, old epoch %d", param.Epoch, oldStream.Epoch)
+			}
+			oldStream.Epoch = param.Epoch
+		}
+		newStream = oldStream
 
-		streamInfo := fbutil.Marshal(oldStream)
+		streamInfo := fbutil.Marshal(newStream)
 		_, _ = kv.Put(ctx, key, streamInfo, true)
 		mcache.Free(streamInfo)
 
-		newStream = oldStream
 		return nil
 	})
 	if err != nil {

@@ -46,8 +46,6 @@ pub trait Client {
 
     async fn describe_stream(&self, stream_id: u64) -> Result<StreamMetadata, EsError>;
 
-    async fn update_stream_epoch(&self, stream_id: u64, epoch: u64) -> Result<(), EsError>;
-
     async fn create_range(&self, range_metadata: RangeMetadata) -> Result<RangeMetadata, EsError>;
 
     async fn create_range_replica(
@@ -181,20 +179,6 @@ impl Client for DefaultClient {
             .await
             .map_err(|e| {
                 error!("Timeout when describe stream[stream-id={stream_id}]. {}", e);
-                EsError::new(ErrorCode::RPC_TIMEOUT, "describe stream rpc timeout")
-            })?
-    }
-
-    async fn update_stream_epoch(&self, stream_id: u64, epoch: u64) -> Result<(), EsError> {
-        let composite_session = self.get_pd_session().await?;
-        let future = composite_session.update_stream_epoch(stream_id, epoch);
-        time::timeout(self.config.client_io_timeout(), future)
-            .await
-            .map_err(|e| {
-                error!(
-                    "Timeout when update stream epoch[stream-id={stream_id}]. {}",
-                    e
-                );
                 EsError::new(ErrorCode::RPC_TIMEOUT, "describe stream rpc timeout")
             })?
     }

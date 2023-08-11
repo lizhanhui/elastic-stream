@@ -227,10 +227,6 @@ impl Session {
                 frame.operation_code = OperationCode::DESCRIBE_STREAM;
             }
 
-            request::Headers::UpdateStreamEpoch { .. } => {
-                frame.operation_code = OperationCode::UPDATE_STREAM_EPOCH;
-            }
-
             request::Headers::ListRange { .. } => {
                 frame.operation_code = OperationCode::LIST_RANGE;
             }
@@ -462,10 +458,6 @@ impl Session {
                         }
 
                         OperationCode::TRIM_STREAM => todo!(),
-
-                        OperationCode::UPDATE_STREAM_EPOCH => {
-                            response.on_update_stream_epoch(&frame, &ctx);
-                        }
 
                         OperationCode::REPORT_METRICS => {
                             response.on_report_metrics(&frame);

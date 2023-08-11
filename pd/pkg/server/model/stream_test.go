@@ -32,7 +32,6 @@ func TestNoNewFieldsInUpdateStreamParam(t *testing.T) {
 
 	ignoredFields := []string{
 		"StartOffset",
-		"Epoch",
 	}
 	streamFields := getAllFields(rpcfb.StreamT{})
 	updateStreamParamFields := getAllFields(UpdateStreamParam{})

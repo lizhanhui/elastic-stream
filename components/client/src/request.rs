@@ -44,11 +44,6 @@ pub enum Headers {
         stream_id: u64,
     },
 
-    UpdateStreamEpoch {
-        stream_id: u64,
-        epoch: u64,
-    },
-
     ListRange {
         criteria: ListRangeCriteria,
     },
@@ -148,15 +143,6 @@ impl From<&Request> for Bytes {
                 let mut request = DescribeStreamRequestT::default();
                 request.timeout_ms = req.timeout.as_millis() as i32;
                 request.stream_id = *stream_id as i64;
-                let request = request.pack(&mut builder);
-                builder.finish(request, None);
-            }
-
-            Headers::UpdateStreamEpoch { stream_id, epoch } => {
-                let mut request = protocol::rpc::header::UpdateStreamEpochRequestT::default();
-                request.timeout_ms = req.timeout.as_millis() as i32;
-                request.stream_id = *stream_id as i64;
-                request.epoch = *epoch as i64;
                 let request = request.pack(&mut builder);
                 builder.finish(request, None);
             }

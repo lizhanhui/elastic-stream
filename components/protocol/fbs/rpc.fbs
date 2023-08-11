@@ -194,8 +194,6 @@ enum OperationCode : short {
     DESCRIBE_STREAM = 0x3004,
     // Trim the min offset of a batch of streams.
     TRIM_STREAM = 0x3005,
-    // Update the epoch of a stream to fence the stream.
-    UPDATE_STREAM_EPOCH = 0x3006,
 
     // 0x4000 ~ 0x4FFF is reserved for observability
 
@@ -536,17 +534,19 @@ table Stream {
     stream_id: int64 = -1 (id: 0);
 
     // The number of replica of the stream.
-    replica: int8 (id: 1);
+    replica: int8 = -1 (id: 1);
 
     // The number of ack of the stream.
-    ack_count: int8 (id: 2);
+    ack_count: int8 = -1 (id: 2);
 
     // The time to live of records in the stream in milliseconds.
-    retention_period_ms: int64 (id: 3);
+    // Zero means the records will never be deleted automatically.
+    retention_period_ms: int64 = -1 (id: 3);
 
-    start_offset: int64 (id: 4);
+    // The start offset of the stream, data before this offset has been deleted.
+    start_offset: int64 = -1 (id: 4);
 
-    // The current epoch of the stream, updated by `UPDATE_STREAM_EPOCH`.
+    // The current epoch of the stream.
     epoch: int64 = -1 (id: 5);
 }
 
@@ -1009,20 +1009,6 @@ table RangeProgress {
 }
 
 table ReportRangeProgressResponse {
-    status: Status (id: 0, required);
-
-    throttle_time_ms: int32 (id: 1);
-}
-
-table UpdateStreamEpochRequest {
-    timeout_ms: int32 (id: 0);
-
-    stream_id: int64  = -1 (id: 1);
-
-    epoch: int64 = -1 (id: 2);
-}
-
-table UpdateStreamEpochResponse {
     status: Status (id: 0, required);
 
     throttle_time_ms: int32 (id: 1);
