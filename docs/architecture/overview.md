@@ -6,7 +6,7 @@ As technology advances and data continues to explode, traditional messaging and 
 * Efficiency - Performance scales linearly with addition of resources, offering response latency in milliseconds;
 * Autonomous - Automatic failover and service re-balance;
 
-Separation of concerns is one of endorsed principles. Our design and this article also follow this rule.
+Separation of concerns is one of widely endorsed principles. Our design and this article also follow this rule.
 
 ## Cost
 Cloud computing has become the mainstream. Among those cloud products, Object Storage Service impacts the storage landscape significantly. Compared to traditional storage products, object storage has several advantages:
@@ -103,21 +103,32 @@ To achieve maximum spatial locality, every component is armed with a cache. Fron
 It's true that our system is data-intensive; however, introduction of thread-per-core manages shift bottleneck from I/O to CPU. [Literature](https://www.usenix.org/conference/fast23/presentation/li-qiang-deployed) shows that serialization and deserialization of RPCs on data path costs about 30% of CPU. Adopting flatbuffers avoids this overhead and results in 59% network throughput gain.
 
 ## Autonomous
-Being autonomous means our system should be capable of self-management and self-healing. They are crucial to reduce operational cost and simplify SRE efforts. Again, we achieve this goal through separation of concerns principle.
+Being autonomous means our system should be capable of self management and self healing. They are crucial to reduce operational cost and simplify SRE efforts. Once the scaling in and out can be completed within seconds, the whole system may go serverless and financially become pay-as-you-go. Again, we achieve this goal through separation of concerns principle.
 
 ### Separation of Concern
 
 #### Separation of Storage and Compute
-Scale Independently
+Many modern systems are separating compute and storage into two subsystems, allowing them to scale independently. There are two major benefits doing this way:
+
+* Compute nodes become completely stateless, therefore extremely easy to manage;
+* Scaling each subsystem on demand to meet strict financial budget goals;
+
+After rendering gateway servers stateless, we may deploy and manage them in the same way as [Knative](http://knative.dev).
 
 #### Separation of CP and AP
 
-CP = Consistency + Partition
+Now that the compute has become serverless and can scale on realtime demand, it comes to the last part: storage. As is discussed in the `Cost` section, majority of the storage has already been offloaded to object storage. The rest of the this section is to focus on reducing system RTO to some 20ms and overcoming limitation of object storage service.
 
-AP = Availability + Partition
+To achieve these goals, we adopt the separation of concerns once again. First, we split the storage system into two planes: control plane and data plane; Each prefers its own strategy in perspective of CAP theorem:
+* Control Plane
+    Control plane functions as source of truth for the system metadata, taking consistency and partition toleration among CAP by applying RAFT consensus algorithm.
+* Data Plane
+    Data plane serves large amount of data store and load operations. Availability and partition toleration are chosen whereas data replication and consistency are built on top of control plane and a custom replication algorithm. See section 4 of [Windows Azure Storage](https://www.cs.purdue.edu/homes/csjgwang/CloudNativeDB/AzureStorageSOSP11.pdf).
 
-Strong consistency while RTO tends to be zero
-RPO = 0 and RTO -> 0
+With these done, we can build a storage system with:
+* RPO = 0;
+* RTO -> 0(some 20ms);
+* Flexible replication strategy per stream
 
 
 ## Reference
