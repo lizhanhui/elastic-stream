@@ -11,7 +11,15 @@
 ### Placement Driver
 
 ## Layers
-Each layer scales independently.
+At the highest level, our architecture is manifested as a number of layers, each of which interacts with the layers directly above and below it as relatively opaque services.
+
+![Layers](../images/layer.arch.png)
+
+| Layer  | Order  | Goal  |
+|---|---|---|
+| Compute  | 1  | messaging and streaming semantics, compute scalability |
+|  Elastic Stream |  2 | high performance, low latency, fault tolerance  |
+|  Object Storage |  3 | Cost effective, unlimited storage capacity |
 
 ### Compute Servers
 This layer offers messaging and streaming semantics.
