@@ -9,14 +9,15 @@ use log::{debug, error, info, trace, warn};
 use model::payload::Payload;
 use protocol::rpc::header::{
     AppendResponseT, AppendResultEntryT, CreateRangeRequest, CreateRangeResponseT,
-    CreateStreamRequest, CreateStreamResponseT, DescribePlacementDriverClusterRequest,
-    DescribePlacementDriverClusterResponseT, DescribeStreamRequest, DescribeStreamResponseT,
-    ErrorCode, EventType, HeartbeatRequest, HeartbeatResponseT, IdAllocationRequest,
-    IdAllocationResponseT, ListRangeRequest, ListRangeResponseT, ListResourceRequest,
-    ListResourceResponseT, ObjT, OffloadOwnerT, OperationCode, PlacementDriverClusterT,
-    PlacementDriverNodeT, RangeServerT, RangeT, ReportMetricsRequest, ReportMetricsResponseT,
-    ResourceEventT, ResourceT, ResourceType, SealKind, SealRangeRequest, SealRangeResponseT,
-    StatusT, StreamT, UpdateStreamRequest, UpdateStreamResponseT, WatchResourceRequest,
+    CreateStreamRequest, CreateStreamResponseT, DeleteStreamRequest, DeleteStreamResponseT,
+    DescribePlacementDriverClusterRequest, DescribePlacementDriverClusterResponseT,
+    DescribeStreamRequest, DescribeStreamResponseT, ErrorCode, EventType, HeartbeatRequest,
+    HeartbeatResponseT, IdAllocationRequest, IdAllocationResponseT, ListRangeRequest,
+    ListRangeResponseT, ListResourceRequest, ListResourceResponseT, ObjT, OffloadOwnerT,
+    OperationCode, PlacementDriverClusterT, PlacementDriverNodeT, RangeServerT, RangeT,
+    ReportMetricsRequest, ReportMetricsResponseT, ResourceEventT, ResourceT, ResourceType,
+    SealKind, SealRangeRequest, SealRangeResponseT, StatusT, StreamT, TrimStreamRequest,
+    TrimStreamResponseT, UpdateStreamRequest, UpdateStreamResponseT, WatchResourceRequest,
     WatchResourceResponseT,
 };
 
@@ -338,9 +339,32 @@ pub async fn run_listener() -> u16 {
                                         {
                                             serve_update_stream(&req, &mut response_frame);
                                         } else {
-                                            error!(
-                                                "Failed to decode describe-stream-request header"
-                                            );
+                                            error!("Failed to decode update-stream-request header");
+                                        }
+                                    }
+                                }
+
+                                OperationCode::TRIM_STREAM => {
+                                    response_frame.operation_code = OperationCode::TRIM_STREAM;
+                                    if let Some(buf) = frame.header.as_ref() {
+                                        if let Ok(req) = flatbuffers::root::<TrimStreamRequest>(buf)
+                                        {
+                                            serve_trim_stream(&req, &mut response_frame);
+                                        } else {
+                                            error!("Failed to decode trim-stream-request header");
+                                        }
+                                    }
+                                }
+
+                                OperationCode::DELETE_STREAM => {
+                                    response_frame.operation_code = OperationCode::DELETE_STREAM;
+                                    if let Some(buf) = frame.header.as_ref() {
+                                        if let Ok(req) =
+                                            flatbuffers::root::<DeleteStreamRequest>(buf)
+                                        {
+                                            serve_delete_stream(&req, &mut response_frame);
+                                        } else {
+                                            error!("Failed to decode delete-stream-request header");
                                         }
                                     }
                                 }
@@ -626,6 +650,36 @@ fn serve_update_stream(_req: &UpdateStreamRequest, response_frame: &mut Frame) {
     stream.retention_period_ms = time::Duration::from_secs(3600 * 24).as_millis() as i64;
 
     response.stream = Box::new(stream);
+
+    let mut builder = flatbuffers::FlatBufferBuilder::new();
+    let resp = response.pack(&mut builder);
+    builder.finish(resp, None);
+    let data = builder.finished_data();
+    response_frame.flag_response();
+    response_frame.header = Some(Bytes::copy_from_slice(data));
+}
+
+fn serve_trim_stream(_req: &TrimStreamRequest, response_frame: &mut Frame) {
+    let mut response = TrimStreamResponseT::default();
+    let mut status = StatusT::default();
+    status.code = ErrorCode::OK;
+    status.message = Some("OK".to_string());
+    response.status = Box::new(status);
+
+    let mut builder = flatbuffers::FlatBufferBuilder::new();
+    let resp = response.pack(&mut builder);
+    builder.finish(resp, None);
+    let data = builder.finished_data();
+    response_frame.flag_response();
+    response_frame.header = Some(Bytes::copy_from_slice(data));
+}
+
+fn serve_delete_stream(_req: &DeleteStreamRequest, response_frame: &mut Frame) {
+    let mut response = DeleteStreamResponseT::default();
+    let mut status = StatusT::default();
+    status.code = ErrorCode::OK;
+    status.message = Some("OK".to_string());
+    response.status = Box::new(status);
 
     let mut builder = flatbuffers::FlatBufferBuilder::new();
     let resp = response.pack(&mut builder);

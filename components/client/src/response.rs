@@ -16,6 +16,7 @@ use protocol::rpc::header::AppendResponse;
 use protocol::rpc::header::CommitObjectResponse;
 use protocol::rpc::header::CreateRangeResponse;
 use protocol::rpc::header::CreateStreamResponse;
+use protocol::rpc::header::DeleteStreamResponse;
 use protocol::rpc::header::DescribePlacementDriverClusterResponse;
 use protocol::rpc::header::DescribeStreamResponse;
 use protocol::rpc::header::ErrorCode;
@@ -33,6 +34,7 @@ use protocol::rpc::header::SystemError;
 use model::range::RangeMetadata;
 use model::PlacementDriverNode;
 use model::Status;
+use protocol::rpc::header::TrimStreamResponse;
 use protocol::rpc::header::UpdateStreamResponse;
 use protocol::rpc::header::WatchResourceResponse;
 
@@ -536,6 +538,34 @@ impl Response {
                             metadata: Into::<StreamMetadata>::into(&response.stream().unpack()),
                         })
                     }
+                }
+                Err(e) => {
+                    error!("Failed to parse the response header: {:?}", e);
+                }
+            }
+        }
+    }
+
+    pub fn on_trim_stream(&mut self, frame: &Frame) {
+        if let Some(buf) = frame.header.as_ref() {
+            match flatbuffers::root::<TrimStreamResponse>(buf) {
+                Ok(response) => {
+                    self.status = Into::<Status>::into(&response.status().unpack());
+                    if self.status.code == ErrorCode::OK {}
+                }
+                Err(e) => {
+                    error!("Failed to parse the response header: {:?}", e);
+                }
+            }
+        }
+    }
+
+    pub fn on_delete_stream(&mut self, frame: &Frame) {
+        if let Some(buf) = frame.header.as_ref() {
+            match flatbuffers::root::<DeleteStreamResponse>(buf) {
+                Ok(response) => {
+                    self.status = Into::<Status>::into(&response.status().unpack());
+                    if self.status.code == ErrorCode::OK {}
                 }
                 Err(e) => {
                     error!("Failed to parse the response header: {:?}", e);

@@ -277,6 +277,12 @@ impl Session {
             request::Headers::UpdateStream { .. } => {
                 frame.operation_code = OperationCode::UPDATE_STREAM;
             }
+            request::Headers::TrimStream { .. } => {
+                frame.operation_code = OperationCode::TRIM_STREAM;
+            }
+            request::Headers::DeleteStream { .. } => {
+                frame.operation_code = OperationCode::DELETE_STREAM;
+            }
         };
 
         frame.payload = request.body.clone();
@@ -451,15 +457,16 @@ impl Session {
                         }
 
                         OperationCode::DELETE_STREAM => {
-                            warn!("Received an unexpected `DeleteStreams` response");
-                            return;
+                            response.on_delete_stream(&frame);
                         }
 
                         OperationCode::UPDATE_STREAM => {
                             response.on_update_stream(&frame);
                         }
 
-                        OperationCode::TRIM_STREAM => todo!(),
+                        OperationCode::TRIM_STREAM => {
+                            response.on_trim_stream(&frame);
+                        }
 
                         OperationCode::REPORT_METRICS => {
                             response.on_report_metrics(&frame);

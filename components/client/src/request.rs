@@ -7,11 +7,11 @@ use model::{
 };
 use protocol::rpc::header::{
     AppendRequestT, ClientRole, CommitObjectRequestT, CreateRangeRequestT, CreateStreamRequestT,
-    DescribePlacementDriverClusterRequestT, DescribeStreamRequestT, FetchRequestT,
-    HeartbeatRequestT, IdAllocationRequestT, ListRangeCriteriaT, ListRangeRequestT,
+    DeleteStreamRequestT, DescribePlacementDriverClusterRequestT, DescribeStreamRequestT,
+    FetchRequestT, HeartbeatRequestT, IdAllocationRequestT, ListRangeCriteriaT, ListRangeRequestT,
     ListResourceRequestT, ObjT, RangeProgressT, RangeServerMetricsT, RangeT, ReportMetricsRequestT,
     ReportRangeProgressRequestT, ResourceType, SealKind, SealRangeRequestT, StreamT,
-    UpdateStreamRequestT, WatchResourceRequestT,
+    TrimStreamRequestT, UpdateStreamRequestT, WatchResourceRequestT,
 };
 use std::fmt;
 use std::time::Duration;
@@ -118,6 +118,17 @@ pub enum Headers {
         replica_count: Option<u8>,
         ack_count: Option<u8>,
         epoch: Option<u64>,
+    },
+
+    TrimStream {
+        stream_id: u64,
+        epoch: u64,
+        min_offset: u64,
+    },
+
+    DeleteStream {
+        stream_id: u64,
+        epoch: u64,
     },
 }
 
@@ -332,6 +343,27 @@ impl From<&Request> for Bytes {
                 ack_count.map(|c| stream.ack_count = c as i8);
                 epoch.map(|c| stream.epoch = c as i64);
                 request.stream = Box::new(stream);
+                let request = request.pack(&mut builder);
+                builder.finish(request, None);
+            }
+            Headers::TrimStream {
+                stream_id,
+                epoch,
+                min_offset,
+            } => {
+                let mut request = TrimStreamRequestT::default();
+                request.timeout_ms = req.timeout.as_millis() as i32;
+                request.stream_id = stream_id.to_owned() as i64;
+                request.epoch = epoch.to_owned() as i64;
+                request.min_offset = min_offset.to_owned() as i64;
+                let request = request.pack(&mut builder);
+                builder.finish(request, None);
+            }
+            Headers::DeleteStream { stream_id, epoch } => {
+                let mut request = DeleteStreamRequestT::default();
+                request.timeout_ms = req.timeout.as_millis() as i32;
+                request.stream_id = stream_id.to_owned() as i64;
+                request.epoch = epoch.to_owned() as i64;
                 let request = request.pack(&mut builder);
                 builder.finish(request, None);
             }

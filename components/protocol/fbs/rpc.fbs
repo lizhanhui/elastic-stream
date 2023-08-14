@@ -580,6 +580,9 @@ table DeleteStreamRequest {
 
     // The id of the stream to delete.
     stream_id: int64 = -1 (id: 1);
+
+    // The epoch of the stream.
+    epoch: int64 = -1 (id: 2);
 }
 
 table DeleteStreamResponse {
@@ -644,12 +647,15 @@ table TrimStreamRequest {
     // The id of the stream
     stream_id: int64 = -1 (id: 1);
 
+    // The epoch of the stream
+    epoch: int64 = -1 (id: 2);
+
     // The current minimum offset of the stream.
     // All the records before this offset have be deleted.
-    min_offset: int64 (id: 2);
+    min_offset: int64 (id: 3);
 }
 
-table TrimStreamsResponse {
+table TrimStreamResponse {
     status: Status (id: 0, required);
 
     // The time in milliseconds to throttle the client, due to a quota violation or the server is too busy.

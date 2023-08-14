@@ -106,6 +106,11 @@ pub trait Client {
         ack_count: Option<u8>,
         epoch: Option<u64>,
     ) -> Result<StreamMetadata, EsError>;
+
+    async fn trim_stream(&self, stream_id: u64, epoch: u64, min_offset: u64)
+        -> Result<(), EsError>;
+
+    async fn delete_stream(&self, stream_id: u64, epoch: u64) -> Result<(), EsError>;
 }
 
 /// `Client` is used to send
@@ -411,6 +416,27 @@ impl Client for DefaultClient {
         time::timeout(self.config.client_io_timeout(), future)
             .await
             .map_err(|_| EsError::new(ErrorCode::RPC_TIMEOUT, "update stream timeout"))?
+    }
+
+    async fn trim_stream(
+        &self,
+        stream_id: u64,
+        epoch: u64,
+        min_offset: u64,
+    ) -> Result<(), EsError> {
+        let composite_session = self.get_pd_session().await?;
+        let future = composite_session.trim_stream(stream_id, epoch, min_offset);
+        time::timeout(self.config.client_io_timeout(), future)
+            .await
+            .map_err(|_| EsError::new(ErrorCode::RPC_TIMEOUT, "trim stream timeout"))?
+    }
+
+    async fn delete_stream(&self, stream_id: u64, epoch: u64) -> Result<(), EsError> {
+        let composite_session = self.get_pd_session().await?;
+        let future = composite_session.delete_stream(stream_id, epoch);
+        time::timeout(self.config.client_io_timeout(), future)
+            .await
+            .map_err(|_| EsError::new(ErrorCode::RPC_TIMEOUT, "delete stream timeout"))?
     }
 }
 
@@ -986,6 +1012,52 @@ mod tests {
                 std::time::Duration::from_secs(3600 * 24),
                 stream_metadata.retention_period
             );
+            Ok(())
+        })
+    }
+
+    #[test]
+    fn test_trim_stream() -> Result<(), EsError> {
+        ulog::try_init_log();
+        tokio_uring::start(async move {
+            #[allow(unused_variables)]
+            let port = 2378;
+            let port = run_listener().await;
+            let config = config::Configuration {
+                placement_driver: format!("127.0.0.1:{}", port),
+                ..Default::default()
+            };
+            let config = Arc::new(config);
+            let (tx, _rx) = broadcast::channel(1);
+            let client = DefaultClient::new(config, tx);
+
+            client
+                .trim_stream(1, 233, 100)
+                .await
+                .expect("trim stream should not fail");
+            Ok(())
+        })
+    }
+
+    #[test]
+    fn test_delete_stream() -> Result<(), EsError> {
+        ulog::try_init_log();
+        tokio_uring::start(async move {
+            #[allow(unused_variables)]
+            let port = 2378;
+            let port = run_listener().await;
+            let config = config::Configuration {
+                placement_driver: format!("127.0.0.1:{}", port),
+                ..Default::default()
+            };
+            let config = Arc::new(config);
+            let (tx, _rx) = broadcast::channel(1);
+            let client = DefaultClient::new(config, tx);
+
+            client
+                .delete_stream(1, 233)
+                .await
+                .expect("trim stream should not fail");
             Ok(())
         })
     }

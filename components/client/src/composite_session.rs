@@ -1032,6 +1032,43 @@ impl CompositeSession {
         }
     }
 
+    pub async fn trim_stream(
+        &self,
+        stream_id: u64,
+        epoch: u64,
+        min_offset: u64,
+    ) -> Result<(), EsError> {
+        let request = request::Request {
+            timeout: self.config.client_io_timeout(),
+            headers: request::Headers::TrimStream {
+                stream_id,
+                epoch,
+                min_offset,
+            },
+            body: None,
+        };
+        let response = self.request(request).await?;
+        if response.ok() {
+            Ok(())
+        } else {
+            Err(EsError::from(&response))
+        }
+    }
+
+    pub async fn delete_stream(&self, stream_id: u64, epoch: u64) -> Result<(), EsError> {
+        let request = request::Request {
+            timeout: self.config.client_io_timeout(),
+            headers: request::Headers::DeleteStream { stream_id, epoch },
+            body: None,
+        };
+        let response = self.request(request).await?;
+        if response.ok() {
+            Ok(())
+        } else {
+            Err(EsError::from(&response))
+        }
+    }
+
     async fn broadcast_to_pd(
         &self,
         request: &Request,
