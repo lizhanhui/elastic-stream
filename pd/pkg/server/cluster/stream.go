@@ -77,9 +77,6 @@ func (c *RaftCluster) DeleteStream(ctx context.Context, streamID int64) (*rpcfb.
 		}
 		return nil, err
 	}
-	if stream == nil {
-		return nil, errors.Wrapf(model.ErrStreamNotFound, "stream id %d", streamID)
-	}
 
 	return stream, nil
 }

@@ -545,6 +545,9 @@ table Stream {
 
     // The current epoch of the stream.
     epoch: int64 = -1 (id: 5);
+
+    // The flag to indicate if the stream is deleted.
+    deleted: bool = false (id: 6);
 }
 
 // The create stream request is used to create a batch of streams.

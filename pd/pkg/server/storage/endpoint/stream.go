@@ -32,6 +32,7 @@ type StreamEndpoint interface {
 	// CreateStream creates a new stream based on the given stream and returns it.
 	CreateStream(ctx context.Context, stream *rpcfb.StreamT) (*rpcfb.StreamT, error)
 	// DeleteStream deletes the stream with the given stream id and returns it.
+	// It returns model.ErrStreamNotFound if the stream does not exist.
 	DeleteStream(ctx context.Context, streamID int64) (*rpcfb.StreamT, error)
 	// UpdateStream updates the stream with the given stream and returns it.
 	// It returns model.ErrStreamNotFound if the stream does not exist.
@@ -66,21 +67,43 @@ func (e *Endpoint) CreateStream(ctx context.Context, stream *rpcfb.StreamT) (*rp
 func (e *Endpoint) DeleteStream(ctx context.Context, streamID int64) (*rpcfb.StreamT, error) {
 	logger := e.lg.With(zap.Int64("stream-id", streamID), traceutil.TraceLogField(ctx))
 
-	prevV, err := e.KV.Delete(ctx, streamPath(streamID), true)
+	var deletedStream *rpcfb.StreamT
+	err := e.KV.ExecInTxn(ctx, func(kv kv.BasicKV) error {
+		k := streamPath(streamID)
+		v, err := kv.Get(ctx, k)
+		if err != nil {
+			logger.Error("failed to get stream", zap.Error(err))
+			return errors.Wrapf(err, "get stream %d", streamID)
+		}
+		if v == nil {
+			logger.Error("stream not found when delete stream")
+			return errors.Wrapf(model.ErrStreamNotFound, "stream %d", streamID)
+		}
+
+		s := rpcfb.GetRootAsStream(v, 0).UnPack()
+		deletedStream = s
+		if s.Deleted {
+			logger.Warn("stream already deleted")
+			return nil
+		}
+		s.Deleted = true
+
+		streamInfo := fbutil.Marshal(s)
+		_, _ = kv.Put(ctx, k, streamInfo, true)
+		mcache.Free(streamInfo)
+
+		return nil
+	})
 	if err != nil {
-		logger.Error("failed to delete stream", zap.Error(err))
 		return nil, errors.Wrapf(err, "delete stream %d", streamID)
 	}
-	if prevV == nil {
-		logger.Warn("stream not found when delete stream")
-		return nil, nil
-	}
+
 	// TODO: delete ranges asynchronously
 	rangeInStreamPrefix := []byte(fmt.Sprintf(_rangeStreamPrefixFormat, streamID))
 	_, _ = e.KV.DeleteByPrefixes(ctx, [][]byte{rangeInStreamPrefix})
 	// TODO: delete index asynchronously
 
-	return rpcfb.GetRootAsStream(prevV, 0).UnPack(), nil
+	return deletedStream, nil
 }
 
 func (e *Endpoint) UpdateStream(ctx context.Context, param *model.UpdateStreamParam) (*rpcfb.StreamT, error) {
@@ -89,7 +112,6 @@ func (e *Endpoint) UpdateStream(ctx context.Context, param *model.UpdateStreamPa
 	var newStream *rpcfb.StreamT
 	err := e.KV.ExecInTxn(ctx, func(kv kv.BasicKV) error {
 		key := streamPath(param.StreamID)
-
 		v, err := kv.Get(ctx, key)
 		if err != nil {
 			logger.Error("failed to get stream", zap.Error(err))

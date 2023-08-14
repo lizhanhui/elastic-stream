@@ -102,6 +102,90 @@ func TestHandler_CreateStream(t *testing.T) {
 	}
 }
 
+func TestHandler_DeleteStream(t *testing.T) {
+	type args struct {
+		streamID int64
+	}
+	type want struct {
+		stream rpcfb.StreamT
+
+		wantErr bool
+		errCode rpcfb.ErrorCode
+		errMsg  string
+	}
+	tests := []struct {
+		name string
+		args args
+		want want
+	}{
+		{
+			name: "normal case",
+			args: args{streamID: 1},
+			want: want{
+				stream: rpcfb.StreamT{StreamId: 1, Replica: 3, AckCount: 3, Deleted: true},
+			},
+		},
+		{
+			name: "delete stream twice",
+			args: args{streamID: 0},
+			want: want{
+				stream: rpcfb.StreamT{StreamId: 0, Replica: 3, AckCount: 3, Deleted: true},
+			},
+		},
+		{
+			name: "invalid stream id",
+			args: args{streamID: -1},
+			want: want{
+				wantErr: true,
+				errCode: rpcfb.ErrorCodeBAD_REQUEST,
+				errMsg:  "invalid stream id",
+			},
+		},
+		{
+			name: "stream not found",
+			args: args{streamID: 2},
+			want: want{
+				wantErr: true,
+				errCode: rpcfb.ErrorCodeNOT_FOUND,
+				errMsg:  "stream not found",
+			},
+		},
+	}
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			re := require.New(t)
+
+			h, closeFunc := startSbpHandler(t, nil, true)
+			defer closeFunc()
+
+			// prepare
+			preHeartbeats(t, h, 0, 1, 2)
+			streamIDs := preCreateStreams(t, h, 3, 2)
+			re.Equal([]int64{0, 1}, streamIDs)
+			// delete stream 0
+			preDeleteStream(t, h, 0)
+
+			// create stream
+			req := &protocol.DeleteStreamRequest{DeleteStreamRequestT: rpcfb.DeleteStreamRequestT{
+				StreamId: tt.args.streamID,
+			}}
+			resp := &protocol.DeleteStreamResponse{}
+			h.DeleteStream(req, resp)
+
+			// check response
+			if tt.want.wantErr {
+				re.Equal(tt.want.errCode, resp.Status.Code)
+				re.Contains(resp.Status.Message, tt.want.errMsg)
+			} else {
+				re.Equal(rpcfb.ErrorCodeOK, resp.Status.Code)
+				re.Equal(tt.want.stream, *resp.Stream)
+			}
+		})
+	}
+}
+
 func TestHandler_UpdateStream(t *testing.T) {
 	type args struct {
 		stream *rpcfb.StreamT

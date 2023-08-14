@@ -158,6 +158,18 @@ func preCreateStream(tb testing.TB, h *Handler, replica int8) *rpcfb.StreamT {
 	return resp.Stream
 }
 
+func preDeleteStream(tb testing.TB, h *Handler, streamID int64) {
+	re := require.New(tb)
+
+	req := &protocol.DeleteStreamRequest{DeleteStreamRequestT: rpcfb.DeleteStreamRequestT{
+		StreamId: streamID,
+	}}
+	resp := &protocol.DeleteStreamResponse{}
+
+	h.DeleteStream(req, resp)
+	re.Equal(rpcfb.ErrorCodeOK, resp.Status.Code, resp.Status.Message)
+}
+
 type preObject struct {
 	streamID    int64
 	rangeIndex  int32

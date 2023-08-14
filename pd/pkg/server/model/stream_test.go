@@ -17,6 +17,7 @@ func TestNoNewFieldsInCreateStreamParam(t *testing.T) {
 		"StreamId",
 		"StartOffset",
 		"Epoch",
+		"Deleted",
 	}
 	streamFields := testutil.GetAllFields(rpcfb.StreamT{})
 	createStreamParamFields := testutil.GetAllFields(CreateStreamParam{})
@@ -32,6 +33,7 @@ func TestNoNewFieldsInUpdateStreamParam(t *testing.T) {
 
 	ignoredFields := []string{
 		"StartOffset",
+		"Deleted",
 	}
 	streamFields := testutil.GetAllFields(rpcfb.StreamT{})
 	updateStreamParamFields := testutil.GetAllFields(UpdateStreamParam{})
