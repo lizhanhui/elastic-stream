@@ -1,14 +1,25 @@
 ## Concepts
 
 ### Record
+A record is a piece of information in your business system, representing an event in the domain, or a state change. Typically, a record contains timestamp, metadata headers, system properties and value. A record can be single or composite. A composite record holds multiple internal single ones and there is a system property length for the number of single records inside.
 
-### Stream
+Record is the minimum unit of data for reading and writing in Elastic Stream.
 
 ### Range
+A range contains an sequence of records. A range is replicated among a set of range servers to be resilient to occasional range server loss. On creation, ranges are mutable and ready to accept appending of records. Once sealed, they become immutable forever.
+
+### Stream
+Every stream has an unique ID in the management plane. Conceptually, a stream is an ordered list of pointers to ranges maintained by placement driver servers. Only the last range is mutable and all the prior ones are immutable.
+
+![Stream](../images/stream.arch.png)
+
+
+### Placement Driver
+
+Placement Driver(PD, hereafter) tracks ranges for each stream and manages placements for replicas of every range. PD is built on top of RAFT consensus algorithm and is off the critical path of client requests.
 
 ### Range Server
 
-### Placement Driver
 
 ## Layers
 At the highest level, our architecture is manifested as a number of layers, each of which interacts with the layers directly above and below it as relatively opaque services.
