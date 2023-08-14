@@ -28,12 +28,14 @@ where
 {
     log_ident: String,
     weak_self: RefCell<Weak<Self>>,
-    id: i64,
+    id: u64,
     epoch: u64,
     ranges: RefCell<BTreeMap<u64, Rc<R>>>,
     client: Weak<C>,
     next_offset: RefCell<u64>,
     last_range: RefCell<Option<Rc<R>>>,
+    // stream start offset.
+    start_offset: RefCell<u64>,
     /// #append send StreamAppendRequest to tx.
     append_requests_tx: mpsc::unbounded::Tx<StreamAppendRequest>,
     /// send by range ack / delay retry to trigger append task loop next round.
@@ -50,7 +52,7 @@ where
     R: ReplicationRange<C> + 'static,
     C: Client + 'static,
 {
-    pub(crate) fn new(id: i64, epoch: u64, client: Weak<C>, cache: Rc<HotCache>) -> Rc<Self> {
+    pub(crate) fn new(id: u64, epoch: u64, client: Weak<C>, cache: Rc<HotCache>) -> Rc<Self> {
         let (append_requests_tx, append_requests_rx) = mpsc::unbounded::channel();
         let (append_tasks_tx, append_tasks_rx) = mpsc::unbounded::channel();
         let (shutdown_signal_tx, shutdown_signal_rx) = broadcast::channel(1);
@@ -62,7 +64,8 @@ where
             ranges: RefCell::new(BTreeMap::new()),
             client,
             next_offset: RefCell::new(0),
-            last_range: RefCell::new(Option::None),
+            last_range: RefCell::new(None),
+            start_offset: RefCell::new(0),
             append_requests_tx,
             append_tasks_tx,
             shutdown_signal_tx,
@@ -88,7 +91,7 @@ where
         this
     }
 
-    async fn new_range(&self, range_index: i32, start_offset: u64) -> Result<Rc<R>, EsError> {
+    async fn new_range(&self, range_index: u32, start_offset: u64) -> Result<Rc<R>, EsError> {
         if let Some(client) = self.client.upgrade() {
             let range_metadata =
                 R::create(client, self.id, self.epoch, range_index, start_offset).await?;
@@ -248,7 +251,7 @@ where
             let last_range = stream.last_range.borrow().as_ref().cloned();
             let last_writable_range = match last_range {
                 Some(last_range) => {
-                    let range_index = last_range.metadata().index();
+                    let range_index = last_range.metadata().index() as u32;
                     if !last_range.is_writable() {
                         info!("{}The last range[{range_index}] is not writable, try create a new range.", log_ident);
                         // if last range is not writable, try to seal it and create a new range and retry append in next round.
@@ -302,6 +305,13 @@ where
             return Ok((last_writable_range, next_append_start_offset));
         }
     }
+
+    fn get_client(&self) -> Result<Rc<C>, EsError> {
+        self.client.upgrade().ok_or(EsError::new(
+            ErrorCode::UNEXPECTED,
+            "range get client fail, client is dropped",
+        ))
+    }
 }
 
 impl<R, C> Stream for ReplicationStream<R, C>
@@ -311,17 +321,14 @@ where
 {
     async fn open(&self) -> Result<(), EsError> {
         info!("{}Opening...", self.log_ident);
-        let client = self.client.upgrade().ok_or(EsError::new(
-            ErrorCode::UNEXPECTED,
-            "open fail, client is dropped",
-        ))?;
+        let client = self.get_client()?;
         // 1. fence the stream with new epoch.
         let _ = client
-            .update_stream(self.id as u64, None, None, Some(self.epoch))
+            .update_stream(self.id, None, None, Some(self.epoch))
             .await?;
         // 2. load all ranges
         client
-            .list_ranges(model::ListRangeCriteria::new(None, Some(self.id as u64)))
+            .list_ranges(model::ListRangeCriteria::new(None, Some(self.id)))
             .await
             .map_err(|e| {
                 error!(
@@ -370,6 +377,13 @@ where
                 }
             }
         }
+        let start_offset = self
+            .ranges
+            .borrow()
+            .first_key_value()
+            .map(|(k, _)| *k)
+            .unwrap_or(0);
+        *self.start_offset.borrow_mut() = start_offset;
         let range_count = self.ranges.borrow().len();
         let start_offset = self.start_offset();
         let next_offset = self.next_offset();
@@ -393,12 +407,10 @@ where
         info!("{}Closed...", self.log_ident);
     }
 
+    /// Get stream start offset.
+    /// The self.start_offset is the source of truth, cause of #trim only remove deleted ranges.
     fn start_offset(&self) -> u64 {
-        self.ranges
-            .borrow()
-            .first_key_value()
-            .map(|(k, _)| *k)
-            .unwrap_or(0)
+        *self.start_offset.borrow()
     }
 
     fn confirm_offset(&self) -> u64 {
@@ -543,8 +555,33 @@ where
         }
     }
 
-    async fn trim(&self, _new_start_offset: u64) -> Result<(), EsError> {
-        todo!()
+    async fn trim(&self, new_start_offset: u64) -> Result<(), EsError> {
+        *self.start_offset.borrow_mut() = new_start_offset;
+        {
+            // Remove deleted ranges from ranges besides the last range.
+            // Cause of we need the last range to create new range.
+            let mut ranges = self.ranges.borrow_mut();
+            if !ranges.is_empty() {
+                let last_range_start_offset = *(ranges.last_entry().unwrap().key());
+                ranges.retain(|range_start_offset, range| {
+                    *range_start_offset == last_range_start_offset
+                        || range
+                            .metadata()
+                            .end()
+                            .map(|end_offset| end_offset > new_start_offset)
+                            .unwrap_or(true)
+                });
+            }
+        }
+        self.get_client()?
+            .trim_stream(self.id, self.epoch, new_start_offset)
+            .await
+    }
+
+    async fn delete(&self) -> Result<(), EsError> {
+        self.ranges.borrow_mut().clear();
+        let _ = self.last_range.borrow_mut().take();
+        self.get_client()?.delete_stream(self.id, self.epoch).await
     }
 }
 
@@ -777,6 +814,60 @@ mod tests {
         Ok(())
     }
 
+    #[test]
+    fn test_trim() -> Result<(), Box<dyn Error>> {
+        tokio_uring::start(async move {
+            let mut client = MockClient::new();
+            client
+                .expect_update_stream()
+                .returning(|_, _, _, _| Ok(StreamMetadata::default()));
+            client.expect_list_ranges().returning(|_| {
+                Ok(vec![
+                    RangeMetadata::new(0, 0, 0, 0, Some(100)),
+                    RangeMetadata::new(0, 1, 0, 100, Some(200)),
+                ])
+            });
+            client.expect_trim_stream().returning(|_, _, _| Ok(()));
+
+            let client = Rc::new(client);
+            let stream: Rc<ReplicationStream<MemoryReplicationRange, MockClient>> =
+                ReplicationStream::new(0, 1, Rc::downgrade(&client), Rc::new(HotCache::new(4096)));
+            stream.open().await.unwrap();
+            assert_eq!(2, stream.ranges.borrow().len());
+            assert_eq!(0, stream.start_offset());
+            stream.trim(150).await.unwrap();
+            assert_eq!(1, stream.ranges.borrow().len());
+            assert_eq!(150, stream.start_offset());
+        });
+        Ok(())
+    }
+
+    #[test]
+    fn test_delete() -> Result<(), Box<dyn Error>> {
+        tokio_uring::start(async move {
+            let mut client = MockClient::new();
+            client
+                .expect_update_stream()
+                .returning(|_, _, _, _| Ok(StreamMetadata::default()));
+            client.expect_list_ranges().returning(|_| {
+                Ok(vec![
+                    RangeMetadata::new(0, 0, 0, 0, Some(100)),
+                    RangeMetadata::new(0, 1, 0, 100, Some(200)),
+                ])
+            });
+            client.expect_delete_stream().returning(|_, _| Ok(()));
+
+            let client = Rc::new(client);
+            let stream: Rc<ReplicationStream<MemoryReplicationRange, MockClient>> =
+                ReplicationStream::new(0, 1, Rc::downgrade(&client), Rc::new(HotCache::new(4096)));
+            stream.open().await.unwrap();
+            stream.delete().await.unwrap();
+            assert_eq!(0, stream.ranges.borrow().len());
+            assert!(stream.last_range.borrow().is_none());
+        });
+        Ok(())
+    }
+
     fn get_records_blocks(dataset: FetchDataset) -> Vec<RecordsBlock> {
         match dataset {
             FetchDataset::Full(blocks) => blocks,
@@ -811,9 +902,9 @@ mod tests {
     impl ReplicationRange<MockClient> for MemoryReplicationRange {
         async fn create(
             _client: Rc<MockClient>,
-            stream_id: i64,
+            stream_id: u64,
             epoch: u64,
-            index: i32,
+            index: u32,
             start_offset: u64,
         ) -> Result<RangeMetadata, EsError> {
             if unsafe { FENCED } {
@@ -823,8 +914,8 @@ mod tests {
                 ))
             } else {
                 Ok(RangeMetadata::new(
-                    stream_id,
-                    index,
+                    stream_id as i64,
+                    index as i32,
                     epoch,
                     start_offset,
                     None,

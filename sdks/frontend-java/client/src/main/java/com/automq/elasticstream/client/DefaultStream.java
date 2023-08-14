@@ -63,8 +63,7 @@ public class DefaultStream implements Stream {
 
     @Override
     public CompletableFuture<Void> trim(long newStartOffset) {
-        // TODO:
-        return CompletableFuture.completedFuture(null);
+        return jniStream.trim(newStartOffset);
     }
 
     @Override
@@ -74,6 +73,6 @@ public class DefaultStream implements Stream {
 
     @Override
     public CompletableFuture<Void> destroy() {
-        throw new UnsupportedOperationException();
+        return jniStream.delete();
     }
 }

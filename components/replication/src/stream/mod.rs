@@ -37,7 +37,9 @@ pub(crate) trait Stream {
         batch_max_bytes: u32,
     ) -> Result<FetchDataset, EsError>;
 
-    async fn trim(&self, _new_start_offset: u64) -> Result<(), EsError>;
+    async fn trim(&self, new_start_offset: u64) -> Result<(), EsError>;
+
+    async fn delete(&self) -> Result<(), EsError>;
 }
 
 #[derive(Debug)]

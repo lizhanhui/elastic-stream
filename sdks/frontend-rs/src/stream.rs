@@ -98,6 +98,20 @@ impl Stream {
             std::mem::take(&mut response.data)
         })
     }
+
+    pub async fn trim(&self, new_start_offset: i64) -> Result<(), EsError> {
+        let request = replication::request::TrimRequest {
+            stream_id: self.id,
+            new_start_offset: new_start_offset as u64,
+        };
+        self.stream_client.trim(request).await
+    }
+
+    pub async fn delete(&self) -> Result<(), EsError> {
+        let request = replication::request::DeleteRequest { stream_id: self.id };
+        self.stream_client.delete(request).await
+    }
+
     /// Close stream.
     ///
     /// # Arguments

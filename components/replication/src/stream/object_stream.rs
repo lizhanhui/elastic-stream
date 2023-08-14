@@ -179,6 +179,10 @@ where
     async fn trim(&self, new_start_offset: u64) -> Result<(), EsError> {
         self.stream.trim(new_start_offset).await
     }
+
+    async fn delete(&self) -> Result<(), EsError> {
+        self.stream.delete().await
+    }
 }
 
 #[derive(Debug)]

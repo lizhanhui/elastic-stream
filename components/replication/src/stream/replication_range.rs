@@ -34,9 +34,9 @@ where
 {
     async fn create(
         client: Rc<C>,
-        stream_id: i64,
+        stream_id: u64,
         epoch: u64,
-        index: i32,
+        index: u32,
         start_offset: u64,
     ) -> Result<RangeMetadata, EsError>;
 
@@ -261,13 +261,14 @@ where
 {
     async fn create(
         client: Rc<C>,
-        stream_id: i64,
+        stream_id: u64,
         epoch: u64,
-        index: i32,
+        index: u32,
         start_offset: u64,
     ) -> Result<RangeMetadata, EsError> {
         // 1. request placement driver to create range and get the range metadata.
-        let mut metadata = RangeMetadata::new(stream_id, index, epoch, start_offset, None);
+        let mut metadata =
+            RangeMetadata::new(stream_id as i64, index as i32, epoch, start_offset, None);
         metadata = client.create_range(metadata).await?;
         // 2. request range server to create range replica.
         let mut create_replica_tasks = vec![];

@@ -5,8 +5,8 @@ use tokio::sync::{mpsc, oneshot};
 
 use crate::{
     request::{
-        AppendRequest, AppendResponse, CloseStreamRequest, CreateStreamRequest, OpenStreamRequest,
-        ReadRequest, ReadResponse, Request, TrimRequest,
+        AppendRequest, AppendResponse, CloseStreamRequest, CreateStreamRequest, DeleteRequest,
+        OpenStreamRequest, ReadRequest, ReadResponse, Request, TrimRequest,
     },
     stream::stream_manager::StreamManager,
 };
@@ -61,6 +61,9 @@ impl StreamClient {
                 }
                 Request::Trim { request, tx } => {
                     stream_manager.trim(request, tx);
+                }
+                Request::Delete { request, tx } => {
+                    stream_manager.delete(request, tx);
                 }
             }
         }
@@ -172,5 +175,16 @@ impl StreamClient {
         self.tx.send(req).expect("trim send request to tx");
         rx.await
             .unwrap_or_else(|_| Err(EsError::unexpected("trim fail to receive response from rx")))
+    }
+
+    pub async fn delete(&self, request: DeleteRequest) -> Result<(), EsError> {
+        let (tx, rx) = oneshot::channel();
+        let req = Request::Delete { request, tx };
+        self.tx.send(req).expect("delete send request to tx");
+        rx.await.unwrap_or_else(|_| {
+            Err(EsError::unexpected(
+                "delete fail to receive response from rx",
+            ))
+        })
     }
 }

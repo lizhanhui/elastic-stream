@@ -60,6 +60,11 @@ pub struct TrimRequest {
 }
 
 #[derive(Debug)]
+pub struct DeleteRequest {
+    pub stream_id: u64,
+}
+
+#[derive(Debug)]
 pub(crate) enum Request {
     Append {
         request: AppendRequest,
@@ -93,6 +98,10 @@ pub(crate) enum Request {
     },
     Trim {
         request: TrimRequest,
+        tx: oneshot::Sender<Result<(), EsError>>,
+    },
+    Delete {
+        request: DeleteRequest,
         tx: oneshot::Sender<Result<(), EsError>>,
     },
 }

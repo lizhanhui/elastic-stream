@@ -19,8 +19,8 @@ use tokio::{
 use crate::{
     request::{
         AppendRequest, AppendResponse, CloseStreamRequest, CreateStreamRequest,
-        CreateStreamResponse, OpenStreamRequest, OpenStreamResponse, ReadRequest, ReadResponse,
-        TrimRequest,
+        CreateStreamResponse, DeleteRequest, OpenStreamRequest, OpenStreamResponse, ReadRequest,
+        ReadResponse, TrimRequest,
     },
     stream::replication_stream::ReplicationStream,
 };
@@ -288,14 +288,21 @@ impl StreamManager {
     }
 
     pub fn trim(&mut self, request: TrimRequest, tx: oneshot::Sender<Result<(), EsError>>) {
-        let stream = self
-            .streams
-            .borrow_mut()
-            .remove(&request.stream_id)
-            .map(|stream| Rc::clone(&stream));
+        let stream = self.streams.borrow().get(&request.stream_id).map(Rc::clone);
         if let Some(stream) = stream {
             tokio_uring::spawn(async move {
                 let _ = tx.send(stream.trim(request.new_start_offset).await);
+            });
+        } else {
+            let _ = tx.send(Err(stream_not_exist(request.stream_id)));
+        }
+    }
+
+    pub fn delete(&mut self, request: DeleteRequest, tx: oneshot::Sender<Result<(), EsError>>) {
+        let stream = self.streams.borrow().get(&request.stream_id).map(Rc::clone);
+        if let Some(stream) = stream {
+            tokio_uring::spawn(async move {
+                let _ = tx.send(stream.delete().await);
             });
         } else {
             let _ = tx.send(Err(stream_not_exist(request.stream_id)));
@@ -310,7 +317,7 @@ impl StreamManager {
         block_cache: Rc<BlockCache>,
         object_reader: Rc<AsyncObjectReader>,
     ) -> Rc<FStream> {
-        let stream = ReplicationStream::new(stream_id as i64, epoch, client, hot_cache.clone());
+        let stream = ReplicationStream::new(stream_id, epoch, client, hot_cache.clone());
 
         let object_reader = DefaultObjectReader::new(object_reader);
         let stream = ObjectStream::new(stream, object_reader);

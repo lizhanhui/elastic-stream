@@ -94,8 +94,19 @@ async fn process_command(cmd: Command<'_>) {
         Command::CloseStream { stream, future } => {
             process_close_stream_command(stream, future).await;
         }
+        Command::Trim {
+            stream,
+            new_start_offset,
+            future,
+        } => {
+            process_trim_stream_command(stream, new_start_offset, future).await;
+        }
+        Command::Delete { stream, future } => {
+            process_delete_stream_command(stream, future).await;
+        }
     }
 }
+
 async fn process_close_stream_command(stream: &Stream, future: GlobalRef) {
     trace!("Start processing close command");
     let result = stream.close().await;
@@ -263,6 +274,35 @@ async fn process_create_stream_command(
     };
     trace!("Create_stream command finished");
 }
+
+async fn process_trim_stream_command(stream: &Stream, new_start_offset: i64, future: GlobalRef) {
+    let result = stream.trim(new_start_offset).await;
+    match result {
+        Ok(_) => {
+            let tx = unsafe { CALLBACK_TX.get() }.unwrap();
+            let _ = tx.send(CallbackCommand::Trim { future });
+        }
+        Err(err) => {
+            let tx = unsafe { CALLBACK_TX.get() }.unwrap();
+            let _ = tx.send(CallbackCommand::ClientError { future, err });
+        }
+    };
+}
+
+async fn process_delete_stream_command(stream: &Stream, future: GlobalRef) {
+    let result = stream.delete().await;
+    match result {
+        Ok(_) => {
+            let tx = unsafe { CALLBACK_TX.get() }.unwrap();
+            let _ = tx.send(CallbackCommand::Delete { future });
+        }
+        Err(err) => {
+            let tx = unsafe { CALLBACK_TX.get() }.unwrap();
+            let _ = tx.send(CallbackCommand::ClientError { future, err });
+        }
+    };
+}
+
 /// # Safety
 ///
 /// This function could be only called by java vm when onload this lib.
@@ -374,6 +414,12 @@ pub extern "system" fn JNI_OnLoad(vm: JavaVM, _: *mut c_void) -> jint {
                             }
                             CallbackCommand::ClientError { future, err } => {
                                 complete_future_with_error(future, err);
+                            }
+                            CallbackCommand::Trim { future } => {
+                                complete_future_with_void(future);
+                            }
+                            CallbackCommand::Delete { future } => {
+                                complete_future_with_void(future);
                             }
                         },
                         Err(_) => {
@@ -713,6 +759,45 @@ pub unsafe extern "system" fn Java_com_automq_elasticstream_client_jni_Stream_ne
 ///
 /// Expose `C` API to Java
 #[no_mangle]
+pub unsafe extern "system" fn Java_com_automq_elasticstream_client_jni_Stream_trim(
+    env: JNIEnv,
+    _class: JClass,
+    ptr: *mut Stream,
+    new_start_offset: jlong,
+    future: JObject,
+) {
+    let command = env.new_global_ref(future).map(|future| {
+        let stream = unsafe { &mut *ptr };
+        Command::Trim {
+            stream,
+            new_start_offset,
+            future,
+        }
+    });
+    send_command(env, command);
+}
+
+/// # Safety
+///
+/// Expose `C` API to Java
+#[no_mangle]
+pub unsafe extern "system" fn Java_com_automq_elasticstream_client_jni_Stream_delete(
+    env: JNIEnv,
+    _class: JClass,
+    ptr: *mut Stream,
+    future: JObject,
+) {
+    let command = env.new_global_ref(future).map(|future| {
+        let stream = unsafe { &mut *ptr };
+        Command::Delete { stream, future }
+    });
+    send_command(env, command);
+}
+
+/// # Safety
+///
+/// Expose `C` API to Java
+#[no_mangle]
 pub unsafe extern "system" fn Java_com_automq_elasticstream_client_jni_Stream_append(
     mut env: JNIEnv,
     _class: JClass,
@@ -831,6 +916,32 @@ pub unsafe extern "system" fn Java_com_automq_elasticstream_client_jni_Stream_re
     } else {
         info!("Failed to construct Read command");
         throw_exception(&mut env, "Failed to construct Read command");
+    }
+}
+
+#[inline]
+fn send_command(mut env: JNIEnv, command: jni::errors::Result<Command<'static>>) {
+    if let Ok(command) = command {
+        if let Some(tx) = unsafe { TX.get() } {
+            if let Err(_e) = tx.send(command) {
+                error!("Failed to dispatch command to tokio-uring runtime");
+                throw_exception(
+                    &mut env,
+                    "Failed to dispatch command to tokio-uring runtime",
+                );
+            } else {
+                trace!("Dispatched the command to tokio-uring runtime");
+            }
+        } else {
+            info!("JNI command channel was dropped. Ignore a request");
+            throw_exception(
+                &mut env,
+                "JNI command channel was dropped. Ignore a request",
+            );
+        }
+    } else {
+        info!("Failed to construct command");
+        throw_exception(&mut env, "Failed to construct command");
     }
 }
 

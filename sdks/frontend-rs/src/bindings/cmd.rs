@@ -46,6 +46,17 @@ pub enum Command<'a> {
         tracer: Tracer,
     },
 
+    Trim {
+        stream: &'a mut Stream,
+        new_start_offset: i64,
+        future: GlobalRef,
+    },
+
+    Delete {
+        stream: &'a mut Stream,
+        future: GlobalRef,
+    },
+
     CloseStream {
         stream: &'a mut Stream,
         future: GlobalRef,
@@ -78,6 +89,12 @@ pub enum CallbackCommand {
     NextOffset {
         future: GlobalRef,
         offset: i64,
+    },
+    Trim {
+        future: GlobalRef,
+    },
+    Delete {
+        future: GlobalRef,
     },
     CloseStream {
         future: GlobalRef,
