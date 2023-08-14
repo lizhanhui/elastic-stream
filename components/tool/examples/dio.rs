@@ -1,5 +1,7 @@
 use clap::Parser;
-use io_uring::{self, opcode, register, types, IoUring, Parameters};
+use io_uring::{
+    self, cqueue::Entry, opcode, register, types, CompletionQueue, IoUring, Parameters,
+};
 use std::{
     alloc::{self, Layout},
     error::Error,
@@ -21,7 +23,7 @@ fn check_io_uring(probe: &register::Probe, params: &Parameters) {
 
     let codes = [
         opcode::OpenAt::CODE,
-        opcode::Fallocate64::CODE,
+        opcode::Fallocate::CODE,
         opcode::Write::CODE,
         opcode::Read::CODE,
         opcode::Close::CODE,
@@ -88,7 +90,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     control_ring.submit_and_wait(1)?;
     let fd = {
         let mut cq = control_ring.completion();
-        let cqe = cq.next().unwrap();
+        let cqe: io_uring::cqueue::Entry = cq.next().unwrap();
         debug_assert_eq!(0, cqe.user_data(), "user-data is inconsistent");
         cq.sync();
         cqe.result()
@@ -98,7 +100,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
     println!("Opened {file_path} with fd={fd}");
 
-    let sqe = opcode::Fallocate64::new(types::Fd(fd), file_size as libc::off64_t)
+    let sqe = opcode::Fallocate::new(types::Fd(fd), file_size as u64)
         .offset(0)
         .mode(libc::FALLOC_FL_ZERO_RANGE)
         .build()
@@ -140,7 +142,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let mut probe = register::Probe::new();
     let submitter = uring.submitter();
-    submitter.register_buffers(&bufs)?;
+    unsafe { submitter.register_buffers(&bufs) }?;
     submitter.register_probe(&mut probe)?;
     submitter.register_files(&[fd])?;
     submitter.register_iowq_max_workers(&mut [2, 2])?;
@@ -167,7 +169,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
             let write_sqe =
                 opcode::WriteFixed::new(types::Fixed(0), ptr as *const u8, buf_size as u32, 0)
-                    .offset(offset as libc::off64_t)
+                    .offset(offset as u64)
                     .build()
                     .user_data(minstant::Instant::now().as_unix_nanos(&anchor));
             offset += buf_size;
@@ -177,7 +179,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
         let _ = uring.submit_and_wait(0)?;
 
-        let mut cq = uring.completion();
+        let mut cq: CompletionQueue<'_, Entry> = uring.completion();
         loop {
             if cq.is_empty() {
                 break;

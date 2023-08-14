@@ -148,7 +148,7 @@ fn check_io_uring(probe: &register::Probe, params: &Parameters) -> Result<(), St
 
     let codes = [
         opcode::OpenAt::CODE,
-        opcode::Fallocate64::CODE,
+        opcode::Fallocate::CODE,
         opcode::Write::CODE,
         opcode::Read::CODE,
         opcode::Close::CODE,
@@ -562,7 +562,7 @@ impl IO {
                         );
 
                         let sqe = opcode::Read::new(types::Fd(sd.fd), ptr, read_len)
-                            .offset(read_from as libc::off_t)
+                            .offset(read_from)
                             .build()
                             .user_data(context as u64);
 
@@ -679,7 +679,7 @@ impl IO {
 
                         // Note we have to write the whole page even if the page is partially filled.
                         let sqe = opcode::Write::new(types::Fd(sd.fd), ptr, buf_capacity)
-                            .offset64(file_offset as libc::off_t)
+                            .offset(file_offset)
                             .build()
                             .user_data(context as u64);
 
@@ -1102,7 +1102,7 @@ impl IO {
                                                     buf_ptr,
                                                     context.len,
                                                 )
-                                                .offset(file_offset as libc::off_t)
+                                                .offset(file_offset)
                                                 .build()
                                                 .user_data(Box::into_raw(context) as u64);
 
@@ -1114,7 +1114,7 @@ impl IO {
                                                     buf_ptr,
                                                     buf.capacity as u32,
                                                 )
-                                                .offset64(file_offset as libc::off_t)
+                                                .offset(file_offset)
                                                 .build()
                                                 .user_data(Box::into_raw(context) as u64);
 
