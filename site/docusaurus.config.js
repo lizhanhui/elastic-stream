@@ -32,6 +32,21 @@ const config = {
     locales: ['en'],
   },
 
+  plugins: [
+    function (context, options) {
+      return {
+        name: 'webpack-configuration-plugin',
+        configureWebpack(config, isServer, utils) {
+          return {
+            resolve: {
+              symlinks: false,
+            }
+          };
+        }
+      };
+    },
+  ],
+
   presets: [
     [
       'classic',
