@@ -285,6 +285,28 @@ func (ds *DescribeStreamRequest) Timeout() int32 {
 	return ds.TimeoutMs
 }
 
+// TrimStreamRequest is a request to rpcfb.OperationCodeTRIM_STREAM
+type TrimStreamRequest struct {
+	baseRequest
+	baseUnmarshaler
+	nonLongPollRequest
+
+	rpcfb.TrimStreamRequestT
+}
+
+func (ts *TrimStreamRequest) unmarshalFlatBuffer(data []byte) error {
+	ts.TrimStreamRequestT = *rpcfb.GetRootAsTrimStreamRequest(data, 0).UnPack()
+	return nil
+}
+
+func (ts *TrimStreamRequest) Unmarshal(fmt codec.Format, data []byte) error {
+	return unmarshal(ts, fmt, data)
+}
+
+func (ts *TrimStreamRequest) Timeout() int32 {
+	return ts.TimeoutMs
+}
+
 // ReportMetricsRequest is a request to rpcfb.OperationCodeREPORT_METRICS
 type ReportMetricsRequest struct {
 	baseRequest

@@ -34,6 +34,8 @@ var (
 	ErrStreamNotFound = errors.New("stream not found")
 	// ErrInvalidStreamEpoch is returned when the stream epoch mismatches.
 	ErrInvalidStreamEpoch = errors.New("invalid stream epoch")
+	// ErrInvalidStreamOffset is returned when the stream's start offset is invalid.
+	ErrInvalidStreamOffset = errors.New("invalid stream offset")
 )
 
 // Range errors

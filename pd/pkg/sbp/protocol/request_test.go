@@ -23,6 +23,7 @@ var _inRequests = []packableRequest{
 	&DeleteStreamRequest{},
 	&DescribePDClusterRequest{},
 	&DescribeStreamRequest{},
+	&TrimStreamRequest{},
 	&HeartbeatRequest{},
 	&IDAllocationRequest{},
 	&ListRangeRequest{},

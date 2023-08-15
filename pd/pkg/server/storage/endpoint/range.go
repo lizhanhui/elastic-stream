@@ -380,6 +380,40 @@ func (e *Endpoint) forEachRangeInStreamLimited(ctx context.Context, streamID int
 	return
 }
 
+var (
+	errFound = errors.New("found")
+	errStop  = errors.New("stop")
+)
+
+// getRangeByOffset gets the range containing the given offset.
+// It returns nil and no error if the offset is out of range.
+func (e *Endpoint) getRangeByOffset(ctx context.Context, streamID int64, offset int64) (*rpcfb.RangeT, error) {
+	var foundRange *rpcfb.RangeT
+	err := e.ForEachRangeInStream(ctx, streamID, func(r *rpcfb.RangeT) error {
+		if offset < r.Start {
+			// ranges are sorted by offset, so we can stop here
+			return errStop
+		}
+		if r.End == _writableRangeEnd || offset < r.End {
+			foundRange = r
+			return errFound
+		}
+		if offset == r.End {
+			// Corner case:
+			// When offset is equal to the current range's end,
+			// there might be a new range with the same start offset after this one.
+			// If such a range exists, we'll use it instead; otherwise, we'll use this range.
+			foundRange = r
+			return nil
+		}
+		return nil
+	})
+	if err == errFound || err == errStop {
+		err = nil
+	}
+	return foundRange, err
+}
+
 func (e *Endpoint) endRangePathInStream(streamID int64) []byte {
 	return e.KV.GetPrefixRangeEnd([]byte(fmt.Sprintf(_rangeStreamPrefixFormat, streamID)))
 }

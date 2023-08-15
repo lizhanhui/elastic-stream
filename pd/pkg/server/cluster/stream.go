@@ -24,6 +24,13 @@ type StreamService interface {
 	// It returns model.ErrStreamNotFound if the stream is not found.
 	// It returns model.ErrInvalidStreamEpoch if the stream epoch mismatches.
 	UpdateStream(ctx context.Context, param *model.UpdateStreamParam) (*rpcfb.StreamT, error)
+	// TrimStream trims the stream.
+	// It returns model.ErrPDNotLeader if the current PD node is not the leader.
+	// It returns model.ErrStreamNotFound if the stream does not exist.
+	// It returns model.ErrInvalidStreamEpoch if the epoch mismatches.
+	// It returns model.ErrInvalidStreamOffset if the offset is less than the stream start offset.
+	// It returns model.ErrRangeNotFound if there is no range covering the start offset.
+	TrimStream(ctx context.Context, param *model.TrimStreamParam) (*rpcfb.StreamT, *rpcfb.RangeT, error)
 	// DescribeStream describes the stream.
 	// It returns model.ErrPDNotLeader if the current PD node is not the leader.
 	// It returns model.ErrStreamNotFound if the stream is not found.
@@ -31,7 +38,7 @@ type StreamService interface {
 }
 
 func (c *RaftCluster) CreateStream(ctx context.Context, param *model.CreateStreamParam) (*rpcfb.StreamT, error) {
-	logger := c.lg.With(traceutil.TraceLogField(ctx))
+	logger := c.lg.With(param.Fields()...).With(traceutil.TraceLogField(ctx))
 
 	sid, err := c.sAlloc.Alloc(ctx)
 	if err != nil {
@@ -95,6 +102,22 @@ func (c *RaftCluster) UpdateStream(ctx context.Context, param *model.UpdateStrea
 	}
 
 	return upStream, nil
+}
+
+func (c *RaftCluster) TrimStream(ctx context.Context, param *model.TrimStreamParam) (*rpcfb.StreamT, *rpcfb.RangeT, error) {
+	logger := c.lg.With(param.Fields()...).With(traceutil.TraceLogField(ctx))
+
+	logger.Info("start to trim stream")
+	s, r, err := c.storage.TrimStream(ctx, param)
+	logger.Info("finish trimming stream", zap.Error(err))
+	if err != nil {
+		if errors.Is(err, model.ErrKVTxnFailed) {
+			return nil, nil, model.ErrPDNotLeader
+		}
+		return nil, nil, err
+	}
+	c.fillRangeServersInfo(r)
+	return s, r, nil
 }
 
 func (c *RaftCluster) DescribeStream(ctx context.Context, streamID int64) (*rpcfb.StreamT, error) {

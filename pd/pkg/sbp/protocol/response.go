@@ -314,6 +314,30 @@ func (ds *DescribeStreamResponse) OK() {
 	ds.Status = &rpcfb.StatusT{Code: rpcfb.ErrorCodeOK}
 }
 
+// TrimStreamResponse is a response to rpcfb.OperationCodeTRIM_STREAM
+type TrimStreamResponse struct {
+	baseMarshaller
+	singleResponse
+
+	rpcfb.TrimStreamResponseT
+}
+
+func (ts *TrimStreamResponse) marshalFlatBuffer() ([]byte, error) {
+	return fbutil.Marshal(&ts.TrimStreamResponseT), nil
+}
+
+func (ts *TrimStreamResponse) Marshal(fmt codec.Format) ([]byte, error) {
+	return marshal(ts, fmt)
+}
+
+func (ts *TrimStreamResponse) Error(status *rpcfb.StatusT) {
+	ts.Status = status
+}
+
+func (ts *TrimStreamResponse) OK() {
+	ts.Status = &rpcfb.StatusT{Code: rpcfb.ErrorCodeOK}
+}
+
 // ReportMetricsResponse is a response to rpcfb.OperationCodeREPORT_METRICS
 type ReportMetricsResponse struct {
 	baseMarshaller

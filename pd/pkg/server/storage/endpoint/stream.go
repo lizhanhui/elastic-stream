@@ -38,6 +38,12 @@ type StreamEndpoint interface {
 	// It returns model.ErrStreamNotFound if the stream does not exist.
 	// It returns model.ErrInvalidStreamEpoch if the new epoch is less than the old one.
 	UpdateStream(ctx context.Context, param *model.UpdateStreamParam) (*rpcfb.StreamT, error)
+	// TrimStream trims the stream with the given start offset and returns the stream and the first range after trimming.
+	// It returns model.ErrStreamNotFound if the stream does not exist.
+	// It returns model.ErrInvalidStreamEpoch if the epoch mismatches.
+	// It returns model.ErrInvalidStreamOffset if the offset is less than the stream start offset.
+	// It returns model.ErrRangeNotFound if there is no range covering the start offset.
+	TrimStream(ctx context.Context, param *model.TrimStreamParam) (*rpcfb.StreamT, *rpcfb.RangeT, error)
 	// GetStream gets the stream with the given stream id.
 	GetStream(ctx context.Context, streamID int64) (*rpcfb.StreamT, error)
 	// ForEachStream calls the given function for every stream in the storage.
@@ -106,39 +112,113 @@ func (e *Endpoint) DeleteStream(ctx context.Context, streamID int64) (*rpcfb.Str
 	return deletedStream, nil
 }
 
-func (e *Endpoint) UpdateStream(ctx context.Context, param *model.UpdateStreamParam) (*rpcfb.StreamT, error) {
-	logger := e.lg.With(zap.Int64("stream-id", param.StreamID), traceutil.TraceLogField(ctx))
+func (e *Endpoint) TrimStream(ctx context.Context, p *model.TrimStreamParam) (*rpcfb.StreamT, *rpcfb.RangeT, error) {
+	logger := e.lg.With(p.Fields()...).With(traceutil.TraceLogField(ctx))
+
+	firstRange, err := e.getRangeByOffset(ctx, p.StreamID, p.StartOffset)
+	if err != nil {
+		logger.Error("failed to get range by offset", zap.Error(err))
+		return nil, nil, errors.Wrapf(err, "get range by offset %d", p.StartOffset)
+	}
+	// NOTE: firstRange may be nil here
+	// TODO: delete ranges before firstRange.Index
+
+	var trimmedStream *rpcfb.StreamT
+	var trimmedRange *rpcfb.RangeT
+	err = e.KV.ExecInTxn(ctx, func(kv kv.BasicKV) error {
+		// get, check and update the stream
+		sk := streamPath(p.StreamID)
+		sv, err := kv.Get(ctx, sk)
+		if err != nil {
+			logger.Error("failed to get stream", zap.Error(err))
+			return errors.Wrapf(err, "get stream %d", p.StreamID)
+		}
+		if sv == nil {
+			logger.Error("stream not found when trim stream")
+			return errors.Wrapf(model.ErrStreamNotFound, "stream %d", p.StreamID)
+		}
+		s := rpcfb.GetRootAsStream(sv, 0).UnPack()
+		if p.Epoch != s.Epoch {
+			logger.Error("invalid stream epoch when trim stream", zap.Int64("stream-epoch", s.Epoch))
+			return errors.Wrapf(model.ErrInvalidStreamEpoch, "stream %d epoch %d != %d", p.StreamID, p.Epoch, s.Epoch)
+		}
+		if p.StartOffset < s.StartOffset {
+			// As we have check the range before, this should never happen.
+			logger.Error("invalid start offset when trim stream", zap.Int64("stream-start-offset", s.StartOffset))
+			return errors.Wrapf(model.ErrInvalidStreamOffset, "stream %d start offset %d < %d", p.StreamID, p.StartOffset, s.StartOffset)
+		}
+		if firstRange == nil {
+			logger.Error("range not found when trim stream")
+			return errors.Wrapf(model.ErrRangeNotFound, "invalid offset: range not found at offset %d", p.StartOffset)
+		}
+		s.StartOffset = p.StartOffset
+		trimmedStream = s
+
+		streamInfo := fbutil.Marshal(s)
+		_, _ = kv.Put(ctx, sk, streamInfo, true)
+		mcache.Free(streamInfo)
+
+		// update the range
+		rk := rangePathInSteam(p.StreamID, firstRange.Index)
+		rv, err := kv.Get(ctx, rk)
+		if err != nil {
+			logger.Error("failed to get range", zap.Error(err))
+			return errors.Wrapf(err, "get range %d in stream %d", firstRange.Index, p.StreamID)
+		}
+		if rv == nil {
+			logger.Error("range not found when trim stream")
+			return errors.Wrapf(model.ErrRangeNotFound, "range %d in stream %d", firstRange.Index, p.StreamID)
+		}
+		r := rpcfb.GetRootAsRange(rv, 0).UnPack()
+		r.Start = p.StartOffset
+		trimmedRange = r
+
+		rangeInfo := fbutil.Marshal(r)
+		_, _ = kv.Put(ctx, rk, rangeInfo, true)
+		mcache.Free(rangeInfo)
+
+		return nil
+	})
+	if err != nil {
+		return nil, nil, errors.Wrapf(err, "trim stream %d", p.StreamID)
+	}
+
+	return trimmedStream, trimmedRange, nil
+}
+
+func (e *Endpoint) UpdateStream(ctx context.Context, p *model.UpdateStreamParam) (*rpcfb.StreamT, error) {
+	logger := e.lg.With(p.Fields()...).With(traceutil.TraceLogField(ctx))
 
 	var newStream *rpcfb.StreamT
 	err := e.KV.ExecInTxn(ctx, func(kv kv.BasicKV) error {
-		key := streamPath(param.StreamID)
+		key := streamPath(p.StreamID)
 		v, err := kv.Get(ctx, key)
 		if err != nil {
 			logger.Error("failed to get stream", zap.Error(err))
-			return errors.Wrapf(err, "get stream %d", param.StreamID)
+			return errors.Wrapf(err, "get stream %d", p.StreamID)
 		}
 		if v == nil {
 			logger.Error("stream not found when update stream")
-			return errors.Wrapf(model.ErrStreamNotFound, "stream %d", param.StreamID)
+			return errors.Wrapf(model.ErrStreamNotFound, "stream %d", p.StreamID)
 		}
 
 		oldStream := rpcfb.GetRootAsStream(v, 0).UnPack()
 		// Incremental Update
-		if param.Replica > 0 {
-			oldStream.Replica = param.Replica
+		if p.Replica > 0 {
+			oldStream.Replica = p.Replica
 		}
-		if param.AckCount > 0 {
-			oldStream.AckCount = param.AckCount
+		if p.AckCount > 0 {
+			oldStream.AckCount = p.AckCount
 		}
-		if param.RetentionPeriodMs >= 0 {
-			oldStream.RetentionPeriodMs = param.RetentionPeriodMs
+		if p.RetentionPeriodMs >= 0 {
+			oldStream.RetentionPeriodMs = p.RetentionPeriodMs
 		}
-		if param.Epoch >= 0 {
-			if param.Epoch < oldStream.Epoch {
-				logger.Error("invalid epoch", zap.Int64("new-epoch", param.Epoch), zap.Int64("old-epoch", oldStream.Epoch))
-				return errors.Wrapf(model.ErrInvalidStreamEpoch, "new epoch %d < old epoch %d", param.Epoch, oldStream.Epoch)
+		if p.Epoch >= 0 {
+			if p.Epoch < oldStream.Epoch {
+				logger.Error("invalid epoch", zap.Int64("new-epoch", p.Epoch), zap.Int64("old-epoch", oldStream.Epoch))
+				return errors.Wrapf(model.ErrInvalidStreamEpoch, "new epoch %d < old epoch %d", p.Epoch, oldStream.Epoch)
 			}
-			oldStream.Epoch = param.Epoch
+			oldStream.Epoch = p.Epoch
 		}
 		newStream = oldStream
 
@@ -149,7 +229,7 @@ func (e *Endpoint) UpdateStream(ctx context.Context, param *model.UpdateStreamPa
 		return nil
 	})
 	if err != nil {
-		return nil, errors.Wrapf(err, "update stream %d", param.StreamID)
+		return nil, errors.Wrapf(err, "update stream %d", p.StreamID)
 	}
 
 	return newStream, nil

@@ -25,6 +25,8 @@ type Handler interface {
 	UpdateStream(req *protocol.UpdateStreamRequest, resp *protocol.UpdateStreamResponse)
 	// DescribeStream describes the specified stream.
 	DescribeStream(req *protocol.DescribeStreamRequest, resp *protocol.DescribeStreamResponse)
+	// TrimStream trims the specified stream.
+	TrimStream(req *protocol.TrimStreamRequest, resp *protocol.TrimStreamResponse)
 	// ReportMetrics reports metrics to pd.
 	ReportMetrics(req *protocol.ReportMetricsRequest, resp *protocol.ReportMetricsResponse)
 	// DescribePDCluster describes pd cluster membership.
@@ -100,6 +102,13 @@ var (
 			newResp: func() protocol.OutResponse { return &protocol.DescribeStreamResponse{} },
 			act: func(handler Handler, req protocol.InRequest, resp protocol.OutResponse) {
 				handler.DescribeStream(req.(*protocol.DescribeStreamRequest), resp.(*protocol.DescribeStreamResponse))
+			},
+		},
+		rpcfb.OperationCodeTRIM_STREAM: {
+			newReq:  func() protocol.InRequest { return &protocol.TrimStreamRequest{} },
+			newResp: func() protocol.OutResponse { return &protocol.TrimStreamResponse{} },
+			act: func(handler Handler, req protocol.InRequest, resp protocol.OutResponse) {
+				handler.TrimStream(req.(*protocol.TrimStreamRequest), resp.(*protocol.TrimStreamResponse))
 			},
 		},
 		rpcfb.OperationCodeREPORT_METRICS: {

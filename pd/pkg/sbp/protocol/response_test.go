@@ -24,6 +24,7 @@ var _outResponses = []packableResponse{
 	&DeleteStreamResponse{},
 	&DescribePDClusterResponse{},
 	&DescribeStreamResponse{},
+	&TrimStreamResponse{},
 	&HeartbeatResponse{},
 	&IDAllocationResponse{},
 	&ListRangeResponse{},

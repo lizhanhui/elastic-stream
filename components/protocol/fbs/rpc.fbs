@@ -631,7 +631,7 @@ table DescribeStreamResponse {
     stream: Stream (id: 2);
 }
 
-// The trim streams request is used to trim a batch of streams to PD.
+// The trim stream request is used to trim a stream to PD.
 // The range server stores the records in the stream in a log structure,
 // and the records are appended to the end of the log.
 // Consider the length of disk is limited, the range server will delete the records to recycling the disk space.
@@ -648,6 +648,7 @@ table TrimStreamRequest {
     stream_id: int64 = -1 (id: 1);
 
     // The epoch of the stream
+    // If the epoch is not equal to the current epoch of the stream, the trim request will be rejected.
     epoch: int64 = -1 (id: 2);
 
     // The current minimum offset of the stream.
