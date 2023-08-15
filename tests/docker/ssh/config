@@ -1,0 +1,6 @@
+Host *
+  StrictHostKeyChecking no
+  ControlMaster auto
+  ConnectTimeout=10
+  ControlPath ~/.ssh/master-%r@%h:%p
+  IdentityFile ~/.ssh/id_rsa

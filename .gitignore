@@ -13,3 +13,9 @@ default.pd*
 /.flatc
 /.dist
 /dist/*.deb
+
+# Ducktape output
+/results
+/.ducktape
+**/__pycache__
+tests/docker/build

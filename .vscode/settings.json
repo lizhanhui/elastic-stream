@@ -72,4 +72,5 @@
         "editor.defaultFormatter": "tamasfe.even-better-toml"
     },
     "rust-analyzer.check.command": "clippy",
+    "python.analysis.typeCheckingMode": "basic",
 }
