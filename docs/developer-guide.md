@@ -4,7 +4,7 @@
 
 This project employs several distinct programming languages. The Placement Driver is developed utilizing Go, whereas the Range Server leverages the Rust language. In addition, we furnish two SDK implementations with Java and Rust.
 
-For the parts crafted in Go and Java, you can locate the corresponding build commands in the [`./pd`](./pd) and [`./sdks/frontend-java`](./sdks/frontend-java) directories respectively.
+For the parts crafted in Go and Java, you can locate the corresponding build commands in the `pd` and `sdks/frontend-java` directories respectively.
 
 
 ## Run with Address Sanitizer
