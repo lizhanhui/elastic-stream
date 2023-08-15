@@ -105,6 +105,7 @@ func TestHandler_CreateStream(t *testing.T) {
 func TestHandler_DeleteStream(t *testing.T) {
 	type args struct {
 		streamID int64
+		epoch    int64
 	}
 	type want struct {
 		stream rpcfb.StreamT
@@ -120,9 +121,9 @@ func TestHandler_DeleteStream(t *testing.T) {
 	}{
 		{
 			name: "normal case",
-			args: args{streamID: 1},
+			args: args{streamID: 1, epoch: 1},
 			want: want{
-				stream: rpcfb.StreamT{StreamId: 1, Replica: 3, AckCount: 3, Deleted: true},
+				stream: rpcfb.StreamT{StreamId: 1, Replica: 3, AckCount: 3, Epoch: 1, Deleted: true},
 			},
 		},
 		{
@@ -150,6 +151,24 @@ func TestHandler_DeleteStream(t *testing.T) {
 				errMsg:  "stream not found",
 			},
 		},
+		{
+			name: "invalid epoch (less)",
+			args: args{streamID: 1, epoch: 0},
+			want: want{
+				wantErr: true,
+				errCode: rpcfb.ErrorCodeEXPIRED_STREAM_EPOCH,
+				errMsg:  "invalid stream epoch",
+			},
+		},
+		{
+			name: "invalid epoch (greater)",
+			args: args{streamID: 1, epoch: 2},
+			want: want{
+				wantErr: true,
+				errCode: rpcfb.ErrorCodeEXPIRED_STREAM_EPOCH,
+				errMsg:  "invalid stream epoch",
+			},
+		},
 	}
 	for _, tt := range tests {
 		tt := tt
@@ -166,10 +185,12 @@ func TestHandler_DeleteStream(t *testing.T) {
 			re.Equal([]int64{0, 1}, streamIDs)
 			// delete stream 0
 			preDeleteStream(t, h, 0)
+			updateStreamEpoch(t, h, 1, 1)
 
 			// create stream
 			req := &protocol.DeleteStreamRequest{DeleteStreamRequestT: rpcfb.DeleteStreamRequestT{
 				StreamId: tt.args.streamID,
+				Epoch:    tt.args.epoch,
 			}}
 			resp := &protocol.DeleteStreamResponse{}
 			h.DeleteStream(req, resp)

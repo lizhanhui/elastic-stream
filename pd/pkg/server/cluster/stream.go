@@ -18,7 +18,8 @@ type StreamService interface {
 	// DeleteStream deletes the stream.
 	// It returns model.ErrPDNotLeader if the current PD node is not the leader.
 	// It returns model.ErrStreamNotFound if the stream is not found.
-	DeleteStream(ctx context.Context, streamID int64) (*rpcfb.StreamT, error)
+	// It returns model.ErrInvalidStreamEpoch if the epoch mismatches.
+	DeleteStream(ctx context.Context, param *model.DeleteStreamParam) (*rpcfb.StreamT, error)
 	// UpdateStream updates the stream.
 	// It returns model.ErrPDNotLeader if the current PD node is not the leader.
 	// It returns model.ErrStreamNotFound if the stream is not found.
@@ -72,11 +73,11 @@ func (c *RaftCluster) CreateStream(ctx context.Context, param *model.CreateStrea
 	return stream, nil
 }
 
-func (c *RaftCluster) DeleteStream(ctx context.Context, streamID int64) (*rpcfb.StreamT, error) {
-	logger := c.lg.With(zap.Int64("stream-id", streamID), traceutil.TraceLogField(ctx))
+func (c *RaftCluster) DeleteStream(ctx context.Context, p *model.DeleteStreamParam) (*rpcfb.StreamT, error) {
+	logger := c.lg.With(p.Fields()...).With(traceutil.TraceLogField(ctx))
 
 	logger.Info("start to delete stream")
-	stream, err := c.storage.DeleteStream(ctx, streamID)
+	stream, err := c.storage.DeleteStream(ctx, p)
 	logger.Info("finish deleting stream", zap.Error(err))
 	if err != nil {
 		if errors.Is(err, model.ErrKVTxnFailed) {

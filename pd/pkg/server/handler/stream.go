@@ -37,18 +37,21 @@ func (h *Handler) CreateStream(req *protocol.CreateStreamRequest, resp *protocol
 func (h *Handler) DeleteStream(req *protocol.DeleteStreamRequest, resp *protocol.DeleteStreamResponse) {
 	ctx := req.Context()
 
-	if req.StreamId < model.MinStreamID {
-		resp.Error(&rpcfb.StatusT{Code: rpcfb.ErrorCodeBAD_REQUEST, Message: fmt.Sprintf("invalid stream id %d", req.StreamId)})
+	param, err := model.NewDeleteStreamParam(req.DeleteStreamRequestT)
+	if err != nil {
+		resp.Error(&rpcfb.StatusT{Code: rpcfb.ErrorCodeBAD_REQUEST, Message: err.Error()})
 		return
 	}
 
-	stream, err := h.c.DeleteStream(ctx, req.StreamId)
+	stream, err := h.c.DeleteStream(ctx, param)
 	if err != nil {
 		switch {
 		case errors.Is(err, model.ErrPDNotLeader):
 			resp.Error(h.notLeaderError(ctx))
 		case errors.Is(err, model.ErrStreamNotFound):
 			resp.Error(&rpcfb.StatusT{Code: rpcfb.ErrorCodeNOT_FOUND, Message: err.Error()})
+		case errors.Is(err, model.ErrInvalidStreamEpoch):
+			resp.Error(&rpcfb.StatusT{Code: rpcfb.ErrorCodeEXPIRED_STREAM_EPOCH, Message: err.Error()})
 		default:
 			resp.Error(&rpcfb.StatusT{Code: rpcfb.ErrorCodePD_INTERNAL_SERVER_ERROR, Message: err.Error()})
 		}

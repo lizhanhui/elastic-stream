@@ -33,7 +33,8 @@ type StreamEndpoint interface {
 	CreateStream(ctx context.Context, stream *rpcfb.StreamT) (*rpcfb.StreamT, error)
 	// DeleteStream deletes the stream with the given stream id and returns it.
 	// It returns model.ErrStreamNotFound if the stream does not exist.
-	DeleteStream(ctx context.Context, streamID int64) (*rpcfb.StreamT, error)
+	// It returns model.ErrInvalidStreamEpoch if the epoch mismatches.
+	DeleteStream(ctx context.Context, param *model.DeleteStreamParam) (*rpcfb.StreamT, error)
 	// UpdateStream updates the stream with the given stream and returns it.
 	// It returns model.ErrStreamNotFound if the stream does not exist.
 	// It returns model.ErrInvalidStreamEpoch if the new epoch is less than the old one.
@@ -70,20 +71,20 @@ func (e *Endpoint) CreateStream(ctx context.Context, stream *rpcfb.StreamT) (*rp
 	return stream, nil
 }
 
-func (e *Endpoint) DeleteStream(ctx context.Context, streamID int64) (*rpcfb.StreamT, error) {
-	logger := e.lg.With(zap.Int64("stream-id", streamID), traceutil.TraceLogField(ctx))
+func (e *Endpoint) DeleteStream(ctx context.Context, p *model.DeleteStreamParam) (*rpcfb.StreamT, error) {
+	logger := e.lg.With(p.Fields()...).With(traceutil.TraceLogField(ctx))
 
 	var deletedStream *rpcfb.StreamT
 	err := e.KV.ExecInTxn(ctx, func(kv kv.BasicKV) error {
-		k := streamPath(streamID)
+		k := streamPath(p.StreamID)
 		v, err := kv.Get(ctx, k)
 		if err != nil {
 			logger.Error("failed to get stream", zap.Error(err))
-			return errors.Wrapf(err, "get stream %d", streamID)
+			return errors.Wrapf(err, "get stream %d", p.StreamID)
 		}
 		if v == nil {
 			logger.Error("stream not found when delete stream")
-			return errors.Wrapf(model.ErrStreamNotFound, "stream %d", streamID)
+			return errors.Wrapf(model.ErrStreamNotFound, "stream %d", p.StreamID)
 		}
 
 		s := rpcfb.GetRootAsStream(v, 0).UnPack()
@@ -91,6 +92,10 @@ func (e *Endpoint) DeleteStream(ctx context.Context, streamID int64) (*rpcfb.Str
 		if s.Deleted {
 			logger.Warn("stream already deleted")
 			return nil
+		}
+		if p.Epoch != s.Epoch {
+			logger.Error("epoch mismatch when delete stream")
+			return errors.Wrapf(model.ErrInvalidStreamEpoch, "stream %d epoch %d != %d", p.StreamID, p.Epoch, s.Epoch)
 		}
 		s.Deleted = true
 
@@ -101,11 +106,11 @@ func (e *Endpoint) DeleteStream(ctx context.Context, streamID int64) (*rpcfb.Str
 		return nil
 	})
 	if err != nil {
-		return nil, errors.Wrapf(err, "delete stream %d", streamID)
+		return nil, errors.Wrapf(err, "delete stream %d", p.StreamID)
 	}
 
 	// TODO: delete ranges asynchronously
-	rangeInStreamPrefix := []byte(fmt.Sprintf(_rangeStreamPrefixFormat, streamID))
+	rangeInStreamPrefix := []byte(fmt.Sprintf(_rangeStreamPrefixFormat, p.StreamID))
 	_, _ = e.KV.DeleteByPrefixes(ctx, [][]byte{rangeInStreamPrefix})
 	// TODO: delete index asynchronously
 

@@ -96,6 +96,32 @@ func (us UpdateStreamParam) Fields() []zap.Field {
 	}
 }
 
+type DeleteStreamParam struct {
+	StreamID int64
+	Epoch    int64
+}
+
+func NewDeleteStreamParam(r rpcfb.DeleteStreamRequestT) (*DeleteStreamParam, error) {
+	if r.StreamId < MinStreamID {
+		return nil, errors.Errorf("invalid stream id: %d < %d", r.StreamId, MinStreamID)
+	}
+	if r.Epoch < 0 {
+		return nil, errors.Errorf("invalid epoch %d", r.Epoch)
+	}
+
+	return &DeleteStreamParam{
+		StreamID: r.StreamId,
+		Epoch:    r.Epoch,
+	}, nil
+}
+
+func (ds DeleteStreamParam) Fields() []zap.Field {
+	return []zap.Field{
+		zap.Int64("delete-stream-id", ds.StreamID),
+		zap.Int64("delete-stream-epoch", ds.Epoch),
+	}
+}
+
 type TrimStreamParam struct {
 	StreamID    int64
 	StartOffset int64
