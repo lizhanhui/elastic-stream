@@ -120,6 +120,15 @@ func (s *Server) startEtcd(ctx context.Context) error {
 
 	logger := s.lg
 
+	// init etcd logger
+	etcdLogLevel, _ := zapcore.ParseLevel(s.cfg.Etcd.LogLevel)
+	etcdLogger := logger
+	if logger.Core().Enabled(etcdLogLevel) {
+		etcdLogger = logger.WithOptions(zap.IncreaseLevel(etcdLogLevel))
+	}
+
+	// start etcd server
+	s.cfg.Etcd.ZapLoggerBuilder = embed.NewZapLoggerBuilder(etcdLogger.With(zap.Namespace("etcd-server")))
 	etcd, err := embed.StartEtcd(s.cfg.Etcd)
 	if err != nil && strings.Contains(err.Error(), "has already been bootstrapped") {
 		logger.Warn("member has been bootstrapped, set ClusterState = \"existing\" and try again")
@@ -153,11 +162,6 @@ func (s *Server) startEtcd(ctx context.Context) error {
 	endpoints := make([]string, 0, len(s.cfg.Etcd.ACUrls))
 	for _, url := range s.cfg.Etcd.ACUrls {
 		endpoints = append(endpoints, url.String())
-	}
-	etcdLogLevel, _ := zapcore.ParseLevel(s.cfg.Etcd.LogLevel)
-	etcdLogger := logger
-	if logger.Core().Enabled(etcdLogLevel) {
-		etcdLogger = logger.WithOptions(zap.IncreaseLevel(etcdLogLevel))
 	}
 	client, err := clientv3.New(clientv3.Config{
 		Endpoints:   endpoints,
