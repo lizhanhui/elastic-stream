@@ -29,10 +29,12 @@ jobs:
       - name: install dependencies
         uses: borales/actions-yarn@v4
         with:
+          dir: site
           cmd: install
       - name: build doc site
         uses: borales/actions-yarn@v4
         with:
+          dir: site
           cmd: build
       - name: deploy to staging
         uses: ./
