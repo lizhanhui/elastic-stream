@@ -116,17 +116,6 @@ func (c *RaftCluster) listRangeOnRangeServer(ctx context.Context, rangeServerID 
 func (c *RaftCluster) SealRange(ctx context.Context, p *model.SealRangeParam) (*rpcfb.RangeT, error) {
 	logger := c.lg.With(p.Fields()...).With(traceutil.TraceLogField(ctx))
 
-	mu := c.sealMu(p.StreamID)
-	select {
-	case mu <- struct{}{}:
-	case <-ctx.Done():
-		logger.Warn("timeout to acquire stream lock")
-		return nil, ctx.Err()
-	}
-	defer func() {
-		<-mu
-	}()
-
 	logger.Info("start to seal range")
 	sealedRange, err := c.storage.SealRange(ctx, p)
 	logger.Info("finish sealing range", zap.Error(err))
@@ -139,17 +128,6 @@ func (c *RaftCluster) SealRange(ctx context.Context, p *model.SealRangeParam) (*
 
 func (c *RaftCluster) CreateRange(ctx context.Context, p *model.CreateRangeParam) (*rpcfb.RangeT, error) {
 	logger := c.lg.With(p.Fields()...).With(traceutil.TraceLogField(ctx))
-
-	mu := c.sealMu(p.StreamID)
-	select {
-	case mu <- struct{}{}:
-	case <-ctx.Done():
-		logger.Warn("timeout to acquire stream lock")
-		return nil, ctx.Err()
-	}
-	defer func() {
-		<-mu
-	}()
 
 	var chooseServers = func(replica int8, blackList []*rpcfb.RangeServerT) ([]*rpcfb.RangeServerT, error) {
 		blackServerIDs := make(map[int32]struct{})
@@ -176,14 +154,4 @@ func (c *RaftCluster) CreateRange(ctx context.Context, p *model.CreateRangeParam
 	}
 	c.fillRangeServersInfo(newRange)
 	return newRange, err
-}
-
-func (c *RaftCluster) sealMu(streamID int64) chan struct{} {
-	sealMu := c.sealMus.Upsert(streamID, nil, func(exist bool, valueInMap, _ chan struct{}) chan struct{} {
-		if exist {
-			return valueInMap
-		}
-		return make(chan struct{}, 1)
-	})
-	return sealMu
 }
