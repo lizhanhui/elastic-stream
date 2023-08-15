@@ -1,3 +1,7 @@
+---
+sidebar_position: 1
+---
+
 # Quick Start
 
 ## Install from pre-built package
