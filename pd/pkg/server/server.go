@@ -159,8 +159,8 @@ func (s *Server) startEtcd(ctx context.Context) error {
 	logger.Info("etcd started")
 
 	// init client
-	endpoints := make([]string, 0, len(s.cfg.Etcd.ACUrls))
-	for _, url := range s.cfg.Etcd.ACUrls {
+	endpoints := make([]string, 0, len(s.cfg.Etcd.AdvertiseClientUrls))
+	for _, url := range s.cfg.Etcd.AdvertiseClientUrls {
 		endpoints = append(endpoints, url.String())
 	}
 	client, err := clientv3.New(clientv3.Config{

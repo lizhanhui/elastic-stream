@@ -399,10 +399,10 @@ func TestConfig_Adjust(t *testing.T) {
 					config.Name = fmt.Sprintf("pd-%s", hostname)
 					config.Dir = fmt.Sprintf("default.pd-%s", hostname)
 					config.InitialCluster = fmt.Sprintf("pd-%s=http://127.0.0.1:12380", hostname)
-					config.LPUrls, _ = parseUrls("http://127.0.0.1:12380")
-					config.LCUrls, _ = parseUrls("http://127.0.0.1:12379")
-					config.APUrls, _ = parseUrls("http://127.0.0.1:12380")
-					config.ACUrls, _ = parseUrls("http://127.0.0.1:12379")
+					config.ListenPeerUrls, _ = parseUrls("http://127.0.0.1:12380")
+					config.ListenClientUrls, _ = parseUrls("http://127.0.0.1:12379")
+					config.AdvertisePeerUrls, _ = parseUrls("http://127.0.0.1:12380")
+					config.AdvertiseClientUrls, _ = parseUrls("http://127.0.0.1:12379")
 					config.InitialClusterToken = "pd-cluster"
 					config.LogLevel = "warn"
 					config.AutoCompactionMode = "periodic"
@@ -441,10 +441,10 @@ func TestConfig_Adjust(t *testing.T) {
 					config.Name = "test-name"
 					config.Dir = "default.test-name"
 					config.InitialCluster = "test-name=http://example.com:12380,test-name=http://10.0.0.1:12380"
-					config.LPUrls, _ = parseUrls("http://example.com:12380,http://10.0.0.1:12380")
-					config.LCUrls, _ = parseUrls("http://example.com:12379,http://10.0.0.1:12379")
-					config.APUrls, _ = parseUrls("http://example.com:12380,http://10.0.0.1:12380")
-					config.ACUrls, _ = parseUrls("http://example.com:12379,http://10.0.0.1:12379")
+					config.ListenPeerUrls, _ = parseUrls("http://example.com:12380,http://10.0.0.1:12380")
+					config.ListenClientUrls, _ = parseUrls("http://example.com:12379,http://10.0.0.1:12379")
+					config.AdvertisePeerUrls, _ = parseUrls("http://example.com:12380,http://10.0.0.1:12380")
+					config.AdvertiseClientUrls, _ = parseUrls("http://example.com:12379,http://10.0.0.1:12379")
 					config.InitialClusterToken = "pd-cluster"
 					config.LogLevel = "warn"
 					config.AutoCompactionMode = "periodic"

@@ -9,8 +9,8 @@ import (
 type Info struct {
 	Name            string   `json:"name"`              // PD server name
 	MemberID        uint64   `json:"member_id"`         // Member.id
-	PeerUrls        []string `json:"peer_urls"`         // Member.etcd.Config().APUrls
-	ClientUrls      []string `json:"client_urls"`       // Member.etcd.Config().ACUrls
+	PeerUrls        []string `json:"peer_urls"`         // Member.etcd.Config().AdvertisePeerUrls
+	ClientUrls      []string `json:"client_urls"`       // Member.etcd.Config().AdvertiseClientUrls
 	AdvertisePDAddr string   `json:"advertise_pd_addr"` // Config.AdvertisePDAddr
 	IsLeader        bool     `json:"-"`                 // Whether current PD node is the leader
 }

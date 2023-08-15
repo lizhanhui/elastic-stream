@@ -22,7 +22,7 @@ func StartEtcd(tb testing.TB, cfg *embed.Config) (*embed.Etcd, *clientv3.Client,
 	re.NoError(err)
 
 	// new client
-	ep := cfg.LCUrls[0].String()
+	ep := cfg.ListenClientUrls[0].String()
 	client, err := clientv3.New(clientv3.Config{
 		Endpoints: []string{ep},
 		Logger:    zap.NewNop(),

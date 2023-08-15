@@ -184,19 +184,19 @@ func (c *Config) adjustEtcd() error {
 	// cfg.EnablePprof = true
 
 	var err error
-	cfg.LPUrls, err = parseUrls(c.PeerUrls)
+	cfg.ListenPeerUrls, err = parseUrls(c.PeerUrls)
 	if err != nil {
 		return errors.WithMessage(err, "parse peer url")
 	}
-	cfg.LCUrls, err = parseUrls(c.ClientUrls)
+	cfg.ListenClientUrls, err = parseUrls(c.ClientUrls)
 	if err != nil {
 		return errors.WithMessage(err, "parse client url")
 	}
-	cfg.APUrls, err = parseUrls(c.AdvertisePeerUrls)
+	cfg.AdvertisePeerUrls, err = parseUrls(c.AdvertisePeerUrls)
 	if err != nil {
 		return errors.WithMessage(err, "parse advertise peer url")
 	}
-	cfg.ACUrls, err = parseUrls(c.AdvertiseClientUrls)
+	cfg.AdvertiseClientUrls, err = parseUrls(c.AdvertiseClientUrls)
 	if err != nil {
 		return errors.WithMessage(err, "parse advertise client url")
 	}
