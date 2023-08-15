@@ -1,0 +1,57 @@
+name: Deploy doc site
+on:
+  push:
+    branches:
+      - develop
+    paths:
+      - 'docs/**'
+      - 'site/**'
+  pull_request_target:
+    paths:
+      - 'docs/**'
+      - 'site/**'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/cache@v3
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
+      - name: setup Node.js 18.x
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18.x
+      - name: install dependencies
+        uses: borales/actions-yarn@v4
+        with:
+          cmd: install
+      - name: build doc site
+        uses: borales/actions-yarn@v4
+        with:
+          cmd: build
+      - name: deploy to staging
+        uses: ./
+        id: vercel-action-staging
+        if: github.event_name == 'pull_request_target'
+        with:
+          vercel-token: ${{ secrets.VERCEL_TOKEN }}
+          scope: ${{ secrets.VERCEL_TEAM_ID }}
+          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
+          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
+          working-directory: site/build
+      - name: deploy to production
+        uses: ./
+        id: vercel-action-production
+        if: github.event_name == 'push'
+        with:
+          vercel-token: ${{ secrets.VERCEL_TOKEN }}
+          scope: ${{ secrets.VERCEL_TEAM_ID }}
+          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
+          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
+          working-directory: site/build
+          vercel-args: '--prod '
