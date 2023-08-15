@@ -37,7 +37,7 @@ jobs:
           dir: site
           cmd: build
       - name: deploy to staging
-        uses: ./
+        uses: amondnet/vercel-action@v25
         id: vercel-action-staging
         if: github.event_name == 'pull_request_target'
         with:
@@ -47,7 +47,7 @@ jobs:
           vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
           working-directory: site/build
       - name: deploy to production
-        uses: ./
+        uses: amondnet/vercel-action@v25
         id: vercel-action-production
         if: github.event_name == 'push'
         with:
