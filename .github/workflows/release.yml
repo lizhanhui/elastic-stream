@@ -26,7 +26,7 @@ jobs:
     name: Release with Debian Packages and Docker Images
     strategy:
       matrix:
-        go-version: [ "1.20" ]
+        go-version: [ "1.21" ]
         platform: [ "ubuntu-22.04" ]
     runs-on: ${{ matrix.platform }}
     steps:

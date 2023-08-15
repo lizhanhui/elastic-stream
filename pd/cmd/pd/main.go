@@ -22,6 +22,10 @@ func main() {
 	if errors.Is(err, pflag.ErrHelp) {
 		os.Exit(0)
 	}
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
 
 	if cfg.Version {
 		fmt.Println("Version:", version.Version)

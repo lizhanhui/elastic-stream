@@ -9,7 +9,7 @@ jobs:
     name: Build and Push Placement Driver Images
     strategy:
       matrix:
-        go-version: [ "1.20" ]
+        go-version: [ "1.21" ]
         platform: [ "ubuntu-latest" ]
     runs-on: ${{ matrix.platform }}
     defaults:
@@ -42,7 +42,7 @@ jobs:
     name: Build and Push Elastic Stream and Long Running Images
     strategy:
       matrix:
-        go-version: ["1.20"]
+        go-version: ["1.21"]
         platform: ["ubuntu-22.04"]
     runs-on: ${{ matrix.platform }}
     steps:

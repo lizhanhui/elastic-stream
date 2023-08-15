@@ -86,7 +86,7 @@ ARCH := $(if $(GOARCH),$(GOARCH),$(HOST_ARCH))
 
 TAG := $(VERSION)__$(OS)_$(ARCH)
 
-GO_VERSION := 1.20
+GO_VERSION := 1.21
 BUILD_IMAGE := golang:$(GO_VERSION)-alpine
 DPKG_IMAGE := debian:bookworm-slim
 
