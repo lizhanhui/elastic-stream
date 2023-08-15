@@ -11,6 +11,8 @@ on:
       - 'docs/**'
       - 'site/**'
 
+permissions: write-all
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -45,6 +47,7 @@ jobs:
           scope: ${{ secrets.VERCEL_TEAM_ID }}
           vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
           vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
           github-comment: true
           working-directory: site/build
       - name: deploy to production
@@ -56,6 +59,7 @@ jobs:
           scope: ${{ secrets.VERCEL_TEAM_ID }}
           vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
           vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
           github-comment: true
           working-directory: site/build
           vercel-args: '--prod '
