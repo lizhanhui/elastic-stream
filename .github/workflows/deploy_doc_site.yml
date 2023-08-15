@@ -45,6 +45,7 @@ jobs:
           scope: ${{ secrets.VERCEL_TEAM_ID }}
           vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
           vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
+          github-comment: true
           working-directory: site/build
       - name: deploy to production
         uses: amondnet/vercel-action@v25
@@ -55,5 +56,6 @@ jobs:
           scope: ${{ secrets.VERCEL_TEAM_ID }}
           vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
           vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
+          github-comment: true
           working-directory: site/build
           vercel-args: '--prod '
