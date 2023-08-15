@@ -97,7 +97,7 @@ func (c *RaftCluster) chooseRangeServers(cnt int, grayServerIDs map[int32]struct
 	wRangeServers, gRangeServers := c.cache.ActiveRangeServers(c.cfg.RangeServerTimeout, grayServerIDs)
 
 	if cnt > len(wRangeServers)+len(gRangeServers) {
-		return nil, errors.Wrapf(model.ErrNotEnoughRangeServers, "required %d, available %d", cnt, len(wRangeServers)+len(gRangeServers))
+		return nil, errors.WithMessagef(model.ErrNotEnoughRangeServers, "required %d, available %d", cnt, len(wRangeServers)+len(gRangeServers))
 	}
 
 	// If there are not enough range servers, use the gray list.

@@ -55,7 +55,7 @@ func (e *Endpoint) CreateObject(ctx context.Context, object Object) error {
 
 	if err != nil {
 		logger.Error("failed to create object", zap.Error(err))
-		return errors.Wrapf(err, "create object %d", object.ObjectID)
+		return errors.WithMessagef(err, "create object %d", object.ObjectID)
 	}
 	if prevValue != nil {
 		logger.Warn("object already exist, will override it")
@@ -79,7 +79,7 @@ func (e *Endpoint) UpdateObject(ctx context.Context, object Object) (Object, err
 	mcache.Free(value)
 	if err != nil {
 		logger.Error("failed to update object", zap.Error(err))
-		return Object{}, errors.Wrapf(err, "update object %d", object.ObjectID)
+		return Object{}, errors.WithMessagef(err, "update object %d", object.ObjectID)
 	}
 	if prevValue == nil {
 		logger.Warn("object not found when updating")
@@ -101,7 +101,7 @@ func (e *Endpoint) GetObjectsByRange(ctx context.Context, rangeID RangeID) ([]Ob
 	})
 	if err != nil {
 		logger.Error("failed to get objects by range", zap.Error(err))
-		return nil, errors.Wrapf(err, "get objects by range %d-%d", rangeID.StreamID, rangeID.Index)
+		return nil, errors.WithMessagef(err, "get objects by range %d-%d", rangeID.StreamID, rangeID.Index)
 	}
 
 	return objects, nil
@@ -126,7 +126,7 @@ func (e *Endpoint) forEachObjectInRangeLimited(ctx context.Context, rangeID Rang
 	kvs, _, more, err := e.KV.GetByRange(ctx, kv.Range{StartKey: startKey, EndKey: e.endObjectPathInRange(rangeID)}, 0, limit, false)
 	if err != nil {
 		logger.Error("failed to get objects", zap.Int32("start-id", int32(startID)), zap.Int64("limit", limit), zap.Error(err))
-		return model.MinObjectID - 1, errors.Wrap(err, "get objects")
+		return model.MinObjectID - 1, errors.WithMessage(err, "get objects")
 	}
 
 	for _, objectKV := range kvs {
@@ -134,7 +134,7 @@ func (e *Endpoint) forEachObjectInRangeLimited(ctx context.Context, rangeID Rang
 		oid, err := objectIDFromPath(objectKV.Key)
 		if err != nil {
 			logger.Error("failed to parse object ID", zap.Error(err))
-			return model.MinObjectID - 1, errors.Wrap(err, "parse object ID")
+			return model.MinObjectID - 1, errors.WithMessage(err, "parse object ID")
 		}
 		nextID = oid + 1
 
@@ -165,7 +165,7 @@ func objectIDFromPath(path []byte) (objectID int64, err error) {
 	var rangeID RangeID
 	_, err = fmt.Sscanf(string(path), _objectFormat, &rangeID.StreamID, &rangeID.Index, &objectID)
 	if err != nil {
-		err = errors.Wrapf(err, "invalid object path %s", string(path))
+		err = errors.WithMessagef(err, "invalid object path %s", string(path))
 	}
 	return
 }

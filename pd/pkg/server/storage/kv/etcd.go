@@ -100,7 +100,7 @@ func (e *Etcd) Get(ctx context.Context, k []byte) ([]byte, error) {
 
 	kvs, err := e.BatchGet(ctx, [][]byte{k}, false)
 	if err != nil {
-		return nil, errors.Wrap(err, "kv get")
+		return nil, errors.WithMessage(err, "kv get")
 	}
 
 	for _, kv := range kvs {
@@ -119,7 +119,7 @@ func (e *Etcd) BatchGet(ctx context.Context, keys [][]byte, inTxn bool) ([]KeyVa
 	}
 	batchSize := int(e.maxTxnOps)
 	if inTxn && len(keys) > batchSize {
-		return nil, errors.Wrap(model.ErrKVTooManyTxnOps, "kv batch get")
+		return nil, errors.WithMessage(model.ErrKVTooManyTxnOps, "kv batch get")
 	}
 
 	kvs := make([]KeyValue, 0, len(keys))
@@ -143,10 +143,10 @@ func (e *Etcd) BatchGet(ctx context.Context, keys [][]byte, inTxn bool) ([]KeyVa
 		txn := e.newTxnFunc(ctx).Then(ops...)
 		resp, err := txn.Commit()
 		if err != nil {
-			return nil, errors.Wrap(err, "kv batch get")
+			return nil, errors.WithMessage(err, "kv batch get")
 		}
 		if !resp.Succeeded {
-			return nil, errors.Wrap(model.ErrKVTxnFailed, "kv batch get")
+			return nil, errors.WithMessage(model.ErrKVTxnFailed, "kv batch get")
 		}
 
 		for _, resp := range resp.Responses {
@@ -193,12 +193,12 @@ func (e *Etcd) GetByRange(ctx context.Context, r Range, rev int64, limit int64, 
 	resp, err := e.newTxnFunc(ctx).Then(clientv3.OpGet(string(startKey), opts...)).Commit()
 	if err != nil {
 		if err == etcdrpc.ErrCompacted {
-			return nil, 0, false, errors.Wrapf(model.ErrKVCompacted, "kv get by range, revision %d", rev)
+			return nil, 0, false, errors.WithMessagef(model.ErrKVCompacted, "kv get by range, revision %d", rev)
 		}
-		return nil, 0, false, errors.Wrap(err, "kv get by range")
+		return nil, 0, false, errors.WithMessage(err, "kv get by range")
 	}
 	if !resp.Succeeded {
-		return nil, 0, false, errors.Wrap(model.ErrKVTxnFailed, "kv get by range")
+		return nil, 0, false, errors.WithMessage(model.ErrKVTxnFailed, "kv get by range")
 	}
 
 	// When the transaction succeeds, the number of responses is always 1 and is always a range response.
@@ -247,7 +247,7 @@ func (e *Etcd) Put(ctx context.Context, k, v []byte, prevKV bool) ([]byte, error
 
 	prevKVs, err := e.BatchPut(ctx, []KeyValue{{Key: k, Value: v}}, prevKV, false)
 	if err != nil {
-		return nil, errors.Wrap(err, "kv put")
+		return nil, errors.WithMessage(err, "kv put")
 	}
 
 	if !prevKV {
@@ -270,7 +270,7 @@ func (e *Etcd) BatchPut(ctx context.Context, kvs []KeyValue, prevKV bool, inTxn 
 	}
 	batchSize := int(e.maxTxnOps)
 	if inTxn && len(kvs) > batchSize {
-		return nil, errors.Wrap(model.ErrKVTooManyTxnOps, "kv batch put")
+		return nil, errors.WithMessage(model.ErrKVTooManyTxnOps, "kv batch put")
 	}
 
 	var prevKVs []KeyValue
@@ -302,10 +302,10 @@ func (e *Etcd) BatchPut(ctx context.Context, kvs []KeyValue, prevKV bool, inTxn 
 		txn := e.newTxnFunc(ctx).Then(ops...)
 		resp, err := txn.Commit()
 		if err != nil {
-			return nil, errors.Wrap(err, "kv batch put")
+			return nil, errors.WithMessage(err, "kv batch put")
 		}
 		if !resp.Succeeded {
-			return nil, errors.Wrap(model.ErrKVTxnFailed, "kv batch put")
+			return nil, errors.WithMessage(model.ErrKVTxnFailed, "kv batch put")
 		}
 
 		if !prevKV {
@@ -337,7 +337,7 @@ func (e *Etcd) Delete(ctx context.Context, k []byte, prevKV bool) ([]byte, error
 
 	prevKVs, err := e.BatchDelete(ctx, [][]byte{k}, prevKV, false)
 	if err != nil {
-		return nil, errors.Wrap(err, "kv delete")
+		return nil, errors.WithMessage(err, "kv delete")
 	}
 
 	if !prevKV {
@@ -359,7 +359,7 @@ func (e *Etcd) BatchDelete(ctx context.Context, keys [][]byte, prevKV bool, inTx
 	}
 	batchSize := int(e.maxTxnOps)
 	if inTxn && len(keys) > batchSize {
-		return nil, errors.Wrap(model.ErrKVTooManyTxnOps, "kv batch delete")
+		return nil, errors.WithMessage(model.ErrKVTooManyTxnOps, "kv batch delete")
 	}
 
 	var prevKVs []KeyValue
@@ -390,10 +390,10 @@ func (e *Etcd) BatchDelete(ctx context.Context, keys [][]byte, prevKV bool, inTx
 		txn := e.newTxnFunc(ctx).Then(ops...)
 		resp, err := txn.Commit()
 		if err != nil {
-			return nil, errors.Wrap(err, "kv batch delete")
+			return nil, errors.WithMessage(err, "kv batch delete")
 		}
 		if !resp.Succeeded {
-			return nil, errors.Wrap(model.ErrKVTxnFailed, "kv batch delete")
+			return nil, errors.WithMessage(model.ErrKVTxnFailed, "kv batch delete")
 		}
 
 		if !prevKV {
@@ -434,10 +434,10 @@ func (e *Etcd) DeleteByPrefixes(ctx context.Context, prefixes [][]byte) (int64, 
 	txn := e.newTxnFunc(ctx).Then(ops...)
 	resp, err := txn.Commit()
 	if err != nil {
-		return 0, errors.Wrap(err, "kv delete by prefix")
+		return 0, errors.WithMessage(err, "kv delete by prefix")
 	}
 	if !resp.Succeeded {
-		return 0, errors.Wrap(model.ErrKVTxnFailed, "kv delete by prefix")
+		return 0, errors.WithMessage(model.ErrKVTxnFailed, "kv delete by prefix")
 	}
 
 	deleted := int64(0)

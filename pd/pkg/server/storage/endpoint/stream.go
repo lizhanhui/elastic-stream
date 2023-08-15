@@ -62,7 +62,7 @@ func (e *Endpoint) CreateStream(ctx context.Context, stream *rpcfb.StreamT) (*rp
 
 	if err != nil {
 		logger.Error("failed to save stream", zap.Error(err))
-		return nil, errors.Wrapf(err, "save stream %d", stream.StreamId)
+		return nil, errors.WithMessagef(err, "save stream %d", stream.StreamId)
 	}
 	if prevValue != nil {
 		logger.Warn("stream already exist, will override it")
@@ -80,11 +80,11 @@ func (e *Endpoint) DeleteStream(ctx context.Context, p *model.DeleteStreamParam)
 		v, err := kv.Get(ctx, k)
 		if err != nil {
 			logger.Error("failed to get stream", zap.Error(err))
-			return errors.Wrapf(err, "get stream %d", p.StreamID)
+			return errors.WithMessagef(err, "get stream %d", p.StreamID)
 		}
 		if v == nil {
 			logger.Error("stream not found when delete stream")
-			return errors.Wrapf(model.ErrStreamNotFound, "stream %d", p.StreamID)
+			return errors.WithMessagef(model.ErrStreamNotFound, "stream %d", p.StreamID)
 		}
 
 		s := rpcfb.GetRootAsStream(v, 0).UnPack()
@@ -106,7 +106,7 @@ func (e *Endpoint) DeleteStream(ctx context.Context, p *model.DeleteStreamParam)
 		return nil
 	})
 	if err != nil {
-		return nil, errors.Wrapf(err, "delete stream %d", p.StreamID)
+		return nil, errors.WithMessagef(err, "delete stream %d", p.StreamID)
 	}
 
 	// TODO: delete ranges asynchronously
@@ -123,7 +123,7 @@ func (e *Endpoint) TrimStream(ctx context.Context, p *model.TrimStreamParam) (*r
 	firstRange, err := e.getRangeByOffset(ctx, p.StreamID, p.StartOffset)
 	if err != nil {
 		logger.Error("failed to get range by offset", zap.Error(err))
-		return nil, nil, errors.Wrapf(err, "get range by offset %d", p.StartOffset)
+		return nil, nil, errors.WithMessagef(err, "get range by offset %d", p.StartOffset)
 	}
 	// NOTE: firstRange may be nil here
 	// TODO: delete ranges before firstRange.Index
@@ -136,25 +136,25 @@ func (e *Endpoint) TrimStream(ctx context.Context, p *model.TrimStreamParam) (*r
 		sv, err := kv.Get(ctx, sk)
 		if err != nil {
 			logger.Error("failed to get stream", zap.Error(err))
-			return errors.Wrapf(err, "get stream %d", p.StreamID)
+			return errors.WithMessagef(err, "get stream %d", p.StreamID)
 		}
 		if sv == nil {
 			logger.Error("stream not found when trim stream")
-			return errors.Wrapf(model.ErrStreamNotFound, "stream %d", p.StreamID)
+			return errors.WithMessagef(model.ErrStreamNotFound, "stream %d", p.StreamID)
 		}
 		s := rpcfb.GetRootAsStream(sv, 0).UnPack()
 		if p.Epoch != s.Epoch {
 			logger.Error("invalid stream epoch when trim stream", zap.Int64("stream-epoch", s.Epoch))
-			return errors.Wrapf(model.ErrInvalidStreamEpoch, "stream %d epoch %d != %d", p.StreamID, p.Epoch, s.Epoch)
+			return errors.WithMessagef(model.ErrInvalidStreamEpoch, "stream %d epoch %d != %d", p.StreamID, p.Epoch, s.Epoch)
 		}
 		if p.StartOffset < s.StartOffset {
 			// As we have check the range before, this should never happen.
 			logger.Error("invalid start offset when trim stream", zap.Int64("stream-start-offset", s.StartOffset))
-			return errors.Wrapf(model.ErrInvalidStreamOffset, "stream %d start offset %d < %d", p.StreamID, p.StartOffset, s.StartOffset)
+			return errors.WithMessagef(model.ErrInvalidStreamOffset, "stream %d start offset %d < %d", p.StreamID, p.StartOffset, s.StartOffset)
 		}
 		if firstRange == nil {
 			logger.Error("range not found when trim stream")
-			return errors.Wrapf(model.ErrRangeNotFound, "invalid offset: range not found at offset %d", p.StartOffset)
+			return errors.WithMessagef(model.ErrRangeNotFound, "invalid offset: range not found at offset %d", p.StartOffset)
 		}
 		s.StartOffset = p.StartOffset
 		trimmedStream = s
@@ -168,11 +168,11 @@ func (e *Endpoint) TrimStream(ctx context.Context, p *model.TrimStreamParam) (*r
 		rv, err := kv.Get(ctx, rk)
 		if err != nil {
 			logger.Error("failed to get range", zap.Error(err))
-			return errors.Wrapf(err, "get range %d in stream %d", firstRange.Index, p.StreamID)
+			return errors.WithMessagef(err, "get range %d in stream %d", firstRange.Index, p.StreamID)
 		}
 		if rv == nil {
 			logger.Error("range not found when trim stream")
-			return errors.Wrapf(model.ErrRangeNotFound, "range %d in stream %d", firstRange.Index, p.StreamID)
+			return errors.WithMessagef(model.ErrRangeNotFound, "range %d in stream %d", firstRange.Index, p.StreamID)
 		}
 		r := rpcfb.GetRootAsRange(rv, 0).UnPack()
 		r.Start = p.StartOffset
@@ -185,7 +185,7 @@ func (e *Endpoint) TrimStream(ctx context.Context, p *model.TrimStreamParam) (*r
 		return nil
 	})
 	if err != nil {
-		return nil, nil, errors.Wrapf(err, "trim stream %d", p.StreamID)
+		return nil, nil, errors.WithMessagef(err, "trim stream %d", p.StreamID)
 	}
 
 	return trimmedStream, trimmedRange, nil
@@ -200,11 +200,11 @@ func (e *Endpoint) UpdateStream(ctx context.Context, p *model.UpdateStreamParam)
 		v, err := kv.Get(ctx, key)
 		if err != nil {
 			logger.Error("failed to get stream", zap.Error(err))
-			return errors.Wrapf(err, "get stream %d", p.StreamID)
+			return errors.WithMessagef(err, "get stream %d", p.StreamID)
 		}
 		if v == nil {
 			logger.Error("stream not found when update stream")
-			return errors.Wrapf(model.ErrStreamNotFound, "stream %d", p.StreamID)
+			return errors.WithMessagef(model.ErrStreamNotFound, "stream %d", p.StreamID)
 		}
 
 		oldStream := rpcfb.GetRootAsStream(v, 0).UnPack()
@@ -221,7 +221,7 @@ func (e *Endpoint) UpdateStream(ctx context.Context, p *model.UpdateStreamParam)
 		if p.Epoch >= 0 {
 			if p.Epoch < oldStream.Epoch {
 				logger.Error("invalid epoch", zap.Int64("new-epoch", p.Epoch), zap.Int64("old-epoch", oldStream.Epoch))
-				return errors.Wrapf(model.ErrInvalidStreamEpoch, "new epoch %d < old epoch %d", p.Epoch, oldStream.Epoch)
+				return errors.WithMessagef(model.ErrInvalidStreamEpoch, "new epoch %d < old epoch %d", p.Epoch, oldStream.Epoch)
 			}
 			oldStream.Epoch = p.Epoch
 		}
@@ -234,7 +234,7 @@ func (e *Endpoint) UpdateStream(ctx context.Context, p *model.UpdateStreamParam)
 		return nil
 	})
 	if err != nil {
-		return nil, errors.Wrapf(err, "update stream %d", p.StreamID)
+		return nil, errors.WithMessagef(err, "update stream %d", p.StreamID)
 	}
 
 	return newStream, nil
@@ -246,7 +246,7 @@ func (e *Endpoint) GetStream(ctx context.Context, streamID int64) (*rpcfb.Stream
 	v, err := e.KV.Get(ctx, streamPath(streamID))
 	if err != nil {
 		logger.Error("failed to get stream", zap.Error(err))
-		return nil, errors.Wrapf(err, "get stream %d", streamID)
+		return nil, errors.WithMessagef(err, "get stream %d", streamID)
 	}
 	if v == nil {
 		logger.Warn("stream not found")
@@ -275,7 +275,7 @@ func (e *Endpoint) forEachStreamLimited(ctx context.Context, f func(stream *rpcf
 	kvs, _, more, err := e.KV.GetByRange(ctx, kv.Range{StartKey: startKey, EndKey: e.endStreamPath()}, 0, limit, false)
 	if err != nil {
 		logger.Error("failed to get streams", zap.Int64("start-id", startID), zap.Int64("limit", limit), zap.Error(err))
-		return model.MinStreamID - 1, errors.Wrap(err, "get streams")
+		return model.MinStreamID - 1, errors.WithMessage(err, "get streams")
 	}
 
 	for _, streamKV := range kvs {
@@ -308,7 +308,7 @@ func streamPath(streamID int64) []byte {
 func streamIDFromPath(path []byte) (streamID int64, err error) {
 	_, err = fmt.Sscanf(string(path), _streamFormat, &streamID)
 	if err != nil {
-		err = errors.Wrapf(err, "parse stream id from path %s", string(path))
+		err = errors.WithMessagef(err, "parse stream id from path %s", string(path))
 	}
 	return
 }

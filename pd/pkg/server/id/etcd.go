@@ -116,7 +116,7 @@ func (e *EtcdAllocator) AllocN(ctx context.Context, n int) ([]uint64, error) {
 
 	growth := e.step * (uint64(n)/e.step + 1)
 	if err := e.growLocked(ctx, growth); err != nil {
-		return nil, errors.Wrapf(err, "grow %d", growth)
+		return nil, errors.WithMessagef(err, "grow %d", growth)
 	}
 
 	for i := 0; i < n; i++ {
@@ -131,7 +131,7 @@ func (e *EtcdAllocator) growLocked(ctx context.Context, growth uint64) error {
 
 	kv, err := etcdutil.GetOne(ctx, e.kv, []byte(e.path), logger)
 	if err != nil {
-		return errors.Wrapf(err, "get key %s", e.path)
+		return errors.WithMessagef(err, "get key %s", e.path)
 	}
 
 	var prevEnd uint64
@@ -145,7 +145,7 @@ func (e *EtcdAllocator) growLocked(ctx context.Context, growth uint64) error {
 	} else {
 		prevEnd, err = typeutil.BytesToUint64(kv.Value)
 		if err != nil {
-			return errors.Wrapf(err, "parse value %s", string(kv.Value))
+			return errors.WithMessagef(err, "parse value %s", string(kv.Value))
 		}
 		cmpList = append(cmpList, clientv3.Compare(clientv3.Value(e.path), "=", string(kv.Value)))
 	}
@@ -155,14 +155,14 @@ func (e *EtcdAllocator) growLocked(ctx context.Context, growth uint64) error {
 	txn := etcdutil.NewTxn(ctx, e.kv, logger).If(cmpList...).Then(clientv3.OpPut(e.path, string(v)))
 	resp, err := txn.Commit()
 	if err != nil {
-		return errors.Wrap(err, "update id")
+		return errors.WithMessage(err, "update id")
 	}
 	if !resp.Succeeded {
 		// TODO: add retry mechanism.
 		// Currently, there is only one allocator on each key.
 		// So if the transaction fails, it means the EtcdAllocatorParam.CmpFunc is not satisfied. And there is no need to retry.
 		// If we have multiple allocators on the same key, we need to add a retry mechanism.
-		return errors.Wrap(model.ErrKVTxnFailed, "update id")
+		return errors.WithMessage(model.ErrKVTxnFailed, "update id")
 	}
 
 	e.end = end
@@ -184,10 +184,10 @@ func (e *EtcdAllocator) Reset(ctx context.Context) error {
 	}
 	resp, err := txn.Then(clientv3.OpPut(e.path, string(v))).Commit()
 	if err != nil {
-		return errors.Wrap(err, "reset etcd id allocator")
+		return errors.WithMessage(err, "reset etcd id allocator")
 	}
 	if !resp.Succeeded {
-		return errors.Wrap(model.ErrKVTxnFailed, "reset etcd id allocator")
+		return errors.WithMessage(model.ErrKVTxnFailed, "reset etcd id allocator")
 	}
 
 	e.base = e.start

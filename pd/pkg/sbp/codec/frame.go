@@ -175,7 +175,7 @@ func (fr *Framer) ReadFrame() (frame Frame, free func(), err error) {
 	buf := fr.fixedBuf[:_fixedHeaderLen]
 	_, err = io.ReadFull(fr.r, buf)
 	if err != nil {
-		return &baseFrame{}, nil, errors.Wrap(err, "read fixed header")
+		return &baseFrame{}, nil, errors.WithMessage(err, "read fixed header")
 	}
 	headerBuf := bytes.NewBuffer(buf)
 
@@ -207,7 +207,7 @@ func (fr *Framer) ReadFrame() (frame Frame, free func(), err error) {
 	_, err = io.ReadFull(fr.r, tBuf)
 	if err != nil {
 		free()
-		return &baseFrame{}, nil, errors.Wrap(err, "read extended header and payload")
+		return &baseFrame{}, nil, errors.WithMessage(err, "read extended header and payload")
 	}
 
 	header := func() []byte {
@@ -227,7 +227,7 @@ func (fr *Framer) ReadFrame() (frame Frame, free func(), err error) {
 	err = binary.Read(fr.r, binary.BigEndian, &checksum)
 	if err != nil {
 		free()
-		return &baseFrame{}, nil, errors.Wrap(err, "read payload checksum")
+		return &baseFrame{}, nil, errors.WithMessage(err, "read payload checksum")
 	}
 	if payloadLen > 0 {
 		if ckm := crc32.ChecksumIEEE(payload); ckm != checksum {
@@ -335,7 +335,7 @@ func (fr *Framer) endWrite() error {
 	_, err := fr.w.Write(fr.wbuf)
 	if err != nil {
 		logger.Error("failed to write frame", zap.Error(err))
-		return errors.Wrap(err, "write frame")
+		return errors.WithMessage(err, "write frame")
 	}
 	return nil
 }

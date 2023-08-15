@@ -38,7 +38,7 @@ func (c *RaftCluster) ListResource(ctx context.Context, types []rpcfb.ResourceTy
 	logger := c.lg.With(zap.Stringers("resource-types", types), zap.Int32("limit", limit), zap.ByteString("continue", continueStr), traceutil.TraceLogField(ctx))
 
 	if ok, dup := typeutil.IsUnique(types); !ok {
-		return nil, 0, nil, errors.Wrapf(model.ErrInvalidResourceType, "duplicate resource type %s", dup)
+		return nil, 0, nil, errors.WithMessagef(model.ErrInvalidResourceType, "duplicate resource type %s", dup)
 	}
 	err := checkResourceType(types)
 	if err != nil {
@@ -60,12 +60,12 @@ func (c *RaftCluster) ListResource(ctx context.Context, types []rpcfb.ResourceTy
 		err := json.Unmarshal(continueStr, &continuation)
 		if err != nil {
 			logger.Error("failed to unmarshal continuation string", zap.Error(err))
-			return nil, 0, nil, errors.Wrapf(model.ErrInvalidResourceContinuation, "unmarshal continuation string %s", continueStr)
+			return nil, 0, nil, errors.WithMessagef(model.ErrInvalidResourceContinuation, "unmarshal continuation string %s", continueStr)
 		}
 		err = continuation.check(types)
 		if err != nil {
 			logger.Error("invalid continuation string", zap.Error(err))
-			return nil, 0, nil, errors.Wrapf(err, "check continuation string %s", continueStr)
+			return nil, 0, nil, errors.WithMessagef(err, "check continuation string %s", continueStr)
 		}
 	}
 
@@ -93,7 +93,7 @@ func (c *RaftCluster) ListResource(ctx context.Context, types []rpcfb.ResourceTy
 			case errors.Is(err, model.ErrKVCompacted):
 				err = model.ErrResourceVersionCompacted
 			default:
-				err = errors.Wrap(err, "list resources")
+				err = errors.WithMessage(err, "list resources")
 			}
 			return nil, 0, nil, err
 		}
@@ -113,7 +113,7 @@ func (c *RaftCluster) ListResource(ctx context.Context, types []rpcfb.ResourceTy
 		newContinueStr, err = json.Marshal(continuation)
 		if err != nil {
 			logger.Error("failed to marshal continuation string", zap.Error(err))
-			return nil, 0, nil, errors.Wrap(err, "marshal continuation string")
+			return nil, 0, nil, errors.WithMessage(err, "marshal continuation string")
 		}
 	}
 	for _, resource := range resources {
@@ -158,7 +158,7 @@ func (c *RaftCluster) fillResourceInfo(resource *rpcfb.ResourceT) {
 func checkResourceType(types []rpcfb.ResourceType) error {
 	for _, typ := range types {
 		if typ == rpcfb.ResourceTypeUNKNOWN {
-			return errors.Wrapf(model.ErrInvalidResourceType, "invalid type %s", typ)
+			return errors.WithMessagef(model.ErrInvalidResourceType, "invalid type %s", typ)
 		}
 	}
 	return nil
@@ -171,23 +171,23 @@ type Continuation struct {
 
 func (c Continuation) check(types []rpcfb.ResourceType) error {
 	if c.ResourceVersion <= 0 {
-		return errors.Wrapf(model.ErrInvalidResourceContinuation, "invalid resource version %d", c.ResourceVersion)
+		return errors.WithMessagef(model.ErrInvalidResourceContinuation, "invalid resource version %d", c.ResourceVersion)
 	}
 
 	for i, token := range c.Tokens {
 		if token.ResourceType == rpcfb.ResourceTypeUNKNOWN {
-			return errors.Wrapf(model.ErrInvalidResourceType, "invalid type %s in token %d", token.ResourceType, i)
+			return errors.WithMessagef(model.ErrInvalidResourceType, "invalid type %s in token %d", token.ResourceType, i)
 		}
 	}
 
 	// Check whether the types are the same.
 	// The types are sorted and unique, so we can compare them directly.
 	if len(types) != len(c.Tokens) {
-		return errors.Wrapf(model.ErrInvalidResourceContinuation, "type count %d != token count %d", len(types), len(c.Tokens))
+		return errors.WithMessagef(model.ErrInvalidResourceContinuation, "type count %d != token count %d", len(types), len(c.Tokens))
 	}
 	for i, token := range c.Tokens {
 		if types[i] != token.ResourceType {
-			return errors.Wrapf(model.ErrInvalidResourceContinuation, "type %s != token %d type %s", types[i], i, token.ResourceType)
+			return errors.WithMessagef(model.ErrInvalidResourceContinuation, "type %s != token %d type %s", types[i], i, token.ResourceType)
 		}
 	}
 

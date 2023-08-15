@@ -97,7 +97,7 @@ func (m *Member) Init(ctx context.Context, cfg *config.Config, name string, clus
 	bytes, err := json.Marshal(info)
 	if err != nil {
 		logger.Error("failed to marshal member info", zap.Error(err))
-		return errors.Wrap(err, "marshal member info")
+		return errors.WithMessage(err, "marshal member info")
 	}
 	m.infoValue = bytes
 	m.clusterRootPath = clusterRootPath
@@ -106,7 +106,7 @@ func (m *Member) Init(ctx context.Context, cfg *config.Config, name string, clus
 	err = m.saveInfo(ctx, m.infoValue)
 	if err != nil {
 		logger.Error("failed to save member info", zap.Error(err))
-		return errors.Wrap(err, "save member info")
+		return errors.WithMessage(err, "save member info")
 	}
 
 	return nil
@@ -153,7 +153,7 @@ func (m *Member) GetLeader(ctx context.Context) (*Info, etcdutil.ModRevision, er
 	kv, err := etcdutil.GetOne(ctx, m.client, []byte(m.LeaderPath()), logger)
 	if err != nil {
 		logger.Error("failed to get leader", zap.String("leader-key", m.LeaderPath()), zap.Error(err))
-		return nil, 0, errors.Wrap(err, "get kv from etcd")
+		return nil, 0, errors.WithMessage(err, "get kv from etcd")
 	}
 	if kv == nil {
 		return nil, 0, nil
@@ -163,7 +163,7 @@ func (m *Member) GetLeader(ctx context.Context) (*Info, etcdutil.ModRevision, er
 	err = json.Unmarshal(kv.Value, info)
 	if err != nil {
 		logger.Error("failed to unmarshal leader info", zap.ByteString("raw-string", kv.Value), zap.Error(err))
-		return nil, 0, errors.Wrap(err, "unmarshal leader info")
+		return nil, 0, errors.WithMessage(err, "unmarshal leader info")
 	}
 
 	return info, kv.ModRevision, nil
@@ -213,17 +213,17 @@ func (m *Member) CheckPriorityAndMoveLeader(ctx context.Context) error {
 
 	myPriority, err := m.GetMemberPriority(ctx, m.id)
 	if err != nil {
-		return errors.Wrap(err, "load current member priority")
+		return errors.WithMessage(err, "load current member priority")
 	}
 	leaderPriority, err := m.GetMemberPriority(ctx, etcdLeaderID)
 	if err != nil {
-		return errors.Wrap(err, "load etcd leader member priority")
+		return errors.WithMessage(err, "load etcd leader member priority")
 	}
 
 	if myPriority > leaderPriority {
 		err := m.MoveEtcdLeader(ctx, etcdLeaderID, m.id)
 		if err != nil {
-			return errors.Wrap(err, "transfer etcd leader")
+			return errors.WithMessage(err, "transfer etcd leader")
 		}
 		logger.Info("transfer etcd leader", zap.Uint64("from", etcdLeaderID), zap.Uint64("to", m.id))
 	}
@@ -242,7 +242,7 @@ func (m *Member) GetMemberPriority(ctx context.Context, id uint64) (int, error) 
 	key := m.getPriorityPath(id)
 	kv, err := etcdutil.GetOne(ctx, m.client, []byte(key), logger)
 	if err != nil {
-		return 0, errors.Wrapf(err, "failed to get member's leader priority by key %s", key)
+		return 0, errors.WithMessagef(err, "failed to get member's leader priority by key %s", key)
 	}
 	if kv == nil {
 		return 0, nil
@@ -250,7 +250,7 @@ func (m *Member) GetMemberPriority(ctx context.Context, id uint64) (int, error) 
 
 	priority, err := strconv.Atoi(string(kv.Value))
 	if err != nil {
-		return 0, errors.Wrap(err, "parse priority")
+		return 0, errors.WithMessage(err, "parse priority")
 	}
 	return priority, nil
 }
@@ -265,7 +265,7 @@ func (m *Member) MoveEtcdLeader(ctx context.Context, old, new uint64) error {
 	err := m.etcd.Server.MoveLeader(moveCtx, old, new)
 	if err != nil {
 		logger.Error("failed to move etcd leader", zap.Uint64("from", old), zap.Uint64("to", new), zap.Error(err))
-		return errors.Wrap(err, "move leader")
+		return errors.WithMessage(err, "move leader")
 	}
 	return nil
 }
@@ -295,7 +295,7 @@ func (m *Member) ClusterInfo(ctx context.Context) ([]*Info, error) {
 	etcdMembers, err := m.client.MemberList(ctx)
 	if err != nil {
 		logger.Error("failed to list etcd members", zap.Error(err))
-		return nil, errors.Wrap(err, "list etcd members")
+		return nil, errors.WithMessage(err, "list etcd members")
 	}
 
 	leader := m.Leader()
@@ -303,7 +303,7 @@ func (m *Member) ClusterInfo(ctx context.Context) ([]*Info, error) {
 	for _, em := range etcdMembers.Members {
 		info, err := m.loadInfo(ctx, em.ID)
 		if err != nil {
-			return nil, errors.Wrapf(err, "get info of member %d", em.ID)
+			return nil, errors.WithMessagef(err, "get info of member %d", em.ID)
 		}
 		member := &Info{
 			Name:            em.Name,
@@ -345,7 +345,7 @@ func (m *Member) saveInfo(ctx context.Context, infoValue []byte) error {
 	txn := etcdutil.NewTxn(ctx, m.client, logger)
 	resp, err := txn.Then(clientv3.OpPut(m.InfoPath(m.id), string(infoValue))).Commit()
 	if err != nil {
-		return errors.Wrap(err, "put member info")
+		return errors.WithMessage(err, "put member info")
 	}
 	if !resp.Succeeded {
 		return errors.New("put member info: transaction failed")
@@ -361,7 +361,7 @@ func (m *Member) loadInfo(ctx context.Context, id uint64) (*Info, error) {
 	kv, err := etcdutil.GetOne(ctx, m.client, []byte(key), logger)
 	if err != nil {
 		logger.Error("failed to get member info", zap.Error(err))
-		return nil, errors.Wrapf(err, "failed to get member info by key %s", key)
+		return nil, errors.WithMessagef(err, "failed to get member info by key %s", key)
 	}
 	if kv == nil {
 		logger.Error("failed to get member info, key not found")
@@ -372,7 +372,7 @@ func (m *Member) loadInfo(ctx context.Context, id uint64) (*Info, error) {
 	err = json.Unmarshal(kv.Value, info)
 	if err != nil {
 		logger.Error("failed to unmarshal member info", zap.ByteString("raw-string", kv.Value), zap.Error(err))
-		return nil, errors.Wrap(err, "unmarshal member info")
+		return nil, errors.WithMessage(err, "unmarshal member info")
 	}
 
 	return info, nil

@@ -134,7 +134,7 @@ func (c *RaftCluster) DescribeStream(ctx context.Context, streamID int64) (*rpcf
 		return nil, err
 	}
 	if stream == nil {
-		return nil, errors.Wrapf(model.ErrStreamNotFound, "stream id %d", streamID)
+		return nil, errors.WithMessagef(model.ErrStreamNotFound, "stream id %d", streamID)
 	}
 
 	return stream, nil

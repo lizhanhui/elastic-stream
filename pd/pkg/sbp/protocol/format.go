@@ -103,7 +103,7 @@ func unmarshal(m unmarshaler, fmt codec.Format, data []byte) (err error) {
 			if r := recover(); r != nil {
 				switch r := r.(type) {
 				case error:
-					err = errors.Wrap(r, "unmarshal FlatBuffer")
+					err = errors.WithMessage(r, "unmarshal FlatBuffer")
 				default:
 					err = errors.Errorf("unmarshal FlatBuffer: %v", r)
 				}

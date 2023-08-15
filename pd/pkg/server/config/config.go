@@ -107,24 +107,24 @@ func NewConfig(arguments []string, errOutput io.Writer) (*Config, error) {
 	err = v.ReadInConfig()
 	if err != nil {
 		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
-			return nil, errors.Wrap(err, "read configuration file")
+			return nil, errors.WithMessage(err, "read configuration file")
 		}
 	}
 
 	// set config
 	err = v.Unmarshal(cfg)
 	if err != nil {
-		return nil, errors.Wrap(err, "unmarshal configuration")
+		return nil, errors.WithMessage(err, "unmarshal configuration")
 	}
 
 	// new and set logger (first thing after configuration loaded)
 	err = cfg.Log.Adjust()
 	if err != nil {
-		return nil, errors.Wrap(err, "adjust log config")
+		return nil, errors.WithMessage(err, "adjust log config")
 	}
 	logger, err := cfg.Log.Logger()
 	if err != nil {
-		return nil, errors.Wrap(err, "create logger")
+		return nil, errors.WithMessage(err, "create logger")
 	}
 	cfg.lg = logger
 
@@ -146,7 +146,7 @@ func (c *Config) Adjust() error {
 	if c.Name == "" {
 		hostname, err := os.Hostname()
 		if err != nil {
-			return errors.Wrap(err, "get hostname")
+			return errors.WithMessage(err, "get hostname")
 		}
 		c.Name = fmt.Sprintf(_defaultNameFormat, hostname)
 	}
@@ -170,7 +170,7 @@ func (c *Config) Adjust() error {
 	// set etcd config
 	err := c.adjustEtcd()
 	if err != nil {
-		return errors.Wrap(err, "adjust etcd config")
+		return errors.WithMessage(err, "adjust etcd config")
 	}
 
 	return nil
@@ -186,19 +186,19 @@ func (c *Config) adjustEtcd() error {
 	var err error
 	cfg.LPUrls, err = parseUrls(c.PeerUrls)
 	if err != nil {
-		return errors.Wrap(err, "parse peer url")
+		return errors.WithMessage(err, "parse peer url")
 	}
 	cfg.LCUrls, err = parseUrls(c.ClientUrls)
 	if err != nil {
-		return errors.Wrap(err, "parse client url")
+		return errors.WithMessage(err, "parse client url")
 	}
 	cfg.APUrls, err = parseUrls(c.AdvertisePeerUrls)
 	if err != nil {
-		return errors.Wrap(err, "parse advertise peer url")
+		return errors.WithMessage(err, "parse advertise peer url")
 	}
 	cfg.ACUrls, err = parseUrls(c.AdvertiseClientUrls)
 	if err != nil {
-		return errors.Wrap(err, "parse advertise client url")
+		return errors.WithMessage(err, "parse advertise client url")
 	}
 
 	return nil
@@ -208,15 +208,15 @@ func (c *Config) adjustEtcd() error {
 func (c *Config) Validate() error {
 	_, err := filepath.Abs(c.DataDir)
 	if err != nil {
-		return errors.Wrapf(err, "invalid data dir path `%s`", c.DataDir)
+		return errors.WithMessagef(err, "invalid data dir path `%s`", c.DataDir)
 	}
 
 	if err := c.Cluster.Validate(); err != nil {
-		return errors.Wrap(err, "validate cluster config")
+		return errors.WithMessage(err, "validate cluster config")
 	}
 
 	if err := c.Sbp.Validate(); err != nil {
-		return errors.Wrap(err, "validate sbp config")
+		return errors.WithMessage(err, "validate sbp config")
 	}
 
 	return nil
@@ -304,7 +304,7 @@ func parseUrls(s string) ([]url.URL, error) {
 	for _, item := range items {
 		u, err := url.Parse(item)
 		if err != nil {
-			return nil, errors.Wrapf(err, "parse url %s", item)
+			return nil, errors.WithMessagef(err, "parse url %s", item)
 		}
 
 		urls = append(urls, *u)

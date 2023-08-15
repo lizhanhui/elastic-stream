@@ -50,7 +50,7 @@ func (e *Endpoint) SaveRangeServer(ctx context.Context, rangeServer *rpcfb.Range
 	_, err := e.KV.Put(ctx, key, value, false)
 	if err != nil {
 		logger.Error("failed to save range server", zap.Error(err))
-		return nil, errors.Wrapf(err, "save range server %d", rangeServer.ServerId)
+		return nil, errors.WithMessagef(err, "save range server %d", rangeServer.ServerId)
 	}
 
 	return rangeServer, nil
@@ -75,7 +75,7 @@ func (e *Endpoint) forEachRangeServerLimited(ctx context.Context, f func(rangeSe
 	kvs, _, more, err := e.KV.GetByRange(ctx, kv.Range{StartKey: startKey, EndKey: e.endRangeServerPath()}, 0, limit, false)
 	if err != nil {
 		logger.Error("failed to get range servers", zap.Int32("start-id", startID), zap.Int64("limit", limit), zap.Error(err))
-		return model.MinRangeServerID - 1, errors.Wrap(err, "get range servers")
+		return model.MinRangeServerID - 1, errors.WithMessage(err, "get range servers")
 	}
 
 	for _, keyValue := range kvs {

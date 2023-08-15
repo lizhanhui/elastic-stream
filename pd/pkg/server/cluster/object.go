@@ -33,7 +33,7 @@ func (c *RaftCluster) CommitObject(ctx context.Context, obj *rpcfb.ObjT) (endpoi
 		return endpoint.Object{}, err
 	}
 	if r == nil {
-		return endpoint.Object{}, errors.Wrapf(model.ErrRangeNotFound, "stream-id %d, range-index %d", obj.StreamId, obj.RangeIndex)
+		return endpoint.Object{}, errors.WithMessagef(model.ErrRangeNotFound, "stream-id %d, range-index %d", obj.StreamId, obj.RangeIndex)
 	}
 
 	oid, err := c.oAlloc.Alloc(ctx)

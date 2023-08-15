@@ -409,7 +409,7 @@ func (c *conn) processUnknownFrame(f codec.Frame, st *stream) error {
 	headerFmt := codec.FormatFlatBuffer
 	header, err := resp.Marshal(headerFmt)
 	if err != nil {
-		return errors.Wrap(err, "failed to marshal response")
+		return errors.WithMessage(err, "failed to marshal response")
 	}
 
 	outFrame := codec.NewDataFrameResp(&codec.DataFrameContext{

@@ -82,7 +82,7 @@ func (c *SbpClient) Do(req protocol.OutRequest, addr Address) (protocol.InRespon
 	cc, err := c.connPool.getConn(req, addr)
 	if err != nil {
 		logger.Error("failed to get connection", zap.Error(err))
-		return nil, errors.Wrapf(err, "get connection to %s", addr)
+		return nil, errors.WithMessagef(err, "get connection to %s", addr)
 	}
 
 	resp, err := cc.roundTrip(req)
@@ -117,7 +117,7 @@ func (c *SbpClient) dialConn(ctx context.Context, addr string) (*conn, error) {
 	var d net.Dialer
 	conn, err := d.DialContext(ctx, "tcp", addr)
 	if err != nil {
-		return nil, errors.Wrapf(err, "dial %s", addr)
+		return nil, errors.WithMessagef(err, "dial %s", addr)
 	}
 	return c.newConn(conn)
 }

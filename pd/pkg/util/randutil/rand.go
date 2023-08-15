@@ -14,12 +14,12 @@ func Uint64() (uint64, error) {
 
 	_, err := rand.Read(bytes)
 	if err != nil {
-		return 0, errors.Wrap(err, "read rand bytes")
+		return 0, errors.WithMessage(err, "read rand bytes")
 	}
 
 	result, err := typeutil.BytesToUint64(bytes)
 	if err != nil {
-		return 0, errors.Wrap(err, "convert bytes to int64")
+		return 0, errors.WithMessage(err, "convert bytes to int64")
 	}
 
 	return result, nil

@@ -97,16 +97,16 @@ func (e *Endpoint) CreateRange(ctx context.Context, p *model.CreateRangeParam, f
 		sv, err := kv.Get(ctx, sk)
 		if err != nil {
 			logger.Error("failed to get stream", zap.Error(err))
-			return errors.Wrapf(err, "get stream %d", p.StreamID)
+			return errors.WithMessagef(err, "get stream %d", p.StreamID)
 		}
 		if sv == nil {
 			logger.Error("stream not found")
-			return errors.Wrapf(model.ErrStreamNotFound, "stream %d", p.StreamID)
+			return errors.WithMessagef(model.ErrStreamNotFound, "stream %d", p.StreamID)
 		}
 		s := rpcfb.GetRootAsStream(sv, 0).UnPack()
 		if s.Epoch != p.Epoch {
 			logger.Error("invalid epoch", zap.Int64("stream-epoch", s.Epoch))
-			return errors.Wrapf(model.ErrInvalidStreamEpoch, "range %d-%d epoch %d != %d", p.StreamID, p.Index, p.Epoch, s.Epoch)
+			return errors.WithMessagef(model.ErrInvalidStreamEpoch, "range %d-%d epoch %d != %d", p.StreamID, p.Index, p.Epoch, s.Epoch)
 		}
 
 		// make sure the range does not exist
@@ -114,18 +114,18 @@ func (e *Endpoint) CreateRange(ctx context.Context, p *model.CreateRangeParam, f
 		rv, err := kv.Get(ctx, rk)
 		if err != nil {
 			logger.Error("failed to get range", zap.Error(err))
-			return errors.Wrapf(err, "get range %d-%d", p.StreamID, p.Index)
+			return errors.WithMessagef(err, "get range %d-%d", p.StreamID, p.Index)
 		}
 		if rv != nil {
 			r := rpcfb.GetRootAsRange(rv, 0).UnPack()
 			if r.Epoch == p.Epoch && r.Start == p.Start {
 				logger.Info("create range twice")
 				newRange = r
-				return errors.Wrapf(model.ErrCreateRangeTwice, "range %d-%d", p.StreamID, p.Index)
+				return errors.WithMessagef(model.ErrCreateRangeTwice, "range %d-%d", p.StreamID, p.Index)
 			}
 			// try to create the same range with different parameters
 			logger.Error("range already exists")
-			return errors.Wrapf(model.ErrRangeAlreadyExist, "range %d-%d", p.StreamID, p.Index)
+			return errors.WithMessagef(model.ErrRangeAlreadyExist, "range %d-%d", p.StreamID, p.Index)
 		}
 
 		// check the previous range
@@ -142,28 +142,28 @@ func (e *Endpoint) CreateRange(ctx context.Context, p *model.CreateRangeParam, f
 			prv, err := kv.Get(ctx, prk)
 			if err != nil {
 				logger.Error("failed to get previous range", zap.Error(err))
-				return errors.Wrapf(err, "get previous range %d-%d", p.StreamID, p.Index-1)
+				return errors.WithMessagef(err, "get previous range %d-%d", p.StreamID, p.Index-1)
 			}
 			if prv == nil {
 				logger.Error("previous range not found")
-				return errors.Wrapf(model.ErrInvalidRangeIndex, "previous range %d-%d not found", p.StreamID, p.Index-1)
+				return errors.WithMessagef(model.ErrInvalidRangeIndex, "previous range %d-%d not found", p.StreamID, p.Index-1)
 			}
 			pr = rpcfb.GetRootAsRange(prv, 0).UnPack()
 		}
 		if pr.End == _writableRangeEnd {
 			logger.Error("create range before sealing the previous range")
-			return errors.Wrapf(model.ErrCreateRangeBeforeSeal, "create range %d-%d before sealing the previous range %d-%d", p.StreamID, p.Index, p.StreamID, p.Index-1)
+			return errors.WithMessagef(model.ErrCreateRangeBeforeSeal, "create range %d-%d before sealing the previous range %d-%d", p.StreamID, p.Index, p.StreamID, p.Index-1)
 		}
 		if p.Start != pr.End {
 			logger.Error("invalid range start", zap.Int64("previous-end", pr.End))
-			return errors.Wrapf(model.ErrInvalidRangeStart, "range %d-%d start %d != %d", p.StreamID, p.Index, p.Start, pr.End)
+			return errors.WithMessagef(model.ErrInvalidRangeStart, "range %d-%d start %d != %d", p.StreamID, p.Index, p.Start, pr.End)
 		}
 
 		// all check passed, create the range
 		servers, err := f(s.Replica, pr.Servers)
 		if err != nil {
 			logger.Error("failed to choose servers", zap.Error(err))
-			return errors.Wrapf(err, "choose servers for range %d-%d", p.StreamID, p.Index)
+			return errors.WithMessagef(err, "choose servers for range %d-%d", p.StreamID, p.Index)
 		}
 		newRange = &rpcfb.RangeT{
 			StreamId:     p.StreamID,
@@ -188,7 +188,7 @@ func (e *Endpoint) CreateRange(ctx context.Context, p *model.CreateRangeParam, f
 	})
 
 	if err != nil {
-		err := errors.Wrapf(err, "create range %d-%d", p.StreamID, p.Index)
+		err := errors.WithMessagef(err, "create range %d-%d", p.StreamID, p.Index)
 		if errors.Is(err, model.ErrCreateRangeTwice) {
 			return newRange, err
 		}
@@ -208,16 +208,16 @@ func (e *Endpoint) SealRange(ctx context.Context, p *model.SealRangeParam) (*rpc
 		sv, err := kv.Get(ctx, sk)
 		if err != nil {
 			logger.Error("failed to get stream", zap.Error(err))
-			return errors.Wrapf(err, "get stream %d", p.StreamID)
+			return errors.WithMessagef(err, "get stream %d", p.StreamID)
 		}
 		if sv == nil {
 			logger.Error("stream not found")
-			return errors.Wrapf(model.ErrStreamNotFound, "stream %d", p.StreamID)
+			return errors.WithMessagef(model.ErrStreamNotFound, "stream %d", p.StreamID)
 		}
 		s := rpcfb.GetRootAsStream(sv, 0).UnPack()
 		if s.Epoch != p.Epoch {
 			logger.Error("invalid epoch", zap.Int64("stream-epoch", s.Epoch))
-			return errors.Wrapf(model.ErrInvalidStreamEpoch, "range %d-%d epoch %d != %d", p.StreamID, p.Index, p.Epoch, s.Epoch)
+			return errors.WithMessagef(model.ErrInvalidStreamEpoch, "range %d-%d epoch %d != %d", p.StreamID, p.Index, p.Epoch, s.Epoch)
 		}
 
 		// get and check the range
@@ -225,26 +225,26 @@ func (e *Endpoint) SealRange(ctx context.Context, p *model.SealRangeParam) (*rpc
 		rv, err := kv.Get(ctx, rk)
 		if err != nil {
 			logger.Error("failed to get range", zap.Error(err))
-			return errors.Wrapf(err, "get range %d-%d", p.StreamID, p.Index)
+			return errors.WithMessagef(err, "get range %d-%d", p.StreamID, p.Index)
 		}
 		if rv == nil {
 			logger.Error("range not found")
-			return errors.Wrapf(model.ErrRangeNotFound, "range %d-%d", p.StreamID, p.Index)
+			return errors.WithMessagef(model.ErrRangeNotFound, "range %d-%d", p.StreamID, p.Index)
 		}
 		r := rpcfb.GetRootAsRange(rv, 0).UnPack()
 		if r.End != _writableRangeEnd {
 			if r.End == p.End {
 				logger.Info("seal range twice")
 				sealedRange = r
-				return errors.Wrapf(model.ErrSealRangeTwice, "range %d-%d", p.StreamID, p.Index)
+				return errors.WithMessagef(model.ErrSealRangeTwice, "range %d-%d", p.StreamID, p.Index)
 			}
 			// try to seal a sealed range with different end offset
 			logger.Error("range already sealed", zap.Int64("end", r.End))
-			return errors.Wrapf(model.ErrRangeAlreadySealed, "range %d-%d", p.StreamID, p.Index)
+			return errors.WithMessagef(model.ErrRangeAlreadySealed, "range %d-%d", p.StreamID, p.Index)
 		}
 		if p.End < r.Start {
 			logger.Error("invalid end offset", zap.Int64("start", r.Start))
-			return errors.Wrapf(model.ErrInvalidRangeEnd, "range %d-%d end %d < start %d", p.StreamID, p.Index, p.End, r.Start)
+			return errors.WithMessagef(model.ErrInvalidRangeEnd, "range %d-%d end %d < start %d", p.StreamID, p.Index, p.End, r.Start)
 		}
 
 		// all check passed, seal the range
@@ -257,7 +257,7 @@ func (e *Endpoint) SealRange(ctx context.Context, p *model.SealRangeParam) (*rpc
 		return nil
 	})
 	if err != nil {
-		err := errors.Wrapf(err, "seal range %d-%d", p.StreamID, p.Index)
+		err := errors.WithMessagef(err, "seal range %d-%d", p.StreamID, p.Index)
 		if errors.Is(err, model.ErrSealRangeTwice) {
 			return sealedRange, err
 		}
@@ -290,7 +290,7 @@ func (e *Endpoint) GetRanges(ctx context.Context, rangeIDs []*RangeID) ([]*rpcfb
 	kvs, err := e.KV.BatchGet(ctx, keys, false)
 	if err != nil {
 		logger.Error("failed to get ranges", zap.Error(err))
-		return nil, errors.Wrap(err, "get ranges")
+		return nil, errors.WithMessage(err, "get ranges")
 	}
 
 	ranges := make([]*rpcfb.RangeT, 0, len(kvs))
@@ -336,7 +336,7 @@ func (e *Endpoint) GetRangesByStream(ctx context.Context, streamID int64) ([]*rp
 	})
 	if err != nil {
 		logger.Error("failed to get ranges", zap.Error(err))
-		return nil, errors.Wrapf(err, "get ranges in stream %d", streamID)
+		return nil, errors.WithMessagef(err, "get ranges in stream %d", streamID)
 	}
 
 	return ranges, nil
@@ -361,7 +361,7 @@ func (e *Endpoint) forEachRangeInStreamLimited(ctx context.Context, streamID int
 	kvs, _, more, err := e.KV.GetByRange(ctx, kv.Range{StartKey: startKey, EndKey: e.endRangePathInStream(streamID)}, 0, limit, false)
 	if err != nil {
 		logger.Error("failed to get ranges", zap.Int32("start-id", startID), zap.Int64("limit", limit), zap.Error(err))
-		return model.MinRangeIndex - 1, errors.Wrap(err, "get ranges")
+		return model.MinRangeIndex - 1, errors.WithMessage(err, "get ranges")
 	}
 
 	for _, rangeKV := range kvs {
@@ -439,7 +439,7 @@ func rangeIDsFromPathsInStream(kvs []kv.KeyValue) []*RangeID {
 func rangeIDFromPathInStream(path []byte) (streamID int64, index int32, err error) {
 	_, err = fmt.Sscanf(string(path), _rangeStreamFormat, &streamID, &index)
 	if err != nil {
-		err = errors.Wrapf(err, "invalid range path %s", string(path))
+		err = errors.WithMessagef(err, "invalid range path %s", string(path))
 	}
 	return
 }
@@ -455,7 +455,7 @@ func (e *Endpoint) GetRangeIDsByRangeServer(ctx context.Context, rangeServerID i
 	})
 	if err != nil {
 		logger.Error("failed to get range ids by range server", zap.Error(err))
-		return nil, errors.Wrapf(err, "get range ids by range server %d", rangeServerID)
+		return nil, errors.WithMessagef(err, "get range ids by range server %d", rangeServerID)
 	}
 
 	return rangeIDs, nil
@@ -480,7 +480,7 @@ func (e *Endpoint) forEachRangeIDOnRangeServerLimited(ctx context.Context, range
 	kvs, _, more, err := e.KV.GetByRange(ctx, kv.Range{StartKey: startKey, EndKey: e.endRangePathOnRangeServer(rangeServerID)}, 0, limit, false)
 	if err != nil {
 		logger.Error("failed to get range ids by range server", zap.Int64("start-stream-id", startID.StreamID), zap.Int32("start-range-index", startID.Index), zap.Int64("limit", limit), zap.Error(err))
-		return nil, errors.Wrap(err, "get range ids by range server")
+		return nil, errors.WithMessage(err, "get range ids by range server")
 	}
 
 	nextID = startID
@@ -515,7 +515,7 @@ func (e *Endpoint) GetRangeIDsByRangeServerAndStream(ctx context.Context, stream
 	kvs, _, _, err := e.KV.GetByRange(ctx, kv.Range{StartKey: startKey, EndKey: e.endRangePathOnRangeServerInStream(rangeServerID, streamID)}, 0, 0, false)
 	if err != nil {
 		logger.Error("failed to get range ids by range server and stream", zap.Error(err))
-		return nil, errors.Wrapf(err, "get range ids by range server %d and stream %d", rangeServerID, streamID)
+		return nil, errors.WithMessagef(err, "get range ids by range server %d and stream %d", rangeServerID, streamID)
 	}
 
 	rangeIDs := make([]*RangeID, 0, len(kvs))
@@ -543,7 +543,7 @@ func rangePathOnRangeServer(rangeServerID int32, streamID int64, index int32) []
 func rangeIDFromPathOnRangeServer(path []byte) (rangeServerID int32, streamID int64, index int32, err error) {
 	_, err = fmt.Sscanf(string(path), _rangeOnServerFormat, &rangeServerID, &streamID, &index)
 	if err != nil {
-		err = errors.Wrapf(err, "parse range path: %s", string(path))
+		err = errors.WithMessagef(err, "parse range path: %s", string(path))
 	}
 	return
 }

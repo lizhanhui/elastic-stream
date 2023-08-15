@@ -31,7 +31,7 @@ func (e *Endpoint) ListResource(ctx context.Context, rv int64, token ContinueTok
 	keyPrefix, err := keyPrefix(token.ResourceType)
 	if err != nil {
 		logger.Error("failed to get key prefix", zap.Error(err))
-		return nil, 0, ContinueToken{}, errors.Wrap(err, "get key prefix")
+		return nil, 0, ContinueToken{}, errors.WithMessage(err, "get key prefix")
 	}
 	keyRange := kv.Range{
 		StartKey: append(keyPrefix, token.StartKey...),
@@ -41,7 +41,7 @@ func (e *Endpoint) ListResource(ctx context.Context, rv int64, token ContinueTok
 	kvs, newRV, more, err := e.KV.GetByRange(ctx, keyRange, rv, int64(limit), false)
 	if err != nil {
 		logger.Error("failed to list resources", zap.Error(err))
-		return nil, 0, ContinueToken{}, errors.Wrap(err, "list resources")
+		return nil, 0, ContinueToken{}, errors.WithMessage(err, "list resources")
 	}
 
 	token.More = more
@@ -68,7 +68,7 @@ func (e *Endpoint) WatchResource(ctx context.Context, rv int64, types []rpcfb.Re
 		prefix, err := keyPrefix(resourceType)
 		if err != nil {
 			logger.Error("failed to get key prefix", zap.Error(err))
-			return nil, 0, errors.Wrap(err, "get key prefix")
+			return nil, 0, errors.WithMessage(err, "get key prefix")
 		}
 		prefixes[i] = prefix
 	}
@@ -89,7 +89,7 @@ func (e *Endpoint) WatchResource(ctx context.Context, rv int64, types []rpcfb.Re
 	case events := <-ch:
 		if err := events.Error; err != nil {
 			logger.Error("failed to watch resources", zap.Error(err))
-			return nil, 0, errors.Wrap(err, "watch resources")
+			return nil, 0, errors.WithMessage(err, "watch resources")
 		}
 		resourceEvents := make([]*rpcfb.ResourceEventT, len(events.Events))
 		for i, event := range events.Events {
@@ -126,7 +126,7 @@ func keyPrefix(resourceType rpcfb.ResourceType) ([]byte, error) {
 	case rpcfb.ResourceTypeOBJECT:
 		return []byte(_objectPrefix), nil
 	default:
-		return nil, errors.Wrapf(ErrUnsupportedResourceType, "unsupported resource type %v", resourceType)
+		return nil, errors.WithMessagef(ErrUnsupportedResourceType, "unsupported resource type %v", resourceType)
 	}
 }
 

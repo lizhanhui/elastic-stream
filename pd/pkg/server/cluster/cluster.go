@@ -114,7 +114,7 @@ func (c *RaftCluster) Start(s Server) error {
 	err := c.loadInfo()
 	if err != nil {
 		logger.Error("load cluster info failed", zap.Error(err))
-		return errors.Wrap(err, "load cluster info")
+		return errors.WithMessage(err, "load cluster info")
 	}
 
 	// start other background goroutines
@@ -144,7 +144,7 @@ func (c *RaftCluster) loadInfo() error {
 		return nil
 	})
 	if err != nil {
-		return errors.Wrap(err, "load range servers")
+		return errors.WithMessage(err, "load range servers")
 	}
 	logger.Info("load range servers", zap.Int("count", c.cache.RangeServerCount()), zap.Duration("cost", time.Since(start)))
 
