@@ -71,7 +71,7 @@ pd
 ### Launch Range Server
 
 ```shell
-range-server -- start --config etc/range-server.yaml --log etc/range-server-log.yaml
+range-server start --config etc/range-server.yaml --log etc/range-server-log.yaml
 ```
 
 ### Launch Example workload
