@@ -57,7 +57,7 @@ func TestWriteScheduler(t *testing.T) {
 
 func makeControlWriteRequest(streamID uint32) frameWriteRequest {
 	return frameWriteRequest{
-		f: codec.NewGoAwayFrame(streamID, false),
+		f: codec.NewGoAwayFrame(streamID, false, false),
 		stream: &stream{
 			id: streamID,
 		},

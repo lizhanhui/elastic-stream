@@ -755,11 +755,11 @@ table CommitObjectResponse {
 }
 
 enum ResourceType: byte {
-    UNKNOWN = 0,
-    RANGE_SERVER = 1,
-    STREAM = 2,
-    RANGE = 3,
-    OBJECT = 4,
+    RESOURCE_UNKNOWN = 0,
+    RESOURCE_RANGE_SERVER = 1,
+    RESOURCE_STREAM = 2,
+    RESOURCE_RANGE = 3,
+    RESOURCE_OBJECT = 4,
 }
 
 // As vectors of unions are not yet supported in rust, we use a struct to wrap the union like
@@ -774,10 +774,10 @@ table Resource {
 }
 
 enum EventType: byte {
-    UNKNOWN = 0,
-    ADDED = 1,
-    MODIFIED = 2,
-    DELETED = 3,
+    EVENT_UNKNOWN = 0,
+    EVENT_ADDED = 1,
+    EVENT_MODIFIED = 2,
+    EVENT_DELETED = 3,
 }
 
 table ResourceEvent {

@@ -28,8 +28,10 @@ impl MetadataWatcher for DefaultMetadataWatcher {
         P: PlacementDriverClient + 'static,
     {
         *self.started.borrow_mut() = true;
-        let mut rx =
-            pd_client.list_and_watch_resource(&[ResourceType::STREAM, ResourceType::RANGE]);
+        let mut rx = pd_client.list_and_watch_resource(&[
+            ResourceType::RESOURCE_STREAM,
+            ResourceType::RESOURCE_RANGE,
+        ]);
         let mut listeners = self.listeners.clone();
         tokio_uring::spawn(async move {
             loop {

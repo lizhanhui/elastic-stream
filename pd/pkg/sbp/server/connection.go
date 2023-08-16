@@ -49,6 +49,7 @@ type conn struct {
 	inGoAway            bool            // we've started to or sent GOAWAY
 	needToSendGoAway    bool            // we need to schedule a GOAWAY frame write
 	isGoAwayResponse    bool            // we started a GOAWAY response rather than a request
+	isShutdown          bool            // conn is going to be closed
 	shutdownTimer       *time.Timer     // nil until used
 	idleTimeout         time.Duration   // zero if disabled
 	idleTimer           *time.Timer     // nil if unused
@@ -65,7 +66,7 @@ func (c *conn) serve() {
 	defer logutil.LogPanic(logger)
 	defer c.close()
 
-	logger.Info("start to serve connection")
+	logger.Debug("start to serve connection")
 
 	if c.idleTimeout != 0 {
 		c.idleTimer = time.AfterFunc(c.idleTimeout, func() { c.sendServeMsg(idleTimerMsg) })
@@ -96,13 +97,14 @@ func (c *conn) serve() {
 		case msg := <-c.serveMsgCh:
 			switch msg {
 			case idleTimerMsg:
-				logger.Info("connection is idle")
+				logger.Debug("connection is idle")
 				c.goAway(false)
 			case shutdownTimerMsg:
-				logger.Info("GOAWAY close timer fired, closing connection")
+				logger.Debug("GOAWAY close timer fired, closing connection")
 				return
 			case gracefulShutdownMsg:
 				logger.Info("start to shut down gracefully")
+				c.isShutdown = true
 				c.goAway(false)
 			default:
 				panic("unknown timer")
@@ -217,7 +219,7 @@ func (c *conn) scheduleFrameWrite() {
 				goAwayStream = c.newStream(c.nextClientStreamID)
 			}
 			c.startFrameWrite(frameWriteRequest{
-				f:         codec.NewGoAwayFrame(goAwayStream.id, c.isGoAwayResponse),
+				f:         codec.NewGoAwayFrame(goAwayStream.id, c.isGoAwayResponse, c.isShutdown),
 				stream:    goAwayStream,
 				endStream: true,
 			})
@@ -612,7 +614,7 @@ func (c *conn) closeStream(st *stream) {
 
 func (c *conn) close() {
 	logger := c.lg
-	logger.Info("closing connection")
+	logger.Debug("closing connection")
 	close(c.doneServing)
 	if t := c.shutdownTimer; t != nil {
 		t.Stop()
@@ -622,7 +624,7 @@ func (c *conn) close() {
 	}
 	_ = c.rwc.Close()
 	c.cancelCtx()
-	logger.Info("connection closed")
+	logger.Debug("connection closed")
 }
 
 // After sending GOAWAY with an error code (non-graceful shutdown), the

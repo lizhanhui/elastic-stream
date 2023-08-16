@@ -29,15 +29,22 @@ const (
 	// FlagResponse indicates whether the frame is a response frame.
 	// If set, the frame contains the response payload to a specific request frame identified by a stream identifier.
 	// If not set, the frame represents a request frame.
-	FlagResponse Flags = 0x1
+	FlagResponse = Flags(rpcfb.CommonFlagsRESPONSE)
 
 	// FlagResponseEnd indicates whether the response frame is the last frame of the response.
 	// If set, the frame is the last frame in a response sequence.
 	// If not set, the response sequence continues with more frames.
-	FlagResponseEnd Flags = 0x1 << 1
+	FlagResponseEnd = Flags(rpcfb.CommonFlagsEND_OF_STREAM)
 
 	// FlagSystemError indicates whether the response frame is a system error response.
-	FlagSystemError Flags = 0x1 << 2
+	FlagSystemError = Flags(rpcfb.CommonFlagsSYSTEM_ERROR)
+)
+
+const (
+	// FlagGoAwayMaintenance indicates the server is going to perform maintenance shortly.
+	// No new connection/stream will be served for current epoch.
+	// Servers will broadcast GOAWAY frames to existing streams/connections, instructing clients to conduct fail-over as soon as possible.
+	FlagGoAwayMaintenance = Flags(rpcfb.GoAwayFlagsSERVER_MAINTENANCE)
 )
 
 // Flags is a bitmask of SBP flags.
@@ -371,14 +378,17 @@ type GoAwayFrame struct {
 }
 
 // NewGoAwayFrame creates a new GoAway frame
-func NewGoAwayFrame(maxStreamID uint32, isResponse bool) *GoAwayFrame {
+func NewGoAwayFrame(maxStreamID uint32, isResponse bool, isShutdown bool) *GoAwayFrame {
 	f := &GoAwayFrame{baseFrame{
 		OpCode:    rpcfb.OperationCodeGOAWAY,
 		StreamID:  maxStreamID,
 		HeaderFmt: DefaultFormat(),
 	}}
 	if isResponse {
-		f.Flag = FlagResponse | FlagResponseEnd
+		f.Flag |= FlagResponse | FlagResponseEnd
+	}
+	if isShutdown {
+		f.Flag |= FlagGoAwayMaintenance
 	}
 	return f
 }

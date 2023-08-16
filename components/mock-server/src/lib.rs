@@ -608,22 +608,22 @@ fn server_watch_resource(request: &WatchResourceRequest, frame: &mut Frame) {
     let mut events = vec![];
 
     let mut range_server_e = ResourceEventT::default();
-    range_server_e.type_ = EventType::ADDED;
+    range_server_e.type_ = EventType::EVENT_ADDED;
     range_server_e.resource = Box::new(mock_range_server());
     events.push(range_server_e);
 
     let mut stream_e = ResourceEventT::default();
-    stream_e.type_ = EventType::MODIFIED;
+    stream_e.type_ = EventType::EVENT_MODIFIED;
     stream_e.resource = Box::new(mock_stream());
     events.push(stream_e);
 
     let mut range_e = ResourceEventT::default();
-    range_e.type_ = EventType::DELETED;
+    range_e.type_ = EventType::EVENT_DELETED;
     range_e.resource = Box::new(mock_range());
     events.push(range_e);
 
     let mut obj_e = ResourceEventT::default();
-    obj_e.type_ = EventType::ADDED;
+    obj_e.type_ = EventType::EVENT_ADDED;
     obj_e.resource = Box::new(mock_obj());
     events.push(obj_e);
 
@@ -694,7 +694,7 @@ fn mock_range_server() -> ResourceT {
     range_server.server_id = 42;
     range_server.advertise_addr = "127.0.0.1:10911".to_owned();
     let mut range_server_t = ResourceT::default();
-    range_server_t.type_ = ResourceType::RANGE_SERVER;
+    range_server_t.type_ = ResourceType::RESOURCE_RANGE_SERVER;
     range_server_t.range_server = Some(Box::new(range_server));
     range_server_t
 }
@@ -706,7 +706,7 @@ fn mock_stream() -> ResourceT {
     stream.ack_count = 1;
     stream.retention_period_ms = time::Duration::from_secs(3600 * 24).as_millis() as i64;
     let mut stream_t = ResourceT::default();
-    stream_t.type_ = ResourceType::STREAM;
+    stream_t.type_ = ResourceType::RESOURCE_STREAM;
     stream_t.stream = Some(Box::new(stream));
     stream_t
 }
@@ -728,7 +728,7 @@ fn mock_range() -> ResourceT {
     owner.epoch = 1;
     range.offload_owner = Some(Box::new(owner));
     let mut range_t = ResourceT::default();
-    range_t.type_ = ResourceType::RANGE;
+    range_t.type_ = ResourceType::RESOURCE_RANGE;
     range_t.range = Some(Box::new(range));
     range_t
 }
@@ -742,7 +742,7 @@ fn mock_obj() -> ResourceT {
     object.end_offset_delta = 10;
     object.data_len = 1024;
     let mut object_t = ResourceT::default();
-    object_t.type_ = ResourceType::OBJECT;
+    object_t.type_ = ResourceType::RESOURCE_OBJECT;
     object_t.object = Some(Box::new(object));
     object_t
 }

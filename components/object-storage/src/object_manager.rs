@@ -261,7 +261,10 @@ where
     pub fn new(cluster: &str, pd_client: Rc<C>, server_id: i32) -> Self {
         let token = CancellationToken::new();
         let metadata = Rc::new(RefCell::new(Metadata::default()));
-        let rx = pd_client.list_and_watch_resource(&[ResourceType::RANGE, ResourceType::OBJECT]);
+        let rx = pd_client.list_and_watch_resource(&[
+            ResourceType::RESOURCE_RANGE,
+            ResourceType::RESOURCE_OBJECT,
+        ]);
 
         let t = token.clone();
         let m = metadata.clone();

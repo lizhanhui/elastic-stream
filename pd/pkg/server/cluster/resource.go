@@ -150,14 +150,14 @@ func (c *RaftCluster) WatchResource(ctx context.Context, rv int64, types []rpcfb
 }
 
 func (c *RaftCluster) fillResourceInfo(resource *rpcfb.ResourceT) {
-	if resource.Type == rpcfb.ResourceTypeRANGE {
+	if resource.Type == rpcfb.ResourceTypeRESOURCE_RANGE {
 		c.fillRangeServersInfo(resource.Range)
 	}
 }
 
 func checkResourceType(types []rpcfb.ResourceType) error {
 	for _, typ := range types {
-		if typ == rpcfb.ResourceTypeUNKNOWN {
+		if typ == rpcfb.ResourceTypeRESOURCE_UNKNOWN {
 			return errors.WithMessagef(model.ErrInvalidResourceType, "invalid type %s", typ)
 		}
 	}
@@ -175,7 +175,7 @@ func (c Continuation) check(types []rpcfb.ResourceType) error {
 	}
 
 	for i, token := range c.Tokens {
-		if token.ResourceType == rpcfb.ResourceTypeUNKNOWN {
+		if token.ResourceType == rpcfb.ResourceTypeRESOURCE_UNKNOWN {
 			return errors.WithMessagef(model.ErrInvalidResourceType, "invalid type %s in token %d", token.ResourceType, i)
 		}
 	}

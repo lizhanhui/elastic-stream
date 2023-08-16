@@ -261,7 +261,7 @@ func (cc *conn) sendGoAway() error {
 	cc.wmu.Lock()
 	defer cc.wmu.Unlock()
 	// Send a graceful shutdown frame to server
-	f := codec.NewGoAwayFrame(maxStreamID, false)
+	f := codec.NewGoAwayFrame(maxStreamID, false, true)
 	if err := cc.fr.WriteFrame(f); err != nil {
 		return err
 	}

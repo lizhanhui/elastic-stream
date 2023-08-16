@@ -917,10 +917,10 @@ mod tests {
             let result = client
                 .list_resource(
                     vec![
-                        ResourceType::RANGE_SERVER,
-                        ResourceType::STREAM,
-                        ResourceType::RANGE,
-                        ResourceType::OBJECT,
+                        ResourceType::RESOURCE_RANGE_SERVER,
+                        ResourceType::RESOURCE_STREAM,
+                        ResourceType::RESOURCE_RANGE,
+                        ResourceType::RESOURCE_OBJECT,
                     ]
                     .as_ref(),
                     100,
@@ -961,10 +961,10 @@ mod tests {
             let result = client
                 .watch_resource(
                     vec![
-                        ResourceType::RANGE_SERVER,
-                        ResourceType::STREAM,
-                        ResourceType::RANGE,
-                        ResourceType::OBJECT,
+                        ResourceType::RESOURCE_RANGE_SERVER,
+                        ResourceType::RESOURCE_STREAM,
+                        ResourceType::RESOURCE_RANGE,
+                        ResourceType::RESOURCE_OBJECT,
                     ]
                     .as_ref(),
                     version,

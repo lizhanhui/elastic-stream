@@ -51,7 +51,7 @@ where
             .copied()
             .filter(|&t| t.0 >= ResourceType::ENUM_MIN)
             .filter(|&t| t.0 <= ResourceType::ENUM_MAX)
-            .filter(|&t| t != ResourceType::UNKNOWN)
+            .filter(|&t| t != ResourceType::RESOURCE_UNKNOWN)
             .collect::<Vec<_>>();
         assert!(!types.is_empty(), "resource types must not be empty");
 
@@ -243,10 +243,10 @@ mod tests {
             let pd_client = DefaultPlacementDriverClient::new(Rc::new(client));
 
             let mut receiver = pd_client.list_and_watch_resource(&[
-                ResourceType::RANGE_SERVER,
-                ResourceType::STREAM,
-                ResourceType::RANGE,
-                ResourceType::OBJECT,
+                ResourceType::RESOURCE_RANGE_SERVER,
+                ResourceType::RESOURCE_STREAM,
+                ResourceType::RESOURCE_RANGE,
+                ResourceType::RESOURCE_OBJECT,
             ]);
             let mut events = Vec::new();
             for _ in 0..9 {
