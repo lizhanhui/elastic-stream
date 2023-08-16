@@ -237,7 +237,7 @@ func TestSealRange(t *testing.T) {
 			},
 		},
 		{
-			name: "stream not found",
+			name: "stream not found (deleted)",
 			prepare: []preRange{
 				{end: 42},
 				{index: 1, start: 42, end: -1},
@@ -246,7 +246,24 @@ func TestSealRange(t *testing.T) {
 			want: want{
 				wantErr: true,
 				errCode: rpcfb.ErrorCodeNOT_FOUND,
-				errMsg:  "stream 1: stream not found",
+				errMsg:  "stream 1 deleted: stream not found",
+				after: []*rpcfb.RangeT{
+					{Epoch: 1, End: 42},
+					{Epoch: 2, Index: 1, Start: 42, End: -1},
+				},
+			},
+		},
+		{
+			name: "stream not found (not exist)",
+			prepare: []preRange{
+				{end: 42},
+				{index: 1, start: 42, end: -1},
+			},
+			args: args{kind: rpcfb.SealKindPLACEMENT_DRIVER, r: &rpcfb.RangeT{Epoch: 2, StreamId: 2, Index: 1, End: 84}},
+			want: want{
+				wantErr: true,
+				errCode: rpcfb.ErrorCodeNOT_FOUND,
+				errMsg:  "stream 2: stream not found",
 				after: []*rpcfb.RangeT{
 					{Epoch: 1, End: 42},
 					{Epoch: 2, Index: 1, Start: 42, End: -1},
@@ -376,8 +393,9 @@ func TestSealRange(t *testing.T) {
 
 			// prepare
 			preHeartbeats(t, h, 0, 1, 2)
-			streamIDs := preCreateStreams(t, h, 3, 1)
-			re.Equal([]int64{0}, streamIDs)
+			streamIDs := preCreateStreams(t, h, 3, 2)
+			re.Equal([]int64{0, 1}, streamIDs)
+			preDeleteStream(t, h, 1)
 			prepareRanges(t, h, 0, tt.prepare)
 
 			// seal range
@@ -462,7 +480,7 @@ func TestHandler_CreateRange(t *testing.T) {
 			},
 		},
 		{
-			name: "stream not exist",
+			name: "stream not found (deleted)",
 			prepare: []preRange{
 				{end: 42},
 			},
@@ -470,7 +488,22 @@ func TestHandler_CreateRange(t *testing.T) {
 			want: want{
 				wantErr: true,
 				errCode: rpcfb.ErrorCodeNOT_FOUND,
-				errMsg:  "stream 1: stream not found",
+				errMsg:  "stream 1 deleted: stream not found",
+				after: []*rpcfb.RangeT{
+					{Epoch: 1, End: 42},
+				},
+			},
+		},
+		{
+			name: "stream not found (not exist)",
+			prepare: []preRange{
+				{end: 42},
+			},
+			args: args{&rpcfb.RangeT{Epoch: 1, StreamId: 2, Index: 1, Start: 42}},
+			want: want{
+				wantErr: true,
+				errCode: rpcfb.ErrorCodeNOT_FOUND,
+				errMsg:  "stream 2: stream not found",
 				after: []*rpcfb.RangeT{
 					{Epoch: 1, End: 42},
 				},
@@ -597,8 +630,9 @@ func TestHandler_CreateRange(t *testing.T) {
 
 			// prepare
 			preHeartbeats(t, h, 0, 1, 2)
-			streamIDs := preCreateStreams(t, h, 3, 1)
-			re.Equal([]int64{0}, streamIDs)
+			streamIDs := preCreateStreams(t, h, 3, 2)
+			re.Equal([]int64{0, 1}, streamIDs)
+			preDeleteStream(t, h, 1)
 			prepareRanges(t, h, 0, tt.prepare)
 
 			// create range

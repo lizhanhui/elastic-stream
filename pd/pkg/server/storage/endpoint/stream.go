@@ -34,6 +34,7 @@ type StreamEndpoint interface {
 	// DeleteStream deletes the stream with the given stream id and returns it.
 	// It returns model.ErrStreamNotFound if the stream does not exist.
 	// It returns model.ErrInvalidStreamEpoch if the epoch mismatches.
+	// NOTE: It's OK to delete a deleted stream.
 	DeleteStream(ctx context.Context, param *model.DeleteStreamParam) (*rpcfb.StreamT, error)
 	// UpdateStream updates the stream with the given stream and returns it.
 	// It returns model.ErrStreamNotFound if the stream does not exist.
@@ -49,6 +50,7 @@ type StreamEndpoint interface {
 	GetStream(ctx context.Context, streamID int64) (*rpcfb.StreamT, error)
 	// ForEachStream calls the given function for every stream in the storage.
 	// If f returns an error, the iteration is stopped and the error is returned.
+	// NOTE: Deleted streams are also iterated.
 	ForEachStream(ctx context.Context, f func(stream *rpcfb.StreamT) error) error
 }
 
@@ -83,7 +85,7 @@ func (e *Endpoint) DeleteStream(ctx context.Context, p *model.DeleteStreamParam)
 			return errors.WithMessagef(err, "get stream %d", p.StreamID)
 		}
 		if v == nil {
-			logger.Error("stream not found when delete stream")
+			logger.Error("stream not found")
 			return errors.WithMessagef(model.ErrStreamNotFound, "stream %d", p.StreamID)
 		}
 
@@ -94,7 +96,7 @@ func (e *Endpoint) DeleteStream(ctx context.Context, p *model.DeleteStreamParam)
 			return nil
 		}
 		if p.Epoch != s.Epoch {
-			logger.Error("epoch mismatch when delete stream")
+			logger.Error("epoch mismatch")
 			return errors.Wrapf(model.ErrInvalidStreamEpoch, "stream %d epoch %d != %d", p.StreamID, p.Epoch, s.Epoch)
 		}
 		s.Deleted = true
@@ -139,21 +141,25 @@ func (e *Endpoint) TrimStream(ctx context.Context, p *model.TrimStreamParam) (*r
 			return errors.WithMessagef(err, "get stream %d", p.StreamID)
 		}
 		if sv == nil {
-			logger.Error("stream not found when trim stream")
+			logger.Error("stream not found")
 			return errors.WithMessagef(model.ErrStreamNotFound, "stream %d", p.StreamID)
 		}
 		s := rpcfb.GetRootAsStream(sv, 0).UnPack()
+		if s.Deleted {
+			logger.Error("stream already deleted")
+			return errors.WithMessagef(model.ErrStreamNotFound, "stream %d deleted", p.StreamID)
+		}
 		if p.Epoch != s.Epoch {
-			logger.Error("invalid stream epoch when trim stream", zap.Int64("stream-epoch", s.Epoch))
+			logger.Error("invalid stream epoch", zap.Int64("stream-epoch", s.Epoch))
 			return errors.WithMessagef(model.ErrInvalidStreamEpoch, "stream %d epoch %d != %d", p.StreamID, p.Epoch, s.Epoch)
 		}
 		if p.StartOffset < s.StartOffset {
 			// As we have check the range before, this should never happen.
-			logger.Error("invalid start offset when trim stream", zap.Int64("stream-start-offset", s.StartOffset))
+			logger.Error("invalid start offset", zap.Int64("stream-start-offset", s.StartOffset))
 			return errors.WithMessagef(model.ErrInvalidStreamOffset, "stream %d start offset %d < %d", p.StreamID, p.StartOffset, s.StartOffset)
 		}
 		if firstRange == nil {
-			logger.Error("range not found when trim stream")
+			logger.Error("range not found")
 			return errors.WithMessagef(model.ErrRangeNotFound, "invalid offset: range not found at offset %d", p.StartOffset)
 		}
 		s.StartOffset = p.StartOffset
@@ -171,7 +177,7 @@ func (e *Endpoint) TrimStream(ctx context.Context, p *model.TrimStreamParam) (*r
 			return errors.WithMessagef(err, "get range %d in stream %d", firstRange.Index, p.StreamID)
 		}
 		if rv == nil {
-			logger.Error("range not found when trim stream")
+			logger.Error("range not found")
 			return errors.WithMessagef(model.ErrRangeNotFound, "range %d in stream %d", firstRange.Index, p.StreamID)
 		}
 		r := rpcfb.GetRootAsRange(rv, 0).UnPack()
@@ -203,11 +209,15 @@ func (e *Endpoint) UpdateStream(ctx context.Context, p *model.UpdateStreamParam)
 			return errors.WithMessagef(err, "get stream %d", p.StreamID)
 		}
 		if v == nil {
-			logger.Error("stream not found when update stream")
+			logger.Error("stream not found")
 			return errors.WithMessagef(model.ErrStreamNotFound, "stream %d", p.StreamID)
 		}
 
 		oldStream := rpcfb.GetRootAsStream(v, 0).UnPack()
+		if oldStream.Deleted {
+			logger.Error("stream already deleted")
+			return errors.WithMessagef(model.ErrStreamNotFound, "stream %d deleted", p.StreamID)
+		}
 		// Incremental Update
 		if p.Replica > 0 {
 			oldStream.Replica = p.Replica
@@ -253,7 +263,13 @@ func (e *Endpoint) GetStream(ctx context.Context, streamID int64) (*rpcfb.Stream
 		return nil, nil
 	}
 
-	return rpcfb.GetRootAsStream(v, 0).UnPack(), nil
+	s := rpcfb.GetRootAsStream(v, 0).UnPack()
+	if s.Deleted {
+		logger.Warn("stream already deleted")
+		return nil, nil
+	}
+
+	return s, nil
 }
 
 func (e *Endpoint) ForEachStream(ctx context.Context, f func(stream *rpcfb.StreamT) error) error {

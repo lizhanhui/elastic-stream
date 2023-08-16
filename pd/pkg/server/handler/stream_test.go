@@ -357,9 +357,21 @@ func TestHandler_UpdateStream(t *testing.T) {
 			},
 		},
 		{
-			name: "stream not found",
+			name: "stream not found (deleted)",
 			args: args{
 				stream: &rpcfb.StreamT{StreamId: 1, Replica: 3, AckCount: 3, StartOffset: -1},
+			},
+			want: want{
+				wantErr: true,
+				errCode: rpcfb.ErrorCodeNOT_FOUND,
+				errMsg:  "stream not found",
+				after:   rpcfb.StreamT{Replica: 3, AckCount: 3},
+			},
+		},
+		{
+			name: "stream not found (not exist)",
+			args: args{
+				stream: &rpcfb.StreamT{StreamId: 2, Replica: 3, AckCount: 3, StartOffset: -1},
 			},
 			want: want{
 				wantErr: true,
@@ -380,8 +392,9 @@ func TestHandler_UpdateStream(t *testing.T) {
 
 			// prepare
 			preHeartbeats(t, h, 0, 1, 2)
-			streamIDs := preCreateStreams(t, h, 3, 1)
-			re.Equal([]int64{0}, streamIDs)
+			streamIDs := preCreateStreams(t, h, 3, 2)
+			re.Equal([]int64{0, 1}, streamIDs)
+			preDeleteStream(t, h, 1)
 
 			// update stream
 			req := &protocol.UpdateStreamRequest{UpdateStreamRequestT: rpcfb.UpdateStreamRequestT{
@@ -449,9 +462,20 @@ func TestHandler_DescribeStream(t *testing.T) {
 			},
 		},
 		{
-			name: "stream not found",
+			name: "stream not found (deleted)",
 			args: args{
 				streamID: 1,
+			},
+			want: want{
+				wantErr: true,
+				errCode: rpcfb.ErrorCodeNOT_FOUND,
+				errMsg:  "stream not found",
+			},
+		},
+		{
+			name: "stream not found (not exist)",
+			args: args{
+				streamID: 2,
 			},
 			want: want{
 				wantErr: true,
@@ -471,8 +495,9 @@ func TestHandler_DescribeStream(t *testing.T) {
 
 			// prepare
 			preHeartbeats(t, h, 0, 1, 2)
-			streamIDs := preCreateStreams(t, h, 3, 1)
-			re.Equal([]int64{0}, streamIDs)
+			streamIDs := preCreateStreams(t, h, 3, 2)
+			re.Equal([]int64{0, 1}, streamIDs)
+			preDeleteStream(t, h, 1)
 
 			// create stream
 			req := &protocol.DescribeStreamRequest{DescribeStreamRequestT: rpcfb.DescribeStreamRequestT{
@@ -570,12 +595,25 @@ func TestHandler_TrimStream(t *testing.T) {
 			},
 		},
 		{
-			name: "stream not found",
+			name: "stream not found (deleted)",
 			prepare: []preRange{
 				{0, 0, 42},
 				{1, 42, -1},
 			},
 			args: args{streamID: 1, epoch: _streamEpoch, offset: 84},
+			want: want{
+				wantErr: true,
+				errCode: rpcfb.ErrorCodeNOT_FOUND,
+				errMsg:  "stream not found",
+			},
+		},
+		{
+			name: "stream not found (not exist)",
+			prepare: []preRange{
+				{0, 0, 42},
+				{1, 42, -1},
+			},
+			args: args{streamID: 2, epoch: _streamEpoch, offset: 84},
 			want: want{
 				wantErr: true,
 				errCode: rpcfb.ErrorCodeNOT_FOUND,
@@ -646,8 +684,9 @@ func TestHandler_TrimStream(t *testing.T) {
 
 			// prepare
 			preHeartbeats(t, h, 0, 1, 2)
-			streamIDs := preCreateStreams(t, h, _replica, 1)
-			re.Equal([]int64{0}, streamIDs)
+			streamIDs := preCreateStreams(t, h, _replica, 2)
+			re.Equal([]int64{0, 1}, streamIDs)
+			preDeleteStream(t, h, 1)
 			prepareRanges(t, h, 0, tt.prepare)
 			trimStream(t, h, 0, _streamOffset)
 			updateStreamEpoch(t, h, 0, _streamEpoch)

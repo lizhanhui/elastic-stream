@@ -104,6 +104,10 @@ func (e *Endpoint) CreateRange(ctx context.Context, p *model.CreateRangeParam, f
 			return errors.WithMessagef(model.ErrStreamNotFound, "stream %d", p.StreamID)
 		}
 		s := rpcfb.GetRootAsStream(sv, 0).UnPack()
+		if s.Deleted {
+			logger.Error("stream already deleted")
+			return errors.WithMessagef(model.ErrStreamNotFound, "stream %d deleted", p.StreamID)
+		}
 		if s.Epoch != p.Epoch {
 			logger.Error("invalid epoch", zap.Int64("stream-epoch", s.Epoch))
 			return errors.WithMessagef(model.ErrInvalidStreamEpoch, "range %d-%d epoch %d != %d", p.StreamID, p.Index, p.Epoch, s.Epoch)
@@ -215,6 +219,10 @@ func (e *Endpoint) SealRange(ctx context.Context, p *model.SealRangeParam) (*rpc
 			return errors.WithMessagef(model.ErrStreamNotFound, "stream %d", p.StreamID)
 		}
 		s := rpcfb.GetRootAsStream(sv, 0).UnPack()
+		if s.Deleted {
+			logger.Error("stream already deleted")
+			return errors.WithMessagef(model.ErrStreamNotFound, "stream %d deleted", p.StreamID)
+		}
 		if s.Epoch != p.Epoch {
 			logger.Error("invalid epoch", zap.Int64("stream-epoch", s.Epoch))
 			return errors.WithMessagef(model.ErrInvalidStreamEpoch, "range %d-%d epoch %d != %d", p.StreamID, p.Index, p.Epoch, s.Epoch)
@@ -328,7 +336,6 @@ func (e *Endpoint) GetLastRange(ctx context.Context, streamID int64) (*rpcfb.Ran
 func (e *Endpoint) GetRangesByStream(ctx context.Context, streamID int64) ([]*rpcfb.RangeT, error) {
 	logger := e.lg.With(zap.Int64("stream-id", streamID), traceutil.TraceLogField(ctx))
 
-	// TODO set capacity
 	ranges := make([]*rpcfb.RangeT, 0)
 	err := e.ForEachRangeInStream(ctx, streamID, func(r *rpcfb.RangeT) error {
 		ranges = append(ranges, r)
@@ -447,7 +454,6 @@ func rangeIDFromPathInStream(path []byte) (streamID int64, index int32, err erro
 func (e *Endpoint) GetRangeIDsByRangeServer(ctx context.Context, rangeServerID int32) ([]*RangeID, error) {
 	logger := e.lg.With(zap.Int32("range-server-id", rangeServerID), traceutil.TraceLogField(ctx))
 
-	// TODO set capacity
 	rangeIDs := make([]*RangeID, 0)
 	err := e.ForEachRangeIDOnRangeServer(ctx, rangeServerID, func(rangeID *RangeID) error {
 		rangeIDs = append(rangeIDs, rangeID)
