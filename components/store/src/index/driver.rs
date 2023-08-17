@@ -13,7 +13,7 @@ use crossbeam::channel::{self, Receiver, Select, Sender, TryRecvError};
 use log::{error, info, warn};
 use model::{
     error::EsError,
-    range::{RangeLifecycleEvent, RangeMetadata},
+    range::{RangeEvent, RangeMetadata},
 };
 use tokio::sync::{mpsc, oneshot};
 
@@ -29,14 +29,14 @@ pub(crate) struct IndexDriver {
 
 pub(crate) enum IndexCommand {
     Index {
-        stream_id: i64,
+        stream_id: u64,
         range: u32,
         offset: u64,
         handle: RecordHandle,
     },
     /// Used to retrieve a batch of record handles from a given offset.
     ScanRecord {
-        stream_id: i64,
+        stream_id: u64,
         range: u32,
         offset: u64,
         max_offset: u64,
@@ -49,7 +49,7 @@ pub(crate) enum IndexCommand {
     },
 
     ListRangeByStream {
-        stream_id: i64,
+        stream_id: u64,
         tx: mpsc::UnboundedSender<RangeMetadata>,
     },
 
@@ -63,7 +63,7 @@ pub(crate) enum IndexCommand {
         tx: oneshot::Sender<Result<(), StoreError>>,
     },
     RangeEvent {
-        events: Vec<RangeLifecycleEvent>,
+        events: Vec<RangeEvent>,
         tx: oneshot::Sender<u64>,
     },
 }
@@ -98,7 +98,7 @@ impl IndexDriver {
         })
     }
 
-    pub(crate) fn index(&self, stream_id: i64, range: u32, offset: u64, handle: RecordHandle) {
+    pub(crate) fn index(&self, stream_id: u64, range: u32, offset: u64, handle: RecordHandle) {
         if let Err(_e) = self.tx.send(IndexCommand::Index {
             stream_id,
             range,
@@ -111,7 +111,7 @@ impl IndexDriver {
 
     pub(crate) fn scan_record_handles(
         &self,
-        stream_id: i64,
+        stream_id: u64,
         range: u32,
         offset: u64,
         max_offset: u64,
@@ -138,7 +138,7 @@ impl IndexDriver {
 
     pub(crate) fn list_ranges_by_stream(
         &self,
-        stream_id: i64,
+        stream_id: u64,
         tx: mpsc::UnboundedSender<RangeMetadata>,
     ) {
         if let Err(_e) = self
@@ -195,10 +195,7 @@ impl IndexDriver {
         }
     }
 
-    pub(crate) async fn handle_range_event(
-        &self,
-        events: Vec<RangeLifecycleEvent>,
-    ) -> Result<u64, EsError> {
+    pub(crate) async fn handle_range_event(&self, events: Vec<RangeEvent>) -> Result<u64, EsError> {
         let (tx, rx) = oneshot::channel();
         self.tx
             .send(IndexCommand::RangeEvent { events, tx })
@@ -268,7 +265,7 @@ impl IndexDriverRunner {
                                 sleep(std::time::Duration::from_millis(100));
                             }
                             log_cleaner.handle_new_index(
-                                (stream_id as u64, range),
+                                (stream_id, range),
                                 offset,
                                 physical_offset,
                             );
@@ -314,7 +311,7 @@ impl IndexDriverRunner {
 
                         IndexCommand::CreateRange { range, tx } => {
                             log_cleaner.handle_new_range(
-                                (range.stream_id() as u64, range.index() as u32),
+                                (range.stream_id(), range.index() as u32),
                                 range.start(),
                             );
                             match self.indexer.add(range.stream_id(), &range) {

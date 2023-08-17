@@ -47,11 +47,6 @@ impl Window {
         self.committed
     }
 
-    pub(crate) fn reset(&mut self, offset: u64) {
-        self.next = offset;
-        self.committed = offset;
-    }
-
     /// Checks the request with the given offset is ready to be dispatched.
     ///
     /// # Arguments
@@ -106,13 +101,13 @@ impl Window {
     /// Move the committed offset.
     ///
     /// # Arguments
-    /// * `new_committed` - the records before the new_committed are persisted.
+    /// * `value` - the records whose offsets prior to `value` are all persisted.
     ///
     /// # Return
     /// * the committed offset.
-    pub(crate) fn commit(&mut self, new_committed: u64) -> u64 {
-        if new_committed > self.committed {
-            self.committed = new_committed;
+    pub(crate) fn commit(&mut self, value: u64) -> u64 {
+        if value > self.committed {
+            self.committed = value;
         }
         self.committed
     }

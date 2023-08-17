@@ -19,13 +19,12 @@ impl Stream {
         }
     }
 
+    pub(crate) fn update_metadata(&mut self, metadata: StreamMetadata) {
+        self.metadata = metadata;
+    }
+
     fn verify_stream_id(&self, metadata: &RangeMetadata) -> Result<(), ServiceError> {
-        if self
-            .metadata
-            .stream_id
-            .expect("Stream-id should be present")
-            != metadata.stream_id() as u64
-        {
+        if self.metadata.stream_id != metadata.stream_id() {
             error!(
                 "Stream-id mismatch, stream_id={:?}, metadata={}",
                 self.metadata.stream_id, metadata
@@ -33,13 +32,6 @@ impl Stream {
             return Err(ServiceError::Internal("Stream-id mismatch".to_owned()));
         }
         Ok(())
-    }
-
-    pub(crate) fn reset_commit(&mut self, range_index: i32, offset: u64) {
-        self.ranges
-            .iter_mut()
-            .filter(|range| range.metadata.index() == range_index)
-            .for_each(|range| range.reset(offset));
     }
 
     /// TODO: error handling
@@ -77,6 +69,12 @@ impl Stream {
 
         self.ranges.push(Range::new(metadata));
         self.sort();
+    }
+
+    pub(crate) fn remove_range(&mut self, metadata: &RangeMetadata) {
+        self.ranges
+            .extract_if(|range| range.metadata.index() == metadata.index())
+            .count();
     }
 
     // Sort ranges
@@ -133,7 +131,7 @@ mod tests {
         stream.replica = 1;
         stream.retention_period_ms = 1000;
         let stream = StreamMetadata::from(&stream);
-        assert_eq!(stream.stream_id, Some(1));
+        assert_eq!(stream.stream_id, 1);
         assert_eq!(stream.replica, 1);
         assert_eq!(stream.retention_period.as_millis(), 1000);
         Ok(())

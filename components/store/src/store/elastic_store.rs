@@ -21,7 +21,7 @@ use client::PlacementDriverIdGenerator;
 use crossbeam::channel::{Receiver, Sender, TryRecvError};
 use futures::future::join_all;
 use log::{error, trace, warn};
-use model::range::{RangeLifecycleEvent, RangeMetadata};
+use model::range::{RangeEvent, RangeMetadata};
 use observation::metrics::store_metrics::{
     RangeServerStatistics, STORE_APPEND_BYTES_COUNT, STORE_APPEND_COUNT,
     STORE_APPEND_LATENCY_HISTOGRAM, STORE_FAILED_APPEND_COUNT, STORE_FAILED_FETCH_COUNT,
@@ -403,7 +403,7 @@ impl Store for ElasticStore {
     /// this range server.
     async fn list_by_stream<F>(
         &self,
-        stream_id: i64,
+        stream_id: u64,
         filter: F,
     ) -> Result<Vec<RangeMetadata>, StoreError>
     where
@@ -450,7 +450,7 @@ impl Store for ElasticStore {
     /// `StoreError` - If something is wrong when accessing RocksDB;
     /// `Some(u64)` - If the max record offset is found;
     /// `None` - If there is no record of the given stream;
-    fn get_range_end_offset(&self, stream_id: i64, range: u32) -> Result<Option<u64>, StoreError> {
+    fn get_range_end_offset(&self, stream_id: u64, range: u32) -> Result<Option<u64>, StoreError> {
         self.shared
             .indexer
             .retrieve_max_key(stream_id, range)
@@ -465,7 +465,7 @@ impl Store for ElasticStore {
         Arc::clone(&self.config)
     }
 
-    async fn handle_range_event(&self, events: Vec<RangeLifecycleEvent>) {
+    async fn handle_range_event(&self, events: Vec<RangeEvent>) {
         match self.shared.indexer.handle_range_event(events).await {
             Ok(deletable_offset) => {
                 self.shared

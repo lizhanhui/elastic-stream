@@ -24,7 +24,7 @@ impl From<&FetchRequest> for FetchRequestT {
         let mut res = FetchRequestT::default();
         res.max_wait_ms = value.max_wait.as_millis() as i32;
         let mut range = RangeT::default();
-        range.stream_id = value.range.stream_id();
+        range.stream_id = value.range.stream_id() as i64;
         range.index = value.range.index();
         range.start = value.range.start() as i64;
         if let Some(end) = value.range.end() {

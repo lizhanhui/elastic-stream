@@ -9,8 +9,8 @@ use std::{
 use client::{client::Client, heartbeat::HeartbeatData, DefaultClient};
 use config::Configuration;
 use log::{error, warn};
-use model::{error::EsError, stream::StreamMetadata};
-use protocol::rpc::header::{ClientRole, ErrorCode};
+use model::error::EsError;
+use protocol::rpc::header::{ClientRole, ErrorCode, StreamT};
 use tokio::{
     sync::{broadcast, oneshot},
     time::{sleep, Instant},
@@ -187,14 +187,12 @@ impl StreamManager {
         request: CreateStreamRequest,
         tx: oneshot::Sender<Result<CreateStreamResponse, EsError>>,
     ) {
-        let metadata = StreamMetadata {
-            stream_id: None,
-            replica: request.replica,
-            ack_count: request.ack_count,
-            retention_period: request.retention_period,
-            start_offset: 0,
-            epoch: 0,
-        };
+        let mut stream = StreamT::default();
+        stream.replica = request.replica as i8;
+        stream.ack_count = request.ack_count as i8;
+        stream.retention_period_ms = request.retention_period.as_millis() as i64;
+        stream.start_offset = 0;
+        stream.epoch = 0;
 
         let client = match self.route_client() {
             Ok(client) => client,
@@ -204,14 +202,13 @@ impl StreamManager {
             }
         };
         tokio_uring::spawn(async move {
-            let result =
-                client
-                    .create_stream(metadata)
-                    .await
-                    .map(|metadata| CreateStreamResponse {
-                        // TODO: unify stream_id type
-                        stream_id: metadata.stream_id.expect("stream id cannot be none"),
-                    });
+            let result = client
+                .create_stream(stream)
+                .await
+                .map(|metadata| CreateStreamResponse {
+                    // TODO: unify stream_id type
+                    stream_id: metadata.stream_id,
+                });
             let _ = tx.send(result);
         });
     }

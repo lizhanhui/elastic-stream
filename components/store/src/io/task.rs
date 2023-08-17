@@ -11,7 +11,7 @@ use crate::{
 #[derive(Debug)]
 pub(crate) struct ReadTask {
     /// Stream ID of the record.
-    pub(crate) stream_id: i64,
+    pub(crate) stream_id: u64,
 
     /// Offset, in term of WAL, of the record to read.
     pub(crate) wal_offset: u64,
@@ -27,7 +27,7 @@ pub(crate) struct ReadTask {
 // Each `ReadTask` returns a single fetch result.
 #[derive(Debug)]
 pub struct SingleFetchResult {
-    pub(crate) stream_id: i64,
+    pub(crate) stream_id: u64,
     pub(crate) wal_offset: i64,
     /// The payload of a SingleFetchResult may be splitted into multiple `Bytes`s.
     pub(crate) payload: Vec<Bytes>,
@@ -59,7 +59,7 @@ impl IntoIterator for SingleFetchResult {
 #[derivative(Debug)]
 pub(crate) struct WriteTask {
     /// Stream ID of the record.
-    pub(crate) stream_id: i64,
+    pub(crate) stream_id: u64,
 
     /// Range Index
     pub(crate) range: u32,

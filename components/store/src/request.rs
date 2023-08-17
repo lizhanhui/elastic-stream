@@ -8,7 +8,7 @@ use model::Batch;
 #[derive(Clone, Debug)]
 pub struct AppendRecordRequest {
     /// Stream ID
-    pub stream_id: i64,
+    pub stream_id: u64,
 
     /// Range index
     pub range_index: i32,

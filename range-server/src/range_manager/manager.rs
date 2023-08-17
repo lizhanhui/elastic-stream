@@ -1,114 +1,79 @@
+use super::{range::Range, stream::Stream, RangeManager};
+use crate::{error::ServiceError, metadata::ResourceObserver};
+use local_sync::oneshot::{self, Sender};
+use log::{error, info, warn};
+use model::{
+    object::ObjectMetadata,
+    range::RangeMetadata,
+    replica::RangeProgress,
+    resource::{EventType, Resource, ResourceEvent},
+    stream::StreamMetadata,
+    Batch,
+};
+use object_storage::ObjectStorage;
 use std::{
+    cell::{RefCell, UnsafeCell},
     collections::{hash_map::Entry, HashMap},
     rc::Rc,
     time::Duration,
 };
-
-use log::{error, info, warn};
-use model::{
-    error::EsError, object::ObjectMetadata, range::RangeMetadata, replica::RangeProgress,
-    stream::StreamMetadata, Batch,
-};
-use object_storage::ObjectStorage;
-use store::{error::AppendError, Store};
-
-use crate::{
-    error::ServiceError,
-    metadata::{MetadataManager, RangeEventListener},
+use store::{
+    error::{AppendError, FetchError},
+    option::{ReadOptions, WriteOptions},
+    AppendRecordRequest, AppendResult, FetchResult, Store,
 };
 
-use super::{fetcher::PlacementFetcher, range::Range, stream::Stream, RangeManager};
+/// Manager of ranges, both metadata of control plane and data append/fetch of data plane.
+///
+/// TODO: `ObjectStorage` should be an implementation layer of `Store`.
+pub(crate) struct DefaultRangeManager<S, O> {
+    streams: UnsafeCell<HashMap<u64, Stream>>,
 
-pub(crate) struct DefaultRangeManager<S, F, O, M> {
-    streams: HashMap<i64, Stream>,
+    /// Flag whether range metadata has been loaded from PD yet.
+    metadata_loaded: RefCell<bool>,
 
-    fetcher: F,
+    /// Tasks that await for completion of metadata loading on start
+    metadata_loading_wait_list: RefCell<Vec<Sender<()>>>,
 
     store: Rc<S>,
 
-    object_storage: Rc<O>,
-
-    #[allow(dead_code)]
-    metadata_manager: M,
+    object_storage: O,
 }
 
-impl<S, F, O, M> DefaultRangeManager<S, F, O, M>
-where
-    S: Store + 'static,
-    F: PlacementFetcher,
-    O: ObjectStorage,
-    M: MetadataManager,
-{
-    pub(crate) fn new(
-        fetcher: F,
-        store: Rc<S>,
-        object_storage: Rc<O>,
-        metadata_manager: M,
-    ) -> Self {
+impl<S, O> DefaultRangeManager<S, O> {
+    pub(crate) fn new(store: Rc<S>, object_storage: O) -> Self {
         Self {
-            streams: HashMap::new(),
-            fetcher,
+            streams: UnsafeCell::new(HashMap::new()),
+            metadata_loaded: RefCell::new(false),
+            metadata_loading_wait_list: RefCell::new(vec![]),
             store,
             object_storage,
-            metadata_manager,
         }
     }
 
-    /// Bootstrap all stream ranges that are assigned to current range server.
-    ///
-    /// # Panic
-    /// If failed to access store to acquire max offset of the stream with mutable range.
-    async fn bootstrap(&mut self) -> Result<(), EsError> {
-        let range_event_rx = self.metadata_manager.watch()?;
-        self.metadata_manager.start().await;
-        let ranges = self
-            .fetcher
-            .bootstrap(self.store.config().server.server_id as u32)
-            .await
-            .map_err(|e| EsError::unexpected("pd fetcher bootstrap fail").set_source(e))?;
-        self.start_notify_range_event_task(range_event_rx);
-
-        for range in ranges {
-            let committed = self
-                .store
-                .get_range_end_offset(range.stream_id(), range.index() as u32)
-                .expect("Failed to acquire end offset of the range");
-            let range_index = range.index();
-            let entry = self.streams.entry(range.stream_id());
-            match entry {
-                Entry::Occupied(mut occupied) => {
-                    occupied.get_mut().create_range(range);
-                    if let Some(offset) = committed {
-                        occupied.get_mut().reset_commit(range_index, offset);
-                    }
-                }
-                Entry::Vacant(vacant) => {
-                    let metadata = self.fetcher.describe_stream(range.stream_id() as u64).await.expect(
-                        "Failed to fetch stream metadata from placement driver during bootstrap",
-                    );
-                    let mut stream = Stream::new(metadata);
-                    stream.create_range(range);
-                    if let Some(offset) = committed {
-                        stream.reset_commit(range_index, offset);
-                    }
-                    vacant.insert(stream);
-                }
-            }
+    async fn wait_metadata_loaded(&self) {
+        if *self.metadata_loaded.borrow() {
+            return;
         }
-        Ok(())
+
+        let (tx, rx) = oneshot::channel();
+        self.metadata_loading_wait_list.borrow_mut().push(tx);
+        let _ = rx.await;
     }
 
-    fn start_notify_range_event_task(&self, mut range_event_rx: RangeEventListener) {
-        let store = self.store.clone();
-        tokio_uring::spawn(async move {
-            while let Some(events) = range_event_rx.recv().await {
-                store.handle_range_event(events).await;
-            }
-        });
+    #[inline]
+    fn streams(&self) -> &HashMap<u64, Stream> {
+        unsafe { &*self.streams.get() }
+    }
+
+    #[inline]
+    #[allow(clippy::mut_from_ref)]
+    fn streams_mut(&self) -> &mut HashMap<u64, Stream> {
+        unsafe { &mut *self.streams.get() }
     }
 
     fn get_range(&self, stream_id: u64, range_index: u32) -> Option<&Range> {
-        if let Some(stream) = self.streams.get(&(stream_id as i64)) {
+        if let Some(stream) = self.streams().get(&(stream_id)) {
             stream.get_range(range_index as i32)
         } else {
             None
@@ -122,42 +87,95 @@ where
     ///
     /// # Returns
     /// The stream if it exists, otherwise `None`.
-    fn get_stream(&mut self, stream_id: i64) -> Option<&mut Stream> {
-        self.streams.get_mut(&stream_id)
+    fn get_stream(&self, stream_id: u64) -> Option<&mut Stream> {
+        self.streams_mut().get_mut(&stream_id)
     }
 
-    fn get_range_mut(&mut self, stream_id: i64, index: i32) -> Option<&mut Range> {
+    fn get_range_mut(&self, stream_id: u64, index: i32) -> Option<&mut Range> {
         if let Some(stream) = self.get_stream(stream_id) {
             stream.get_range_mut(index)
         } else {
             None
         }
     }
+
+    fn on_range_event(&self, ty: EventType, metadata: &RangeMetadata) {
+        match ty {
+            EventType::None | EventType::Reset => {}
+            EventType::ListFinished => {
+                *self.metadata_loaded.borrow_mut() = true;
+            }
+            EventType::Added | EventType::Modified | EventType::Listed => {
+                let streams = self.streams_mut();
+                let stream = streams.entry(metadata.stream_id()).or_insert_with(|| {
+                    let stream_metadata_holder = StreamMetadata {
+                        stream_id: metadata.stream_id(),
+                        ..Default::default()
+                    };
+                    Stream::new(stream_metadata_holder)
+                });
+                match stream.get_range_mut(metadata.index()) {
+                    Some(range) => {
+                        range.metadata = metadata.clone();
+                    }
+                    None => {
+                        stream.create_range(metadata.clone());
+                    }
+                }
+            }
+            EventType::Deleted => {
+                let streams = self.streams_mut();
+                if let Some(stream) = streams.get_mut(&metadata.stream_id()) {
+                    stream.remove_range(metadata);
+                }
+            }
+        }
+    }
+
+    fn on_stream_event(&self, ty: EventType, metadata: &StreamMetadata) {
+        match ty {
+            EventType::None | EventType::Reset | EventType::ListFinished => {}
+            EventType::Added | EventType::Modified | EventType::Listed => {
+                let streams = self.streams_mut();
+
+                match streams.entry(metadata.stream_id) {
+                    Entry::Occupied(mut entry) => {
+                        entry.get_mut().update_metadata(metadata.clone());
+                    }
+                    Entry::Vacant(entry) => {
+                        let stream = Stream::new(metadata.clone());
+                        entry.insert(stream);
+                    }
+                }
+            }
+            EventType::Deleted => {
+                self.streams_mut().remove(&metadata.stream_id);
+            }
+        }
+    }
 }
 
-impl<S, F, O, M> RangeManager for DefaultRangeManager<S, F, O, M>
+impl<S, O> RangeManager for DefaultRangeManager<S, O>
 where
-    S: Store + 'static,
-    F: PlacementFetcher,
+    S: Store,
     O: ObjectStorage,
-    M: MetadataManager,
 {
-    async fn start(&mut self) -> Result<(), EsError> {
-        self.bootstrap().await?;
-        Ok(())
+    async fn start(&self) {
+        self.store.start();
+        self.wait_metadata_loaded().await;
     }
 
     /// Create a new range for the specified stream.
-    fn create_range(&mut self, range: RangeMetadata) -> Result<(), ServiceError> {
+    fn create_range(&self, range: RangeMetadata) -> Result<(), ServiceError> {
         info!("Create range={:?}", range);
 
-        match self.streams.entry(range.stream_id()) {
+        match self.streams_mut().entry(range.stream_id()) {
             Entry::Occupied(mut occupied) => {
                 occupied.get_mut().create_range(range);
             }
             Entry::Vacant(vacant) => {
                 let metadata = StreamMetadata {
-                    stream_id: Some(range.stream_id() as u64),
+                    stream_id: range.stream_id(),
                     replica: 0,
                     ack_count: 0,
                     retention_period: Duration::from_secs(1),
@@ -173,17 +191,17 @@ where
     }
 
     fn commit(
-        &mut self,
-        stream_id: i64,
+        &self,
+        stream_id: u64,
         range_index: i32,
         offset: u64,
         last_offset_delta: u32,
-        bytes_len: u32,
+        _bytes_len: u32,
     ) -> Result<(), ServiceError> {
         if let Some(range) = self.get_range_mut(stream_id, range_index) {
             range.commit(offset + last_offset_delta as u64)?;
-            self.object_storage
-                .new_commit(stream_id as u64, range_index as u32, bytes_len);
+            // self.object_storage
+            //     .new_commit(stream_id as u64, range_index as u32, bytes_len);
             Ok(())
         } else {
             error!("Commit fail, range[{stream_id}#{range_index}] is not found");
@@ -193,8 +211,8 @@ where
         }
     }
 
-    fn seal(&mut self, range: &mut RangeMetadata) -> Result<(), ServiceError> {
-        if let Some(stream) = self.streams.get_mut(&range.stream_id()) {
+    fn seal(&self, range: &mut RangeMetadata) -> Result<(), ServiceError> {
+        if let Some(stream) = self.streams_mut().get_mut(&range.stream_id()) {
             if !stream.has_range(range.index()) {
                 stream.create_range(range.clone());
             }
@@ -205,7 +223,7 @@ where
                 range.stream_id()
             );
             let stream_metadata = StreamMetadata {
-                stream_id: Some(range.stream_id() as u64),
+                stream_id: range.stream_id(),
                 replica: 0,
                 ack_count: 0,
                 retention_period: Duration::from_secs(1),
@@ -216,17 +234,12 @@ where
             stream.create_range(range.clone());
             // Seal the range
             stream.seal(range)?;
-            self.streams.insert(range.stream_id(), stream);
+            self.streams_mut().insert(range.stream_id(), stream);
             Ok(())
         }
     }
 
-    fn check_barrier<R>(
-        &mut self,
-        stream_id: i64,
-        range_index: i32,
-        req: &R,
-    ) -> Result<(), AppendError>
+    fn check_barrier<R>(&self, stream_id: u64, range_index: i32, req: &R) -> Result<(), AppendError>
     where
         R: Batch + Ord + 'static,
     {
@@ -286,6 +299,32 @@ where
             }
         }
         progress
+    }
+
+    async fn append(
+        &self,
+        options: &WriteOptions,
+        request: AppendRecordRequest,
+    ) -> Result<AppendResult, AppendError> {
+        self.store.append(options, request).await
+    }
+
+    async fn fetch(&self, options: ReadOptions) -> Result<FetchResult, FetchError> {
+        self.store.fetch(options).await
+    }
+}
+
+impl<S, O> ResourceObserver for DefaultRangeManager<S, O> {
+    fn on_resource_event(&self, event: &ResourceEvent) {
+        match &event.resource {
+            Resource::Range(range) => {
+                self.on_range_event(event.event_type, range);
+            }
+            Resource::Stream(stream) => {
+                self.on_stream_event(event.event_type, stream);
+            }
+            _ => {}
+        }
     }
 }
 

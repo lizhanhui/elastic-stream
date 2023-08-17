@@ -26,14 +26,14 @@ pub trait MinOffset {
 /// Trait of local range manger.
 pub trait LocalRangeManager {
     // TODO: error propagation
-    fn list_by_stream(&self, stream_id: i64, tx: mpsc::UnboundedSender<RangeMetadata>);
+    fn list_by_stream(&self, stream_id: u64, tx: mpsc::UnboundedSender<RangeMetadata>);
 
     // TODO: error propagation
     fn list(&self, tx: mpsc::UnboundedSender<RangeMetadata>);
 
-    fn seal(&self, stream_id: i64, range: &RangeMetadata) -> Result<(), StoreError>;
+    fn seal(&self, stream_id: u64, range: &RangeMetadata) -> Result<(), StoreError>;
 
-    fn add(&self, stream_id: i64, range: &RangeMetadata) -> Result<(), StoreError>;
+    fn add(&self, stream_id: u64, range: &RangeMetadata) -> Result<(), StoreError>;
 }
 
 /// Definition of core storage trait.
@@ -41,7 +41,7 @@ pub trait LocalRangeManager {
 pub(crate) trait Indexer {
     fn index(
         &self,
-        stream_id: i64,
+        stream_id: u64,
         range: u32,
         offset: u64,
         handle: &RecordHandle,
@@ -49,7 +49,7 @@ pub(crate) trait Indexer {
 
     fn scan_record_handles_left_shift(
         &self,
-        stream_id: i64,
+        stream_id: u64,
         range: u32,
         offset: u64,
         max_offset: u64,
@@ -64,7 +64,7 @@ pub(crate) trait Indexer {
 
     fn retrieve_max_key(
         &self,
-        stream_id: i64,
+        stream_id: u64,
         range: u32,
     ) -> Result<Option<IndexEntry>, StoreError>;
 }

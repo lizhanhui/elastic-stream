@@ -41,7 +41,7 @@ where
         max_size: u32,
     ) -> Result<RangeFetchResult, store::error::FetchError> {
         let read_option = ReadOptions {
-            stream_id: stream_id as i64,
+            stream_id,
             range: range_index,
             offset: start_offset as i64,
             max_offset: end_offset,

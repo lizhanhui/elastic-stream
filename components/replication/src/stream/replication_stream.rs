@@ -914,7 +914,7 @@ mod tests {
                 ))
             } else {
                 Ok(RangeMetadata::new(
-                    stream_id as i64,
+                    stream_id,
                     index as i32,
                     epoch,
                     start_offset,
@@ -953,11 +953,11 @@ mod tests {
             let flat_record_batch_bytes = record_batch_to_bytes(
                 record_batch,
                 &context,
-                self.metadata().stream_id() as u64,
+                self.metadata().stream_id(),
                 self.metadata().index() as u32,
             );
             self.records.insert(
-                self.metadata.stream_id() as u64,
+                self.metadata.stream_id(),
                 base_offset,
                 last_offset_delta,
                 vec![vec_bytes_to_bytes(&flat_record_batch_bytes)],
@@ -976,7 +976,7 @@ mod tests {
             batch_max_bytes: u32,
         ) -> Result<FetchDataset, EsError> {
             Ok(FetchDataset::Full(vec![self.records.get_block(
-                self.metadata.stream_id() as u64,
+                self.metadata.stream_id(),
                 start_offset,
                 end_offset,
                 batch_max_bytes,

@@ -3,7 +3,7 @@ use std::{cell::RefCell, collections::HashMap, rc::Rc, sync::Arc};
 use futures::future::join_all;
 use local_sync::oneshot;
 use log::trace;
-use model::range::{RangeLifecycleEvent, RangeMetadata};
+use model::range::{RangeEvent, RangeMetadata};
 
 use crate::{
     error::{AppendError, FetchError, StoreError},
@@ -32,12 +32,11 @@ impl StoreBuffer {
     }
 
     pub(crate) fn fast_forward(&mut self, request: &AppendRecordRequest) -> bool {
-        self.stream_buffer(request.stream_id as u64)
-            .fast_forward(request)
+        self.stream_buffer(request.stream_id).fast_forward(request)
     }
 
     pub(crate) fn buffer(&mut self, req: BufferedRequest) -> Result<(), BufferedRequest> {
-        self.stream_buffer(req.request.stream_id as u64).buffer(req)
+        self.stream_buffer(req.request.stream_id).buffer(req)
     }
 
     pub(crate) fn create_range(&mut self, stream_id: u64, index: u32, offset: u64) {
@@ -102,7 +101,7 @@ where
             request.offset
         );
         if self.buffer.borrow_mut().fast_forward(&request) {
-            let stream_id = request.stream_id as u64;
+            let stream_id = request.stream_id;
             let range = request.range_index as u32;
             let fut = self.store.append(options, request);
 
@@ -156,7 +155,7 @@ where
     /// if `filter` returns true, the range is kept in the final result vector; dropped otherwise.
     async fn list_by_stream<F>(
         &self,
-        stream_id: i64,
+        stream_id: u64,
         filter: F,
     ) -> Result<Vec<RangeMetadata>, StoreError>
     where
@@ -169,14 +168,14 @@ where
     async fn seal(&self, range: RangeMetadata) -> Result<(), StoreError> {
         self.buffer
             .borrow_mut()
-            .seal_range(range.stream_id() as u64, range.index() as u32);
+            .seal_range(range.stream_id(), range.index() as u32);
         self.store.seal(range).await
     }
 
     /// Create a stream range in metadata.
     async fn create(&self, range: RangeMetadata) -> Result<(), StoreError> {
         self.buffer.borrow_mut().create_range(
-            range.stream_id() as u64,
+            range.stream_id(),
             range.index() as u32,
             range.start(),
         );
@@ -184,7 +183,7 @@ where
     }
 
     /// Get range end offset in current range server.
-    fn get_range_end_offset(&self, stream_id: i64, range: u32) -> Result<Option<u64>, StoreError> {
+    fn get_range_end_offset(&self, stream_id: u64, range: u32) -> Result<Option<u64>, StoreError> {
         self.store.get_range_end_offset(stream_id, range)
     }
 
@@ -196,7 +195,7 @@ where
         self.store.config()
     }
 
-    async fn handle_range_event(&self, events: Vec<RangeLifecycleEvent>) {
+    async fn handle_range_event(&self, events: Vec<RangeEvent>) {
         self.store.handle_range_event(events).await;
     }
 }

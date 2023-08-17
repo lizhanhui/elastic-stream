@@ -36,7 +36,7 @@ pub mod util;
 
 use self::option::{ReadOptions, WriteOptions};
 use error::{AppendError, FetchError, StoreError};
-use model::range::{RangeLifecycleEvent, RangeMetadata};
+use model::range::{RangeEvent, RangeMetadata};
 use std::sync::Arc;
 
 pub use crate::io::record::RECORD_PREFIX_LENGTH;
@@ -83,7 +83,7 @@ pub trait Store {
     /// if `filter` returns true, the range is kept in the final result vector; dropped otherwise.
     async fn list_by_stream<F>(
         &self,
-        stream_id: i64,
+        stream_id: u64,
         filter: F,
     ) -> Result<Vec<RangeMetadata>, StoreError>
     where
@@ -96,7 +96,7 @@ pub trait Store {
     async fn create(&self, range: RangeMetadata) -> Result<(), StoreError>;
 
     /// Get range end offset in current range server.
-    fn get_range_end_offset(&self, stream_id: i64, range: u32) -> Result<Option<u64>, StoreError>;
+    fn get_range_end_offset(&self, stream_id: u64, range: u32) -> Result<Option<u64>, StoreError>;
 
     fn id(&self) -> i32;
 
@@ -104,7 +104,7 @@ pub trait Store {
 
     /// Handle range lifecycle event. The events will be used in:
     /// - wal cleanup
-    async fn handle_range_event(&self, events: Vec<RangeLifecycleEvent>);
+    async fn handle_range_event(&self, events: Vec<RangeEvent>);
 }
 
 #[cfg(test)]

@@ -1,22 +1,19 @@
+use super::{MetadataEventRx, MetadataListener, MetadataManager, ResourceObserver};
+use log::info;
+use model::{
+    error::EsError,
+    range::{Range, RangeEvent, RangeIndex, RangeMetadata, StreamId},
+    resource::{EventType, Resource, ResourceEvent},
+    stream::StreamMetadata,
+};
 use std::{
     cell::RefCell,
     cmp::max,
     collections::{BTreeMap, HashMap},
-    rc::Rc,
-};
-
-use log::info;
-use model::{
-    error::EsError,
-    range::{Range, RangeIndex, RangeLifecycleEvent, RangeMetadata, StreamId},
-    resource::{EventType, Resource, ResourceEvent},
-    stream::StreamMetadata,
+    rc::{Rc, Weak},
 };
 use tokio::sync::{mpsc, oneshot};
-
-use super::{MetadataListener, MetadataManager, RangeEventListener};
-
-type Listener = mpsc::UnboundedSender<Vec<RangeLifecycleEvent>>;
+type Listener = mpsc::UnboundedSender<Vec<RangeEvent>>;
 
 pub(crate) struct DefaultMetadataManager {
     server_id: i32,
@@ -24,6 +21,7 @@ pub(crate) struct DefaultMetadataManager {
     object_rx: RefCell<Option<object_storage::OffloadProgressListener>>,
     stream_map: Rc<RefCell<HashMap<StreamId, Stream>>>,
     listeners: Vec<Listener>,
+    observers: Rc<RefCell<Vec<Weak<dyn ResourceObserver>>>>,
 }
 
 impl DefaultMetadataManager {
@@ -39,6 +37,7 @@ impl DefaultMetadataManager {
             object_rx: RefCell::new(object_rx),
             stream_map: stream_map.clone(),
             listeners: Vec::new(),
+            observers: Rc::new(RefCell::new(vec![])),
         }
     }
 
@@ -48,12 +47,14 @@ impl DefaultMetadataManager {
         object_rx: object_storage::OffloadProgressListener,
         stream_map: Rc<RefCell<HashMap<u64, Stream>>>,
         listeners: Vec<Listener>,
+        observers: Rc<RefCell<Vec<Weak<dyn ResourceObserver>>>>,
     ) {
         Self::listen_metadata_events(
             server_id,
             metadata_rx,
             stream_map.clone(),
             listeners.clone(),
+            observers,
         )
         .await;
         Self::listen_object_events(object_rx, stream_map, listeners);
@@ -64,6 +65,7 @@ impl DefaultMetadataManager {
         mut metadata_rx: MetadataListener,
         stream_map: Rc<RefCell<HashMap<u64, Stream>>>,
         listeners: Vec<Listener>,
+        observers: Rc<RefCell<Vec<Weak<dyn ResourceObserver>>>>,
     ) {
         let (list_done_tx, list_done_rx) = oneshot::channel();
         let mut list_done_tx = Some(list_done_tx);
@@ -74,6 +76,14 @@ impl DefaultMetadataManager {
             loop {
                 match metadata_rx.recv().await {
                     Some(event) => {
+                        {
+                            for observer in observers.borrow().iter() {
+                                if let Some(observer) = observer.upgrade() {
+                                    observer.on_resource_event(&event);
+                                }
+                            }
+                        }
+
                         match event.event_type {
                             EventType::ListFinished => {
                                 if let Some(tx) = list_done_tx.take() {
@@ -123,11 +133,11 @@ impl DefaultMetadataManager {
         server_id: i32,
         event: ResourceEvent,
         stream_map: &Rc<RefCell<HashMap<u64, Stream>>>,
-    ) -> Vec<RangeLifecycleEvent> {
+    ) -> Vec<RangeEvent> {
         let mut stream_map = stream_map.borrow_mut();
         match event.resource {
             Resource::Stream(stream_metadata) => {
-                let stream_id = stream_metadata.stream_id.unwrap_or(0);
+                let stream_id = stream_metadata.stream_id;
                 match event.event_type {
                     EventType::Listed | EventType::Added | EventType::Modified => {
                         if let Some(stream) = stream_map.get_mut(&stream_id) {
@@ -150,11 +160,11 @@ impl DefaultMetadataManager {
                 if !range.held_by(server_id) {
                     return Vec::default();
                 }
-                let stream_id = range.stream_id() as u64;
+                let stream_id = range.stream_id();
                 let stream = if let Some(stream) = stream_map.get_mut(&stream_id) {
                     stream
                 } else {
-                    stream_map.insert(stream_id, Stream::new(range.stream_id() as u64, None));
+                    stream_map.insert(stream_id, Stream::new(range.stream_id(), None));
                     stream_map.get_mut(&stream_id).unwrap()
                 };
                 match event.event_type {
@@ -181,7 +191,7 @@ impl DefaultMetadataManager {
             loop {
                 match object_rx.recv().await {
                     Some(offload_progress) => {
-                        let events: Vec<RangeLifecycleEvent> = offload_progress
+                        let events: Vec<RangeEvent> = offload_progress
                             .into_iter()
                             .map(|((stream_id, range_index), offloaded_offset)| {
                                 let mut stream_map = stream_map.borrow_mut();
@@ -208,7 +218,7 @@ impl DefaultMetadataManager {
     }
 }
 
-fn notify_listeners(events: Vec<RangeLifecycleEvent>, listeners: &mut Vec<Listener>) -> bool {
+fn notify_listeners(events: Vec<RangeEvent>, listeners: &mut Vec<Listener>) -> bool {
     let mut has_closed = false;
     for tx in listeners.iter() {
         if tx.send(events.clone()).is_err() {
@@ -235,14 +245,19 @@ impl MetadataManager for DefaultMetadataManager {
             object_rx,
             self.stream_map.clone(),
             self.listeners.clone(),
+            Rc::clone(&self.observers),
         )
         .await;
     }
 
-    fn watch(&mut self) -> Result<RangeEventListener, EsError> {
+    fn watch(&mut self) -> Result<MetadataEventRx, EsError> {
         let (tx, rx) = mpsc::unbounded_channel();
         self.listeners.push(tx);
         Ok(rx)
+    }
+
+    fn add_observer(&mut self, observer: Weak<dyn ResourceObserver>) {
+        self.observers.borrow_mut().push(observer);
     }
 }
 
@@ -265,7 +280,7 @@ impl Stream {
         }
     }
 
-    fn add(&mut self, range: RangeMetadata) -> RangeLifecycleEvent {
+    fn add(&mut self, range: RangeMetadata) -> RangeEvent {
         let range_index = range.index() as u32;
         let new_start_offset = max(self.new_start_offset(range_index), range.start());
         let range_key = (self.stream_id, range_index);
@@ -279,15 +294,15 @@ impl Stream {
         )
     }
 
-    fn del(&mut self, range: &RangeMetadata) -> RangeLifecycleEvent {
+    fn del(&mut self, range: &RangeMetadata) -> RangeEvent {
         let range_index = range.index() as u32;
-        let event = RangeLifecycleEvent::Del((range.stream_id() as u64, range_index));
+        let event = RangeEvent::Del((range.stream_id(), range_index));
         self.ranges.remove(&range_index);
         self.range_offloaded_offsets.remove(&range_index);
         event
     }
 
-    fn update_stream(&mut self, metadata: StreamMetadata) -> Vec<RangeLifecycleEvent> {
+    fn update_stream(&mut self, metadata: StreamMetadata) -> Vec<RangeEvent> {
         self.metadata = Some(metadata);
         let mut events = Vec::new();
         let range_indexes: Vec<u32> = self.ranges.keys().copied().collect();
@@ -312,7 +327,7 @@ impl Stream {
         &mut self,
         range_index: RangeIndex,
         offloaded_offset: u64,
-    ) -> RangeLifecycleEvent {
+    ) -> RangeEvent {
         self.range_offloaded_offsets
             .insert(range_index, offloaded_offset);
         let new_start_offset = self.new_start_offset(range_index);
@@ -329,11 +344,11 @@ impl Stream {
         )
     }
 
-    fn gen_destroy_events(&self) -> Vec<RangeLifecycleEvent> {
+    fn gen_destroy_events(&self) -> Vec<RangeEvent> {
         let mut events = Vec::with_capacity(self.ranges.len());
         for (range, _) in self.ranges.values() {
-            let range_key = (range.stream_id() as u64, range.index() as u32);
-            events.push(RangeLifecycleEvent::Del(range_key));
+            let range_key = (range.stream_id(), range.index() as u32);
+            events.push(RangeEvent::Del(range_key));
         }
         events
     }
@@ -360,15 +375,15 @@ impl Stream {
         range_end_offset: Option<&u64>,
         offloaded_offset: Option<&u64>,
         new_start_offset: u64,
-    ) -> RangeLifecycleEvent {
+    ) -> RangeEvent {
         if offloaded_offset
             .zip(range_end_offset)
             .map(|(a, b)| *a >= *b)
             .unwrap_or(false)
         {
-            RangeLifecycleEvent::Offloaded(range)
+            RangeEvent::Offloaded(range)
         } else {
-            RangeLifecycleEvent::OffsetMove(range, new_start_offset)
+            RangeEvent::OffsetMove(range, new_start_offset)
         }
     }
 }
@@ -402,22 +417,22 @@ mod tests {
             });
             let _ = m_tx.send(ResourceEvent {
                 event_type: EventType::ListFinished,
-                resource: Resource::NONE,
+                resource: Resource::None,
             });
             assert_eq!(TryRecvError::Empty, events_rx.try_recv().unwrap_err());
             manager.start().await;
             let events = events_rx.try_recv().unwrap();
             assert_eq!(
                 vec![
-                    RangeLifecycleEvent::OffsetMove((1, 1), 100),
-                    RangeLifecycleEvent::OffsetMove((1, 2), 150)
+                    RangeEvent::OffsetMove((1, 1), 100),
+                    RangeEvent::OffsetMove((1, 2), 150)
                 ],
                 events
             );
 
             o_tx.send(vec![((1, 2), 200)]).unwrap();
             let events = events_rx.recv().await.unwrap();
-            assert_eq!(vec![RangeLifecycleEvent::OffsetMove((1, 2), 200)], events);
+            assert_eq!(vec![RangeEvent::OffsetMove((1, 2), 200)], events);
         });
         Ok(())
     }
@@ -426,43 +441,43 @@ mod tests {
     fn test_stream() {
         let mut stream = Stream::new(1, None);
         assert_eq!(
-            RangeLifecycleEvent::OffsetMove((1, 1), 10),
+            RangeEvent::OffsetMove((1, 1), 10),
             stream.add(RangeMetadata::new(1, 1, 0, 10, Some(50)))
         );
 
         assert_eq!(
-            RangeLifecycleEvent::OffsetMove((1, 1), 20),
+            RangeEvent::OffsetMove((1, 1), 20),
             stream.update_offloaded_offset(1, 20),
         );
         assert!(stream
             .update_stream(StreamMetadata {
-                stream_id: Some(1),
+                stream_id: 1,
                 start_offset: 15,
                 ..Default::default()
             })
             .is_empty());
         assert_eq!(
-            vec![RangeLifecycleEvent::OffsetMove((1, 1), 40)],
+            vec![RangeEvent::OffsetMove((1, 1), 40)],
             stream.update_stream(StreamMetadata {
-                stream_id: Some(1),
+                stream_id: 1,
                 start_offset: 40,
                 ..Default::default()
             }),
         );
         assert_eq!(
-            RangeLifecycleEvent::Offloaded((1, 1)),
+            RangeEvent::Offloaded((1, 1)),
             stream.update_offloaded_offset(1, 50),
         );
 
         assert_eq!(
-            RangeLifecycleEvent::Del((1, 1)),
+            RangeEvent::Del((1, 1)),
             stream.del(&RangeMetadata::new(1, 1, 0, 10, Some(50))),
         );
     }
 
     fn stream(stream_id: u64, start_offset: u64) -> Resource {
         Resource::Stream(StreamMetadata {
-            stream_id: Some(stream_id),
+            stream_id,
             start_offset,
             ..Default::default()
         })
@@ -475,13 +490,8 @@ mod tests {
         end_offset: Option<u64>,
         server_id: i32,
     ) -> Resource {
-        let mut range = RangeMetadata::new(
-            stream_id as i64,
-            range_index as i32,
-            0,
-            start_offset,
-            end_offset,
-        );
+        let mut range =
+            RangeMetadata::new(stream_id, range_index as i32, 0, start_offset, end_offset);
         range.replica_mut().push(RangeServer::new(
             server_id,
             "",

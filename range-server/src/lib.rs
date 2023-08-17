@@ -1,6 +1,7 @@
 #![feature(result_option_inspect)]
 #![feature(try_find)]
 #![feature(hash_extract_if)]
+#![feature(extract_if)]
 #![feature(btree_extract_if)]
 #![feature(async_fn_in_trait)]
 #![feature(ip)]

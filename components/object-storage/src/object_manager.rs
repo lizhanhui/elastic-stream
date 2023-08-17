@@ -322,7 +322,7 @@ where
         match resource {
             Resource::Range(range) => {
                 let mut metadata = metadata.borrow_mut();
-                let stream_id = range.stream_id() as u64;
+                let stream_id = range.stream_id();
                 let range_index = range.index() as u32;
                 let key = RangeKey::new(stream_id, range_index);
                 if range.held_by(server_id) {

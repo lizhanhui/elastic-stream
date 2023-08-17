@@ -1,7 +1,6 @@
 use bytes::{Bytes, BytesMut};
 use model::object::ObjectMetadata;
 use model::request::fetch::FetchRequest;
-use model::stream::StreamMetadata;
 use model::{
     range::RangeMetadata, range_server::RangeServer, replica::RangeProgress, ListRangeCriteria,
 };
@@ -38,7 +37,7 @@ pub enum Headers {
     },
 
     CreateStream {
-        stream_metadata: StreamMetadata,
+        stream: StreamT,
     },
 
     DescribeStream {
@@ -150,10 +149,9 @@ impl From<&Request> for Bytes {
                 builder.finish(heartbeat, None);
             }
 
-            Headers::CreateStream { stream_metadata } => {
+            Headers::CreateStream { stream } => {
                 let mut request = CreateStreamRequestT::default();
-                let stream = stream_metadata.into();
-                request.stream = Box::new(stream);
+                request.stream = Box::new(stream.clone());
                 let request = request.pack(&mut builder);
                 builder.finish(request, None);
             }
@@ -213,7 +211,7 @@ impl From<&Request> for Bytes {
                 request.timeout_ms = req.timeout.as_millis() as i32;
                 request.kind = *kind;
                 let mut range_t = RangeT::default();
-                range_t.stream_id = range.stream_id();
+                range_t.stream_id = range.stream_id() as i64;
                 range_t.index = range.index();
                 range_t.epoch = range.epoch() as i64;
                 range_t.start = range.start() as i64;

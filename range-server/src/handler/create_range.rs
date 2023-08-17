@@ -1,16 +1,12 @@
-use core::fmt;
-use std::{cell::UnsafeCell, rc::Rc};
-
+use super::util::root_as_rpc_request;
+use crate::range_manager::RangeManager;
 use bytes::Bytes;
 use codec::frame::Frame;
-use log::{error, trace, warn};
+use core::fmt;
+use log::{error, warn};
 use model::range::RangeMetadata;
-use protocol::rpc::header::{CreateRangeRequest, ErrorCode, RangeT, SealRangeResponseT, StatusT};
-use store::Store;
-
-use crate::range_manager::RangeManager;
-
-use super::util::root_as_rpc_request;
+use protocol::rpc::header::{CreateRangeRequest, ErrorCode, SealRangeResponseT, StatusT};
+use std::rc::Rc;
 
 #[derive(Debug)]
 pub(crate) struct CreateRange<'a> {
@@ -35,51 +31,27 @@ impl<'a> CreateRange<'a> {
         Ok(Self { request })
     }
 
-    pub(crate) async fn apply<S, M>(
-        &self,
-        store: Rc<S>,
-        range_manager: Rc<UnsafeCell<M>>,
-        response: &mut Frame,
-    ) where
-        S: Store,
+    pub(crate) async fn apply<M>(&self, range_manager: Rc<M>, response: &mut Frame)
+    where
         M: RangeManager,
     {
         let request = self.request.unpack();
 
         let mut create_response = SealRangeResponseT::default();
 
-        let manager = unsafe { &mut *range_manager.get() };
-
         let range = request.range;
         let range: RangeMetadata = Into::<RangeMetadata>::into(&*range);
         let mut status = StatusT::default();
+        status.code = ErrorCode::OK;
 
         // Notify range creation to `RangeManager`
-        if let Err(e) = manager.create_range(range.clone()) {
+        if let Err(e) = range_manager.create_range(range.clone()) {
             error!("Failed to create range: {:?}", e);
             // TODO: Map service error to the corresponding error code.
-            status.code = ErrorCode::RS_INTERNAL_SERVER_ERROR;
+            status.code = ErrorCode::RS_CREATE_RANGE;
             status.message = Some(format!("Failed to create range: {}", e));
-            create_response.status = Box::new(status);
-        } else {
-            // Notify range creation to `Store`
-            if let Err(e) = store.create(range.clone()).await {
-                error!("Failed to create-range in store: {}", e.to_string());
-                status.code = ErrorCode::RS_CREATE_RANGE;
-                status.message = Some(format!("Failed to create range: {}", e));
-                create_response.status = Box::new(status);
-                self.build_response(response, &create_response);
-                return;
-            }
-
-            status.code = ErrorCode::OK;
-            status.message = Some(String::from("OK"));
-            create_response.status = Box::new(status);
-            // Write back the range metadata to client so that client may maintain consistent code.
-            create_response.range = Some(Box::new(Into::<RangeT>::into(&range)));
-            trace!("Created range={:?}", range);
         }
-
+        create_response.status = Box::new(status);
         self.build_response(response, &create_response);
     }
 
@@ -101,17 +73,14 @@ impl<'a> fmt::Display for CreateRange<'a> {
 
 #[cfg(test)]
 mod tests {
-    use std::{cell::UnsafeCell, rc::Rc};
-
+    use crate::{error::ServiceError, range_manager::MockRangeManager};
     use bytes::Bytes;
     use codec::frame::Frame;
     use flatbuffers::FlatBufferBuilder;
     use protocol::rpc::header::{
         CreateRangeRequestT, CreateRangeResponse, ErrorCode, OperationCode, RangeT,
     };
-    use store::{error::StoreError, MockStore};
-
-    use crate::{error::ServiceError, range_manager::MockRangeManager};
+    use std::rc::Rc;
 
     fn create_range_request() -> Frame {
         let mut frame = Frame::new(OperationCode::CREATE_RANGE);
@@ -159,25 +128,19 @@ mod tests {
     #[test]
     fn test_create_range_apply() {
         ulog::try_init_log();
-        let mut store = MockStore::default();
-        let rm = Rc::new(UnsafeCell::new(MockRangeManager::default()));
+        let mut range_manager = MockRangeManager::default();
+        range_manager
+            .expect_create_range()
+            .once()
+            .returning_st(|_range| Ok(()));
+        let range_manager = Rc::new(range_manager);
         let request = create_range_request();
         let handler =
             super::CreateRange::parse_frame(&request).expect("Parse frame should NOT fail");
         let mut response = Frame::new(OperationCode::UNKNOWN);
 
-        let stream_manager = unsafe { &mut *rm.get() };
-        stream_manager
-            .expect_create_range()
-            .once()
-            .returning(|_metadata| Ok(()));
-
-        store.expect_create().once().returning(|_metadata| Ok(()));
-
         tokio_uring::start(async move {
-            let store = Rc::new(store);
-            handler.apply(store, rm, &mut response).await;
-
+            handler.apply(range_manager, &mut response).await;
             if let Some(buf) = &response.header {
                 let resp = flatbuffers::root::<CreateRangeResponse>(buf)
                     .expect("Should get a valid create-range response");
@@ -191,27 +154,24 @@ mod tests {
     #[test]
     fn test_create_range_apply_when_range_manager_fails() {
         ulog::try_init_log();
-        let store = MockStore::default();
-        let rm = Rc::new(UnsafeCell::new(MockRangeManager::default()));
+        let mut range_manager = MockRangeManager::default();
+        range_manager
+            .expect_create_range()
+            .once()
+            .returning(|_metadata| Err(ServiceError::Internal("Test".to_owned())));
+        let rm = Rc::new(range_manager);
         let request = create_range_request();
         let handler =
             super::CreateRange::parse_frame(&request).expect("Parse frame should NOT fail");
         let mut response = Frame::new(OperationCode::UNKNOWN);
 
-        let stream_manager = unsafe { &mut *rm.get() };
-        stream_manager
-            .expect_create_range()
-            .once()
-            .returning(|_metadata| Err(ServiceError::Internal("Test".to_owned())));
-
         tokio_uring::start(async move {
-            let store = Rc::new(store);
-            handler.apply(store, rm, &mut response).await;
+            handler.apply(rm, &mut response).await;
 
             if let Some(buf) = &response.header {
                 let resp = flatbuffers::root::<CreateRangeResponse>(buf)
                     .expect("Should get a valid create-range response");
-                assert_eq!(ErrorCode::RS_INTERNAL_SERVER_ERROR, resp.status().code());
+                assert_eq!(ErrorCode::RS_CREATE_RANGE, resp.status().code());
             } else {
                 panic!("Create range should not fail");
             }
@@ -221,28 +181,22 @@ mod tests {
     #[test]
     fn test_create_range_apply_when_store_fails() {
         ulog::try_init_log();
-        let mut store = MockStore::default();
-        let rm = Rc::new(UnsafeCell::new(MockRangeManager::default()));
+        let mut range_manager = MockRangeManager::default();
+        range_manager
+            .expect_create_range()
+            .once()
+            .returning(|metadata| {
+                assert_eq!(1, metadata.stream_id());
+                Err(ServiceError::Internal("Test".to_string()))
+            });
+        let range_manager = Rc::new(range_manager);
         let request = create_range_request();
         let handler =
             super::CreateRange::parse_frame(&request).expect("Parse frame should NOT fail");
         let mut response = Frame::new(OperationCode::UNKNOWN);
 
-        let stream_manager = unsafe { &mut *rm.get() };
-        stream_manager
-            .expect_create_range()
-            .once()
-            .returning(|_metadata| Ok(()));
-
-        store.expect_create().once().returning(|metadata| {
-            assert_eq!(1, metadata.stream_id());
-            Err(StoreError::Internal("Test".to_string()))
-        });
-
         tokio_uring::start(async move {
-            let store = Rc::new(store);
-            handler.apply(store, rm, &mut response).await;
-
+            handler.apply(range_manager, &mut response).await;
             if let Some(buf) = &response.header {
                 let resp = flatbuffers::root::<CreateRangeResponse>(buf)
                     .expect("Should get a valid create-range response");

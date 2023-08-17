@@ -1,16 +1,12 @@
-use std::{cell::UnsafeCell, fmt, rc::Rc};
-
-use codec::frame::Frame;
-use log::error;
-use protocol::rpc::header::{ErrorCode, OperationCode};
-use store::Store;
-
-use crate::range_manager::RangeManager;
-
 use super::{
     append::Append, create_range::CreateRange, fetch::Fetch, heartbeat::Heartbeat, ping::Ping,
     seal_range::SealRange,
 };
+use crate::range_manager::RangeManager;
+use codec::frame::Frame;
+use log::error;
+use protocol::rpc::header::{ErrorCode, OperationCode};
+use std::{fmt, rc::Rc};
 
 #[derive(Debug)]
 pub(crate) enum Command<'a> {
@@ -104,22 +100,17 @@ impl<'a> Command<'a> {
         }
     }
 
-    pub(crate) async fn apply<S, M>(
-        &self,
-        store: Rc<S>,
-        range_manager: Rc<UnsafeCell<M>>,
-        response: &mut Frame,
-    ) where
-        S: Store,
+    pub(crate) async fn apply<M>(&self, range_manager: Rc<M>, response: &mut Frame)
+    where
         M: RangeManager,
     {
         match self {
-            Command::Append(cmd) => cmd.apply(store, range_manager, response).await,
-            Command::Fetch(cmd) => cmd.apply(store, range_manager, response).await,
-            Command::Heartbeat(cmd) => cmd.apply(store, range_manager, response).await,
-            Command::Ping(cmd) => cmd.apply(store, range_manager, response).await,
-            Command::CreateRange(cmd) => cmd.apply(store, range_manager, response).await,
-            Command::SealRange(cmd) => cmd.apply(store, range_manager, response).await,
+            Command::Append(cmd) => cmd.apply(range_manager, response).await,
+            Command::Fetch(cmd) => cmd.apply(range_manager, response).await,
+            Command::Heartbeat(cmd) => cmd.apply(range_manager, response).await,
+            Command::Ping(cmd) => cmd.apply(range_manager, response).await,
+            Command::CreateRange(cmd) => cmd.apply(range_manager, response).await,
+            Command::SealRange(cmd) => cmd.apply(range_manager, response).await,
         }
     }
 }

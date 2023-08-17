@@ -45,7 +45,7 @@ impl From<&OffloadOwnerT> for OffloadOwner {
 #[derive(Derivative)]
 #[derivative(Debug, PartialEq, Clone)]
 pub struct RangeMetadata {
-    stream_id: i64,
+    stream_id: u64,
 
     epoch: u64,
 
@@ -77,7 +77,7 @@ pub struct RangeMetadata {
 
 impl RangeMetadata {
     // TODO: replace with new_range, after add RangeReplicaMeta
-    pub fn new(stream_id: i64, index: i32, epoch: u64, start: u64, end: Option<u64>) -> Self {
+    pub fn new(stream_id: u64, index: i32, epoch: u64, start: u64, end: Option<u64>) -> Self {
         Self {
             stream_id,
             index,
@@ -95,7 +95,7 @@ impl RangeMetadata {
     }
 
     pub fn new_range(
-        stream_id: i64,
+        stream_id: u64,
         index: i32,
         epoch: u64,
         start: u64,
@@ -145,7 +145,7 @@ impl RangeMetadata {
         }
     }
 
-    pub fn stream_id(&self) -> i64 {
+    pub fn stream_id(&self) -> u64 {
         self.stream_id
     }
 
@@ -204,7 +204,7 @@ impl Display for RangeMetadata {
 impl From<&RangeMetadata> for RangeT {
     fn from(value: &RangeMetadata) -> Self {
         let mut range = RangeT::default();
-        range.stream_id = value.stream_id;
+        range.stream_id = value.stream_id as i64;
         range.epoch = value.epoch as i64;
         range.index = value.index;
         range.start = value.start as i64;
@@ -240,7 +240,7 @@ impl From<&RangeT> for RangeMetadata {
             }
         }
         Self {
-            stream_id: value.stream_id,
+            stream_id: value.stream_id as u64,
             epoch: value.epoch as u64,
             index: value.index,
             start: value.start as u64,
@@ -270,7 +270,7 @@ type StartOffset = u64;
 /// end_offset may be larger than Range end_offset, we need Offloaded & Del
 /// to force release resource.
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
-pub enum RangeLifecycleEvent {
+pub enum RangeEvent {
     // The data before start offset is deletable.
     OffsetMove(Range, StartOffset),
     // The data in range is offloaded.

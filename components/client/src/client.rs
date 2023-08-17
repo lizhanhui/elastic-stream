@@ -22,7 +22,7 @@ use observation::metrics::{
     sys_metrics::{DiskStatistics, MemoryStatistics},
     uring_metrics::UringStatistics,
 };
-use protocol::rpc::header::{ErrorCode, RangeServerState, ResourceType, SealKind};
+use protocol::rpc::header::{ErrorCode, RangeServerState, ResourceType, SealKind, StreamT};
 use std::{cell::UnsafeCell, rc::Rc, sync::Arc, time::Duration};
 use tokio::{sync::broadcast, time};
 
@@ -39,10 +39,7 @@ pub trait Client {
 
     async fn broadcast_heartbeat(&self, data: &HeartbeatData);
 
-    async fn create_stream(
-        &self,
-        stream_metadata: StreamMetadata,
-    ) -> Result<StreamMetadata, EsError>;
+    async fn create_stream(&self, stream: StreamT) -> Result<StreamMetadata, EsError>;
 
     async fn describe_stream(&self, stream_id: u64) -> Result<StreamMetadata, EsError>;
 
@@ -171,10 +168,7 @@ impl Client for DefaultClient {
         session_manager.broadcast_heartbeat(data).await;
     }
 
-    async fn create_stream(
-        &self,
-        stream_metadata: StreamMetadata,
-    ) -> Result<StreamMetadata, EsError> {
+    async fn create_stream(&self, stream_metadata: StreamT) -> Result<StreamMetadata, EsError> {
         let composite_session = self.get_pd_session().await?;
         let future = composite_session.create_stream(stream_metadata);
         time::timeout(self.config.client_io_timeout(), future)
@@ -479,7 +473,6 @@ mod tests {
     use mock_server::run_listener;
     use model::error::EsError;
     use model::resource::{EventType, Resource};
-    use model::stream::StreamMetadata;
     use model::ListRangeCriteria;
     use model::{
         range::RangeMetadata,
@@ -490,7 +483,7 @@ mod tests {
         sys_metrics::{DiskStatistics, MemoryStatistics},
         uring_metrics::UringStatistics,
     };
-    use protocol::rpc::header::{ClientRole, RangeServerState, ResourceType, SealKind};
+    use protocol::rpc::header::{ClientRole, RangeServerState, ResourceType, SealKind, StreamT};
     use std::{error::Error, sync::Arc};
     use tokio::sync::broadcast;
 
@@ -554,18 +547,15 @@ mod tests {
             let config = Arc::new(config);
             let (tx, _rx) = broadcast::channel(1);
             let client = DefaultClient::new(config, tx);
-            let stream_metadata = client
-                .create_stream(StreamMetadata {
-                    stream_id: None,
-                    replica: 1,
-                    ack_count: 1,
-                    retention_period: std::time::Duration::from_secs(1),
-                    start_offset: 0,
-                    epoch: 0,
-                })
-                .await?;
+            let mut stream_t = StreamT::default();
+            stream_t.replica = 1;
+            stream_t.ack_count = 1;
+            stream_t.retention_period_ms = 1000;
+            stream_t.epoch = 0;
+            stream_t.start_offset = 0;
+            let stream_metadata = client.create_stream(stream_t).await?;
             dbg!(&stream_metadata);
-            assert!(stream_metadata.stream_id.is_some());
+            assert!(stream_metadata.stream_id > 0);
             assert_eq!(1, stream_metadata.replica);
             assert_eq!(
                 std::time::Duration::from_secs(1),
@@ -594,7 +584,7 @@ mod tests {
                 .describe_stream(1)
                 .await
                 .expect("Describe stream should not fail");
-            assert_eq!(Some(1), stream_metadata.stream_id);
+            assert_eq!(1, stream_metadata.stream_id);
             assert_eq!(1, stream_metadata.replica);
             assert_eq!(
                 std::time::Duration::from_secs(3600 * 24),
@@ -1006,7 +996,7 @@ mod tests {
                 .update_stream(1, None, None, Some(1))
                 .await
                 .expect("Update stream should not fail");
-            assert_eq!(Some(1), stream_metadata.stream_id);
+            assert_eq!(1, stream_metadata.stream_id);
             assert_eq!(1, stream_metadata.epoch);
             assert_eq!(
                 std::time::Duration::from_secs(3600 * 24),
@@ -1080,7 +1070,7 @@ mod tests {
     fn check_stream(resource: &Resource) {
         match resource {
             Resource::Stream(stream) => {
-                assert_eq!(42, stream.stream_id.unwrap());
+                assert_eq!(42, stream.stream_id);
                 assert_eq!(2, stream.replica);
                 assert_eq!(1, stream.ack_count);
                 assert_eq!(

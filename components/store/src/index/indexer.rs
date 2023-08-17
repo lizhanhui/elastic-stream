@@ -168,7 +168,7 @@ impl DefaultIndexer {
     #[cfg(test)]
     pub(crate) fn scan_record_handles(
         &self,
-        stream_id: i64,
+        stream_id: u64,
         range: u32,
         offset: u64,
         max_bytes: u32,
@@ -178,7 +178,7 @@ impl DefaultIndexer {
         read_opts.set_iterate_lower_bound(&lower[..]);
 
         let mut upper = BytesMut::with_capacity(8 + 4);
-        upper.put_i64(stream_id);
+        upper.put_u64(stream_id);
         upper.put_u32(range + 1);
         read_opts.set_iterate_upper_bound(upper.freeze());
 
@@ -241,7 +241,7 @@ impl DefaultIndexer {
     /// 3. Otherwise, the left key is returned.
     fn retrieve_left_key(
         &self,
-        stream_id: i64,
+        stream_id: u64,
         range: u32,
         offset: u64,
     ) -> Result<Option<IndexEntry>, StoreError> {
@@ -267,7 +267,7 @@ impl DefaultIndexer {
                 read_opts.set_iterate_upper_bound(&upper[..]);
 
                 let mut lower = BytesMut::with_capacity(8 + 4 + 8);
-                lower.put_i64(stream_id);
+                lower.put_u64(stream_id);
                 lower.put_u32(range);
                 lower.put_u64(0);
                 read_opts.set_iterate_lower_bound(lower.freeze());
@@ -287,9 +287,9 @@ impl DefaultIndexer {
         }
     }
 
-    fn build_index_key(&self, stream_id: i64, range: u32, offset: u64) -> Bytes {
+    fn build_index_key(&self, stream_id: u64, range: u32, offset: u64) -> Bytes {
         let mut index_key = BytesMut::with_capacity(8 + 4 + 8);
-        index_key.put_i64(stream_id);
+        index_key.put_u64(stream_id);
         index_key.put_u32(range);
         index_key.put_u64(offset);
         index_key.freeze()
@@ -307,7 +307,7 @@ impl Indexer for DefaultIndexer {
     ///
     fn index(
         &self,
-        stream_id: i64,
+        stream_id: u64,
         range: u32,
         offset: u64,
         handle: &RecordHandle,
@@ -315,7 +315,7 @@ impl Indexer for DefaultIndexer {
         match self.db.cf_handle(INDEX_COLUMN_FAMILY) {
             Some(cf) => {
                 let mut key_buf = BytesMut::with_capacity(20);
-                key_buf.put_i64(stream_id);
+                key_buf.put_u64(stream_id);
                 key_buf.put_u32(range);
                 key_buf.put_u64(offset);
 
@@ -342,7 +342,7 @@ impl Indexer for DefaultIndexer {
     /// So the `scan_record_handles_left_shift` will left-shift the offset as a lower bound to scan the records
     fn scan_record_handles_left_shift(
         &self,
-        stream_id: i64,
+        stream_id: u64,
         range: u32,
         offset: u64,
         max_offset: u64,
@@ -442,19 +442,19 @@ impl Indexer for DefaultIndexer {
 
     fn retrieve_max_key(
         &self,
-        stream_id: i64,
+        stream_id: u64,
         range: u32,
     ) -> Result<Option<IndexEntry>, StoreError> {
         match self.db.cf_handle(INDEX_COLUMN_FAMILY) {
             Some(cf) => {
                 let mut read_opts = ReadOptions::default();
                 let mut lower = BytesMut::with_capacity(12);
-                lower.put_i64(stream_id);
+                lower.put_u64(stream_id);
                 lower.put_u32(range);
                 read_opts.set_iterate_lower_bound(lower.freeze());
 
                 let mut upper = BytesMut::with_capacity(12);
-                upper.put_i64(stream_id);
+                upper.put_u64(stream_id);
                 upper.put_u32(range + 1);
                 read_opts.set_iterate_upper_bound(upper.freeze());
 
@@ -473,10 +473,10 @@ impl Indexer for DefaultIndexer {
 }
 
 impl super::LocalRangeManager for DefaultIndexer {
-    fn list_by_stream(&self, stream_id: i64, tx: mpsc::UnboundedSender<RangeMetadata>) {
+    fn list_by_stream(&self, stream_id: u64, tx: mpsc::UnboundedSender<RangeMetadata>) {
         let mut prefix = BytesMut::with_capacity(9);
         prefix.put_u8(RANGE_PREFIX);
-        prefix.put_i64(stream_id);
+        prefix.put_u64(stream_id);
 
         if let Some(cf) = self.db.cf_handle(METADATA_COLUMN_FAMILY) {
             let mut read_opts = ReadOptions::default();
@@ -496,7 +496,7 @@ impl super::LocalRangeManager for DefaultIndexer {
                         let _prefix = key_reader.get_u8();
                         debug_assert_eq!(_prefix, RANGE_PREFIX);
 
-                        let _stream_id = key_reader.get_i64();
+                        let _stream_id = key_reader.get_u64();
                         debug_assert_eq!(stream_id, _stream_id);
 
                         let id = key_reader.get_i32();
@@ -548,7 +548,7 @@ impl super::LocalRangeManager for DefaultIndexer {
                         let _prefix = key_reader.get_u8();
                         debug_assert_eq!(_prefix, RANGE_PREFIX);
 
-                        let _stream_id = key_reader.get_i64();
+                        let _stream_id = key_reader.get_u64();
 
                         let id = key_reader.get_i32();
 
@@ -573,7 +573,7 @@ impl super::LocalRangeManager for DefaultIndexer {
         }
     }
 
-    fn seal(&self, stream_id: i64, range: &RangeMetadata) -> Result<(), StoreError> {
+    fn seal(&self, stream_id: u64, range: &RangeMetadata) -> Result<(), StoreError> {
         debug_assert!(
             range.has_end(),
             "The metadata to seal range does not have end offset"
@@ -583,7 +583,7 @@ impl super::LocalRangeManager for DefaultIndexer {
         // prefix + stream-id + range-index
         let mut key_buf = BytesMut::with_capacity(1 + 8 + 4);
         key_buf.put_u8(RANGE_PREFIX);
-        key_buf.put_i64(stream_id);
+        key_buf.put_u64(stream_id);
         key_buf.put_i32(range.index());
 
         // start, [end] offset.
@@ -603,10 +603,10 @@ impl super::LocalRangeManager for DefaultIndexer {
         }
     }
 
-    fn add(&self, stream_id: i64, range: &RangeMetadata) -> Result<(), StoreError> {
+    fn add(&self, stream_id: u64, range: &RangeMetadata) -> Result<(), StoreError> {
         let mut key_buf = BytesMut::with_capacity(1 + 8 + 4);
         key_buf.put_u8(RANGE_PREFIX);
-        key_buf.put_i64(stream_id);
+        key_buf.put_u64(stream_id);
         key_buf.put_i32(range.index());
 
         let mut value_buf = BytesMut::with_capacity(8 + 8);
@@ -704,7 +704,7 @@ mod tests {
         let max_key = indexer.retrieve_max_key(stream_id, range).unwrap().unwrap();
         assert_eq!(
             (stream_id, range, start_offset + 1),
-            (max_key.stream_id as i64, max_key.range, max_key.offset)
+            (max_key.stream_id, max_key.range, max_key.offset)
         );
 
         //Case two: no max key
@@ -737,7 +737,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             (stream_id, range, left_offset),
-            (left_key.stream_id as i64, left_key.range, left_key.offset)
+            (left_key.stream_id, left_key.range, left_key.offset)
         );
 
         // Case two: the specific key is equal to the left key
@@ -747,7 +747,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             (stream_id, range, left_offset + 2),
-            (left_key.stream_id as i64, left_key.range, left_key.offset)
+            (left_key.stream_id, left_key.range, left_key.offset)
         );
 
         // Case three: no left key
@@ -763,7 +763,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             (stream_id, range, left_offset),
-            (left_key.stream_id as i64, left_key.range, left_key.offset)
+            (left_key.stream_id, left_key.range, left_key.offset)
         );
 
         // Case five: the biggest key
@@ -774,7 +774,7 @@ mod tests {
 
         assert_eq!(
             (stream_id, range, left_offset + 4),
-            (left_key.stream_id as i64, left_key.range, left_key.offset)
+            (left_key.stream_id, left_key.range, left_key.offset)
         );
 
         // Case six: the biggest key + 1

@@ -26,7 +26,9 @@ use observation::metrics::{
     sys_metrics::{DiskStatistics, MemoryStatistics},
     uring_metrics::UringStatistics,
 };
-use protocol::rpc::header::{ErrorCode, PlacementDriverCluster, RangeServerState, ResourceType};
+use protocol::rpc::header::{
+    ErrorCode, PlacementDriverCluster, RangeServerState, ResourceType, StreamT,
+};
 use protocol::rpc::header::{OperationCode, SealKind};
 use std::{
     cell::RefCell,
@@ -350,13 +352,10 @@ impl CompositeSession {
         self.refresh_placement_driver_cluster().await.is_ok()
     }
 
-    pub(crate) async fn create_stream(
-        &self,
-        stream_metadata: StreamMetadata,
-    ) -> Result<StreamMetadata, EsError> {
+    pub(crate) async fn create_stream(&self, stream: StreamT) -> Result<StreamMetadata, EsError> {
         let request = request::Request {
             timeout: self.config.client_io_timeout(),
-            headers: request::Headers::CreateStream { stream_metadata },
+            headers: request::Headers::CreateStream { stream },
             body: None,
         };
         let response = self.request(request).await?;

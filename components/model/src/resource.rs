@@ -6,7 +6,7 @@ use crate::{object::ObjectMetadata, range::RangeMetadata, stream::StreamMetadata
 
 #[derive(Debug, Clone)]
 pub enum Resource {
-    NONE,
+    None,
     RangeServer(RangeServer),
     Stream(StreamMetadata),
     Range(RangeMetadata),
@@ -48,14 +48,14 @@ impl From<&ResourceT> for Resource {
                 };
                 Resource::Object(object)
             }
-            ResourceType::RESOURCE_UNKNOWN => Resource::NONE,
-            ResourceType(i8::MIN..=ResourceType::ENUM_MIN) => Resource::NONE,
-            ResourceType(ResourceType::ENUM_MAX..=i8::MAX) => Resource::NONE,
+            ResourceType::RESOURCE_UNKNOWN => Resource::None,
+            ResourceType(i8::MIN..=ResourceType::ENUM_MIN) => Resource::None,
+            ResourceType(ResourceType::ENUM_MAX..=i8::MAX) => Resource::None,
         }
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Copy)]
 pub enum EventType {
     None,
 
@@ -109,14 +109,14 @@ impl ResourceEvent {
     pub fn list_finished() -> Self {
         Self {
             event_type: EventType::ListFinished,
-            resource: Resource::NONE,
+            resource: Resource::None,
         }
     }
 
     pub fn reset() -> Self {
         Self {
             event_type: EventType::Reset,
-            resource: Resource::NONE,
+            resource: Resource::None,
         }
     }
 }

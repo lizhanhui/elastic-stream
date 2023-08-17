@@ -37,12 +37,6 @@ impl Range {
         self.committed
     }
 
-    pub(crate) fn reset(&mut self, offset: u64) {
-        if let Some(window) = self.window_mut() {
-            window.reset(offset);
-        }
-    }
-
     /// Move the committed offset
     /// Arguments:
     /// - new_committed_offset: the records before the new_committed are persisted.

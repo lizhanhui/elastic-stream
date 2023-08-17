@@ -5,7 +5,7 @@ use std::{
 };
 
 use log::debug;
-use model::range::{Range, RangeLifecycleEvent};
+use model::range::{Range, RangeEvent};
 
 use super::Indexer;
 
@@ -68,13 +68,10 @@ where
         self.last_index_physical_offset = physical_offset;
     }
 
-    pub(crate) fn handle_range_event(
-        &mut self,
-        events: Vec<RangeLifecycleEvent>,
-    ) -> PhysicalOffset {
+    pub(crate) fn handle_range_event(&mut self, events: Vec<RangeEvent>) -> PhysicalOffset {
         for event in events {
             match event {
-                RangeLifecycleEvent::OffsetMove(range, logic_offset) => {
+                RangeEvent::OffsetMove(range, logic_offset) => {
                     let deletable_physical_offset =
                         self.get_range_deletable_physical_offset(range, logic_offset);
                     if let Some((_, old_physical_offset)) = self
@@ -89,7 +86,7 @@ where
                             .insert(deletable_physical_offset, ());
                     }
                 }
-                RangeLifecycleEvent::Del(range) | RangeLifecycleEvent::Offloaded(range) => {
+                RangeEvent::Del(range) | RangeEvent::Offloaded(range) => {
                     if let Some((_, physical_offset)) = self.ranges.remove(&range) {
                         self.range_deletable_physical_offsets
                             .remove(&physical_offset);
@@ -111,13 +108,7 @@ where
         logic_offset: u64,
     ) -> PhysicalOffset {
         self.indexer
-            .scan_record_handles_left_shift(
-                range.0 as i64,
-                range.1,
-                logic_offset,
-                logic_offset + 1,
-                1,
-            )
+            .scan_record_handles_left_shift(range.0, range.1, logic_offset, logic_offset + 1, 1)
             .expect("handle_range_event indexer scan not fail")
             .map(|handles| {
                 let (key, handle) = &handles[0];
@@ -154,7 +145,7 @@ where
 #[cfg(test)]
 mod tests {
     use mockall::predicate::{always, eq};
-    use model::range::RangeLifecycleEvent;
+    use model::range::RangeEvent;
 
     use crate::index::{
         record_handle::{HandleExt, RecordHandle},
@@ -183,7 +174,7 @@ mod tests {
         // range start offset move to 11, then the deletable physical offset is record(offset=10) 's wal_offset
         assert_eq!(
             60,
-            log_cleaner.handle_range_event(vec![RangeLifecycleEvent::OffsetMove((233, 1), 11)])
+            log_cleaner.handle_range_event(vec![RangeEvent::OffsetMove((233, 1), 11)])
         );
 
         Arc::get_mut(&mut log_cleaner.indexer)
@@ -201,7 +192,7 @@ mod tests {
         // range start offset move to the end_offset
         assert_eq!(
             100,
-            log_cleaner.handle_range_event(vec![RangeLifecycleEvent::OffsetMove((233, 1), 12)])
+            log_cleaner.handle_range_event(vec![RangeEvent::OffsetMove((233, 1), 12)])
         );
 
         // range insert new record
@@ -222,13 +213,13 @@ mod tests {
 
         assert_eq!(
             110,
-            log_cleaner.handle_range_event(vec![RangeLifecycleEvent::OffsetMove((233, 1), 12)])
+            log_cleaner.handle_range_event(vec![RangeEvent::OffsetMove((233, 1), 12)])
         );
 
         // range deleted.
         assert_eq!(
             200,
-            log_cleaner.handle_range_event(vec![RangeLifecycleEvent::Del((233, 1))])
+            log_cleaner.handle_range_event(vec![RangeEvent::Del((233, 1))])
         );
     }
 
@@ -250,19 +241,19 @@ mod tests {
         log_cleaner.handle_new_range((233, 2), 10);
         assert_eq!(
             60,
-            log_cleaner.handle_range_event(vec![RangeLifecycleEvent::OffsetMove((233, 1), 11)])
+            log_cleaner.handle_range_event(vec![RangeEvent::OffsetMove((233, 1), 11)])
         );
 
         assert_eq!(
             100,
-            log_cleaner.handle_range_event(vec![RangeLifecycleEvent::OffsetMove((233, 1), 12)])
+            log_cleaner.handle_range_event(vec![RangeEvent::OffsetMove((233, 1), 12)])
         );
         log_cleaner.handle_new_index((233, 2), 10, 110);
         log_cleaner.handle_new_index((233, 2), 11, 120);
         log_cleaner.set_last_index_physical_offset(200);
         assert_eq!(
             110,
-            log_cleaner.handle_range_event(vec![RangeLifecycleEvent::OffsetMove((233, 1), 12)])
+            log_cleaner.handle_range_event(vec![RangeEvent::OffsetMove((233, 1), 12)])
         );
     }
 }

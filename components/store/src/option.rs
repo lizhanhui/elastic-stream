@@ -24,7 +24,7 @@ impl Default for WriteOptions {
 #[derive(Debug, Default)]
 pub struct ReadOptions {
     /// Target stream
-    pub stream_id: i64,
+    pub stream_id: u64,
 
     pub range: u32,
 

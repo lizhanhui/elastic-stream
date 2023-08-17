@@ -10,8 +10,8 @@ use protocol::rpc::header::{
     AppendResponse, AppendResponseArgs, AppendResultEntry, AppendResultEntryArgs, ErrorCode,
     Status, StatusArgs,
 };
-use std::{cell::UnsafeCell, fmt, rc::Rc};
-use store::{error::AppendError, option::WriteOptions, AppendRecordRequest, AppendResult, Store};
+use std::{fmt, rc::Rc};
+use store::{error::AppendError, option::WriteOptions, AppendRecordRequest, AppendResult};
 
 use crate::{error::ServiceError, range_manager::RangeManager};
 
@@ -71,13 +71,8 @@ impl Append {
     ///
     /// `response` - Mutable response frame reference, into which required business data are filled.
     ///
-    pub(crate) async fn apply<S, M>(
-        &self,
-        store: Rc<S>,
-        range_manager: Rc<UnsafeCell<M>>,
-        response: &mut Frame,
-    ) where
-        S: Store,
+    pub(crate) async fn apply<M>(&self, range_manager: Rc<M>, response: &mut Frame)
+    where
         M: RangeManager,
     {
         match self.replicated() {
@@ -112,11 +107,10 @@ impl Append {
             .map(|req| {
                 trace!("Received append request: {}", req);
                 let result = async {
-                    let manager = unsafe { &mut *range_manager.get() };
-                    manager.check_barrier(req.stream_id, req.range_index, &req)?;
+                    range_manager.check_barrier(req.stream_id, req.range_index, &req)?;
                     let options = WriteOptions::default();
                     // Append to store
-                    let append_result = store.append(&options, req).await?;
+                    let append_result = range_manager.append(&options, req).await?;
                     Ok(append_result)
                 };
                 Box::pin(result)
@@ -139,8 +133,7 @@ impl Append {
         for res in &res_from_store {
             match res {
                 Ok(result) => {
-                    let rm = unsafe { &mut *range_manager.get() };
-                    if let Err(e) = rm.commit(
+                    if let Err(e) = range_manager.commit(
                         result.stream_id,
                         result.range_index as i32,
                         result.offset as u64,
@@ -221,7 +214,7 @@ impl Append {
             })?
         {
             let request = AppendRecordRequest {
-                stream_id: entry.stream_id as i64,
+                stream_id: entry.stream_id,
                 range_index: entry.index as i32,
                 offset: entry.offset.map(|value| value as i64).unwrap_or(-1),
                 len: entry.len,
@@ -286,8 +279,7 @@ impl fmt::Display for Append {
 
 #[cfg(test)]
 mod tests {
-    use std::{cell::UnsafeCell, rc::Rc};
-
+    use crate::range_manager::MockRangeManager;
     use bytes::{BufMut, Bytes, BytesMut};
     use codec::frame::Frame;
     use model::record::flat_record::RecordMagic;
@@ -295,9 +287,8 @@ mod tests {
         flat_model::records::{KeyValueT, RecordBatchMetaT},
         rpc::header::{AppendResponse, ErrorCode, OperationCode},
     };
-    use store::{error::AppendError, AppendRecordRequest, AppendResult, MockStore};
-
-    use crate::range_manager::MockRangeManager;
+    use std::rc::Rc;
+    use store::{error::AppendError, AppendRecordRequest, AppendResult};
 
     fn create_append_entry() -> Bytes {
         let mut buf = BytesMut::new();
@@ -345,25 +336,28 @@ mod tests {
 
     #[test]
     fn test_apply() {
-        let mut store = MockStore::default();
-
-        store.expect_append().once().returning(|_opt, _request| {
-            let append = AppendResult {
-                stream_id: 1,
-                range_index: 1,
-                offset: 10,
-                last_offset_delta: 1,
-                wal_offset: 0,
-                bytes_len: 0,
-            };
-            Ok(append)
-        });
-
+        ulog::try_init_log();
         let mut range_manager = MockRangeManager::default();
         range_manager
             .expect_check_barrier()
             .once()
             .returning_st(|_stream_id, _index, _: &AppendRecordRequest| Ok(()));
+
+        range_manager
+            .expect_append()
+            .once()
+            .returning_st(|_opt, req| {
+                let append = AppendResult {
+                    stream_id: req.stream_id,
+                    range_index: req.range_index as u32,
+                    offset: req.offset,
+                    last_offset_delta: 1,
+                    wal_offset: 0,
+                    bytes_len: req.buffer.len() as u32,
+                };
+                Ok(append)
+            });
+
         range_manager.expect_commit().once().returning_st(
             |_stream_id, _range_index, _offset, _last_offset_delta, _bytes_len| Ok(()),
         );
@@ -374,13 +368,7 @@ mod tests {
         let handler = super::Append::parse_frame(&request).expect("Parse shall not raise an error");
         let mut response = Frame::new(OperationCode::APPEND);
         tokio_uring::start(async move {
-            handler
-                .apply(
-                    Rc::new(store),
-                    Rc::new(UnsafeCell::new(range_manager)),
-                    &mut response,
-                )
-                .await;
+            handler.apply(Rc::new(range_manager), &mut response).await;
 
             if let Some(ref buf) = response.header {
                 match flatbuffers::root::<AppendResponse>(buf) {
@@ -405,8 +393,7 @@ mod tests {
 
     #[test]
     fn test_apply_when_out_of_order() {
-        let store = MockStore::default();
-
+        ulog::try_init_log();
         let mut range_manager = MockRangeManager::default();
         range_manager.expect_check_barrier().once().returning_st(
             |_stream_id, _index, _: &AppendRecordRequest| Err(AppendError::OutOfOrder),
@@ -418,13 +405,7 @@ mod tests {
         let handler = super::Append::parse_frame(&request).expect("Parse shall not raise an error");
         let mut response = Frame::new(OperationCode::APPEND);
         tokio_uring::start(async move {
-            handler
-                .apply(
-                    Rc::new(store),
-                    Rc::new(UnsafeCell::new(range_manager)),
-                    &mut response,
-                )
-                .await;
+            handler.apply(Rc::new(range_manager), &mut response).await;
 
             if let Some(ref buf) = response.header {
                 match flatbuffers::root::<AppendResponse>(buf) {

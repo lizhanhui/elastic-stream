@@ -20,13 +20,12 @@ use codec::frame::Frame;
 use local_sync::mpsc;
 use log::{trace, warn};
 use protocol::rpc::header::{StatusT, SystemErrorT};
-use std::{cell::UnsafeCell, rc::Rc};
-use store::Store;
+use std::rc::Rc;
 
 /// Representation of the incoming request.
 ///
 ///
-pub(crate) struct ServerCall<S, M> {
+pub(crate) struct ServerCall<M> {
     /// The incoming request
     pub(crate) request: Frame,
 
@@ -35,17 +34,11 @@ pub(crate) struct ServerCall<S, M> {
     /// Note the receiver part is polled by `ChannelWriter` in a spawned task.
     pub(crate) sender: mpsc::unbounded::Tx<Frame>,
 
-    /// `Store` to query, persist and replicate records.
-    ///
-    /// Note this store is `!Send` as it follows thread-per-core pattern.
-    pub(crate) store: Rc<S>,
-
-    pub(crate) range_manager: Rc<UnsafeCell<M>>,
+    pub(crate) range_manager: Rc<M>,
 }
 
-impl<S, M> ServerCall<S, M>
+impl<M> ServerCall<M>
 where
-    S: Store,
     M: RangeManager,
 {
     /// Serve the incoming request
@@ -79,12 +72,8 @@ where
                 );
 
                 // Delegate the request to its dedicated handler.
-                cmd.apply(
-                    Rc::clone(&self.store),
-                    Rc::clone(&self.range_manager),
-                    &mut response,
-                )
-                .await;
+                cmd.apply(Rc::clone(&self.range_manager), &mut response)
+                    .await;
 
                 match cmd {
                     Command::Append(_) => {
@@ -133,20 +122,15 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::{cell::UnsafeCell, rc::Rc};
-
+    use super::ServerCall;
+    use crate::range_manager::MockRangeManager;
     use codec::frame::Frame;
     use local_sync::mpsc;
     use protocol::rpc::header::{ErrorCode, OperationCode, SystemError};
-    use store::MockStore;
-
-    use crate::range_manager::MockRangeManager;
-
-    use super::ServerCall;
+    use std::rc::Rc;
 
     #[test]
     fn test_call() {
-        let store = MockStore::default();
         let range_manager = MockRangeManager::default();
         let (tx, mut rx) = mpsc::unbounded::channel();
 
@@ -155,8 +139,7 @@ mod tests {
         let mut server_call = ServerCall {
             request,
             sender: tx,
-            store: Rc::new(store),
-            range_manager: Rc::new(UnsafeCell::new(range_manager)),
+            range_manager: Rc::new(range_manager),
         };
 
         tokio_uring::start(async move {
@@ -174,7 +157,6 @@ mod tests {
 
     #[test]
     fn test_call_when_error() {
-        let store = MockStore::default();
         let range_manager = MockRangeManager::default();
         let (tx, mut rx) = mpsc::unbounded::channel();
 
@@ -183,8 +165,7 @@ mod tests {
         let mut server_call = ServerCall {
             request,
             sender: tx,
-            store: Rc::new(store),
-            range_manager: Rc::new(UnsafeCell::new(range_manager)),
+            range_manager: Rc::new(range_manager),
         };
 
         tokio_uring::start(async move {

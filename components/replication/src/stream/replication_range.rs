@@ -267,8 +267,7 @@ where
         start_offset: u64,
     ) -> Result<RangeMetadata, EsError> {
         // 1. request placement driver to create range and get the range metadata.
-        let mut metadata =
-            RangeMetadata::new(stream_id as i64, index as i32, epoch, start_offset, None);
+        let mut metadata = RangeMetadata::new(stream_id, index as i32, epoch, start_offset, None);
         metadata = client.create_range(metadata).await?;
         // 2. request range server to create range replica.
         let mut create_replica_tasks = vec![];
@@ -374,11 +373,11 @@ where
         let flat_record_batch_bytes = record_batch_to_bytes(
             record_batch,
             &context,
-            self.metadata().stream_id() as u64,
+            self.metadata().stream_id(),
             self.metadata().index() as u32,
         );
         self.cache.insert(
-            self.metadata.stream_id() as u64,
+            self.metadata.stream_id(),
             base_offset,
             last_offset_delta,
             // deep copy record batch bytes cause of replication directly use the bytes passed from frontend which

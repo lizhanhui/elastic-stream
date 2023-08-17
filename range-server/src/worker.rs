@@ -1,16 +1,8 @@
-use std::{
-    cell::{RefCell, UnsafeCell},
-    error::Error,
-    rc::Rc,
-    sync::Arc,
-    time::{Duration, Instant},
-};
-
 use crate::{
     connection_tracker::ConnectionTracker,
     heartbeat::Heartbeat,
-    metadata::MetadataWatcher,
-    range_manager::{fetcher::FetchRangeTask, RangeManager},
+    metadata::{MetadataManager, MetadataWatcher},
+    range_manager::RangeManager,
     worker_config::WorkerConfig,
 };
 use client::{client::Client, DefaultClient};
@@ -22,8 +14,14 @@ use observation::metrics::{
 };
 use pd_client::PlacementDriverClient;
 use protocol::rpc::header::RangeServerState;
-use store::Store;
-use tokio::sync::{broadcast, mpsc};
+use std::{
+    cell::RefCell,
+    error::Error,
+    rc::Rc,
+    sync::Arc,
+    time::{Duration, Instant},
+};
+use tokio::sync::broadcast;
 use tokio_uring::net::TcpListener;
 use util::metrics::http_serve;
 
@@ -34,51 +32,53 @@ use util::metrics::http_serve;
 /// and communication with the placement driver.
 ///
 /// Inter-worker communications are achieved via channels.
-pub(crate) struct Worker<S, M, P, W> {
+pub(crate) struct Worker<M, W, Meta> {
     config: WorkerConfig,
-    store: Rc<S>,
-    range_manager: Rc<UnsafeCell<M>>,
+    range_manager: Rc<M>,
     client: Rc<DefaultClient>,
-    pd_client: Rc<P>,
+
+    /// `MetadataWatcher` is having a `PlacementDriverClient` embedded in, which lists and watches
+    /// resources of interest.
+    ///
+    /// Once the watcher fetches a set of resource events, it dispatches them to all metadata managers
+    /// per worker through MPSC channels.
     metadata_watcher: Option<W>,
 
-    state: Rc<RefCell<RangeServerState>>,
+    /// `MetadataManager` caches all relevant metadata it receives and notifies all registered observers.
+    metadata_manager: Meta,
 
-    #[allow(dead_code)]
-    channels: Option<Vec<mpsc::UnboundedReceiver<FetchRangeTask>>>,
+    state: Rc<RefCell<RangeServerState>>,
 }
 
-impl<S, M, P, W> Worker<S, M, P, W>
+impl<M, W, Meta> Worker<M, W, Meta>
 where
-    S: Store + 'static,
     M: RangeManager + 'static,
-    P: PlacementDriverClient + 'static,
     W: MetadataWatcher + 'static,
+    Meta: MetadataManager + 'static,
 {
     pub fn new(
         config: WorkerConfig,
-        store: Rc<S>,
-        range_manager: Rc<UnsafeCell<M>>,
+        range_manager: Rc<M>,
         client: Rc<DefaultClient>,
-        pd_client: Rc<P>,
         metadata_watcher: Option<W>,
-        channels: Option<Vec<mpsc::UnboundedReceiver<FetchRangeTask>>>,
+        metadata_manager: Meta,
     ) -> Self {
         Self {
             config,
-            store,
             range_manager,
             client,
-            pd_client,
             metadata_watcher,
+            metadata_manager,
             state: Rc::new(RefCell::new(
                 RangeServerState::RANGE_SERVER_STATE_READ_WRITE,
             )),
-            channels,
         }
     }
 
-    pub fn serve(&mut self, shutdown: broadcast::Sender<()>) {
+    pub fn serve<P>(&mut self, pd_client: Box<P>, shutdown: broadcast::Sender<()>)
+    where
+        P: PlacementDriverClient + 'static,
+    {
         core_affinity::set_for_current(self.config.core_id);
         if self.config.primary {
             info!(
@@ -102,11 +102,14 @@ where
             )
             .start(async {
                 // Run dispatching service of Store.
-                self.store.start();
-
-                if let Some(watcher) = self.metadata_watcher.as_ref() {
-                    watcher.start(self.pd_client.clone());
+                if let Some(ref mut watcher) = self.metadata_watcher {
+                    watcher.start(pd_client);
                 }
+
+                self.metadata_manager.start().await;
+
+                self.range_manager.start().await;
+
                 let bind_address = &self.config.server_config.server.addr;
                 let listener =
                     match TcpListener::bind(bind_address.parse().expect("Failed to bind")) {
@@ -119,18 +122,6 @@ where
                             return;
                         }
                     };
-
-                if unsafe { &mut *self.range_manager.get() }
-                    .start()
-                    .await
-                    .is_err()
-                {
-                    eprintln!(
-                        "Failed to bootstrap stream ranges from PD: {}",
-                        self.config.server_config.placement_driver
-                    );
-                    panic!("Failed to retrieve bootstrap stream ranges metadata from PD");
-                }
 
                 if self.config.primary {
                     let port = self.config.server_config.observation.metrics.port;
@@ -210,7 +201,7 @@ where
                         break;
                     }
                     _  = interval.tick() => {
-                        let range_progress = unsafe{ & *range_manager.get()}.get_range_progress().await;
+                        let range_progress = range_manager.get_range_progress().await;
                         let _ = client.report_range_progress(range_progress).await;
                     }
                 }
@@ -254,7 +245,6 @@ where
                     let session = super::session::Session::new(
                         Arc::clone(&self.config.server_config),
                         stream, peer_socket_address,
-                        Rc::clone(&self.store),
                         Rc::clone(&self.range_manager),
                         Rc::clone(&connection_tracker)
                        );

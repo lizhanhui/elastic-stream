@@ -238,7 +238,7 @@ impl Wal {
             // Index the record batch
             match Payload::parse_append_entry(&buf) {
                 Ok((Some(entry), len)) => {
-                    let stream_id = entry.stream_id as i64;
+                    let stream_id = entry.stream_id;
                     let range = entry.index;
                     let offset = entry.offset.expect("base-offset should have been assigned");
                     let handle = RecordHandle {

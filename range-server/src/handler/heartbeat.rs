@@ -1,14 +1,10 @@
-use std::{cell::UnsafeCell, fmt, rc::Rc};
-
+use super::util::root_as_rpc_request;
+use crate::range_manager::RangeManager;
 use bytes::Bytes;
 use codec::frame::Frame;
 use log::trace;
 use protocol::rpc::header::{ErrorCode, HeartbeatRequest, HeartbeatResponseT, StatusT};
-use store::Store;
-
-use crate::range_manager::RangeManager;
-
-use super::util::root_as_rpc_request;
+use std::{fmt, rc::Rc};
 
 #[derive(Debug)]
 pub(crate) struct Heartbeat<'a> {
@@ -27,13 +23,8 @@ impl<'a> Heartbeat<'a> {
         Ok(Self { request })
     }
 
-    pub(crate) async fn apply<S, M>(
-        &self,
-        _store: Rc<S>,
-        _range_manager: Rc<UnsafeCell<M>>,
-        response: &mut Frame,
-    ) where
-        S: Store,
+    pub(crate) async fn apply<M>(&self, _range_manager: Rc<M>, response: &mut Frame)
+    where
         M: RangeManager,
     {
         trace!("Prepare heartbeat response header for {:?}", self.request);
@@ -66,16 +57,13 @@ impl<'a> fmt::Display for Heartbeat<'a> {
 
 #[cfg(test)]
 mod tests {
-    use std::{cell::UnsafeCell, error::Error, rc::Rc};
-
+    use crate::range_manager::MockRangeManager;
     use bytes::Bytes;
     use codec::frame::Frame;
     use protocol::rpc::header::{
         ClientRole, ErrorCode, HeartbeatRequestT, HeartbeatResponse, OperationCode,
     };
-    use store::MockStore;
-
-    use crate::range_manager::MockRangeManager;
+    use std::{error::Error, rc::Rc};
 
     fn heartbeat_request() -> Frame {
         let mut frame = Frame::new(OperationCode::HEARTBEAT);
@@ -119,11 +107,10 @@ mod tests {
         let handler = super::Heartbeat::parse_frame(&frame).unwrap();
 
         let mut response = Frame::new(OperationCode::UNKNOWN);
-        let store = Rc::new(MockStore::default());
-        let rm = Rc::new(UnsafeCell::new(MockRangeManager::default()));
+        let rm = Rc::new(MockRangeManager::default());
 
         tokio_uring::start(async move {
-            handler.apply(store, rm, &mut response).await;
+            handler.apply(rm, &mut response).await;
             if let Some(header) = response.header {
                 let resp = flatbuffers::root::<HeartbeatResponse>(&header[..]).unwrap();
                 let ec = resp.status().code();

@@ -1,8 +1,7 @@
 use crate::range_manager::RangeManager;
 use codec::frame::Frame;
 use log::trace;
-use std::{cell::UnsafeCell, fmt, rc::Rc};
-use store::Store;
+use std::{fmt, rc::Rc};
 
 /// Process Ping request
 ///
@@ -18,13 +17,8 @@ impl<'a> Ping<'a> {
         Self { request: frame }
     }
 
-    pub(crate) async fn apply<S, M>(
-        &self,
-        _store: Rc<S>,
-        _range_manager: Rc<UnsafeCell<M>>,
-        response: &mut Frame,
-    ) where
-        S: Store,
+    pub(crate) async fn apply<M>(&self, _range_manager: Rc<M>, response: &mut Frame)
+    where
         M: RangeManager,
     {
         trace!("Ping[stream-id={}] received", self.request.stream_id);
@@ -41,26 +35,21 @@ impl<'a> fmt::Display for Ping<'a> {
 
 #[cfg(test)]
 mod tests {
-    use std::{cell::UnsafeCell, error::Error, rc::Rc};
-
     use crate::range_manager::MockRangeManager;
     use codec::frame::Frame;
     use protocol::rpc::header::OperationCode;
-    use store::MockStore;
+    use std::{error::Error, rc::Rc};
 
     #[test]
     fn test_ping() -> Result<(), Box<dyn Error>> {
         let request = Frame::new(OperationCode::PING);
         let mut response = Frame::new(OperationCode::UNKNOWN);
-        let mock_store = MockStore::new();
         tokio_uring::start(async move {
             let ping = super::Ping::new(&request);
             let msg = format!("{}", ping);
             assert_eq!("Ping[stream-id=1]", msg);
-            let store = Rc::new(mock_store);
-            let range_manager = Rc::new(UnsafeCell::new(MockRangeManager::new()));
-            ping.apply(Rc::clone(&store), range_manager, &mut response)
-                .await;
+            let range_manager = Rc::new(MockRangeManager::new());
+            ping.apply(range_manager, &mut response).await;
             Ok(())
         })
     }

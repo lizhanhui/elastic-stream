@@ -2021,7 +2021,7 @@ mod tests {
 
     fn send_and_receive_with_records(
         sender: crossbeam::channel::Sender<IoTask>,
-        stream_id: i64,
+        stream_id: u64,
         start_offset: i64,
         records: Vec<bytes::Bytes>,
     ) {

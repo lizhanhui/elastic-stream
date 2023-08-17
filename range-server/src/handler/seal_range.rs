@@ -1,15 +1,11 @@
-use std::{cell::UnsafeCell, fmt, rc::Rc};
-
+use super::util::root_as_rpc_request;
+use crate::{error::ServiceError, range_manager::RangeManager};
 use bytes::Bytes;
 use codec::frame::Frame;
 use log::{error, warn};
 use model::range::RangeMetadata;
 use protocol::rpc::header::{ErrorCode, RangeT, SealRangeRequest, SealRangeResponseT, StatusT};
-use store::Store;
-
-use crate::{error::ServiceError, range_manager::RangeManager};
-
-use super::util::root_as_rpc_request;
+use std::{fmt, rc::Rc};
 
 #[derive(Debug)]
 pub(crate) struct SealRange<'a> {
@@ -34,13 +30,8 @@ impl<'a> SealRange<'a> {
         Ok(Self { request })
     }
 
-    pub(crate) async fn apply<S, M>(
-        &self,
-        store: Rc<S>,
-        range_manager: Rc<UnsafeCell<M>>,
-        response: &mut Frame,
-    ) where
-        S: Store,
+    pub(crate) async fn apply<M>(&self, range_manager: Rc<M>, response: &mut Frame)
+    where
         M: RangeManager,
     {
         let request = self.request.unpack();
@@ -49,12 +40,11 @@ impl<'a> SealRange<'a> {
         let mut status = StatusT::default();
         status.code = ErrorCode::OK;
         status.message = Some(String::from("OK"));
-        let manager = unsafe { &mut *range_manager.get() };
 
         let range = request.range;
         let mut range = Into::<RangeMetadata>::into(&*range);
 
-        match manager.seal(&mut range) {
+        match range_manager.seal(&mut range) {
             Ok(_) => {
                 status.code = ErrorCode::OK;
                 status.message = Some(String::from("OK"));
@@ -70,6 +60,7 @@ impl<'a> SealRange<'a> {
                 match e {
                     ServiceError::NotFound(_) => status.code = ErrorCode::RANGE_NOT_FOUND,
                     ServiceError::AlreadySealed => status.code = ErrorCode::RANGE_ALREADY_SEALED,
+                    ServiceError::Seal => status.code = ErrorCode::RS_SEAL_RANGE,
                     _ => status.code = ErrorCode::RS_INTERNAL_SERVER_ERROR,
                 }
                 status.message = Some(e.to_string());
@@ -77,19 +68,6 @@ impl<'a> SealRange<'a> {
                 self.build_response(response, &seal_response);
                 return;
             }
-        }
-
-        if let Err(e) = store.seal(range.clone()).await {
-            error!(
-                "Failed to seal stream-id={}, range_index={} in store",
-                range.stream_id(),
-                range.index()
-            );
-            status.code = ErrorCode::RS_SEAL_RANGE;
-            status.message = Some(e.to_string());
-            seal_response.status = Box::new(status);
-            self.build_response(response, &seal_response);
-            return;
         }
 
         seal_response.status = Box::new(status);
@@ -122,16 +100,13 @@ impl<'a> fmt::Display for SealRange<'a> {
 
 #[cfg(test)]
 mod tests {
-    use std::{cell::UnsafeCell, error::Error, rc::Rc};
-
+    use crate::{error::ServiceError, range_manager::MockRangeManager};
     use bytes::Bytes;
     use codec::frame::Frame;
     use protocol::rpc::header::{
         ErrorCode, OperationCode, RangeT, SealKind, SealRangeRequestT, SealRangeResponse,
     };
-    use store::{error::StoreError, MockStore};
-
-    use crate::{error::ServiceError, range_manager::MockRangeManager};
+    use std::{error::Error, rc::Rc};
 
     fn seal_range_request() -> Frame {
         let mut frame = Frame::new(OperationCode::SEAL_RANGE);
@@ -197,9 +172,6 @@ mod tests {
 
     #[test]
     fn test_apply() {
-        let mut store = MockStore::default();
-        store.expect_seal().once().returning(|_metadata| Ok(()));
-
         let mut range_manager = MockRangeManager::default();
         range_manager
             .expect_seal()
@@ -211,13 +183,7 @@ mod tests {
         let handler = super::SealRange::parse_frame(&request).expect("Parse frame should be OK");
 
         tokio_uring::start(async move {
-            handler
-                .apply(
-                    Rc::new(store),
-                    Rc::new(UnsafeCell::new(range_manager)),
-                    &mut response,
-                )
-                .await;
+            handler.apply(Rc::new(range_manager), &mut response).await;
 
             if let Some(ref buf) = response.header {
                 let resp =
@@ -231,8 +197,6 @@ mod tests {
 
     #[test]
     fn test_apply_when_already_sealed() {
-        let store = MockStore::default();
-
         let mut range_manager = MockRangeManager::default();
         range_manager
             .expect_seal()
@@ -244,13 +208,7 @@ mod tests {
         let handler = super::SealRange::parse_frame(&request).expect("Parse frame should be OK");
 
         tokio_uring::start(async move {
-            handler
-                .apply(
-                    Rc::new(store),
-                    Rc::new(UnsafeCell::new(range_manager)),
-                    &mut response,
-                )
-                .await;
+            handler.apply(Rc::new(range_manager), &mut response).await;
 
             if let Some(ref buf) = response.header {
                 let resp =
@@ -264,8 +222,6 @@ mod tests {
 
     #[test]
     fn test_apply_when_range_not_found() {
-        let store = MockStore::default();
-
         let mut range_manager = MockRangeManager::default();
         range_manager
             .expect_seal()
@@ -277,13 +233,7 @@ mod tests {
         let handler = super::SealRange::parse_frame(&request).expect("Parse frame should be OK");
 
         tokio_uring::start(async move {
-            handler
-                .apply(
-                    Rc::new(store),
-                    Rc::new(UnsafeCell::new(range_manager)),
-                    &mut response,
-                )
-                .await;
+            handler.apply(Rc::new(range_manager), &mut response).await;
 
             if let Some(ref buf) = response.header {
                 let resp =
@@ -297,8 +247,6 @@ mod tests {
 
     #[test]
     fn test_apply_when_internal_error() {
-        let store = MockStore::default();
-
         let mut range_manager = MockRangeManager::default();
         range_manager
             .expect_seal()
@@ -310,13 +258,7 @@ mod tests {
         let handler = super::SealRange::parse_frame(&request).expect("Parse frame should be OK");
 
         tokio_uring::start(async move {
-            handler
-                .apply(
-                    Rc::new(store),
-                    Rc::new(UnsafeCell::new(range_manager)),
-                    &mut response,
-                )
-                .await;
+            handler.apply(Rc::new(range_manager), &mut response).await;
 
             if let Some(ref buf) = response.header {
                 let resp =
@@ -330,30 +272,19 @@ mod tests {
 
     #[test]
     fn test_apply_when_store_error() {
-        let mut store = MockStore::default();
-        store
-            .expect_seal()
-            .once()
-            .returning(|_metadata| Err(StoreError::System(22)));
-
+        ulog::try_init_log();
         let mut range_manager = MockRangeManager::default();
         range_manager
             .expect_seal()
             .once()
-            .returning(|_metadata| Ok(()));
+            .returning(|_metadata| Err(ServiceError::Seal));
 
         let request = seal_range_request();
         let mut response = Frame::new(OperationCode::SEAL_RANGE);
         let handler = super::SealRange::parse_frame(&request).expect("Parse frame should be OK");
 
         tokio_uring::start(async move {
-            handler
-                .apply(
-                    Rc::new(store),
-                    Rc::new(UnsafeCell::new(range_manager)),
-                    &mut response,
-                )
-                .await;
+            handler.apply(Rc::new(range_manager), &mut response).await;
 
             if let Some(ref buf) = response.header {
                 let resp =

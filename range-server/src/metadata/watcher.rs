@@ -1,5 +1,3 @@
-use std::{cell::RefCell, rc::Rc};
-
 use log::warn;
 use model::{error::EsError, resource::ResourceEvent};
 use pd_client::PlacementDriverClient;
@@ -10,24 +8,24 @@ use super::{MetadataListener, MetadataWatcher};
 
 pub(crate) struct DefaultMetadataWatcher {
     listeners: Vec<mpsc::UnboundedSender<ResourceEvent>>,
-    started: RefCell<bool>,
+    started: bool,
 }
 
 impl DefaultMetadataWatcher {
     pub(crate) fn new() -> Self {
         Self {
             listeners: Vec::new(),
-            started: RefCell::new(false),
+            started: false,
         }
     }
 }
 
 impl MetadataWatcher for DefaultMetadataWatcher {
-    fn start<P>(&self, pd_client: Rc<P>)
+    fn start<P>(&mut self, pd_client: Box<P>)
     where
         P: PlacementDriverClient + 'static,
     {
-        *self.started.borrow_mut() = true;
+        self.started = true;
         let mut rx = pd_client.list_and_watch_resource(&[
             ResourceType::RESOURCE_STREAM,
             ResourceType::RESOURCE_RANGE,
@@ -62,7 +60,7 @@ impl MetadataWatcher for DefaultMetadataWatcher {
     }
 
     fn watch(&mut self) -> Result<MetadataListener, EsError> {
-        if *self.started.borrow() {
+        if self.started {
             return Err(EsError::unexpected("watcher already started"));
         }
         let (tx, rx) = mpsc::unbounded_channel();

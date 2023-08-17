@@ -1,14 +1,8 @@
-use std::{
-    cell::{RefCell, UnsafeCell},
-    net::SocketAddr,
-    rc::Rc,
-    sync::Arc,
-};
+use std::{cell::RefCell, net::SocketAddr, rc::Rc, sync::Arc};
 
 use config::Configuration;
 use local_sync::mpsc;
 use log::{info, trace, warn};
-use store::Store;
 use tokio_uring::net::TcpStream;
 use transport::connection::Connection;
 
@@ -17,33 +11,29 @@ use crate::{
     range_manager::RangeManager,
 };
 
-pub(crate) struct Session<S, M> {
+pub(crate) struct Session<M> {
     config: Arc<Configuration>,
     stream: TcpStream,
     addr: SocketAddr,
-    store: Rc<S>,
-    range_manager: Rc<UnsafeCell<M>>,
+    range_manager: Rc<M>,
     connection_tracker: Rc<RefCell<ConnectionTracker>>,
 }
 
-impl<S, M> Session<S, M>
+impl<M> Session<M>
 where
-    S: Store + 'static,
     M: RangeManager + 'static,
 {
     pub(crate) fn new(
         config: Arc<Configuration>,
         stream: TcpStream,
         addr: SocketAddr,
-        store: Rc<S>,
-        range_manager: Rc<UnsafeCell<M>>,
+        range_manager: Rc<M>,
         connection_tracker: Rc<RefCell<ConnectionTracker>>,
     ) -> Self {
         Self {
             config,
             stream,
             addr,
-            store,
             range_manager,
             connection_tracker,
         }
@@ -52,7 +42,6 @@ where
     pub(crate) fn process(self) {
         tokio_uring::spawn(async move {
             Self::process0(
-                self.store,
                 self.range_manager,
                 self.connection_tracker,
                 self.addr,
@@ -64,8 +53,7 @@ where
     }
 
     async fn process0(
-        store: Rc<S>,
-        range_manager: Rc<UnsafeCell<M>>,
+        range_manager: Rc<M>,
         connection_tracker: Rc<RefCell<ConnectionTracker>>,
         peer_address: SocketAddr,
         stream: TcpStream,
@@ -100,12 +88,10 @@ where
                         // Update last read instant.
                         read_idle_handler.on_read();
                         let sender = tx.clone();
-                        let store = Rc::clone(&store);
                         let range_manager = Rc::clone(&range_manager);
                         let mut server_call = ServerCall {
                             request: frame,
                             sender,
-                            store,
                             range_manager,
                         };
                         tokio_uring::spawn(async move {
