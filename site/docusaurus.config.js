@@ -57,7 +57,7 @@ const config = {
           // Please change this to your repo.
           // Remove this to remove the "edit this page" links.
           editUrl:
-            'https://github.com/AutoMQ/elastic-stream/tree/develop/site/docs',
+            'https://github.com/AutoMQ/elastic-stream/tree/develop',
         },
         blog: {
           showReadingTime: true,
