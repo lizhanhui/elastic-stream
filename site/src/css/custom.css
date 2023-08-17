@@ -5,26 +5,129 @@
  */
 
 /* You can override the default Infima variables here. */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 :root {
-  --ifm-color-primary: #2e8555;
-  --ifm-color-primary-dark: #29784c;
-  --ifm-color-primary-darker: #277148;
-  --ifm-color-primary-darkest: #205d3b;
-  --ifm-color-primary-light: #33925d;
-  --ifm-color-primary-lighter: #359962;
-  --ifm-color-primary-lightest: #3cad6e;
+  --ifm-color-primary: var(--primary-500);
+  --ifm-color-primary-dark: var(--primary-500);
+  --ifm-color-primary-darker: var(--primary-500);
+  --ifm-color-primary-darkest: var(--primary-500);
+  --ifm-color-primary-light: var(--primary-300);
+  --ifm-color-primary-lighter: var(--primary-200);
+  --ifm-color-primary-lightest: var(--primary-100);
+  --ifm-navbar-background-color: var(--ifm-background-surface-color);
+  --ifm-breadcrumb-color-active: var(--primary-400);
+  --ifm-navbar-height: 5rem;
+  --font-display: 'gilmer-web', 'Gilmer', Geneva, Tahoma, Helvetica, Verdana, sans-serif;
+  --font-body: 'metro-web', 'Metro', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+    Oxygen-Sans, Ubuntu, Cantarell, 'Helvetica Neue', sans-serif;
+  --font-monospace: 'dejavu-sans-mono-web', monospace;
+  /* --ifm-link-color:var(--primary-400); */
+  /* --ifm-navbar-link-color: var(--primary-500); */
+  --ifm-navbar-link-hover-color: var(--primary-500);
   --ifm-code-font-size: 95%;
   --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.1);
+  --tw-content: '';
+  --primary-bg-color: #f9f0ff;
+  --primary-100: #f3f0ff;
+  --primary-200: #d4ccff;
+  --primary-300: #a59bf2;
+  --primary-400: #786ee6;
+  --primary-500: #4e46da;
+  --primary-600: #3230b3;
+  --primary-700: #1f218c;
+  --primary-800: #111666;
+  --primary-900: #0a0f40;
+  --second-100: #f0f5ff;
+  --second-200: #d6e4ff;
+  --second-300: #adc6ff;
+  --second-400: #85a5ff;
+  --second-500: #597ef7;
+  --second-600: #2f54eb;
+  --second-700: #1d39c4;
+  --second-800: #10239e;
+  --second-900: #061178;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-family: MaisonNeue-Medium,apple-system,system-ui,sans-serif;
+}
+a {
+  text-decoration: none !important;
+}
+
+.navbar__toggle svg {
+  color: var(--ifm-navbar-link-color);
+}
+ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+@keyframes animate-hover {
+  from {
+    background-color: var(--primary-500);
+  }
+  to {
+    background-color: var(--primary-600);
+  }
 }
 
 /* For readability concerns, you should choose a lighter palette in dark mode. */
 [data-theme='dark'] {
-  --ifm-color-primary: #25c2a0;
-  --ifm-color-primary-dark: #21af90;
-  --ifm-color-primary-darker: #1fa588;
-  --ifm-color-primary-darkest: #1a8870;
-  --ifm-color-primary-light: #29d5b0;
-  --ifm-color-primary-lighter: #32d8b4;
-  --ifm-color-primary-lightest: #4fddbf;
+  --ifm-color-primary: var(--primary-400);
+  --ifm-color-primary-dark: var(--primary-400);
+  --ifm-color-primary-darker: var(--primary-400);
+  --ifm-color-primary-darkest: var(--primary-400);
+  --ifm-color-primary-light: var(--primary-400);
+  --ifm-color-primary-lighter: var(--primary-400);
+  --ifm-color-primary-lightest: var(--primary-400);
   --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.3);
+}
+
+[data-theme='light'] .DocSearch {
+  /* --docsearch-primary-color: var(--ifm-color-primary); */
+  /* --docsearch-text-color: var(--ifm-font-color-base); */
+  --docsearch-muted-color: var(--ifm-color-secondary-darkest);
+  --docsearch-container-background: rgba(94, 100, 112, 0.7);
+  /* 弹窗 */
+  --docsearch-modal-background: var(--ifm-color-secondary-lighter);
+  /* 搜索框 */
+  --docsearch-searchbox-background: var(--ifm-color-secondary);
+  --docsearch-searchbox-focus-background: var(--ifm-color-white);
+  /* 条目 */
+  --docsearch-hit-color: var(--ifm-font-color-base);
+  --docsearch-hit-active-color: var(--ifm-color-white);
+  --docsearch-hit-background: var(--ifm-color-white);
+  /* 页脚 */
+  --docsearch-footer-background: var(--ifm-color-white);
+}
+
+[data-theme='dark'] .DocSearch {
+  --docsearch-text-color: var(--ifm-font-color-base);
+  --docsearch-muted-color: var(--ifm-color-secondary-darkest);
+  --docsearch-container-background: rgba(47, 55, 69, 0.7);
+  /* 弹窗 */
+  --docsearch-modal-background: var(--ifm-background-color);
+  /* 搜索框 */
+  --docsearch-searchbox-background: var(--ifm-background-color);
+  --docsearch-searchbox-focus-background: var(--ifm-color-black);
+  /* 条目 */
+  --docsearch-hit-color: var(--ifm-font-color-base);
+  --docsearch-hit-active-color: var(--ifm-color-white);
+  --docsearch-hit-background: var(--ifm-color-emphasis-100);
+  /* 页脚 */
+  --docsearch-footer-background: var(--ifm-background-surface-color);
+  --docsearch-key-gradient: linear-gradient(
+    -26.5deg,
+    var(--ifm-color-emphasis-200) 0%,
+    var(--ifm-color-emphasis-100) 100%
+  );
 }
