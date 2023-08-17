@@ -1,3 +1,5 @@
+# Architecture Motivation
+
 ## Cloud Native Design
 
 As technology advances and data continues to explode, traditional messaging and streaming platforms have exhibited their limitations in terms of infrastructure cost and operational management complexity. To address these challenges and make most of technology innovations, now is the time to redesign streaming platform, to meet following desirable expectations:
