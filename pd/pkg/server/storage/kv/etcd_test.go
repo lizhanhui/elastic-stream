@@ -3,6 +3,7 @@ package kv
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -1702,24 +1703,50 @@ func TestEtcd_ExecInTxn(t *testing.T) {
 			},
 		},
 		{
-			name: "data modified by other",
+			name: "data modified by other (three times)",
 			preset: map[string]string{
-				"/test/key1": "val1",
-				"/test/key2": "val2",
+				"/test/key": "0",
 			},
 			args: args{func(tb testing.TB, kv clientv3.KV, basicKV BasicKV) error {
-				getAndPut(tb, basicKV, "key0", nil, "val0")
-				_, err := kv.Put(context.Background(), "/test/key0", "val00")
-				require.NoError(tb, err)
+				re := require.New(tb)
+				v, err := basicKV.Get(context.Background(), []byte("key"))
+				re.NoError(err)
+				times, err := strconv.Atoi(string(v))
+				re.NoError(err)
+				_, _ = basicKV.Put(context.Background(), []byte("key"), []byte(strconv.Itoa(times+1)), false)
+
+				_, err = kv.Put(context.Background(), "/test/key", strconv.Itoa(times+2))
+				re.NoError(err)
 				return nil
 			}},
 			after: map[string]string{
-				"/test/key0": "val00",
-				"/test/key1": "val1",
-				"/test/key2": "val2",
+				"/test/key": "6",
 			},
 			wantErr: true,
 			errMsg:  "data has been modified",
+		},
+		{
+			name: "data modified by other (only once)",
+			preset: map[string]string{
+				"/test/key": "0",
+			},
+			args: args{func(tb testing.TB, kv clientv3.KV, basicKV BasicKV) error {
+				re := require.New(tb)
+				v, err := basicKV.Get(context.Background(), []byte("key"))
+				re.NoError(err)
+				times, err := strconv.Atoi(string(v))
+				re.NoError(err)
+				_, _ = basicKV.Put(context.Background(), []byte("key"), []byte(strconv.Itoa(times+1)), false)
+
+				if times == 0 {
+					_, err = kv.Put(context.Background(), "/test/key", strconv.Itoa(times+2))
+					re.NoError(err)
+				}
+				return nil
+			}},
+			after: map[string]string{
+				"/test/key": "3",
+			},
 		},
 		{
 			name: "pass the error returned by f",

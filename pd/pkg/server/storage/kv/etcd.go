@@ -33,6 +33,9 @@ import (
 const (
 	// A buffer in order to reduce times of context switch.
 	_watchChanCap = 128
+
+	// The max retry count when txn commit failed with model.ErrKVDataModified.
+	_txnMaxRetry = 3
 )
 
 // Etcd is a kv based on etcd.
@@ -451,15 +454,24 @@ func (e *Etcd) DeleteByPrefixes(ctx context.Context, prefixes [][]byte) (int64, 
 
 // ExecInTxn returns model.ErrKVTxnFailed if EtcdParam.CmpFunc evaluates to false.
 // It returns model.ErrKVDataModified if any key is modified by others.
-func (e *Etcd) ExecInTxn(ctx context.Context, f func(kv BasicKV) error) error {
-	txn := e.newEtcdTxn(ctx)
+func (e *Etcd) ExecInTxn(ctx context.Context, f func(kv BasicKV) error) (err error) {
+	// retry if txn failed
+	for i := 0; i < _txnMaxRetry; i++ {
+		txn := e.newEtcdTxn(ctx)
+		err = f(txn)
+		if err != nil {
+			return
+		}
 
-	err := f(txn)
-	if err != nil {
-		return err
+		err = txn.Commit()
+		if err == nil {
+			return
+		}
+		if !errors.Is(err, model.ErrKVDataModified) {
+			return
+		}
 	}
-
-	return txn.Commit()
+	return
 }
 
 func (e *Etcd) GetPrefixRangeEnd(p []byte) []byte {
