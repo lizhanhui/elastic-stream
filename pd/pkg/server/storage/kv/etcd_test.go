@@ -333,7 +333,6 @@ func TestEtcd_GetByRange(t *testing.T) {
 			},
 			want: want{kvs: []KeyValue{{Key: []byte("key2"), Value: []byte("val2")}, {Key: []byte("key1"), Value: []byte("val1")}}, revision: 4},
 		},
-
 		{
 			name:   "end key greater than start key",
 			preset: []kv{{"/test/key1", "val1"}, {"/test/key2", "val2"}, {"/test/key3", "val3"}},
@@ -341,6 +340,14 @@ func TestEtcd_GetByRange(t *testing.T) {
 				r: Range{[]byte("key3"), []byte("key1")},
 			},
 			want: want{kvs: []KeyValue{}, revision: 4},
+		},
+		{
+			name:   "get keys with empty end key",
+			preset: []kv{{"/test/key1", "val1"}, {"/test/key2", "val2"}, {"/test/key3", "val3"}},
+			args: args{
+				r: Range{[]byte("key2"), []byte("")},
+			},
+			want: want{},
 		},
 		{
 			name:   "get keys with empty range",
@@ -1490,90 +1497,95 @@ func TestEtcd_BatchDelete(t *testing.T) {
 	}
 }
 
-func TestEtcd_DeleteByPrefix(t *testing.T) {
+func TestEtcd_DeleteByRange(t *testing.T) {
 	type args struct {
-		prefixes [][]byte
+		r Range
+	}
+	type want struct {
+		deleted int
 	}
 	tests := []struct {
 		name    string
 		preset  map[string]string
 		args    args
-		want    int64
+		want    want
 		after   map[string]string
 		wantErr bool
 	}{
 		{
 			name: "normal case",
 			preset: map[string]string{
-				"/test/foo1/key1": "val1",
-				"/test/foo1/key2": "val2",
-				"/test/foo2/key3": "val3",
-				"/test/foo2/key4": "val4",
-				"/test/bar/key5":  "val5",
-				"/test/bar/key6":  "val6",
+				"/test/key0": "val0",
+				"/test/key1": "val1",
+				"/test/key2": "val2",
 			},
-			args: args{
-				prefixes: [][]byte{[]byte("foo1/"), []byte("foo2/")},
-			},
-			want: 4,
+			args: args{r: Range{[]byte("key0"), []byte("key2")}},
+			want: want{2},
 			after: map[string]string{
-				"/test/bar/key5": "val5",
-				"/test/bar/key6": "val6",
+				"/test/key2": "val2",
 			},
 		},
 		{
-			name: "delete specific key",
+			name: "delete by prefix",
 			preset: map[string]string{
-				"/test/foo/key1": "val1",
-				"/test/foo/key2": "val2",
+				"/test/key0": "val0",
+				"/test/key1": "val1",
+				"/test/key2": "val2",
 			},
-			args: args{
-				prefixes: [][]byte{[]byte("foo/key1")},
+			args:  args{r: Range{[]byte("key"), []byte(clientv3.GetPrefixRangeEnd("key"))}},
+			want:  want{3},
+			after: map[string]string{},
+		},
+		{
+			name: "out of range",
+			preset: map[string]string{
+				"/test/key0": "val0",
+				"/test/key1": "val1",
+				"/test/key2": "val2",
 			},
-			want: 1,
+			args: args{r: Range{[]byte("bar"), []byte("foo")}},
+			want: want{0},
 			after: map[string]string{
-				"/test/foo/key2": "val2",
+				"/test/key0": "val0",
+				"/test/key1": "val1",
+				"/test/key2": "val2",
 			},
 		},
 		{
-			name: "nonexistent prefix",
+			name: "end key greater than start key",
 			preset: map[string]string{
-				"/test/foo/key1": "val1",
-				"/test/foo/key2": "val2",
+				"/test/key0": "val0",
+				"/test/key1": "val1",
+				"/test/key2": "val2",
 			},
-			args: args{
-				prefixes: [][]byte{[]byte("bar/")},
-			},
-			want: 0,
+			args: args{r: Range{[]byte("key2"), []byte("key0")}},
+			want: want{0},
 			after: map[string]string{
-				"/test/foo/key1": "val1",
-				"/test/foo/key2": "val2",
+				"/test/key0": "val0",
+				"/test/key1": "val1",
+				"/test/key2": "val2",
 			},
 		},
 		{
-			name: "empty key",
+			name: "empty start key",
 			preset: map[string]string{
-				"/test/foo/key1": "val1",
+				"/test/key0": "val0",
 			},
-			args: args{
-				prefixes: [][]byte{[]byte("")},
-			},
-			want: 0,
+			args: args{r: Range{[]byte(""), []byte("key0")}},
+			want: want{0},
 			after: map[string]string{
-				"/test/foo/key1": "val1",
+				"/test/key0": "val0",
 			},
 		},
 		{
-			name: "nil key",
+			name: "empty end key",
 			preset: map[string]string{
-				"/test/foo/key1": "val1",
+				"/test/key0": "val0",
 			},
-			args: args{
-				prefixes: [][]byte{nil},
-			},
-			want: 0,
+			args: args{r: Range{[]byte("key0"), []byte("key")}},
+			want: want{0},
 			after: map[string]string{
-				"/test/foo/key1": "val1",
+				"/test/key0": "val0",
 			},
 		},
 	}
@@ -1598,14 +1610,14 @@ func TestEtcd_DeleteByPrefix(t *testing.T) {
 			}
 
 			// run
-			got, err := etcd.DeleteByPrefixes(context.Background(), tt.args.prefixes)
+			got, err := etcd.DeleteByRange(context.Background(), tt.args.r)
 
 			// check
 			if tt.wantErr {
 				re.Error(err)
 			} else {
 				re.NoError(err)
-				re.Equal(tt.want, got)
+				re.Equal(tt.want.deleted, got)
 			}
 			resp, err := kv.Get(context.Background(), "/test", clientv3.WithPrefix())
 			re.NoError(err)
@@ -1624,8 +1636,8 @@ func TestEtcd_ExecInTxn(t *testing.T) {
 		re.NoError(err)
 		re.Equal(oldValue, v)
 		v, err = kv.Put(context.Background(), []byte(key), []byte(newValue), false)
-		re.NoError(err)
-		re.Nil(v)
+		re.Zero(err)
+		re.Zero(v)
 	}
 	getAndDelete := func(tb testing.TB, kv BasicKV, key string, oldValue []byte) {
 		re := require.New(tb)
@@ -1633,10 +1645,15 @@ func TestEtcd_ExecInTxn(t *testing.T) {
 		re.NoError(err)
 		re.Equal(oldValue, v)
 		v, err = kv.Delete(context.Background(), []byte(key), false)
-		re.NoError(err)
-		re.Nil(v)
+		re.Zero(err)
+		re.Zero(v)
 	}
-
+	deleteByRange := func(tb testing.TB, kv BasicKV, r Range) {
+		re := require.New(tb)
+		c, err := kv.DeleteByRange(context.Background(), r)
+		re.Zero(err)
+		re.Zero(c)
+	}
 	type fields struct {
 		newCmpFunc func() clientv3.Cmp
 	}
@@ -1657,6 +1674,8 @@ func TestEtcd_ExecInTxn(t *testing.T) {
 			preset: map[string]string{
 				"/test/key1": "val1",
 				"/test/key2": "val2",
+				"/test/foo1": "bar1",
+				"/test/foo2": "bar2",
 			},
 			args: args{func(tb testing.TB, _ clientv3.KV, basicKV BasicKV) error {
 				// get a non-existent key and put it
@@ -1665,6 +1684,8 @@ func TestEtcd_ExecInTxn(t *testing.T) {
 				getAndPut(tb, basicKV, "key1", []byte("val1"), "val11")
 				// get an existent key and delete it
 				getAndDelete(tb, basicKV, "key2", []byte("val2"))
+				// delete by range
+				deleteByRange(tb, basicKV, Range{[]byte("foo1"), []byte("foo3")})
 				return nil
 			}},
 			after: map[string]string{
@@ -1681,6 +1702,7 @@ func TestEtcd_ExecInTxn(t *testing.T) {
 			args: args{func(tb testing.TB, _ clientv3.KV, basicKV BasicKV) error {
 				getAndPut(tb, basicKV, "", nil, "bar")
 				getAndDelete(tb, basicKV, "", nil)
+				deleteByRange(tb, basicKV, Range{})
 				return nil
 			}},
 			after: map[string]string{

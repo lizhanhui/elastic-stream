@@ -151,13 +151,13 @@ func (l Logger) BatchDelete(ctx context.Context, keys [][]byte, prevKV bool, inT
 	return
 }
 
-func (l Logger) DeleteByPrefixes(ctx context.Context, prefixes [][]byte) (int64, error) {
-	deleted, err := l.KV.DeleteByPrefixes(ctx, prefixes)
+func (l Logger) DeleteByRange(ctx context.Context, r Range) (int, error) {
+	deleted, err := l.KV.DeleteByRange(ctx, r)
 
 	logger := l.logger()
 	if logger.Core().Enabled(zap.DebugLevel) {
 		logger = logger.With(traceutil.TraceLogField(ctx))
-		logger.Debug("kv delete by prefix", zap.ByteStrings("prefixes", prefixes), zap.Int64("deleted", deleted), zap.Error(err))
+		logger.Debug("kv delete by range", zap.ByteString("start-key", r.StartKey), zap.ByteString("end-key", r.EndKey), zap.Int("deleted", deleted), zap.Error(err))
 	}
 	return deleted, err
 }

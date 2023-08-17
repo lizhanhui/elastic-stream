@@ -113,7 +113,7 @@ func (e *Endpoint) DeleteStream(ctx context.Context, p *model.DeleteStreamParam)
 
 	// TODO: delete ranges asynchronously
 	rangeInStreamPrefix := []byte(fmt.Sprintf(_rangeStreamPrefixFormat, p.StreamID))
-	_, _ = e.KV.DeleteByPrefixes(ctx, [][]byte{rangeInStreamPrefix})
+	_, _ = e.KV.DeleteByRange(ctx, kv.Range{StartKey: rangeInStreamPrefix, EndKey: e.KV.GetPrefixRangeEnd(rangeInStreamPrefix)})
 	// TODO: delete index asynchronously
 
 	return deletedStream, nil

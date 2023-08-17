@@ -99,6 +99,11 @@ type BasicKV interface {
 	// If the key does not exist, Delete does nothing and returns no error.
 	// If prevKV is true, the old value (if any) will be returned.
 	Delete(ctx context.Context, key []byte, prevKV bool) ([]byte, error)
+
+	// DeleteByRange removes all key-value pairs whose keys fall within the given range (r).
+	// If the Range.StartKey or Range.EndKey is empty, DeleteByRange does nothing and returns no error.
+	// It returns the number of key-value pairs deleted.
+	DeleteByRange(ctx context.Context, r Range) (int, error)
 }
 
 // KV represents a key-value store.
@@ -113,7 +118,7 @@ type KV interface {
 
 	// GetByRange retrieves a list of key-value pairs whose keys fall within the given range (r)
 	// and limits the number of results returned to "limit".
-	// If the Range.StartKey is empty, GetByRange returns nil and no error.
+	// If the Range.StartKey or Range.EndKey is empty, GetByRange does nothing and returns no error.
 	// If rev is less than or equal to 0, GetByRange gets the key-value pairs at the latest revision, and returns the revision.
 	// If rev is greater than 0, GetByRange gets the key-value pairs at the given revision, and returns the same revision.
 	// If limit is 0, GetByRange will return all key-value pairs whose keys fall within the given range (r).
@@ -144,11 +149,6 @@ type KV interface {
 	// If inTxn is true, BatchDelete will try to delete all keys in a single transaction.
 	BatchDelete(ctx context.Context, keys [][]byte, prevKV bool, inTxn bool) ([]KeyValue, error)
 
-	// DeleteByPrefixes removes the key-value pairs associated with the given prefixes in a single transaction.
-	// Any empty prefix will be ignored.
-	// It returns the number of key-value pairs that are deleted.
-	DeleteByPrefixes(ctx context.Context, prefixes [][]byte) (int64, error)
-
 	// ExecInTxn executes the given function in a single transaction.
 	// It prioritizes returning the error returned by the function, and then the error occurred within the transaction.
 	// If and only if the function returns no error, the transaction will be committed.
@@ -159,7 +159,8 @@ type KV interface {
 	// * There is a limitation on the number of write operations, with a default limit of 128.
 	//   Do not attempt to perform too many operations in a single transaction.
 	// * The kv passed to the function is not thread-safe. DO NOT use it in multiple goroutines.
-	// * The flag `prevKV` in Put and Delete will not take effect; Put and Delete will always return nils.
+	// * The flag `prevKV` in BasicKV.Put and BasicKV.Delete will not take effect.
+	// * BasicKV.Put, BasicKV.Delete and BasicKV.DeleteByRange will always return zero values.
 	ExecInTxn(ctx context.Context, f func(kv BasicKV) error) error
 
 	// GetPrefixRangeEnd returns the end key for a prefix range query.

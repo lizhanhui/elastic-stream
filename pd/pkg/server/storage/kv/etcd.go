@@ -175,7 +175,7 @@ func (e *Etcd) BatchGet(ctx context.Context, keys [][]byte, inTxn bool) ([]KeyVa
 // GetByRange returns model.ErrKVTxnFailed if EtcdParam.CmpFunc evaluates to false.
 // It returns model.ErrKVCompacted if the requested revision has been compacted.
 func (e *Etcd) GetByRange(ctx context.Context, r Range, rev int64, limit int64, desc bool) ([]KeyValue, int64, bool, error) {
-	if len(r.StartKey) == 0 {
+	if len(r.StartKey) == 0 || len(r.EndKey) == 0 {
 		return nil, 0, false, nil
 	}
 
@@ -419,37 +419,28 @@ func (e *Etcd) BatchDelete(ctx context.Context, keys [][]byte, prevKV bool, inTx
 	return prevKVs, nil
 }
 
-// DeleteByPrefixes returns model.ErrKVTxnFailed if EtcdParam.CmpFunc evaluates to false.
-func (e *Etcd) DeleteByPrefixes(ctx context.Context, prefixes [][]byte) (int64, error) {
-	ops := make([]clientv3.Op, 0, len(prefixes))
-	for _, p := range prefixes {
-		if len(p) == 0 {
-			continue
-		}
-		key := e.addPrefix(p)
-		ops = append(ops, clientv3.OpDelete(string(key), clientv3.WithPrefix()))
-	}
-
-	if len(ops) == 0 {
+// DeleteByRange returns model.ErrKVTxnFailed if EtcdParam.CmpFunc evaluates to false.
+func (e *Etcd) DeleteByRange(ctx context.Context, r Range) (int, error) {
+	if len(r.StartKey) == 0 && len(r.EndKey) == 0 {
 		return 0, nil
 	}
 
-	txn := e.newTxnFunc(ctx).Then(ops...)
-	resp, err := txn.Commit()
+	startKey := e.addPrefix(r.StartKey)
+	endKey := e.addPrefix(r.EndKey)
+	opts := []clientv3.OpOption{clientv3.WithRange(string(endKey))}
+
+	resp, err := e.newTxnFunc(ctx).Then(clientv3.OpDelete(string(startKey), opts...)).Commit()
 	if err != nil {
-		return 0, errors.WithMessage(err, "kv delete by prefix")
+		return 0, errors.WithMessage(err, "kv delete by range")
 	}
 	if !resp.Succeeded {
-		return 0, errors.WithMessage(model.ErrKVTxnFailed, "kv delete by prefix")
+		return 0, errors.WithMessage(model.ErrKVTxnFailed, "kv delete by range")
 	}
 
-	deleted := int64(0)
-	for _, resp := range resp.Responses {
-		deleteResp := resp.GetResponseDeleteRange()
-		deleted += deleteResp.Deleted
-	}
+	// When the transaction succeeds, the number of responses is always 1 and is always a DeleteRangeResponse.
+	delResp := resp.Responses[0].GetResponseDeleteRange()
 
-	return deleted, nil
+	return int(delResp.Deleted), nil
 }
 
 // ExecInTxn returns model.ErrKVTxnFailed if EtcdParam.CmpFunc evaluates to false.
@@ -717,6 +708,19 @@ func (et *etcdTxn) Delete(_ context.Context, k []byte, _ bool) ([]byte, error) {
 	et.ops = append(et.ops, op)
 
 	return nil, nil
+}
+
+func (et *etcdTxn) DeleteByRange(_ context.Context, r Range) (int, error) {
+	if len(r.StartKey) == 0 || len(r.EndKey) == 0 {
+		return 0, nil
+	}
+
+	s := et.addPrefix(r.StartKey)
+	e := et.addPrefix(r.EndKey)
+	op := clientv3.OpDelete(string(s), clientv3.WithRange(string(e)))
+	et.ops = append(et.ops, op)
+
+	return 0, nil
 }
 
 func (et *etcdTxn) Commit() error {
