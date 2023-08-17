@@ -75,6 +75,8 @@ cluster:
   sealReqTimeoutMs: 1000
   # timeout after which a range server is considered dead
   rangeServerTimeout: 100s
+  # time interval between soft deletion and hard deletion of a stream
+  streamDeleteDelay: 24h
 
 sbp:
   server:

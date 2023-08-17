@@ -684,14 +684,16 @@ func TestEtcd_Put(t *testing.T) {
 		key    []byte
 		value  []byte
 		prevKV bool
+		ttl    int64
 	}
 	tests := []struct {
-		name    string
-		preset  map[string]string
-		args    args
-		want    []byte
-		after   map[string]string
-		wantErr bool
+		name     string
+		preset   map[string]string
+		args     args
+		want     []byte
+		after    map[string]string
+		afterTTL map[string]string
+		wantErr  bool
 	}{
 		{
 			name: "put new key",
@@ -723,6 +725,43 @@ func TestEtcd_Put(t *testing.T) {
 			after: map[string]string{
 				"/test/key1": "val2",
 			},
+		},
+		{
+			name: "put new key with ttl",
+			preset: map[string]string{
+				"/test/key0": "val0",
+			},
+			args: args{
+				key:    []byte("key1"),
+				value:  []byte("val1"),
+				prevKV: true,
+				ttl:    1,
+			},
+			want: nil,
+			after: map[string]string{
+				"/test/key0": "val0",
+				"/test/key1": "val1",
+			},
+			afterTTL: map[string]string{
+				"/test/key0": "val0",
+			},
+		},
+		{
+			name: "put existing key with ttl",
+			preset: map[string]string{
+				"/test/key1": "val1",
+			},
+			args: args{
+				key:    []byte("key1"),
+				value:  []byte("val2"),
+				prevKV: true,
+				ttl:    1,
+			},
+			want: []byte("val1"),
+			after: map[string]string{
+				"/test/key1": "val2",
+			},
+			afterTTL: map[string]string{},
 		},
 		{
 			name: "put existing key without prevKV",
@@ -824,7 +863,7 @@ func TestEtcd_Put(t *testing.T) {
 			}
 
 			// run
-			got, err := etcd.Put(context.Background(), tt.args.key, tt.args.value, tt.args.prevKV)
+			got, err := etcd.Put(context.Background(), tt.args.key, tt.args.value, tt.args.prevKV, tt.args.ttl)
 
 			// check
 			if tt.wantErr {
@@ -838,6 +877,15 @@ func TestEtcd_Put(t *testing.T) {
 			re.Equal(len(tt.after), len(resp.Kvs))
 			for _, kvs := range resp.Kvs {
 				re.Equal(tt.after[string(kvs.Key)], string(kvs.Value))
+			}
+			if tt.args.ttl > 0 {
+				time.Sleep(time.Second*time.Duration(tt.args.ttl) + time.Second*2) // another 2 seconds to make sure the key is expired
+				resp, err := kv.Get(context.Background(), "/test", clientv3.WithPrefix())
+				re.NoError(err)
+				re.Equal(len(tt.afterTTL), len(resp.Kvs))
+				for _, kvs := range resp.Kvs {
+					re.Equal(tt.afterTTL[string(kvs.Key)], string(kvs.Value))
+				}
 			}
 		})
 	}
@@ -1139,7 +1187,7 @@ func TestEtcd_BatchPut(t *testing.T) {
 			}
 
 			// run
-			got, err := etcd.BatchPut(context.Background(), tt.args.kvs, tt.args.prevKV, tt.args.inTxn)
+			got, err := etcd.BatchPut(context.Background(), tt.args.kvs, tt.args.prevKV, tt.args.inTxn, 0)
 
 			// check
 			if tt.wantErr {
@@ -1635,7 +1683,7 @@ func TestEtcd_ExecInTxn(t *testing.T) {
 		v, err := kv.Get(context.Background(), []byte(key))
 		re.NoError(err)
 		re.Equal(oldValue, v)
-		v, err = kv.Put(context.Background(), []byte(key), []byte(newValue), false)
+		v, err = kv.Put(context.Background(), []byte(key), []byte(newValue), false, 0)
 		re.Zero(err)
 		re.Zero(v)
 	}
@@ -1735,7 +1783,7 @@ func TestEtcd_ExecInTxn(t *testing.T) {
 				re.NoError(err)
 				times, err := strconv.Atoi(string(v))
 				re.NoError(err)
-				_, _ = basicKV.Put(context.Background(), []byte("key"), []byte(strconv.Itoa(times+1)), false)
+				_, _ = basicKV.Put(context.Background(), []byte("key"), []byte(strconv.Itoa(times+1)), false, 0)
 
 				_, err = kv.Put(context.Background(), "/test/key", strconv.Itoa(times+2))
 				re.NoError(err)
@@ -1758,7 +1806,7 @@ func TestEtcd_ExecInTxn(t *testing.T) {
 				re.NoError(err)
 				times, err := strconv.Atoi(string(v))
 				re.NoError(err)
-				_, _ = basicKV.Put(context.Background(), []byte("key"), []byte(strconv.Itoa(times+1)), false)
+				_, _ = basicKV.Put(context.Background(), []byte("key"), []byte(strconv.Itoa(times+1)), false, 0)
 
 				if times == 0 {
 					_, err = kv.Put(context.Background(), "/test/key", strconv.Itoa(times+2))
@@ -1864,6 +1912,49 @@ func TestEtcd_ExecInTxn(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestEtcd_ExecInTxnPutWithTTL(t *testing.T) {
+	t.Parallel()
+	re := require.New(t)
+	_, client, closeFunc := testutil.StartEtcd(t, nil)
+	defer closeFunc()
+
+	etcd := Logger{NewEtcd(EtcdParam{
+		Client:   client,
+		RootPath: "/test",
+	}, zap.NewNop())}
+
+	// prepare
+	kv := client.KV
+	var err error
+	_, err = kv.Put(context.Background(), "/test/key0", "val0")
+	re.NoError(err)
+	_, err = kv.Put(context.Background(), "/test/key1", "val1")
+	re.NoError(err)
+
+	// run
+	err = etcd.ExecInTxn(context.Background(), func(kv BasicKV) error {
+		_, _ = kv.Put(context.Background(), []byte("key1"), []byte("val11"), false, 1)
+		_, _ = kv.Put(context.Background(), []byte("key2"), []byte("val22"), false, 1)
+		return nil
+	})
+
+	// check
+	re.NoError(err)
+	resp, err := kv.Get(context.Background(), "/test", clientv3.WithPrefix())
+	re.NoError(err)
+	re.Len(resp.Kvs, 3)
+	re.Equal("val0", string(resp.Kvs[0].Value))
+	re.Equal("val11", string(resp.Kvs[1].Value))
+	re.Equal("val22", string(resp.Kvs[2].Value))
+
+	// wait for ttl
+	time.Sleep(time.Second * 3)
+	resp, err = kv.Get(context.Background(), "/test", clientv3.WithPrefix())
+	re.NoError(err)
+	re.Len(resp.Kvs, 1)
+	re.Equal("val0", string(resp.Kvs[0].Value))
 }
 
 func alwaysFailedTxnFunc() clientv3.Cmp {

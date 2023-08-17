@@ -182,9 +182,9 @@ func (e *Endpoint) CreateRange(ctx context.Context, p *model.CreateRangeParam, f
 			OffloadOwner: &rpcfb.OffloadOwnerT{ServerId: servers[0].ServerId},
 		}
 		rangeInfo := fbutil.Marshal(newRange)
-		_, _ = kv.Put(ctx, rk, rangeInfo, false)
+		_, _ = kv.Put(ctx, rk, rangeInfo, false, 0)
 		for _, server := range newRange.Servers {
-			_, _ = kv.Put(ctx, rangePathOnRangeServer(server.ServerId, newRange.StreamId, newRange.Index), nil, false)
+			_, _ = kv.Put(ctx, rangePathOnRangeServer(server.ServerId, newRange.StreamId, newRange.Index), nil, false, 0)
 		}
 		mcache.Free(rangeInfo)
 
@@ -259,7 +259,7 @@ func (e *Endpoint) SealRange(ctx context.Context, p *model.SealRangeParam) (*rpc
 		r.End = p.End
 		sealedRange = r
 		rangeInfo := fbutil.Marshal(sealedRange)
-		_, _ = kv.Put(ctx, rk, rangeInfo, false)
+		_, _ = kv.Put(ctx, rk, rangeInfo, false, 0)
 		mcache.Free(rangeInfo)
 
 		return nil

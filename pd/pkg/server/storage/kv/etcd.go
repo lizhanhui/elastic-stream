@@ -45,12 +45,14 @@ type Etcd struct {
 	maxTxnOps  uint
 
 	watcher clientv3.Watcher
+	lease   clientv3.Lease
 
 	lg *zap.Logger
 }
 
 type Client interface {
 	clientv3.KV
+	clientv3.Lease
 	clientv3.Watcher
 }
 
@@ -72,6 +74,8 @@ func NewEtcd(param EtcdParam, lg *zap.Logger) *Etcd {
 	e := &Etcd{
 		rootPath:  []byte(param.RootPath),
 		maxTxnOps: param.MaxTxnOps,
+		watcher:   param.Client,
+		lease:     param.Client,
 		lg:        logger,
 	}
 
@@ -89,8 +93,6 @@ func NewEtcd(param EtcdParam, lg *zap.Logger) *Etcd {
 			return etcdutil.NewTxn(ctx, param.Client, logger.With(traceutil.TraceLogField(ctx)))
 		}
 	}
-
-	e.watcher = param.Client
 
 	return e
 }
@@ -243,12 +245,12 @@ func (e *Etcd) Watch(ctx context.Context, prefix []byte, rev int64, filter Filte
 }
 
 // Put returns model.ErrKVTxnFailed if EtcdParam.CmpFunc evaluates to false.
-func (e *Etcd) Put(ctx context.Context, k, v []byte, prevKV bool) ([]byte, error) {
+func (e *Etcd) Put(ctx context.Context, k, v []byte, prevKV bool, ttl int64) ([]byte, error) {
 	if len(k) == 0 {
 		return nil, nil
 	}
 
-	prevKVs, err := e.BatchPut(ctx, []KeyValue{{Key: k, Value: v}}, prevKV, false)
+	prevKVs, err := e.BatchPut(ctx, []KeyValue{{Key: k, Value: v}}, prevKV, false, ttl)
 	if err != nil {
 		return nil, errors.WithMessage(err, "kv put")
 	}
@@ -267,7 +269,7 @@ func (e *Etcd) Put(ctx context.Context, k, v []byte, prevKV bool) ([]byte, error
 
 // BatchPut returns model.ErrKVTxnFailed if EtcdParam.CmpFunc evaluates to false.
 // If inTxn is true, BatchPut returns model.ErrKVTooManyTxnOps if the number of kvs exceeds EtcdParam.MaxTxnOps.
-func (e *Etcd) BatchPut(ctx context.Context, kvs []KeyValue, prevKV bool, inTxn bool) ([]KeyValue, error) {
+func (e *Etcd) BatchPut(ctx context.Context, kvs []KeyValue, prevKV bool, inTxn bool, ttl int64) ([]KeyValue, error) {
 	if len(kvs) == 0 {
 		return nil, nil
 	}
@@ -281,6 +283,18 @@ func (e *Etcd) BatchPut(ctx context.Context, kvs []KeyValue, prevKV bool, inTxn 
 		prevKVs = make([]KeyValue, 0, len(kvs))
 	}
 
+	var opts []clientv3.OpOption
+	if prevKV {
+		opts = append(opts, clientv3.WithPrevKV())
+	}
+	if ttl > 0 {
+		leaseID, err := e.grantLease(ctx, ttl)
+		if err != nil {
+			return nil, err
+		}
+		opts = append(opts, clientv3.WithLease(leaseID))
+	}
+
 	for i := 0; i < len(kvs); i += batchSize {
 		end := i + batchSize
 		if end > len(kvs) {
@@ -289,10 +303,6 @@ func (e *Etcd) BatchPut(ctx context.Context, kvs []KeyValue, prevKV bool, inTxn 
 		batchKVs := kvs[i:end]
 
 		ops := make([]clientv3.Op, 0, len(batchKVs))
-		var opts []clientv3.OpOption
-		if prevKV {
-			opts = append(opts, clientv3.WithPrevKV())
-		}
 		for _, kv := range batchKVs {
 			if len(kv.Key) == 0 {
 				continue
@@ -495,6 +505,18 @@ func (e *Etcd) hasPrefix(k []byte) bool {
 		string(k[len(e.rootPath):len(e.rootPath)+len(KeySeparator)]) == KeySeparator
 }
 
+type lease interface {
+	grantLease(ctx context.Context, ttl int64) (clientv3.LeaseID, error)
+}
+
+func (e *Etcd) grantLease(ctx context.Context, ttl int64) (clientv3.LeaseID, error) {
+	resp, err := e.lease.Grant(ctx, ttl)
+	if err != nil {
+		return 0, errors.WithMessagef(err, "grant lease with ttl %d", ttl)
+	}
+	return resp.ID, nil
+}
+
 type watchChan struct {
 	prefixHandler
 
@@ -644,6 +666,7 @@ func (e *Etcd) newEtcdTxn(ctx context.Context) *etcdTxn {
 	logger := e.lg.With(traceutil.TraceLogField(ctx))
 	return &etcdTxn{
 		prefixHandler: e,
+		lease:         e,
 		kv:            e,
 		txn:           e.newTxnFunc(ctx),
 		lg:            logger,
@@ -657,6 +680,7 @@ func (e *Etcd) newEtcdTxn(ctx context.Context) *etcdTxn {
 // In other words, write operations are only executed if the data read remains unmodified.
 type etcdTxn struct {
 	prefixHandler
+	lease
 	kv BasicKV
 
 	txn clientv3.Txn
@@ -688,12 +712,21 @@ func (et *etcdTxn) Get(ctx context.Context, k []byte) ([]byte, error) {
 	return v, nil
 }
 
-func (et *etcdTxn) Put(_ context.Context, k, v []byte, _ bool) ([]byte, error) {
+func (et *etcdTxn) Put(ctx context.Context, k, v []byte, _ bool, ttl int64) ([]byte, error) {
 	if len(k) == 0 {
 		return nil, nil
 	}
 
-	op := clientv3.OpPut(string(et.addPrefix(k)), string(v))
+	var opts []clientv3.OpOption
+	if ttl > 0 {
+		leaseID, err := et.grantLease(ctx, ttl)
+		if err != nil {
+			return nil, err
+		}
+		opts = append(opts, clientv3.WithLease(leaseID))
+	}
+
+	op := clientv3.OpPut(string(et.addPrefix(k)), string(v), opts...)
 	et.ops = append(et.ops, op)
 
 	return nil, nil

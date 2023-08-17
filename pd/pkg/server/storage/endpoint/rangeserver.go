@@ -47,7 +47,7 @@ func (e *Endpoint) SaveRangeServer(ctx context.Context, rangeServer *rpcfb.Range
 	value := fbutil.Marshal(rangeServer)
 	defer mcache.Free(value)
 
-	_, err := e.KV.Put(ctx, key, value, false)
+	_, err := e.KV.Put(ctx, key, value, false, 0)
 	if err != nil {
 		logger.Error("failed to save range server", zap.Error(err))
 		return nil, errors.WithMessagef(err, "save range server %d", rangeServer.ServerId)

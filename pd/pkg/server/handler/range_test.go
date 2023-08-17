@@ -65,7 +65,7 @@ func TestHandler_ListRange(t *testing.T) {
 			t.Parallel()
 			re := require.New(t)
 
-			h, closeFunc := startSbpHandler(t, nil, true)
+			h, closeFunc := startSbpHandler(t, nil, nil, true)
 			defer closeFunc()
 
 			// prepare: 3 range servers, 3 streams, 1 sealed range and 1 writable range per stream
@@ -388,7 +388,7 @@ func TestSealRange(t *testing.T) {
 			t.Parallel()
 			re := require.New(t)
 
-			h, closeFunc := startSbpHandler(t, nil, true)
+			h, closeFunc := startSbpHandler(t, nil, nil, true)
 			defer closeFunc()
 
 			// prepare
@@ -625,7 +625,7 @@ func TestHandler_CreateRange(t *testing.T) {
 			t.Parallel()
 			re := require.New(t)
 
-			h, closeFunc := startSbpHandler(t, nil, true)
+			h, closeFunc := startSbpHandler(t, nil, nil, true)
 			defer closeFunc()
 
 			// prepare
@@ -763,8 +763,8 @@ func getRanges(tb testing.TB, h *Handler, streamID int64) []*rpcfb.RangeT {
 
 	ranges := make([]*rpcfb.RangeT, 0, len(resp.Resources))
 	for _, r := range resp.Resources {
+		re.Equal(rpcfb.ResourceTypeRESOURCE_RANGE, r.Type)
 		if r.Range.StreamId == streamID {
-			re.Equal(rpcfb.ResourceTypeRESOURCE_RANGE, r.Type)
 			ranges = append(ranges, r.Range)
 		}
 	}

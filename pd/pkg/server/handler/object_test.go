@@ -58,7 +58,7 @@ func TestHandler_CommitObject(t *testing.T) {
 			t.Parallel()
 			re := require.New(t)
 
-			h, closeFunc := startSbpHandler(t, nil, true)
+			h, closeFunc := startSbpHandler(t, nil, nil, true)
 			defer closeFunc()
 
 			// prepare

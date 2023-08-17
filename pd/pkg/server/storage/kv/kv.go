@@ -92,7 +92,8 @@ type BasicKV interface {
 	// IF the key is empty, Put does nothing and returns no error.
 	// If the key already exists, Put overwrites the existing value.
 	// If prevKV is true, the old value (if any) will be returned.
-	Put(ctx context.Context, key, value []byte, prevKV bool) ([]byte, error)
+	// If ttl is greater than 0, the key will be expired after the ttl (in seconds).
+	Put(ctx context.Context, key, value []byte, prevKV bool, ttl int64) ([]byte, error)
 
 	// Delete removes the key-value pair associated with the given key.
 	// If the key is empty, Delete does nothing and returns no error.
@@ -140,7 +141,8 @@ type KV interface {
 	// Any empty key will be ignored.
 	// If prevKV is true, the old key-value pairs (if any) will be returned.
 	// If inTxn is true, BatchPut will try to put all keys in a single transaction.
-	BatchPut(ctx context.Context, kvs []KeyValue, prevKV bool, inTxn bool) ([]KeyValue, error)
+	// If ttl is greater than 0, the key will be expired after the ttl (in seconds).
+	BatchPut(ctx context.Context, kvs []KeyValue, prevKV bool, inTxn bool, ttl int64) ([]KeyValue, error)
 
 	// BatchDelete removes the key-value pairs associated with the given keys.
 	// If the key does not exist, BatchDelete returns no error.

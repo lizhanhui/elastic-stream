@@ -8,6 +8,7 @@ import (
 
 	"github.com/AutoMQ/pd/api/rpcfb/rpcfb"
 	"github.com/AutoMQ/pd/pkg/sbp/protocol"
+	"github.com/AutoMQ/pd/pkg/server/config"
 )
 
 func TestHandler_CreateStream(t *testing.T) {
@@ -75,7 +76,7 @@ func TestHandler_CreateStream(t *testing.T) {
 			t.Parallel()
 			re := require.New(t)
 
-			h, closeFunc := startSbpHandler(t, nil, true)
+			h, closeFunc := startSbpHandler(t, nil, nil, true)
 			defer closeFunc()
 
 			// prepare
@@ -106,6 +107,9 @@ func TestHandler_DeleteStream(t *testing.T) {
 	const (
 		_streamEpoch = 16
 	)
+	type fields struct {
+		streamDeleteDelay time.Duration
+	}
 	type args struct {
 		streamID int64
 		epoch    int64
@@ -118,13 +122,22 @@ func TestHandler_DeleteStream(t *testing.T) {
 		errMsg  string
 	}
 	tests := []struct {
-		name string
-		args args
-		want want
+		name   string
+		fields fields
+		args   args
+		want   want
 	}{
 		{
 			name: "normal case",
 			args: args{streamID: 1, epoch: _streamEpoch},
+			want: want{
+				stream: rpcfb.StreamT{StreamId: 1, Replica: 3, AckCount: 3, Epoch: _streamEpoch, Deleted: true},
+			},
+		},
+		{
+			name:   "test delete stream delay",
+			fields: fields{time.Second},
+			args:   args{streamID: 1, epoch: _streamEpoch},
 			want: want{
 				stream: rpcfb.StreamT{StreamId: 1, Replica: 3, AckCount: 3, Epoch: _streamEpoch, Deleted: true},
 			},
@@ -179,7 +192,9 @@ func TestHandler_DeleteStream(t *testing.T) {
 			t.Parallel()
 			re := require.New(t)
 
-			h, closeFunc := startSbpHandler(t, nil, true)
+			cfg := config.DefaultCluster()
+			cfg.StreamDeleteDelay = tt.fields.streamDeleteDelay
+			h, closeFunc := startSbpHandler(t, nil, cfg, true)
 			defer closeFunc()
 
 			// prepare
@@ -206,6 +221,10 @@ func TestHandler_DeleteStream(t *testing.T) {
 				re.Equal(rpcfb.ErrorCodeOK, resp.Status.Code)
 				re.Equal(tt.want.stream, *resp.Stream)
 				re.Empty(getRanges(t, h, tt.args.streamID)) // no ranges in the stream
+				if tt.fields.streamDeleteDelay != 0 {
+					time.Sleep(tt.fields.streamDeleteDelay + 2*time.Second) // another 2 seconds to make sure the stream is deleted
+					re.Nil(getStream(t, h, tt.args.streamID))
+				}
 			}
 		})
 	}
@@ -391,7 +410,7 @@ func TestHandler_UpdateStream(t *testing.T) {
 			t.Parallel()
 			re := require.New(t)
 
-			h, closeFunc := startSbpHandler(t, nil, true)
+			h, closeFunc := startSbpHandler(t, nil, nil, true)
 			defer closeFunc()
 
 			// prepare
@@ -494,7 +513,7 @@ func TestHandler_DescribeStream(t *testing.T) {
 			t.Parallel()
 			re := require.New(t)
 
-			h, closeFunc := startSbpHandler(t, nil, true)
+			h, closeFunc := startSbpHandler(t, nil, nil, true)
 			defer closeFunc()
 
 			// prepare
@@ -683,7 +702,7 @@ func TestHandler_TrimStream(t *testing.T) {
 			t.Parallel()
 			re := require.New(t)
 
-			h, closeFunc := startSbpHandler(t, nil, true)
+			h, closeFunc := startSbpHandler(t, nil, nil, true)
 			defer closeFunc()
 
 			// prepare
@@ -733,14 +752,22 @@ func TestHandler_TrimStream(t *testing.T) {
 func getStream(tb testing.TB, h *Handler, streamID int64) *rpcfb.StreamT {
 	re := require.New(tb)
 
-	req := &protocol.DescribeStreamRequest{DescribeStreamRequestT: rpcfb.DescribeStreamRequestT{
-		StreamId: streamID,
+	// If the stream has been deleted, we can not get the stream by `DescribeStream`, so we use `ListResource` instead.
+	req := &protocol.ListResourceRequest{ListResourceRequestT: rpcfb.ListResourceRequestT{
+		ResourceType: []rpcfb.ResourceType{rpcfb.ResourceTypeRESOURCE_STREAM},
 	}}
-	resp := &protocol.DescribeStreamResponse{}
-	h.DescribeStream(req, resp)
+	resp := &protocol.ListResourceResponse{}
+	h.ListResource(req, resp)
 	re.Equal(rpcfb.ErrorCodeOK, resp.Status.Code, resp.Status.Message)
 
-	return resp.Stream
+	for _, r := range resp.Resources {
+		re.Equal(rpcfb.ResourceTypeRESOURCE_STREAM, r.Type)
+		if r.Stream.StreamId == streamID {
+			return r.Stream
+		}
+	}
+
+	return nil
 }
 
 func updateStreamEpoch(tb testing.TB, h *Handler, streamID int64, epoch int64) {

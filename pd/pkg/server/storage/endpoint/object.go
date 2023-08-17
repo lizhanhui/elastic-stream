@@ -50,7 +50,7 @@ func (e *Endpoint) CreateObject(ctx context.Context, object Object) error {
 
 	key := objectPath(object.StreamId, object.RangeIndex, object.ObjectID)
 	value := fbutil.Marshal(object)
-	prevValue, err := e.KV.Put(ctx, key, value, true)
+	prevValue, err := e.KV.Put(ctx, key, value, true, 0)
 	mcache.Free(value)
 
 	if err != nil {
@@ -75,7 +75,7 @@ func (e *Endpoint) UpdateObject(ctx context.Context, object Object) (Object, err
 	key := objectPath(object.StreamId, object.RangeIndex, object.ObjectID)
 	value := fbutil.Marshal(object)
 
-	prevValue, err := e.KV.Put(ctx, key, value, false)
+	prevValue, err := e.KV.Put(ctx, key, value, false, 0)
 	mcache.Free(value)
 	if err != nil {
 		logger.Error("failed to update object", zap.Error(err))

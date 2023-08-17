@@ -43,6 +43,7 @@ compress = true
 [cluster]
 sealReqTimeoutMs = 1234567
 rangeServerTimeout = "1h1m1s"
+streamDeleteDelay = "2h2m2s"
 
 [sbp.server]
 heartbeatInterval = "2h2m2s"

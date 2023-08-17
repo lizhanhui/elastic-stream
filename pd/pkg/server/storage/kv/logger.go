@@ -85,19 +85,19 @@ func (l Logger) Watch(ctx context.Context, prefix []byte, rev int64, filter Filt
 	return
 }
 
-func (l Logger) Put(ctx context.Context, k, v []byte, prevKV bool) (prevV []byte, err error) {
-	prevV, err = l.KV.Put(ctx, k, v, prevKV)
+func (l Logger) Put(ctx context.Context, k, v []byte, prevKV bool, ttl int64) (prevV []byte, err error) {
+	prevV, err = l.KV.Put(ctx, k, v, prevKV, ttl)
 
 	logger := l.logger()
 	if logger.Core().Enabled(zap.DebugLevel) {
 		logger = logger.With(traceutil.TraceLogField(ctx))
-		logger.Debug("kv put", zap.ByteString("key", k), zap.Binary("value", v), zap.Bool("prev-kv", prevKV), zap.Binary("prev-value", prevV), zap.Error(err))
+		logger.Debug("kv put", zap.ByteString("key", k), zap.Binary("value", v), zap.Bool("prev-kv", prevKV), zap.Int64("ttl", ttl), zap.Binary("prev-value", prevV), zap.Error(err))
 	}
 	return
 }
 
-func (l Logger) BatchPut(ctx context.Context, kvs []KeyValue, prevKV bool, inTxn bool) (prevKVs []KeyValue, err error) {
-	prevKVs, err = l.KV.BatchPut(ctx, kvs, prevKV, inTxn)
+func (l Logger) BatchPut(ctx context.Context, kvs []KeyValue, prevKV bool, inTxn bool, ttl int64) (prevKVs []KeyValue, err error) {
+	prevKVs, err = l.KV.BatchPut(ctx, kvs, prevKV, inTxn, ttl)
 
 	logger := l.logger()
 	if logger.Core().Enabled(zap.DebugLevel) {
@@ -105,6 +105,7 @@ func (l Logger) BatchPut(ctx context.Context, kvs []KeyValue, prevKV bool, inTxn
 		fields := []zap.Field{
 			zap.Bool("prev-kv", prevKV),
 			zap.Bool("in-txn", inTxn),
+			zap.Int64("ttl", ttl),
 			zap.Error(err),
 		}
 		for i, kv := range kvs {

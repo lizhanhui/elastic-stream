@@ -29,6 +29,7 @@ var (
 		cluster := NewCluster()
 		cluster.SealReqTimeoutMs = 1000
 		cluster.RangeServerTimeout = 100 * time.Second
+		cluster.StreamDeleteDelay = 24 * time.Hour
 		return cluster
 	}
 	_testDefaultSbp = func() *Sbp {
@@ -71,6 +72,7 @@ var (
 		cluster := NewCluster()
 		cluster.SealReqTimeoutMs = 1234567
 		cluster.RangeServerTimeout = 1*time.Hour + 1*time.Minute + 1*time.Second
+		cluster.StreamDeleteDelay = 2*time.Hour + 2*time.Minute + 2*time.Second
 		return cluster
 	}
 	_testSbp = func() *Sbp {
@@ -214,6 +216,7 @@ func TestNewConfig(t *testing.T) {
 				"--log-rotate-compress=true",
 				"--cluster-seal-req-timeout-ms=1234567",
 				"--cluster-range-server-timeout=1h1m1s",
+				"--cluster-stream-delete-delay=2h2m2s",
 				"--sbp-server-heartbeat-interval=2h2m2s",
 				"--sbp-server-heartbeat-miss-count=12345678",
 				"--sbp-client-idle-conn-timeout=3h3m3s",

@@ -14,7 +14,7 @@ func TestHandler_Heartbeat(t *testing.T) {
 	re := require.New(t)
 
 	// send heartbeats to a pd node which is not leader
-	h, closeFunc := startSbpHandler(t, nil, false)
+	h, closeFunc := startSbpHandler(t, nil, nil, false)
 	defer closeFunc()
 
 	req := &protocol.HeartbeatRequest{HeartbeatRequestT: rpcfb.HeartbeatRequestT{
@@ -33,7 +33,7 @@ func TestHandler_Heartbeat(t *testing.T) {
 func TestHandler_DescribePDCluster(t *testing.T) {
 	re := require.New(t)
 
-	h, closeFunc := startSbpHandler(t, nil, true)
+	h, closeFunc := startSbpHandler(t, nil, nil, true)
 	defer closeFunc()
 
 	req := &protocol.DescribePDClusterRequest{DescribePlacementDriverClusterRequestT: rpcfb.DescribePlacementDriverClusterRequestT{

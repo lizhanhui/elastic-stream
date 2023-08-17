@@ -159,7 +159,7 @@ func TestHandler_ListResource(t *testing.T) {
 			t.Parallel()
 			re := require.New(t)
 
-			h, closeFunc := startSbpHandler(t, nil, true)
+			h, closeFunc := startSbpHandler(t, nil, nil, true)
 			defer closeFunc()
 
 			// prepare
@@ -280,7 +280,7 @@ func TestHandler_WatchResource(t *testing.T) {
 			t.Parallel()
 			re := require.New(t)
 
-			h, closeFunc := startSbpHandler(t, nil, true)
+			h, closeFunc := startSbpHandler(t, nil, nil, true)
 			defer closeFunc()
 
 			// prepare

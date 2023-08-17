@@ -3,6 +3,7 @@ package endpoint
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/bytedance/gopkg/lang/mcache"
 	"github.com/pkg/errors"
@@ -35,7 +36,7 @@ type StreamEndpoint interface {
 	// It returns model.ErrStreamNotFound if the stream does not exist.
 	// It returns model.ErrInvalidStreamEpoch if the epoch mismatches.
 	// NOTE: It's OK to delete a deleted stream.
-	DeleteStream(ctx context.Context, param *model.DeleteStreamParam) (*rpcfb.StreamT, error)
+	DeleteStream(ctx context.Context, param *model.DeleteStreamParam, delay time.Duration) (*rpcfb.StreamT, error)
 	// UpdateStream updates the stream with the given stream and returns it.
 	// It returns model.ErrStreamNotFound if the stream does not exist.
 	// It returns model.ErrInvalidStreamEpoch if the new epoch is less than the old one.
@@ -59,7 +60,7 @@ func (e *Endpoint) CreateStream(ctx context.Context, stream *rpcfb.StreamT) (*rp
 
 	key := streamPath(stream.StreamId)
 	value := fbutil.Marshal(stream)
-	prevValue, err := e.KV.Put(ctx, key, value, true)
+	prevValue, err := e.KV.Put(ctx, key, value, true, 0)
 	mcache.Free(value)
 
 	if err != nil {
@@ -73,7 +74,7 @@ func (e *Endpoint) CreateStream(ctx context.Context, stream *rpcfb.StreamT) (*rp
 	return stream, nil
 }
 
-func (e *Endpoint) DeleteStream(ctx context.Context, p *model.DeleteStreamParam) (*rpcfb.StreamT, error) {
+func (e *Endpoint) DeleteStream(ctx context.Context, p *model.DeleteStreamParam, delay time.Duration) (*rpcfb.StreamT, error) {
 	logger := e.lg.With(p.Fields()...).With(traceutil.TraceLogField(ctx))
 
 	var deletedStream *rpcfb.StreamT
@@ -102,7 +103,7 @@ func (e *Endpoint) DeleteStream(ctx context.Context, p *model.DeleteStreamParam)
 		s.Deleted = true
 
 		streamInfo := fbutil.Marshal(s)
-		_, _ = basicKV.Put(ctx, k, streamInfo, true)
+		_, _ = basicKV.Put(ctx, k, streamInfo, true, int64(delay.Seconds()))
 		mcache.Free(streamInfo)
 
 		// Delete ranges in the stream.
@@ -169,7 +170,7 @@ func (e *Endpoint) TrimStream(ctx context.Context, p *model.TrimStreamParam) (*r
 		trimmedStream = s
 
 		streamInfo := fbutil.Marshal(s)
-		_, _ = kv.Put(ctx, sk, streamInfo, true)
+		_, _ = kv.Put(ctx, sk, streamInfo, true, 0)
 		mcache.Free(streamInfo)
 
 		// update the range
@@ -188,7 +189,7 @@ func (e *Endpoint) TrimStream(ctx context.Context, p *model.TrimStreamParam) (*r
 		trimmedRange = r
 
 		rangeInfo := fbutil.Marshal(r)
-		_, _ = kv.Put(ctx, rk, rangeInfo, true)
+		_, _ = kv.Put(ctx, rk, rangeInfo, true, 0)
 		mcache.Free(rangeInfo)
 
 		return nil
@@ -241,7 +242,7 @@ func (e *Endpoint) UpdateStream(ctx context.Context, p *model.UpdateStreamParam)
 		newStream = oldStream
 
 		streamInfo := fbutil.Marshal(newStream)
-		_, _ = kv.Put(ctx, key, streamInfo, false)
+		_, _ = kv.Put(ctx, key, streamInfo, false, 0)
 		mcache.Free(streamInfo)
 
 		return nil

@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/require"
 	clientv3 "go.etcd.io/etcd/client/v3"
@@ -86,11 +85,14 @@ func (m mockSbpClient) Do(_ protocol.OutRequest, _ sbpClient.Address) (protocol.
 	panic("does not mock yet")
 }
 
-func startSbpHandler(tb testing.TB, sbpClient sbpClient.Client, isLeader bool) (*Handler, func()) {
+func startSbpHandler(tb testing.TB, sbpClient sbpClient.Client, clusterCfg *config.Cluster, isLeader bool) (*Handler, func()) {
 	re := require.New(tb)
 
 	if sbpClient == nil {
 		sbpClient = mockSbpClient{}
+	}
+	if clusterCfg == nil {
+		clusterCfg = config.DefaultCluster()
 	}
 
 	_, client, closeFunc := testutil.StartEtcd(tb, nil)
@@ -101,7 +103,7 @@ func startSbpHandler(tb testing.TB, sbpClient sbpClient.Client, isLeader bool) (
 		server = &mockServerNotLeader{server}
 	}
 
-	c := cluster.NewRaftCluster(context.Background(), &config.Cluster{SealReqTimeoutMs: 1000, RangeServerTimeout: time.Minute}, server.Member(), zap.NewNop())
+	c := cluster.NewRaftCluster(context.Background(), clusterCfg, server.Member(), zap.NewNop())
 	err := c.Start(server)
 	re.NoError(err)
 

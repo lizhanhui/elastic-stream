@@ -77,7 +77,7 @@ func (c *RaftCluster) DeleteStream(ctx context.Context, p *model.DeleteStreamPar
 	logger := c.lg.With(p.Fields()...).With(traceutil.TraceLogField(ctx))
 
 	logger.Info("start to delete stream")
-	stream, err := c.storage.DeleteStream(ctx, p)
+	stream, err := c.storage.DeleteStream(ctx, p, c.cfg.StreamDeleteDelay)
 	logger.Info("finish deleting stream", zap.Error(err))
 	if err != nil {
 		if errors.Is(err, model.ErrKVTxnFailed) {
