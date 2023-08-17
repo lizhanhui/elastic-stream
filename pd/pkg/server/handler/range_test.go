@@ -750,6 +750,28 @@ func getLastRange(tb testing.TB, h *Handler, streamID int64) *rpcfb.RangeT {
 	return r
 }
 
+func getRanges(tb testing.TB, h *Handler, streamID int64) []*rpcfb.RangeT {
+	re := require.New(tb)
+
+	// If the stream has been deleted, we can not get ranges by `ListRange`, so we use `ListResource` instead.
+	req := &protocol.ListResourceRequest{ListResourceRequestT: rpcfb.ListResourceRequestT{
+		ResourceType: []rpcfb.ResourceType{rpcfb.ResourceTypeRESOURCE_RANGE},
+	}}
+	resp := &protocol.ListResourceResponse{}
+	h.ListResource(req, resp)
+	re.Equal(rpcfb.ErrorCodeOK, resp.Status.Code, resp.Status.Message)
+
+	ranges := make([]*rpcfb.RangeT, 0, len(resp.Resources))
+	for _, r := range resp.Resources {
+		if r.Range.StreamId == streamID {
+			re.Equal(rpcfb.ResourceTypeRESOURCE_RANGE, r.Type)
+			ranges = append(ranges, r.Range)
+		}
+	}
+
+	return ranges
+}
+
 func fmtRangeServers(r *rpcfb.RangeT) {
 	// erase offload owner
 	r.OffloadOwner = nil

@@ -77,9 +77,9 @@ func (e *Endpoint) DeleteStream(ctx context.Context, p *model.DeleteStreamParam)
 	logger := e.lg.With(p.Fields()...).With(traceutil.TraceLogField(ctx))
 
 	var deletedStream *rpcfb.StreamT
-	err := e.KV.ExecInTxn(ctx, func(kv kv.BasicKV) error {
+	err := e.KV.ExecInTxn(ctx, func(basicKV kv.BasicKV) error {
 		k := streamPath(p.StreamID)
-		v, err := kv.Get(ctx, k)
+		v, err := basicKV.Get(ctx, k)
 		if err != nil {
 			logger.Error("failed to get stream", zap.Error(err))
 			return errors.WithMessagef(err, "get stream %d", p.StreamID)
@@ -102,8 +102,14 @@ func (e *Endpoint) DeleteStream(ctx context.Context, p *model.DeleteStreamParam)
 		s.Deleted = true
 
 		streamInfo := fbutil.Marshal(s)
-		_, _ = kv.Put(ctx, k, streamInfo, true)
+		_, _ = basicKV.Put(ctx, k, streamInfo, true)
 		mcache.Free(streamInfo)
+
+		// Delete ranges in the stream.
+		_, _ = basicKV.DeleteByRange(ctx, kv.Range{
+			StartKey: rangePathInSteam(p.StreamID, model.MinRangeIndex),
+			EndKey:   e.endRangePathInStream(p.StreamID),
+		})
 
 		return nil
 	})
@@ -111,9 +117,6 @@ func (e *Endpoint) DeleteStream(ctx context.Context, p *model.DeleteStreamParam)
 		return nil, errors.WithMessagef(err, "delete stream %d", p.StreamID)
 	}
 
-	// TODO: delete ranges asynchronously
-	rangeInStreamPrefix := []byte(fmt.Sprintf(_rangeStreamPrefixFormat, p.StreamID))
-	_, _ = e.KV.DeleteByRange(ctx, kv.Range{StartKey: rangeInStreamPrefix, EndKey: e.KV.GetPrefixRangeEnd(rangeInStreamPrefix)})
 	// TODO: delete index asynchronously
 
 	return deletedStream, nil
