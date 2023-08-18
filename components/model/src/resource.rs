@@ -87,7 +87,7 @@ pub struct ResourceEvent {
     /// The resource that the event is about.
     /// If the event type is [`EventType::Listed`], [`EventType::Added`] or [`EventType::Modified`], the resource is the one after the change.
     /// If the event type is [`EventType::Deleted`], the resource is the one before deletion.
-    /// If the event type is [`EventType::ListFinished`] or [`EventType::Reset`], the resource will be [`Resource::NONE`].
+    /// If the event type is [`EventType::ListFinished`] or [`EventType::Reset`], the resource will be [`Resource::None`].
     pub resource: Resource,
 }
 

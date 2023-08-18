@@ -19,8 +19,36 @@ impl Stream {
         }
     }
 
+    /// Upstream layers may prefer to update stream metadata: changing replica, trimming minimum stream offset, etc.
+    ///
+    /// As a result, `Stream` shall delete or trim ranges under its administration.
+    ///
+    /// # Argument
+    /// * `metadata` - Latest stream specification;
     pub(crate) fn update_metadata(&mut self, metadata: StreamMetadata) {
+        debug_assert_eq!(self.metadata.stream_id, metadata.stream_id);
         self.metadata = metadata;
+        self.trim_ranges(self.metadata.start_offset);
+    }
+
+    /// Trim ranges that falls behind minimum `offset`.
+    ///
+    /// # Argument
+    /// * `offset` - Minimum stream offset;
+    fn trim_ranges(&mut self, offset: u64) {
+        self.ranges.retain_mut(|range| {
+            if let Some(end) = range.metadata.end() {
+                if end <= offset {
+                    info!("Delete range[StreamId={}, index={}] as its end-offset is less than minimum stream min offset", self.metadata.stream_id, range.metadata.index());
+                    return false;
+                }
+            }
+            let metadata = &mut range.metadata;
+            if metadata.start() < offset {
+                metadata.trim_start(offset);
+            }
+            true
+        });
     }
 
     fn verify_stream_id(&self, metadata: &RangeMetadata) -> Result<(), ServiceError> {
@@ -72,6 +100,11 @@ impl Stream {
     }
 
     pub(crate) fn remove_range(&mut self, metadata: &RangeMetadata) {
+        info!(
+            "Try to remove range[StreamId={}, index={}]",
+            metadata.stream_id(),
+            metadata.index()
+        );
         self.ranges
             .extract_if(|range| range.metadata.index() == metadata.index())
             .count();
@@ -150,6 +183,43 @@ mod tests {
         stream.create_range(range);
 
         assert_eq!(stream.ranges.len(), 1);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_update_metadata_trim_range() -> Result<(), Box<dyn Error>> {
+        let mut stream_t = StreamT::default();
+        stream_t.stream_id = 1;
+        stream_t.replica = 1;
+        stream_t.retention_period_ms = 1000;
+        let stream_metadata = StreamMetadata::from(&stream_t);
+        let mut stream = super::Stream::new(stream_metadata);
+
+        let range = RangeMetadata::new(1, 0, 0, 0, Some(50));
+        stream.create_range(range);
+
+        let range = RangeMetadata::new(1, 1, 0, 50, Some(110));
+        stream.create_range(range);
+
+        let range = RangeMetadata::new(1, 2, 0, 110, None);
+        stream.create_range(range);
+
+        stream_t.start_offset = 100;
+        let stream_metadata = StreamMetadata::from(&stream_t);
+        stream.update_metadata(stream_metadata);
+
+        // Deprecated ranges should have been removed
+        assert!(stream.get_range(0).is_none());
+
+        // Ranges, spanning across stream minimum offset, should be properly trimmed
+        let range = stream.get_range(1).unwrap();
+        assert_eq!(range.metadata.start(), 100);
+
+        // Ranges, whose start offset is greater than stream minimum offset should not be affected.
+        let range = stream.get_range(2).unwrap();
+        assert_eq!(range.metadata.start(), 110);
+        assert_eq!(range.metadata.end(), None);
 
         Ok(())
     }

@@ -161,6 +161,15 @@ impl RangeMetadata {
         self.start
     }
 
+    pub fn trim_start(&mut self, offset: u64) {
+        debug_assert!(offset > self.start);
+        info!(
+            "Start-offset of range[StreamId={}, index={}] trimmed: {} --> {}",
+            self.stream_id, self.index, self.start, offset
+        );
+        self.start = offset;
+    }
+
     pub fn end(&self) -> Option<u64> {
         self.end
     }
