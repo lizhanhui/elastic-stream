@@ -25,7 +25,7 @@ impl RangeBuffer {
     }
 
     pub(crate) fn fast_forward(&mut self, request: &AppendRecordRequest) -> bool {
-        if self.next == request.offset as u64 {
+        if self.next == request.offset {
             self.next += request.len as u64;
             true
         } else {
@@ -39,14 +39,14 @@ impl RangeBuffer {
         }
 
         if let Some(item) = self.buffered.peek() {
-            if item.request.offset as u64 != self.next {
+            if item.request.offset != self.next {
                 return None;
             }
         }
 
         let mut res = vec![];
         while let Some(item) = self.buffered.peek() {
-            if item.request.offset as u64 != self.next {
+            if item.request.offset != self.next {
                 break;
             }
 
@@ -60,7 +60,7 @@ impl RangeBuffer {
 
     pub(crate) fn buffer(&mut self, req: BufferedRequest) {
         debug_assert!(
-            req.request.offset as u64 != self.next,
+            req.request.offset != self.next,
             "Should NOT buffer an append request if it's already continuous"
         );
         self.buffered.push(req);

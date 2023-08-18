@@ -258,7 +258,7 @@ impl Store for ElasticStore {
         self.shared.indexer.scan_record_handles(
             options.stream_id,
             options.range,
-            options.offset as u64,
+            options.offset,
             options.max_offset,
             options.max_bytes as u32,
             index_tx,

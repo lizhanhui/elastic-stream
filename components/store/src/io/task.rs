@@ -65,7 +65,7 @@ pub(crate) struct WriteTask {
     pub(crate) range: u32,
 
     /// Logical primary index offset
-    pub(crate) offset: i64,
+    pub(crate) offset: u64,
 
     /// Number of nested record entries included in `buffer`.
     pub(crate) len: u32,

@@ -1220,7 +1220,7 @@ impl IO {
             ext: HandleExt::BatchSize(task.len),
         };
         self.indexer
-            .index(task.stream_id, task.range, task.offset as u64, handle);
+            .index(task.stream_id, task.range, task.offset, handle);
     }
 
     fn complete_read_tasks(&mut self, affected_segments: HashSet<u64>) {
@@ -2022,7 +2022,7 @@ mod tests {
     fn send_and_receive_with_records(
         sender: crossbeam::channel::Sender<IoTask>,
         stream_id: u64,
-        start_offset: i64,
+        start_offset: u64,
         records: Vec<bytes::Bytes>,
     ) {
         let (cq_tx, cq_rx) = crossbeam::channel::unbounded();
@@ -2033,7 +2033,7 @@ mod tests {
                 IoTask::Write(WriteTask {
                     stream_id,
                     range: 0,
-                    offset: start_offset + i as i64,
+                    offset: start_offset + i as u64,
                     len: 1,
                     buffer: buf.clone(),
                     observer: cq_tx.clone(),

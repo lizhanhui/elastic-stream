@@ -43,7 +43,7 @@ where
         let read_option = ReadOptions {
             stream_id,
             range: range_index,
-            offset: start_offset as i64,
+            offset: start_offset,
             max_offset: end_offset,
             max_wait_ms: 3000,
             max_bytes: max_size as i32,

@@ -136,7 +136,7 @@ impl Append {
                     if let Err(e) = range_manager.commit(
                         result.stream_id,
                         result.range_index as i32,
-                        result.offset as u64,
+                        result.offset,
                         result.last_offset_delta,
                         result.bytes_len,
                     ) {
@@ -216,7 +216,7 @@ impl Append {
             let request = AppendRecordRequest {
                 stream_id: entry.stream_id,
                 range_index: entry.index as i32,
-                offset: entry.offset.map(|value| value as i64).unwrap_or(-1),
+                offset: entry.offset.ok_or(ErrorCode::BAD_REQUEST)?,
                 len: entry.len,
                 buffer: self.payload.slice(pos..pos + len),
             };

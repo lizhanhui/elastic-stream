@@ -63,14 +63,14 @@ impl<'a> Fetch<'a> {
             .get_objects(
                 option.stream_id,
                 option.range,
-                option.offset as u64,
+                option.offset,
                 option.max_offset,
                 option.max_bytes as u32,
             )
             .await;
         read_option(&mut option, cover_all);
 
-        let payload = if option.offset as u64 >= option.max_offset || option.max_bytes == 0 {
+        let payload = if option.offset >= option.max_offset || option.max_bytes == 0 {
             None
         } else {
             let start = Instant::now();
@@ -143,7 +143,8 @@ impl<'a> Fetch<'a> {
         // Retrieve stream id from req.range
         let stream_id = self.fetch_request.range().stream_id() as u64;
         let range_index = self.fetch_request.range().index();
-        let offset = self.fetch_request.offset();
+        let offset =
+            u64::try_from(self.fetch_request.offset()).map_err(|_e| FetchError::BadRequest)?;
         let limit = self.fetch_request.limit();
 
         // If the stream-range exists and contains the requested offset, build the read options

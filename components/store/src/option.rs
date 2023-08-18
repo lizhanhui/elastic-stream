@@ -29,7 +29,7 @@ pub struct ReadOptions {
     pub range: u32,
 
     /// Logical offset, from which to read records
-    pub offset: i64,
+    pub offset: u64,
 
     /// Logical offset, the exclusive upper boundary of the read range, specified by client.
     pub max_offset: u64,

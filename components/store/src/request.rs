@@ -14,7 +14,7 @@ pub struct AppendRecordRequest {
     pub range_index: i32,
 
     /// Base offset of the nested record entries in `buffer`
-    pub offset: i64,
+    pub offset: u64,
 
     /// Number of nested record entries included in `buffer`.
     pub len: u32,
@@ -40,7 +40,7 @@ impl Display for AppendRecordRequest {
 
 impl Batch for AppendRecordRequest {
     fn offset(&self) -> u64 {
-        self.offset as u64
+        self.offset
     }
 
     fn len(&self) -> u32 {
