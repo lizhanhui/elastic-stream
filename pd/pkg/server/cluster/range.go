@@ -134,7 +134,7 @@ func (c *RaftCluster) CreateRange(ctx context.Context, p *model.CreateRangeParam
 		for _, rs := range blackList {
 			blackServerIDs[rs.ServerId] = struct{}{}
 		}
-		servers, err := c.chooseRangeServers(int(replica), blackServerIDs)
+		servers, err := c.chooseRangeServers(int(replica), blackServerIDs, logger)
 		if err != nil {
 			return nil, err
 		}

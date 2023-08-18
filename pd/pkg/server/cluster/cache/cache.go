@@ -1,9 +1,11 @@
 package cache
 
 import (
+	"fmt"
 	"time"
 
 	cmap "github.com/orcaman/concurrent-map/v2"
+	"go.uber.org/zap"
 
 	"github.com/AutoMQ/pd/api/rpcfb/rpcfb"
 )
@@ -28,8 +30,8 @@ func (c *Cache) Reset() {
 // RangeServer is the cache for RangeServerT and its status.
 type RangeServer struct {
 	rpcfb.RangeServerT
-	LastActiveTime time.Time
-	Metrics        *rpcfb.RangeServerMetricsT
+	LastActiveTime *time.Time                 // nil means never active
+	Metrics        *rpcfb.RangeServerMetricsT // nil means no metrics
 }
 
 // Score returns the score of the range server.
@@ -70,13 +72,13 @@ func (rs *RangeServer) Score() (score int) {
 // SaveRangeServer saves a range server to the cache.
 // It returns true if the range server is new or its info is updated.
 // If its info is updated, the old value is returned.
-func (c *Cache) SaveRangeServer(rangeServer *RangeServer) (updated bool, old rpcfb.RangeServerT) {
+func (c *Cache) SaveRangeServer(rangeServer *RangeServer) (updated bool, old *rpcfb.RangeServerT) {
 	_ = c.rangeServers.Upsert(rangeServer.ServerId, rangeServer, func(exist bool, valueInMap, newValue *RangeServer) *RangeServer {
 		if exist {
 			if !isRangeServerEqual(valueInMap.RangeServerT, newValue.RangeServerT) {
 				updated = true
 				valueInMap.RangeServerT = newValue.RangeServerT
-				old = valueInMap.RangeServerT
+				old = &valueInMap.RangeServerT
 			}
 			valueInMap.LastActiveTime = newValue.LastActiveTime
 			if newValue.Metrics != nil {
@@ -107,7 +109,7 @@ func (c *Cache) ActiveRangeServers(timeout time.Duration, grayServerIDs map[int3
 	white = make([]*RangeServer, 0)
 	gray = make([]*RangeServer, 0)
 	c.rangeServers.IterCb(func(_ int32, rangeServer *RangeServer) {
-		if rangeServer.LastActiveTime.IsZero() || time.Since(rangeServer.LastActiveTime) > timeout {
+		if rangeServer.LastActiveTime == nil || time.Since(*rangeServer.LastActiveTime) > timeout {
 			return
 		}
 		if rangeServer.RangeServerT.State != rpcfb.RangeServerStateRANGE_SERVER_STATE_READ_WRITE {
@@ -128,6 +130,18 @@ func (c *Cache) ActiveRangeServers(timeout time.Duration, grayServerIDs map[int3
 // RangeServerCount returns the count of range servers in the cache.
 func (c *Cache) RangeServerCount() int {
 	return c.rangeServers.Count()
+}
+
+// RangeServerInfo returns the range server info for logging.
+func (c *Cache) RangeServerInfo() (fields []zap.Field) {
+	c.rangeServers.IterCb(func(id int32, rangeServer *RangeServer) {
+		fields = append(fields,
+			zap.String(fmt.Sprintf("range-server-%d-addr", id), rangeServer.AdvertiseAddr),
+			zap.Stringer(fmt.Sprintf("range-server-%d-state", id), rangeServer.State),
+			zap.Timep(fmt.Sprintf("range-server-%d-last-active-time", id), rangeServer.LastActiveTime),
+		)
+	})
+	return
 }
 
 func isRangeServerEqual(a, b rpcfb.RangeServerT) bool {

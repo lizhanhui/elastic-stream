@@ -28,12 +28,17 @@ type RangeServerService interface {
 func (c *RaftCluster) Heartbeat(ctx context.Context, rangeServer *rpcfb.RangeServerT) error {
 	logger := c.lg.With(traceutil.TraceLogField(ctx))
 
+	t := time.Now()
 	updated, old := c.cache.SaveRangeServer(&cache.RangeServer{
 		RangeServerT:   *rangeServer,
-		LastActiveTime: time.Now(),
+		LastActiveTime: &t,
 	})
 	if updated && c.IsLeader() {
-		logger.Info("range server updated, start to save it", zap.Any("new", rangeServer), zap.Any("old", old))
+		if old == nil {
+			logger.Info("range server added, start to save it", zap.Any("new", rangeServer))
+		} else {
+			logger.Info("range server updated, start to save it", zap.Any("new", rangeServer), zap.Any("old", old))
+		}
 		_, err := c.storage.SaveRangeServer(ctx, rangeServer)
 		logger.Info("finish saving range server", zap.Int32("server-id", rangeServer.ServerId), zap.Error(err))
 		if err != nil {
@@ -64,13 +69,18 @@ func (c *RaftCluster) AllocateID(ctx context.Context) (int32, error) {
 func (c *RaftCluster) Metrics(ctx context.Context, rangeServer *rpcfb.RangeServerT, metrics *rpcfb.RangeServerMetricsT) error {
 	logger := c.lg.With(traceutil.TraceLogField(ctx))
 
+	t := time.Now()
 	updated, old := c.cache.SaveRangeServer(&cache.RangeServer{
 		RangeServerT:   *rangeServer,
-		LastActiveTime: time.Now(),
+		LastActiveTime: &t,
 		Metrics:        metrics,
 	})
 	if updated && c.IsLeader() {
-		logger.Info("range server updated when reporting metrics, start to save it", zap.Any("new", rangeServer), zap.Any("old", old))
+		if old == nil {
+			logger.Info("range server added when reporting metrics, start to save it", zap.Any("new", rangeServer))
+		} else {
+			logger.Info("range server updated when reporting metrics, start to save it", zap.Any("new", rangeServer), zap.Any("old", old))
+		}
 		_, err := c.storage.SaveRangeServer(ctx, rangeServer)
 		logger.Info("finish saving range server", zap.Int32("server-id", rangeServer.ServerId), zap.Error(err))
 		if err != nil {
@@ -88,7 +98,7 @@ func (c *RaftCluster) Metrics(ctx context.Context, rangeServer *rpcfb.RangeServe
 // If `grayServerIDs` is not nil, the range servers with the ids in `grayServerIDs` will not be selected, unless there are no other available range servers.
 // Only RangeServerT.ServerId is filled in the returned RangeServerT.
 // It returns model.ErrNotEnoughRangeServers if there are not enough range servers to allocate.
-func (c *RaftCluster) chooseRangeServers(cnt int, grayServerIDs map[int32]struct{}) ([]*rpcfb.RangeServerT, error) {
+func (c *RaftCluster) chooseRangeServers(cnt int, grayServerIDs map[int32]struct{}, logger *zap.Logger) ([]*rpcfb.RangeServerT, error) {
 	if cnt <= 0 {
 		return nil, nil
 	}
@@ -97,6 +107,8 @@ func (c *RaftCluster) chooseRangeServers(cnt int, grayServerIDs map[int32]struct
 	wRangeServers, gRangeServers := c.cache.ActiveRangeServers(c.cfg.RangeServerTimeout, grayServerIDs)
 
 	if cnt > len(wRangeServers)+len(gRangeServers) {
+		logger.With(zap.Namespace("range-servers")).With(c.cache.RangeServerInfo()...).
+			Error("not enough range servers", zap.Int("required", cnt), zap.Int("available", len(wRangeServers)+len(gRangeServers)))
 		return nil, errors.WithMessagef(model.ErrNotEnoughRangeServers, "required %d, available %d", cnt, len(wRangeServers)+len(gRangeServers))
 	}
 

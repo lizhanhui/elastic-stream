@@ -138,7 +138,7 @@ func (c *RaftCluster) loadInfo() error {
 		updated, old := c.cache.SaveRangeServer(&cache.RangeServer{
 			RangeServerT: *serverT,
 		})
-		if updated {
+		if updated && old != nil {
 			logger.Warn("different range server in storage and cache", zap.Any("range-server-in-storage", serverT), zap.Any("range-server-in-cache", old))
 		}
 		return nil

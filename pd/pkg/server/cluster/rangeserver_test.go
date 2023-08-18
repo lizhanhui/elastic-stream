@@ -77,24 +77,26 @@ func TestRaftCluster_chooseRangeServers(t *testing.T) {
 			cfg := config.NewCluster()
 			cfg.RangeServerTimeout = 1 * time.Minute
 			cluster := NewRaftCluster(context.Background(), cfg, nil, zap.NewNop())
+			tActive := time.Now()
+			tInactive := tActive.Add(-2 * time.Minute)
 			// Two active range server
 			cluster.cache.SaveRangeServer(&cache.RangeServer{
 				RangeServerT:   rpcfb.RangeServerT{ServerId: 1, State: rpcfb.RangeServerStateRANGE_SERVER_STATE_READ_WRITE},
-				LastActiveTime: time.Now(),
+				LastActiveTime: &tActive,
 			})
 			cluster.cache.SaveRangeServer(&cache.RangeServer{
 				RangeServerT:   rpcfb.RangeServerT{ServerId: 2, State: rpcfb.RangeServerStateRANGE_SERVER_STATE_READ_WRITE},
-				LastActiveTime: time.Now(),
+				LastActiveTime: &tActive,
 			})
 			// An offline range server
 			cluster.cache.SaveRangeServer(&cache.RangeServer{
 				RangeServerT:   rpcfb.RangeServerT{ServerId: 3, State: rpcfb.RangeServerStateRANGE_SERVER_STATE_OFFLINE},
-				LastActiveTime: time.Now(),
+				LastActiveTime: &tActive,
 			})
 			// An inactive range server
 			cluster.cache.SaveRangeServer(&cache.RangeServer{
 				RangeServerT:   rpcfb.RangeServerT{ServerId: 4, State: rpcfb.RangeServerStateRANGE_SERVER_STATE_READ_WRITE},
-				LastActiveTime: time.Now().Add(-2 * time.Minute),
+				LastActiveTime: &tInactive,
 			})
 
 			// tt.args.grayServerIDs into map
@@ -102,7 +104,7 @@ func TestRaftCluster_chooseRangeServers(t *testing.T) {
 			for _, id := range tt.args.grayServerIDs {
 				grayServerIDs[id] = struct{}{}
 			}
-			servers, err := cluster.chooseRangeServers(tt.args.cnt, grayServerIDs)
+			servers, err := cluster.chooseRangeServers(tt.args.cnt, grayServerIDs, zap.NewNop())
 			if tt.wantErr {
 				re.ErrorContains(err, tt.errMsg)
 				return
