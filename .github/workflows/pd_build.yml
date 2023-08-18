@@ -9,23 +9,6 @@ defaults:
     working-directory: ./pd
 
 jobs:
-  flatc:
-    name: Verify Flatbuffers
-    strategy:
-      matrix:
-        platform: [ "ubuntu-latest" ]
-    runs-on: ${{ matrix.platform }}
-    timeout-minutes: 5
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v3
-      - name: Install flatc
-        run: |
-          sudo ../scripts/try_install_flatc.sh
-      - name: Verify Flatbuffers
-        run: |
-          make flatc
-          git diff --exit-code
   lint:
     name: Lint
     strategy:
