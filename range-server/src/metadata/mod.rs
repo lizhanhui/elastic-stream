@@ -3,14 +3,18 @@ pub(crate) mod watcher;
 
 use std::rc::Weak;
 
-use model::{error::EsError, range::RangeEvent, resource::ResourceEvent};
+use model::{
+    error::EsError,
+    range::RangeEvent,
+    resource::{ResourceEvent, ResourceEventObserver},
+};
 use pd_client::PlacementDriverClient;
 use tokio::sync::mpsc;
 
 #[cfg(any(test, feature = "mock"))]
 use mockall::automock;
 
-pub type MetadataListener = mpsc::UnboundedReceiver<ResourceEvent>;
+pub type ResourceEventRx = mpsc::UnboundedReceiver<ResourceEvent>;
 
 /// Watch metadata changes through `PlacementDriverClient` and dispatch these changes to `MetadataManager` of each
 /// `Worker`.
@@ -20,7 +24,7 @@ pub type MetadataListener = mpsc::UnboundedReceiver<ResourceEvent>;
 pub(crate) trait MetadataWatcher {
     fn start<P: PlacementDriverClient + 'static>(&mut self, pd_client: Box<P>);
 
-    fn watch(&mut self) -> Result<MetadataListener, EsError>;
+    fn watch(&mut self) -> Result<ResourceEventRx, EsError>;
 }
 
 pub type MetadataEventRx = mpsc::UnboundedReceiver<Vec<RangeEvent>>;
@@ -45,15 +49,5 @@ pub(crate) trait MetadataManager {
     ///
     /// # Arguments
     /// * `observer` - Weak reference to the observer
-    fn add_observer(&mut self, observer: Weak<dyn ResourceObserver>);
-}
-
-/// Contract of metadata change observer.
-///
-/// Components that are interested in metadata and its changes need to implement this trait and register itself
-/// into `MetadataManager`.
-///
-pub(crate) trait ResourceObserver {
-    /// This method feeds metadata and changes to components that are interested
-    fn on_resource_event(&self, event: &ResourceEvent);
+    fn add_observer(&mut self, observer: Weak<dyn ResourceEventObserver>);
 }

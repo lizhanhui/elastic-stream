@@ -1,4 +1,4 @@
-use super::{MetadataEventRx, MetadataListener, MetadataManager, ResourceObserver};
+use super::{MetadataEventRx, MetadataManager, ResourceEventObserver, ResourceEventRx};
 use log::info;
 use model::{
     error::EsError,
@@ -17,16 +17,16 @@ type Listener = mpsc::UnboundedSender<Vec<RangeEvent>>;
 
 pub(crate) struct DefaultMetadataManager {
     server_id: i32,
-    metadata_rx: RefCell<Option<MetadataListener>>,
+    metadata_rx: RefCell<Option<ResourceEventRx>>,
     object_rx: RefCell<Option<object_storage::OffloadProgressListener>>,
     stream_map: Rc<RefCell<HashMap<StreamId, Stream>>>,
     listeners: Vec<Listener>,
-    observers: Rc<RefCell<Vec<Weak<dyn ResourceObserver>>>>,
+    observers: Rc<RefCell<Vec<Weak<dyn ResourceEventObserver>>>>,
 }
 
 impl DefaultMetadataManager {
     pub(crate) fn new(
-        metadata_rx: MetadataListener,
+        metadata_rx: ResourceEventRx,
         object_rx: Option<object_storage::OffloadProgressListener>,
         server_id: i32,
     ) -> Self {
@@ -43,11 +43,11 @@ impl DefaultMetadataManager {
 
     async fn start0(
         server_id: i32,
-        metadata_rx: MetadataListener,
+        metadata_rx: ResourceEventRx,
         object_rx: object_storage::OffloadProgressListener,
         stream_map: Rc<RefCell<HashMap<u64, Stream>>>,
         listeners: Vec<Listener>,
-        observers: Rc<RefCell<Vec<Weak<dyn ResourceObserver>>>>,
+        observers: Rc<RefCell<Vec<Weak<dyn ResourceEventObserver>>>>,
     ) {
         Self::listen_metadata_events(
             server_id,
@@ -62,10 +62,10 @@ impl DefaultMetadataManager {
 
     async fn listen_metadata_events(
         server_id: i32,
-        mut metadata_rx: MetadataListener,
+        mut metadata_rx: ResourceEventRx,
         stream_map: Rc<RefCell<HashMap<u64, Stream>>>,
         listeners: Vec<Listener>,
-        observers: Rc<RefCell<Vec<Weak<dyn ResourceObserver>>>>,
+        observers: Rc<RefCell<Vec<Weak<dyn ResourceEventObserver>>>>,
     ) {
         let (list_done_tx, list_done_rx) = oneshot::channel();
         let mut list_done_tx = Some(list_done_tx);
@@ -256,7 +256,7 @@ impl MetadataManager for DefaultMetadataManager {
         Ok(rx)
     }
 
-    fn add_observer(&mut self, observer: Weak<dyn ResourceObserver>) {
+    fn add_observer(&mut self, observer: Weak<dyn ResourceEventObserver>) {
         self.observers.borrow_mut().push(observer);
     }
 }

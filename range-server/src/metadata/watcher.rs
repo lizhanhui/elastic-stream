@@ -4,7 +4,7 @@ use pd_client::PlacementDriverClient;
 use protocol::rpc::header::ResourceType;
 use tokio::sync::mpsc;
 
-use super::{MetadataListener, MetadataWatcher};
+use super::{MetadataWatcher, ResourceEventRx};
 
 #[derive(Debug, Default)]
 pub(crate) struct DefaultMetadataWatcher {
@@ -60,7 +60,7 @@ impl MetadataWatcher for DefaultMetadataWatcher {
         });
     }
 
-    fn watch(&mut self) -> Result<MetadataListener, EsError> {
+    fn watch(&mut self) -> Result<ResourceEventRx, EsError> {
         if self.started {
             return Err(EsError::unexpected("watcher already started"));
         }

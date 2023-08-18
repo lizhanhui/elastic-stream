@@ -3,7 +3,10 @@ use std::{cell::RefCell, collections::HashMap, rc::Rc, sync::Arc};
 use futures::future::join_all;
 use local_sync::oneshot;
 use log::trace;
-use model::range::{RangeEvent, RangeMetadata};
+use model::{
+    range::{RangeEvent, RangeMetadata},
+    resource::ResourceEventObserver,
+};
 
 use crate::{
     error::{AppendError, FetchError, StoreError},
@@ -197,5 +200,14 @@ where
 
     async fn handle_range_event(&self, events: Vec<RangeEvent>) {
         self.store.handle_range_event(events).await;
+    }
+}
+
+impl<S> ResourceEventObserver for BufferedStore<S>
+where
+    S: Store + ResourceEventObserver,
+{
+    fn on_resource_event(&self, event: &model::resource::ResourceEvent) {
+        self.store.on_resource_event(event);
     }
 }

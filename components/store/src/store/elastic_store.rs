@@ -21,7 +21,11 @@ use client::PlacementDriverIdGenerator;
 use crossbeam::channel::{Receiver, Sender, TryRecvError};
 use futures::future::join_all;
 use log::{error, trace, warn};
-use model::range::{RangeEvent, RangeMetadata};
+use model::{
+    range::{RangeEvent, RangeMetadata},
+    resource::{EventType, Resource, ResourceEvent, ResourceEventObserver},
+    stream::StreamMetadata,
+};
 use observation::metrics::store_metrics::{
     RangeServerStatistics, STORE_APPEND_BYTES_COUNT, STORE_APPEND_COUNT,
     STORE_APPEND_LATENCY_HISTOGRAM, STORE_FAILED_APPEND_COUNT, STORE_FAILED_FETCH_COUNT,
@@ -183,6 +187,10 @@ impl ElasticStore {
             }
         }
     }
+
+    fn on_range_event(&self, _type: EventType, _metadata: &RangeMetadata) {}
+
+    fn on_stream_event(&self, _type: EventType, _metadata: &StreamMetadata) {}
 }
 
 impl Store for ElasticStore {
@@ -483,6 +491,21 @@ impl AsRawFd for ElasticStore {
     /// FD of the underlying I/O Uring instance, for the purpose of sharing worker pool with other I/O Uring instances.
     fn as_raw_fd(&self) -> RawFd {
         self.shared.sharing_uring
+    }
+}
+
+impl ResourceEventObserver for ElasticStore {
+    fn on_resource_event(&self, event: &ResourceEvent) {
+        match &event.resource {
+            Resource::Stream(metadata) => {
+                self.on_stream_event(event.event_type, metadata);
+            }
+
+            Resource::Range(metadata) => {
+                self.on_range_event(event.event_type, metadata);
+            }
+            _ => {}
+        }
     }
 }
 

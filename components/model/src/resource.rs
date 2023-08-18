@@ -120,3 +120,13 @@ impl ResourceEvent {
         }
     }
 }
+
+/// Metadata changes are defined as `ResourceEvent`; This trait defines contracts for components to implement if they have interest in metadata changes.
+///
+/// Components that are interested in metadata and its changes need to implement this trait and register itself
+/// into `MetadataManager`.
+///
+pub trait ResourceEventObserver {
+    /// This method feeds metadata and changes to components that are interested
+    fn on_resource_event(&self, event: &ResourceEvent);
+}

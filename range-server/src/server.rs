@@ -151,6 +151,7 @@ impl Server {
                     Rc::new(DefaultRangeManager::new(Rc::clone(&store), object_storage));
 
                 metadata_manager.add_observer(Rc::downgrade(&(Rc::clone(&range_manager) as _)));
+                metadata_manager.add_observer(Rc::downgrade(&(Rc::clone(&store) as _)));
 
                 let pd_client = Box::new(DefaultPlacementDriverClient::new(Rc::clone(&client)));
 

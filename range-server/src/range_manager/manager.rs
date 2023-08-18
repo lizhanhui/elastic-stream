@@ -1,12 +1,12 @@
 use super::{range::Range, stream::Stream, RangeManager};
-use crate::{error::ServiceError, metadata::ResourceObserver};
+use crate::error::ServiceError;
 use local_sync::oneshot::{self, Sender};
 use log::{error, info, warn};
 use model::{
     object::ObjectMetadata,
     range::RangeMetadata,
     replica::RangeProgress,
-    resource::{EventType, Resource, ResourceEvent},
+    resource::{EventType, Resource, ResourceEvent, ResourceEventObserver},
     stream::StreamMetadata,
     Batch,
 };
@@ -314,7 +314,7 @@ where
     }
 }
 
-impl<S, O> ResourceObserver for DefaultRangeManager<S, O> {
+impl<S, O> ResourceEventObserver for DefaultRangeManager<S, O> {
     fn on_resource_event(&self, event: &ResourceEvent) {
         match &event.resource {
             Resource::Range(range) => {
