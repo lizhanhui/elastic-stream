@@ -305,6 +305,9 @@ func (m *Member) ClusterInfo(ctx context.Context) ([]*Info, error) {
 		if err != nil {
 			return nil, errors.WithMessagef(err, "get info of member %d", em.ID)
 		}
+		if info == nil {
+			continue
+		}
 		member := &Info{
 			Name:            em.Name,
 			MemberID:        em.ID,
@@ -364,8 +367,8 @@ func (m *Member) loadInfo(ctx context.Context, id uint64) (*Info, error) {
 		return nil, errors.WithMessagef(err, "failed to get member info by key %s", key)
 	}
 	if kv == nil {
-		logger.Error("failed to get member info, key not found")
-		return nil, errors.Errorf("failed to get member info: key not found: %s", key)
+		logger.Warn("failed to get member info, key not found")
+		return nil, nil
 	}
 
 	info := &Info{}
