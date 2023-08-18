@@ -6,6 +6,7 @@ use tokio::sync::mpsc;
 
 use super::{MetadataListener, MetadataWatcher};
 
+#[derive(Debug, Default)]
 pub(crate) struct DefaultMetadataWatcher {
     listeners: Vec<mpsc::UnboundedSender<ResourceEvent>>,
     started: bool,
