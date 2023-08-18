@@ -131,15 +131,13 @@ func (e *Endpoint) TrimStream(ctx context.Context, p *model.TrimStreamParam) (*r
 		logger.Error("failed to get range by offset", zap.Error(err))
 		return nil, nil, errors.WithMessagef(err, "get range by offset %d", p.StartOffset)
 	}
-	// NOTE: firstRange may be nil here
-	// TODO: delete ranges before firstRange.Index
 
 	var trimmedStream *rpcfb.StreamT
 	var trimmedRange *rpcfb.RangeT
-	err = e.KV.ExecInTxn(ctx, func(kv kv.BasicKV) error {
+	err = e.KV.ExecInTxn(ctx, func(basicKV kv.BasicKV) error {
 		// get, check and update the stream
 		sk := streamPath(p.StreamID)
-		sv, err := kv.Get(ctx, sk)
+		sv, err := basicKV.Get(ctx, sk)
 		if err != nil {
 			logger.Error("failed to get stream", zap.Error(err))
 			return errors.WithMessagef(err, "get stream %d", p.StreamID)
@@ -170,12 +168,12 @@ func (e *Endpoint) TrimStream(ctx context.Context, p *model.TrimStreamParam) (*r
 		trimmedStream = s
 
 		streamInfo := fbutil.Marshal(s)
-		_, _ = kv.Put(ctx, sk, streamInfo, true, 0)
+		_, _ = basicKV.Put(ctx, sk, streamInfo, true, 0)
 		mcache.Free(streamInfo)
 
 		// update the range
 		rk := rangePathInSteam(p.StreamID, firstRange.Index)
-		rv, err := kv.Get(ctx, rk)
+		rv, err := basicKV.Get(ctx, rk)
 		if err != nil {
 			logger.Error("failed to get range", zap.Error(err))
 			return errors.WithMessagef(err, "get range %d in stream %d", firstRange.Index, p.StreamID)
@@ -189,8 +187,14 @@ func (e *Endpoint) TrimStream(ctx context.Context, p *model.TrimStreamParam) (*r
 		trimmedRange = r
 
 		rangeInfo := fbutil.Marshal(r)
-		_, _ = kv.Put(ctx, rk, rangeInfo, true, 0)
+		_, _ = basicKV.Put(ctx, rk, rangeInfo, true, 0)
 		mcache.Free(rangeInfo)
+
+		// delete ranges before the first range
+		_, _ = basicKV.DeleteByRange(ctx, kv.Range{
+			StartKey: rangePathInSteam(p.StreamID, model.MinRangeIndex),
+			EndKey:   rangePathInSteam(p.StreamID, firstRange.Index),
+		})
 
 		return nil
 	})

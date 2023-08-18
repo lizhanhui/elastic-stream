@@ -555,8 +555,9 @@ func TestHandler_TrimStream(t *testing.T) {
 		offset   int64
 	}
 	type want struct {
-		s *rpcfb.StreamT
-		r *rpcfb.RangeT
+		s     *rpcfb.StreamT
+		r     *rpcfb.RangeT
+		after []*rpcfb.RangeT
 
 		wantErr bool
 		errCode rpcfb.ErrorCode
@@ -567,7 +568,6 @@ func TestHandler_TrimStream(t *testing.T) {
 		prepare []preRange
 		args    args
 		want    want
-		// TODO check after trim
 	}{
 		{
 			name: "trim at a non-sealed range",
@@ -579,6 +579,9 @@ func TestHandler_TrimStream(t *testing.T) {
 			want: want{
 				s: &rpcfb.StreamT{StartOffset: 84},
 				r: &rpcfb.RangeT{Epoch: 2, Index: 1, Start: 84, End: -1},
+				after: []*rpcfb.RangeT{
+					{Epoch: 2, Index: 1, Start: 84, End: -1},
+				},
 			},
 		},
 		{
@@ -591,6 +594,10 @@ func TestHandler_TrimStream(t *testing.T) {
 			want: want{
 				s: &rpcfb.StreamT{StartOffset: 21},
 				r: &rpcfb.RangeT{Epoch: 1, Index: 0, Start: 21, End: 42},
+				after: []*rpcfb.RangeT{
+					{Epoch: 1, Index: 0, Start: 21, End: 42},
+					{Epoch: 2, Index: 1, Start: 42, End: -1},
+				},
 			},
 		},
 		{
@@ -603,6 +610,9 @@ func TestHandler_TrimStream(t *testing.T) {
 			want: want{
 				s: &rpcfb.StreamT{StartOffset: 42},
 				r: &rpcfb.RangeT{Epoch: 2, Index: 1, Start: 42, End: -1},
+				after: []*rpcfb.RangeT{
+					{Epoch: 2, Index: 1, Start: 42, End: -1},
+				},
 			},
 		},
 		{
@@ -615,6 +625,9 @@ func TestHandler_TrimStream(t *testing.T) {
 			want: want{
 				s: &rpcfb.StreamT{StartOffset: 84},
 				r: &rpcfb.RangeT{Epoch: 2, Index: 1, Start: 84, End: 84},
+				after: []*rpcfb.RangeT{
+					{Epoch: 2, Index: 1, Start: 84, End: 84},
+				},
 			},
 		},
 		{
@@ -628,6 +641,7 @@ func TestHandler_TrimStream(t *testing.T) {
 				wantErr: true,
 				errCode: rpcfb.ErrorCodeNOT_FOUND,
 				errMsg:  "stream not found",
+				after:   []*rpcfb.RangeT{},
 			},
 		},
 		{
@@ -641,6 +655,7 @@ func TestHandler_TrimStream(t *testing.T) {
 				wantErr: true,
 				errCode: rpcfb.ErrorCodeNOT_FOUND,
 				errMsg:  "stream not found",
+				after:   []*rpcfb.RangeT{},
 			},
 		},
 		{
@@ -654,6 +669,10 @@ func TestHandler_TrimStream(t *testing.T) {
 				wantErr: true,
 				errCode: rpcfb.ErrorCodeEXPIRED_STREAM_EPOCH,
 				errMsg:  "invalid stream epoch",
+				after: []*rpcfb.RangeT{
+					{Epoch: 1, Index: 0, Start: _streamOffset, End: 42},
+					{Epoch: 2, Index: 1, Start: 42, End: -1},
+				},
 			},
 		},
 		{
@@ -667,6 +686,10 @@ func TestHandler_TrimStream(t *testing.T) {
 				wantErr: true,
 				errCode: rpcfb.ErrorCodeEXPIRED_STREAM_EPOCH,
 				errMsg:  "invalid stream epoch",
+				after: []*rpcfb.RangeT{
+					{Epoch: 1, Index: 0, Start: _streamOffset, End: 42},
+					{Epoch: 2, Index: 1, Start: 42, End: -1},
+				},
 			},
 		},
 		{
@@ -680,6 +703,10 @@ func TestHandler_TrimStream(t *testing.T) {
 				wantErr: true,
 				errCode: rpcfb.ErrorCodeBAD_REQUEST,
 				errMsg:  "invalid stream offset",
+				after: []*rpcfb.RangeT{
+					{Epoch: 1, Index: 0, Start: _streamOffset, End: 42},
+					{Epoch: 2, Index: 1, Start: 42, End: 84},
+				},
 			},
 		},
 		{
@@ -693,6 +720,10 @@ func TestHandler_TrimStream(t *testing.T) {
 				wantErr: true,
 				errCode: rpcfb.ErrorCodeBAD_REQUEST,
 				errMsg:  "invalid offset",
+				after: []*rpcfb.RangeT{
+					{Epoch: 1, Index: 0, Start: _streamOffset, End: 42},
+					{Epoch: 2, Index: 1, Start: 42, End: 84},
+				},
 			},
 		},
 	}
@@ -720,10 +751,6 @@ func TestHandler_TrimStream(t *testing.T) {
 				tt.want.s.Replica = _replica
 				tt.want.s.AckCount = _ack
 			}
-			if tt.want.r != nil {
-				tt.want.r.ReplicaCount = _replica
-				tt.want.r.AckCount = _ack
-			}
 
 			// trim stream
 			req := &protocol.TrimStreamRequest{TrimStreamRequestT: rpcfb.TrimStreamRequestT{
@@ -745,6 +772,23 @@ func TestHandler_TrimStream(t *testing.T) {
 				fillRangeInfo(tt.want.r)
 				re.Equal(tt.want.r, resp.Range)
 			}
+
+			// list ranges
+			lReq := &protocol.ListRangeRequest{ListRangeRequestT: rpcfb.ListRangeRequestT{
+				Criteria: &rpcfb.ListRangeCriteriaT{StreamId: tt.args.streamID, ServerId: -1},
+			}}
+			lResp := &protocol.ListRangeResponse{}
+			h.ListRange(lReq, lResp)
+			re.Equal(rpcfb.ErrorCodeOK, lResp.Status.Code, lResp.Status.Message)
+
+			// check list range response
+			for _, r := range lResp.Ranges {
+				fmtRangeServers(r)
+			}
+			for _, r := range tt.want.after {
+				fillRangeInfo(r)
+			}
+			re.Equal(tt.want.after, lResp.Ranges)
 		})
 	}
 }
