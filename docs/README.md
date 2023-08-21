@@ -4,7 +4,7 @@ draft: true
 
 # Table of Contents
 
-* [Quick Start](./quick-start.md)
+* [Quick Start](./quick-start.mdx)
 * [Architecture](./architecture/)
 * [Threading Model](./threading-model.md)
 * [TLA+](./tlaplus/)
