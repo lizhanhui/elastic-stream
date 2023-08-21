@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/brianvoe/gofakeit/v6"
+	mapset "github.com/deckarep/golang-set/v2"
 	"github.com/stretchr/testify/require"
 
 	"github.com/AutoMQ/pd/pkg/sbp/codec"
@@ -135,10 +136,10 @@ func TestAll_Unmarshal(t *testing.T) {
 }
 
 func TestAll_Timeout(t *testing.T) {
-	noTimeoutReqs := map[string]struct{}{
-		reflect.TypeOf(&ReportMetricsRequest{}).String(): {},
-		reflect.TypeOf(&HeartbeatRequest{}).String():     {},
-	}
+	noTimeoutReqs := mapset.NewThreadUnsafeSet(
+		reflect.TypeOf(&ReportMetricsRequest{}).String(),
+		reflect.TypeOf(&HeartbeatRequest{}).String(),
+	)
 
 	for _, req := range _inRequests {
 		req := req
@@ -149,7 +150,7 @@ func TestAll_Timeout(t *testing.T) {
 			// mock
 			err := gofakeit.Struct(req)
 			re.NoError(err)
-			if _, ok := noTimeoutReqs[reflect.TypeOf(req).String()]; ok {
+			if noTimeoutReqs.Contains(reflect.TypeOf(req).String()) {
 				re.Zero(req.Timeout())
 			} else {
 				re.NotZero(req.Timeout())
@@ -159,9 +160,9 @@ func TestAll_Timeout(t *testing.T) {
 }
 
 func TestAll_LongPoll(t *testing.T) {
-	longPollReqs := map[string]struct{}{
-		reflect.TypeOf(&WatchResourceRequest{}).String(): {},
-	}
+	longPollReqs := mapset.NewThreadUnsafeSet(
+		reflect.TypeOf(&WatchResourceRequest{}).String(),
+	)
 
 	for _, req := range _inRequests {
 		req := req
@@ -172,7 +173,7 @@ func TestAll_LongPoll(t *testing.T) {
 			// mock
 			err := gofakeit.Struct(req)
 			re.NoError(err)
-			if _, ok := longPollReqs[reflect.TypeOf(req).String()]; ok {
+			if longPollReqs.Contains(reflect.TypeOf(req).String()) {
 				re.True(req.LongPoll())
 			} else {
 				re.False(req.LongPoll())

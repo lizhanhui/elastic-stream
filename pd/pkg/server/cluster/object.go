@@ -19,13 +19,13 @@ type ObjectService interface {
 	CommitObject(ctx context.Context, object *rpcfb.ObjT) (endpoint.Object, error)
 	// ListObjectInRange returns all objects in the range.
 	// It returns model.ErrPDNotLeader if the current PD node is not the leader.
-	ListObjectInRange(ctx context.Context, rangeID endpoint.RangeID) ([]endpoint.Object, error)
+	ListObjectInRange(ctx context.Context, rangeID model.RangeID) ([]endpoint.Object, error)
 }
 
 func (c *RaftCluster) CommitObject(ctx context.Context, obj *rpcfb.ObjT) (endpoint.Object, error) {
 	logger := c.lg.With(zap.Int64("stream-id", obj.StreamId), zap.Int32("range-index", obj.RangeIndex), traceutil.TraceLogField(ctx))
 
-	r, err := c.storage.GetRange(ctx, &endpoint.RangeID{StreamID: obj.StreamId, Index: obj.RangeIndex})
+	r, err := c.storage.GetRange(ctx, model.RangeID{StreamID: obj.StreamId, Index: obj.RangeIndex})
 	if err != nil {
 		if errors.Is(err, model.ErrKVTxnFailed) {
 			return endpoint.Object{}, model.ErrPDNotLeader
@@ -63,7 +63,7 @@ func (c *RaftCluster) CommitObject(ctx context.Context, obj *rpcfb.ObjT) (endpoi
 	return object, nil
 }
 
-func (c *RaftCluster) ListObjectInRange(ctx context.Context, rangeID endpoint.RangeID) ([]endpoint.Object, error) {
+func (c *RaftCluster) ListObjectInRange(ctx context.Context, rangeID model.RangeID) ([]endpoint.Object, error) {
 	logger := c.lg.With(zap.Int64("stream-id", rangeID.StreamID), zap.Int32("range-index", rangeID.Index), traceutil.TraceLogField(ctx))
 
 	logger.Debug("start to list objects in range")

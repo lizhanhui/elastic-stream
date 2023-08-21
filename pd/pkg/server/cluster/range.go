@@ -3,6 +3,7 @@ package cluster
 import (
 	"context"
 
+	mapset "github.com/deckarep/golang-set/v2"
 	"github.com/pkg/errors"
 	"go.uber.org/zap"
 
@@ -69,17 +70,25 @@ func (c *RaftCluster) listRangeOnRangeServerInStream(ctx context.Context, stream
 	logger := c.lg.With(zap.Int64("stream-id", streamID), zap.Int32("range-server-id", rangeServerID), traceutil.TraceLogField(ctx))
 
 	logger.Debug("start to list ranges on range server in stream")
-	rangeIDs, err := c.storage.GetRangeIDsByRangeServerAndStream(ctx, streamID, rangeServerID)
-	if err != nil {
-		return nil, err
+	select {
+	case <-c.rangeLoadedNotify():
+	case <-ctx.Done():
+		logger.Warn("context is done when waiting for range loaded")
+		return nil, ctx.Err()
+	}
+	rangeIDs := make([]model.RangeID, 0)
+	for id := range c.cache.RangesOnServer(rangeServerID).Iter() {
+		if id.StreamID == streamID {
+			rangeIDs = append(rangeIDs, id)
+		}
 	}
 
 	ranges, err := c.storage.GetRanges(ctx, rangeIDs)
+	logger.Debug("finish listing ranges on range server in stream", zap.Int("range-cnt", len(ranges)))
 	if err != nil {
 		return nil, err
 	}
 
-	logger.Debug("finish listing ranges on range server in stream", zap.Int("range-cnt", len(ranges)))
 	return ranges, nil
 }
 
@@ -99,17 +108,19 @@ func (c *RaftCluster) listRangeOnRangeServer(ctx context.Context, rangeServerID 
 	logger := c.lg.With(zap.Int32("range-server-id", rangeServerID), traceutil.TraceLogField(ctx))
 
 	logger.Debug("start to list ranges on range server")
-	rangeIDs, err := c.storage.GetRangeIDsByRangeServer(ctx, rangeServerID)
-	if err != nil {
-		return nil, err
+	select {
+	case <-c.rangeLoadedNotify():
+	case <-ctx.Done():
+		logger.Warn("context is done when waiting for range loaded")
+		return nil, ctx.Err()
 	}
-
-	ranges, err := c.storage.GetRanges(ctx, rangeIDs)
-	if err != nil {
-		return nil, err
-	}
-
+	rangeIDs := c.cache.RangesOnServer(rangeServerID)
+	ranges, err := c.storage.GetRanges(ctx, rangeIDs.ToSlice())
 	logger.Debug("finish listing ranges on range server", zap.Int("range-cnt", len(ranges)))
+	if err != nil {
+		return nil, err
+	}
+
 	return ranges, nil
 }
 
@@ -130,9 +141,9 @@ func (c *RaftCluster) CreateRange(ctx context.Context, p *model.CreateRangeParam
 	logger := c.lg.With(p.Fields()...).With(traceutil.TraceLogField(ctx))
 
 	var chooseServers = func(replica int8, blackList []*rpcfb.RangeServerT) ([]*rpcfb.RangeServerT, error) {
-		blackServerIDs := make(map[int32]struct{})
+		blackServerIDs := mapset.NewThreadUnsafeSetWithSize[int32](len(blackList))
 		for _, rs := range blackList {
-			blackServerIDs[rs.ServerId] = struct{}{}
+			blackServerIDs.Add(rs.ServerId)
 		}
 		servers, err := c.chooseRangeServers(int(replica), blackServerIDs, logger)
 		if err != nil {

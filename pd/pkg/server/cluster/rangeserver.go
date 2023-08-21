@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	mapset "github.com/deckarep/golang-set/v2"
 	"github.com/pkg/errors"
 	"go.uber.org/zap"
 
@@ -98,7 +99,7 @@ func (c *RaftCluster) Metrics(ctx context.Context, rangeServer *rpcfb.RangeServe
 // If `grayServerIDs` is not nil, the range servers with the ids in `grayServerIDs` will not be selected, unless there are no other available range servers.
 // Only RangeServerT.ServerId is filled in the returned RangeServerT.
 // It returns model.ErrNotEnoughRangeServers if there are not enough range servers to allocate.
-func (c *RaftCluster) chooseRangeServers(cnt int, grayServerIDs map[int32]struct{}, logger *zap.Logger) ([]*rpcfb.RangeServerT, error) {
+func (c *RaftCluster) chooseRangeServers(cnt int, grayServerIDs mapset.Set[int32], logger *zap.Logger) ([]*rpcfb.RangeServerT, error) {
 	if cnt <= 0 {
 		return nil, nil
 	}

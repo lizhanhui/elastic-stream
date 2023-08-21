@@ -39,10 +39,10 @@ type ObjectEndpoint interface {
 	// UpdateObject updates the object and returns the previous object.
 	UpdateObject(ctx context.Context, object Object) (Object, error)
 	// GetObjectsByRange returns all objects in the range.
-	GetObjectsByRange(ctx context.Context, rangeID RangeID) ([]Object, error)
+	GetObjectsByRange(ctx context.Context, rangeID model.RangeID) ([]Object, error)
 	// ForEachObjectInRange calls f for each object in the range.
 	// If f returns an error, stop traversing and return the error.
-	ForEachObjectInRange(ctx context.Context, rangeID RangeID, f func(object Object) error) error
+	ForEachObjectInRange(ctx context.Context, rangeID model.RangeID, f func(object Object) error) error
 }
 
 func (e *Endpoint) CreateObject(ctx context.Context, object Object) error {
@@ -91,7 +91,7 @@ func (e *Endpoint) UpdateObject(ctx context.Context, object Object) (Object, err
 	prevObject.ObjectID = object.ObjectID
 	return prevObject, nil
 }
-func (e *Endpoint) GetObjectsByRange(ctx context.Context, rangeID RangeID) ([]Object, error) {
+func (e *Endpoint) GetObjectsByRange(ctx context.Context, rangeID model.RangeID) ([]Object, error) {
 	logger := e.lg.With(zap.Int64("stream-id", rangeID.StreamID), zap.Int32("range-index", rangeID.Index), traceutil.TraceLogField(ctx))
 
 	objects := make([]Object, 0)
@@ -107,7 +107,7 @@ func (e *Endpoint) GetObjectsByRange(ctx context.Context, rangeID RangeID) ([]Ob
 	return objects, nil
 }
 
-func (e *Endpoint) ForEachObjectInRange(ctx context.Context, rangeID RangeID, f func(object Object) error) error {
+func (e *Endpoint) ForEachObjectInRange(ctx context.Context, rangeID model.RangeID, f func(object Object) error) error {
 	var startID = model.MinObjectID
 	for startID >= model.MinStreamID {
 		nextID, err := e.forEachObjectInRangeLimited(ctx, rangeID, f, startID, _objectByRangeLimit)
@@ -119,7 +119,7 @@ func (e *Endpoint) ForEachObjectInRange(ctx context.Context, rangeID RangeID, f 
 	return nil
 }
 
-func (e *Endpoint) forEachObjectInRangeLimited(ctx context.Context, rangeID RangeID, f func(object Object) error, startID int64, limit int64) (nextID int64, err error) {
+func (e *Endpoint) forEachObjectInRangeLimited(ctx context.Context, rangeID model.RangeID, f func(object Object) error, startID int64, limit int64) (nextID int64, err error) {
 	logger := e.lg.With(zap.Int64("stream-id", rangeID.StreamID), zap.Int32("range-index", rangeID.Index), traceutil.TraceLogField(ctx))
 
 	startKey := objectPath(rangeID.StreamID, rangeID.Index, startID)
@@ -151,7 +151,7 @@ func (e *Endpoint) forEachObjectInRangeLimited(ctx context.Context, rangeID Rang
 	return
 }
 
-func (e *Endpoint) endObjectPathInRange(rangeID RangeID) []byte {
+func (e *Endpoint) endObjectPathInRange(rangeID model.RangeID) []byte {
 	return e.KV.GetPrefixRangeEnd([]byte(fmt.Sprintf(_objectInRangePrefixFormat, rangeID.StreamID, rangeID.Index)))
 }
 
@@ -162,7 +162,7 @@ func objectPath(streamID int64, rangeIndex int32, objectID int64) []byte {
 }
 
 func objectIDFromPath(path []byte) (objectID int64, err error) {
-	var rangeID RangeID
+	var rangeID model.RangeID
 	_, err = fmt.Sscanf(string(path), _objectFormat, &rangeID.StreamID, &rangeID.Index, &objectID)
 	if err != nil {
 		err = errors.WithMessagef(err, "invalid object path %s", string(path))

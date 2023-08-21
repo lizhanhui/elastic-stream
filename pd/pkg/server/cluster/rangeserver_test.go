@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/brianvoe/gofakeit/v6"
+	mapset "github.com/deckarep/golang-set/v2"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 
@@ -99,11 +100,8 @@ func TestRaftCluster_chooseRangeServers(t *testing.T) {
 				LastActiveTime: &tInactive,
 			})
 
-			// tt.args.grayServerIDs into map
-			grayServerIDs := make(map[int32]struct{})
-			for _, id := range tt.args.grayServerIDs {
-				grayServerIDs[id] = struct{}{}
-			}
+			// tt.args.grayServerIDs into set
+			grayServerIDs := mapset.NewThreadUnsafeSet(tt.args.grayServerIDs...)
 			servers, err := cluster.chooseRangeServers(tt.args.cnt, grayServerIDs, zap.NewNop())
 			if tt.wantErr {
 				re.ErrorContains(err, tt.errMsg)

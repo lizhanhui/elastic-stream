@@ -2,6 +2,8 @@ package typeutil
 
 import (
 	"sort"
+
+	mapset "github.com/deckarep/golang-set/v2"
 )
 
 // FilterZero returns a new slice with all zero values removed.
@@ -41,12 +43,11 @@ func IsUnique[T comparable](l []T) (bool, T) {
 	if len(l) < 2 {
 		return true, n
 	}
-	m := make(map[T]struct{}, len(l))
+	set := mapset.NewThreadUnsafeSetWithSize[T](len(l))
 	for _, t := range l {
-		if _, ok := m[t]; ok {
+		if !set.Add(t) {
 			return false, t
 		}
-		m[t] = struct{}{}
 	}
 	return true, n
 }

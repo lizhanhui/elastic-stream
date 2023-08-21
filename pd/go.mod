@@ -6,6 +6,7 @@ require (
 	github.com/brianvoe/gofakeit/v6 v6.23.1
 	github.com/bytedance/gopkg v0.0.0-20230728082804-614d0af6619b
 	github.com/cakturk/go-netstat v0.0.0-20200220111822-e5b49efee7a5
+	github.com/deckarep/golang-set/v2 v2.3.1
 	github.com/golang/protobuf v1.5.3
 	github.com/google/flatbuffers v23.5.26+incompatible
 	github.com/google/uuid v1.3.0

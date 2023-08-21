@@ -8,6 +8,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	mapset "github.com/deckarep/golang-set/v2"
 	"github.com/pkg/errors"
 	"go.uber.org/zap"
 
@@ -30,8 +31,8 @@ type Server struct {
 	handler Handler
 
 	mu          sync.Mutex
-	listeners   map[*net.Listener]struct{}
-	activeConns map[*conn]struct{}
+	listeners   mapset.Set[*net.Listener]
+	activeConns mapset.Set[*conn]
 	doneChan    chan struct{}
 
 	listenerGroup sync.WaitGroup
@@ -43,10 +44,12 @@ type Server struct {
 // NewServer creates a server
 func NewServer(ctx context.Context, cfg *config.SbpServer, handler Handler, logger *zap.Logger) *Server {
 	return &Server{
-		ctx:     ctx,
-		cfg:     cfg,
-		handler: handler,
-		lg:      logger,
+		ctx:         ctx,
+		cfg:         cfg,
+		handler:     handler,
+		listeners:   mapset.NewThreadUnsafeSet[*net.Listener](),
+		activeConns: mapset.NewThreadUnsafeSet[*conn](),
+		lg:          logger,
 	}
 }
 
@@ -183,19 +186,16 @@ func (s *Server) trackListener(ln *net.Listener, add bool) bool {
 	logger := s.lg
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.listeners == nil {
-		s.listeners = make(map[*net.Listener]struct{})
-	}
 	if add {
 		if s.isShuttingDown() {
 			return false
 		}
 		logger.Info("add listener", zap.String("addr", (*ln).Addr().String()))
-		s.listeners[ln] = struct{}{}
+		s.listeners.Add(ln)
 		s.listenerGroup.Add(1)
 	} else {
 		logger.Info("delete listener", zap.String("addr", (*ln).Addr().String()))
-		delete(s.listeners, ln)
+		s.listeners.Remove(ln)
 		s.listenerGroup.Done()
 	}
 	return true
@@ -209,16 +209,13 @@ func (s *Server) trackConn(c *conn, add bool) {
 	logger := s.lg
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.activeConns == nil {
-		s.activeConns = make(map[*conn]struct{})
-	}
 	if add {
 		logger.Info("add conn", zap.String("addr", c.rwc.RemoteAddr().String()))
-		s.activeConns[c] = struct{}{}
+		s.activeConns.Add(c)
 		s.connGroup.Add(1)
 	} else {
 		logger.Info("delete conn", zap.String("addr", c.rwc.RemoteAddr().String()))
-		delete(s.activeConns, c)
+		s.activeConns.Remove(c)
 		s.connGroup.Done()
 	}
 }
@@ -250,7 +247,7 @@ func (s *Server) closeDoneChanLocked() {
 
 func (s *Server) closeListenersLocked() error {
 	var err error
-	for ln := range s.listeners {
+	for ln := range s.listeners.Iter() {
 		if cErr := (*ln).Close(); cErr != nil && err == nil {
 			err = cErr
 		}
@@ -260,7 +257,7 @@ func (s *Server) closeListenersLocked() error {
 
 func (s *Server) startGracefulShutdown() {
 	s.mu.Lock()
-	for c := range s.activeConns {
+	for c := range s.activeConns.Iter() {
 		c.startGracefulShutdown()
 	}
 	s.mu.Unlock()

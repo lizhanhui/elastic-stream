@@ -22,11 +22,13 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	mapset "github.com/deckarep/golang-set/v2"
 )
 
 var (
 	testAddrMutex sync.Mutex
-	testAddrMap   = make(map[string]struct{})
+	testAddrMap   = mapset.NewThreadUnsafeSet[string]()
 )
 
 func Alloc(tb testing.TB) string {
@@ -58,12 +60,12 @@ func tryAllocTestAddr(tb testing.TB) string {
 
 	testAddrMutex.Lock()
 	defer testAddrMutex.Unlock()
-	if _, ok := testAddrMap[addr]; ok {
+	if testAddrMap.Contains(addr) {
 		return ""
 	}
 	if !environmentCheck(addr, tb) {
 		return ""
 	}
-	testAddrMap[addr] = struct{}{}
+	testAddrMap.Add(addr)
 	return addr
 }

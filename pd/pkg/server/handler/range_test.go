@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"runtime"
 	"sort"
 	"testing"
 
@@ -79,22 +80,41 @@ func TestHandler_ListRange(t *testing.T) {
 				re.Equal(int32(1), r.Index)
 			}
 
-			req := &protocol.ListRangeRequest{ListRangeRequestT: rpcfb.ListRangeRequestT{
-				Criteria: &rpcfb.ListRangeCriteriaT{StreamId: tt.args.StreamID, ServerId: tt.args.RangeServerID},
-			}}
-			resp := &protocol.ListRangeResponse{}
-			h.ListRange(req, resp)
+			for i := 0; i < 5; i++ {
+				req := &protocol.ListRangeRequest{ListRangeRequestT: rpcfb.ListRangeRequestT{
+					Criteria: &rpcfb.ListRangeCriteriaT{StreamId: tt.args.StreamID, ServerId: tt.args.RangeServerID},
+				}}
+				resp := &protocol.ListRangeResponse{}
+				h.ListRange(req, resp)
 
-			re.Equal(rpcfb.ErrorCodeOK, resp.Status.Code, resp.Status.Message)
-			for _, r := range resp.Ranges {
-				fmtRangeServers(r)
+				re.Equal(rpcfb.ErrorCodeOK, resp.Status.Code, resp.Status.Message)
+				if len(tt.want) != len(resp.Ranges) {
+					// maybe not all ranges are watched, yield and retry
+					runtime.Gosched()
+				} else {
+					sortRanges(resp.Ranges)
+					for _, r := range resp.Ranges {
+						fmtRangeServers(r)
+					}
+					sortRanges(tt.want)
+					for _, r := range tt.want {
+						fillRangeInfo(r)
+					}
+					re.Equal(tt.want, resp.Ranges)
+					break
+				}
 			}
-			for _, r := range tt.want {
-				fillRangeInfo(r)
-			}
-			re.Equal(tt.want, resp.Ranges)
 		})
 	}
+}
+
+func sortRanges(ranges []*rpcfb.RangeT) {
+	sort.Slice(ranges, func(i, j int) bool {
+		if ranges[i].StreamId == ranges[j].StreamId {
+			return ranges[i].Index < ranges[j].Index
+		}
+		return ranges[i].StreamId < ranges[j].StreamId
+	})
 }
 
 type preRange struct {

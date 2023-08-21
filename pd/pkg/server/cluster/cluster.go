@@ -16,6 +16,7 @@ package cluster
 
 import (
 	"context"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -30,36 +31,45 @@ import (
 	"github.com/AutoMQ/pd/pkg/server/member"
 	"github.com/AutoMQ/pd/pkg/server/model"
 	"github.com/AutoMQ/pd/pkg/server/storage"
+	"github.com/AutoMQ/pd/pkg/server/storage/endpoint"
 )
 
 const (
-	_streamIDAllocKey      = "stream"
-	_streamIDStep          = 100
+	_streamIDAllocKey = "stream"
+	_streamIDStep     = 100
+
 	_rangeServerIDAllocKey = "range-server"
 	_rangeServerIDStep     = 1
-	_objectIDAllocKey      = "object"
-	_objectIDStep          = 100
+
+	_objectIDAllocKey = "object"
+	_objectIDStep     = 100
+
+	_loadRangeLimit      = 1024
+	_loadRangeRetryDelay = 1 * time.Second
 )
 
 // RaftCluster is used for metadata management.
 type RaftCluster struct {
 	ctx context.Context
 
-	cfg *config.Cluster
+	// set when creating the RaftCluster
+	cfg            *config.Cluster
+	member         MemberService
+	cache          *cache.Cache
+	rangeServerIdx atomic.Uint64
+	mu             sync.RWMutex  // lock for all variables below
+	rangeLoadedCh  chan struct{} // Closed when all ranges are loaded.
 
-	starting      atomic.Bool
 	running       atomic.Bool
 	runningCtx    context.Context
 	runningCancel context.CancelFunc
 
-	storage        storage.Storage
-	sAlloc         id.Allocator // stream id allocator
-	rsAlloc        id.Allocator // range server id allocator
-	oAlloc         id.Allocator // object id allocator
-	member         MemberService
-	cache          *cache.Cache
-	rangeServerIdx atomic.Uint64
-	client         sbpClient.Client
+	// set when starting the RaftCluster
+	storage storage.Storage
+	sAlloc  id.Allocator // stream id allocator
+	rsAlloc id.Allocator // range server id allocator
+	oAlloc  id.Allocator // object id allocator
+	client  sbpClient.Client
 
 	lg *zap.Logger
 }
@@ -81,11 +91,12 @@ type Server interface {
 // NewRaftCluster creates a new RaftCluster.
 func NewRaftCluster(ctx context.Context, cfg *config.Cluster, member MemberService, logger *zap.Logger) *RaftCluster {
 	return &RaftCluster{
-		ctx:    ctx,
-		cfg:    cfg,
-		member: member,
-		cache:  cache.NewCache(),
-		lg:     logger,
+		ctx:           ctx,
+		cfg:           cfg,
+		member:        member,
+		cache:         cache.NewCache(),
+		rangeLoadedCh: make(chan struct{}),
+		lg:            logger,
 	}
 }
 
@@ -96,11 +107,6 @@ func (c *RaftCluster) Start(s Server) error {
 		logger.Warn("raft cluster is already running")
 		return nil
 	}
-	if c.starting.Swap(true) {
-		logger.Warn("raft cluster is starting")
-		return nil
-	}
-	defer c.starting.Store(false)
 
 	logger.Info("starting raft cluster")
 
@@ -111,7 +117,7 @@ func (c *RaftCluster) Start(s Server) error {
 	c.oAlloc = s.IDAllocator(_objectIDAllocKey, uint64(model.MinObjectID), _objectIDStep)
 	c.client = s.SbpClient()
 
-	err := c.loadInfo()
+	err := c.loadInfo(c.runningCtx)
 	if err != nil {
 		logger.Error("load cluster info failed", zap.Error(err))
 		return errors.WithMessage(err, "load cluster info")
@@ -127,14 +133,22 @@ func (c *RaftCluster) Start(s Server) error {
 }
 
 // loadInfo loads all info from storage into cache.
-func (c *RaftCluster) loadInfo() error {
+func (c *RaftCluster) loadInfo(ctx context.Context) error {
+	err := c.loadRangeServers(ctx)
+	if err != nil {
+		return err
+	}
+
+	go c.loadRangesLoop(ctx)
+
+	return nil
+}
+
+func (c *RaftCluster) loadRangeServers(ctx context.Context) error {
 	logger := c.lg
 
-	c.cache.Reset()
-
-	// load range servers
 	start := time.Now()
-	err := c.storage.ForEachRangeServer(c.ctx, func(serverT *rpcfb.RangeServerT) error {
+	err := c.storage.ForEachRangeServer(ctx, func(serverT *rpcfb.RangeServerT) error {
 		updated, old := c.cache.SaveRangeServer(&cache.RangeServer{
 			RangeServerT: *serverT,
 		})
@@ -151,6 +165,78 @@ func (c *RaftCluster) loadInfo() error {
 	return nil
 }
 
+func (c *RaftCluster) loadRangesLoop(ctx context.Context) {
+	for {
+		if ok := c.loadRanges(ctx); !ok {
+			return
+		}
+		c.cache.ResetRangeIndex()
+		time.Sleep(_loadRangeRetryDelay)
+	}
+}
+
+// loadRanges returns whether a retry should be performed.
+func (c *RaftCluster) loadRanges(ctx context.Context) bool {
+	logger := c.lg
+
+	var rv int64
+	// list ranges
+	token := endpoint.ContinueToken{
+		ResourceType: rpcfb.ResourceTypeRESOURCE_RANGE,
+		More:         true,
+	}
+	for token.More {
+		var resources []*rpcfb.ResourceT
+		var err error
+		logger := logger.With(zap.Int64("rv", rv)).With(token.ZapFields()...)
+		resources, rv, token, err = c.storage.ListResource(ctx, rv, token, _loadRangeLimit)
+		if err != nil {
+			if ctx.Err() != nil {
+				return false
+			}
+			logger.Warn("list ranges failed", zap.Error(err))
+			//nolint:gosimple
+			if errors.Is(err, model.ErrKVTxnFailed) {
+				// Not leader anymore, fail fast
+				return false
+			}
+			return true
+		}
+		for _, resource := range resources {
+			c.cache.OnRangeCreated(resource.Range)
+		}
+	}
+
+	// all ranges are loaded, ready to serve
+	c.rangeLoaded()
+	defer c.resetRangeLoaded()
+
+	// watch ranges
+	for {
+		var events []*rpcfb.ResourceEventT
+		var err error
+		logger := logger.With(zap.Int64("rv", rv))
+		events, rv, err = c.WatchResource(ctx, rv, []rpcfb.ResourceType{rpcfb.ResourceTypeRESOURCE_RANGE})
+		if err != nil {
+			if ctx.Err() != nil {
+				return false
+			}
+			logger.Warn("watch ranges failed", zap.Error(err))
+			return true
+		}
+		for _, event := range events {
+			switch event.Type {
+			case rpcfb.EventTypeEVENT_ADDED:
+				c.cache.OnRangeCreated(event.Resource.Range)
+			case rpcfb.EventTypeEVENT_MODIFIED:
+				c.cache.OnRangeModified(event.Resource.Range)
+			case rpcfb.EventTypeEVENT_DELETED:
+				c.cache.OnRangeDeleted(event.Resource.Range)
+			}
+		}
+	}
+}
+
 // Stop stops the RaftCluster.
 func (c *RaftCluster) Stop() error {
 	logger := c.lg
@@ -161,6 +247,7 @@ func (c *RaftCluster) Stop() error {
 
 	logger.Info("stopping cluster")
 	c.runningCancel()
+	c.cache.Reset()
 
 	logger.Info("cluster stopped")
 	return nil
@@ -177,4 +264,30 @@ func (c *RaftCluster) IsLeader() bool {
 
 func (c *RaftCluster) ClusterInfo(ctx context.Context) ([]*member.Info, error) {
 	return c.member.ClusterInfo(ctx)
+}
+
+func (c *RaftCluster) rangeLoaded() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	select {
+	case <-c.rangeLoadedCh:
+	default:
+		close(c.rangeLoadedCh)
+	}
+}
+
+func (c *RaftCluster) resetRangeLoaded() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	select {
+	case <-c.rangeLoadedCh:
+		c.rangeLoadedCh = make(chan struct{})
+	default:
+	}
+}
+
+func (c *RaftCluster) rangeLoadedNotify() <-chan struct{} {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.rangeLoadedCh
 }

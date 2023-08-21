@@ -12,6 +12,11 @@ const (
 	MinRangeIndex int32 = 0
 )
 
+type RangeID struct {
+	StreamID int64
+	Index    int32
+}
+
 type SealRangeParam struct {
 	StreamID int64
 	Epoch    int64

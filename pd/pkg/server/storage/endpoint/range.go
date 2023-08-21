@@ -28,20 +28,8 @@ const (
 	_rangeStreamFormat       = _rangeStreamPath + kv.KeySeparator + _streamIDFormat + kv.KeySeparator + _rangeIDFormat
 	_rangeStreamKeyLen       = len(_rangeStreamPath) + len(kv.KeySeparator) + _streamIDLen + len(kv.KeySeparator) + _rangeIDLen
 
-	// ranges on range server
-	_rangeOnServerPath               = "ranges-rs"
-	_rangeOnServerPrefixFormat       = _rangeOnServerPath + kv.KeySeparator + _rangeServerIDFormat + kv.KeySeparator
-	_rangeOnServerStreamPrefixFormat = _rangeOnServerPath + kv.KeySeparator + _rangeServerIDFormat + kv.KeySeparator + _streamIDFormat + kv.KeySeparator
-	_rangeOnServerFormat             = _rangeOnServerPath + kv.KeySeparator + _rangeServerIDFormat + kv.KeySeparator + _streamIDFormat + kv.KeySeparator + _rangeIDFormat
-	_rangeOnServerKeyLen             = len(_rangeOnServerPath) + len(kv.KeySeparator) + _rangeServerIDLen + len(kv.KeySeparator) + _streamIDLen + len(kv.KeySeparator) + _rangeIDLen
-
 	_rangeByRangeLimit = 1e4
 )
-
-type RangeID struct {
-	StreamID int64
-	Index    int32
-}
 
 // ChooseServersFunc is the function to choose range servers.
 // It returns model.ErrNotEnoughRangeServers if there are not enough range servers to allocate.
@@ -67,9 +55,9 @@ type RangeEndpoint interface {
 	// It returns model.ErrInvalidStreamEpoch if the stream epoch mismatches.
 	SealRange(ctx context.Context, p *model.SealRangeParam) (*rpcfb.RangeT, error)
 	// GetRange returns the range by the range ID.
-	GetRange(ctx context.Context, rangeID *RangeID) (*rpcfb.RangeT, error)
+	GetRange(ctx context.Context, rangeID model.RangeID) (*rpcfb.RangeT, error)
 	// GetRanges returns ranges by range IDs.
-	GetRanges(ctx context.Context, rangeIDs []*RangeID) ([]*rpcfb.RangeT, error)
+	GetRanges(ctx context.Context, rangeIDs []model.RangeID) ([]*rpcfb.RangeT, error)
 	// GetLastRange returns the last range of the given stream.
 	// It returns nil and no error if there is no range in the stream.
 	GetLastRange(ctx context.Context, streamID int64) (*rpcfb.RangeT, error)
@@ -78,13 +66,6 @@ type RangeEndpoint interface {
 	// ForEachRangeInStream calls the given function f for each range in the stream.
 	// If f returns an error, the iteration is stopped and the error is returned.
 	ForEachRangeInStream(ctx context.Context, streamID int64, f func(r *rpcfb.RangeT) error) error
-	// GetRangeIDsByRangeServer returns the range IDs on the range server.
-	GetRangeIDsByRangeServer(ctx context.Context, rangeServerID int32) ([]*RangeID, error)
-	// ForEachRangeIDOnRangeServer calls the given function f for each range on the range server.
-	// If f returns an error, the iteration is stopped and the error is returned.
-	ForEachRangeIDOnRangeServer(ctx context.Context, rangeServerID int32, f func(rangeID *RangeID) error) error
-	// GetRangeIDsByRangeServerAndStream returns the range IDs on the range server and the stream.
-	GetRangeIDsByRangeServerAndStream(ctx context.Context, streamID int64, rangeServerID int32) ([]*RangeID, error)
 }
 
 func (e *Endpoint) CreateRange(ctx context.Context, p *model.CreateRangeParam, f ChooseServersFunc) (*rpcfb.RangeT, error) {
@@ -183,9 +164,6 @@ func (e *Endpoint) CreateRange(ctx context.Context, p *model.CreateRangeParam, f
 		}
 		rangeInfo := fbutil.Marshal(newRange)
 		_, _ = kv.Put(ctx, rk, rangeInfo, false, 0)
-		for _, server := range newRange.Servers {
-			_, _ = kv.Put(ctx, rangePathOnRangeServer(server.ServerId, newRange.StreamId, newRange.Index), nil, false, 0)
-		}
 		mcache.Free(rangeInfo)
 
 		return nil
@@ -275,8 +253,8 @@ func (e *Endpoint) SealRange(ctx context.Context, p *model.SealRangeParam) (*rpc
 	return sealedRange, nil
 }
 
-func (e *Endpoint) GetRange(ctx context.Context, rangeID *RangeID) (*rpcfb.RangeT, error) {
-	ranges, err := e.GetRanges(ctx, []*RangeID{rangeID})
+func (e *Endpoint) GetRange(ctx context.Context, rangeID model.RangeID) (*rpcfb.RangeT, error) {
+	ranges, err := e.GetRanges(ctx, []model.RangeID{rangeID})
 	if err != nil {
 		return nil, err
 	}
@@ -287,7 +265,7 @@ func (e *Endpoint) GetRange(ctx context.Context, rangeID *RangeID) (*rpcfb.Range
 	return ranges[0], nil
 }
 
-func (e *Endpoint) GetRanges(ctx context.Context, rangeIDs []*RangeID) ([]*rpcfb.RangeT, error) {
+func (e *Endpoint) GetRanges(ctx context.Context, rangeIDs []model.RangeID) ([]*rpcfb.RangeT, error) {
 	logger := e.lg.With(traceutil.TraceLogField(ctx))
 
 	keys := make([][]byte, len(rangeIDs))
@@ -431,14 +409,14 @@ func rangePathInSteam(streamID int64, index int32) []byte {
 	return res
 }
 
-func rangeIDsFromPathsInStream(kvs []kv.KeyValue) []*RangeID {
-	rangeIDs := make([]*RangeID, 0, len(kvs))
+func rangeIDsFromPathsInStream(kvs []kv.KeyValue) []*model.RangeID {
+	rangeIDs := make([]*model.RangeID, 0, len(kvs))
 	for _, rangeKV := range kvs {
 		streamID, index, err := rangeIDFromPathInStream(rangeKV.Key)
 		if err != nil {
 			continue
 		}
-		rangeIDs = append(rangeIDs, &RangeID{StreamID: streamID, Index: index})
+		rangeIDs = append(rangeIDs, &model.RangeID{StreamID: streamID, Index: index})
 	}
 	return rangeIDs
 }
@@ -447,109 +425,6 @@ func rangeIDFromPathInStream(path []byte) (streamID int64, index int32, err erro
 	_, err = fmt.Sscanf(string(path), _rangeStreamFormat, &streamID, &index)
 	if err != nil {
 		err = errors.WithMessagef(err, "invalid range path %s", string(path))
-	}
-	return
-}
-
-func (e *Endpoint) GetRangeIDsByRangeServer(ctx context.Context, rangeServerID int32) ([]*RangeID, error) {
-	logger := e.lg.With(zap.Int32("range-server-id", rangeServerID), traceutil.TraceLogField(ctx))
-
-	rangeIDs := make([]*RangeID, 0)
-	err := e.ForEachRangeIDOnRangeServer(ctx, rangeServerID, func(rangeID *RangeID) error {
-		rangeIDs = append(rangeIDs, rangeID)
-		return nil
-	})
-	if err != nil {
-		logger.Error("failed to get range ids by range server", zap.Error(err))
-		return nil, errors.WithMessagef(err, "get range ids by range server %d", rangeServerID)
-	}
-
-	return rangeIDs, nil
-}
-
-func (e *Endpoint) ForEachRangeIDOnRangeServer(ctx context.Context, rangeServerID int32, f func(rangeID *RangeID) error) error {
-	startID := &RangeID{StreamID: model.MinStreamID, Index: model.MinRangeIndex}
-	for startID != nil && startID.StreamID >= model.MinStreamID && startID.Index >= model.MinRangeIndex {
-		nextID, err := e.forEachRangeIDOnRangeServerLimited(ctx, rangeServerID, f, startID, _rangeByRangeLimit)
-		if err != nil {
-			return err
-		}
-		startID = nextID
-	}
-	return nil
-}
-
-func (e *Endpoint) forEachRangeIDOnRangeServerLimited(ctx context.Context, rangeServerID int32, f func(rangeID *RangeID) error, startID *RangeID, limit int64) (nextID *RangeID, err error) {
-	logger := e.lg.With(zap.Int32("range-server-id", rangeServerID), traceutil.TraceLogField(ctx))
-
-	startKey := rangePathOnRangeServer(rangeServerID, startID.StreamID, startID.Index)
-	kvs, _, more, err := e.KV.GetByRange(ctx, kv.Range{StartKey: startKey, EndKey: e.endRangePathOnRangeServer(rangeServerID)}, 0, limit, false)
-	if err != nil {
-		logger.Error("failed to get range ids by range server", zap.Int64("start-stream-id", startID.StreamID), zap.Int32("start-range-index", startID.Index), zap.Int64("limit", limit), zap.Error(err))
-		return nil, errors.WithMessage(err, "get range ids by range server")
-	}
-
-	nextID = startID
-	for _, rangeKV := range kvs {
-		_, streamID, index, err := rangeIDFromPathOnRangeServer(rangeKV.Key)
-		if err != nil {
-			return nil, err
-		}
-		nextID.StreamID = streamID
-		nextID.Index = index + 1
-		err = f(&RangeID{StreamID: streamID, Index: index})
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	// return nil if no more ranges
-	if !more {
-		nextID = nil
-	}
-	return
-}
-
-func (e *Endpoint) endRangePathOnRangeServer(rangeServerID int32) []byte {
-	return e.KV.GetPrefixRangeEnd([]byte(fmt.Sprintf(_rangeOnServerPrefixFormat, rangeServerID)))
-}
-
-func (e *Endpoint) GetRangeIDsByRangeServerAndStream(ctx context.Context, streamID int64, rangeServerID int32) ([]*RangeID, error) {
-	logger := e.lg.With(zap.Int64("stream-id", streamID), zap.Int32("range-server-id", rangeServerID), traceutil.TraceLogField(ctx))
-
-	startKey := rangePathOnRangeServer(rangeServerID, streamID, model.MinRangeIndex)
-	kvs, _, _, err := e.KV.GetByRange(ctx, kv.Range{StartKey: startKey, EndKey: e.endRangePathOnRangeServerInStream(rangeServerID, streamID)}, 0, 0, false)
-	if err != nil {
-		logger.Error("failed to get range ids by range server and stream", zap.Error(err))
-		return nil, errors.WithMessagef(err, "get range ids by range server %d and stream %d", rangeServerID, streamID)
-	}
-
-	rangeIDs := make([]*RangeID, 0, len(kvs))
-	for _, rangeKV := range kvs {
-		_, _, index, err := rangeIDFromPathOnRangeServer(rangeKV.Key)
-		if err != nil {
-			return nil, err
-		}
-		rangeIDs = append(rangeIDs, &RangeID{StreamID: streamID, Index: index})
-	}
-
-	return rangeIDs, nil
-}
-
-func (e *Endpoint) endRangePathOnRangeServerInStream(rangeServerID int32, streamID int64) []byte {
-	return e.KV.GetPrefixRangeEnd([]byte(fmt.Sprintf(_rangeOnServerStreamPrefixFormat, rangeServerID, streamID)))
-}
-
-func rangePathOnRangeServer(rangeServerID int32, streamID int64, index int32) []byte {
-	res := make([]byte, 0, _rangeOnServerKeyLen)
-	res = fmt.Appendf(res, _rangeOnServerFormat, rangeServerID, streamID, index)
-	return res
-}
-
-func rangeIDFromPathOnRangeServer(path []byte) (rangeServerID int32, streamID int64, index int32, err error) {
-	_, err = fmt.Sscanf(string(path), _rangeOnServerFormat, &rangeServerID, &streamID, &index)
-	if err != nil {
-		err = errors.WithMessagef(err, "parse range path: %s", string(path))
 	}
 	return
 }

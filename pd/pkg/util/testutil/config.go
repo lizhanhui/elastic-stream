@@ -18,14 +18,11 @@ package testutil
 
 import (
 	"fmt"
-	"io"
 	"net/url"
 	"testing"
 
-	"github.com/stretchr/testify/require"
 	"go.etcd.io/etcd/server/v3/embed"
 
-	"github.com/AutoMQ/pd/pkg/server/config"
 	tempurl "github.com/AutoMQ/pd/pkg/util/testutil/url"
 )
 
@@ -53,22 +50,17 @@ func NewEtcdConfig(tb testing.TB) *embed.Config {
 	return cfg
 }
 
-func NewPDConfig(tb testing.TB) *config.Config {
-	re := require.New(tb)
-
-	peerURL := tempurl.Alloc(tb)
-	clientURL := tempurl.Alloc(tb)
-	pdAddr := tempurl.AllocAddr(tb)
-
-	cfg, err := config.NewConfig([]string{
-		"--peer-urls", peerURL,
-		"--client-urls", clientURL,
-		"--pd-addr", pdAddr,
-	}, io.Discard)
-	re.NoError(err)
-
-	cfg.Name = fmt.Sprintf("test_pd_%s", tb.Name())
-	cfg.DataDir = tb.TempDir()
-
-	return cfg
+// NewEtcdConfigs is used to create multiple etcd configs for the unit test purpose.
+func NewEtcdConfigs(tb testing.TB, cnt int) (cs []*embed.Config) {
+	var initialCluster string
+	for i := 0; i < cnt; i++ {
+		cfg := NewEtcdConfig(tb)
+		cfg.Name = fmt.Sprintf("test_etcd_%d", i)
+		initialCluster += fmt.Sprintf(",%s=%s", cfg.Name, &cfg.ListenPeerUrls[0])
+		cs = append(cs, cfg)
+	}
+	for _, cfg := range cs {
+		cfg.InitialCluster = initialCluster[1:]
+	}
+	return
 }

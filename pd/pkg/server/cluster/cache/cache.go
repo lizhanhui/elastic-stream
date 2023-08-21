@@ -4,28 +4,15 @@ import (
 	"fmt"
 	"time"
 
+	mapset "github.com/deckarep/golang-set/v2"
 	cmap "github.com/orcaman/concurrent-map/v2"
 	"go.uber.org/zap"
 
 	"github.com/AutoMQ/pd/api/rpcfb/rpcfb"
+	"github.com/AutoMQ/pd/pkg/server/model"
 )
 
-// Cache is the cache for all metadata.
-type Cache struct {
-	rangeServers cmap.ConcurrentMap[int32, *RangeServer]
-}
-
-// NewCache creates a new Cache.
-func NewCache() *Cache {
-	return &Cache{
-		rangeServers: cmap.NewWithCustomShardingFunction[int32, *RangeServer](func(key int32) uint32 { return uint32(key) }),
-	}
-}
-
-// Reset resets the cache.
-func (c *Cache) Reset() {
-	// No need to reset range servers, as they will be updated by heartbeat.
-}
+type serverID int32
 
 // RangeServer is the cache for RangeServerT and its status.
 type RangeServer struct {
@@ -69,6 +56,34 @@ func (rs *RangeServer) Score() (score int) {
 	return
 }
 
+type rangeIDSet mapset.Set[model.RangeID]
+
+// Cache is the cache for all metadata.
+type Cache struct {
+	rangeServers cmap.ConcurrentMap[int32, *RangeServer]
+	rangeIndex   cmap.ConcurrentMap[serverID, rangeIDSet]
+}
+
+// NewCache creates a new Cache.
+func NewCache() *Cache {
+	return &Cache{
+		rangeServers: cmap.NewWithCustomShardingFunction[int32, *RangeServer](func(key int32) uint32 { return uint32(key) }),
+		rangeIndex:   cmap.NewWithCustomShardingFunction[serverID, rangeIDSet](func(key serverID) uint32 { return uint32(key) }),
+	}
+}
+
+// Reset resets the cache.
+func (c *Cache) Reset() {
+	// No need to reset range servers, as they will be updated by heartbeat.
+	// c.rangeServers.Clear()
+	c.ResetRangeIndex()
+}
+
+// ResetRangeIndex resets the range index.
+func (c *Cache) ResetRangeIndex() {
+	c.rangeIndex.Clear()
+}
+
 // SaveRangeServer saves a range server to the cache.
 // It returns true if the range server is new or its info is updated.
 // If its info is updated, the old value is returned.
@@ -105,7 +120,7 @@ func (c *Cache) RangeServer(serverID int32) *RangeServer {
 
 // ActiveRangeServers returns all active range servers.
 // It returns two lists, the first one is the white list, the second one is the gray list.
-func (c *Cache) ActiveRangeServers(timeout time.Duration, grayServerIDs map[int32]struct{}) (white []*RangeServer, gray []*RangeServer) {
+func (c *Cache) ActiveRangeServers(timeout time.Duration, grayServerIDs mapset.Set[int32]) (white []*RangeServer, gray []*RangeServer) {
 	white = make([]*RangeServer, 0)
 	gray = make([]*RangeServer, 0)
 	c.rangeServers.IterCb(func(_ int32, rangeServer *RangeServer) {
@@ -118,7 +133,7 @@ func (c *Cache) ActiveRangeServers(timeout time.Duration, grayServerIDs map[int3
 		if rangeServer.Metrics != nil && rangeServer.Metrics.DiskFreeSpace == 0 {
 			return
 		}
-		if _, ok := grayServerIDs[rangeServer.ServerId]; ok {
+		if grayServerIDs.Contains(rangeServer.ServerId) {
 			gray = append(gray, rangeServer)
 		} else {
 			white = append(white, rangeServer)
@@ -141,6 +156,63 @@ func (c *Cache) RangeServerInfo() (fields []zap.Field) {
 			zap.Timep(fmt.Sprintf("range-server-%d-last-active-time", id), rangeServer.LastActiveTime),
 		)
 	})
+	return
+}
+
+// OnRangeCreated is called when a new range is created.
+func (c *Cache) OnRangeCreated(r *rpcfb.RangeT) {
+	rID := model.RangeID{
+		StreamID: r.StreamId,
+		Index:    r.Index,
+	}
+	for _, s := range r.Servers {
+		c.addRangeToServer(rID, s.ServerId)
+	}
+}
+
+// OnRangeModified is called when a range is modified.
+func (c *Cache) OnRangeModified(r *rpcfb.RangeT) {
+	_ = r
+	// TODO: Currently, range servers are not updated when a range is modified.
+}
+
+// OnRangeDeleted is called when a range is deleted.
+func (c *Cache) OnRangeDeleted(r *rpcfb.RangeT) {
+	rID := model.RangeID{
+		StreamID: r.StreamId,
+		Index:    r.Index,
+	}
+	for _, s := range r.Servers {
+		c.removeRangeFromServer(rID, s.ServerId)
+	}
+}
+
+func (c *Cache) addRangeToServer(rID model.RangeID, sID int32) {
+	c.rangeIndex.Upsert(serverID(sID), nil, func(exist bool, valueInMap rangeIDSet, _ rangeIDSet) rangeIDSet {
+		if exist {
+			valueInMap.Add(rID)
+			return valueInMap
+		}
+		return mapset.NewThreadUnsafeSet(rID)
+	})
+}
+
+func (c *Cache) removeRangeFromServer(rID model.RangeID, sID int32) {
+	c.rangeIndex.Upsert(serverID(sID), nil, func(exist bool, valueInMap rangeIDSet, _ rangeIDSet) rangeIDSet {
+		if exist {
+			valueInMap.Remove(rID)
+			return valueInMap
+		}
+		return mapset.NewThreadUnsafeSet[model.RangeID]()
+	})
+}
+
+// RangesOnServer returns all ranges on a range server.
+func (c *Cache) RangesOnServer(sID int32) (rangeIDs mapset.Set[model.RangeID]) {
+	rangeIDs, _ = c.rangeIndex.Get(serverID(sID))
+	if rangeIDs == nil {
+		rangeIDs = mapset.NewThreadUnsafeSet[model.RangeID]()
+	}
 	return
 }
 

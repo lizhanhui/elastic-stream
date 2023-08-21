@@ -651,6 +651,57 @@ func TestEtcd_Watch(t *testing.T) {
 	}
 }
 
+func TestEtcd_Watch_LeaderTransferred(t *testing.T) {
+	t.Parallel()
+	re := require.New(t)
+
+	etcds, client, closeFunc := testutil.StartEtcdCluster(t, 3)
+	defer func() {
+		closeFunc()
+		time.Sleep(5 * time.Second) // wait for etcd cluster to close
+	}()
+
+	etcd := Logger{NewEtcd(EtcdParam{
+		Client:   client,
+		RootPath: "/test",
+	}, zap.NewNop())}
+
+	watcher := etcd.Watch(context.Background(), []byte("foo/"), 0, nil)
+	defer watcher.Close()
+
+	// put a kv pair
+	kv := client.KV
+	_, err := kv.Put(context.Background(), "/test/foo/key1", "val1")
+	re.NoError(err)
+
+	e := <-watcher.EventChan()
+	re.NoError(e.Error)
+	re.Equal(Events{
+		Events:   []Event{{Type: Added, Key: []byte("foo/key1"), Value: []byte("val1")}},
+		Revision: 2,
+	}, e)
+
+	// transfer leader
+	leader := etcds[0].Server.Leader()
+	leaderChanged := etcds[0].Server.LeaderChangedNotify()
+	for _, etcd := range etcds {
+		if etcd.Server.ID() == leader {
+			err := etcd.Server.TransferLeadership()
+			re.NoError(err)
+		}
+	}
+	<-leaderChanged
+
+	_, err = kv.Put(context.Background(), "/test/foo/key2", "val2")
+	re.NoError(err)
+	e = <-watcher.EventChan()
+	re.NoError(e.Error)
+	re.Equal(Events{
+		Events:   []Event{{Type: Added, Key: []byte("foo/key2"), Value: []byte("val2")}},
+		Revision: 3,
+	}, e)
+}
+
 func TestEtcd_WatchCompacted(t *testing.T) {
 	t.Parallel()
 	re := require.New(t)
