@@ -53,7 +53,10 @@ impl Server {
 
     fn start_profiler(&self) {
         #[cfg(feature = "trace")]
-        observation::trace::start_trace_exporter(Arc::clone(&config), shutdown.subscribe());
+        observation::trace::start_trace_exporter(
+            Arc::clone(&self.config),
+            self.shutdown.subscribe(),
+        );
 
         if self.config.server.profiling.enable {
             let server_endpoint = self.config.server.profiling.server_endpoint.clone();
