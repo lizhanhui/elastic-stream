@@ -11,6 +11,7 @@
     <modules>
         <module>client</module>
         <module>examples</module>
+        <module>tools</module>
     </modules>
 
     <packaging>pom</packaging>

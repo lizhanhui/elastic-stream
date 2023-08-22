@@ -1,4 +1,4 @@
-package com.automq.elasticstream.client.examples.longrunning;
+package com.automq.elasticstream.client.tools.longrunning;
 
 public class LongRunningOption {
     private String endpoint = "127.0.0.1:12378";

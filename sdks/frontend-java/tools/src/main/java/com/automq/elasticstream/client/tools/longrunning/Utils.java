@@ -1,4 +1,4 @@
-package com.automq.elasticstream.client.examples.longrunning;
+package com.automq.elasticstream.client.tools.longrunning;
 
 import org.apache.log4j.Logger;
 import java.nio.ByteBuffer;

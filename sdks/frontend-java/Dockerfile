@@ -1,5 +1,5 @@
 FROM openjdk:11
 
-COPY examples/target/examples-*-jar-with-dependencies.jar .
+COPY tools/target/tools-*-jar-with-dependencies.jar ./tools.jar
 
-CMD ["java", "-cp", "examples-*-jar-with-dependencies.jar", "com.automq.elasticstream.client.examples.longrunning.LongRunning"]
+CMD ["java", "-cp", "tools.jar", "com.automq.elasticstream.client.tools.longrunning.LongRunning"]
