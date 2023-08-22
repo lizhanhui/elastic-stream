@@ -20,6 +20,7 @@ require (
 	go.etcd.io/etcd/client/v3 v3.5.9
 	go.etcd.io/etcd/server/v3 v3.5.9
 	go.uber.org/goleak v1.2.1
+	go.uber.org/mock v0.2.0
 	go.uber.org/zap v1.25.0
 	google.golang.org/grpc v1.57.0
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1

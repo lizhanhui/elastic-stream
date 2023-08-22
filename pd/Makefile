@@ -453,7 +453,7 @@ version:
 	echo $(VERSION)
 
 test: # @HELP runs tests, as defined in ./build/test.sh
-test: .flatc | $(BUILD_DIRS)
+test: .flatc mock | $(BUILD_DIRS)
 	docker run                                                  \
 	    -i                                                      \
 	    --rm                                                    \
@@ -478,15 +478,13 @@ test: .flatc | $(BUILD_DIRS)
 	    ./build/test.sh ./...
 
 lint: # @HELP runs golangci-lint
-lint: .flatc | $(BUILD_DIRS)
+lint: .flatc mock | $(BUILD_DIRS)
 	docker run                                                  \
 	    -i                                                      \
 	    --rm                                                    \
 	    -u $$(id -u):$$(id -g)                                  \
 	    -v $$(pwd):/src                                         \
 	    -w /src                                                 \
-	    -v $$(pwd)/.go/bin/$(OS)_$(ARCH):/go/bin                \
-	    -v $$(pwd)/.go/bin/$(OS)_$(ARCH):/go/bin/$(OS)_$(ARCH)  \
 	    -v $$(pwd)/.go/cache:/.cache                            \
 	    --env GOCACHE="/.cache/gocache"                         \
 	    --env GOMODCACHE="/.cache/gomodcache"                   \
@@ -509,8 +507,6 @@ fmt: | $(BUILD_DIRS)
 	    -u $$(id -u):$$(id -g)                                  \
 	    -v $$(pwd):/src                                         \
 	    -w /src                                                 \
-	    -v $$(pwd)/.go/bin/$(OS)_$(ARCH):/go/bin                \
-	    -v $$(pwd)/.go/bin/$(OS)_$(ARCH):/go/bin/$(OS)_$(ARCH)  \
 	    -v $$(pwd)/.go/cache:/.cache                            \
 	    --env GOCACHE="/.cache/gocache"                         \
 	    --env GOMODCACHE="/.cache/gomodcache"                   \
@@ -527,6 +523,29 @@ fmt: | $(BUILD_DIRS)
 
 flatc: # @HELP runs flatc to generate go code from flatbuffers schema
 flatc: .flatc
+
+mock: #@HELP runs `go generate` to generate mock interfaces
+mock: bin/tool/mockgen
+	docker run                                                  \
+	    -i                                                      \
+	    --rm                                                    \
+	    -u $$(id -u):$$(id -g)                                  \
+	    -v $$(pwd):/src                                         \
+	    -w /src                                                 \
+	    -v $$(pwd)/bin/tool:/go/bin                             \
+	    -v $$(pwd)/.go/cache:/.cache                            \
+	    --env GOCACHE="/.cache/gocache"                         \
+	    --env GOMODCACHE="/.cache/gomodcache"                   \
+	    --env ARCH="$(ARCH)"                                    \
+	    --env OS="$(OS)"                                        \
+	    --env VERSION="$(VERSION)"                              \
+	    --env DEBUG="$(DBG)"                                    \
+	    --env GOFLAGS="$(GOFLAGS)"                              \
+	    --env GOPROXY="$(GOPROXY)"                              \
+	    --env HTTP_PROXY="$(HTTP_PROXY)"                        \
+	    --env HTTPS_PROXY="$(HTTPS_PROXY)"                      \
+	    $(BUILD_IMAGE)                                          \
+	    ./build/mock.sh
 
 .flatc: $(shell find $$(pwd)/../components/protocol/fbs -type f)
 	if [ -z "$(FLATC)" ]; then \
@@ -549,22 +568,44 @@ flatc: .flatc
 $(BUILD_DIRS):
 	mkdir -p $@
 
-clean: # @HELP removes built binaries and temporary files
-clean: container-clean bin-clean deb-clean flatc-clean
+bin/tool/mockgen: | bin/tool
+	echo "Installing mockgen..."
+	docker run                                 \
+	    -i                                     \
+	    --rm                                   \
+	    -u $$(id -u):$$(id -g)                 \
+	    -v $$(pwd)/tool:/src                   \
+	    -w /src                                \
+	    -v $$(pwd)/bin/tool:/go/bin            \
+	    -v $$(pwd)/.go/cache:/.cache           \
+	    --env GOCACHE="/.cache/gocache"        \
+	    --env GOMODCACHE="/.cache/gomodcache"  \
+	    --env CGO_ENABLED=0                    \
+	    --env GOPROXY="$(GOPROXY)"             \
+	    --env HTTP_PROXY="$(HTTP_PROXY)"       \
+	    --env HTTPS_PROXY="$(HTTPS_PROXY)"     \
+	    $(BUILD_IMAGE)                         \
+	    go install go.uber.org/mock/mockgen
 
-container-clean:
+clean: # @HELP removes built binaries and temporary files
+clean: clean-container clean-bin clean-deb clean-flatc clean-mock
+
+clean-container:
 	rm -rf .container-* .dockerfile-* .push-* .buildx-initialized $(LICENSES)
 
-bin-clean:
+clean-bin:
 	test -d .go && chmod -R u+w .go || true
 	rm -rf .go bin
 
-deb-clean:
+clean-deb:
 	rm -rf .distribution distribution/*.deb
 
-flatc-clean:
+clean-flatc:
 	rm -f .flatc
 	rm -rf api/rpcfb/rpcfb
+
+clean-mock:
+	find . -name "*_mock.go" -type f -delete
 
 help: # @HELP prints this message
 help:

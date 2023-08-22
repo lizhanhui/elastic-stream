@@ -118,8 +118,6 @@ func (e *Endpoint) DeleteStream(ctx context.Context, p *model.DeleteStreamParam,
 		return nil, errors.WithMessagef(err, "delete stream %d", p.StreamID)
 	}
 
-	// TODO: delete index asynchronously
-
 	return deletedStream, nil
 }
 

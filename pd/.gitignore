@@ -32,3 +32,4 @@
 
 # Generated Golang files
 /api/rpcfb/rpcfb
+*_mock.go

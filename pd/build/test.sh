@@ -21,12 +21,8 @@ set -o pipefail
 export CGO_ENABLED=0
 export GO111MODULE=on
 
-
-test() {
-    echo "Running tests:"
-    go_test_flags=${GO_TEST_FLAGS:-}
-    # shellcheck disable=SC2086
-    go test ${go_test_flags} -tags testing -cover -installsuffix "static" "$@"
-    echo
-}
-test "$@"
+echo "Running tests:"
+go_test_flags=${GO_TEST_FLAGS:-}
+# shellcheck disable=SC2086
+go test ${go_test_flags} -tags testing -cover -installsuffix "static" "$@"
+echo

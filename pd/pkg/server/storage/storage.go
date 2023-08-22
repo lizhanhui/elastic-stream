@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//go:generate mockgen -typed -source=storage.go -destination=storage_mock.go -package=storage Storage
 package storage
 
 import (

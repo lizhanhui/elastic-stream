@@ -21,18 +21,7 @@ set -o pipefail
 export CGO_ENABLED=0
 export GO111MODULE=on
 
-find_files() {
-  find . -not \( \
-      \( \
-        -wholename './output' \
-        -o -wholename './.git' \
-        -o -wholename './.go' \
-        -o -wholename './bin' \
-      \) -prune \
-    \) -name '*.go'
-}
-
 echo "Running gofmt..."
-find_files | xargs gofmt -l -s -w
+"$(dirname "$0")"/tool/find_files.sh | xargs gofmt -l -s -w
 echo "Finish"
 echo
