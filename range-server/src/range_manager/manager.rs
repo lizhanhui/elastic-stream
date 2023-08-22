@@ -181,6 +181,7 @@ where
                     retention_period: Duration::from_secs(1),
                     start_offset: 0,
                     epoch: 0,
+                    deleted: false,
                 };
                 let mut stream = Stream::new(metadata);
                 stream.create_range(range);
@@ -229,6 +230,7 @@ where
                 retention_period: Duration::from_secs(1),
                 start_offset: 0,
                 epoch: 0,
+                deleted: false,
             };
             let mut stream = Stream::new(stream_metadata);
             stream.create_range(range.clone());

@@ -79,6 +79,88 @@ pub enum EventType {
     Reset,
 }
 
+/// The event of a resource.
+///
+/// # Scenarios
+/// Here are all the scenarios that can trigger a resource event.
+///
+/// ## [`RangeServer`]
+///
+/// ### [`Added`]
+/// A [`RangeServer`] with new [`RangeServer::server_id`] sends a heartbeat to PD.
+///
+/// ### [`Modified`]
+/// A [`RangeServer`] with existing [`RangeServer::server_id`] sends a heartbeat to PD,
+/// and [`RangeServer::advertise_address`] or [`RangeServer::state`] is changed.
+///
+/// ### [`Deleted`]
+/// Will never happen.
+///
+///
+/// ## [`Stream`]
+///
+/// ### [`Added`]
+/// A [`Stream`] is created.
+///
+/// ### [`Modified`]
+/// Here are several scenarios that can trigger a [`Modified`] event:
+/// * [`StreamMetadata::replica`], [`StreamMetadata::ack_count`] or [`StreamMetadata::retention_period`] changed
+/// The [`Stream`] is updated.
+/// * [`StreamMetadata::start_offset`] increased
+/// The [`Stream`] is trimmed to the new start offset.
+/// * [`StreamMetadata::epoch`] increased
+/// The [`Stream`] updates its epoch.
+/// * [`StreamMetadata::deleted`] set to `true`
+/// The [`Stream`] is deleted.
+///
+/// ### [`Deleted`]
+/// After [`StreamMetadata::deleted`] is set to `true` for a period of time (default to 24h), the [`Deleted`] event is triggered.
+///
+///
+/// ## [`Range`]
+///
+/// ### [`Added`]
+/// A [`Range`] is created.
+///
+/// ### [`Modified`]
+/// Here are several scenarios that can trigger a [`Modified`] event:
+/// * [`RangeMetadata::start`] increased
+/// The stream of [`RangeMetadata::stream_id`] is trimmed, and the [`Range`] covers the new start offset of the stream.
+/// * [`RangeMetadata::end`] set from [`Option::None`] to [`Option::Some`]
+/// The [`Range`] is sealed at the given end offset.
+/// * [`RangeMetadata::offload_owner`] updated
+/// The offload owner of the [`Range`] is changed.
+///
+/// ### [`Deleted`]
+/// Here are two scenarios that can trigger a [`Deleted`] event:
+/// * The stream of [`RangeMetadata::stream_id`] is deleted.
+/// * The stream of [`RangeMetadata::stream_id`] is trimmed, and the [`Range`] falls out of the new start offset of the stream.
+///
+///
+/// ## [`Object`]
+///
+/// ### [`Added`]
+/// The [`Object`] is uploaded and committed.
+/// TODO: prepare the object
+///
+/// ### [`Modified`]
+/// Will never happen.
+/// TODO: commit the object
+///
+/// ### [`Deleted`]
+/// Here are two scenarios that can trigger a [`Deleted`] event:
+/// * The stream of [`ObjectMetadata::stream_id`] is deleted.
+/// * The stream of [`ObjectMetadata::stream_id`] is trimmed, and the [`Object`] falls out of the new start offset of the stream.
+/// NOTE: [`Object`]s are deleted asynchronously, so the [`Deleted`] event may be delayed.
+///
+///
+/// [`RangeServer`]: Resource::RangeServer
+/// [`Stream`]: Resource::Stream
+/// [`Range`]: Resource::Range
+/// [`Object`]: Resource::Object
+/// [`Added`]: EventType::Added
+/// [`Modified`]: EventType::Modified
+/// [`Deleted`]: EventType::Deleted
 #[derive(Debug, Clone)]
 pub struct ResourceEvent {
     /// The type of the event, indicating what happened to the resource.

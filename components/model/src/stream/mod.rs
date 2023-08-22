@@ -22,6 +22,8 @@ pub struct StreamMetadata {
     pub start_offset: u64,
 
     pub epoch: u64,
+
+    pub deleted: bool,
 }
 
 /// Converter from `StreamT` to `Stream`.
@@ -34,6 +36,7 @@ impl From<&StreamT> for StreamMetadata {
             retention_period: Duration::from_millis(stream.retention_period_ms as u64),
             start_offset: stream.start_offset as u64,
             epoch: stream.epoch as u64,
+            deleted: stream.deleted,
         }
     }
 }
