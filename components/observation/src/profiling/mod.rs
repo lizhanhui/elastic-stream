@@ -2,20 +2,53 @@ use std::{cmp::Ordering, os::unix::prelude::OsStrExt, path::Path, sync::Arc};
 
 use config::Configuration;
 use log::{error, info};
+use pyroscope::PyroscopeAgent;
+use pyroscope_pprofrs::{pprof_backend, PprofConfig};
 use tokio::sync::broadcast::{self, error::TryRecvError};
 
-pub(crate) fn generate_flame_graph(
+pub fn start_profiling(
     config: Arc<Configuration>,
-    mut shutdown: broadcast::Receiver<()>,
+    shutdown: broadcast::Receiver<()>,
+    tags: Vec<(&str, &str)>,
 ) {
+    if config.observation.profiling.enable {
+        let server_endpoint = config.observation.profiling.server_endpoint.clone();
+        if server_endpoint.is_empty() {
+            generate_flame_graph(config, shutdown);
+            info!("Continuous profiling starts, generate flame graph locally");
+        } else {
+            start_exporter(config, tags);
+            info!("Continuous profiling starts, report to {}", server_endpoint);
+        }
+    }
+}
+
+fn start_exporter(config: Arc<Configuration>, tags: Vec<(&str, &str)>) {
+    PyroscopeAgent::builder(
+        config.observation.profiling.server_endpoint.clone(),
+        "elastic-stream.range-server".to_string(),
+    )
+    .backend(pprof_backend(
+        PprofConfig::new()
+            .sample_rate(config.observation.profiling.sampling_frequency as u32)
+            .report_thread_name(),
+    ))
+    .tags(tags)
+    .build()
+    .expect("build pyroscope agent failed")
+    .start()
+    .expect("start pyroscope agent failed");
+}
+
+fn generate_flame_graph(config: Arc<Configuration>, mut shutdown: broadcast::Receiver<()>) {
     std::thread::Builder::new()
-        .name("flamegraph".to_owned())
+        .name("flamegraph_generator".to_owned())
         .spawn(move || {
             // Bind to CPU processor 0.
             core_affinity::set_for_current(core_affinity::CoreId { id: 0 });
 
             let guard = match pprof::ProfilerGuardBuilder::default()
-                .frequency(config.server.profiling.sampling_frequency)
+                .frequency(config.observation.profiling.sampling_frequency)
                 .blocklist(&["libc", "libgcc", "pthread", "vdso"])
                 .build()
             {
@@ -35,7 +68,7 @@ pub(crate) fn generate_flame_graph(
                 }
             };
 
-            let base_path = cwd.join(&config.server.profiling.report_path);
+            let base_path = cwd.join(&config.observation.profiling.report_path);
             if !base_path.exists() {
                 if let Err(_e) = std::fs::create_dir_all(base_path.as_path()) {
                     error!(
@@ -56,7 +89,7 @@ pub(crate) fn generate_flame_graph(
 
                 std::thread::sleep(std::time::Duration::from_secs(1));
                 if last_generation_instant.elapsed().as_secs()
-                    < config.server.profiling.report_interval
+                    < config.observation.profiling.report_interval
                 {
                     continue;
                 }
@@ -105,7 +138,7 @@ fn sweep_expired(report_path: &Path, config: &Arc<Configuration>) -> std::io::Re
         })
         .collect::<Vec<_>>();
 
-    if entries.len() <= config.server.profiling.max_report_backup {
+    if entries.len() <= config.observation.profiling.max_report_backup {
         return Ok(());
     }
 
@@ -140,7 +173,7 @@ fn sweep_expired(report_path: &Path, config: &Arc<Configuration>) -> std::io::Re
     let mut entries = entries.into_iter().rev().collect::<Vec<_>>();
 
     loop {
-        if entries.len() <= config.server.profiling.max_report_backup {
+        if entries.len() <= config.observation.profiling.max_report_backup {
             break;
         }
 

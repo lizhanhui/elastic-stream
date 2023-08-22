@@ -1,5 +1,23 @@
+use std::{
+    error::Error,
+    os::fd::AsRawFd,
+    rc::Rc,
+    sync::Arc,
+    thread::{self, JoinHandle},
+};
+
+use core_affinity::CoreId;
+use futures::executor::block_on;
+use log::error;
+use tokio::sync::{broadcast, oneshot};
+
+use config::Configuration;
+use model::error::EsError;
+use object_storage::{object_storage::AsyncObjectStorage, ObjectStorage};
+use pd_client::pd_client::DefaultPlacementDriverClient;
+use store::{BufferedStore, ElasticStore, Store};
+
 use crate::{
-    built_info,
     metadata::{
         manager::DefaultMetadataManager, watcher::DefaultMetadataWatcher, MetadataManager,
         MetadataWatcher,
@@ -8,24 +26,6 @@ use crate::{
     worker::Worker,
     worker_config::WorkerConfig,
 };
-use config::Configuration;
-use core_affinity::CoreId;
-use futures::executor::block_on;
-use log::{error, info};
-use model::error::EsError;
-use object_storage::{object_storage::AsyncObjectStorage, ObjectStorage};
-use pd_client::pd_client::DefaultPlacementDriverClient;
-use pyroscope::PyroscopeAgent;
-use pyroscope_pprofrs::{pprof_backend, PprofConfig};
-use std::{
-    error::Error,
-    os::fd::AsRawFd,
-    rc::Rc,
-    sync::Arc,
-    thread::{self, JoinHandle},
-};
-use store::{BufferedStore, ElasticStore, Store};
-use tokio::sync::{broadcast, oneshot};
 
 struct Server {
     config: Arc<Configuration>,
@@ -51,55 +51,38 @@ impl Server {
         }
     }
 
-    fn start_profiler(&self) {
+    fn start_observation(&self) {
         #[cfg(feature = "trace")]
         observation::trace::start_trace_exporter(
             Arc::clone(&self.config),
             self.shutdown.subscribe(),
         );
 
-        if self.config.server.profiling.enable {
-            let server_endpoint = self.config.server.profiling.server_endpoint.clone();
-            if server_endpoint.is_empty() {
-                crate::profiling::generate_flame_graph(
-                    Arc::clone(&self.config),
-                    self.shutdown.subscribe(),
-                );
-                info!("Continuous profiling starts, generate flame graph locally");
-            } else {
-                let hostname = gethostname::gethostname()
-                    .into_string()
-                    .unwrap_or(String::from("unknown"));
+        #[cfg(feature = "profiling")]
+        {
+            use crate::built_info;
 
-                let mut tag_vec = vec![
-                    ("hostname", hostname.as_str()),
-                    ("version", built_info::PKG_VERSION),
-                ];
+            let hostname = gethostname::gethostname()
+                .into_string()
+                .unwrap_or(String::from("unknown"));
 
-                if let Some(commit_hash) = built_info::GIT_COMMIT_HASH {
-                    tag_vec.push(("git_commit_hash", commit_hash))
-                }
+            let mut tag_vec = vec![
+                ("hostname", hostname.as_str()),
+                ("version", built_info::PKG_VERSION),
+            ];
 
-                if let Some(head_ref) = built_info::GIT_HEAD_REF {
-                    tag_vec.push(("git_head_ref", head_ref))
-                }
-
-                PyroscopeAgent::builder(
-                    server_endpoint.clone(),
-                    "elastic-stream.range-server".to_string(),
-                )
-                .backend(pprof_backend(
-                    PprofConfig::new()
-                        .sample_rate(self.config.server.profiling.sampling_frequency as u32)
-                        .report_thread_name(),
-                ))
-                .tags(tag_vec)
-                .build()
-                .expect("build pyroscope agent failed")
-                .start()
-                .expect("start pyroscope agent failed");
-                info!("Continuous profiling starts, report to {}", server_endpoint);
+            if let Some(commit_hash) = built_info::GIT_COMMIT_HASH {
+                tag_vec.push(("git_commit_hash", commit_hash))
             }
+
+            if let Some(head_ref) = built_info::GIT_HEAD_REF {
+                tag_vec.push(("git_head_ref", head_ref))
+            }
+            observation::profiling::start_profiling(
+                Arc::clone(&self.config),
+                self.shutdown.subscribe(),
+                tag_vec,
+            );
         }
     }
 
@@ -218,7 +201,7 @@ pub fn launch(
         handles.push(handle);
     }
 
-    server.start_profiler();
+    server.start_observation();
 
     for handle in handles.into_iter() {
         let _result = handle.unwrap().join();

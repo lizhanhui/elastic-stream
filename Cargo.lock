@@ -1850,12 +1850,12 @@ dependencies = [
 
 [[package]]
 name = "inferno"
-version = "0.11.15"
+version = "0.11.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2fb7c1b80a1dfa604bb4a649a5c5aeef3d913f7c520cb42b40e534e8a61bcdfc"
+checksum = "73c0fefcb6d409a6587c07515951495d482006f89a21daa0f2f783aa4fd5e027"
 dependencies = [
  "ahash",
- "indexmap 1.9.3",
+ "indexmap 2.0.0",
  "is-terminal",
  "itoa",
  "log",
@@ -2698,6 +2698,7 @@ dependencies = [
 name = "observation"
 version = "0.2.9"
 dependencies = [
+ "chrono",
  "config",
  "core_affinity",
  "futures",
@@ -2709,8 +2710,11 @@ dependencies = [
  "opentelemetry",
  "opentelemetry-otlp",
  "parking_lot",
+ "pprof",
  "procfs",
  "prometheus",
+ "pyroscope",
+ "pyroscope_pprofrs",
  "sysinfo",
  "tokio",
 ]
@@ -3443,11 +3447,8 @@ dependencies = [
  "observation",
  "pd-client",
  "polling 0.2.9",
- "pprof",
  "prometheus",
  "protocol",
- "pyroscope",
- "pyroscope_pprofrs",
  "replication",
  "serde",
  "serde_yaml 0.9.25",

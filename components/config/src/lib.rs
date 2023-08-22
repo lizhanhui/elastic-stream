@@ -100,41 +100,6 @@ impl Default for Client {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct Profiling {
-    pub enable: bool,
-
-    #[serde(rename = "server-endpoint")]
-    pub server_endpoint: String,
-
-    #[serde(rename = "sampling-frequency")]
-    pub sampling_frequency: i32,
-
-    #[serde(rename = "report-interval")]
-    pub report_interval: u64,
-
-    ///  Path to save flamegraph files: if a relative path is configured, it will be relative to current working directory;
-    ///  If an absolute path is configured, the absolute path is used.
-    #[serde(rename = "report-path")]
-    pub report_path: String,
-
-    #[serde(rename = "max-report-backup")]
-    pub max_report_backup: usize,
-}
-
-impl Default for Profiling {
-    fn default() -> Self {
-        Self {
-            enable: true,
-            server_endpoint: "".to_owned(),
-            sampling_frequency: 1000,
-            report_interval: 300,
-            report_path: "flamegraph".to_owned(),
-            max_report_backup: 3,
-        }
-    }
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Server {
     #[serde(skip_serializing, skip_deserializing)]
     pub addr: String,
@@ -156,8 +121,6 @@ pub struct Server {
 
     #[serde(rename = "grace-period")]
     pub grace_period: u64,
-
-    pub profiling: Profiling,
 }
 
 impl Server {
@@ -180,7 +143,6 @@ impl Default for Server {
             uring: Uring::default(),
             connection_idle_duration: 60,
             grace_period: 120,
-            profiling: Profiling::default(),
         }
     }
 }
@@ -409,7 +371,9 @@ impl Default for RocksDB {
 pub struct Observation {
     pub metrics: Metrics,
     pub trace: Trace,
+    pub profiling: Profiling,
 }
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Metrics {
     pub host: String,
@@ -423,6 +387,7 @@ impl Default for Metrics {
         }
     }
 }
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Trace {
     pub endpoint: String,
@@ -436,6 +401,40 @@ impl Default for Trace {
             endpoint: "http:localhost:4317".to_owned(),
             protocol: "grpc".to_owned(),
             timeout_ms: 1000,
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct Profiling {
+    pub enable: bool,
+
+    #[serde(rename = "server-endpoint")]
+    pub server_endpoint: String,
+
+    #[serde(rename = "sampling-frequency")]
+    pub sampling_frequency: i32,
+
+    #[serde(rename = "report-interval")]
+    pub report_interval: u64,
+
+    ///  Path to save flamegraph files: if a relative path is configured, it will be relative to current working directory;
+    ///  If an absolute path is configured, the absolute path is used.
+    #[serde(rename = "report-path")]
+    pub report_path: String,
+
+    #[serde(rename = "max-report-backup")]
+    pub max_report_backup: usize,
+}
+impl Default for Profiling {
+    fn default() -> Self {
+        Self {
+            enable: true,
+            server_endpoint: "".to_owned(),
+            sampling_frequency: 1000,
+            report_interval: 300,
+            report_path: "flamegraph".to_owned(),
+            max_report_backup: 3,
         }
     }
 }

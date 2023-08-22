@@ -40,11 +40,8 @@ object-storage = { path = "../components/object-storage" }
 observation = { path = "../components/observation" }
 pd-client = { path = "../components/pd-client" }
 polling = { path = "../components/polling" }
-pprof = { workspace = true }
 prometheus = { workspace = true }
 protocol = { path = "../components/protocol" }
-pyroscope = { workspace = true }
-pyroscope_pprofrs = { workspace = true }
 replication = { path = "../components/replication" }
 serde = { workspace = true, features = ["derive"] }
 serde_yaml = { workspace = true }
@@ -76,3 +73,4 @@ tcmalloc = ["alloc/tcmalloc"]
 mimalloc = ["alloc/mimalloc"]
 snmalloc = ["alloc/snmalloc-rs"]
 trace = ["store/trace", "observation/trace"]
+profiling = ["observation/profiling"]

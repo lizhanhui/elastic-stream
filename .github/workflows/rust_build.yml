@@ -46,7 +46,7 @@ jobs:
       uses: actions-rs/clippy-check@v1
       with:
         token: ${{ secrets.GITHUB_TOKEN }}
-        args: --all-targets --features=jemalloc,trace -- -D warnings
+        args: --all-targets --features=jemalloc,trace,profiling -- -D warnings
   build:
     name: Cargo Build
     strategy:

@@ -322,7 +322,10 @@ impl Store for ElasticStore {
 
                         let length_type = record_prefix.get_u32();
                         let _type = length_type & 0xFF;
-                        debug_assert_eq!(_type as u8, RecordType::Full.into());
+                        debug_assert_eq!(
+                            _type as u8,
+                            <RecordType as Into<u8>>::into(RecordType::Full)
+                        );
                         let expected_length = length_type >> 8;
                         let actual_length = res.payload.iter().map(|buf| buf.len()).sum::<usize>();
                         if expected_length != actual_length as u32 {

@@ -8,6 +8,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+chrono = { workspace = true }
 config = { path = "../config" }
 core_affinity = { workspace = true }
 futures = { workspace = true }
@@ -19,11 +20,16 @@ minstant = { workspace = true }
 opentelemetry = { workspace = true }
 opentelemetry-otlp = { workspace = true }
 parking_lot = { workspace = true }
+pprof = { workspace = true, optional = true }
 procfs = { workspace = true }
 prometheus = { workspace = true }
+pyroscope = { workspace = true, optional = true }
+pyroscope_pprofrs = { workspace = true, optional = true }
 sysinfo = { workspace = true }
 tokio = { workspace = true }
 
 [features]
 trace = ["minitrace/enable"]
+profiling = ["pyroscope", "pyroscope_pprofrs", "pprof"]
+
 
