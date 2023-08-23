@@ -246,7 +246,7 @@ dependencies = [
  "async-global-executor",
  "async-io",
  "async-lock",
- "crossbeam-utils",
+ "crossbeam-utils 0.8.16 (registry+https://github.com/rust-lang/crates.io-index)",
  "futures-channel",
  "futures-core",
  "futures-io",
@@ -861,7 +861,7 @@ version = "2.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "62ec6771ecfa0762d24683ee5a32ad78487a3d3afdc0fb8cae19d2c5deb50b7c"
 dependencies = [
- "crossbeam-utils",
+ "crossbeam-utils 0.8.16 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -1042,15 +1042,14 @@ dependencies = [
 [[package]]
 name = "crossbeam"
 version = "0.8.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2801af0d36612ae591caa9568261fddce32ce6e08a7275ea334a06a4ad021a2c"
+source = "git+https://github.com/AutoMQ/crossbeam.git?branch=try_recv_no_block#5a856843d959ba4c40a7a13e3e338f406f82d409"
 dependencies = [
  "cfg-if",
- "crossbeam-channel",
- "crossbeam-deque",
- "crossbeam-epoch",
+ "crossbeam-channel 0.5.8 (git+https://github.com/AutoMQ/crossbeam.git?branch=try_recv_no_block)",
+ "crossbeam-deque 0.8.3 (git+https://github.com/AutoMQ/crossbeam.git?branch=try_recv_no_block)",
+ "crossbeam-epoch 0.9.15 (git+https://github.com/AutoMQ/crossbeam.git?branch=try_recv_no_block)",
  "crossbeam-queue",
- "crossbeam-utils",
+ "crossbeam-utils 0.8.16 (git+https://github.com/AutoMQ/crossbeam.git?branch=try_recv_no_block)",
 ]
 
 [[package]]
@@ -1060,7 +1059,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a33c2bf77f2df06183c3aa30d1e96c0695a313d4f9c453cc3762a6db39f99200"
 dependencies = [
  "cfg-if",
- "crossbeam-utils",
+ "crossbeam-utils 0.8.16 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "crossbeam-channel"
+version = "0.5.8"
+source = "git+https://github.com/AutoMQ/crossbeam.git?branch=try_recv_no_block#5a856843d959ba4c40a7a13e3e338f406f82d409"
+dependencies = [
+ "cfg-if",
+ "crossbeam-utils 0.8.16 (git+https://github.com/AutoMQ/crossbeam.git?branch=try_recv_no_block)",
 ]
 
 [[package]]
@@ -1070,8 +1078,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ce6fd6f855243022dcecf8702fef0c297d4338e226845fe067f6341ad9fa0cef"
 dependencies = [
  "cfg-if",
- "crossbeam-epoch",
- "crossbeam-utils",
+ "crossbeam-epoch 0.9.15 (registry+https://github.com/rust-lang/crates.io-index)",
+ "crossbeam-utils 0.8.16 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "crossbeam-deque"
+version = "0.8.3"
+source = "git+https://github.com/AutoMQ/crossbeam.git?branch=try_recv_no_block#5a856843d959ba4c40a7a13e3e338f406f82d409"
+dependencies = [
+ "cfg-if",
+ "crossbeam-epoch 0.9.15 (git+https://github.com/AutoMQ/crossbeam.git?branch=try_recv_no_block)",
+ "crossbeam-utils 0.8.16 (git+https://github.com/AutoMQ/crossbeam.git?branch=try_recv_no_block)",
 ]
 
 [[package]]
@@ -1082,7 +1100,19 @@ checksum = "ae211234986c545741a7dc064309f67ee1e5ad243d0e48335adc0484d960bcc7"
 dependencies = [
  "autocfg",
  "cfg-if",
- "crossbeam-utils",
+ "crossbeam-utils 0.8.16 (registry+https://github.com/rust-lang/crates.io-index)",
+ "memoffset 0.9.0",
+ "scopeguard",
+]
+
+[[package]]
+name = "crossbeam-epoch"
+version = "0.9.15"
+source = "git+https://github.com/AutoMQ/crossbeam.git?branch=try_recv_no_block#5a856843d959ba4c40a7a13e3e338f406f82d409"
+dependencies = [
+ "autocfg",
+ "cfg-if",
+ "crossbeam-utils 0.8.16 (git+https://github.com/AutoMQ/crossbeam.git?branch=try_recv_no_block)",
  "memoffset 0.9.0",
  "scopeguard",
 ]
@@ -1090,11 +1120,10 @@ dependencies = [
 [[package]]
 name = "crossbeam-queue"
 version = "0.3.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d1cfb3ea8a53f37c40dea2c7bedcbd88bdfae54f5e2175d6ecaff1c988353add"
+source = "git+https://github.com/AutoMQ/crossbeam.git?branch=try_recv_no_block#5a856843d959ba4c40a7a13e3e338f406f82d409"
 dependencies = [
  "cfg-if",
- "crossbeam-utils",
+ "crossbeam-utils 0.8.16 (git+https://github.com/AutoMQ/crossbeam.git?branch=try_recv_no_block)",
 ]
 
 [[package]]
@@ -1102,6 +1131,14 @@ name = "crossbeam-utils"
 version = "0.8.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5a22b2d63d4d1dc0b7f1b6b2747dd0088008a9be28b6ddf0b1e7d335e3037294"
+dependencies = [
+ "cfg-if",
+]
+
+[[package]]
+name = "crossbeam-utils"
+version = "0.8.16"
+source = "git+https://github.com/AutoMQ/crossbeam.git?branch=try_recv_no_block#5a856843d959ba4c40a7a13e3e338f406f82d409"
 dependencies = [
  "cfg-if",
 ]
@@ -1664,7 +1701,7 @@ checksum = "7f19b9f54f7c7f55e31401bb647626ce0cf0f67b0004982ce815b3ee72a02aa8"
 dependencies = [
  "base64 0.13.1",
  "byteorder",
- "crossbeam-channel",
+ "crossbeam-channel 0.5.8 (registry+https://github.com/rust-lang/crates.io-index)",
  "flate2",
  "nom",
  "num-traits",
@@ -2864,7 +2901,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fa8e705a0612d48139799fcbaba0d4a90f06277153e43dd2bdc16c6f0edd8026"
 dependencies = [
  "async-trait",
- "crossbeam-channel",
+ "crossbeam-channel 0.5.8 (registry+https://github.com/rust-lang/crates.io-index)",
  "futures-channel",
  "futures-executor",
  "futures-util",
@@ -3487,9 +3524,9 @@ version = "1.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4b8f95bd6966f5c87776639160a66bd8ab9895d9d4ab01ddba9fc60661aebe8d"
 dependencies = [
- "crossbeam-channel",
- "crossbeam-deque",
- "crossbeam-utils",
+ "crossbeam-channel 0.5.8 (registry+https://github.com/rust-lang/crates.io-index)",
+ "crossbeam-deque 0.8.3 (registry+https://github.com/rust-lang/crates.io-index)",
+ "crossbeam-utils 0.8.16 (registry+https://github.com/rust-lang/crates.io-index)",
  "num_cpus",
 ]
 

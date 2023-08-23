@@ -325,7 +325,9 @@ impl IO {
     }
 
     #[minitrace::trace]
-    fn receive_io_tasks(&mut self) -> usize {
+    fn receive_io_tasks(&mut self) -> (usize, bool) {
+        let mut suspended = false;
+
         let mut received = 0;
         let mut buffered = 0;
         let io_depth = self.data_ring.params().sq_entries() as usize;
@@ -353,11 +355,11 @@ impl IO {
             // For example, if the I/O size is 500 KiB, Amazon EBS splits the operation into 2 IOPS.
             // The first one is 256 KiB and the second one is 244 KiB.
             if buffered >= self.options.store.io_size {
-                break received;
+                break (received, suspended);
             }
 
             if self.inflight + received >= io_depth {
-                break received;
+                break (received, suspended);
             }
 
             // if there is not inflight data uring tasks nor inflight control tasks, we
@@ -368,6 +370,7 @@ impl IO {
                 + self.wal.inflight_control_task_num()
                 == 0
             {
+                suspended = true;
                 debug!("Block IO thread until IO tasks are received from channel");
                 // Block the thread until at least one IO task arrives
                 match self.sq_rx.recv() {
@@ -377,7 +380,7 @@ impl IO {
                     Err(_e) => {
                         info!("Channel for submitting IO task disconnected");
                         self.channel_disconnected = true;
-                        break received;
+                        break (received, suspended);
                     }
                 }
             } else {
@@ -388,12 +391,12 @@ impl IO {
                         self.add_pending_task(io_task, &mut received, &mut buffered);
                     }
                     Err(TryRecvError::Empty) => {
-                        break received;
+                        break (received, suspended);
                     }
                     Err(TryRecvError::Disconnected) => {
                         info!("Channel for submitting IO task disconnected");
                         self.channel_disconnected = true;
-                        break received;
+                        break (received, suspended);
                     }
                 }
             }
@@ -1421,11 +1424,11 @@ impl IO {
             drop(build_segment_span);
 
             let mut entries = vec![];
-            {
+            let _suspended = {
                 let mut io_mut = io.borrow_mut();
 
                 // Receive IO tasks from channel
-                let cnt = io_mut.receive_io_tasks();
+                let (cnt, suspended) = io_mut.receive_io_tasks();
                 trace!("Received {} IO requests from channel", cnt);
 
                 // Convert IO tasks into io_uring entries
@@ -1433,7 +1436,8 @@ impl IO {
                 // Note: even if `cnt` is 0, we still need to call `build_sqe` because
                 // `buf_writer` might have buffered some data due to queue-depth constraints.
                 io_mut.build_sqe(&mut entries);
-            }
+                suspended
+            };
 
             if !entries.is_empty() {
                 io.borrow_mut().submit_data_tasks(&entries)?;
@@ -1474,7 +1478,9 @@ impl IO {
             drop(report_disk_stats_span);
             drop(root);
             #[cfg(feature = "trace")]
-            observation::trace::report_trace(trace_collector.collect());
+            if !_suspended {
+                observation::trace::report_trace(trace_collector.collect());
+            }
         }
         info!("Main loop quit");
 
