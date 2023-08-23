@@ -5,6 +5,7 @@
 resolver = "2"
 members = [
     "components/alloc",
+    "components/cache",
     "components/client",
     "components/codec",
     "components/config",
