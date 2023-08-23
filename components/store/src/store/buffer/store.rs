@@ -3,10 +3,7 @@ use std::{cell::RefCell, collections::HashMap, rc::Rc, sync::Arc};
 use futures::future::join_all;
 use local_sync::oneshot;
 use log::trace;
-use model::{
-    range::{RangeEvent, RangeMetadata},
-    resource::ResourceEventObserver,
-};
+use model::{range::RangeMetadata, resource::ResourceEventObserver};
 
 use crate::{
     error::{AppendError, FetchError, StoreError},
@@ -196,10 +193,6 @@ where
 
     fn config(&self) -> Arc<config::Configuration> {
         self.store.config()
-    }
-
-    async fn handle_range_event(&self, events: Vec<RangeEvent>) {
-        self.store.handle_range_event(events).await;
     }
 }
 

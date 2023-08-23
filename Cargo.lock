@@ -4166,6 +4166,7 @@ dependencies = [
  "futures",
  "hdrhistogram",
  "io-uring",
+ "itertools 0.11.0",
  "lazy_static",
  "libc",
  "local-sync",

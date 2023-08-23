@@ -13,7 +13,7 @@ use rocksdb::{
 
 use log::{info, trace};
 
-use super::MinOffset;
+use crate::watermark::Watermark;
 
 pub(crate) struct IndexCompactionFilter {
     name: CString,
@@ -57,11 +57,11 @@ impl CompactionFilter for IndexCompactionFilter {
 
 pub(crate) struct IndexCompactionFilterFactory {
     name: CString,
-    min_offset: Arc<dyn MinOffset>,
+    min_offset: Arc<dyn Watermark>,
 }
 
 impl IndexCompactionFilterFactory {
-    pub(crate) fn new(name: CString, min_offset: Arc<dyn MinOffset>) -> Self {
+    pub(crate) fn new(name: CString, min_offset: Arc<dyn Watermark>) -> Self {
         Self { name, min_offset }
     }
 }
@@ -74,10 +74,10 @@ impl CompactionFilterFactory for IndexCompactionFilterFactory {
             "Created a `IndexCompactionFilter`: full_compaction: {}, manual_compaction: {}, min_offset: {}",
             context.is_full_compaction,
             context.is_manual_compaction,
-            self.min_offset.min_offset(),
+            self.min_offset.min(),
         );
 
-        IndexCompactionFilter::new(self.name.clone(), self.min_offset.min_offset())
+        IndexCompactionFilter::new(self.name.clone(), self.min_offset.min())
     }
 
     fn name(&self) -> &CStr {
@@ -125,14 +125,14 @@ impl CompactionFilter for RangeCompactionFilter {
 
 pub(crate) struct RangeCompactionFilterFactory {
     name: CString,
-    min_offset: Arc<dyn MinOffset>,
+    min_offset: Arc<dyn Watermark>,
 }
 
 impl CompactionFilterFactory for RangeCompactionFilterFactory {
     type Filter = RangeCompactionFilter;
 
     fn create(&mut self, _context: CompactionFilterContext) -> Self::Filter {
-        Self::Filter::new(self.name.clone(), self.min_offset.min_offset())
+        Self::Filter::new(self.name.clone(), self.min_offset.min())
     }
 
     fn name(&self) -> &CStr {

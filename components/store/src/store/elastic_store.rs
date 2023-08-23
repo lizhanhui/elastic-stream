@@ -1,7 +1,10 @@
 use super::lock::Lock;
 use crate::{
     error::{AppendError, FetchError, StoreError},
-    index::{driver::IndexDriver, Indexer, MinOffset},
+    index::{
+        driver::{IndexCommand, IndexDriver},
+        Indexer,
+    },
     io::{
         self,
         record::RecordType,
@@ -12,8 +15,8 @@ use crate::{
         },
         ReadTask,
     },
-    offset_manager::WalOffsetManager,
     option::{ReadOptions, WriteOptions},
+    watermark::{WalWatermark, Watermark},
     AppendRecordRequest, AppendResult, FetchResult, Store,
 };
 use bytes::Buf;
@@ -22,7 +25,8 @@ use crossbeam::channel::{Receiver, Sender, TryRecvError};
 use futures::future::join_all;
 use log::{error, trace, warn};
 use model::{
-    range::{RangeEvent, RangeMetadata},
+    object::ObjectMetadata,
+    range::RangeMetadata,
     resource::{EventType, Resource, ResourceEvent, ResourceEventObserver},
     stream::StreamMetadata,
 };
@@ -55,7 +59,7 @@ struct Shared {
     indexer: Arc<IndexDriver>,
 
     #[allow(dead_code)]
-    wal_offset_manager: Arc<WalOffsetManager>,
+    wal_offset_manager: Arc<WalWatermark>,
 
     /// Expose underlying I/O Uring FD so that its worker pool may be shared with
     /// server layer I/O Uring instances.
@@ -90,11 +94,11 @@ impl ElasticStore {
         let config = Arc::new(config);
 
         // Build wal offset manager
-        let wal_offset_manager = Arc::new(WalOffsetManager::new());
+        let wal_watermark = Arc::new(WalWatermark::new());
         // Build index driver
         let indexer = Arc::new(IndexDriver::new(
             &config,
-            Arc::clone(&wal_offset_manager) as Arc<dyn MinOffset>,
+            Arc::clone(&wal_watermark) as Arc<dyn Watermark + Send + Sync>,
             config.store.rocksdb.flush_threshold,
         )?);
 
@@ -129,7 +133,7 @@ impl ElasticStore {
             lock,
             sq_tx,
             indexer,
-            wal_offset_manager,
+            wal_offset_manager: wal_watermark,
             sharing_uring,
             join_handles: handle_joiner,
         });
@@ -188,9 +192,57 @@ impl ElasticStore {
         }
     }
 
-    fn on_range_event(&self, _type: EventType, _metadata: &RangeMetadata) {}
+    /// Process events addition, seal and removal of ranges.
+    fn on_range_event(&self, _type: EventType, metadata: &RangeMetadata) {
+        if metadata
+            .replica()
+            .iter()
+            .map(|rs| rs.server_id)
+            .any(|id| id == self.id())
+        {
+            self.shared
+                .indexer
+                .process_range_event(IndexCommand::RangeEvent {
+                    event_type: _type,
+                    metadata: metadata.clone(),
+                });
+        }
+    }
 
-    fn on_stream_event(&self, _type: EventType, _metadata: &StreamMetadata) {}
+    /// Notify when slice of range data is uploaded to object storage.
+    ///
+    /// When tiered storage is active, data of stream will be offloaded to object storage service
+    /// before it cools down.
+    ///
+    /// Assume data are with the following distribution: [start_local, end_local), [start_remote, end_remote),
+    /// The following inequality holds:
+    /// start_remote <= start_local <= end_remote <= end_local.
+    ///
+    /// Records having offsets within [start_remote, start_local) are only available in object storage;
+    /// Records having offsets within [start_local, end_remote) can be removed without data loss;
+    /// Records having offsets within [end_remote, end_local) should be just appended and in the process of uploading to OSS.
+    fn on_data_offload(&self, type_: EventType, metadata: &ObjectMetadata) {
+        if EventType::Added == type_ {
+            self.shared
+                .indexer
+                .offload_range_data(IndexCommand::DataOffload {
+                    stream_id: metadata.stream_id,
+                    range: metadata.range_index,
+                    offset: metadata.start_offset,
+                    delta: metadata.end_offset_delta,
+                });
+        }
+    }
+
+    /// Process events when streams are trimmed by frontend.
+    fn on_stream_event(&self, type_: EventType, metadata: &StreamMetadata) {
+        if EventType::Modified == type_ {
+            self.shared.indexer.trim_stream(IndexCommand::StreamTrim {
+                stream_id: metadata.stream_id,
+                offset: metadata.start_offset,
+            });
+        }
+    }
 }
 
 impl Store for ElasticStore {
@@ -475,19 +527,6 @@ impl Store for ElasticStore {
     fn config(&self) -> Arc<config::Configuration> {
         Arc::clone(&self.config)
     }
-
-    async fn handle_range_event(&self, events: Vec<RangeEvent>) {
-        match self.shared.indexer.handle_range_event(events).await {
-            Ok(deletable_offset) => {
-                self.shared
-                    .wal_offset_manager
-                    .set_deletable_offset(deletable_offset);
-            }
-            Err(e) => {
-                error!("Failed to handle range event: {}", e);
-            }
-        }
-    }
 }
 
 impl AsRawFd for ElasticStore {
@@ -506,6 +545,10 @@ impl ResourceEventObserver for ElasticStore {
 
             Resource::Range(metadata) => {
                 self.on_range_event(event.event_type, metadata);
+            }
+
+            Resource::Object(metadata) => {
+                self.on_data_offload(event.event_type, metadata);
             }
             _ => {}
         }

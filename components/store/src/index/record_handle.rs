@@ -35,6 +35,7 @@ pub(crate) enum HandleExt {
 }
 
 impl HandleExt {
+    #[allow(dead_code)]
     pub(crate) fn count(&self) -> u32 {
         match self {
             HandleExt::Hash(_) => 1,

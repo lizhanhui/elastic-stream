@@ -2,26 +2,16 @@ use crate::error::StoreError;
 use model::range::RangeMetadata;
 use tokio::sync::mpsc;
 
-use self::{entry::IndexEntry, record_handle::RecordHandle, record_key::RecordKey};
+use self::{entry::IndexEntry, record_handle::RecordHandle};
 
 #[cfg(any(test, feature = "mock"))]
 use mockall::automock;
 
-pub(crate) mod cleaner;
 pub(crate) mod compaction;
 pub(crate) mod driver;
 pub(crate) mod entry;
 pub(crate) mod indexer;
 pub(crate) mod record_handle;
-pub(crate) mod record_key;
-
-/// Expose minimum WAL offset.
-///
-/// WAL file sequence would periodically check and purge deprecated segment files. Once a segment file is removed, min offset of the
-/// WAL is be updated. Their index entries, that map to the removed file should be compacted away.
-pub trait MinOffset {
-    fn min_offset(&self) -> u64;
-}
 
 /// Trait of local range manger.
 pub trait LocalRangeManager {
@@ -47,6 +37,14 @@ pub(crate) trait Indexer {
         handle: &RecordHandle,
     ) -> Result<(), StoreError>;
 
+    fn scan_wal_offset(
+        &self,
+        stream_id: u64,
+        range: u32,
+        offset: u64,
+        end: Option<u64>,
+    ) -> Option<u64>;
+
     fn scan_record_handles_left_shift(
         &self,
         stream_id: u64,
@@ -54,7 +52,7 @@ pub(crate) trait Indexer {
         offset: u64,
         max_offset: u64,
         max_bytes: u32,
-    ) -> Result<Option<Vec<(RecordKey, RecordHandle)>>, StoreError>;
+    ) -> Result<Option<Vec<RecordHandle>>, StoreError>;
 
     fn get_wal_checkpoint(&self) -> Result<u64, StoreError>;
 

@@ -1,23 +1,19 @@
+use super::{indexer::DefaultIndexer, record_handle::RecordHandle, Indexer};
+use crate::{
+    error::StoreError,
+    index::LocalRangeManager,
+    watermark::{DefaultWatermarkManager, Watermark, WatermarkManager},
+};
+use config::Configuration;
+use crossbeam::channel::{self, Receiver, Select, Sender, TryRecvError};
+use log::{error, info, warn};
+use model::{range::RangeMetadata, resource::EventType};
 use std::{
     ops::Deref,
     sync::Arc,
     thread::{sleep, Builder, JoinHandle},
 };
-
-use crate::{
-    error::StoreError,
-    index::{cleaner::LogCleaner, LocalRangeManager},
-};
-use config::Configuration;
-use crossbeam::channel::{self, Receiver, Select, Sender, TryRecvError};
-use log::{error, info, warn};
-use model::{
-    error::EsError,
-    range::{RangeEvent, RangeMetadata},
-};
 use tokio::sync::{mpsc, oneshot};
-
-use super::{indexer::DefaultIndexer, record_handle::RecordHandle, Indexer, MinOffset};
 
 pub(crate) struct IndexDriver {
     tx: Sender<IndexCommand>,
@@ -62,22 +58,38 @@ pub(crate) enum IndexCommand {
         range: RangeMetadata,
         tx: oneshot::Sender<Result<(), StoreError>>,
     },
+
     RangeEvent {
-        events: Vec<RangeEvent>,
-        tx: oneshot::Sender<u64>,
+        event_type: EventType,
+        metadata: RangeMetadata,
+    },
+
+    StreamTrim {
+        stream_id: u64,
+
+        /// Minimum offset
+        offset: u64,
+    },
+
+    DataOffload {
+        stream_id: u64,
+        range: u32,
+        offset: u64,
+        delta: u32,
     },
 }
 
 impl IndexDriver {
     pub(crate) fn new(
         config: &Arc<Configuration>,
-        min_offset: Arc<dyn MinOffset>,
+        watermark: Arc<dyn Watermark + Send + Sync>,
         flush_threshold: usize,
     ) -> Result<Self, StoreError> {
         let (tx, rx) = channel::unbounded();
         let (shutdown_tx, shutdown_rx) = channel::bounded(1);
-        let indexer = Arc::new(DefaultIndexer::new(config, min_offset, flush_threshold)?);
-        let runner = IndexDriverRunner::new(rx, shutdown_rx, Arc::clone(&indexer));
+        let watermark_ = Arc::clone(&watermark);
+        let indexer = Arc::new(DefaultIndexer::new(config, watermark, flush_threshold)?);
+        let indexer_ = Arc::clone(&indexer);
         // Always bind indexer thread to processor-0, which runs miscellaneous tasks.
         let core = core_affinity::CoreId { id: 0 };
         let handle = Builder::new()
@@ -86,6 +98,10 @@ impl IndexDriver {
                 if !core_affinity::set_for_current(core) {
                     warn!("Failed to set core affinity for indexer thread");
                 }
+                let mut watermark_manager = DefaultWatermarkManager::new(Arc::clone(&indexer_));
+                watermark_manager.add_watermark(watermark_);
+                let mut runner =
+                    IndexDriverRunner::new(rx, shutdown_rx, indexer_, watermark_manager);
                 runner.run();
             })
             .map_err(|e| StoreError::Internal(e.to_string()))?;
@@ -195,16 +211,16 @@ impl IndexDriver {
         }
     }
 
-    pub(crate) async fn handle_range_event(&self, events: Vec<RangeEvent>) -> Result<u64, EsError> {
-        let (tx, rx) = oneshot::channel();
-        self.tx
-            .send(IndexCommand::RangeEvent { events, tx })
-            .map_err(|e| {
-                EsError::unexpected("Cannot send command to index driver").set_source(e)
-            })?;
-        rx.await.map_err(|e| {
-            EsError::unexpected("handle_range_event cannot get response from rx").set_source(e)
-        })
+    pub(crate) fn trim_stream(&self, cmd: IndexCommand) {
+        let _ = self.tx.send(cmd);
+    }
+
+    pub(crate) fn offload_range_data(&self, cmd: IndexCommand) {
+        let _ = self.tx.send(cmd);
+    }
+
+    pub(crate) fn process_range_event(&self, cmd: IndexCommand) {
+        let _ = self.tx.send(cmd);
     }
 }
 
@@ -222,54 +238,69 @@ impl Deref for IndexDriver {
     }
 }
 
-struct IndexDriverRunner {
+struct IndexDriverRunner<M> {
     rx: Receiver<IndexCommand>,
     shutdown_rx: Receiver<()>,
     indexer: Arc<DefaultIndexer>,
+
+    /// Manage watermarks of store.
+    watermark_manager: M,
 }
 
-impl IndexDriverRunner {
+impl<M> IndexDriverRunner<M>
+where
+    M: WatermarkManager,
+{
     fn new(
         rx: Receiver<IndexCommand>,
         shutdown_rx: Receiver<()>,
         indexer: Arc<DefaultIndexer>,
+        watermark_manager: M,
     ) -> Self {
         Self {
             rx,
             shutdown_rx,
             indexer,
+            watermark_manager,
         }
     }
 
-    fn run(&self) {
+    /// Process create range event directly from frontend SDK RPC call.
+    ///
+    /// We have two sources of metadata events: frontend SDK RPC call and PD watch.
+    /// Create-range need to be idempotent;
+    /// Seal range is kind of complex: if frontend SDK kicks off an active seal operation, the seal would be eventual
+    ///  and identical to the incoming one from watch; however, if the seal operation is passive, namely, it picks up
+    ///  a stream whose previous writer crashed out, semantics of the seal operation to range server is carrying two
+    ///  atomic purposes: making the range immutable and report back its max continuous offset. After the frontend SDK
+    /// receives a quorum of such responses, it seals the PD cluster with the final range end offset. The eventual end
+    /// offset would be available to range server via the PD client watch later. Now the range servers may three kinds
+    /// of cases to handle according to its actual end-offset and eventual end-offset: '>', '=', '<'.  For the last
+    /// case, the range server needs to copy data from its replication peers.
+    fn run(&mut self) {
         let mut selector = Select::new();
         selector.recv(&self.rx);
         selector.recv(&self.shutdown_rx);
-        let mut log_cleaner = LogCleaner::new(self.indexer.clone());
         loop {
             let index = selector.ready();
             if 0 == index {
                 match self.rx.try_recv() {
-                    Ok(index_command) => match index_command {
+                    Ok(command) => match command {
                         IndexCommand::Index {
                             stream_id,
                             range,
                             offset,
                             handle,
                         } => {
-                            let physical_offset = handle.wal_offset;
                             while let Err(e) = self.indexer.index(stream_id, range, offset, &handle)
                             {
                                 error!("Failed to index: stream_id={}, offset={}, record_handle={:?}, cause: {}",
                                 stream_id, offset, handle, e);
                                 sleep(std::time::Duration::from_millis(100));
                             }
-                            log_cleaner.handle_new_index(
-                                (stream_id, range),
-                                offset,
-                                physical_offset,
-                            );
+                            self.watermark_manager.on_index(stream_id, range, offset);
                         }
+
                         IndexCommand::ScanRecord {
                             stream_id,
                             range,
@@ -285,12 +316,7 @@ impl IndexDriverRunner {
                                             stream_id, range, offset, max_offset, max_bytes,
                                         )
                                         .map(|indexes_opt| {
-                                            indexes_opt.map(|indexes| {
-                                                indexes
-                                                    .into_iter()
-                                                    .map(|(_, handle)| handle)
-                                                    .collect()
-                                            })
+                                            indexes_opt.map(|indexes| indexes.into_iter().collect())
                                         }),
                                 )
                                 .unwrap_or_else(|_e| {
@@ -310,10 +336,6 @@ impl IndexDriverRunner {
                         }
 
                         IndexCommand::CreateRange { range, tx } => {
-                            log_cleaner.handle_new_range(
-                                (range.stream_id(), range.index() as u32),
-                                range.start(),
-                            );
                             match self.indexer.add(range.stream_id(), &range) {
                                 Ok(()) => {
                                     let _ = tx.send(Ok(()));
@@ -336,9 +358,60 @@ impl IndexDriverRunner {
                                 }
                             }
                         }
-                        IndexCommand::RangeEvent { events, tx } => {
-                            let phy_offset = log_cleaner.handle_range_event(events);
-                            let _ = tx.send(phy_offset);
+
+                        IndexCommand::DataOffload {
+                            stream_id,
+                            range,
+                            offset,
+                            delta,
+                        } => {
+                            self.watermark_manager
+                                .on_data_offload(stream_id, range, offset, delta);
+                        }
+
+                        IndexCommand::RangeEvent {
+                            event_type,
+                            metadata,
+                        } => match event_type {
+                            EventType::Added | EventType::Listed => {
+                                match u32::try_from(metadata.index()) {
+                                    Ok(index) => {
+                                        self.watermark_manager.add_range(
+                                            metadata.stream_id(),
+                                            index,
+                                            metadata.start(),
+                                            metadata.end(),
+                                        );
+                                    }
+                                    Err(e) => {
+                                        error!("Got an invalid range: {}", e);
+                                    }
+                                }
+                            }
+
+                            EventType::Modified => match u32::try_from(metadata.index()) {
+                                Ok(range) => {
+                                    self.watermark_manager.trim_range(
+                                        metadata.stream_id(),
+                                        range,
+                                        metadata.start(),
+                                    );
+                                }
+                                Err(e) => {
+                                    warn!("Got an invalid range metadata: {}", e);
+                                }
+                            },
+
+                            EventType::Deleted => {
+                                self.watermark_manager
+                                    .delete_range(metadata.stream_id(), metadata.index() as u32);
+                            }
+
+                            _ => {}
+                        },
+
+                        IndexCommand::StreamTrim { stream_id, offset } => {
+                            self.watermark_manager.trim_stream(stream_id, offset);
                         }
                     },
                     Err(TryRecvError::Empty) => {
@@ -362,21 +435,33 @@ impl IndexDriverRunner {
 mod tests {
     use config::Configuration;
 
-    use crate::index::{Indexer, MinOffset};
+    use crate::{index::Indexer, watermark::Watermark};
     use std::{error::Error, sync::Arc};
 
-    struct TestMinOffset {}
+    struct TestWatermark {}
 
-    impl MinOffset for TestMinOffset {
-        fn min_offset(&self) -> u64 {
+    impl Watermark for TestWatermark {
+        fn min(&self) -> u64 {
             0
+        }
+
+        fn offload(&self) -> u64 {
+            0
+        }
+
+        fn set_min(&self, _value: u64) {
+            todo!()
+        }
+
+        fn set_offload(&self, _value: u64) {
+            todo!()
         }
     }
 
     #[test]
     fn test_index_driver() -> Result<(), Box<dyn Error>> {
         let db_path = tempfile::tempdir()?;
-        let min_offset = Arc::new(TestMinOffset {});
+        let min_offset = Arc::new(TestWatermark {});
         let mut configuration = Configuration::default();
         configuration
             .store

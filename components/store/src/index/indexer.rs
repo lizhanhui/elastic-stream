@@ -18,11 +18,9 @@ use rocksdb::{
 };
 use tokio::sync::mpsc;
 
-use crate::error::StoreError;
+use crate::{error::StoreError, watermark::Watermark};
 
-use super::{
-    entry::IndexEntry, record_handle::RecordHandle, record_key::RecordKey, Indexer, MinOffset,
-};
+use super::{entry::IndexEntry, record_handle::RecordHandle, Indexer};
 
 const INDEX_COLUMN_FAMILY: &str = "index";
 const METADATA_COLUMN_FAMILY: &str = "metadata";
@@ -57,7 +55,7 @@ impl DefaultIndexer {
     /// Build RocksDB column family options for index.
     ///
     fn build_index_column_family_options(
-        min_offset: Arc<dyn MinOffset>,
+        min_offset: Arc<dyn Watermark>,
     ) -> Result<Options, StoreError> {
         let mut index_cf_opts = Options::default();
         index_cf_opts.enable_statistics();
@@ -97,7 +95,7 @@ impl DefaultIndexer {
     /// * `flush_threshold` - Flush index and metadata records every N operations.
     pub(crate) fn new(
         config: &Arc<Configuration>,
-        min_offset: Arc<dyn MinOffset>,
+        min_offset: Arc<dyn Watermark>,
         flush_threshold: usize,
     ) -> Result<Self, StoreError> {
         let path = config.store.path.metadata_path();
@@ -172,7 +170,7 @@ impl DefaultIndexer {
         range: u32,
         offset: u64,
         max_bytes: u32,
-    ) -> Result<Option<Vec<(RecordKey, RecordHandle)>>, StoreError> {
+    ) -> Result<Option<Vec<RecordHandle>>, StoreError> {
         let mut read_opts = ReadOptions::default();
         let lower = self.build_index_key(stream_id, range, offset);
         read_opts.set_iterate_lower_bound(&lower[..]);
@@ -189,7 +187,7 @@ impl DefaultIndexer {
         &self,
         read_opts: ReadOptions,
         max_bytes: u32,
-    ) -> Result<Option<Vec<(RecordKey, RecordHandle)>>, StoreError> {
+    ) -> Result<Option<Vec<RecordHandle>>, StoreError> {
         let mut bytes_c = 0_u32;
         match self.db.cf_handle(INDEX_COLUMN_FAMILY) {
             Some(cf) => {
@@ -203,14 +201,13 @@ impl DefaultIndexer {
                         }
                         v.len() > 8 /* WAL offset */ + 4 /* length-type */
                     })
-                    .map_while(|(k, v)| {
+                    .map_while(|(_k, v)| {
                         if bytes_c >= max_bytes {
                             return None;
                         }
-                        let key = Into::<RecordKey>::into(&*k);
                         let handle = Into::<RecordHandle>::into(&*v);
                         bytes_c += handle.len;
-                        Some((key, handle))
+                        Some(handle)
                     })
                     .collect();
 
@@ -337,6 +334,44 @@ impl Indexer for DefaultIndexer {
         }
     }
 
+    ///
+    /// Scan WAL offset of the given offset.
+    ///
+    /// # Arguments
+    ///
+    /// * `stream_id` - Stream ID
+    /// * `range` - Range index
+    /// * `offset` - Logical offset to look up
+    /// * `end` - Valid range upper boundary
+    fn scan_wal_offset(
+        &self,
+        stream_id: u64,
+        range: u32,
+        offset: u64,
+        end: Option<u64>,
+    ) -> Option<u64> {
+        let lower = self.build_index_key(stream_id, range, offset);
+
+        let mut upper = BytesMut::with_capacity(8 + 4 + 8);
+        upper.put_u64(stream_id);
+        upper.put_u32(range);
+        if let Some(end) = end {
+            upper.put_u64(end);
+        } else {
+            upper.put_u64(u64::MAX);
+        }
+
+        let mut read_opts = ReadOptions::default();
+        read_opts.set_iterate_lower_bound(&lower[..]);
+        read_opts.set_iterate_upper_bound(upper.freeze());
+        if let Ok(Some(vec)) = self.scan_record_handles_from(read_opts, 1) {
+            if let Some(handle) = vec.first() {
+                return Some(handle.wal_offset);
+            }
+        }
+        None
+    }
+
     /// The specific offset is not guaranteed to exist,
     /// because it may have been compacted or point to a intermediate position of a record batch.
     /// So the `scan_record_handles_left_shift` will left-shift the offset as a lower bound to scan the records
@@ -347,7 +382,7 @@ impl Indexer for DefaultIndexer {
         offset: u64,
         max_offset: u64,
         max_bytes: u32,
-    ) -> Result<Option<Vec<(RecordKey, RecordHandle)>>, StoreError> {
+    ) -> Result<Option<Vec<RecordHandle>>, StoreError> {
         let left_key_entry = self.retrieve_left_key(stream_id, range, offset)?;
         let left_key = left_key_entry
             .map(|entry| entry.key())
@@ -638,24 +673,34 @@ mod tests {
         },
     };
 
-    use crate::index::{
-        record_handle::{HandleExt, RecordHandle},
-        Indexer, MinOffset,
+    use crate::{
+        index::{
+            record_handle::{HandleExt, RecordHandle},
+            Indexer,
+        },
+        watermark::Watermark,
     };
 
-    struct SampleMinOffset {
+    struct SampleWatermark {
         min: AtomicU64,
+        offload: AtomicU64,
     }
 
-    impl SampleMinOffset {
+    impl Watermark for SampleWatermark {
+        fn min(&self) -> u64 {
+            self.min.load(Ordering::Relaxed)
+        }
+
+        fn offload(&self) -> u64 {
+            self.offload.load(Ordering::Relaxed)
+        }
+
         fn set_min(&self, offset: u64) {
             self.min.store(offset, Ordering::Relaxed);
         }
-    }
 
-    impl MinOffset for SampleMinOffset {
-        fn min_offset(&self) -> u64 {
-            self.min.load(Ordering::Relaxed)
+        fn set_offload(&self, offload: u64) {
+            self.offload.store(offload, Ordering::Relaxed);
         }
     }
 
@@ -667,10 +712,11 @@ mod tests {
             .path
             .set_base(path.path().as_os_str().to_str().unwrap());
         let config = Arc::new(config);
-        let min_offset = Arc::new(SampleMinOffset {
+        let watermark = Arc::new(SampleWatermark {
             min: AtomicU64::new(0),
+            offload: AtomicU64::new(0),
         });
-        let indexer = super::DefaultIndexer::new(&config, min_offset as Arc<dyn MinOffset>, 128)?;
+        let indexer = super::DefaultIndexer::new(&config, watermark as Arc<dyn Watermark>, 128)?;
         Ok(indexer)
     }
 
@@ -812,14 +858,11 @@ mod tests {
         let indexes = indexes.unwrap();
         assert_eq!(2, indexes.len());
 
-        indexes
-            .into_iter()
-            .enumerate()
-            .for_each(|(i, (_, handle))| {
-                assert_eq!(((i + 1) * 128) as u64, handle.wal_offset);
-                assert_eq!(128, handle.len);
-                assert_eq!(HandleExt::Hash(10), handle.ext);
-            });
+        indexes.into_iter().enumerate().for_each(|(i, handle)| {
+            assert_eq!(((i + 1) * 128) as u64, handle.wal_offset);
+            assert_eq!(128, handle.len);
+            assert_eq!(HandleExt::Hash(10), handle.ext);
+        });
 
         // Case two: scan from a left key
         let indexes = indexer.scan_record_handles_left_shift(0, range, 12, 100, 128 * 2)?;
@@ -827,14 +870,11 @@ mod tests {
         let handles = indexes.unwrap();
         assert_eq!(2, handles.len());
 
-        handles
-            .into_iter()
-            .enumerate()
-            .for_each(|(i, (_, handle))| {
-                assert_eq!(((i + 1) * 128) as u64, handle.wal_offset);
-                assert_eq!(128, handle.len);
-                assert_eq!(HandleExt::Hash(10), handle.ext);
-            });
+        handles.into_iter().enumerate().for_each(|(i, handle)| {
+            assert_eq!(((i + 1) * 128) as u64, handle.wal_offset);
+            assert_eq!(128, handle.len);
+            assert_eq!(HandleExt::Hash(10), handle.ext);
+        });
 
         // Case three: scan from a key smaller than the smallest key
         let indexes = indexer.scan_record_handles_left_shift(0, range, 1, 100, 128 * 2)?;
@@ -842,14 +882,11 @@ mod tests {
         let indexes = indexes.unwrap();
         assert_eq!(2, indexes.len());
 
-        indexes
-            .into_iter()
-            .enumerate()
-            .for_each(|(i, (_, handle))| {
-                assert_eq!(((i + 1) * 128) as u64, handle.wal_offset);
-                assert_eq!(128, handle.len);
-                assert_eq!(HandleExt::Hash(10), handle.ext);
-            });
+        indexes.into_iter().enumerate().for_each(|(i, handle)| {
+            assert_eq!(((i + 1) * 128) as u64, handle.wal_offset);
+            assert_eq!(128, handle.len);
+            assert_eq!(HandleExt::Hash(10), handle.ext);
+        });
 
         // Case four: scan from a key bigger than the biggest key
 
@@ -862,9 +899,9 @@ mod tests {
         assert!(indexes.is_some());
         let indexes = indexes.unwrap();
         assert_eq!(3, indexes.len());
-        assert_eq!(indexes[0].1.wal_offset, 128);
-        assert_eq!(indexes[1].1.wal_offset, 256);
-        assert_eq!(indexes[2].1.wal_offset, 384);
+        assert_eq!(indexes[0].wal_offset, 128);
+        assert_eq!(indexes[1].wal_offset, 256);
+        assert_eq!(indexes[2].wal_offset, 384);
 
         Ok(())
     }
@@ -890,14 +927,11 @@ mod tests {
         assert!(indexes.is_some());
         let indexes = indexes.unwrap();
         assert_eq!(10, indexes.len());
-        indexes
-            .into_iter()
-            .enumerate()
-            .for_each(|(i, (_, handle))| {
-                assert_eq!(i as u64, handle.wal_offset);
-                assert_eq!(128, handle.len);
-                assert_eq!(HandleExt::Hash(10), handle.ext);
-            });
+        indexes.into_iter().enumerate().for_each(|(i, handle)| {
+            assert_eq!(i as u64, handle.wal_offset);
+            assert_eq!(128, handle.len);
+            assert_eq!(HandleExt::Hash(10), handle.ext);
+        });
 
         // Case two: scan 0 bytes from the indexer
         let indexes = indexer.scan_record_handles(0, range, 0, 0)?;
@@ -921,14 +955,12 @@ mod tests {
             .path
             .set_base(path.path().as_os_str().to_str().unwrap());
         let config = Arc::new(config);
-        let min_offset = Arc::new(SampleMinOffset {
+        let watermark = Arc::new(SampleWatermark {
             min: AtomicU64::new(0),
+            offload: AtomicU64::new(0),
         });
-        let indexer = super::DefaultIndexer::new(
-            &config,
-            Arc::clone(&min_offset) as Arc<dyn MinOffset>,
-            128,
-        )?;
+        let indexer =
+            super::DefaultIndexer::new(&config, Arc::clone(&watermark) as Arc<dyn Watermark>, 128)?;
         let range = 0;
         const CNT: u64 = 1024;
         (0..CNT)
@@ -946,8 +978,8 @@ mod tests {
         indexer.compact();
 
         let indexes = indexer.scan_record_handles(0, range, 0, 10)?.unwrap();
-        assert_eq!(0, indexes[0].1.wal_offset);
-        min_offset.set_min(10);
+        assert_eq!(0, indexes[0].wal_offset);
+        watermark.set_min(10);
 
         indexer.compact();
         let _indexes = indexer.scan_record_handles(0, range, 0, 10)?.unwrap();

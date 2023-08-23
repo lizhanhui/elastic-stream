@@ -24,19 +24,20 @@
 #![feature(iterator_try_collect)]
 #![feature(io_error_more)]
 #![feature(map_try_insert)]
+#![feature(iterator_try_reduce)]
 
 pub mod error;
 mod index;
 pub(crate) mod io;
-mod offset_manager;
 pub mod option;
 mod request;
 pub mod store;
 pub mod util;
+pub(crate) mod watermark;
 
 use self::option::{ReadOptions, WriteOptions};
 use error::{AppendError, FetchError, StoreError};
-use model::range::{RangeEvent, RangeMetadata};
+use model::range::RangeMetadata;
 use std::sync::Arc;
 
 pub use crate::io::record::RECORD_PREFIX_LENGTH;
@@ -101,10 +102,6 @@ pub trait Store {
     fn id(&self) -> i32;
 
     fn config(&self) -> Arc<config::Configuration>;
-
-    /// Handle range lifecycle event. The events will be used in:
-    /// - wal cleanup
-    async fn handle_range_event(&self, events: Vec<RangeEvent>);
 }
 
 #[cfg(test)]

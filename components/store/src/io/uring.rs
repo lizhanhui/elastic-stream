@@ -1599,9 +1599,9 @@ mod tests {
 
     use crate::error::StoreError;
     use crate::index::driver::IndexDriver;
-    use crate::index::{Indexer, MinOffset};
+    use crate::index::Indexer;
     use crate::io::ReadTask;
-    use crate::offset_manager::WalOffsetManager;
+    use crate::watermark::{WalWatermark, Watermark};
 
     use super::{IoTask, WriteTask};
 
@@ -1634,13 +1634,13 @@ mod tests {
         fn build(self) -> Result<super::IO, StoreError> {
             let config = Arc::new(self.cfg);
 
-            // Build wal offset manager
-            let wal_offset_manager = Arc::new(WalOffsetManager::new());
+            // Build watermark
+            let wal_watermark = Arc::new(WalWatermark::new());
 
             // Build index driver
             let indexer = Arc::new(IndexDriver::new(
                 &config,
-                Arc::clone(&wal_offset_manager) as Arc<dyn MinOffset>,
+                Arc::clone(&wal_watermark) as Arc<dyn Watermark + Send + Sync>,
                 128,
             )?);
 
