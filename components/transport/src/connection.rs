@@ -317,6 +317,12 @@ impl Connection {
     }
 }
 
+impl Drop for Connection {
+    fn drop(&mut self) {
+        let _ = self.close();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::{error::Error, thread::JoinHandle};
