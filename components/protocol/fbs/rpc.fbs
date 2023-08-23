@@ -298,10 +298,25 @@ table IdAllocationResponse {
     id: int32 (id: 1);
 }
 
+// Maximum committed offset the range being appended.
+//
+// An offset is considered committed iff
+// 1) frontend has received configured acknowledges out of all write requests;
+// 2) so did all its prior offsets;
+//
+// Range server is safe to dispatch records to mutliple readers if they become committed.
+table CommitEntry {
+    stream_id: int64 (id: 0);
+    range: int32 (id: 1);
+    offset: int64 (id: 2);
+}
+
 // The append request is used to append records to the range server.
 table AppendRequest {
     // The timeout to await a response in milliseconds.
     timeout_ms: int32 (id: 0);
+
+    committed: [CommitEntry] (id: 1, required);
 
     // Other fields are serialized in the payload.
     // Layout of the request payload
