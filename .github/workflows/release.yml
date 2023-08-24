@@ -6,7 +6,7 @@ on:
       - 'v[0-9]+\.[0-9]+\.[0-9]+'
 
 jobs:
-  check-version:
+  check-rust-version:
     name: Check version in Cargo.toml
     runs-on: ubuntu-latest
     steps:
@@ -20,9 +20,25 @@ jobs:
             echo "Range Server version $range_server_version does not match version in tag $tag_version" >&2
             exit 1
           fi
+  check-java-version:
+    name: Check version in pom.xml
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+      - name: Check version in pom.xml
+        working-directory: ./sdks/frontend-java
+        run: |
+          tag_version=$(echo ${{ github.ref_name }} | sed 's/v//')
+          mvn versions:set -DgenerateBackupPoms=false -DoldVersion=* -DgroupId=* -DartifactId=* -DnewVersion="$tag_version"-SNAPSHOT
+          if ! git diff --exit-code; then
+            echo "Frontend Java version does not match version in tag $tag_version" >&2
+            echo "Run 'mvn versions:set -DgenerateBackupPoms=false -DoldVersion=* -DgroupId=* -DartifactId=* -DnewVersion=$tag_version-SNAPSHOT' to fix" >&2
+            exit 1
+          fi
 
   release:
-    needs: check-version
+    needs: [ check-rust-version, check-java-version ]
     name: Release with Debian Packages and Docker Images
     strategy:
       matrix:
@@ -81,7 +97,7 @@ jobs:
           git diff --exit-code
           ./build.sh
   java-release:
-    needs: check-version
+    needs: [ check-rust-version, check-java-version ]
     name: Publish snapshot package to the Maven Central Repository
     strategy:
       matrix:
