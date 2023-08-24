@@ -10,8 +10,8 @@ import (
 	"github.com/AutoMQ/pd/api/rpcfb/rpcfb"
 	"github.com/AutoMQ/pd/pkg/server/model"
 	"github.com/AutoMQ/pd/pkg/server/storage/endpoint"
-	"github.com/AutoMQ/pd/pkg/util/traceutil"
-	"github.com/AutoMQ/pd/pkg/util/typeutil"
+	traceutil "github.com/AutoMQ/pd/pkg/util/trace"
+	typeutil "github.com/AutoMQ/pd/pkg/util/type"
 )
 
 type ResourceService interface {

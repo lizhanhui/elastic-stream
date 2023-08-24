@@ -1,7 +1,0 @@
-codecov:
-  token: "bfe27ac8-cd4b-4cda-a74b-3daf0416adc3"
-
-ignore:
-  - "pkg/util/testutil/**/*"
-  - "api"
-  - "third_party"

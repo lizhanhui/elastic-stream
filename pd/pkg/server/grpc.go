@@ -24,7 +24,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/AutoMQ/pd/api/kvpb"
-	"github.com/AutoMQ/pd/pkg/util/etcdutil"
+	etcdutil "github.com/AutoMQ/pd/pkg/util/etcd"
 )
 
 var _globalPrefix = []byte("/global/kv/")

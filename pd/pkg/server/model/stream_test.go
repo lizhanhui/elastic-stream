@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/AutoMQ/pd/api/rpcfb/rpcfb"
-	"github.com/AutoMQ/pd/pkg/util/testutil"
+	testutil "github.com/AutoMQ/pd/pkg/util/test"
 )
 
 func TestNoNewFieldsInCreateStreamParam(t *testing.T) {

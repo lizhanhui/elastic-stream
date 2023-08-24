@@ -26,8 +26,8 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/AutoMQ/pd/pkg/server/model"
-	"github.com/AutoMQ/pd/pkg/util/etcdutil"
-	"github.com/AutoMQ/pd/pkg/util/traceutil"
+	etcdutil "github.com/AutoMQ/pd/pkg/util/etcd"
+	traceutil "github.com/AutoMQ/pd/pkg/util/trace"
 )
 
 const (

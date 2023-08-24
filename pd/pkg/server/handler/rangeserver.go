@@ -7,7 +7,7 @@ import (
 	"github.com/AutoMQ/pd/api/rpcfb/rpcfb"
 	"github.com/AutoMQ/pd/pkg/sbp/protocol"
 	"github.com/AutoMQ/pd/pkg/server/model"
-	"github.com/AutoMQ/pd/pkg/util/traceutil"
+	traceutil "github.com/AutoMQ/pd/pkg/util/trace"
 )
 
 func (h *Handler) Heartbeat(req *protocol.HeartbeatRequest, resp *protocol.HeartbeatResponse) {

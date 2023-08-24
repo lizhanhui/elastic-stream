@@ -8,7 +8,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/AutoMQ/pd/pkg/server/config"
-	"github.com/AutoMQ/pd/pkg/util/testutil"
+	testutil "github.com/AutoMQ/pd/pkg/util/test"
 )
 
 func TestMember_ClusterInfo(t *testing.T) {

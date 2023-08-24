@@ -8,8 +8,8 @@ import (
 	"github.com/AutoMQ/pd/api/rpcfb/rpcfb"
 	"github.com/AutoMQ/pd/pkg/sbp/protocol"
 	"github.com/AutoMQ/pd/pkg/server/cluster"
-	"github.com/AutoMQ/pd/pkg/util/fbutil"
-	"github.com/AutoMQ/pd/pkg/util/traceutil"
+	fbutil "github.com/AutoMQ/pd/pkg/util/flatbuffer"
+	traceutil "github.com/AutoMQ/pd/pkg/util/trace"
 )
 
 type Cluster interface {

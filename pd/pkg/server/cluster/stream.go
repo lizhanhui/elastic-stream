@@ -8,7 +8,7 @@ import (
 
 	"github.com/AutoMQ/pd/api/rpcfb/rpcfb"
 	"github.com/AutoMQ/pd/pkg/server/model"
-	"github.com/AutoMQ/pd/pkg/util/traceutil"
+	traceutil "github.com/AutoMQ/pd/pkg/util/trace"
 )
 
 type StreamService interface {

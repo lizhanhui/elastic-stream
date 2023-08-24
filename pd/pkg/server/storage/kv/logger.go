@@ -6,7 +6,7 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/AutoMQ/pd/pkg/util/traceutil"
+	traceutil "github.com/AutoMQ/pd/pkg/util/trace"
 )
 
 type LogAble interface {

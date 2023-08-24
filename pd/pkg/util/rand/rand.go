@@ -5,7 +5,7 @@ import (
 
 	"github.com/pkg/errors"
 
-	"github.com/AutoMQ/pd/pkg/util/typeutil"
+	typeutil "github.com/AutoMQ/pd/pkg/util/type"
 )
 
 // Uint64 returns a random 64-bit value as a uint64

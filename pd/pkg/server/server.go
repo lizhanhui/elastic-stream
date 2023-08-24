@@ -45,10 +45,10 @@ import (
 	"github.com/AutoMQ/pd/pkg/server/storage"
 	"github.com/AutoMQ/pd/pkg/server/storage/endpoint"
 	"github.com/AutoMQ/pd/pkg/server/storage/kv"
-	"github.com/AutoMQ/pd/pkg/util/etcdutil"
-	"github.com/AutoMQ/pd/pkg/util/logutil"
-	"github.com/AutoMQ/pd/pkg/util/randutil"
-	"github.com/AutoMQ/pd/pkg/util/typeutil"
+	etcdutil "github.com/AutoMQ/pd/pkg/util/etcd"
+	logutil "github.com/AutoMQ/pd/pkg/util/log"
+	randutil "github.com/AutoMQ/pd/pkg/util/rand"
+	typeutil "github.com/AutoMQ/pd/pkg/util/type"
 )
 
 const (

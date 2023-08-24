@@ -16,7 +16,7 @@ import (
 	"go.etcd.io/etcd/server/v3/embed"
 	"go.uber.org/zap"
 
-	"github.com/AutoMQ/pd/pkg/util/netutil"
+	netutil "github.com/AutoMQ/pd/pkg/util/net"
 )
 
 var (

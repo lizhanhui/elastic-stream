@@ -23,7 +23,7 @@ import (
 
 	"go.etcd.io/etcd/server/v3/embed"
 
-	tempurl "github.com/AutoMQ/pd/pkg/util/testutil/url"
+	tempurl "github.com/AutoMQ/pd/pkg/util/test/url"
 )
 
 // NewEtcdConfig is used to create an etcd config for the unit test purpose.

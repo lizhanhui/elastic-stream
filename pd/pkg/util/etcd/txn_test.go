@@ -11,7 +11,7 @@ import (
 	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest/observer"
 
-	"github.com/AutoMQ/pd/pkg/util/testutil"
+	testutil "github.com/AutoMQ/pd/pkg/util/test"
 )
 
 type MockEtcdTxn struct {

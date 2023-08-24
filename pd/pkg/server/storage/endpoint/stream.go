@@ -12,8 +12,8 @@ import (
 	"github.com/AutoMQ/pd/api/rpcfb/rpcfb"
 	"github.com/AutoMQ/pd/pkg/server/model"
 	"github.com/AutoMQ/pd/pkg/server/storage/kv"
-	"github.com/AutoMQ/pd/pkg/util/fbutil"
-	"github.com/AutoMQ/pd/pkg/util/traceutil"
+	fbutil "github.com/AutoMQ/pd/pkg/util/flatbuffer"
+	traceutil "github.com/AutoMQ/pd/pkg/util/trace"
 )
 
 const (

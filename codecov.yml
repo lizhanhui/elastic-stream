@@ -2,7 +2,7 @@ codecov:
   token: 14d9c2d5-0c86-4623-8f3c-08d069667b7c
 
 ignore:
-  - "pd/pkg/util/testutil/"
+  - "pd/pkg/util/test/"
   - "pd/api/"
   - "pd/third_party/"
   - "pd/**/*_mock.go

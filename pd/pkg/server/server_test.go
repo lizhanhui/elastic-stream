@@ -13,7 +13,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/AutoMQ/pd/pkg/server/config"
-	tempurl "github.com/AutoMQ/pd/pkg/util/testutil/url"
+	tempurl "github.com/AutoMQ/pd/pkg/util/test/url"
 )
 
 func TestMain(m *testing.M) {

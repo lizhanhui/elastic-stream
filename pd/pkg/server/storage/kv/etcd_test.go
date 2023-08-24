@@ -15,7 +15,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/AutoMQ/pd/pkg/server/model"
-	"github.com/AutoMQ/pd/pkg/util/testutil"
+	testutil "github.com/AutoMQ/pd/pkg/util/test"
 )
 
 func TestEtcd_Get(t *testing.T) {

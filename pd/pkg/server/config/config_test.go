@@ -14,7 +14,7 @@ import (
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 
-	"github.com/AutoMQ/pd/pkg/util/netutil"
+	netutil "github.com/AutoMQ/pd/pkg/util/net"
 )
 
 var (

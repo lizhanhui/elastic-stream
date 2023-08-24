@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/AutoMQ/pd/pkg/sbp/codec"
-	"github.com/AutoMQ/pd/pkg/util/fbutil"
+	fbutil "github.com/AutoMQ/pd/pkg/util/flatbuffer"
 )
 
 type packableRequest interface {

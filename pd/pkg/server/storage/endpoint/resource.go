@@ -9,7 +9,7 @@ import (
 
 	"github.com/AutoMQ/pd/api/rpcfb/rpcfb"
 	"github.com/AutoMQ/pd/pkg/server/storage/kv"
-	"github.com/AutoMQ/pd/pkg/util/traceutil"
+	traceutil "github.com/AutoMQ/pd/pkg/util/trace"
 )
 
 var (

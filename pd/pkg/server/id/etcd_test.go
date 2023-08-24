@@ -10,7 +10,7 @@ import (
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"go.uber.org/zap"
 
-	"github.com/AutoMQ/pd/pkg/util/testutil"
+	testutil "github.com/AutoMQ/pd/pkg/util/test"
 )
 
 func TestEtcdAllocator_Alloc(t *testing.T) {

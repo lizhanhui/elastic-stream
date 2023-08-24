@@ -30,8 +30,8 @@ import (
 
 	"github.com/AutoMQ/pd/pkg/server/config"
 	"github.com/AutoMQ/pd/pkg/server/election"
-	"github.com/AutoMQ/pd/pkg/util/etcdutil"
-	"github.com/AutoMQ/pd/pkg/util/traceutil"
+	etcdutil "github.com/AutoMQ/pd/pkg/util/etcd"
+	traceutil "github.com/AutoMQ/pd/pkg/util/trace"
 )
 
 const (

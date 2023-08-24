@@ -5,7 +5,7 @@ import (
 
 	"github.com/AutoMQ/pd/api/rpcfb/rpcfb"
 	"github.com/AutoMQ/pd/pkg/sbp/codec"
-	"github.com/AutoMQ/pd/pkg/util/fbutil"
+	fbutil "github.com/AutoMQ/pd/pkg/util/flatbuffer"
 )
 
 // request is an SBP request

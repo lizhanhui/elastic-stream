@@ -23,7 +23,7 @@ import (
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"go.uber.org/zap"
 
-	"github.com/AutoMQ/pd/pkg/util/etcdutil"
+	etcdutil "github.com/AutoMQ/pd/pkg/util/etcd"
 )
 
 // Leadership is used to manage the leadership campaigning.

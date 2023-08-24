@@ -17,8 +17,8 @@ import (
 	"github.com/AutoMQ/pd/api/rpcfb/rpcfb"
 	"github.com/AutoMQ/pd/pkg/sbp/codec"
 	"github.com/AutoMQ/pd/pkg/sbp/protocol"
-	"github.com/AutoMQ/pd/pkg/util/logutil"
-	"github.com/AutoMQ/pd/pkg/util/traceutil"
+	logutil "github.com/AutoMQ/pd/pkg/util/log"
+	traceutil "github.com/AutoMQ/pd/pkg/util/trace"
 	tphttp2 "github.com/AutoMQ/pd/third_party/forked/golang/net/http2"
 )
 

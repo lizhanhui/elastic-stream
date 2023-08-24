@@ -19,7 +19,7 @@ import (
 	"github.com/AutoMQ/pd/pkg/server/storage"
 	"github.com/AutoMQ/pd/pkg/server/storage/endpoint"
 	"github.com/AutoMQ/pd/pkg/server/storage/kv"
-	"github.com/AutoMQ/pd/pkg/util/testutil"
+	testutil "github.com/AutoMQ/pd/pkg/util/test"
 )
 
 type mockServer struct {
