@@ -17,13 +17,11 @@ use log::{debug, error, info, trace, warn};
 use minitrace::local::LocalCollector;
 use minitrace::local::LocalSpan;
 use minstant::Instant;
+use observation::metrics::uring_metrics::{
+    record_inflight_io, record_io_depth, record_pending_task,
+};
 use rustc_hash::{FxHashMap, FxHashSet};
 use tokio::sync::oneshot;
-
-use observation::metrics::uring_metrics::{
-    UringStatistics, COMPLETED_READ_IO, COMPLETED_WRITE_IO, INFLIGHT_IO, IO_DEPTH, PENDING_TASK,
-    READ_BYTES_TOTAL, READ_IO_LATENCY, WRITE_BYTES_TOTAL, WRITE_IO_LATENCY,
-};
 
 use crate::error::{AppendError, FetchError, StoreError};
 use crate::index::driver::IndexDriver;
@@ -320,7 +318,7 @@ impl IO {
         }
 
         self.pending_data_tasks.push_back(io_task);
-        PENDING_TASK.set(self.pending_data_tasks.len() as i64);
+        record_pending_task(self.pending_data_tasks.len() as u64);
         *received += 1;
     }
 
@@ -331,7 +329,7 @@ impl IO {
         let mut received = 0;
         let mut buffered = 0;
         let io_depth = self.data_ring.params().sq_entries() as usize;
-        IO_DEPTH.set(io_depth as i64);
+        record_io_depth(io_depth as u64);
         loop {
             // TODO: Find a better estimation.
             //
@@ -874,7 +872,7 @@ impl IO {
             }
         }
         drop(span);
-        PENDING_TASK.set(self.pending_data_tasks.len() as i64);
+        record_pending_task(self.pending_data_tasks.len() as u64);
         self.build_read_sqe(entries, missed_entries);
 
         // Increase the strong reference count of the entries.
@@ -1016,17 +1014,15 @@ impl IO {
                     }
 
                     match context.opcode {
-                        opcode::Read::CODE => {
-                            READ_IO_LATENCY.observe(latency.as_micros() as f64);
-                            READ_BYTES_TOTAL.inc_by(context.buf.capacity as u64);
-                            COMPLETED_READ_IO.inc();
-                            UringStatistics::observe_latency(latency.as_millis() as i16);
-                        }
+                        opcode::Read::CODE => observation::metrics::uring_metrics::record_read_io(
+                            latency.as_micros() as u64,
+                            context.buf.capacity as u64,
+                        ),
                         opcode::Write::CODE => {
-                            WRITE_IO_LATENCY.observe(latency.as_micros() as f64);
-                            WRITE_BYTES_TOTAL.inc_by(context.buf.capacity as u64);
-                            COMPLETED_WRITE_IO.inc();
-                            UringStatistics::observe_latency(latency.as_millis() as i16);
+                            observation::metrics::uring_metrics::record_write_io(
+                                latency.as_micros() as u64,
+                                context.buf.capacity as u64,
+                            )
                         }
                         _ => {}
                     }
@@ -1167,7 +1163,7 @@ impl IO {
             }
             debug_assert!(self.inflight >= count);
             self.inflight -= count;
-            INFLIGHT_IO.sub(count as i64);
+            record_inflight_io(-(count as i64));
             trace!("Reaped {} data CQE(s)", count);
         }
 
@@ -1380,7 +1376,7 @@ impl IO {
                     })?
             };
             self.inflight += cnt;
-            INFLIGHT_IO.add(cnt as i64);
+            record_inflight_io(cnt as i64);
             trace!("Pushed {} SQEs into submission queue", cnt);
         }
         Ok(())

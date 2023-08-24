@@ -1,13 +1,16 @@
+use std::sync::atomic::Ordering;
 use std::time::Instant;
 
 use lazy_static::*;
-use prometheus::{
-    core::{Atomic, AtomicF64, AtomicU64},
-    *,
-};
+use opentelemetry::metrics::{Counter, Histogram, ObservableGauge, UpDownCounter};
+#[cfg(feature = "metrics")]
+use opentelemetry::KeyValue;
+use prometheus::core::{Atomic, AtomicF64, AtomicI64, AtomicU64};
+
+use crate::metrics::get_meter;
+
 pub struct UringStatistics {
     last_instant: Instant,
-    uring_task_old: u64,
     uring_task_rate: i16,
 }
 
@@ -15,7 +18,6 @@ impl Default for UringStatistics {
     fn default() -> Self {
         Self {
             last_instant: Instant::now(),
-            uring_task_old: 0,
             uring_task_rate: 0,
         }
     }
@@ -36,17 +38,13 @@ impl UringStatistics {
             .as_millis() as u64
             / 1000;
         self.last_instant = current_instant;
-        update_rate(
-            &mut self.uring_task_old,
-            &mut self.uring_task_rate,
-            COMPLETED_READ_IO.get() + COMPLETED_WRITE_IO.get(),
-            time_delta,
-        );
+        self.uring_task_rate = (COMPLETED_IO_COUNT.swap(0, Ordering::Relaxed) / time_delta) as i16;
     }
     /// The observe_latency() is responsible for recording a new latency
     /// and calculating the average latency over the past minute.
     /// It uses EWMA (Exponentially Weighted Moving Average) to determine the value.
-    pub fn observe_latency(latency: i16) {
+    fn observe_latency(latency: i16) {
+        COMPLETED_IO_COUNT.inc_by(1);
         let cur_observe_time = START_TIME.elapsed().as_millis() as u64;
         let last_observe_time = URING_OBSERVE_TIME.get();
         if last_observe_time == u64::MAX {
@@ -68,23 +66,13 @@ impl UringStatistics {
         self.uring_task_rate
     }
     pub fn get_uring_inflight_task_cnt(&self) -> i16 {
-        INFLIGHT_IO.get() as i16
+        INFLIGHT_IO_COUNT.get() as i16
     }
     pub fn get_uring_pending_task_cnt(&self) -> i32 {
-        PENDING_TASK.get() as i32
+        PENDING_TASK_COUNT.get() as i32
     }
     pub fn get_uring_task_avg_latency(&self) -> i16 {
         URING_AVG_LATENCY.get() as i16
-    }
-}
-
-/// The update_rate() is used to calculate a new rate
-/// based on the current metric, old metric, and time_delta.
-fn update_rate(old_metric: &mut u64, rate: &mut i16, cur_metric: u64, time_delta: u64) {
-    let metric_delta = cur_metric - *old_metric;
-    if time_delta > 0 {
-        *old_metric = cur_metric;
-        *rate = (metric_delta / time_delta) as i16;
     }
 }
 
@@ -96,59 +84,87 @@ lazy_static! {
     // It is necessary to implement EWMA, which helps determine the latest average latency
     pub static ref URING_OBSERVE_TIME: AtomicU64 = AtomicU64::new(u64::MAX);
 
-    pub static ref COMPLETED_READ_IO : IntCounter = register_int_counter!(
-        "completed_read_io",
-        "Number of completed read IO",
-    )
-    .unwrap();
+    pub static ref COMPLETED_IO_COUNT: AtomicU64 = AtomicU64::new(0);
+    pub static ref PENDING_TASK_COUNT: AtomicU64 = AtomicU64::new(0);
+    pub static ref INFLIGHT_IO_COUNT: AtomicI64 = AtomicI64::new(0);
 
-    pub static ref COMPLETED_WRITE_IO : IntCounter = register_int_counter!(
-        "completed_write_io",
-        "Number of completed write IO",
-    )
-    .unwrap();
+    pub static ref COUNTER_INFLIGHT_IO : UpDownCounter<i64> = get_meter()
+        .i64_up_down_counter("store.io.inflight.task")
+        .with_description("Number of inflight IO tasks")
+        .init();
 
-    pub static ref INFLIGHT_IO: IntGauge = register_int_gauge!(
-        "inflight_io",
-        "Number of inflight io tasks"
-    ).unwrap();
+    static ref COUNTER_BYTES_TOTAL : Counter<u64> = get_meter()
+        .u64_counter("store.io.bytes.total")
+        .with_description("Total number of bytes read or written by uring")
+        .init();
 
-    pub static ref PENDING_TASK: IntGauge = register_int_gauge!(
-        "pending_task",
-        "Number of pending io-task"
-    ).unwrap();
-
-    pub static ref READ_IO_LATENCY: Histogram = register_histogram!(
-        "read_io_latency",
-        "Histogram of read IO latency in microseconds",
-        linear_buckets(0.0, 100.0, 100).unwrap()
-    )
-    .unwrap();
-
-    pub static ref WRITE_IO_LATENCY: Histogram = register_histogram!(
-        "write_io_latency",
-        "Histogram of write IO latency in microseconds",
-        linear_buckets(0.0, 100.0, 100).unwrap()
-    )
-    .unwrap();
-
-    pub static ref READ_BYTES_TOTAL : IntCounter = register_int_counter!(
-        "read_bytes_total",
-        "Total number of bytes read",
-    )
-    .unwrap();
-
-    pub static ref WRITE_BYTES_TOTAL : IntCounter = register_int_counter!(
-        "write_bytes_total",
-        "Total number of bytes written by uring",
-    )
-    .unwrap();
+    pub static ref GAUGE_PENDING_TASK: ObservableGauge<u64> = get_meter()
+        .u64_observable_gauge("store.io.pending.task")
+        .with_description("Number of pending IO task")
+        .init();
 
     // dimensions for io_uring
-    pub static ref IO_DEPTH: IntGauge = register_int_gauge!(
-        "io_depth",
-        "the io-depth of io_uring"
-    ).unwrap();
+    static ref GAUGE_IO_DEPTH : ObservableGauge<u64> = get_meter()
+        .u64_observable_gauge("store.io.depth")
+        .with_description("The io depth of io_uring")
+        .init();
+
+    static ref HISTOGRAM_IO_LATENCY: Histogram<u64> = get_meter()
+        .u64_histogram("store.io.latency")
+        .with_description("Histogram of read IO latency in microseconds")
+        .init();
+}
+
+#[cfg(feature = "metrics")]
+const LABEL_IO_TYPE: &str = "io_type";
+#[cfg(feature = "metrics")]
+const IO_TYPE_READ: &str = "read";
+#[cfg(feature = "metrics")]
+const IO_TYPE_WRITE: &str = "write";
+
+#[inline]
+pub fn record_read_io(_latency: u64, _bytes: u64) {
+    #[cfg(feature = "metrics")]
+    {
+        HISTOGRAM_IO_LATENCY.record(_latency, &[KeyValue::new(LABEL_IO_TYPE, IO_TYPE_READ)]);
+        COUNTER_BYTES_TOTAL.add(_bytes, &[KeyValue::new(LABEL_IO_TYPE, IO_TYPE_READ)]);
+    }
+    UringStatistics::observe_latency(_latency as i16);
+}
+
+#[inline]
+pub fn record_write_io(_latency: u64, _bytes: u64) {
+    #[cfg(feature = "metrics")]
+    {
+        HISTOGRAM_IO_LATENCY.record(_latency, &[KeyValue::new(LABEL_IO_TYPE, IO_TYPE_WRITE)]);
+        COUNTER_BYTES_TOTAL.add(_bytes, &[KeyValue::new(LABEL_IO_TYPE, IO_TYPE_WRITE)]);
+    }
+    UringStatistics::observe_latency(_latency as i16);
+}
+
+#[inline]
+pub fn record_io_depth(_depth: u64) {
+    #[cfg(feature = "metrics")]
+    {
+        GAUGE_IO_DEPTH.observe(_depth, &[]);
+    }
+}
+
+#[inline]
+pub fn record_pending_task(_task_count: u64) {
+    #[cfg(feature = "metrics")]
+    {
+        GAUGE_PENDING_TASK.observe(_task_count, &[]);
+    }
+}
+
+#[inline]
+pub fn record_inflight_io(_io_count: i64) {
+    #[cfg(feature = "metrics")]
+    {
+        INFLIGHT_IO_COUNT.inc_by(_io_count);
+        COUNTER_INFLIGHT_IO.add(_io_count, &[]);
+    }
 }
 
 #[cfg(test)]
@@ -157,15 +173,13 @@ mod tests {
 
     use log::trace;
 
-    use crate::metrics::uring_metrics::{UringStatistics, COMPLETED_READ_IO, COMPLETED_WRITE_IO};
+    use crate::metrics::uring_metrics::UringStatistics;
 
     #[test]
     #[ignore = "This test is just for observing the effect."]
     fn test_uring_statistics() {
         let mut statistics = UringStatistics::new();
         statistics.record();
-        COMPLETED_WRITE_IO.inc_by(100);
-        COMPLETED_READ_IO.inc_by(50);
         sleep(Duration::from_secs(2));
         statistics.record();
         assert_eq!((100 + 50) / 2, statistics.get_uring_task_rate());

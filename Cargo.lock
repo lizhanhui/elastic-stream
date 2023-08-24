@@ -2750,12 +2750,15 @@ dependencies = [
  "core_affinity",
  "futures",
  "gethostname",
+ "hyper",
  "lazy_static",
  "log",
  "minitrace 0.5.0",
  "minstant",
+ "once_cell",
  "opentelemetry",
  "opentelemetry-otlp",
+ "opentelemetry-prometheus",
  "parking_lot",
  "pprof",
  "procfs",
@@ -2855,6 +2858,19 @@ dependencies = [
  "thiserror",
  "tokio",
  "tonic",
+]
+
+[[package]]
+name = "opentelemetry-prometheus"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c7d81bc254e2d572120363a2b16cdb0d715d301b5789be0cfc26ad87e4e10e53"
+dependencies = [
+ "once_cell",
+ "opentelemetry_api",
+ "opentelemetry_sdk",
+ "prometheus",
+ "protobuf",
 ]
 
 [[package]]

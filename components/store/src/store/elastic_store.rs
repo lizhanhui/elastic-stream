@@ -93,6 +93,8 @@ impl ElasticStore {
         config.server.server_id = lock.id();
         let config = Arc::new(config);
 
+        observation::metrics::init_meter(config.clone());
+
         // Build wal offset manager
         let wal_watermark = Arc::new(WalWatermark::new());
         // Build index driver
@@ -579,6 +581,15 @@ unsafe impl Send for ElasticStore {}
 /// Some tests for ElasticStore.
 #[cfg(test)]
 mod tests {
+    use std::error::Error;
+
+    use bytes::{Bytes, BytesMut};
+    use futures::future::join_all;
+    use log::trace;
+    use tokio::sync::oneshot;
+
+    use mock_server::run_listener;
+
     use crate::{
         error::{AppendError, FetchError},
         io::task::SingleFetchResult,
@@ -586,12 +597,6 @@ mod tests {
         store::{append_result::AppendResult, fetch_result::FetchResult},
         AppendRecordRequest, ElasticStore, Store,
     };
-    use bytes::{Bytes, BytesMut};
-    use futures::future::join_all;
-    use log::trace;
-    use mock_server::run_listener;
-    use std::error::Error;
-    use tokio::sync::oneshot;
 
     fn build_store(pd_address: &str, store_path: &str) -> ElasticStore {
         let mut config = config::Configuration {

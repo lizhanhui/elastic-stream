@@ -136,8 +136,8 @@ pyroscope_pprofrs = "0.2"
 sysinfo = "0.29"
 procfs = "0.15"
 
-opentelemetry = { version = "0.20", features = ["trace"] }
-opentelemetry-otlp = { version = "0.13", features = ["trace"] }
+opentelemetry = { version = "0.20", features = ["trace", "metrics"] }
+opentelemetry-otlp = { version = "0.13", features = ["trace", "metrics"] }
 parking_lot = "0.12.1"
 
 [profile.dev]
