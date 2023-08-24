@@ -7,63 +7,55 @@ use tokio::sync::mpsc;
 use super::{MetadataWatcher, ResourceEventRx};
 
 #[derive(Debug, Default)]
-pub(crate) struct DefaultMetadataWatcher {
+pub(crate) struct DefaultMetadataWatcher<P> {
     listeners: Vec<mpsc::UnboundedSender<ResourceEvent>>,
-    started: bool,
+    pd_client: P,
 }
 
-impl DefaultMetadataWatcher {
-    pub(crate) fn new() -> Self {
+impl<P> DefaultMetadataWatcher<P> {
+    pub(crate) fn new(pd_client: P) -> Self {
         Self {
             listeners: Vec::new(),
-            started: false,
+            pd_client,
         }
     }
 }
 
-impl MetadataWatcher for DefaultMetadataWatcher {
-    fn start<P>(&mut self, pd_client: Box<P>)
-    where
-        P: PlacementDriverClient + 'static,
-    {
-        self.started = true;
-        let mut rx = pd_client.list_and_watch_resource(&[
+impl<P> MetadataWatcher for DefaultMetadataWatcher<P>
+where
+    P: PlacementDriverClient,
+{
+    async fn start(&mut self) {
+        let mut rx = self.pd_client.list_and_watch_resource(&[
             ResourceType::RESOURCE_STREAM,
             ResourceType::RESOURCE_RANGE,
+            ResourceType::RESOURCE_OBJECT,
         ]);
-        let mut listeners = self.listeners.clone();
-        tokio_uring::spawn(async move {
-            loop {
-                match rx.recv().await {
-                    Some(event) => {
-                        let mut has_closed = false;
-                        for tx in listeners.iter() {
-                            if tx.send(event.clone()).is_err() {
-                                has_closed = true;
-                            }
-                        }
-                        if has_closed {
-                            listeners.retain(|tx| !tx.is_closed());
-                            if listeners.is_empty() {
-                                break;
-                            }
+        loop {
+            match rx.recv().await {
+                Some(event) => {
+                    let mut has_closed = false;
+                    for tx in self.listeners.iter() {
+                        if tx.send(event.clone()).is_err() {
+                            has_closed = true;
                         }
                     }
-                    _ => {
-                        warn!(
-                            "RangeMetadataWatcher failed to receive resource event: channel closed"
-                        );
-                        break;
+                    if has_closed {
+                        self.listeners.retain(|tx| !tx.is_closed());
+                        if self.listeners.is_empty() {
+                            break;
+                        }
                     }
                 }
+                _ => {
+                    warn!("RangeMetadataWatcher failed to receive resource event: channel closed");
+                    break;
+                }
             }
-        });
+        }
     }
 
     fn watch(&mut self) -> Result<ResourceEventRx, EsError> {
-        if self.started {
-            return Err(EsError::unexpected("watcher already started"));
-        }
         let (tx, rx) = mpsc::unbounded_channel();
         self.listeners.push(tx);
         Ok(rx)

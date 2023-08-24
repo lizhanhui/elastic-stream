@@ -16,15 +16,11 @@ use observation::metrics::{
     sys::{DiskStatistics, MemoryStatistics},
     uring::UringStatistics,
 };
-use pd_client::PlacementDriverClient;
 use protocol::rpc::header::RangeServerState;
 
 use crate::{
-    connection_tracker::ConnectionTracker,
-    heartbeat::Heartbeat,
-    metadata::{MetadataManager, MetadataWatcher},
-    range_manager::RangeManager,
-    worker_config::WorkerConfig,
+    connection_tracker::ConnectionTracker, heartbeat::Heartbeat, metadata::MetadataManager,
+    range_manager::RangeManager, worker_config::WorkerConfig,
 };
 
 /// A server aggregates one or more `Worker`s and each `Worker` takes up a dedicated CPU
@@ -34,17 +30,10 @@ use crate::{
 /// and communication with the placement driver.
 ///
 /// Inter-worker communications are achieved via channels.
-pub(crate) struct Worker<M, W, Meta> {
+pub(crate) struct Worker<M, Meta> {
     config: WorkerConfig,
     range_manager: Rc<M>,
     client: Rc<DefaultClient>,
-
-    /// `MetadataWatcher` is having a `PlacementDriverClient` embedded in, which lists and watches
-    /// resources of interest.
-    ///
-    /// Once the watcher fetches a set of resource events, it dispatches them to all metadata managers
-    /// per worker through MPSC channels.
-    metadata_watcher: Option<W>,
 
     /// `MetadataManager` caches all relevant metadata it receives and notifies all registered observers.
     metadata_manager: Meta,
@@ -52,24 +41,21 @@ pub(crate) struct Worker<M, W, Meta> {
     state: Rc<RefCell<RangeServerState>>,
 }
 
-impl<M, W, Meta> Worker<M, W, Meta>
+impl<M, Meta> Worker<M, Meta>
 where
     M: RangeManager + 'static,
-    W: MetadataWatcher + 'static,
     Meta: MetadataManager + 'static,
 {
     pub fn new(
         config: WorkerConfig,
         range_manager: Rc<M>,
         client: Rc<DefaultClient>,
-        metadata_watcher: Option<W>,
         metadata_manager: Meta,
     ) -> Self {
         Self {
             config,
             range_manager,
             client,
-            metadata_watcher,
             metadata_manager,
             state: Rc::new(RefCell::new(
                 RangeServerState::RANGE_SERVER_STATE_READ_WRITE,
@@ -77,10 +63,7 @@ where
         }
     }
 
-    pub fn serve<P>(&mut self, pd_client: Box<P>, shutdown: broadcast::Sender<()>)
-    where
-        P: PlacementDriverClient + 'static,
-    {
+    pub fn serve(&mut self, shutdown: broadcast::Sender<()>) {
         core_affinity::set_for_current(self.config.core_id);
         if self.config.primary {
             info!(
@@ -103,11 +86,6 @@ where
                     .setup_attach_wq(self.config.sharing_uring),
             )
             .start(async {
-                // Run dispatching service of Store.
-                if let Some(ref mut watcher) = self.metadata_watcher {
-                    watcher.start(pd_client);
-                }
-
                 self.metadata_manager.start().await;
 
                 self.range_manager.start().await;

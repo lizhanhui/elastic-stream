@@ -1,4 +1,5 @@
 use super::{MetadataEventRx, MetadataManager, ResourceEventObserver, ResourceEventRx};
+use local_sync::oneshot;
 use log::info;
 use model::{
     error::EsError,
@@ -12,7 +13,7 @@ use std::{
     collections::{BTreeMap, HashMap},
     rc::{Rc, Weak},
 };
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::mpsc;
 type Listener = mpsc::UnboundedSender<Vec<RangeEvent>>;
 
 pub(crate) struct DefaultMetadataManager {
@@ -126,6 +127,7 @@ impl DefaultMetadataManager {
             }
         });
         let _ = list_done_rx.await;
+        info!("Complete fetching metadata from PD");
     }
 
     #[inline]

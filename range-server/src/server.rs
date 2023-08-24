@@ -1,21 +1,13 @@
-use std::{
-    error::Error,
-    os::fd::AsRawFd,
-    rc::Rc,
-    sync::Arc,
-    thread::{self, JoinHandle},
-};
-
+use config::Configuration;
 use core_affinity::CoreId;
 use futures::executor::block_on;
-use log::error;
-use tokio::sync::{broadcast, oneshot};
-
-use config::Configuration;
-use model::error::EsError;
+use log::{error, info};
+use model::{error::EsError, resource::ResourceEvent};
 use object_storage::{object_storage::AsyncObjectStorage, ObjectStorage};
 use pd_client::pd_client::DefaultPlacementDriverClient;
+use std::{os::fd::AsRawFd, rc::Rc, sync::Arc, thread};
 use store::{BufferedStore, ElasticStore, Store};
+use tokio::sync::{broadcast, mpsc::UnboundedReceiver, oneshot};
 
 use crate::{
     metadata::{
@@ -32,7 +24,6 @@ struct Server {
     store: ElasticStore,
     shutdown: broadcast::Sender<()>,
     object_storage: AsyncObjectStorage,
-    metadata_watcher: DefaultMetadataWatcher,
 }
 
 impl Server {
@@ -47,7 +38,6 @@ impl Server {
             store,
             shutdown,
             object_storage,
-            metadata_watcher: DefaultMetadataWatcher::new(),
         }
     }
 
@@ -92,23 +82,21 @@ impl Server {
         }
     }
 
-    fn start_worker(&mut self, core_id: CoreId, primary: bool) -> Result<JoinHandle<()>, EsError> {
+    fn start_worker(
+        &mut self,
+        core_id: CoreId,
+        primary: bool,
+        metadata_rx: UnboundedReceiver<ResourceEvent>,
+    ) -> Result<(), EsError> {
         let server_config = self.config.clone();
         let store: ElasticStore = self.store.clone();
         let object_storage = self.object_storage.clone();
 
         let shutdown_tx = self.shutdown.clone();
-        let metadata_watcher_rx = self.metadata_watcher.watch()?;
         let thread_name = if primary {
             "RangeServer[Primary]".to_owned()
         } else {
             "RangeServer".to_owned()
-        };
-
-        let metadata_watcher = if primary {
-            Some(std::mem::take(&mut self.metadata_watcher))
-        } else {
-            None
         };
 
         let object_rx = if primary {
@@ -134,7 +122,7 @@ impl Server {
                 ));
 
                 let mut metadata_manager = DefaultMetadataManager::new(
-                    metadata_watcher_rx,
+                    metadata_rx,
                     object_rx,
                     server_config.server.server_id,
                 );
@@ -145,35 +133,33 @@ impl Server {
                 metadata_manager.add_observer(Rc::downgrade(&(Rc::clone(&range_manager) as _)));
                 metadata_manager.add_observer(Rc::downgrade(&(Rc::clone(&store) as _)));
 
-                let pd_client = Box::new(DefaultPlacementDriverClient::new(Rc::clone(&client)));
-
-                let mut worker = Worker::new(
-                    worker_config,
-                    range_manager,
-                    client,
-                    metadata_watcher,
-                    metadata_manager,
-                );
-                worker.serve(pd_client, shutdown_tx)
+                let mut worker =
+                    Worker::new(worker_config, range_manager, client, metadata_manager);
+                worker.serve(shutdown_tx);
             })
-            .map_err(|e| EsError::unexpected(&e.to_string()))
+            .map_err(|e| EsError::unexpected(&e.to_string()))?;
+        Ok(())
+    }
+
+    fn start_admin(&mut self, mut watcher: impl MetadataWatcher) {
+        tokio_uring::start(async move {
+            watcher.start().await;
+        });
+        info!("MetadataWatcher completed");
     }
 }
 
-pub fn launch(
-    config: Configuration,
-    shutdown: broadcast::Sender<()>,
-) -> Result<(), Box<dyn Error>> {
+pub fn launch(config: Configuration, shutdown: broadcast::Sender<()>) -> Result<(), EsError> {
     let (recovery_completion_tx, recovery_completion_rx) = oneshot::channel();
     // Note we move the configuration into store, letting it either allocate or read existing server-id for us.
-    let store = match ElasticStore::new(config, recovery_completion_tx) {
-        Ok(store) => store,
-        Err(e) => {
-            error!("Failed to launch ElasticStore: {:?}", e);
-            return Err(Box::new(e));
-        }
-    };
-    recovery_completion_rx.blocking_recv()?;
+    let store = ElasticStore::new(config, recovery_completion_tx).map_err(|e| {
+        error!("Failed to launch ElasticStore: {:?}", e);
+        EsError::unexpected(&e.to_string())
+    })?;
+    recovery_completion_rx.blocking_recv().map_err(|e| {
+        error!("Error raised while waiting for completion of store recovery");
+        EsError::unexpected(&e.to_string())
+    })?;
 
     // Acquire a shared ref to full-fledged configuration.
     let config = store.config();
@@ -184,18 +170,26 @@ pub fn launch(
         "At least one core should be reserved for primary worker"
     );
 
+    let client = Rc::new(client::DefaultClient::new(
+        Arc::clone(&config),
+        shutdown.clone(),
+    ));
+    let pd_client = DefaultPlacementDriverClient::new(client);
+    let mut metadata_watcher = DefaultMetadataWatcher::new(pd_client);
     let mut server = Server::new(config, store, shutdown);
 
-    // Build non-primary workers first
-    let mut handles = worker_core_ids
+    // Build and start workers
+    for core_id in worker_core_ids
         .iter()
         .rev()
         .skip(1)
         .map(|id| core_affinity::CoreId { id: *id as usize })
-        .map(|core_id| server.start_worker(core_id, false))
-        .collect::<Vec<_>>();
+    {
+        let metadata_rx = metadata_watcher.watch()?;
+        server.start_worker(core_id, false, metadata_rx)?;
+    }
 
-    // Build primary worker
+    // Build and start primary worker
     {
         let core_id = worker_core_ids
             .iter()
@@ -203,15 +197,14 @@ pub fn launch(
             .map(|id| core_affinity::CoreId { id: *id as usize })
             .next()
             .unwrap();
-        let handle = server.start_worker(core_id, true);
-        handles.push(handle);
+        let metadata_rx = metadata_watcher.watch()?;
+        server.start_worker(core_id, true, metadata_rx)?;
     }
 
     server.start_observation();
 
-    for handle in handles.into_iter() {
-        let _result = handle.unwrap().join();
-    }
+    // block current thread.
+    server.start_admin(metadata_watcher);
 
     Ok(())
 }

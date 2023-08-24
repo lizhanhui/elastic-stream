@@ -1,6 +1,5 @@
 use super::{range::Range, stream::Stream, RangeManager};
 use crate::error::ServiceError;
-use local_sync::oneshot::{self, Sender};
 use log::{error, info, warn};
 use model::{
     object::ObjectMetadata,
@@ -12,7 +11,7 @@ use model::{
 };
 use object_storage::ObjectStorage;
 use std::{
-    cell::{RefCell, UnsafeCell},
+    cell::UnsafeCell,
     collections::{hash_map::Entry, HashMap},
     rc::Rc,
     time::Duration,
@@ -29,12 +28,6 @@ use store::{
 pub(crate) struct DefaultRangeManager<S, O> {
     streams: UnsafeCell<HashMap<u64, Stream>>,
 
-    /// Flag whether range metadata has been loaded from PD yet.
-    metadata_loaded: RefCell<bool>,
-
-    /// Tasks that await for completion of metadata loading on start
-    metadata_loading_wait_list: RefCell<Vec<Sender<()>>>,
-
     store: Rc<S>,
 
     object_storage: O,
@@ -44,21 +37,9 @@ impl<S, O> DefaultRangeManager<S, O> {
     pub(crate) fn new(store: Rc<S>, object_storage: O) -> Self {
         Self {
             streams: UnsafeCell::new(HashMap::new()),
-            metadata_loaded: RefCell::new(false),
-            metadata_loading_wait_list: RefCell::new(vec![]),
             store,
             object_storage,
         }
-    }
-
-    async fn wait_metadata_loaded(&self) {
-        if *self.metadata_loaded.borrow() {
-            return;
-        }
-
-        let (tx, rx) = oneshot::channel();
-        self.metadata_loading_wait_list.borrow_mut().push(tx);
-        let _ = rx.await;
     }
 
     #[inline]
@@ -101,10 +82,7 @@ impl<S, O> DefaultRangeManager<S, O> {
 
     fn on_range_event(&self, ty: EventType, metadata: &RangeMetadata) {
         match ty {
-            EventType::None | EventType::Reset => {}
-            EventType::ListFinished => {
-                *self.metadata_loaded.borrow_mut() = true;
-            }
+            EventType::None | EventType::Reset | EventType::ListFinished => {}
             EventType::Added | EventType::Modified | EventType::Listed => {
                 let streams = self.streams_mut();
                 let stream = streams.entry(metadata.stream_id()).or_insert_with(|| {
@@ -162,7 +140,6 @@ where
 {
     async fn start(&self) {
         self.store.start();
-        self.wait_metadata_loaded().await;
     }
 
     /// Create a new range for the specified stream.

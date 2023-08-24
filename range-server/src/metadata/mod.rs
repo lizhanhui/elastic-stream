@@ -8,7 +8,6 @@ use model::{
     range::RangeEvent,
     resource::{ResourceEvent, ResourceEventObserver},
 };
-use pd_client::PlacementDriverClient;
 use tokio::sync::mpsc;
 
 #[cfg(any(test, feature = "mock"))]
@@ -22,7 +21,7 @@ pub type ResourceEventRx = mpsc::UnboundedReceiver<ResourceEvent>;
 /// Primary worker aggregates a `MetadataWatcher` instance and a valid `PlacementDriverClient`.
 #[cfg_attr(test, automock)]
 pub(crate) trait MetadataWatcher {
-    fn start<P: PlacementDriverClient + 'static>(&mut self, pd_client: Box<P>);
+    async fn start(&mut self);
 
     fn watch(&mut self) -> Result<ResourceEventRx, EsError>;
 }
