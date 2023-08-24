@@ -82,9 +82,13 @@ jobs:
       - name: Test
         run: make test GOFLAGS="-v" GO_VERSION=${{ matrix.go-version }} GO_TEST_FLAGS="-coverprofile=covprofile -covermode=atomic -coverpkg=./..."
       - name: Upload coverage
-        uses: codecov/codecov-action@v2
+        uses: Wandalen/wretry.action@master
         with:
-          files: ./pd/covprofile
-          fail_ci_if_error: true
-          verbose: true
-          version: "v0.1.15"
+          action: codecov/codecov-action@v2
+          attempt_limit: 5
+          attempt_delay: 60000 # 1 minute
+          with: |
+            files: ./pd/covprofile
+            fail_ci_if_error: true
+            verbose: true
+            version: "v0.1.15"

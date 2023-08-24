@@ -112,10 +112,14 @@ jobs:
         run: cargo llvm-cov --features="jemalloc" --workspace --ignore-filename-regex "generated|linux" --codecov --output-path codecov.json
         env:
           RUST_BACKTRACE: 1
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v2
+      - name: Upload coverage
+        uses: Wandalen/wretry.action@master
         with:
-          files: codecov.json
-          fail_ci_if_error: true
-          verbose: true
-          version: "v0.1.15"
+          action: codecov/codecov-action@v2
+          attempt_limit: 5
+          attempt_delay: 60000 # 1 minute
+          with: |
+            files: codecov.json
+            fail_ci_if_error: true
+            verbose: true
+            version: "v0.1.15"
