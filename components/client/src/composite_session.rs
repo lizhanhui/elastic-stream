@@ -704,13 +704,13 @@ impl CompositeSession {
         sessions: Rc<RefCell<HashMap<SocketAddr, Session>>>,
         shutdown: broadcast::Sender<()>,
     ) -> Result<Session, EsError> {
-        trace!("Establishing connection to {:?}", addr);
+        info!("Establishing connection to {:?}", addr);
         let endpoint = addr.to_string();
         let connect = TcpStream::connect(addr);
         let stream = match timeout(duration, connect).await {
             Ok(res) => match res {
                 Ok(connection) => {
-                    trace!("Connection to {:?} established", addr);
+                    info!("Connection to {:?} established", addr);
                     connection.set_nodelay(true).map_err(|e| {
                         error!("Failed to disable Nagle's algorithm. Cause: {:?}", e);
                         EsError::new(ErrorCode::CONNECT_DISABLE_NAGLE_FAIL, "Disable nagle fail")
