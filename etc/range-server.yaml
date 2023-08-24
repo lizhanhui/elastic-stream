@@ -88,14 +88,22 @@ replication:
 
 observation:
   metrics:
+    enable: true
     # Host address
     host: "127.0.0.1"
     # Listening port
     port: 9898
+    # Metrics push mode, available values: "otlp", "prometheus", default value is "prometheus"
+    mode: "prometheus"
+    # OpenTelemetry Protocol, available values: "grpc", "http", default value is "grpc"
+    protocol: "grpc"
+    # Metrics push interval in ticks, default value is 60s
+    interval: 60
   trace:
+    enable: false
     # OpenTelemetry collector endpoint
     endpoint: "http://localhost:4317"
-    # OpenTelemetry Protocol, available values: "grpc", "http"
+    # OpenTelemetry Protocol, available values: "grpc", "http", default value is "grpc"
     protocol: "grpc"
     # Default max waiting time for the backend to process each signal batch
     timeout-ms: 3000

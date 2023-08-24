@@ -41,6 +41,9 @@ impl DiskStatistics {
             .saturating_duration_since(self.last_instant)
             .as_millis() as i64
             / 1000;
+        if time_delta == 0 {
+            return;
+        }
         self.last_instant = current_instant;
         if let Ok(proc) = procfs::process::Process::myself() {
             if let Ok(io) = proc.io() {

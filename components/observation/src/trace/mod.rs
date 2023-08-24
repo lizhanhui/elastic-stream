@@ -44,6 +44,9 @@ pub fn report_trace(spans: LocalSpans) {
 }
 
 pub fn start_trace_exporter(config: Arc<Configuration>, mut shutdown: broadcast::Receiver<()>) {
+    if !config.observation.trace.enable {
+        return;
+    }
     std::thread::Builder::new()
         .name("TraceExporter".to_string())
         .spawn(move || {
@@ -73,7 +76,7 @@ pub fn start_trace_exporter(config: Arc<Configuration>, mut shutdown: broadcast:
                 match shutdown.try_recv() {
                     Err(TryRecvError::Empty) => {}
                     _ => {
-                        info!("Trace exporter stopped");
+                        info!("Shutting down trace exporter");
                         break;
                     }
                 }
@@ -90,7 +93,7 @@ pub fn start_trace_exporter(config: Arc<Configuration>, mut shutdown: broadcast:
 
                 let result = runtime.block_on(grpc_exporter.export(convert(spans)));
                 if let Err(error) = result {
-                    warn!("Failed to export spans: {:?}", error);
+                    warn!("Failed to export traces: {:?}", error);
                 }
             }
             runtime.shutdown_timeout(Duration::from_millis(config.observation.trace.timeout_ms));

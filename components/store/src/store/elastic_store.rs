@@ -93,6 +93,7 @@ impl ElasticStore {
         config.server.server_id = lock.id();
         let config = Arc::new(config);
 
+        #[cfg(feature = "metrics")]
         observation::metrics::init_meter(config.clone());
 
         // Build wal offset manager

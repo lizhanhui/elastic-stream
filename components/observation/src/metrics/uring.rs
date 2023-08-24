@@ -37,6 +37,9 @@ impl UringStatistics {
             .saturating_duration_since(self.last_instant)
             .as_millis() as u64
             / 1000;
+        if time_delta == 0 {
+            return;
+        }
         self.last_instant = current_instant;
         self.uring_task_rate = (COMPLETED_IO_COUNT.swap(0, Ordering::Relaxed) / time_delta) as i16;
     }
