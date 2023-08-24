@@ -1,4 +1,28 @@
-use super::lock::Lock;
+use std::{
+    cell::{RefCell, UnsafeCell},
+    collections::VecDeque,
+    os::fd::{AsRawFd, RawFd},
+    rc::Rc,
+    sync::Arc,
+    thread::{Builder, JoinHandle},
+    time::Duration,
+};
+
+use bytes::Buf;
+use crossbeam::channel::{Receiver, Sender, TryRecvError};
+use futures::future::join_all;
+use log::{error, trace, warn};
+use tokio::sync::{mpsc, oneshot};
+
+use client::PlacementDriverIdGenerator;
+use model::{
+    object::ObjectMetadata,
+    range::RangeMetadata,
+    resource::{EventType, Resource, ResourceEvent, ResourceEventObserver},
+    stream::StreamMetadata,
+};
+use observation::metrics::store::{record_append_operation, record_fetch_operation};
+
 use crate::{
     error::{AppendError, FetchError, StoreError},
     index::{
@@ -19,32 +43,8 @@ use crate::{
     watermark::{WalWatermark, Watermark},
     AppendRecordRequest, AppendResult, FetchResult, Store,
 };
-use bytes::Buf;
-use client::PlacementDriverIdGenerator;
-use crossbeam::channel::{Receiver, Sender, TryRecvError};
-use futures::future::join_all;
-use log::{error, trace, warn};
-use model::{
-    object::ObjectMetadata,
-    range::RangeMetadata,
-    resource::{EventType, Resource, ResourceEvent, ResourceEventObserver},
-    stream::StreamMetadata,
-};
-use observation::metrics::store_metrics::{
-    RangeServerStatistics, STORE_APPEND_BYTES_COUNT, STORE_APPEND_COUNT,
-    STORE_APPEND_LATENCY_HISTOGRAM, STORE_FAILED_APPEND_COUNT, STORE_FAILED_FETCH_COUNT,
-    STORE_FETCH_BYTES_COUNT, STORE_FETCH_COUNT, STORE_FETCH_LATENCY_HISTOGRAM,
-};
-use std::{
-    cell::{RefCell, UnsafeCell},
-    collections::VecDeque,
-    os::fd::{AsRawFd, RawFd},
-    rc::Rc,
-    sync::Arc,
-    thread::{Builder, JoinHandle},
-    time::Duration,
-};
-use tokio::sync::{mpsc, oneshot};
+
+use super::lock::Lock;
 
 struct Shared {
     lock: Lock,
@@ -300,15 +300,11 @@ impl Store for ElasticStore {
         self.do_append(request);
         match rx.await.map_err(|_e| AppendError::ChannelRecv) {
             Ok(res) => {
-                let latency = now.elapsed();
-                STORE_APPEND_LATENCY_HISTOGRAM.observe(latency.as_micros() as f64);
-                RangeServerStatistics::observe_append_latency(latency.as_millis() as i16);
-                STORE_APPEND_COUNT.inc();
-                STORE_APPEND_BYTES_COUNT.inc_by(len as u64);
+                record_append_operation(now.elapsed().as_micros() as u64, len as u64, true);
                 res
             }
             Err(e) => {
-                STORE_FAILED_APPEND_COUNT.inc();
+                record_append_operation(now.elapsed().as_micros() as u64, 0, true);
                 Err(e)
             }
         }
@@ -420,19 +416,16 @@ impl Store for ElasticStore {
             // Sort the result
             final_result.sort_by(|a, b| a.wal_offset.cmp(&b.wal_offset));
 
-            STORE_FETCH_COUNT.inc();
-            let latency = now.elapsed();
-            STORE_FETCH_LATENCY_HISTOGRAM.observe(latency.as_micros() as f64);
-            RangeServerStatistics::observe_fetch_latency(latency.as_millis() as i16);
-            STORE_FETCH_BYTES_COUNT
-                .inc_by(final_result.iter().map(|re| re.total_len()).sum::<usize>() as u64);
+            let total_bytes = final_result.iter().map(|re| re.total_len()).sum::<usize>() as u64;
+            record_fetch_operation(now.elapsed().as_micros() as u64, total_bytes, true);
+
             return Ok(FetchResult {
                 stream_id: options.stream_id,
                 offset: options.offset,
                 results: final_result,
             });
         }
-        STORE_FAILED_FETCH_COUNT.inc();
+        record_fetch_operation(now.elapsed().as_micros() as u64, 0, false);
         Err(FetchError::NoRecord)
     }
 

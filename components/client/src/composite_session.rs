@@ -22,9 +22,9 @@ use model::{
     AppendResultEntry, ListRangeCriteria, PlacementDriverNode,
 };
 use observation::metrics::{
-    store_metrics::RangeServerStatistics,
-    sys_metrics::{DiskStatistics, MemoryStatistics},
-    uring_metrics::UringStatistics,
+    store::RangeServerStatistics,
+    sys::{DiskStatistics, MemoryStatistics},
+    uring::UringStatistics,
 };
 use protocol::rpc::header::{
     ErrorCode, PlacementDriverCluster, RangeServerState, ResourceType, StreamT,

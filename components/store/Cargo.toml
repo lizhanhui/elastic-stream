@@ -59,6 +59,7 @@ uuid = { workspace = true }
 [features]
 default = []
 mock = ["mockall"]
+metrics = ["observation/metrics"]
 trace = ["observation/trace", "minitrace/enable"]
 
 [[bench]]

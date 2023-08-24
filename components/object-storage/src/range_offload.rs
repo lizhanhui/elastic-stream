@@ -11,7 +11,7 @@ use model::object::gen_footer;
 use model::object::gen_object_key;
 use model::object::BLOCK_DELIMITER;
 use model::record::flat_record::RecordMagic;
-use observation::metrics::object_metrics;
+use observation::metrics::object;
 use opendal::Operator;
 use opendal::Writer;
 use protocol::flat_model::records::RecordBatchMeta;
@@ -313,7 +313,7 @@ impl MultiPartObject {
             let start = Instant::now();
             match writer.write(bytes.clone()).await {
                 Ok(_) => {
-                    object_metrics::multi_part_object_write(bytes.len() as u32, start.elapsed());
+                    object::multi_part_object_write(bytes.len() as u32, start.elapsed());
                     debug!(
                         "{key} write multi-part object part[len={}] success",
                         bytes.len()
@@ -333,7 +333,7 @@ impl MultiPartObject {
         loop {
             match writer.close().await {
                 Ok(_) => {
-                    object_metrics::multi_part_object_complete();
+                    object::multi_part_object_complete();
                     debug!("{key} complete multi-part object success");
                     break;
                 }
@@ -420,7 +420,7 @@ where
             match op.write(key, bytes.clone()).await {
                 Ok(_) => {
                     debug!("{key} write object success[len={}]", data_len);
-                    object_metrics::object_complete(data_len as u32, start.elapsed());
+                    object::object_complete(data_len as u32, start.elapsed());
                     break;
                 }
                 Err(e) => {

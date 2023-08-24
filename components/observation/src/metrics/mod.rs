@@ -21,10 +21,11 @@ use tokio::sync::broadcast;
 
 use config::Configuration;
 
-pub mod object_metrics;
-pub mod store_metrics;
-pub mod sys_metrics;
-pub mod uring_metrics;
+pub mod object;
+pub mod range_server;
+pub mod store;
+pub mod sys;
+pub mod uring;
 
 static METER: OnceCell<Meter> = OnceCell::new();
 
@@ -102,10 +103,6 @@ async fn serve_req(_req: Request<Body>) -> Result<Response<Body>, hyper::Error> 
 }
 
 pub fn start_metrics_exporter(config: Arc<Configuration>, mut shutdown: broadcast::Receiver<()>) {
-    // init meter
-    init_meter(config.clone());
-
-    // init exporter
     std::thread::Builder::new()
         .name("MetricsExporter".to_string())
         .spawn(move || {

@@ -42,11 +42,16 @@ jobs:
     - name: Install Deps
       run: |
         sudo ./scripts/install_deps.sh
-    - name: Clippy Check
+    - name: Clippy Check with all features
       uses: actions-rs/clippy-check@v1
       with:
         token: ${{ secrets.GITHUB_TOKEN }}
         args: --all-targets --features=jemalloc,trace,profiling,metrics -- -D warnings
+    - name: Clippy Check without observation features
+      uses: actions-rs/clippy-check@v1
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        args: --all-targets --features=jemalloc -- -D warnings
   build:
     name: Cargo Build
     strategy:

@@ -19,7 +19,6 @@ pub use crate::cli::Cli;
 pub(crate) mod connection_handler;
 pub(crate) mod heartbeat;
 pub(crate) mod metadata;
-mod metrics;
 pub(crate) mod session;
 
 pub mod built_info {

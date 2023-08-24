@@ -1,19 +1,3 @@
-use crate::{
-    connection_tracker::ConnectionTracker,
-    heartbeat::Heartbeat,
-    metadata::{MetadataManager, MetadataWatcher},
-    range_manager::RangeManager,
-    worker_config::WorkerConfig,
-};
-use client::{client::Client, DefaultClient};
-use log::{debug, error, info, warn};
-use observation::metrics::{
-    store_metrics::RangeServerStatistics,
-    sys_metrics::{DiskStatistics, MemoryStatistics},
-    uring_metrics::UringStatistics,
-};
-use pd_client::PlacementDriverClient;
-use protocol::rpc::header::RangeServerState;
 use std::{
     cell::RefCell,
     error::Error,
@@ -21,9 +5,27 @@ use std::{
     sync::Arc,
     time::{Duration, Instant},
 };
+
+use log::{debug, error, info, warn};
 use tokio::sync::broadcast;
 use tokio_uring::net::TcpListener;
-use util::metrics::http_serve;
+
+use client::{client::Client, DefaultClient};
+use observation::metrics::{
+    store::RangeServerStatistics,
+    sys::{DiskStatistics, MemoryStatistics},
+    uring::UringStatistics,
+};
+use pd_client::PlacementDriverClient;
+use protocol::rpc::header::RangeServerState;
+
+use crate::{
+    connection_tracker::ConnectionTracker,
+    heartbeat::Heartbeat,
+    metadata::{MetadataManager, MetadataWatcher},
+    range_manager::RangeManager,
+    worker_config::WorkerConfig,
+};
 
 /// A server aggregates one or more `Worker`s and each `Worker` takes up a dedicated CPU
 /// processor, following the Thread-per-Core design paradigm.
@@ -124,11 +126,6 @@ where
                     };
 
                 if self.config.primary {
-                    let port = self.config.server_config.observation.metrics.port;
-                    let host = self.config.server_config.observation.metrics.host.clone();
-                    tokio_uring::spawn(async move {
-                        http_serve(&host, port).await;
-                    });
                     self.report_metrics(shutdown.subscribe());
                 }
 

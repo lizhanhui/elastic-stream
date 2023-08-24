@@ -1,6 +1,20 @@
 //! Server-side handlers, processors for requests of each kind.
 //!
 //! See details docs for each operation code
+use std::rc::Rc;
+
+use bytes::Bytes;
+use local_sync::mpsc;
+use log::{trace, warn};
+
+use codec::frame::Frame;
+use observation::metrics::range_server::{record_append_operation, record_fetch_operation};
+use protocol::rpc::header::{StatusT, SystemErrorT};
+
+use crate::range_manager::RangeManager;
+
+use self::cmd::Command;
+
 mod append;
 mod cmd;
 mod create_range;
@@ -10,17 +24,6 @@ mod heartbeat;
 mod ping;
 mod seal_range;
 mod util;
-use self::cmd::Command;
-use crate::{
-    metrics::{APPEND_LATENCY, FETCH_LATENCY},
-    range_manager::RangeManager,
-};
-use bytes::Bytes;
-use codec::frame::Frame;
-use local_sync::mpsc;
-use log::{trace, warn};
-use protocol::rpc::header::{StatusT, SystemErrorT};
-use std::rc::Rc;
 
 /// Representation of the incoming request.
 ///
@@ -77,10 +80,10 @@ where
 
                 match cmd {
                     Command::Append(_) => {
-                        APPEND_LATENCY.observe(now.elapsed().as_micros() as f64);
+                        record_append_operation(now.elapsed().as_micros() as u64);
                     }
                     Command::Fetch(_) => {
-                        FETCH_LATENCY.observe(now.elapsed().as_micros() as f64);
+                        record_fetch_operation(now.elapsed().as_micros() as u64);
                     }
                     _ => {}
                 }
@@ -122,12 +125,16 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::ServerCall;
-    use crate::range_manager::MockRangeManager;
-    use codec::frame::Frame;
-    use local_sync::mpsc;
-    use protocol::rpc::header::{ErrorCode, OperationCode, SystemError};
     use std::rc::Rc;
+
+    use local_sync::mpsc;
+
+    use codec::frame::Frame;
+    use protocol::rpc::header::{ErrorCode, OperationCode, SystemError};
+
+    use crate::range_manager::MockRangeManager;
+
+    use super::ServerCall;
 
     #[test]
     fn test_call() {

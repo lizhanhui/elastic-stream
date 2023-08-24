@@ -18,9 +18,9 @@ use model::{
     AppendResultEntry, ListRangeCriteria,
 };
 use observation::metrics::{
-    store_metrics::RangeServerStatistics,
-    sys_metrics::{DiskStatistics, MemoryStatistics},
-    uring_metrics::UringStatistics,
+    store::RangeServerStatistics,
+    sys::{DiskStatistics, MemoryStatistics},
+    uring::UringStatistics,
 };
 use protocol::rpc::header::{ErrorCode, RangeServerState, ResourceType, SealKind, StreamT};
 use std::{cell::UnsafeCell, rc::Rc, sync::Arc, time::Duration};
@@ -479,9 +479,9 @@ mod tests {
         record::{flat_record::FlatRecordBatch, RecordBatchBuilder},
     };
     use observation::metrics::{
-        store_metrics::RangeServerStatistics,
-        sys_metrics::{DiskStatistics, MemoryStatistics},
-        uring_metrics::UringStatistics,
+        store::RangeServerStatistics,
+        sys::{DiskStatistics, MemoryStatistics},
+        uring::UringStatistics,
     };
     use protocol::rpc::header::{ClientRole, RangeServerState, ResourceType, SealKind, StreamT};
     use std::{error::Error, sync::Arc};

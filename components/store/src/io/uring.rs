@@ -17,8 +17,8 @@ use log::{debug, error, info, trace, warn};
 use minitrace::local::LocalCollector;
 use minitrace::local::LocalSpan;
 use minstant::Instant;
-use observation::metrics::uring_metrics::{
-    record_inflight_io, record_io_depth, record_pending_task,
+use observation::metrics::uring::{
+    record_inflight_io, record_io_depth, record_pending_task, record_read_io, record_write_io,
 };
 use rustc_hash::{FxHashMap, FxHashSet};
 use tokio::sync::oneshot;
@@ -1014,15 +1014,11 @@ impl IO {
                     }
 
                     match context.opcode {
-                        opcode::Read::CODE => observation::metrics::uring_metrics::record_read_io(
-                            latency.as_micros() as u64,
-                            context.buf.capacity as u64,
-                        ),
+                        opcode::Read::CODE => {
+                            record_read_io(latency.as_micros() as u64, context.buf.capacity as u64)
+                        }
                         opcode::Write::CODE => {
-                            observation::metrics::uring_metrics::record_write_io(
-                                latency.as_micros() as u64,
-                                context.buf.capacity as u64,
-                            )
+                            record_write_io(latency.as_micros() as u64, context.buf.capacity as u64)
                         }
                         _ => {}
                     }

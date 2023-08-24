@@ -123,23 +123,23 @@ const IO_TYPE_READ: &str = "read";
 const IO_TYPE_WRITE: &str = "write";
 
 #[inline]
-pub fn record_read_io(_latency: u64, _bytes: u64) {
+pub fn record_read_io(latency: u64, _bytes: u64) {
     #[cfg(feature = "metrics")]
     {
-        HISTOGRAM_IO_LATENCY.record(_latency, &[KeyValue::new(LABEL_IO_TYPE, IO_TYPE_READ)]);
+        HISTOGRAM_IO_LATENCY.record(latency, &[KeyValue::new(LABEL_IO_TYPE, IO_TYPE_READ)]);
         COUNTER_BYTES_TOTAL.add(_bytes, &[KeyValue::new(LABEL_IO_TYPE, IO_TYPE_READ)]);
     }
-    UringStatistics::observe_latency(_latency as i16);
+    UringStatistics::observe_latency(latency as i16);
 }
 
 #[inline]
-pub fn record_write_io(_latency: u64, _bytes: u64) {
+pub fn record_write_io(latency: u64, _bytes: u64) {
     #[cfg(feature = "metrics")]
     {
-        HISTOGRAM_IO_LATENCY.record(_latency, &[KeyValue::new(LABEL_IO_TYPE, IO_TYPE_WRITE)]);
+        HISTOGRAM_IO_LATENCY.record(latency, &[KeyValue::new(LABEL_IO_TYPE, IO_TYPE_WRITE)]);
         COUNTER_BYTES_TOTAL.add(_bytes, &[KeyValue::new(LABEL_IO_TYPE, IO_TYPE_WRITE)]);
     }
-    UringStatistics::observe_latency(_latency as i16);
+    UringStatistics::observe_latency(latency as i16);
 }
 
 #[inline]
@@ -173,7 +173,7 @@ mod tests {
 
     use log::trace;
 
-    use crate::metrics::uring_metrics::UringStatistics;
+    use crate::metrics::uring::UringStatistics;
 
     #[test]
     #[ignore = "This test is just for observing the effect."]

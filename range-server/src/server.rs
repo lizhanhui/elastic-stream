@@ -52,6 +52,12 @@ impl Server {
     }
 
     fn start_observation(&self) {
+        #[cfg(feature = "metrics")]
+        observation::metrics::start_metrics_exporter(
+            Arc::clone(&self.config),
+            self.shutdown.subscribe(),
+        );
+
         #[cfg(feature = "trace")]
         observation::trace::start_trace_exporter(
             Arc::clone(&self.config),

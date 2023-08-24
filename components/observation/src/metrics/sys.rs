@@ -124,7 +124,7 @@ mod tests {
 
     use log::trace;
 
-    use crate::metrics::sys_metrics::{DiskStatistics, MemoryStatistics};
+    use crate::metrics::sys::{DiskStatistics, MemoryStatistics};
 
     fn write_one_gb() {
         let path = Path::new("/tmp/test_data");
