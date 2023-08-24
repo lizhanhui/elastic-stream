@@ -251,24 +251,7 @@ shell: .flatc | $(BUILD_DIRS)
 
 LICENSES = .licenses
 
-$(LICENSES): .flatc | $(BUILD_DIRS)
-	# Don't assume that `go` is available locally.
-	docker run                                 \
-	    -i                                     \
-	    --rm                                   \
-	    -u $$(id -u):$$(id -g)                 \
-	    -v $$(pwd)/tool:/src                   \
-	    -w /src                                \
-	    -v $$(pwd)/bin/tool:/go/bin            \
-	    -v $$(pwd)/.go/cache:/.cache           \
-	    --env GOCACHE="/.cache/gocache"        \
-	    --env GOMODCACHE="/.cache/gomodcache"  \
-	    --env CGO_ENABLED=0                    \
-	    --env GOPROXY="$(GOPROXY)"             \
-	    --env HTTP_PROXY="$(HTTP_PROXY)"       \
-	    --env HTTPS_PROXY="$(HTTPS_PROXY)"     \
-	    $(BUILD_IMAGE)                         \
-	    go install github.com/google/go-licenses
+$(LICENSES): .flatc bin/tool/go-licenses | $(BUILD_DIRS)
 	# The tool runs in a container because it execs `go`, which doesn't
 	# play nicely with CI.  The tool also wants its output dir to not
 	# exist, so we can't just volume mount $(LICENSES).
@@ -411,41 +394,14 @@ push: container
 
 # This depends on github.com/estesp/manifest-tool.
 manifest-list: # @HELP builds a manifest list of containers for all platforms
-manifest-list: all-push
-	# Don't assume that `go` is available locally.
-	docker run                                 \
-	    -i                                     \
-	    --rm                                   \
-	    -u $$(id -u):$$(id -g)                 \
-	    -v $$(pwd)/tool:/src                   \
-	    -w /src                                \
-	    -v $$(pwd)/bin/tool:/go/bin            \
-	    -v $$(pwd)/.go/cache:/.cache           \
-	    --env GOCACHE="/.cache/gocache"        \
-	    --env GOMODCACHE="/.cache/gomodcache"  \
-	    --env GOARCH="$(HOST_ARCH)"            \
-	    --env GOOS="$(HOST_OS)"                \
-	    --env CGO_ENABLED=0                    \
-	    --env GOPROXY="$(GOPROXY)"             \
-	    --env HTTP_PROXY="$(HTTP_PROXY)"       \
-	    --env HTTPS_PROXY="$(HTTPS_PROXY)"     \
-	    $(BUILD_IMAGE)                         \
-	    go install github.com/estesp/manifest-tool/v2/cmd/manifest-tool
+manifest-list: all-push bin/tool/manifest-tool
 	for bin in $(BINS); do                                        \
 	    platforms=$$(echo $(ALL_PLATFORMS) | sed 's/ /,/g');      \
-	    if [ -e bin/tool/manifest-tool ]; then                    \
-	        bin/tool/manifest-tool                                \
-	            push from-args                                    \
-	            --platforms "$$platforms"                         \
-	            --template $(REGISTRY)/$$bin:$(VERSION)__OS_ARCH  \
-	            --target $(REGISTRY)/$$bin:$(VERSION);            \
-	    else                                                      \
-	        bin/tool/$(HOST_OS)_$(HOST_ARCH)/manifest-tool        \
-	           push from-args                                     \
-	           --platforms "$$platforms"                          \
-	           --template $(REGISTRY)/$$bin:$(VERSION)__OS_ARCH   \
-	           --target $(REGISTRY)/$$bin:$(VERSION);             \
-	    fi                                                        \
+	    bin/tool/manifest-tool                                    \
+	        push from-args                                        \
+	        --platforms "$$platforms"                             \
+	        --template $(REGISTRY)/$$bin:$(VERSION)__OS_ARCH      \
+	        --target $(REGISTRY)/$$bin:$(VERSION);                \
 	done
 
 version: # @HELP outputs the version string
@@ -478,13 +434,14 @@ test: .flatc mock | $(BUILD_DIRS)
 	    ./build/test.sh ./...
 
 lint: # @HELP runs golangci-lint
-lint: .flatc mock | $(BUILD_DIRS)
+lint: .flatc mock bin/tool/golangci-lint | $(BUILD_DIRS)
 	docker run                                                  \
 	    -i                                                      \
 	    --rm                                                    \
 	    -u $$(id -u):$$(id -g)                                  \
 	    -v $$(pwd):/src                                         \
 	    -w /src                                                 \
+	    -v $$(pwd)/bin/tool:/go/bin                             \
 	    -v $$(pwd)/.go/cache:/.cache                            \
 	    --env GOCACHE="/.cache/gocache"                         \
 	    --env GOMODCACHE="/.cache/gomodcache"                   \
@@ -568,8 +525,13 @@ mock: bin/tool/mockgen
 $(BUILD_DIRS):
 	mkdir -p $@
 
-bin/tool/mockgen: | bin/tool
-	echo "Installing mockgen..."
+TOOL_URL_go-licenses := github.com/google/go-licenses
+TOOL_URL_golangci-lint := github.com/golangci/golangci-lint/cmd/golangci-lint
+TOOL_URL_manifest-tool := github.com/estesp/manifest-tool/v2/cmd/manifest-tool
+TOOL_URL_mockgen := go.uber.org/mock/mockgen
+
+bin/tool/%: tool/go.mod | bin/tool
+	echo "Installing $*..."
 	docker run                                 \
 	    -i                                     \
 	    --rm                                   \
@@ -585,7 +547,7 @@ bin/tool/mockgen: | bin/tool
 	    --env HTTP_PROXY="$(HTTP_PROXY)"       \
 	    --env HTTPS_PROXY="$(HTTPS_PROXY)"     \
 	    $(BUILD_IMAGE)                         \
-	    go install go.uber.org/mock/mockgen
+	    go install $(TOOL_URL_$*)
 
 clean: # @HELP removes built binaries and temporary files
 clean: clean-container clean-bin clean-deb clean-flatc clean-mock
