@@ -5,7 +5,7 @@ ignore:
   - "pd/pkg/util/test/"
   - "pd/api/"
   - "pd/third_party/"
-  - "pd/**/*_mock.go
+  - "pd/**/*_mock.go"
 
 comment:
   layout: "reach, diff, flags, components, tree, reach"
