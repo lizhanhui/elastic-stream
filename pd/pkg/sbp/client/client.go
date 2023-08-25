@@ -1,3 +1,4 @@
+//go:generate mockgen -typed -source=client.go -destination=client_mock.go -package=client Client
 package client
 
 import (
@@ -31,7 +32,12 @@ var (
 )
 
 type Client interface {
-	Do(req protocol.OutRequest, addr Address) (protocol.InResponse, error)
+	Do(ctx context.Context, req protocol.OutRequest, addr Address) (protocol.InResponse, error)
+	SealRange(ctx context.Context, req *protocol.SealRangeRequest, addr Address) (*protocol.SealRangeResponse, error)
+	CreateRange(ctx context.Context, req *protocol.CreateRangeRequest, addr Address) (*protocol.CreateRangeResponse, error)
+	CreateStream(ctx context.Context, req *protocol.CreateStreamRequest, addr Address) (*protocol.CreateStreamResponse, error)
+	ReportMetrics(ctx context.Context, req *protocol.ReportMetricsRequest, addr Address) (*protocol.ReportMetricsResponse, error)
+	CommitObject(ctx context.Context, req *protocol.CommitObjectRequest, addr Address) (*protocol.CommitObjectResponse, error)
 }
 
 // A SbpClient internally caches connections to servers.
@@ -62,7 +68,7 @@ func NewClient(cfg *config.SbpClient, lg *zap.Logger) *SbpClient {
 // Do sends a request to the server and returns the response.
 // The request is sent to the server specified by addr.
 // On success, the response is returned. On error, the response is nil and the error is returned.
-func (c *SbpClient) Do(req protocol.OutRequest, addr Address) (protocol.InResponse, error) {
+func (c *SbpClient) Do(ctx context.Context, req protocol.OutRequest, addr Address) (protocol.InResponse, error) {
 	logger := c.lg.With(zap.String("address", addr))
 
 	debug := logger.Core().Enabled(zap.DebugLevel)
@@ -73,10 +79,11 @@ func (c *SbpClient) Do(req protocol.OutRequest, addr Address) (protocol.InRespon
 	}
 
 	if req.Timeout() > 0 {
-		ctx, cancel := context.WithTimeout(req.Context(), time.Duration(req.Timeout())*time.Millisecond)
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, time.Duration(req.Timeout())*time.Millisecond)
 		defer cancel()
-		req.SetContext(ctx)
 	}
+	req.SetContext(ctx)
 
 	// TODO retry when error is retryable
 	cc, err := c.connPool.getConn(req, addr)
@@ -95,6 +102,76 @@ func (c *SbpClient) Do(req protocol.OutRequest, addr Address) (protocol.InRespon
 	}
 
 	return resp, err
+}
+
+func (c *SbpClient) SealRange(ctx context.Context, req *protocol.SealRangeRequest, addr Address) (*protocol.SealRangeResponse, error) {
+	resp, err := c.Do(ctx, req, addr)
+	if err != nil {
+		return nil, err
+	}
+	if sealResp, ok := resp.(*protocol.SealRangeResponse); ok {
+		return sealResp, nil
+	}
+	if sysErr, ok := resp.(*protocol.SystemErrorResponse); ok {
+		return nil, errors.Errorf("system error, code: %s, message: %s", sysErr.Status.Code, sysErr.Status.Message)
+	}
+	return nil, errors.Errorf("sbp: unexpected response type %T", resp)
+}
+
+func (c *SbpClient) CreateRange(ctx context.Context, req *protocol.CreateRangeRequest, addr Address) (*protocol.CreateRangeResponse, error) {
+	resp, err := c.Do(ctx, req, addr)
+	if err != nil {
+		return nil, err
+	}
+	if createResp, ok := resp.(*protocol.CreateRangeResponse); ok {
+		return createResp, nil
+	}
+	if sysErr, ok := resp.(*protocol.SystemErrorResponse); ok {
+		return nil, errors.Errorf("system error, code: %s, message: %s", sysErr.Status.Code, sysErr.Status.Message)
+	}
+	return nil, errors.Errorf("sbp: unexpected response type %T", resp)
+}
+
+func (c *SbpClient) CreateStream(ctx context.Context, req *protocol.CreateStreamRequest, addr Address) (*protocol.CreateStreamResponse, error) {
+	resp, err := c.Do(ctx, req, addr)
+	if err != nil {
+		return nil, err
+	}
+	if createResp, ok := resp.(*protocol.CreateStreamResponse); ok {
+		return createResp, nil
+	}
+	if sysErr, ok := resp.(*protocol.SystemErrorResponse); ok {
+		return nil, errors.Errorf("system error, code: %s, message: %s", sysErr.Status.Code, sysErr.Status.Message)
+	}
+	return nil, errors.Errorf("sbp: unexpected response type %T", resp)
+}
+
+func (c *SbpClient) ReportMetrics(ctx context.Context, req *protocol.ReportMetricsRequest, addr Address) (*protocol.ReportMetricsResponse, error) {
+	resp, err := c.Do(ctx, req, addr)
+	if err != nil {
+		return nil, err
+	}
+	if reportResp, ok := resp.(*protocol.ReportMetricsResponse); ok {
+		return reportResp, nil
+	}
+	if sysErr, ok := resp.(*protocol.SystemErrorResponse); ok {
+		return nil, errors.Errorf("system error, code: %s, message: %s", sysErr.Status.Code, sysErr.Status.Message)
+	}
+	return nil, errors.Errorf("sbp: unexpected response type %T", resp)
+}
+
+func (c *SbpClient) CommitObject(ctx context.Context, req *protocol.CommitObjectRequest, addr Address) (*protocol.CommitObjectResponse, error) {
+	resp, err := c.Do(ctx, req, addr)
+	if err != nil {
+		return nil, err
+	}
+	if commitResp, ok := resp.(*protocol.CommitObjectResponse); ok {
+		return commitResp, nil
+	}
+	if sysErr, ok := resp.(*protocol.SystemErrorResponse); ok {
+		return nil, errors.Errorf("system error, code: %s, message: %s", sysErr.Status.Code, sysErr.Status.Message)
+	}
+	return nil, errors.Errorf("sbp: unexpected response type %T", resp)
 }
 
 // CloseIdleConnections closes any connections which were previously

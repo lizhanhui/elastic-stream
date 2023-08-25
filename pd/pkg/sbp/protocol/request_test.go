@@ -8,16 +8,22 @@ import (
 	mapset "github.com/deckarep/golang-set/v2"
 	"github.com/stretchr/testify/require"
 
+	"github.com/AutoMQ/pd/api/rpcfb/rpcfb"
 	"github.com/AutoMQ/pd/pkg/sbp/codec"
 	fbutil "github.com/AutoMQ/pd/pkg/util/flatbuffer"
 )
 
-type packableRequest interface {
+type packableInRequest interface {
 	InRequest
 	fbutil.Packable
 }
 
-var _inRequests = []packableRequest{
+type packableOutRequest interface {
+	OutRequest
+	fbutil.Packable
+}
+
+var _inRequests = []packableInRequest{
 	&CommitObjectRequest{},
 	&CreateRangeRequest{},
 	&CreateStreamRequest{},
@@ -33,6 +39,15 @@ var _inRequests = []packableRequest{
 	&SealRangeRequest{},
 	&UpdateStreamRequest{},
 	&WatchResourceRequest{},
+}
+
+var _outRequests = []packableOutRequest{
+	&CommitObjectRequest{},
+	&CreateRangeRequest{},
+	&CreateStreamRequest{},
+	&HeartbeatRequest{},
+	&ReportMetricsRequest{},
+	&SealRangeRequest{},
 }
 
 func TestListRangeRequest_Unmarshal(t *testing.T) {
@@ -114,29 +129,8 @@ func TestListRangeRequest_Unmarshal(t *testing.T) {
 	}
 }
 
-func TestAll_Unmarshal(t *testing.T) {
-	for _, req := range _inRequests {
-		req := req
-		t.Run(reflect.TypeOf(req).String(), func(t *testing.T) {
-			t.Parallel()
-			re := require.New(t)
-
-			// mock
-			mockReq := reflect.New(reflect.TypeOf(req).Elem()).Interface().(packableRequest)
-			err := gofakeit.Struct(mockReq)
-			re.NoError(err)
-			data := fbutil.Marshal(mockReq)
-
-			newReq := reflect.New(reflect.TypeOf(req).Elem()).Interface().(packableRequest)
-			err = newReq.Unmarshal(codec.FormatFlatBuffer, data)
-			re.NoError(err)
-			re.Equal(mockReq, newReq)
-		})
-	}
-}
-
-func TestAll_Timeout(t *testing.T) {
-	noTimeoutReqs := mapset.NewThreadUnsafeSet(
+func TestAllRequest_Timeout(t *testing.T) {
+	noTimeoutReqs := mapset.NewSet(
 		reflect.TypeOf(&ReportMetricsRequest{}).String(),
 		reflect.TypeOf(&HeartbeatRequest{}).String(),
 	)
@@ -159,8 +153,29 @@ func TestAll_Timeout(t *testing.T) {
 	}
 }
 
-func TestAll_LongPoll(t *testing.T) {
-	longPollReqs := mapset.NewThreadUnsafeSet(
+func TestInRequest_Unmarshal(t *testing.T) {
+	for _, req := range _inRequests {
+		req := req
+		t.Run(reflect.TypeOf(req).String(), func(t *testing.T) {
+			t.Parallel()
+			re := require.New(t)
+
+			// mock
+			mockReq := reflect.New(reflect.TypeOf(req).Elem()).Interface().(packableInRequest)
+			err := gofakeit.Struct(mockReq)
+			re.NoError(err)
+			data := fbutil.Marshal(mockReq)
+
+			newReq := reflect.New(reflect.TypeOf(req).Elem()).Interface().(packableInRequest)
+			err = newReq.Unmarshal(codec.FormatFlatBuffer, data)
+			re.NoError(err)
+			re.Equal(mockReq, newReq)
+		})
+	}
+}
+
+func TestInRequest_LongPoll(t *testing.T) {
+	longPollReqs := mapset.NewSet(
 		reflect.TypeOf(&WatchResourceRequest{}).String(),
 	)
 
@@ -178,6 +193,53 @@ func TestAll_LongPoll(t *testing.T) {
 			} else {
 				re.False(req.LongPoll())
 			}
+		})
+	}
+}
+
+func TestOutRequest_Marshal(t *testing.T) {
+	for _, req := range _outRequests {
+		req := req
+		t.Run(reflect.TypeOf(req).String(), func(t *testing.T) {
+			t.Parallel()
+			re := require.New(t)
+
+			// mock
+			mockReq := reflect.New(reflect.TypeOf(req).Elem()).Interface().(packableOutRequest)
+			err := gofakeit.Struct(mockReq)
+			re.NoError(err)
+			mockData := fbutil.Marshal(mockReq)
+
+			// check Marshal
+			data, err := mockReq.Marshal(codec.FormatFlatBuffer)
+			re.NoError(err)
+			re.Equal(mockData, data)
+		})
+	}
+}
+
+func TestOutRequest_Operation(t *testing.T) {
+	operationMap := map[string]rpcfb.OperationCode{
+		reflect.TypeOf(&CommitObjectRequest{}).String():  rpcfb.OperationCodeCOMMIT_OBJECT,
+		reflect.TypeOf(&CreateRangeRequest{}).String():   rpcfb.OperationCodeCREATE_RANGE,
+		reflect.TypeOf(&CreateStreamRequest{}).String():  rpcfb.OperationCodeCREATE_STREAM,
+		reflect.TypeOf(&HeartbeatRequest{}).String():     rpcfb.OperationCodeHEARTBEAT,
+		reflect.TypeOf(&ReportMetricsRequest{}).String(): rpcfb.OperationCodeREPORT_METRICS,
+		reflect.TypeOf(&SealRangeRequest{}).String():     rpcfb.OperationCodeSEAL_RANGE,
+	}
+	for _, req := range _outRequests {
+		req := req
+		t.Run(reflect.TypeOf(req).String(), func(t *testing.T) {
+			t.Parallel()
+			re := require.New(t)
+
+			// mock
+			err := gofakeit.Struct(req)
+			re.NoError(err)
+			op, ok := operationMap[reflect.TypeOf(req).String()]
+			re.True(ok)
+
+			re.Equal(op, req.Operation())
 		})
 	}
 }

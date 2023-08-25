@@ -7,6 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	clientv3 "go.etcd.io/etcd/client/v3"
+	"go.uber.org/mock/gomock"
 	"go.uber.org/zap"
 
 	"github.com/AutoMQ/pd/api/rpcfb/rpcfb"
@@ -78,18 +79,12 @@ func (m *mockServerNotLeader) IsLeader() bool {
 	return false
 }
 
-type mockSbpClient struct {
-}
-
-func (m mockSbpClient) Do(_ protocol.OutRequest, _ sbpClient.Address) (protocol.InResponse, error) {
-	panic("does not mock yet")
-}
-
-func startSbpHandler(tb testing.TB, sbpClient sbpClient.Client, clusterCfg *config.Cluster, isLeader bool) (*Handler, func()) {
+func startSbpHandler(tb testing.TB, sc sbpClient.Client, clusterCfg *config.Cluster, isLeader bool) (*Handler, func()) {
 	re := require.New(tb)
 
-	if sbpClient == nil {
-		sbpClient = mockSbpClient{}
+	if sc == nil {
+		mockCtrl := gomock.NewController(tb)
+		sc = sbpClient.NewMockClient(mockCtrl)
 	}
 	if clusterCfg == nil {
 		clusterCfg = config.DefaultCluster()
@@ -98,7 +93,7 @@ func startSbpHandler(tb testing.TB, sbpClient sbpClient.Client, clusterCfg *conf
 	_, client, closeFunc := testutil.StartEtcd(tb, nil)
 
 	var server cluster.Server
-	server = &mockServer{client: client, sbpClient: sbpClient}
+	server = &mockServer{client: client, sbpClient: sc}
 	if !isLeader {
 		server = &mockServerNotLeader{server}
 	}

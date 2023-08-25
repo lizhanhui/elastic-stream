@@ -7,10 +7,18 @@ import (
 
 // newInResponse returns a new empty response for the given operation.
 // It returns nil if the operation is not supported.
-//
-//nolint:gocritic
 func newInResponse(op rpcfb.OperationCode) protocol.InResponse {
 	switch op {
+	case rpcfb.OperationCodeSEAL_RANGE:
+		return &protocol.SealRangeResponse{}
+	case rpcfb.OperationCodeCREATE_RANGE:
+		return &protocol.CreateRangeResponse{}
+	case rpcfb.OperationCodeCREATE_STREAM:
+		return &protocol.CreateStreamResponse{}
+	case rpcfb.OperationCodeREPORT_METRICS:
+		return &protocol.ReportMetricsResponse{}
+	case rpcfb.OperationCodeCOMMIT_OBJECT:
+		return &protocol.CommitObjectResponse{}
 	default:
 		return nil
 	}

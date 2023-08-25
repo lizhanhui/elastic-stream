@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 
+	"github.com/AutoMQ/pd/api/rpcfb/rpcfb"
 	"github.com/AutoMQ/pd/pkg/sbp/protocol"
 	"github.com/AutoMQ/pd/pkg/sbp/server"
 	"github.com/AutoMQ/pd/pkg/server/config"
@@ -17,7 +18,7 @@ import (
 )
 
 type timeoutHandler struct {
-	baseHandler
+	mockHandler
 	UsedTime time.Duration
 }
 
@@ -51,11 +52,348 @@ func TestClientTimeout(t *testing.T) {
 
 	req := &timeoutRequest{RequestTimeout: timeout}
 	now := time.Now()
-	_, err := client.Do(req, addr)
+	_, err := client.Do(context.Background(), req, addr)
 	cost := time.Since(now)
 	re.True(errors.Is(err, context.DeadlineExceeded))
 	re.Greater(cost, timeout)
 	re.Less(cost, used)
+}
+
+var (
+	_okRespFunc = func(_ protocol.InRequest, resp protocol.OutResponse) {
+		resp.OK()
+	}
+	_timeoutRespFunc = func(_ protocol.InRequest, resp protocol.OutResponse) {
+		time.Sleep(40 * time.Millisecond)
+		resp.OK()
+	}
+	_panicRespFunc = func(_ protocol.InRequest, _ protocol.OutResponse) {
+		panic("test system error")
+	}
+)
+
+func TestSbpClient_SealRange(t *testing.T) {
+	type fields struct {
+		handler server.Handler
+	}
+	type args struct {
+		req *protocol.SealRangeRequest
+	}
+	type want struct {
+		resp *protocol.SealRangeResponse
+
+		wantErr bool
+		errMsg  string
+	}
+	tests := []struct {
+		name   string
+		fields fields
+		args   args
+		want   want
+	}{
+		{
+			name:   "normal case",
+			fields: fields{&mockHandler{_okRespFunc}},
+			args:   args{&protocol.SealRangeRequest{SealRangeRequestT: rpcfb.SealRangeRequestT{}}},
+			want: want{resp: &protocol.SealRangeResponse{SealRangeResponseT: rpcfb.SealRangeResponseT{
+				Status: &rpcfb.StatusT{Code: rpcfb.ErrorCodeOK},
+			}}},
+		},
+		{
+			name:   "timeout",
+			fields: fields{&mockHandler{_timeoutRespFunc}},
+			args: args{&protocol.SealRangeRequest{SealRangeRequestT: rpcfb.SealRangeRequestT{
+				TimeoutMs: 20,
+			}}},
+			want: want{wantErr: true, errMsg: "context deadline exceeded"},
+		},
+		{
+			name:   "handler panic",
+			fields: fields{&mockHandler{_panicRespFunc}},
+			args:   args{&protocol.SealRangeRequest{SealRangeRequestT: rpcfb.SealRangeRequestT{}}},
+			want: want{resp: &protocol.SealRangeResponse{SealRangeResponseT: rpcfb.SealRangeResponseT{
+				Status: &rpcfb.StatusT{Code: rpcfb.ErrorCodePD_INTERNAL_SERVER_ERROR, Message: "handler panic"},
+			}}},
+		},
+	}
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			re := require.New(t)
+
+			addr, shutdown := startServer(t, tt.fields.handler, zap.NewNop())
+			defer shutdown()
+
+			client := NewClient(&config.SbpClient{}, zap.NewNop())
+			defer client.Shutdown(context.Background())
+
+			resp, err := client.SealRange(context.Background(), tt.args.req, addr)
+			if tt.want.wantErr {
+				re.Error(err)
+				re.Contains(err.Error(), tt.want.errMsg)
+			} else {
+				re.NoError(err)
+				re.Equal(tt.want.resp, resp)
+			}
+		})
+	}
+}
+
+func TestSbpClient_CreateRange(t *testing.T) {
+	type fields struct {
+		handler server.Handler
+	}
+	type args struct {
+		req *protocol.CreateRangeRequest
+	}
+	type want struct {
+		resp *protocol.CreateRangeResponse
+
+		wantErr bool
+		errMsg  string
+	}
+	tests := []struct {
+		name   string
+		fields fields
+		args   args
+		want   want
+	}{
+		{
+			name:   "normal case",
+			fields: fields{&mockHandler{_okRespFunc}},
+			args:   args{&protocol.CreateRangeRequest{CreateRangeRequestT: rpcfb.CreateRangeRequestT{}}},
+			want: want{resp: &protocol.CreateRangeResponse{CreateRangeResponseT: rpcfb.CreateRangeResponseT{
+				Status: &rpcfb.StatusT{Code: rpcfb.ErrorCodeOK},
+			}}},
+		},
+		{
+			name:   "timeout",
+			fields: fields{&mockHandler{_timeoutRespFunc}},
+			args: args{&protocol.CreateRangeRequest{CreateRangeRequestT: rpcfb.CreateRangeRequestT{
+				TimeoutMs: 20,
+			}}},
+			want: want{wantErr: true, errMsg: "context deadline exceeded"},
+		},
+		{
+			name:   "handler panic",
+			fields: fields{&mockHandler{_panicRespFunc}},
+			args:   args{&protocol.CreateRangeRequest{CreateRangeRequestT: rpcfb.CreateRangeRequestT{}}},
+			want: want{resp: &protocol.CreateRangeResponse{CreateRangeResponseT: rpcfb.CreateRangeResponseT{
+				Status: &rpcfb.StatusT{Code: rpcfb.ErrorCodePD_INTERNAL_SERVER_ERROR, Message: "handler panic"},
+			}}},
+		},
+	}
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			re := require.New(t)
+
+			addr, shutdown := startServer(t, tt.fields.handler, zap.NewNop())
+			defer shutdown()
+
+			client := NewClient(&config.SbpClient{}, zap.NewNop())
+			defer client.Shutdown(context.Background())
+
+			resp, err := client.CreateRange(context.Background(), tt.args.req, addr)
+			if tt.want.wantErr {
+				re.Error(err)
+				re.Contains(err.Error(), tt.want.errMsg)
+			} else {
+				re.NoError(err)
+				re.Equal(tt.want.resp, resp)
+			}
+		})
+	}
+}
+
+func TestSbpClient_CreateStream(t *testing.T) {
+	type fields struct {
+		handler server.Handler
+	}
+	type args struct {
+		req *protocol.CreateStreamRequest
+	}
+	type want struct {
+		resp *protocol.CreateStreamResponse
+
+		wantErr bool
+		errMsg  string
+	}
+	tests := []struct {
+		name   string
+		fields fields
+		args   args
+		want   want
+	}{
+		{
+			name:   "normal case",
+			fields: fields{&mockHandler{_okRespFunc}},
+			args:   args{&protocol.CreateStreamRequest{CreateStreamRequestT: rpcfb.CreateStreamRequestT{}}},
+			want: want{resp: &protocol.CreateStreamResponse{CreateStreamResponseT: rpcfb.CreateStreamResponseT{
+				Status: &rpcfb.StatusT{Code: rpcfb.ErrorCodeOK},
+			}}},
+		},
+		{
+			name:   "timeout",
+			fields: fields{&mockHandler{_timeoutRespFunc}},
+			args: args{&protocol.CreateStreamRequest{CreateStreamRequestT: rpcfb.CreateStreamRequestT{
+				TimeoutMs: 20,
+			}}},
+			want: want{wantErr: true, errMsg: "context deadline exceeded"},
+		},
+		{
+			name:   "handler panic",
+			fields: fields{&mockHandler{_panicRespFunc}},
+			args:   args{&protocol.CreateStreamRequest{CreateStreamRequestT: rpcfb.CreateStreamRequestT{}}},
+			want: want{resp: &protocol.CreateStreamResponse{CreateStreamResponseT: rpcfb.CreateStreamResponseT{
+				Status: &rpcfb.StatusT{Code: rpcfb.ErrorCodePD_INTERNAL_SERVER_ERROR, Message: "handler panic"},
+			}}},
+		},
+	}
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			re := require.New(t)
+
+			addr, shutdown := startServer(t, tt.fields.handler, zap.NewNop())
+			defer shutdown()
+
+			client := NewClient(&config.SbpClient{}, zap.NewNop())
+			defer client.Shutdown(context.Background())
+
+			resp, err := client.CreateStream(context.Background(), tt.args.req, addr)
+			if tt.want.wantErr {
+				re.Error(err)
+				re.Contains(err.Error(), tt.want.errMsg)
+			} else {
+				re.NoError(err)
+				re.Equal(tt.want.resp, resp)
+			}
+		})
+	}
+}
+
+func TestSbpClient_ReportMetrics(t *testing.T) {
+	type fields struct {
+		handler server.Handler
+	}
+	type args struct {
+		req *protocol.ReportMetricsRequest
+	}
+	type want struct {
+		resp *protocol.ReportMetricsResponse
+
+		wantErr bool
+		errMsg  string
+	}
+	tests := []struct {
+		name   string
+		fields fields
+		args   args
+		want   want
+	}{
+		{
+			name:   "normal case",
+			fields: fields{&mockHandler{_okRespFunc}},
+			args:   args{&protocol.ReportMetricsRequest{ReportMetricsRequestT: rpcfb.ReportMetricsRequestT{}}},
+			want: want{resp: &protocol.ReportMetricsResponse{ReportMetricsResponseT: rpcfb.ReportMetricsResponseT{
+				Status: &rpcfb.StatusT{Code: rpcfb.ErrorCodeOK},
+			}}},
+		},
+		{
+			name:   "handler panic",
+			fields: fields{&mockHandler{_panicRespFunc}},
+			args:   args{&protocol.ReportMetricsRequest{ReportMetricsRequestT: rpcfb.ReportMetricsRequestT{}}},
+			want: want{resp: &protocol.ReportMetricsResponse{ReportMetricsResponseT: rpcfb.ReportMetricsResponseT{
+				Status: &rpcfb.StatusT{Code: rpcfb.ErrorCodePD_INTERNAL_SERVER_ERROR, Message: "handler panic"},
+			}}},
+		},
+	}
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			re := require.New(t)
+
+			addr, shutdown := startServer(t, tt.fields.handler, zap.NewNop())
+			defer shutdown()
+
+			client := NewClient(&config.SbpClient{}, zap.NewNop())
+			defer client.Shutdown(context.Background())
+
+			resp, err := client.ReportMetrics(context.Background(), tt.args.req, addr)
+			if tt.want.wantErr {
+				re.Error(err)
+				re.Contains(err.Error(), tt.want.errMsg)
+			} else {
+				re.NoError(err)
+				re.Equal(tt.want.resp, resp)
+			}
+		})
+	}
+}
+
+func TestSbpClient_CommitObject(t *testing.T) {
+	type fields struct {
+		handler server.Handler
+	}
+	type args struct {
+		req *protocol.CommitObjectRequest
+	}
+	type want struct {
+		resp *protocol.CommitObjectResponse
+
+		wantErr bool
+		errMsg  string
+	}
+	tests := []struct {
+		name   string
+		fields fields
+		args   args
+		want   want
+	}{
+		{
+			name:   "normal case",
+			fields: fields{&mockHandler{_okRespFunc}},
+			args:   args{&protocol.CommitObjectRequest{CommitObjectRequestT: rpcfb.CommitObjectRequestT{}}},
+			want: want{resp: &protocol.CommitObjectResponse{CommitObjectResponseT: rpcfb.CommitObjectResponseT{
+				Status: &rpcfb.StatusT{Code: rpcfb.ErrorCodeOK},
+			}}},
+		},
+		{
+			name:   "handler panic",
+			fields: fields{&mockHandler{_panicRespFunc}},
+			args:   args{&protocol.CommitObjectRequest{CommitObjectRequestT: rpcfb.CommitObjectRequestT{}}},
+			want: want{resp: &protocol.CommitObjectResponse{CommitObjectResponseT: rpcfb.CommitObjectResponseT{
+				Status: &rpcfb.StatusT{Code: rpcfb.ErrorCodePD_INTERNAL_SERVER_ERROR, Message: "handler panic"},
+			}}},
+		},
+	}
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			re := require.New(t)
+
+			addr, shutdown := startServer(t, tt.fields.handler, zap.NewNop())
+			defer shutdown()
+
+			client := NewClient(&config.SbpClient{}, zap.NewNop())
+			defer client.Shutdown(context.Background())
+
+			resp, err := client.CommitObject(context.Background(), tt.args.req, addr)
+			if tt.want.wantErr {
+				re.Error(err)
+				re.Contains(err.Error(), tt.want.errMsg)
+			} else {
+				re.NoError(err)
+				re.Equal(tt.want.resp, resp)
+			}
+		})
+	}
 }
 
 func startServer(tb testing.TB, handler server.Handler, lg *zap.Logger) (addr string, shutdown func()) {
@@ -76,64 +414,96 @@ func startServer(tb testing.TB, handler server.Handler, lg *zap.Logger) (addr st
 	return
 }
 
-type baseHandler struct{}
-
-func (b *baseHandler) Heartbeat(_ *protocol.HeartbeatRequest, resp *protocol.HeartbeatResponse) {
-	resp.OK()
+type mockHandler struct {
+	f func(req protocol.InRequest, resp protocol.OutResponse)
 }
 
-func (b *baseHandler) AllocateID(_ *protocol.IDAllocationRequest, resp *protocol.IDAllocationResponse) {
-	resp.OK()
+func (b *mockHandler) Heartbeat(req *protocol.HeartbeatRequest, resp *protocol.HeartbeatResponse) {
+	if b.f != nil {
+		b.f(req, resp)
+	}
 }
 
-func (b *baseHandler) SealRange(_ *protocol.SealRangeRequest, resp *protocol.SealRangeResponse) {
-	resp.OK()
+func (b *mockHandler) AllocateID(req *protocol.IDAllocationRequest, resp *protocol.IDAllocationResponse) {
+	if b.f != nil {
+		b.f(req, resp)
+	}
 }
 
-func (b *baseHandler) CreateRange(_ *protocol.CreateRangeRequest, resp *protocol.CreateRangeResponse) {
-	resp.OK()
+func (b *mockHandler) SealRange(req *protocol.SealRangeRequest, resp *protocol.SealRangeResponse) {
+	if b.f != nil {
+		b.f(req, resp)
+	}
 }
 
-func (b *baseHandler) ListRange(_ *protocol.ListRangeRequest, resp *protocol.ListRangeResponse) {
-	resp.OK()
+func (b *mockHandler) CreateRange(req *protocol.CreateRangeRequest, resp *protocol.CreateRangeResponse) {
+	if b.f != nil {
+		b.f(req, resp)
+	}
 }
 
-func (b *baseHandler) CreateStream(_ *protocol.CreateStreamRequest, resp *protocol.CreateStreamResponse) {
-	resp.OK()
+func (b *mockHandler) ListRange(req *protocol.ListRangeRequest, resp *protocol.ListRangeResponse) {
+	if b.f != nil {
+		b.f(req, resp)
+	}
 }
 
-func (b *baseHandler) DeleteStream(_ *protocol.DeleteStreamRequest, resp *protocol.DeleteStreamResponse) {
-	resp.OK()
+func (b *mockHandler) CreateStream(req *protocol.CreateStreamRequest, resp *protocol.CreateStreamResponse) {
+	if b.f != nil {
+		b.f(req, resp)
+	}
 }
 
-func (b *baseHandler) UpdateStream(_ *protocol.UpdateStreamRequest, resp *protocol.UpdateStreamResponse) {
-	resp.OK()
+func (b *mockHandler) DeleteStream(req *protocol.DeleteStreamRequest, resp *protocol.DeleteStreamResponse) {
+	if b.f != nil {
+		b.f(req, resp)
+	}
 }
 
-func (b *baseHandler) DescribeStream(_ *protocol.DescribeStreamRequest, resp *protocol.DescribeStreamResponse) {
-	resp.OK()
+func (b *mockHandler) UpdateStream(req *protocol.UpdateStreamRequest, resp *protocol.UpdateStreamResponse) {
+	if b.f != nil {
+		b.f(req, resp)
+	}
 }
 
-func (b *baseHandler) TrimStream(_ *protocol.TrimStreamRequest, resp *protocol.TrimStreamResponse) {
-	resp.OK()
+func (b *mockHandler) DescribeStream(req *protocol.DescribeStreamRequest, resp *protocol.DescribeStreamResponse) {
+	if b.f != nil {
+		b.f(req, resp)
+	}
 }
 
-func (b *baseHandler) ReportMetrics(_ *protocol.ReportMetricsRequest, resp *protocol.ReportMetricsResponse) {
-	resp.OK()
+func (b *mockHandler) TrimStream(req *protocol.TrimStreamRequest, resp *protocol.TrimStreamResponse) {
+	if b.f != nil {
+		b.f(req, resp)
+	}
 }
 
-func (b *baseHandler) DescribePDCluster(_ *protocol.DescribePDClusterRequest, resp *protocol.DescribePDClusterResponse) {
-	resp.OK()
+func (b *mockHandler) ReportMetrics(req *protocol.ReportMetricsRequest, resp *protocol.ReportMetricsResponse) {
+	if b.f != nil {
+		b.f(req, resp)
+	}
 }
 
-func (b *baseHandler) CommitObject(_ *protocol.CommitObjectRequest, resp *protocol.CommitObjectResponse) {
-	resp.OK()
+func (b *mockHandler) DescribePDCluster(req *protocol.DescribePDClusterRequest, resp *protocol.DescribePDClusterResponse) {
+	if b.f != nil {
+		b.f(req, resp)
+	}
 }
 
-func (b *baseHandler) ListResource(_ *protocol.ListResourceRequest, resp *protocol.ListResourceResponse) {
-	resp.OK()
+func (b *mockHandler) CommitObject(req *protocol.CommitObjectRequest, resp *protocol.CommitObjectResponse) {
+	if b.f != nil {
+		b.f(req, resp)
+	}
 }
 
-func (b *baseHandler) WatchResource(_ *protocol.WatchResourceRequest, resp *protocol.WatchResourceResponse) {
-	resp.OK()
+func (b *mockHandler) ListResource(req *protocol.ListResourceRequest, resp *protocol.ListResourceResponse) {
+	if b.f != nil {
+		b.f(req, resp)
+	}
+}
+
+func (b *mockHandler) WatchResource(req *protocol.WatchResourceRequest, resp *protocol.WatchResourceResponse) {
+	if b.f != nil {
+		b.f(req, resp)
+	}
 }

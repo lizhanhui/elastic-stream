@@ -156,6 +156,7 @@ func (lr *ListRangeRequest) Timeout() int32 {
 // SealRangeRequest is a request to rpcfb.OperationCodeSEAL_RANGE
 type SealRangeRequest struct {
 	baseRequest
+	baseMarshaller
 	baseUnmarshaler
 	nonLongPollRequest
 
@@ -175,9 +176,22 @@ func (sr *SealRangeRequest) Timeout() int32 {
 	return sr.TimeoutMs
 }
 
+func (sr *SealRangeRequest) marshalFlatBuffer() ([]byte, error) {
+	return fbutil.Marshal(&sr.SealRangeRequestT), nil
+}
+
+func (sr *SealRangeRequest) Marshal(fmt codec.Format) ([]byte, error) {
+	return marshal(sr, fmt)
+}
+
+func (sr *SealRangeRequest) Operation() rpcfb.OperationCode {
+	return rpcfb.OperationCodeSEAL_RANGE
+}
+
 // CreateRangeRequest is a request to rpcfb.OperationCodeCREATE_RANGE
 type CreateRangeRequest struct {
 	baseRequest
+	baseMarshaller
 	baseUnmarshaler
 	nonLongPollRequest
 
@@ -197,9 +211,22 @@ func (cr *CreateRangeRequest) Timeout() int32 {
 	return cr.TimeoutMs
 }
 
+func (cr *CreateRangeRequest) marshalFlatBuffer() ([]byte, error) {
+	return fbutil.Marshal(&cr.CreateRangeRequestT), nil
+}
+
+func (cr *CreateRangeRequest) Marshal(fmt codec.Format) ([]byte, error) {
+	return marshal(cr, fmt)
+}
+
+func (cr *CreateRangeRequest) Operation() rpcfb.OperationCode {
+	return rpcfb.OperationCodeCREATE_RANGE
+}
+
 // CreateStreamRequest is a request to rpcfb.OperationCodeCREATE_STREAM
 type CreateStreamRequest struct {
 	baseRequest
+	baseMarshaller
 	baseUnmarshaler
 	nonLongPollRequest
 
@@ -217,6 +244,18 @@ func (cs *CreateStreamRequest) Unmarshal(fmt codec.Format, data []byte) error {
 
 func (cs *CreateStreamRequest) Timeout() int32 {
 	return cs.TimeoutMs
+}
+
+func (cs *CreateStreamRequest) marshalFlatBuffer() ([]byte, error) {
+	return fbutil.Marshal(&cs.CreateStreamRequestT), nil
+}
+
+func (cs *CreateStreamRequest) Marshal(fmt codec.Format) ([]byte, error) {
+	return marshal(cs, fmt)
+}
+
+func (cs *CreateStreamRequest) Operation() rpcfb.OperationCode {
+	return rpcfb.OperationCodeCREATE_STREAM
 }
 
 // DeleteStreamRequest is a request to rpcfb.OperationCodeDELETE_STREAM
@@ -310,6 +349,7 @@ func (ts *TrimStreamRequest) Timeout() int32 {
 // ReportMetricsRequest is a request to rpcfb.OperationCodeREPORT_METRICS
 type ReportMetricsRequest struct {
 	baseRequest
+	baseMarshaller
 	baseUnmarshaler
 	nonLongPollRequest
 
@@ -323,6 +363,18 @@ func (rm *ReportMetricsRequest) unmarshalFlatBuffer(data []byte) error {
 
 func (rm *ReportMetricsRequest) Unmarshal(fmt codec.Format, data []byte) error {
 	return unmarshal(rm, fmt, data)
+}
+
+func (rm *ReportMetricsRequest) marshalFlatBuffer() ([]byte, error) {
+	return fbutil.Marshal(&rm.ReportMetricsRequestT), nil
+}
+
+func (rm *ReportMetricsRequest) Marshal(fmt codec.Format) ([]byte, error) {
+	return marshal(rm, fmt)
+}
+
+func (rm *ReportMetricsRequest) Operation() rpcfb.OperationCode {
+	return rpcfb.OperationCodeREPORT_METRICS
 }
 
 // DescribePDClusterRequest is a request to rpcfb.OperationCodeDESCRIBE_PLACEMENT_DRIVER
@@ -350,6 +402,7 @@ func (dpd *DescribePDClusterRequest) Timeout() int32 {
 // CommitObjectRequest is a request to rpcfb.OperationCodeCOMMIT_OBJECT
 type CommitObjectRequest struct {
 	baseRequest
+	baseMarshaller
 	baseUnmarshaler
 	nonLongPollRequest
 
@@ -367,6 +420,18 @@ func (co *CommitObjectRequest) Unmarshal(fmt codec.Format, data []byte) error {
 
 func (co *CommitObjectRequest) Timeout() int32 {
 	return co.TimeoutMs
+}
+
+func (co *CommitObjectRequest) marshalFlatBuffer() ([]byte, error) {
+	return fbutil.Marshal(&co.CommitObjectRequestT), nil
+}
+
+func (co *CommitObjectRequest) Marshal(fmt codec.Format) ([]byte, error) {
+	return marshal(co, fmt)
+}
+
+func (co *CommitObjectRequest) Operation() rpcfb.OperationCode {
+	return rpcfb.OperationCodeCOMMIT_OBJECT
 }
 
 // ListResourceRequest is a request to rpcfb.OperationCodeLIST_RESOURCE

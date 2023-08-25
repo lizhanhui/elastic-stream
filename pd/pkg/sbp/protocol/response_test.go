@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/brianvoe/gofakeit/v6"
+	mapset "github.com/deckarep/golang-set/v2"
 	"github.com/stretchr/testify/require"
 
 	"github.com/AutoMQ/pd/api/rpcfb/rpcfb"
@@ -12,12 +13,27 @@ import (
 	fbutil "github.com/AutoMQ/pd/pkg/util/flatbuffer"
 )
 
-type packableResponse interface {
+type packableInResponse interface {
+	InResponse
+	fbutil.Packable
+}
+
+type packableOutResponse interface {
 	OutResponse
 	fbutil.Packable
 }
 
-var _outResponses = []packableResponse{
+var _inResponses = []packableInResponse{
+	&CommitObjectResponse{},
+	&CreateRangeResponse{},
+	&CreateStreamResponse{},
+	&HeartbeatResponse{},
+	&ReportMetricsResponse{},
+	&SealRangeResponse{},
+	&SystemErrorResponse{},
+}
+
+var _outResponses = []packableOutResponse{
 	&CommitObjectResponse{},
 	&CreateRangeResponse{},
 	&CreateStreamResponse{},
@@ -93,7 +109,54 @@ func TestListRangeResponse_Marshal(t *testing.T) {
 	}
 }
 
-func TestOutResponse(t *testing.T) {
+func TestInResponse_Unmarshal(t *testing.T) {
+	for _, resp := range _inResponses {
+		resp := resp
+		t.Run(reflect.TypeOf(resp).String(), func(t *testing.T) {
+			t.Parallel()
+			re := require.New(t)
+
+			// mock
+			mockResp := reflect.New(reflect.TypeOf(resp).Elem()).Interface().(packableInResponse)
+			err := gofakeit.Struct(mockResp)
+			re.NoError(err)
+			mockData := fbutil.Marshal(mockResp)
+
+			newResp := reflect.New(reflect.TypeOf(resp).Elem()).Interface().(packableInResponse)
+			err = newResp.Unmarshal(codec.FormatFlatBuffer, mockData)
+			re.NoError(err)
+			re.Equal(mockResp, newResp)
+		})
+	}
+}
+
+func TestInResponse_ThrottleTime(t *testing.T) {
+	noThrottleResps := mapset.NewSet(
+		reflect.TypeOf(&HeartbeatResponse{}).String(),
+		reflect.TypeOf(&ReportMetricsResponse{}).String(),
+		reflect.TypeOf(&SystemErrorResponse{}).String(),
+	)
+	for _, resp := range _inResponses {
+		resp := resp
+		t.Run(reflect.TypeOf(resp).String(), func(t *testing.T) {
+			t.Parallel()
+			re := require.New(t)
+
+			// mock
+			mockResp := reflect.New(reflect.TypeOf(resp).Elem()).Interface().(packableInResponse)
+			err := gofakeit.Struct(mockResp)
+			re.NoError(err)
+
+			if noThrottleResps.Contains(reflect.TypeOf(resp).String()) {
+				re.Zero(mockResp.ThrottleTime())
+			} else {
+				re.NotZero(mockResp.ThrottleTime())
+			}
+		})
+	}
+}
+
+func TestOutResponse_Marshal(t *testing.T) {
 	for _, resp := range _outResponses {
 		resp := resp
 		t.Run(reflect.TypeOf(resp).String(), func(t *testing.T) {
@@ -101,7 +164,7 @@ func TestOutResponse(t *testing.T) {
 			re := require.New(t)
 
 			// mock
-			mockResp := reflect.New(reflect.TypeOf(resp).Elem()).Interface().(packableResponse)
+			mockResp := reflect.New(reflect.TypeOf(resp).Elem()).Interface().(packableOutResponse)
 			err := gofakeit.Struct(mockResp)
 			re.NoError(err)
 			mockData := fbutil.Marshal(mockResp)
@@ -110,17 +173,62 @@ func TestOutResponse(t *testing.T) {
 			data, err := mockResp.Marshal(codec.FormatFlatBuffer)
 			re.NoError(err)
 			re.Equal(mockData, data)
+		})
+	}
+}
+
+func TestOutResponse_Error(t *testing.T) {
+	for _, resp := range _outResponses {
+		resp := resp
+		t.Run(reflect.TypeOf(resp).String(), func(t *testing.T) {
+			t.Parallel()
+			re := require.New(t)
+
+			// mock
+			mockResp := reflect.New(reflect.TypeOf(resp).Elem()).Interface().(packableOutResponse)
+			err := gofakeit.Struct(mockResp)
+			re.NoError(err)
 
 			// check Error
 			errStatus := rpcfb.StatusT{Code: rpcfb.ErrorCodePD_INTERNAL_SERVER_ERROR, Message: "test error message"}
 			mockResp.Error(&errStatus)
 			status := reflect.ValueOf(mockResp).Elem().FieldByName("Status").Interface().(*rpcfb.StatusT)
 			re.Equal(errStatus, *status)
+		})
+	}
+}
+
+func TestOutResponse_OK(t *testing.T) {
+	for _, resp := range _outResponses {
+		resp := resp
+		t.Run(reflect.TypeOf(resp).String(), func(t *testing.T) {
+			t.Parallel()
+			re := require.New(t)
+
+			// mock
+			mockResp := reflect.New(reflect.TypeOf(resp).Elem()).Interface().(packableOutResponse)
+			err := gofakeit.Struct(mockResp)
+			re.NoError(err)
 
 			// check OK
 			mockResp.OK()
-			status = reflect.ValueOf(mockResp).Elem().FieldByName("Status").Interface().(*rpcfb.StatusT)
+			status := reflect.ValueOf(mockResp).Elem().FieldByName("Status").Interface().(*rpcfb.StatusT)
 			re.Equal(rpcfb.StatusT{Code: rpcfb.ErrorCodeOK}, *status)
+		})
+	}
+}
+
+func TestOutResponse_IsEnd(t *testing.T) {
+	for _, resp := range _outResponses {
+		resp := resp
+		t.Run(reflect.TypeOf(resp).String(), func(t *testing.T) {
+			t.Parallel()
+			re := require.New(t)
+
+			// mock
+			mockResp := reflect.New(reflect.TypeOf(resp).Elem()).Interface().(packableOutResponse)
+			err := gofakeit.Struct(mockResp)
+			re.NoError(err)
 
 			// check IsEnd
 			// currently, all responses are single response

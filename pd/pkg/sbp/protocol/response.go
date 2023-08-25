@@ -170,6 +170,7 @@ func (lr *ListRangeResponse) OK() {
 // SealRangeResponse is a response to rpcfb.OperationCodeSEAL_RANGE
 type SealRangeResponse struct {
 	baseMarshaller
+	baseUnmarshaler
 	singleResponse
 
 	rpcfb.SealRangeResponseT
@@ -191,9 +192,23 @@ func (sr *SealRangeResponse) OK() {
 	sr.Status = &rpcfb.StatusT{Code: rpcfb.ErrorCodeOK}
 }
 
+func (sr *SealRangeResponse) unmarshalFlatBuffer(data []byte) error {
+	sr.SealRangeResponseT = *rpcfb.GetRootAsSealRangeResponse(data, 0).UnPack()
+	return nil
+}
+
+func (sr *SealRangeResponse) Unmarshal(fmt codec.Format, data []byte) error {
+	return unmarshal(sr, fmt, data)
+}
+
+func (sr *SealRangeResponse) ThrottleTime() int32 {
+	return sr.ThrottleTimeMs
+}
+
 // CreateRangeResponse is a response to rpcfb.OperationCodeCREATE_RANGE
 type CreateRangeResponse struct {
 	baseMarshaller
+	baseUnmarshaler
 	singleResponse
 
 	rpcfb.CreateRangeResponseT
@@ -215,9 +230,23 @@ func (cr *CreateRangeResponse) OK() {
 	cr.Status = &rpcfb.StatusT{Code: rpcfb.ErrorCodeOK}
 }
 
+func (cr *CreateRangeResponse) unmarshalFlatBuffer(data []byte) error {
+	cr.CreateRangeResponseT = *rpcfb.GetRootAsCreateRangeResponse(data, 0).UnPack()
+	return nil
+}
+
+func (cr *CreateRangeResponse) Unmarshal(fmt codec.Format, data []byte) error {
+	return unmarshal(cr, fmt, data)
+}
+
+func (cr *CreateRangeResponse) ThrottleTime() int32 {
+	return cr.ThrottleTimeMs
+}
+
 // CreateStreamResponse is a response to rpcfb.OperationCodeCREATE_STREAM
 type CreateStreamResponse struct {
 	baseMarshaller
+	baseUnmarshaler
 	singleResponse
 
 	rpcfb.CreateStreamResponseT
@@ -237,6 +266,19 @@ func (cs *CreateStreamResponse) Error(status *rpcfb.StatusT) {
 
 func (cs *CreateStreamResponse) OK() {
 	cs.Status = &rpcfb.StatusT{Code: rpcfb.ErrorCodeOK}
+}
+
+func (cs *CreateStreamResponse) unmarshalFlatBuffer(data []byte) error {
+	cs.CreateStreamResponseT = *rpcfb.GetRootAsCreateStreamResponse(data, 0).UnPack()
+	return nil
+}
+
+func (cs *CreateStreamResponse) Unmarshal(fmt codec.Format, data []byte) error {
+	return unmarshal(cs, fmt, data)
+}
+
+func (cs *CreateStreamResponse) ThrottleTime() int32 {
+	return cs.ThrottleTimeMs
 }
 
 // DeleteStreamResponse is a response to rpcfb.OperationCodeDELETE_STREAM
@@ -341,7 +383,9 @@ func (ts *TrimStreamResponse) OK() {
 // ReportMetricsResponse is a response to rpcfb.OperationCodeREPORT_METRICS
 type ReportMetricsResponse struct {
 	baseMarshaller
+	baseUnmarshaler
 	singleResponse
+	noThrottleResponse
 
 	rpcfb.ReportMetricsResponseT
 }
@@ -360,6 +404,15 @@ func (rm *ReportMetricsResponse) Error(status *rpcfb.StatusT) {
 
 func (rm *ReportMetricsResponse) OK() {
 	rm.Status = &rpcfb.StatusT{Code: rpcfb.ErrorCodeOK}
+}
+
+func (rm *ReportMetricsResponse) unmarshalFlatBuffer(data []byte) error {
+	rm.ReportMetricsResponseT = *rpcfb.GetRootAsReportMetricsResponse(data, 0).UnPack()
+	return nil
+}
+
+func (rm *ReportMetricsResponse) Unmarshal(fmt codec.Format, data []byte) error {
+	return unmarshal(rm, fmt, data)
 }
 
 // DescribePDClusterResponse is a response to rpcfb.OperationCodeDESCRIBE_PLACEMENT_DRIVER
@@ -393,6 +446,7 @@ func (dpd *DescribePDClusterResponse) OK() {
 // CommitObjectResponse is a response to rpcfb.OperationCodeCOMMIT_OBJECT
 type CommitObjectResponse struct {
 	baseMarshaller
+	baseUnmarshaler
 	singleResponse
 
 	rpcfb.CommitObjectResponseT
@@ -412,6 +466,19 @@ func (co *CommitObjectResponse) Error(status *rpcfb.StatusT) {
 
 func (co *CommitObjectResponse) OK() {
 	co.Status = &rpcfb.StatusT{Code: rpcfb.ErrorCodeOK}
+}
+
+func (co *CommitObjectResponse) unmarshalFlatBuffer(data []byte) error {
+	co.CommitObjectResponseT = *rpcfb.GetRootAsCommitObjectResponse(data, 0).UnPack()
+	return nil
+}
+
+func (co *CommitObjectResponse) Unmarshal(fmt codec.Format, data []byte) error {
+	return unmarshal(co, fmt, data)
+}
+
+func (co *CommitObjectResponse) ThrottleTime() int32 {
+	return co.ThrottleTimeMs
 }
 
 // ListResourceResponse is a response to rpcfb.OperationCodeLIST_RESOURCE
