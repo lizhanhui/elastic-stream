@@ -148,16 +148,17 @@ where
                         return Ok(result.version);
                     }
                 }
-                Err(e) => {
-                    // TODO: handle error
-                    log::error!(
-                        "list resource failed. types: {:?}, continuation: {:?}, err: {:?}",
-                        types,
-                        continuation,
-                        e
-                    );
-                    return Err(ListAndWatchError::Es(e));
-                }
+                #[allow(clippy::single_match_else)]
+                Err(e) => match e.code {
+                    ErrorCode::RPC_TIMEOUT => continue,
+                    _ => {
+                        // TODO: handle error
+                        log::error!(
+                            "list resource failed. types: {types:?}, continuation: {continuation:?}, err: {e:?}"
+                        );
+                        return Err(ListAndWatchError::Es(e));
+                    }
+                },
             }
         }
     }
