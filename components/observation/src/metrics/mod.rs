@@ -1,5 +1,5 @@
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-use std::sync::{Arc, Weak};
+use std::sync::Arc;
 use std::time::Duration;
 
 use hyper::header::CONTENT_TYPE;
@@ -8,80 +8,34 @@ use hyper::{Body, Request, Response, Server};
 use log::{error, info, warn};
 use once_cell::sync::OnceCell;
 use opentelemetry::metrics::{Meter, MeterProvider as _};
-use opentelemetry::sdk::metrics::data::{ResourceMetrics, Temporality};
-use opentelemetry::sdk::metrics::exporter::PushMetricsExporter;
-use opentelemetry::sdk::metrics::reader::{
-    AggregationSelector, DefaultAggregationSelector, DefaultTemporalitySelector, MetricProducer,
-    MetricReader, TemporalitySelector,
-};
 use opentelemetry::sdk::metrics::{
-    new_view, Aggregation, Instrument, InstrumentKind, ManualReader, MeterProvider,
-    MeterProviderBuilder, Pipeline, Stream,
+    new_view, Aggregation, Instrument, MeterProvider, MeterProviderBuilder, Stream,
 };
 use opentelemetry::sdk::resource::{
     EnvResourceDetector, SdkProvidedResourceDetector, TelemetryResourceDetector,
 };
 use opentelemetry::sdk::Resource;
-use opentelemetry::{Context, KeyValue};
-use opentelemetry_otlp::{Protocol, TonicExporterBuilder, WithExportConfig};
+use opentelemetry::KeyValue;
 use prometheus::{Encoder, TextEncoder};
 use tokio::select;
 use tokio::sync::broadcast;
-use tokio::sync::broadcast::error::TryRecvError;
 
 use config::Configuration;
 
 pub mod object;
+mod otlp;
 pub mod range_server;
 pub mod store;
 pub mod sys;
+mod tonic;
 pub mod uring;
-
-#[derive(Debug, Clone)]
-pub struct OtlpExporter {
-    reader: Arc<ManualReader>,
-}
-
-impl TemporalitySelector for OtlpExporter {
-    fn temporality(&self, kind: InstrumentKind) -> Temporality {
-        self.reader.temporality(kind)
-    }
-}
-
-impl AggregationSelector for OtlpExporter {
-    fn aggregation(&self, kind: InstrumentKind) -> Aggregation {
-        self.reader.aggregation(kind)
-    }
-}
-
-impl MetricReader for OtlpExporter {
-    fn register_pipeline(&self, pipeline: Weak<Pipeline>) {
-        self.reader.register_pipeline(pipeline)
-    }
-
-    fn register_producer(&self, producer: Box<dyn MetricProducer>) {
-        self.reader.register_producer(producer)
-    }
-
-    fn collect(&self, rm: &mut ResourceMetrics) -> opentelemetry::metrics::Result<()> {
-        self.reader.collect(rm)
-    }
-
-    fn force_flush(&self, cx: &Context) -> opentelemetry::metrics::Result<()> {
-        self.reader.force_flush(cx)
-    }
-
-    fn shutdown(&self) -> opentelemetry::metrics::Result<()> {
-        self.reader.shutdown()
-    }
-}
 
 static METER: OnceCell<Meter> = OnceCell::new();
 static METER_PROVIDER: OnceCell<MeterProvider> = OnceCell::new();
+static mut OTLP_METRICS_EXPORTER: OnceCell<otlp::OtlpMetricsReader> = OnceCell::new();
 
 lazy_static::lazy_static! {
     static ref REGISTRY: prometheus::Registry = prometheus::Registry::new();
-    static ref OTLP_METRICS_READER: OtlpExporter = OtlpExporter { reader: Arc::new(ManualReader::default()) };
 }
 
 pub(crate) fn get_meter() -> &'static Meter {
@@ -115,11 +69,18 @@ pub fn init_meter(config: Arc<Configuration>) {
             builder = builder.with_reader(prometheus_exporter);
         }
         "otlp" => {
-            builder = builder.with_reader(OTLP_METRICS_READER.clone());
+            let otlp_exporter = otlp::OtlpMetricsReader::new(config.clone())
+                .expect("Build otlp metrics exporter failed");
+            unsafe {
+                OTLP_METRICS_EXPORTER
+                    .set(otlp_exporter.clone())
+                    .expect("Set otlp metrics exporter failed");
+            }
+            builder = builder.with_reader(otlp_exporter);
         }
         _ => {
             panic!(
-                "invalid metrics exporter mode: {}",
+                "Invalid metrics exporter mode: {}",
                 config.observation.metrics.mode
             );
         }
@@ -130,8 +91,12 @@ pub fn init_meter(config: Arc<Configuration>) {
         let _ = meter_provider.shutdown();
     }
 
-    let _ = METER.set(meter_provider.meter("elastic-stream"));
-    let _ = METER_PROVIDER.set(meter_provider);
+    METER
+        .set(meter_provider.meter("elastic-stream"))
+        .expect("Set otlp metrics meter failed");
+    METER_PROVIDER
+        .set(meter_provider)
+        .expect("Set otlp metrics meter provider failed");
 }
 
 fn init_views(provider: MeterProviderBuilder) -> MeterProviderBuilder {
@@ -177,56 +142,45 @@ pub fn start_metrics_exporter(config: Arc<Configuration>, shutdown: broadcast::R
                     }
                     _ => {
                         panic!(
-                            "invalid metrics exporter mode: {}",
+                            "Invalid metrics exporter mode: {}",
                             config.observation.metrics.mode
                         );
                     }
                 }
             });
-            runtime.shutdown_timeout(Duration::from_millis(
-                config_clone.observation.trace.timeout_ms,
+            runtime.shutdown_timeout(Duration::from_secs(
+                config_clone.observation.metrics.timeout,
             ));
         })
         .unwrap();
 }
 
 async fn start_otlp_exporter(config: Arc<Configuration>, mut shutdown: broadcast::Receiver<()>) {
-    let otlp_exporter = opentelemetry_otlp::MetricsExporter::new(
-        TonicExporterBuilder::default()
-            .with_protocol(Protocol::Grpc)
-            .with_endpoint(format!(
-                "http://{};{}",
-                config.observation.metrics.host, config.observation.metrics.port
-            )),
-        Box::new(DefaultTemporalitySelector::new()),
-        Box::new(DefaultAggregationSelector::new()),
-    )
-    .expect("build otlp metrics exporter failed");
+    unsafe {
+        if OTLP_METRICS_EXPORTER.get().is_none() {
+            panic!("Please initialize the otlp metrics exporter before using it");
+        }
+    }
+
+    let mut interval = tokio::time::interval(Duration::from_secs(
+        config.observation.metrics.interval as u64,
+    ));
 
     loop {
-        std::thread::sleep(Duration::from_secs(
-            config.observation.metrics.interval as u64,
-        ));
-
-        let mut metrics = ResourceMetrics {
-            resource: Resource::empty(),
-            scope_metrics: vec![],
-        };
-        if let Ok(()) = OTLP_METRICS_READER.collect(&mut metrics) {
-            if let Err(error) = otlp_exporter.export(&mut metrics).await {
-                error!("Failed to export metrics: {:?}", error);
-            } else {
-                info!("export metrics success: {:?}", metrics);
-            }
-        } else {
-            error!("Failed to collect metrics");
-        }
-
-        match shutdown.try_recv() {
-            Err(TryRecvError::Empty) => {}
-            _ => {
+        select! {
+            _ = shutdown.recv() => {
+                if let Some(meter_provider) = METER_PROVIDER.get() {
+                    let _ = meter_provider.shutdown();
+                }
                 info!("Shutting down otlp metrics exporter");
                 break;
+            }
+            _ = interval.tick() => {
+                unsafe {
+                    if let Err(error) = OTLP_METRICS_EXPORTER.get_mut().unwrap().export().await {
+                        error!("Failed to export metrics: {:?}", error);
+                    }
+                }
             }
         }
     }
@@ -262,21 +216,26 @@ async fn start_prometheus_exporter(
         .unwrap_or(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)));
     let port = config.observation.metrics.port;
     let addr = SocketAddr::new(host, port);
-    info!("prometheus metrics exporter listening on http://{}", addr);
+    info!(
+        "Prometheus metrics exporter is listening on http://{}",
+        addr
+    );
 
     let serve_future = Server::bind(&addr).serve(make_service_fn(|_| async {
         Ok::<_, hyper::Error>(service_fn(serve_metrics_req))
     }));
 
-    select! {
-        _ = shutdown.recv() => {
-            if let Some(meter_provider) = METER_PROVIDER.get() {
-                let _ = meter_provider.shutdown();
-            }
-            info!("Shutting down prometheus metrics exporter");
-        }
-        Err(err) = serve_future => {
-            error!("Server error: {}", err);
-        }
+    if let Err(error) = serve_future
+        .with_graceful_shutdown(async {
+            let _ = shutdown.recv().await;
+        })
+        .await
+    {
+        error!("Start prometheus metrics exporter failed: {:?}", error);
     }
+
+    if let Some(meter_provider) = METER_PROVIDER.get() {
+        let _ = meter_provider.shutdown();
+    }
+    info!("Shutting down prometheus metrics exporter");
 }

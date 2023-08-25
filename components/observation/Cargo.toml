@@ -13,15 +13,16 @@ config = { path = "../config" }
 core_affinity = { workspace = true }
 futures = { workspace = true }
 gethostname = { workspace = true }
-hyper = "0.14"
+hyper = { workspace = true }
 lazy_static = { workspace = true }
 log = { workspace = true }
 minitrace = { workspace = true }
 minstant = { workspace = true }
-once_cell = "1.18.0"
+once_cell = { workspace = true }
 opentelemetry = { workspace = true }
 opentelemetry-otlp = { workspace = true }
 opentelemetry-prometheus = { version = "0.13.0", features = ["prometheus-encoding"] }
+opentelemetry-proto = { workspace = true }
 parking_lot = { workspace = true }
 pprof = { workspace = true, optional = true }
 procfs = { workspace = true }
@@ -30,6 +31,7 @@ pyroscope = { workspace = true, optional = true }
 pyroscope_pprofrs = { workspace = true, optional = true }
 sysinfo = { workspace = true }
 tokio = { workspace = true }
+tonic = "0.9"
 
 [features]
 metrics = []

@@ -377,21 +377,25 @@ pub struct Observation {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Metrics {
     pub enable: bool,
+    pub mode: String,
     pub host: String,
     pub port: u16,
-    pub mode: String,
+    pub endpoint: String,
     pub protocol: String,
     pub interval: u16,
+    pub timeout: u64,
 }
 impl Default for Metrics {
     fn default() -> Self {
         Self {
             enable: true,
+            mode: "prometheus".to_owned(),
             host: "127.0.0.1".to_owned(),
             port: 9898,
-            mode: "prometheus".to_owned(),
+            endpoint: "http://localhost:4317".to_owned(),
             protocol: "grpc".to_owned(),
             interval: 60,
+            timeout: 3,
         }
     }
 }
@@ -401,8 +405,7 @@ pub struct Trace {
     pub enable: bool,
     pub endpoint: String,
     pub protocol: String,
-    #[serde(rename = "timeout-ms")]
-    pub timeout_ms: u64,
+    pub timeout: u64,
 }
 impl Default for Trace {
     fn default() -> Self {
@@ -410,7 +413,7 @@ impl Default for Trace {
             enable: false,
             endpoint: "http://localhost:4317".to_owned(),
             protocol: "grpc".to_owned(),
-            timeout_ms: 1000,
+            timeout: 3,
         }
     }
 }

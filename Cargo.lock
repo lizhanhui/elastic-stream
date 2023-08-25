@@ -2759,6 +2759,7 @@ dependencies = [
  "opentelemetry",
  "opentelemetry-otlp",
  "opentelemetry-prometheus",
+ "opentelemetry-proto",
  "parking_lot",
  "pprof",
  "procfs",
@@ -2767,6 +2768,7 @@ dependencies = [
  "pyroscope_pprofrs",
  "sysinfo",
  "tokio",
+ "tonic",
 ]
 
 [[package]]

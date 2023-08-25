@@ -89,24 +89,28 @@ replication:
 observation:
   metrics:
     enable: true
-    # Host address
-    host: "127.0.0.1"
-    # Listening port
-    port: 9898
     # Metrics push mode, available values: "otlp", "prometheus", default value is "prometheus"
-    mode: "prometheus"
-    # OpenTelemetry Protocol, available values: "grpc", "http", default value is "grpc"
+    mode: "otlp"
+    # Prometheus exporter binding address
+    host: "10.129.103.48"
+    # Prometheus exporter listening port
+    port: 4317
+    # OpenTelemetry collector endpoint
+    endpoint: "http://localhost:4317"
+    # OpenTelemetry Protocol, available values: "grpc"
     protocol: "grpc"
     # Metrics push interval in ticks, default value is 60s
-    interval: 60
+    interval: 10
+    # Default max waiting time for exporting metrics, default value is 3s
+    timeout: 3
   trace:
     enable: false
     # OpenTelemetry collector endpoint
     endpoint: "http://localhost:4317"
-    # OpenTelemetry Protocol, available values: "grpc", "http", default value is "grpc"
+    # OpenTelemetry Protocol, available values: "grpc"
     protocol: "grpc"
-    # Default max waiting time for the backend to process each signal batch
-    timeout-ms: 3000
+    # Default max waiting time for the backend to process each signal batch, default value is 3s
+    timeout: 3
   profiling:
     enable: false
     # pyroscope server endpoint

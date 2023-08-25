@@ -59,13 +59,12 @@ pub fn start_trace_exporter(config: Arc<Configuration>, mut shutdown: broadcast:
                 .enable_all()
                 .build()
                 .unwrap();
-
             let mut grpc_exporter = runtime.block_on(async {
                 opentelemetry_otlp::SpanExporter::new_tonic(
                     opentelemetry_otlp::ExportConfig {
                         endpoint: config.observation.trace.endpoint.to_string(),
                         protocol: opentelemetry_otlp::Protocol::Grpc,
-                        timeout: Duration::from_millis(config.observation.trace.timeout_ms),
+                        timeout: Duration::from_secs(config.observation.trace.timeout),
                     },
                     opentelemetry_otlp::TonicConfig::default(),
                 )
@@ -96,7 +95,7 @@ pub fn start_trace_exporter(config: Arc<Configuration>, mut shutdown: broadcast:
                     warn!("Failed to export traces: {:?}", error);
                 }
             }
-            runtime.shutdown_timeout(Duration::from_millis(config.observation.trace.timeout_ms));
+            runtime.shutdown_timeout(Duration::from_secs(config.observation.trace.timeout));
         })
         .unwrap();
 }

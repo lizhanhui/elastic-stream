@@ -11,7 +11,7 @@ edition = "2021"
 bytes = { workspace = true }
 clap = { workspace = true }
 crc32fast = { workspace = true }
-hyper = { version = "0.14.25", features = ["full"] }
+hyper = { workspace = true }
 lazy_static = { version = "1.4.0" }
 libc = "0.2.141"
 log = { workspace = true }
