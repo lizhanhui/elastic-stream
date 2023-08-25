@@ -6,7 +6,7 @@ on:
     paths:
       - 'docs/**'
       - 'site/**'
-  pull_request:
+  pull_request_target:
     paths:
       - 'docs/**'
       - 'site/**'
@@ -18,6 +18,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
+        if: github.event_name == 'pull_request_target'
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/checkout@v3
+        if: github.event_name != 'pull_request_target'
       - name: Get yarn cache directory path
         id: yarn-cache-dir-path
         run: echo "dir=$(yarn cache dir)" >> $GITHUB_OUTPUT
@@ -33,19 +38,15 @@ jobs:
         with:
           node-version: 18.x
       - name: install dependencies
-        uses: borales/actions-yarn@v4
-        with:
-          dir: site
-          cmd: install
+        working-directory: site
+        run: yarn install
       - name: build doc site
-        uses: borales/actions-yarn@v4
-        with:
-          dir: site
-          cmd: build
+        working-directory: site
+        run: yarn build
       - name: deploy to staging
         uses: amondnet/vercel-action@v25
         id: vercel-action-staging
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request_target'
         with:
           vercel-token: ${{ secrets.VERCEL_TOKEN }}
           scope: ${{ secrets.VERCEL_TEAM_ID }}
