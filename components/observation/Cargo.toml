@@ -36,6 +36,6 @@ tonic = "0.9"
 [features]
 metrics = []
 trace = ["minitrace/enable"]
-profiling = ["pyroscope", "pyroscope_pprofrs", "pprof"]
+profiles = ["pyroscope", "pyroscope_pprofrs", "pprof"]
 
 

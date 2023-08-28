@@ -371,7 +371,7 @@ impl Default for RocksDB {
 pub struct Observation {
     pub metrics: Metrics,
     pub trace: Trace,
-    pub profiling: Profiling,
+    pub profiles: Profiles,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -419,7 +419,7 @@ impl Default for Trace {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct Profiling {
+pub struct Profiles {
     pub enable: bool,
 
     #[serde(rename = "server-endpoint")]
@@ -439,7 +439,7 @@ pub struct Profiling {
     #[serde(rename = "max-report-backup")]
     pub max_report_backup: usize,
 }
-impl Default for Profiling {
+impl Default for Profiles {
     fn default() -> Self {
         Self {
             enable: true,

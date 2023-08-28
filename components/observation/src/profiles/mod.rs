@@ -11,8 +11,8 @@ pub fn start_profiling(
     shutdown: broadcast::Receiver<()>,
     tags: Vec<(&str, &str)>,
 ) {
-    if config.observation.profiling.enable {
-        let server_endpoint = config.observation.profiling.server_endpoint.clone();
+    if config.observation.profiles.enable {
+        let server_endpoint = config.observation.profiles.server_endpoint.clone();
         if server_endpoint.is_empty() {
             generate_flame_graph(config, shutdown);
             info!("Continuous profiling starts, generate flame graph locally");
@@ -25,12 +25,12 @@ pub fn start_profiling(
 
 fn start_exporter(config: Arc<Configuration>, tags: Vec<(&str, &str)>) {
     PyroscopeAgent::builder(
-        config.observation.profiling.server_endpoint.clone(),
+        config.observation.profiles.server_endpoint.clone(),
         "elastic-stream.range-server".to_string(),
     )
     .backend(pprof_backend(
         PprofConfig::new()
-            .sample_rate(config.observation.profiling.sampling_frequency as u32)
+            .sample_rate(config.observation.profiles.sampling_frequency as u32)
             .report_thread_name(),
     ))
     .tags(tags)
@@ -48,7 +48,7 @@ fn generate_flame_graph(config: Arc<Configuration>, mut shutdown: broadcast::Rec
             core_affinity::set_for_current(core_affinity::CoreId { id: 0 });
 
             let guard = match pprof::ProfilerGuardBuilder::default()
-                .frequency(config.observation.profiling.sampling_frequency)
+                .frequency(config.observation.profiles.sampling_frequency)
                 .blocklist(&["libc", "libgcc", "pthread", "vdso"])
                 .build()
             {
@@ -68,7 +68,7 @@ fn generate_flame_graph(config: Arc<Configuration>, mut shutdown: broadcast::Rec
                 }
             };
 
-            let base_path = cwd.join(&config.observation.profiling.report_path);
+            let base_path = cwd.join(&config.observation.profiles.report_path);
             if !base_path.exists() {
                 if let Err(_e) = std::fs::create_dir_all(base_path.as_path()) {
                     error!(
@@ -89,7 +89,7 @@ fn generate_flame_graph(config: Arc<Configuration>, mut shutdown: broadcast::Rec
 
                 std::thread::sleep(std::time::Duration::from_secs(1));
                 if last_generation_instant.elapsed().as_secs()
-                    < config.observation.profiling.report_interval
+                    < config.observation.profiles.report_interval
                 {
                     continue;
                 }
@@ -138,7 +138,7 @@ fn sweep_expired(report_path: &Path, config: &Arc<Configuration>) -> std::io::Re
         })
         .collect::<Vec<_>>();
 
-    if entries.len() <= config.observation.profiling.max_report_backup {
+    if entries.len() <= config.observation.profiles.max_report_backup {
         return Ok(());
     }
 
@@ -173,7 +173,7 @@ fn sweep_expired(report_path: &Path, config: &Arc<Configuration>) -> std::io::Re
     let mut entries = entries.into_iter().rev().collect::<Vec<_>>();
 
     loop {
-        if entries.len() <= config.observation.profiling.max_report_backup {
+        if entries.len() <= config.observation.profiles.max_report_backup {
             break;
         }
 

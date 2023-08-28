@@ -111,7 +111,7 @@ observation:
     protocol: "grpc"
     # Default max waiting time for the backend to process each signal batch, default value is 3s
     timeout: 3
-  profiling:
+  profiles:
     enable: false
     # pyroscope server endpoint
     server-endpoint: ""

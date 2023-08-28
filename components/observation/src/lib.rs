@@ -1,5 +1,5 @@
 pub mod metrics;
-#[cfg(feature = "profiling")]
-pub mod profiling;
+#[cfg(feature = "profiles")]
+pub mod profiles;
 #[cfg(feature = "trace")]
 pub mod trace;
