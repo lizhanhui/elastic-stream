@@ -87,7 +87,11 @@ where
                     }
                     _ => {}
                 }
-                trace!("Response frame generated. stream-id={}", response.stream_id);
+                trace!(
+                    "Generated {:?} response frame for stream-id={}",
+                    response.operation_code,
+                    response.stream_id
+                );
             }
             Err(e) => {
                 response.flag_system_err();
@@ -115,7 +119,8 @@ where
             }
             Err(_e) => {
                 warn!(
-                    "Failed to send response[stream-id={}] to channel because rx of mpsc channel has been closed",
+                    "Failed to send {:?} response[stream-id={}] to channel because rx of mpsc channel has been closed",
+                    self.request.operation_code,
                     self.request.stream_id
                 );
             }

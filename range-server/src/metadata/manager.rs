@@ -85,29 +85,23 @@ impl DefaultMetadataManager {
                             }
                         }
 
-                        match event.event_type {
-                            EventType::ListFinished => {
-                                if let Some(tx) = list_done_tx.take() {
-                                    let _ = tx.send(());
-                                }
-                                list_done = true;
-                                if list_done {
-                                    if !notify_listeners(
-                                        list_done_buffer_events.clone(),
-                                        &mut listeners,
-                                    ) {
-                                        break;
-                                    } else {
-                                        list_done_buffer_events.clear();
-                                    }
+                        if EventType::ListFinished == event.event_type {
+                            if let Some(tx) = list_done_tx.take() {
+                                let _ = tx.send(());
+                            }
+                            list_done = true;
+                            if list_done {
+                                if !notify_listeners(
+                                    list_done_buffer_events.clone(),
+                                    &mut listeners,
+                                ) {
+                                    break;
                                 } else {
-                                    continue;
+                                    list_done_buffer_events.clear();
                                 }
+                            } else {
+                                continue;
                             }
-                            EventType::Reset => {
-                                todo!("reset pd list&watch support");
-                            }
-                            _ => {}
                         }
                         let mut incremental_range_events =
                             Self::handle_event(server_id, event, &stream_map);

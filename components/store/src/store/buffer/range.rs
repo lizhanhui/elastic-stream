@@ -1,4 +1,4 @@
-use std::collections::BinaryHeap;
+use std::{cmp::Ordering, collections::BinaryHeap};
 
 use crate::AppendRecordRequest;
 
@@ -25,11 +25,13 @@ impl RangeBuffer {
     }
 
     pub(crate) fn fast_forward(&mut self, request: &AppendRecordRequest) -> bool {
-        if self.next == request.offset {
-            self.next += request.len as u64;
-            true
-        } else {
-            false
+        match self.next.cmp(&request.offset) {
+            Ordering::Less => false,
+            Ordering::Equal => {
+                self.next += request.len as u64;
+                true
+            }
+            Ordering::Greater => true,
         }
     }
 

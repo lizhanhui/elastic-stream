@@ -1,3 +1,4 @@
+use crate::connection_state::ConnectionState;
 use crate::ConnectionError;
 use crate::WriteTask;
 use bytes::{Buf, BytesMut};
@@ -5,9 +6,16 @@ use codec::error::FrameError;
 use codec::frame::Frame;
 use local_sync::{mpsc, oneshot};
 use log::{error, info, trace, warn};
+use std::cell::RefCell;
 use std::cell::UnsafeCell;
+use std::fmt::Display;
+use std::fmt::Formatter;
 use std::io::Cursor;
 use std::net::Shutdown;
+use std::net::SocketAddr;
+use std::os::fd::AsRawFd;
+use std::os::fd::FromRawFd;
+use std::os::fd::IntoRawFd;
 use std::rc::Rc;
 use tokio_uring::net::TcpStream;
 
@@ -17,10 +25,16 @@ pub struct Connection {
     /// Underlying TCP stream.
     stream: Rc<TcpStream>,
 
+    state: Rc<RefCell<ConnectionState>>,
+
     /// Read buffer for this connection.
     buffer: UnsafeCell<BytesMut>,
 
-    peer_address: String,
+    /// Local socket address
+    local_addr: Option<SocketAddr>,
+
+    /// Peer socket address
+    remote_addr: SocketAddr,
 
     /// Write buffer for this connection.
     ///
@@ -29,26 +43,26 @@ pub struct Connection {
 }
 
 impl Connection {
-    pub fn new(stream: TcpStream, peer_address: &str) -> Self {
+    pub fn new(stream: TcpStream, remote_addr: SocketAddr) -> Self {
+        let local_addr = Self::local_addr_of(&stream);
         let stream = Rc::new(stream);
         let (tx, mut rx) = mpsc::unbounded::channel::<WriteTask>();
-
         let write_stream = Rc::clone(&stream);
-        let target_address = peer_address.to_owned();
+        let state = Rc::new(RefCell::new(ConnectionState::Active));
+
+        let connection_state = Rc::clone(&state);
         tokio_uring::spawn(async move {
-            trace!("Start write coroutine loop for {}", &target_address);
+            trace!("Start write coroutine loop for {remote_addr}");
             loop {
                 match rx.recv().await {
                     Some(task) => {
                         trace!(
-                            "Write-frame-task[stream-id={}] received, start writing to {}",
+                            "Write-frame-task[stream-id={}] received, start writing to {remote_addr}",
                             task.frame.stream_id,
-                            &target_address
+
                         );
 
-                        if let Err(e) =
-                            Self::write(&write_stream, &task.frame, &target_address).await
-                        {
+                        if let Err(e) = Self::write(&write_stream, &task.frame, remote_addr).await {
                             match e {
                                 ConnectionError::EncodeFrame(e) => {
                                     error!("Failed to encode frame: {}", e.to_string());
@@ -58,6 +72,7 @@ impl Connection {
 
                                 ConnectionError::Network(e) => {
                                     error!("Failed to write frame to network due to {}, closing underlying TcpStream", e.to_string());
+                                    *connection_state.borrow_mut() = ConnectionState::Closed;
                                     let _ = write_stream.shutdown(Shutdown::Both);
                                     break;
                                 }
@@ -68,8 +83,8 @@ impl Connection {
                     }
                     None => {
                         log::info!(
-                            "Connection to {} should be closed, stop write coroutine loop",
-                            &target_address
+                            "Connection {local_addr:?} --> {remote_addr} should be closed, stop write coroutine loop",
+
                         );
                         break;
                     }
@@ -79,8 +94,10 @@ impl Connection {
 
         Self {
             stream,
+            state,
             buffer: UnsafeCell::new(BytesMut::with_capacity(BUFFER_SIZE)),
-            peer_address: peer_address.to_owned(),
+            local_addr,
+            remote_addr,
             tx,
         }
     }
@@ -88,12 +105,12 @@ impl Connection {
     async fn write(
         stream: &Rc<TcpStream>,
         frame: &Frame,
-        peer_address: &str,
+        remote_addr: SocketAddr,
     ) -> Result<(), ConnectionError> {
         let mut buffers = frame.encode()?;
 
         let total = buffers.iter().map(|b| b.len()).sum::<usize>();
-        trace!("Get {} bytes to write to: {}", total, peer_address);
+        trace!("Get {} bytes to write to: {}", total, remote_addr);
         let mut remaining = total;
         loop {
             let (res, _buffers) = stream.writev(buffers).await;
@@ -103,7 +120,7 @@ impl Connection {
             if n == remaining {
                 if remaining == total {
                     // First time to write
-                    trace!("Wrote {}/{} bytes to {}", n, total, peer_address);
+                    trace!("Wrote {}/{} bytes to {}", n, total, remote_addr);
                 } else {
                     // Last time of writing: the remaining are all written.
                     remaining -= n;
@@ -111,7 +128,7 @@ impl Connection {
                         "Wrote {}/{} bytes to {}. Overall, {}/{} is written.",
                         n,
                         total,
-                        peer_address,
+                        remote_addr,
                         total - remaining,
                         total
                     );
@@ -122,7 +139,7 @@ impl Connection {
                 trace!(
                     "Wrote {} bytes to {}. Overall, {}/{} is written",
                     n,
-                    peer_address,
+                    remote_addr,
                     total - remaining,
                     total,
                 );
@@ -148,8 +165,12 @@ impl Connection {
         Ok(())
     }
 
-    pub fn peer_address(&self) -> &str {
-        &self.peer_address
+    pub fn remote_addr(&self) -> SocketAddr {
+        self.remote_addr
+    }
+
+    pub fn local_addr(&self) -> Option<SocketAddr> {
+        self.local_addr
     }
 
     #[allow(clippy::mut_from_ref)]
@@ -198,11 +219,11 @@ impl Connection {
 
             let read = match res {
                 Ok(n) => {
-                    trace!("Read {} bytes from {}", n, self.peer_address);
+                    trace!("Read {} bytes from {}", n, self.remote_addr);
                     n
                 }
                 Err(_e) => {
-                    info!("Failed to read data from {}", self.peer_address);
+                    info!("Failed to read data from {}", self.remote_addr);
                     0
                 }
             };
@@ -313,12 +334,47 @@ impl Connection {
     }
 
     pub fn close(&self) -> std::io::Result<()> {
-        self.stream.shutdown(std::net::Shutdown::Both)
+        *self.state.borrow_mut() = ConnectionState::Closed;
+        self.stream.shutdown(Shutdown::Both)
+    }
+
+    pub fn state(&self) -> ConnectionState {
+        *self.state.borrow()
+    }
+
+    pub fn local_addr_of(stream: &TcpStream) -> Option<SocketAddr> {
+        let fd = stream.as_raw_fd();
+        let std_tcp_stream = unsafe { std::net::TcpStream::from_raw_fd(fd) };
+        let local_addr = std_tcp_stream.local_addr();
+        let _ = std_tcp_stream.into_raw_fd();
+        local_addr.ok()
+    }
+
+    pub fn peer_addr_of(stream: &TcpStream) -> Option<SocketAddr> {
+        let fd = stream.as_raw_fd();
+        let std_tcp_stream = unsafe { std::net::TcpStream::from_raw_fd(fd) };
+        let peer_addr = std_tcp_stream.peer_addr();
+        let _ = std_tcp_stream.into_raw_fd();
+        peer_addr.ok()
+    }
+}
+
+impl Display for Connection {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self.local_addr {
+            Some(addr) => {
+                write!(f, "{} --> {}", addr, self.remote_addr)
+            }
+            None => {
+                write!(f, "127.0.0.0:0 --> {}", self.remote_addr)
+            }
+        }
     }
 }
 
 impl Drop for Connection {
     fn drop(&mut self) {
+        info!("Close connection {}", self);
         let _ = self.close();
     }
 }
@@ -410,11 +466,12 @@ mod tests {
         tokio_uring::start(async {
             let address = format!("127.0.0.1:{}", port);
             {
-                let tcp_stream = tokio_uring::net::TcpStream::connect(address.parse().unwrap())
+                let remote_addr = address.parse().unwrap();
+                let tcp_stream = tokio_uring::net::TcpStream::connect(remote_addr)
                     .await
                     .unwrap();
                 tcp_stream.set_nodelay(true).unwrap();
-                let connection = super::Connection::new(tcp_stream, &address);
+                let connection = super::Connection::new(tcp_stream, remote_addr);
                 let mut frame = codec::frame::Frame::new(OperationCode::ALLOCATE_ID);
                 let mut payload = vec![];
                 (0..8).for_each(|_| {

@@ -272,7 +272,6 @@ impl Store for ElasticStore {
                             }
                         }
                         Err(TryRecvError::Empty) => {
-                            trace!("AppendResultCQ is empty");
                             break;
                         }
 
@@ -487,17 +486,17 @@ impl Store for ElasticStore {
     ///
     /// Either case, we need to run the range integrity procedure to ensure we are having complete
     /// and integral replica.
-    async fn seal(&self, range: RangeMetadata) -> Result<(), StoreError> {
+    async fn seal(&self, range: &RangeMetadata) -> Result<(), StoreError> {
         let (tx, rx) = oneshot::channel();
-        self.shared.indexer.seal_range(range, tx);
+        self.shared.indexer.seal_range(range.clone(), tx);
         rx.await
             .map_err(|_e| StoreError::Internal("Channel error".to_owned()))
             .flatten()
     }
 
-    async fn create(&self, range: RangeMetadata) -> Result<(), StoreError> {
+    async fn create(&self, range: &RangeMetadata) -> Result<(), StoreError> {
         let (tx, rx) = oneshot::channel();
-        self.shared.indexer.create_range(range, tx);
+        self.shared.indexer.create_range(range.clone(), tx);
         rx.await
             .map_err(|_e| StoreError::Internal("Channel error".to_owned()))
             .flatten()

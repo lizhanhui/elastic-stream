@@ -38,6 +38,8 @@ pub(crate) struct Worker<M, Meta> {
     /// `MetadataManager` caches all relevant metadata it receives and notifies all registered observers.
     metadata_manager: Meta,
 
+    connection_tracker: Rc<RefCell<ConnectionTracker>>,
+
     state: Rc<RefCell<RangeServerState>>,
 }
 
@@ -57,6 +59,7 @@ where
             range_manager,
             client,
             metadata_manager,
+            connection_tracker: Rc::new(RefCell::new(ConnectionTracker::new())),
             state: Rc::new(RefCell::new(
                 RangeServerState::RANGE_SERVER_STATE_READ_WRITE,
             )),
@@ -189,7 +192,6 @@ where
         listener: TcpListener,
         mut shutdown_rx: broadcast::Receiver<()>,
     ) -> Result<(), Box<dyn Error>> {
-        let connection_tracker = Rc::new(RefCell::new(ConnectionTracker::new()));
         loop {
             tokio::select! {
                 _ = shutdown_rx.recv() => {
@@ -198,15 +200,14 @@ where
                 }
 
                 incoming = listener.accept() => {
-                    let (stream, peer_socket_address) = match incoming {
-                        Ok((stream, socket_addr)) => {
-                            debug!("Accepted a new connection from {socket_addr:?}");
+                    let (stream, remote_addr) = match incoming {
+                        Ok((stream, remote_addr)) => {
+                            debug!("Accepted a new connection from {remote_addr:?}");
                             stream.set_nodelay(true).unwrap_or_else(|e| {
-                                warn!("Failed to disable Nagle's algorithm. Cause: {e:?}, PeerAddress: {socket_addr:?}");
+                                warn!("Failed to disable Nagle's algorithm. Cause: {e:?}, PeerAddress: {remote_addr:?}");
                             });
                             debug!("Nagle's algorithm turned off");
-
-                            (stream, socket_addr)
+                            (stream, remote_addr)
                         }
                         Err(e) => {
                             error!(
@@ -219,9 +220,9 @@ where
 
                     let session = super::session::Session::new(
                         Arc::clone(&self.config.server_config),
-                        stream, peer_socket_address,
+                        stream, remote_addr,
                         Rc::clone(&self.range_manager),
-                        Rc::clone(&connection_tracker)
+                        Rc::clone(&self.connection_tracker)
                        );
                     session.process();
                 }
@@ -229,12 +230,12 @@ where
         }
 
         // Send GoAway frame to all existing connections
-        connection_tracker.borrow_mut().go_away();
+        self.connection_tracker.borrow_mut().go_away();
 
         // Await till all existing connections disconnect
         let start = Instant::now();
         loop {
-            let remaining = connection_tracker.borrow().len();
+            let remaining = self.connection_tracker.borrow().len();
             if 0 == remaining {
                 break;
             }

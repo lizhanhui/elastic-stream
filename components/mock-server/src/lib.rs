@@ -1,8 +1,6 @@
 //! Util functions for tests.
 //!
 
-use std::time::{self, Duration, UNIX_EPOCH};
-
 use bytes::Bytes;
 use codec::frame::Frame;
 use log::{debug, error, info, trace, warn};
@@ -20,6 +18,7 @@ use protocol::rpc::header::{
     TrimStreamResponseT, UpdateStreamRequest, UpdateStreamResponseT, WatchResourceRequest,
     WatchResourceResponseT,
 };
+use std::time::{self, Duration, UNIX_EPOCH};
 
 use tokio::sync::oneshot;
 use tokio_uring::net::TcpListener;
@@ -139,12 +138,11 @@ pub async fn run_listener() -> u16 {
         let port = listener.local_addr().unwrap().port();
         debug!("TestServer is up, listening {}", port);
         tx.send(port).unwrap();
-        while let Ok((conn, sock_addr)) = listener.accept().await {
-            info!("TestServer accepted a connection from {:?}", sock_addr);
+        while let Ok((conn, remote_addr)) = listener.accept().await {
+            info!("TestServer accepted a connection from {:?}", remote_addr);
             tokio_uring::spawn(async move {
-                let addr = sock_addr.to_string();
-                let channel = Connection::new(conn, &addr);
-
+                let addr = remote_addr.to_string();
+                let channel = Connection::new(conn, remote_addr);
                 loop {
                     if let Ok(frame) = channel.read_frame().await {
                         if let Some(frame) = frame {

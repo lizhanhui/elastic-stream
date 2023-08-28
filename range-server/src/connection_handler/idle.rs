@@ -1,6 +1,5 @@
 use std::{
     cell::RefCell,
-    net::SocketAddr,
     rc::{Rc, Weak},
     sync::Arc,
     time::{Duration, Instant},
@@ -21,7 +20,6 @@ pub(crate) struct IdleHandler {
 impl IdleHandler {
     pub(crate) fn new(
         connection: Weak<Connection>,
-        addr: SocketAddr,
         config: Arc<Configuration>,
         conn_tracker: Rc<RefCell<ConnectionTracker>>,
     ) -> Rc<Self> {
@@ -30,7 +28,7 @@ impl IdleHandler {
             last_read: Rc::new(RefCell::new(Instant::now())),
             last_write: Rc::new(RefCell::new(Instant::now())),
         });
-        Self::run(Rc::clone(&handler), connection, addr, config, conn_tracker);
+        Self::run(Rc::clone(&handler), connection, config, conn_tracker);
         handler
     }
 
@@ -61,7 +59,6 @@ impl IdleHandler {
     fn run(
         handler: Rc<Self>,
         connection: Weak<Connection>,
-        addr: SocketAddr,
         config: Arc<Configuration>,
         conn_tracker: Rc<RefCell<ConnectionTracker>>,
     ) {
@@ -70,13 +67,13 @@ impl IdleHandler {
             loop {
                 interval.tick().await;
                 match connection.upgrade() {
-                    Some(channel) => {
+                    Some(connection) => {
                         if handler.read_idle() && handler.write_idle() {
-                            conn_tracker.borrow_mut().remove(&addr);
-                            if channel.close().is_ok() {
+                            conn_tracker.borrow_mut().remove(&connection.remote_addr());
+                            if connection.close().is_ok() {
                                 info!(
                                     "Close connection to {} since read has been idle for {}ms and write has been idle for {}ms",
-                                    channel.peer_address(),
+                                    connection.remote_addr(),
                                     handler.read_elapsed().as_millis(),
                                     handler.write_elapsed().as_millis(),
                                 );
@@ -112,11 +109,10 @@ mod tests {
             let target = format!("127.0.0.1:{}", port);
             let addr = target.parse::<SocketAddr>().unwrap();
             let stream = TcpStream::connect(addr).await.unwrap();
-            let connection = Rc::new(Connection::new(stream, &target));
+            let connection = Rc::new(Connection::new(stream, addr));
             let conn_tracker = Rc::new(RefCell::new(ConnectionTracker::new()));
             let handler = super::IdleHandler::new(
                 Rc::downgrade(&connection),
-                addr,
                 Arc::clone(&config),
                 conn_tracker,
             );

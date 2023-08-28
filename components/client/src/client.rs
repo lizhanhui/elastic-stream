@@ -395,7 +395,7 @@ impl Client for DefaultClient {
     async fn target_go_away(&self, target: &str) -> Result<bool, EsError> {
         let session_manager = unsafe { &mut *self.session_manager.get() };
         let session = session_manager.get_composite_session(target).await?;
-        Ok(session.go_away())
+        Ok(session.going_away())
     }
 
     async fn update_stream(

@@ -806,6 +806,7 @@ dependencies = [
  "observation",
  "ordinal",
  "protocol",
+ "rustc-hash",
  "tempfile",
  "thiserror",
  "tokio",

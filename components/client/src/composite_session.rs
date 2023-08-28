@@ -1,7 +1,7 @@
 use super::{lb_policy::LbPolicy, session::Session};
 use crate::{
     heartbeat::HeartbeatData, invocation_context::InvocationContext, request::Request,
-    response::Response, state::SessionState,
+    response::Response,
 };
 use bytes::Bytes;
 use config::Configuration;
@@ -30,6 +30,7 @@ use protocol::rpc::header::{
     ErrorCode, PlacementDriverCluster, RangeServerState, ResourceType, StreamT,
 };
 use protocol::rpc::header::{OperationCode, SealKind};
+use rustc_hash::FxHashSet;
 use std::{
     cell::RefCell,
     collections::HashMap,
@@ -51,7 +52,7 @@ pub(crate) struct CompositeSession {
     target: String,
     config: Arc<Configuration>,
     lb_policy: LbPolicy,
-    endpoints: RefCell<Vec<SocketAddr>>,
+    endpoints: RefCell<FxHashSet<SocketAddr>>,
     sessions: Rc<RefCell<HashMap<SocketAddr, Session>>>,
     shutdown: broadcast::Sender<()>,
     refresh_cluster_instant: RefCell<Instant>,
@@ -67,7 +68,7 @@ impl CompositeSession {
     where
         T: ToSocketAddrs + ToString,
     {
-        let endpoints = RefCell::new(Vec::new());
+        let endpoints = RefCell::new(FxHashSet::default());
         let sessions = Rc::new(RefCell::new(HashMap::new()));
         // For now, we just resolve one session out of the target.
         // In the future, we would support multiple internal connection and load balancing among them.
@@ -79,13 +80,12 @@ impl CompositeSession {
                 socket_addr,
                 config.client_connect_timeout(),
                 Arc::clone(&config),
-                Rc::clone(&sessions),
                 shutdown.clone(),
             )
             .await;
             match res {
                 Ok(session) => {
-                    endpoints.borrow_mut().push(socket_addr);
+                    endpoints.borrow_mut().insert(socket_addr);
                     sessions.borrow_mut().insert(socket_addr, session);
                     info!("Connection to {} established", target.to_string());
                     break;
@@ -181,7 +181,8 @@ impl CompositeSession {
         self.sessions
         .borrow_mut()
         .extract_if(|k, _v| !addrs.contains(k))
-        .for_each(|(k, _v)| {
+        .for_each(|(k, session)| {
+            let _ = session.connection.close();
             self.endpoints.borrow_mut().retain(|e| {
                 e != &k
             });
@@ -202,7 +203,6 @@ impl CompositeSession {
                 addr,
                 self.config.client_connect_timeout(),
                 Arc::clone(&self.config),
-                Rc::clone(&self.sessions),
                 self.shutdown.clone(),
             )
         });
@@ -211,12 +211,13 @@ impl CompositeSession {
         for item in res {
             match item {
                 Ok(session) => {
-                    info!(
-                        "Insert a session to composite-session {} using socket: {}",
-                        self.target, session.target
-                    );
-                    self.endpoints.borrow_mut().push(session.target);
-                    self.sessions.borrow_mut().insert(session.target, session);
+                    info!("Add a session to composite-session {}", session);
+                    self.endpoints
+                        .borrow_mut()
+                        .insert(session.connection.remote_addr());
+                    self.sessions
+                        .borrow_mut()
+                        .insert(session.connection.remote_addr(), session);
                 }
                 Err(e) => {
                     error!("Failed to connect. {:?}", e);
@@ -269,7 +270,7 @@ impl CompositeSession {
             .filter(|&(_, session)| {
                 trace!(
                     "State of session to {} is {:?}",
-                    session.target,
+                    session.connection.remote_addr(),
                     session.role()
                 );
                 session.role() == NodeRole::Leader
@@ -458,17 +459,18 @@ impl CompositeSession {
     /// Describe current placement driver cluster membership.
     ///
     /// There are multiple rationales for this RPC.
-    /// 1. Placement driver is built on top of RAFT consensus algorithm and election happens in case of leader outage. Some RPCs
-    ///    should steer to the leader node and need to refresh the leadership on failure;
-    /// 2. Heartbeat, metrics-reporting RPC requests should broadcast to all placement driver nodes, so that when leader changes,
-    ///    range-server liveness and load evaluation are not impacted.
+    /// 1. Placement driver is built on top of RAFT consensus algorithm and election happens in case of leader outage.
+    ///    Some RPCs should steer to the leader node and need to refresh the leadership on failure;
+    /// 2. Heartbeat, metrics-reporting RPC requests should broadcast to all placement driver nodes, so that when
+    ///    leader changes, range-server liveness and load evaluation are not impacted.
     ///
     /// # Implementation walkthrough
     /// Step 1: If placement driver access URL uses domain name, resolve it;
     ///  1.1 If the result `SocketAddress` has an existing `Session`, re-use it and go to step 2;
     ///  1.2 If the result `SocketAddress` is completely new, connect and build a new `Session`
     /// Step 2: Send DescribePlacementDriverRequest to the `Session` discovered in step 1;
-    /// Step 3: Once response is received from placement driver server, update the aggregated `Session` table, including leadership
+    /// Step 3: Once response is received from placement driver server, update the aggregated `Session` table,
+    ///         including leadership.
     async fn describe_placement_driver_cluster(
         &self,
     ) -> Result<Option<Vec<PlacementDriverNode>>, EsError> {
@@ -517,15 +519,15 @@ impl CompositeSession {
             }
 
             if !request_sent {
-                warn!(
-                    "Failed to describe placement driver cluster via existing sessions. Try to re-connect..."
+                info!(
+                    "Failed to describe placement driver cluster via {} existing sessions. Try to re-connect",
+                    self.sessions.borrow().len()
                 );
                 if let Some(addr) = addrs.first() {
                     let session = Self::connect(
                         *addr,
                         self.config.client_connect_timeout(),
                         Arc::clone(&self.config),
-                        Rc::clone(&self.sessions),
                         self.shutdown.clone(),
                     )
                     .await?;
@@ -653,6 +655,11 @@ impl CompositeSession {
             return;
         }
 
+        // Remove session that is not active any more.
+        self.sessions
+            .borrow_mut()
+            .retain(|_, session| session.active());
+
         if self.endpoints.borrow().len() > self.sessions.borrow().len() {
             let futures = self
                 .endpoints
@@ -664,7 +671,6 @@ impl CompositeSession {
                         *target,
                         self.config.client_connect_timeout(),
                         Arc::clone(&self.config),
-                        Rc::clone(&self.sessions),
                         self.shutdown.clone(),
                     )
                 })
@@ -682,7 +688,7 @@ impl CompositeSession {
                     .into_iter()
                     .for_each(|res| match res {
                         Ok(session) => {
-                            let target = session.target;
+                            let target = session.connection.remote_addr();
                             sessions.borrow_mut().insert(target, session);
                         }
                         Err(e) => {
@@ -698,24 +704,26 @@ impl CompositeSession {
     }
 
     async fn connect(
-        addr: SocketAddr,
+        remote_addr: SocketAddr,
         duration: Duration,
         config: Arc<Configuration>,
-        sessions: Rc<RefCell<HashMap<SocketAddr, Session>>>,
         shutdown: broadcast::Sender<()>,
     ) -> Result<Session, EsError> {
-        info!("Establishing connection to {:?}", addr);
-        let endpoint = addr.to_string();
-        let connect = TcpStream::connect(addr);
+        info!("Establishing connection to {:?}", remote_addr);
+        let endpoint = remote_addr.to_string();
+        let connect = TcpStream::connect(remote_addr);
         let stream = match timeout(duration, connect).await {
             Ok(res) => match res {
-                Ok(connection) => {
-                    info!("Connection to {:?} established", addr);
-                    connection.set_nodelay(true).map_err(|e| {
+                Ok(tcp_stream) => {
+                    info!("Connection to {:?} established", remote_addr);
+                    tcp_stream.set_nodelay(true).map_err(|e| {
                         error!("Failed to disable Nagle's algorithm. Cause: {:?}", e);
-                        EsError::new(ErrorCode::CONNECT_DISABLE_NAGLE_FAIL, "Disable nagle fail")
+                        EsError::new(
+                            ErrorCode::CONNECT_DISABLE_NAGLE_FAIL,
+                            "Failed to disable Nagle's algorithm",
+                        )
                     })?;
-                    connection
+                    tcp_stream
                 }
                 Err(e) => match e.kind() {
                     ErrorKind::ConnectionRefused => {
@@ -742,14 +750,7 @@ impl CompositeSession {
                 ));
             }
         };
-        Ok(Session::new(
-            addr,
-            stream,
-            &endpoint,
-            &config,
-            Rc::downgrade(&sessions),
-            shutdown.clone(),
-        ))
+        Ok(Session::new(remote_addr, stream, &config, shutdown.clone()))
     }
 
     pub(crate) async fn append(&self, buf: Vec<Bytes>) -> Result<Vec<AppendResultEntry>, EsError> {
@@ -1130,9 +1131,9 @@ impl CompositeSession {
         }
     }
 
-    pub fn go_away(&self) -> bool {
+    pub fn going_away(&self) -> bool {
         for (_, session) in self.sessions.borrow().iter() {
-            if session.state() == SessionState::GoAway {
+            if session.going_away() {
                 return true;
             }
         }

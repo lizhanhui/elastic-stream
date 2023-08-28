@@ -3,7 +3,10 @@ use std::{cell::RefCell, collections::HashMap, rc::Rc, sync::Arc};
 use futures::future::join_all;
 use local_sync::oneshot;
 use log::trace;
-use model::{range::RangeMetadata, resource::ResourceEventObserver};
+use model::{
+    range::RangeMetadata,
+    resource::{EventType, Resource, ResourceEvent, ResourceEventObserver},
+};
 
 use crate::{
     error::{AppendError, FetchError, StoreError},
@@ -74,6 +77,20 @@ where
             store,
             buffer: Rc::new(RefCell::new(StoreBuffer::new())),
         }
+    }
+
+    fn create_range(&self, range: &RangeMetadata) {
+        self.buffer.borrow_mut().create_range(
+            range.stream_id(),
+            range.index() as u32,
+            range.start(),
+        );
+    }
+
+    fn seal_range(&self, range: &RangeMetadata) {
+        self.buffer
+            .borrow_mut()
+            .seal_range(range.stream_id(), range.index() as u32);
     }
 }
 
@@ -165,20 +182,14 @@ where
     }
 
     /// Seal stream range in metadata column family after cross check with placement driver.
-    async fn seal(&self, range: RangeMetadata) -> Result<(), StoreError> {
-        self.buffer
-            .borrow_mut()
-            .seal_range(range.stream_id(), range.index() as u32);
+    async fn seal(&self, range: &RangeMetadata) -> Result<(), StoreError> {
+        self.seal_range(range);
         self.store.seal(range).await
     }
 
     /// Create a stream range in metadata.
-    async fn create(&self, range: RangeMetadata) -> Result<(), StoreError> {
-        self.buffer.borrow_mut().create_range(
-            range.stream_id(),
-            range.index() as u32,
-            range.start(),
-        );
+    async fn create(&self, range: &RangeMetadata) -> Result<(), StoreError> {
+        self.create_range(range);
         self.store.create(range).await
     }
 
@@ -200,7 +211,35 @@ impl<S> ResourceEventObserver for BufferedStore<S>
 where
     S: Store + ResourceEventObserver,
 {
-    fn on_resource_event(&self, event: &model::resource::ResourceEvent) {
+    fn on_resource_event(&self, event: &ResourceEvent) {
+        // Notify the nested store implementation.
         self.store.on_resource_event(event);
+
+        // Handle cases which make sense for `BufferedStore`
+        match event.event_type {
+            EventType::None | EventType::Reset | EventType::ListFinished => {}
+
+            EventType::Added => {
+                if let Resource::Range(range) = &event.resource {
+                    trace!("Create {range} for BufferedStore");
+                    self.create_range(range);
+                }
+            }
+
+            EventType::Listed | EventType::Modified => {
+                if let Resource::Range(range) = &event.resource {
+                    match range.end() {
+                        None => {
+                            trace!("Create {range} for BufferedStore");
+                            self.create_range(range);
+                        }
+                        Some(_end) => {
+                            self.seal_range(range);
+                        }
+                    }
+                }
+            }
+            EventType::Deleted => {}
+        }
     }
 }

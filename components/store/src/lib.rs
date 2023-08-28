@@ -91,10 +91,10 @@ pub trait Store {
         F: Fn(&RangeMetadata) -> bool + 'static;
 
     /// Seal stream range in metadata column family after cross check with placement driver.
-    async fn seal(&self, range: RangeMetadata) -> Result<(), StoreError>;
+    async fn seal(&self, range: &RangeMetadata) -> Result<(), StoreError>;
 
     /// Create a stream range in metadata.
-    async fn create(&self, range: RangeMetadata) -> Result<(), StoreError>;
+    async fn create(&self, range: &RangeMetadata) -> Result<(), StoreError>;
 
     /// Get range end offset in current range server.
     fn get_range_end_offset(&self, stream_id: u64, range: u32) -> Result<Option<u64>, StoreError>;

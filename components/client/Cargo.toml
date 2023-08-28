@@ -24,6 +24,7 @@ model = { path = "../model" }
 observation = { path = "../observation" }
 ordinal = { workspace = true }
 protocol = { path = "../protocol" }
+rustc-hash = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 tokio-uring = { workspace = true }

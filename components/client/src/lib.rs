@@ -25,7 +25,7 @@ pub mod response;
 pub(crate) mod role;
 mod session;
 mod session_manager;
-pub mod state;
+pub mod session_state;
 
 pub use crate::client::DefaultClient;
 pub use crate::id_generator::IdGenerator;

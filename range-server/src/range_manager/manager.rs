@@ -144,8 +144,9 @@ where
 
     /// Create a new range for the specified stream.
     fn create_range(&self, range: RangeMetadata) -> Result<(), ServiceError> {
-        info!("Create range={:?}", range);
-
+        info!("Create range={range}");
+        // `BufferedStore` needs range metadata to sort append requests.
+        self.store.create(&range);
         match self.streams_mut().entry(range.stream_id()) {
             Entry::Occupied(mut occupied) => {
                 occupied.get_mut().create_range(range);

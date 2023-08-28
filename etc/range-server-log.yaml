@@ -57,17 +57,17 @@ loggers:
       - range-server
     additive: false
   model:
-    level: trace
+    level: info
     appenders:
       - range-server
     additive: false
   codec:
-    level: trace
+    level: info
     appenders:
       - range-server
     additive: false
   transport:
-    level: trace
+    level: info
     appenders:
       - range-server
     additive: false
@@ -87,7 +87,12 @@ loggers:
       - range-server
     additive: false
   object_storage:
-    level: trace
+    level: warn
+    appenders:
+      - range-server
+    additive: false
+  pd_client:
+    level: info
     appenders:
       - range-server
     additive: false

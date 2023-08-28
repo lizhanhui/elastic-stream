@@ -316,7 +316,7 @@ table AppendRequest {
     // The timeout to await a response in milliseconds.
     timeout_ms: int32 (id: 0);
 
-    committed: [CommitEntry] (id: 1, required);
+    committed: [CommitEntry] (id: 1);
 
     // Other fields are serialized in the payload.
     // Layout of the request payload

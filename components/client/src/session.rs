@@ -3,23 +3,23 @@ use crate::{
     heartbeat::HeartbeatData,
     request::{self, Request},
     response::{self, Response},
-    state::SessionState,
+    session_state::SessionState,
     NodeRole,
 };
 use codec::{error::FrameError, frame::Frame};
-
 use futures::Future;
 use protocol::rpc::header::{ClientRole, GoAwayFlags, OperationCode, RangeServerState};
 use tower::Service;
-use transport::connection::Connection;
+use transport::{connection::Connection, connection_state::ConnectionState};
 
 use local_sync::oneshot;
 use log::{error, info, trace, warn};
 use std::{
     cell::{RefCell, UnsafeCell},
     collections::HashMap,
+    fmt::Display,
     net::SocketAddr,
-    rc::{Rc, Weak},
+    rc::Rc,
     sync::Arc,
     task::{Context, Poll},
     time::Instant,
@@ -30,13 +30,11 @@ use tokio_uring::net::TcpStream;
 use crate::invocation_context::InvocationContext;
 
 pub(crate) struct Session {
-    pub(crate) target: SocketAddr,
-
     config: Arc<config::Configuration>,
 
     // Unlike {tokio, monoio}::TcpStream where we need to split underlying TcpStream into two owned mutable,
     // tokio_uring::TcpStream requires immutable references only to perform read/write.
-    connection: Rc<Connection>,
+    pub(crate) connection: Rc<Connection>,
 
     /// In-flight requests.
     inflight_requests: Rc<UnsafeCell<HashMap<u32, InvocationContext>>>,
@@ -60,13 +58,11 @@ impl Session {
     fn spawn_read_loop(
         connection: Rc<Connection>,
         inflight_requests: Rc<UnsafeCell<HashMap<u32, InvocationContext>>>,
-        sessions: Weak<RefCell<HashMap<SocketAddr, Session>>>,
         state: Rc<RefCell<SessionState>>,
-        target: SocketAddr,
         mut shutdown: broadcast::Receiver<()>,
     ) {
         tokio_uring::spawn(async move {
-            trace!("Start read loop for session[target={}]", target);
+            trace!("Start read loop for session[{}]", connection);
             loop {
                 tokio::select! {
                     stop = shutdown.recv() => {
@@ -94,56 +90,43 @@ impl Session {
                                         continue;
                                     }
                                     FrameError::ConnectionReset => {
-                                        error!( "Connection to {} reset by peer", target);
+                                        error!( "Connection {} is reset by peer", connection);
                                     }
                                     FrameError::BadFrame(message) => {
-                                        error!( "Read a bad frame from target={}. Cause: {}", target, message);
+                                        error!( "Read a bad frame from connection {}. Cause: {}", connection, message);
                                     }
                                     FrameError::TooLongFrame{found, max} => {
-                                        error!( "Read a frame with excessive length={}, max={}, target={}", found, max, target);
+                                        error!( "Read a frame with excessive length={}, max={}, from connection {}", found, max, connection);
                                     }
                                     FrameError::MagicCodeMismatch{found, expected} => {
-                                        error!( "Read a frame with incorrect magic code. Expected={}, actual={}, target={}", expected, found, target);
+                                        error!( "Read a frame with incorrect magic code. Expected={}, actual={}, from connection {}", expected, found, connection);
                                     }
                                     FrameError::TooLongFrameHeader{found, expected} => {
-                                        error!( "Read a frame with excessive header length={}, max={}, target={}", found, expected, target);
+                                        error!( "Read a frame with excessive header length={}, max={}, from connection {}", found, expected, connection);
                                     }
                                     FrameError::PayloadChecksumMismatch{expected, actual} => {
-                                        error!( "Read a frame with incorrect payload checksum. Expected={}, actual={}, target={}", expected, actual, target);
-                                    }
-                                }
-                                // Close the session
-                                if let Some(sessions) = sessions.upgrade() {
-                                    let mut sessions = sessions.borrow_mut();
-                                    if let Some(_session) = sessions.remove(&target) {
-                                        warn!( "Closing session to {}", target);
+                                        error!( "Read a frame with incorrect payload checksum. Expected={}, actual={}, from connection {}", expected, actual, connection);
                                     }
                                 }
                                 break;
                             }
                             Ok(Some(frame)) => {
-                                trace!( "Read a frame from channel={}", target);
+                                trace!( "Read a frame from channel {}", connection);
                                 let inflight = unsafe { &mut *inflight_requests.get() };
                                 if frame.is_response() {
-                                    Session::handle_response(inflight, frame, target);
+                                    Session::handle_response(inflight, frame, connection.remote_addr());
                                 } else if frame.operation_code == OperationCode::GOAWAY {
                                     *state.borrow_mut() = SessionState::GoAway;
                                     let reason = if frame.has_go_away_flag(GoAwayFlags::SERVER_MAINTENANCE) {
                                         "server maintenance"
                                     } else {"connection being idle"};
-                                    info!("Peer server[{}] has notified to go-away due to {}.", target, reason);
+                                    info!("Received go-away from [{}] because of '{}'.", connection, reason);
                                 } else {
-                                    warn!( "Received an unexpected request frame from target={}", target);
+                                    warn!( "Received an unexpected request frame from {}", connection);
                                 }
                             }
                             Ok(None) => {
-                                info!( "Connection to {} is closed by peer", target);
-                                if let Some(sessions) = sessions.upgrade() {
-                                    let mut sessions = sessions.borrow_mut();
-                                    if let Some(_session) = sessions.remove(&target) {
-                                        info!( "Remove session to {} from composite-session", target);
-                                    }
-                                }
+                                info!( "Connection {} is closed by peer", connection);
                                 break;
                             }
 
@@ -162,19 +145,20 @@ impl Session {
                     !ctx.is_closed()
                 });
             }
-            trace!("Read loop for session[target={}] completed", target);
+            if let Err(e) = connection.close() {
+                warn!("Failed to close connection {}: {:?}", connection, e);
+            }
+            info!("Read loop for session[{}] completed", connection);
         });
     }
 
     pub(crate) fn new(
-        target: SocketAddr,
+        remote_addr: SocketAddr,
         stream: TcpStream,
-        endpoint: &str,
         config: &Arc<config::Configuration>,
-        sessions: Weak<RefCell<HashMap<SocketAddr, Session>>>,
         shutdown: broadcast::Sender<()>,
     ) -> Self {
-        let connection = Rc::new(Connection::new(stream, endpoint));
+        let connection = Rc::new(Connection::new(stream, remote_addr));
         let inflight = Rc::new(UnsafeCell::new(HashMap::new()));
 
         let state = Rc::new(RefCell::new(SessionState::Active));
@@ -182,15 +166,12 @@ impl Session {
         Self::spawn_read_loop(
             Rc::clone(&connection),
             Rc::clone(&inflight),
-            sessions,
             Rc::clone(&state),
-            target,
             shutdown.subscribe(),
         );
 
         Self {
             config: Arc::clone(config),
-            target,
             connection,
             inflight_requests: inflight,
             idle_since: Rc::new(RefCell::new(Instant::now())),
@@ -204,7 +185,7 @@ impl Session {
         request: request::Request,
         response_observer: oneshot::Sender<response::Response>,
     ) -> Result<(), InvocationContext> {
-        trace!("Sending {} to {}", request, self.target);
+        trace!("Sending {} to {}", request, self.connection);
 
         // Update last read/write instant.
         *self.idle_since.borrow_mut() = Instant::now();
@@ -288,7 +269,11 @@ impl Session {
         frame.payload = request.body.clone();
 
         let inflight_requests = unsafe { &mut *self.inflight_requests.get() };
-        let context = InvocationContext::new(self.target, request.clone(), response_observer);
+        let context = InvocationContext::new(
+            self.connection.remote_addr(),
+            request.clone(),
+            response_observer,
+        );
         inflight_requests.insert(frame.stream_id, context);
 
         // Write frame to network
@@ -299,14 +284,14 @@ impl Session {
                 trace!(
                     "Write request[opcode={}] bounded for {} using stream-id={} to socket buffer",
                     opcode.variant_name().unwrap_or("INVALID_OPCODE"),
-                    self.connection.peer_address(),
+                    self.connection.remote_addr(),
                     stream_id,
                 );
             }
             Err(e) => {
                 error!(
                     "Failed to write request[opcode={}] bounded for {} to socket buffer. Cause: {:?}",
-                    opcode.variant_name().unwrap_or("INVALID_OPCODE"), self.connection.peer_address(), e
+                    opcode.variant_name().unwrap_or("INVALID_OPCODE"), self.connection.remote_addr(), e
                 );
                 if let Some(ctx) = inflight_requests.remove(&stream_id) {
                     return Err(ctx);
@@ -350,7 +335,7 @@ impl Session {
                 trace!(
                     "Write request[opcode={}] bounded for {} using stream-id={} to socket buffer",
                     opcode.variant_name().unwrap_or("INVALID_OPCODE"),
-                    self.connection.peer_address(),
+                    self.connection.remote_addr(),
                     stream_id,
                 );
                 *self.idle_since.borrow_mut() = Instant::now();
@@ -358,7 +343,7 @@ impl Session {
             Err(e) => {
                 error!(
                     "Failed to write request[opcode={}] bounded for {} to socket buffer. Cause: {:?}",
-                    opcode.variant_name().unwrap_or("INVALID_OPCODE"), self.connection.peer_address(), e
+                    opcode.variant_name().unwrap_or("INVALID_OPCODE"), self.connection.remote_addr(), e
                 );
             }
         }
@@ -373,14 +358,25 @@ impl Session {
         if current != state {
             info!(
                 "Node-state of {} is changed: {:?} --> {:?}",
-                self.target, current, state
+                self.connection.remote_addr(),
+                current,
+                state
             );
             *self.role.borrow_mut() = state;
         }
     }
 
-    pub fn state(&self) -> SessionState {
-        *self.state.borrow()
+    pub fn going_away(&self) -> bool {
+        *self.state.borrow() == SessionState::GoAway
+    }
+
+    pub fn active(&self) -> bool {
+        match self.connection.state() {
+            ConnectionState::Active => {}
+            ConnectionState::Closed => return false,
+        }
+
+        return *self.state.borrow() == SessionState::Active;
     }
 
     fn handle_response(
@@ -516,7 +512,6 @@ impl Session {
 impl Clone for Session {
     fn clone(&self) -> Self {
         Self {
-            target: self.target,
             config: Arc::clone(&self.config),
             connection: Rc::clone(&self.connection),
             inflight_requests: Rc::clone(&self.inflight_requests),
@@ -524,6 +519,12 @@ impl Clone for Session {
             role: Rc::clone(&self.role),
             state: Rc::clone(&self.state),
         }
+    }
+}
+
+impl Display for Session {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.connection.fmt(f)
     }
 }
 
@@ -566,22 +567,15 @@ mod tests {
 
     /// Verify it's OK to create a new session.
     #[test]
-    fn test_new() -> Result<(), Box<dyn Error>> {
+    fn test_session_new() -> Result<(), Box<dyn Error>> {
+        ulog::try_init_log();
         tokio_uring::start(async {
             let port = run_listener().await;
             let target = format!("127.0.0.1:{}", port);
             let stream = TcpStream::connect(target.parse()?).await?;
             let config = Arc::new(config::Configuration::default());
-            let sessions = Rc::new(RefCell::new(HashMap::new()));
             let (tx, _rx) = broadcast::channel(1);
-            let _session = Session::new(
-                target.parse()?,
-                stream,
-                &target,
-                &config,
-                Rc::downgrade(&sessions),
-                tx,
-            );
+            let _session = Session::new(target.parse()?, stream, &config, tx);
 
             Ok(())
         })
@@ -589,24 +583,15 @@ mod tests {
 
     /// Verify it's OK to wrap `Session` into `Timeout` tower middleware.
     #[test]
-    fn test_session_service() -> Result<(), Box<dyn Error>> {
+    fn test_session_service_heartbeat() -> Result<(), Box<dyn Error>> {
         ulog::try_init_log();
         tokio_uring::start(async {
             let port = run_listener().await;
             let target = format!("127.0.0.1:{}", port);
             let stream = TcpStream::connect(target.parse()?).await?;
             let config = Arc::new(config::Configuration::default());
-            let sessions = Rc::new(RefCell::new(HashMap::new()));
             let (tx, _rx) = broadcast::channel(1);
-            let session = Session::new(
-                target.parse()?,
-                stream,
-                &target,
-                &config,
-                Rc::downgrade(&sessions),
-                tx,
-            );
-
+            let session = Session::new(target.parse()?, stream, &config, tx.clone());
             let mut timeout_session = Timeout::new(session, Duration::from_secs(1));
             let req = crate::request::Request {
                 timeout: Duration::from_secs(1),
@@ -617,6 +602,7 @@ mod tests {
                 },
                 body: None,
             };
+
             match timeout_session.call(req).await {
                 Ok(_resp) => {
                     panic!("Should not receive a heartbeat response");
@@ -665,17 +651,8 @@ mod tests {
             let target = format!("127.0.0.1:{}", port);
             let stream = TcpStream::connect(target.parse()?).await?;
             let config = Arc::new(config::Configuration::default());
-            let sessions = Rc::new(RefCell::new(HashMap::new()));
             let (tx, _rx) = broadcast::channel(1);
-            let session = Session::new(
-                target.parse()?,
-                stream,
-                &target,
-                &config,
-                Rc::downgrade(&sessions),
-                tx,
-            );
-
+            let session = Session::new(target.parse()?, stream, &config, tx.clone());
             let timeout_session = Timeout::new(session, Duration::from_secs(1));
             let req = crate::request::Request {
                 timeout: Duration::from_secs(1),

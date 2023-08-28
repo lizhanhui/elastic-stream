@@ -5,7 +5,7 @@ use codec::frame::Frame;
 use core::fmt;
 use log::{error, warn};
 use model::range::RangeMetadata;
-use protocol::rpc::header::{CreateRangeRequest, ErrorCode, SealRangeResponseT, StatusT};
+use protocol::rpc::header::{CreateRangeRequest, CreateRangeResponseT, ErrorCode, StatusT};
 use std::rc::Rc;
 
 #[derive(Debug)]
@@ -37,26 +37,32 @@ impl<'a> CreateRange<'a> {
     {
         let request = self.request.unpack();
 
-        let mut create_response = SealRangeResponseT::default();
-
+        let mut create_response = CreateRangeResponseT::default();
         let range = request.range;
-        let range: RangeMetadata = Into::<RangeMetadata>::into(&*range);
+        let range_metadata = Into::<RangeMetadata>::into(&*range);
         let mut status = StatusT::default();
         status.code = ErrorCode::OK;
 
-        // Notify range creation to `RangeManager`
-        if let Err(e) = range_manager.create_range(range.clone()) {
-            error!("Failed to create range: {:?}", e);
-            // TODO: Map service error to the corresponding error code.
-            status.code = ErrorCode::RS_CREATE_RANGE;
-            status.message = Some(format!("Failed to create range: {}", e));
+        // Notify range creation to `RangeManager` in case it has not received it from PD
+        match range_manager.create_range(range_metadata.clone()) {
+            Err(e) => {
+                error!("Failed to create range: {:?}", e);
+                // TODO: Map service error to the corresponding error code.
+                status.code = ErrorCode::RS_CREATE_RANGE;
+                status.message = Some(format!("Failed to create range: {}", e));
+            }
+            Ok(()) => {
+                // `RangeManager` should NOT modify range metadata, so it's safe to write it back
+                // directly.
+                create_response.range = Some(range);
+            }
         }
         create_response.status = Box::new(status);
         self.build_response(response, &create_response);
     }
 
     #[inline]
-    fn build_response(&self, frame: &mut Frame, create_response: &SealRangeResponseT) {
+    fn build_response(&self, frame: &mut Frame, create_response: &CreateRangeResponseT) {
         let mut builder = flatbuffers::FlatBufferBuilder::new();
         let resp = create_response.pack(&mut builder);
         builder.finish(resp, None);

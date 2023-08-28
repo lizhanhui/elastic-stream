@@ -13,8 +13,7 @@ use crate::{
 
 pub(crate) struct Session<M> {
     config: Arc<Configuration>,
-    stream: TcpStream,
-    addr: SocketAddr,
+    connection: Rc<Connection>,
     range_manager: Rc<M>,
     connection_tracker: Rc<RefCell<ConnectionTracker>>,
 }
@@ -30,22 +29,22 @@ where
         range_manager: Rc<M>,
         connection_tracker: Rc<RefCell<ConnectionTracker>>,
     ) -> Self {
+        let connection = Rc::new(Connection::new(stream, addr));
         Self {
             config,
-            stream,
-            addr,
+            connection,
             range_manager,
             connection_tracker,
         }
     }
 
     pub(crate) fn process(self) {
+        let connection = Rc::clone(&self.connection);
         tokio_uring::spawn(async move {
             Self::process0(
                 self.range_manager,
                 self.connection_tracker,
-                self.addr,
-                self.stream,
+                connection,
                 self.config,
             )
             .await;
@@ -55,8 +54,7 @@ where
     async fn process0(
         range_manager: Rc<M>,
         connection_tracker: Rc<RefCell<ConnectionTracker>>,
-        peer_address: SocketAddr,
-        stream: TcpStream,
+        connection: Rc<Connection>,
         server_config: Arc<Configuration>,
     ) {
         // Channel to transfer responses from handlers to the coroutine that is in charge of response write.
@@ -67,23 +65,20 @@ where
         // as possible.
         connection_tracker
             .borrow_mut()
-            .insert(peer_address, tx.clone());
-        let channel = Rc::new(Connection::new(stream, &peer_address.to_string()));
+            .insert(connection.remote_addr(), tx.clone());
 
         let idle_handler = connection_handler::idle::IdleHandler::new(
-            Rc::downgrade(&channel),
-            peer_address,
+            Rc::downgrade(&connection),
             Arc::clone(&server_config),
             Rc::clone(&connection_tracker),
         );
 
         // Coroutine to read requests from network connection
-        let _channel = Rc::clone(&channel);
+        let connection_ = Rc::clone(&connection);
         let read_idle_handler = Rc::clone(&idle_handler);
         tokio_uring::spawn(async move {
-            let channel = _channel;
             loop {
-                match channel.read_frame().await {
+                match connection_.read_frame().await {
                     Ok(Some(frame)) => {
                         // Update last read instant.
                         read_idle_handler.on_read();
@@ -99,31 +94,37 @@ where
                         });
                     }
                     Ok(None) => {
-                        info!("Connection to {} is closed", peer_address);
+                        info!(
+                            "Connection {:?} --> {} is closed",
+                            connection_.local_addr(),
+                            connection_.remote_addr()
+                        );
                         break;
                     }
                     Err(e) => {
                         warn!(
-                            "Connection reset. Peer address: {}. Cause: {e:?}",
-                            peer_address
+                            "Connection {:?} --> {} reset. Cause: {e:?}",
+                            connection_.local_addr(),
+                            connection_.remote_addr()
                         );
                         break;
                     }
                 }
             }
 
-            connection_tracker.borrow_mut().remove(&peer_address);
+            connection_tracker
+                .borrow_mut()
+                .remove(&connection_.remote_addr());
         });
 
         // Coroutine to write responses to network connection
         tokio_uring::spawn(async move {
-            let peer_address = channel.peer_address().to_owned();
             loop {
                 match rx.recv().await {
                     Some(frame) => {
                         let stream_id = frame.stream_id;
                         let opcode = frame.operation_code;
-                        match channel.write_frame(frame).await {
+                        match connection.write_frame(frame).await {
                             Ok(_) => {
                                 // Update last write instant
                                 idle_handler.on_write();
@@ -131,7 +132,7 @@ where
                                     "Response frame[stream-id={}, opcode={}] written to {}",
                                     stream_id,
                                     opcode.variant_name().unwrap_or("INVALID_OPCODE"),
-                                    peer_address
+                                    connection.remote_addr()
                                 );
                             }
                             Err(e) => {
@@ -139,7 +140,7 @@ where
                                 "Failed to write response frame[stream-id={}, opcode={}] to {}. Cause: {:?}",
                                 stream_id,
                                 opcode.variant_name().unwrap_or("INVALID_OPCODE"),
-                                peer_address,
+                                connection.remote_addr(),
                                 e
                             );
                                 break;
@@ -149,7 +150,7 @@ where
                     None => {
                         info!(
                             "Channel to receive responses from handlers has been closed. Peer[address={}] should have already closed the read-half of the connection",
-                            peer_address);
+                            connection.remote_addr());
                         break;
                     }
                 }
