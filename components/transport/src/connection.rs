@@ -83,8 +83,11 @@ impl Connection {
                     }
                     None => {
                         log::info!(
-                            "Connection {local_addr:?} --> {remote_addr} should be closed, stop write coroutine loop",
-
+                            "Connection {} --> {remote_addr} should be closed, stop write coroutine loop",
+                            match local_addr {
+                                Some(addr) => addr.to_string(),
+                                None => "127.0.0.1:0".to_owned()
+                            }
                         );
                         break;
                     }
@@ -334,8 +337,12 @@ impl Connection {
     }
 
     pub fn close(&self) -> std::io::Result<()> {
-        *self.state.borrow_mut() = ConnectionState::Closed;
-        self.stream.shutdown(Shutdown::Both)
+        if ConnectionState::Active == *self.state.borrow() {
+            *self.state.borrow_mut() = ConnectionState::Closed;
+            self.stream.shutdown(Shutdown::Both)
+        } else {
+            Ok(())
+        }
     }
 
     pub fn state(&self) -> ConnectionState {
@@ -366,7 +373,7 @@ impl Display for Connection {
                 write!(f, "{} --> {}", addr, self.remote_addr)
             }
             None => {
-                write!(f, "127.0.0.0:0 --> {}", self.remote_addr)
+                write!(f, "127.0.0.1:0 --> {}", self.remote_addr)
             }
         }
     }

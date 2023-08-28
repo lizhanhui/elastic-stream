@@ -43,7 +43,7 @@ where
 
     pub(crate) fn trim(&mut self, offset: u64) {
         loop {
-            let mut drop = false;
+            let drop;
             if let Some(range_descriptor) = self.ranges.front_mut() {
                 if range_descriptor.end < offset {
                     drop = true;
@@ -53,6 +53,8 @@ where
                     }
                     break;
                 }
+            } else {
+                break;
             }
             if drop {
                 self.ranges.pop_front();

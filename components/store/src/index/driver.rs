@@ -309,22 +309,20 @@ where
                             max_bytes,
                             observer,
                         } => {
-                            observer
-                                .send(
-                                    self.indexer
-                                        .scan_record_handles_left_shift(
-                                            stream_id, range, offset, max_offset, max_bytes,
-                                        )
-                                        .map(|indexes_opt| {
-                                            indexes_opt.map(|indexes| indexes.into_iter().collect())
-                                        }),
+                            let res = self
+                                .indexer
+                                .scan_record_handles_left_shift(
+                                    stream_id, range, offset, max_offset, max_bytes,
                                 )
-                                .unwrap_or_else(|_e| {
-                                    error!(
-                                        "Failed to send scan result of {}/{} to observer.",
-                                        stream_id, offset
-                                    );
+                                .map(|indexes_opt| {
+                                    indexes_opt.map(|indexes| indexes.into_iter().collect())
                                 });
+                            observer.send(res).unwrap_or_else(|_e| {
+                                error!(
+                                    "Failed to send scan result of {}/{} to observer.",
+                                    stream_id, offset
+                                );
+                            });
                         }
 
                         IndexCommand::ListRange { tx } => {
