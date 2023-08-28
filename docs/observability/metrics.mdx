@@ -1,0 +1,170 @@
+---
+sidebar_position: 1
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Metrics
+
+Elastic Stream supports these metrics backends:
+
+<Tabs>
+  <TabItem value="otlp" label="OpenTelemetry" default>
+
+## OpenTelemetry
+
+To enable the OpenTelemetry metrics exporter, add this configuration to the range server:
+
+```yaml
+observation:
+  metrics:
+    enable: true
+    mode: "otlp"
+    endpoint: "http://localhost:4317"
+```
+
+### Configuration
+
+#### enable
+
+Required, Default="true"
+
+Enable metrics exporter.
+
+```yaml
+observation:
+  metrics:
+    enable: true
+```
+
+#### mode
+
+Required, Default="prometheus"
+
+Metrics exporter mode, available values: "otlp", "prometheus".
+
+```yaml
+observation:
+  metrics:
+    mode: "otlp"
+```
+
+#### endpoint
+
+Required, Default="http://localhost:4317", Format="`http://<host>:<port>`"
+
+Address of the OpenTelemetry Collector to send metrics to.
+
+```yaml
+observation:
+  metrics:
+    endpoint: "http://localhost:4317"
+```
+
+#### protocol
+
+Optional, Default="grpc"
+
+This instructs the exporter to send metrics to the OpenTelemetry Collector using which protocol.
+
+Currently, only gRPC with plain text is supported.
+
+```yaml
+observation:
+  metrics:
+    protocol: "grpc"
+```
+
+#### interval
+
+Optional, Default="10"
+
+Interval at which metrics are sent to the OpenTelemetry Collector, unit is seconds.
+
+```yaml
+observation:
+  metrics:
+    interval: 10
+```
+
+#### timeout
+
+Optional, Default="3"
+
+Max waiting time for exporting metrics to the OpenTelemetry Collector, unit is seconds.
+
+```yaml
+observation:
+  metrics:
+    timeout: 3
+```
+
+  </TabItem>
+  <TabItem value="prometheus" label="Prometheus">
+
+## Prometheus
+
+To enable the Prometheus metrics exporter, add this configuration to the range server:
+
+```yaml
+observation:
+  metrics:
+    enable: true
+    mode: "prometheus"
+    host: "localhost"
+    port: 9898
+```
+
+### Configuration
+
+#### enable
+
+Required, Default="true"
+
+Enable metrics exporter.
+
+```yaml
+observation:
+  metrics:
+    enable: true
+```
+
+#### mode
+
+Required, Default="prometheus"
+
+Metrics exporter mode, available values: "otlp", "prometheus".
+
+```yaml
+observation:
+  metrics:
+    mode: "prometheus"
+```
+
+#### host
+
+Required, Default="localhost"
+
+Prometheus exporter binding address.
+
+```yaml
+observation:
+  metrics:
+    host: "localhost"
+```
+
+#### port
+
+Required, Default=9898
+
+Prometheus exporter listening port.
+
+```yaml
+observation:
+  metrics:
+    port: 9898
+```
+
+  </TabItem>
+</Tabs>

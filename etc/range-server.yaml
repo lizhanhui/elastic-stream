@@ -90,11 +90,11 @@ observation:
   metrics:
     enable: true
     # Metrics push mode, available values: "otlp", "prometheus", default value is "prometheus"
-    mode: "otlp"
+    mode: "prometheus"
     # Prometheus exporter binding address
-    host: "10.129.103.48"
+    host: "localhost"
     # Prometheus exporter listening port
-    port: 4317
+    port: 9898
     # OpenTelemetry collector endpoint
     endpoint: "http://localhost:4317"
     # OpenTelemetry Protocol, available values: "grpc"
