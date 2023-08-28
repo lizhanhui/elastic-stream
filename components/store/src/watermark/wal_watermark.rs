@@ -16,7 +16,7 @@ pub(crate) struct WalWatermark {
 impl WalWatermark {
     pub(crate) fn new() -> Self {
         Self {
-            min: AtomicU64::new(u64::MAX),
+            min: AtomicU64::new(0),
             offload: AtomicU64::new(0),
         }
     }
@@ -39,5 +39,28 @@ impl Watermark for WalWatermark {
     /// Advance WAL offload offset once a slice of range data is offloaded to object storage service.
     fn set_offload(&self, offset: u64) {
         self.offload.store(offset, Ordering::Relaxed);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::watermark::Watermark;
+
+    use super::WalWatermark;
+
+    #[test]
+    fn test_min() {
+        let watermark = WalWatermark::new();
+        assert_eq!(watermark.min(), 0);
+        watermark.set_min(42);
+        assert_eq!(watermark.min(), 42);
+    }
+
+    #[test]
+    fn test_offload() {
+        let watermark = WalWatermark::new();
+        assert_eq!(watermark.offload(), 0);
+        watermark.set_offload(65);
+        assert_eq!(watermark.offload(), 65);
     }
 }

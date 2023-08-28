@@ -1,21 +1,36 @@
 use std::sync::Arc;
 
+use derivative::Derivative;
+
 use super::OffloadSlice;
 use crate::index::Indexer;
 
+#[derive(Derivative, Debug)]
+#[derivative(PartialEq)]
 pub(crate) struct RangeDescriptor<T> {
     /// Translation Look-aside Buffer translates logical offset to WAL offset.
+    #[derivative(PartialEq = "ignore")]
     tlb: Arc<T>,
+
     stream: u64,
     pub(crate) range: u32,
     pub(crate) start: u64,
+
+    /// Offset that this range has indexed up to
     pub(crate) end: u64,
+
+    /// End offset of this range if sealed.
+    ///
+    /// # Note:
+    /// Due to the replication algorithm used, seal is likely inconsistent with end. Namely, seal may be '>', '<'
+    /// or '=' the 'end' field.
     pub(crate) seal: Option<u64>,
 
     /// Offloaded slices
     offloaded: Vec<OffloadSlice>,
 
     /// Minimum WAL offset of current range.
+    #[derivative(PartialEq = "ignore")]
     wal: Option<u64>,
 }
 
