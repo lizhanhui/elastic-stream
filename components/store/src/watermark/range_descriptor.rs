@@ -52,6 +52,7 @@ where
     pub(crate) fn trim(&mut self, start: u64) {
         if self.start <= start {
             self.start = start;
+
             let end = match self.seal {
                 Some(offset) => offset,
                 None => self.end,
@@ -66,13 +67,19 @@ where
         }
     }
 
+    /// Index the new record (group) once append completes
     pub(crate) fn index(&mut self, offset: u64) {
+        if let Some(end) = self.seal {
+            debug_assert!(end > offset);
+        }
+
         if offset > self.end {
             self.end = offset;
         }
     }
 
     pub(crate) fn seal(&mut self, offset: u64) {
+        debug_assert!(offset >= self.start);
         self.seal = Some(offset);
     }
 
@@ -154,5 +161,175 @@ where
             }
         }
         offset
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use crate::{index::MockIndexer, watermark::OffloadSlice};
+
+    use super::RangeDescriptor;
+
+    #[test]
+    fn test_new() {
+        let tlb = MockIndexer::default();
+        let tlb = Arc::new(tlb);
+        let mut descriptor = RangeDescriptor::new(tlb, 1, 1, 42);
+        assert_eq!(descriptor.stream, 1);
+        assert_eq!(descriptor.range, 1);
+        assert_eq!(descriptor.start, 42);
+        assert_eq!(descriptor.end, 42);
+        assert_eq!(descriptor.seal, None);
+        assert_eq!(descriptor.offloaded, vec![]);
+        assert_eq!(descriptor.wal, None);
+        assert_eq!(descriptor.min_wal(), None);
+    }
+
+    #[test]
+    fn test_with_end() {
+        let mut tlb = MockIndexer::default();
+        tlb.expect_scan_wal_offset()
+            .once()
+            .returning_st(
+                |_stream_id, _range, offset, _end| {
+                    if 42 == offset {
+                        Some(100)
+                    } else {
+                        Some(1000)
+                    }
+                },
+            );
+        let tlb = Arc::new(tlb);
+        let mut descriptor = RangeDescriptor::with_end(tlb, 1, 1, 42, 100);
+        assert_eq!(descriptor.stream, 1);
+        assert_eq!(descriptor.range, 1);
+        assert_eq!(descriptor.start, 42);
+        assert_eq!(descriptor.end, 100);
+        assert_eq!(descriptor.seal, Some(100));
+        assert_eq!(descriptor.offloaded, vec![]);
+        assert_eq!(descriptor.wal, None);
+        assert_eq!(descriptor.min_wal(), Some(100));
+        assert_eq!(descriptor.wal, Some(100));
+    }
+
+    #[test]
+    fn test_trim_mutable() {
+        let mut tlb = MockIndexer::default();
+        tlb.expect_scan_wal_offset()
+            .once()
+            .returning_st(|_stream_id, _range, _offset, _end| Some(1000));
+        let tlb = Arc::new(tlb);
+        let mut descriptor = RangeDescriptor::new(tlb, 1, 1, 42);
+
+        descriptor.index(65);
+
+        descriptor.trim(50);
+        assert_eq!(descriptor.stream, 1);
+        assert_eq!(descriptor.range, 1);
+        assert_eq!(descriptor.start, 50);
+        assert_eq!(descriptor.end, 65);
+        assert_eq!(descriptor.seal, None);
+        assert_eq!(descriptor.offloaded, vec![]);
+        assert_eq!(descriptor.wal, Some(1000));
+
+        // Trimming to an offset less than current start should be no-op.
+        descriptor.trim(30);
+        assert_eq!(descriptor.stream, 1);
+        assert_eq!(descriptor.range, 1);
+        assert_eq!(descriptor.start, 50);
+        assert_eq!(descriptor.end, 65);
+        assert_eq!(descriptor.seal, None);
+        assert_eq!(descriptor.offloaded, vec![]);
+        assert_eq!(descriptor.wal, Some(1000));
+    }
+
+    #[test]
+    fn test_trim_sealed() {
+        let mut tlb = MockIndexer::default();
+        tlb.expect_scan_wal_offset()
+            .once()
+            .returning_st(|_stream_id, _range, _offset, _end| Some(1000));
+        let tlb = Arc::new(tlb);
+        let mut descriptor = RangeDescriptor::with_end(tlb, 1, 1, 42, 100);
+        descriptor.trim(50);
+        assert_eq!(descriptor.stream, 1);
+        assert_eq!(descriptor.range, 1);
+        assert_eq!(descriptor.start, 50);
+        assert_eq!(descriptor.end, 100);
+        assert_eq!(descriptor.seal, Some(100));
+        assert_eq!(descriptor.offloaded, vec![]);
+        assert_eq!(descriptor.wal, Some(1000));
+
+        // Trimming to an offset that is less than current start should be a no-op.
+        descriptor.trim(30);
+        assert_eq!(descriptor.stream, 1);
+        assert_eq!(descriptor.range, 1);
+        assert_eq!(descriptor.start, 50);
+        assert_eq!(descriptor.end, 100);
+        assert_eq!(descriptor.seal, Some(100));
+        assert_eq!(descriptor.offloaded, vec![]);
+        assert_eq!(descriptor.wal, Some(1000));
+    }
+
+    #[test]
+    fn test_seal() {
+        let tlb = MockIndexer::default();
+        let tlb = Arc::new(tlb);
+        let mut descriptor = RangeDescriptor::new(tlb, 1, 1, 42);
+        descriptor.seal(100);
+        assert_eq!(descriptor.stream, 1);
+        assert_eq!(descriptor.range, 1);
+        assert_eq!(descriptor.start, 42);
+        assert_eq!(descriptor.end, 42);
+        assert_eq!(descriptor.seal, Some(100));
+        assert_eq!(descriptor.offloaded, vec![]);
+        assert_eq!(descriptor.wal, None);
+    }
+
+    #[should_panic]
+    #[test]
+    fn test_seal_panic() {
+        let tlb = MockIndexer::default();
+        let tlb = Arc::new(tlb);
+        let mut descriptor = RangeDescriptor::new(tlb, 1, 1, 42);
+        descriptor.seal(10);
+        assert_eq!(descriptor.stream, 1);
+        assert_eq!(descriptor.range, 1);
+        assert_eq!(descriptor.start, 42);
+        assert_eq!(descriptor.end, 42);
+        assert_eq!(descriptor.seal, Some(100));
+        assert_eq!(descriptor.offloaded, vec![]);
+        assert_eq!(descriptor.wal, None);
+    }
+
+    #[should_panic]
+    #[test]
+    fn test_index_panic() {
+        let tlb = MockIndexer::default();
+        let tlb = Arc::new(tlb);
+        let mut descriptor = RangeDescriptor::new(tlb, 1, 1, 42);
+        descriptor.index(50);
+        descriptor.seal(51);
+        descriptor.index(51);
+    }
+
+    #[test]
+    fn test_offload_slice() {
+        let tlb = MockIndexer::default();
+        let tlb = Arc::new(tlb);
+        let mut descriptor = RangeDescriptor::with_end(tlb, 1, 1, 42, 100);
+        descriptor.offload_slice(OffloadSlice { start: 42, end: 50 });
+        assert_eq!(descriptor.high(), 50);
+
+        descriptor.offload_slice(OffloadSlice { start: 50, end: 60 });
+        descriptor.offload_slice(OffloadSlice { start: 70, end: 80 });
+        descriptor.offload_slice(OffloadSlice { start: 80, end: 90 });
+        descriptor.offload_slice(OffloadSlice {
+            start: 90,
+            end: 100,
+        });
+        assert_eq!(descriptor.high(), 60);
     }
 }

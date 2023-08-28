@@ -42,6 +42,7 @@ pub trait WatermarkManager {
     fn offload_wal_offset(&mut self) -> u64;
 }
 
+#[derive(Debug, PartialEq)]
 pub(crate) struct OffloadSlice {
     pub(crate) start: u64,
     pub(crate) end: u64,
