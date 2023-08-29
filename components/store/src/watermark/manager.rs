@@ -97,3 +97,60 @@ where
             .unwrap_or_default()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use crate::{
+        index::MockIndexer,
+        watermark::{MockWatermark, WalWatermark, Watermark, WatermarkManager},
+    };
+
+    use super::DefaultWatermarkManager;
+
+    #[test]
+    fn test_new() {
+        let indexer = MockIndexer::new();
+        let indexer = Arc::new(indexer);
+
+        let manager = DefaultWatermarkManager::new(indexer);
+        assert!(manager.streams.is_empty());
+        assert!(manager.watermarks.is_empty());
+    }
+
+    #[test]
+    fn test_add_watermark() {
+        let indexer = MockIndexer::new();
+        let indexer = Arc::new(indexer);
+
+        let mut manager = DefaultWatermarkManager::new(indexer);
+        let watermark = MockWatermark::new();
+        let watermark = Arc::new(watermark);
+        manager.add_watermark(watermark);
+
+        assert_eq!(manager.watermarks.len(), 1);
+    }
+
+    #[test]
+    fn test_works() {
+        let mut indexer = MockIndexer::new();
+        indexer
+            .expect_scan_wal_offset()
+            .returning_st(|_stream_id, _range, offset, _end| Some(offset * 10));
+        let indexer = Arc::new(indexer);
+
+        let mut manager = DefaultWatermarkManager::new(indexer);
+
+        let watermark = Arc::new(WalWatermark::new());
+        manager.add_watermark(Arc::clone(&watermark) as Arc<dyn Watermark>);
+
+        manager.add_range(42, 0, 0, None);
+        manager.on_index(42, 0, 100);
+        manager.trim_stream(42, 50);
+        assert_eq!(manager.min_wal_offset(), 500);
+
+        manager.on_data_offload(42, 0, 50, 50);
+        assert_eq!(manager.offload_wal_offset(), 1000);
+    }
+}

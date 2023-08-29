@@ -3,6 +3,9 @@ pub(crate) mod range_descriptor;
 pub(crate) mod stream_descriptor;
 pub(crate) mod wal_watermark;
 
+#[cfg(any(test, feature = "mock"))]
+use mockall::automock;
+
 /// Expose minimum and offload WAL watermarks.
 ///
 /// WAL file sequence would periodically check and purge deprecated segment files. Once a segment file is removed,
@@ -11,6 +14,7 @@ pub(crate) mod wal_watermark;
 ///
 /// If tiered storage feature is active, data will be offloaded to object storage service(OSS, S3) asynchronously.
 /// `offload` watermark is used to track the upload progress.
+#[cfg_attr(any(test, feature = "mock"), automock)]
 pub trait Watermark {
     fn min(&self) -> u64;
 
