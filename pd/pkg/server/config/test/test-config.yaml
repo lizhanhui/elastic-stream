@@ -10,6 +10,7 @@ pdAddr: test-pd-addr
 advertisePDAddr: test-advertise-pd-addr
 leaderLease: 123
 leaderPriorityCheckInterval: 3661000000000
+enablePProf: true
 
 etcd:
   initialClusterToken: test-initial-cluster-token

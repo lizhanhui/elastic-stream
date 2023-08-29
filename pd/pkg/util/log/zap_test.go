@@ -70,3 +70,21 @@ func TestLogPanic(t *testing.T) {
 		}},
 	}}, obsLogs.AllUntimed())
 }
+
+func TestIncreaseLevel(t *testing.T) {
+	t.Parallel()
+	re := require.New(t)
+
+	logger := zap.NewExample()
+	re.True(logger.Core().Enabled(zapcore.DebugLevel))
+
+	// increase to an enabled level
+	logger = IncreaseLevel(logger, zapcore.WarnLevel)
+	re.False(logger.Core().Enabled(zapcore.InfoLevel))
+	re.True(logger.Core().Enabled(zapcore.WarnLevel))
+
+	// increase to a disabled level
+	logger = IncreaseLevel(logger, zapcore.InfoLevel)
+	re.False(logger.Core().Enabled(zapcore.InfoLevel))
+	re.True(logger.Core().Enabled(zapcore.WarnLevel))
+}

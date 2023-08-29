@@ -8,6 +8,7 @@ import (
 
 	"github.com/AutoMQ/pd/api/rpcfb/rpcfb"
 	"github.com/AutoMQ/pd/pkg/sbp/protocol"
+	sbpServer "github.com/AutoMQ/pd/pkg/sbp/server"
 	"github.com/AutoMQ/pd/pkg/server/config"
 )
 
@@ -793,7 +794,7 @@ func TestHandler_TrimStream(t *testing.T) {
 	}
 }
 
-func getStream(tb testing.TB, h *Handler, streamID int64) *rpcfb.StreamT {
+func getStream(tb testing.TB, h sbpServer.Handler, streamID int64) *rpcfb.StreamT {
 	re := require.New(tb)
 
 	// If the stream has been deleted, we can not get the stream by `DescribeStream`, so we use `ListResource` instead.
@@ -814,7 +815,7 @@ func getStream(tb testing.TB, h *Handler, streamID int64) *rpcfb.StreamT {
 	return nil
 }
 
-func updateStreamEpoch(tb testing.TB, h *Handler, streamID int64, epoch int64) {
+func updateStreamEpoch(tb testing.TB, h sbpServer.Handler, streamID int64, epoch int64) {
 	re := require.New(tb)
 
 	req := &protocol.UpdateStreamRequest{UpdateStreamRequestT: rpcfb.UpdateStreamRequestT{
@@ -833,7 +834,7 @@ func updateStreamEpoch(tb testing.TB, h *Handler, streamID int64, epoch int64) {
 	re.Equal(epoch, resp.Stream.Epoch)
 }
 
-func trimStream(tb testing.TB, h *Handler, streamID int64, offset int64) {
+func trimStream(tb testing.TB, h sbpServer.Handler, streamID int64, offset int64) {
 	re := require.New(tb)
 
 	s := getStream(tb, h, streamID)

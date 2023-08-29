@@ -33,6 +33,7 @@ var (
 
 type Client interface {
 	Do(ctx context.Context, req protocol.OutRequest, addr Address) (protocol.InResponse, error)
+	Shutdown(ctx context.Context)
 	SealRange(ctx context.Context, req *protocol.SealRangeRequest, addr Address) (*protocol.SealRangeResponse, error)
 	CreateRange(ctx context.Context, req *protocol.CreateRangeRequest, addr Address) (*protocol.CreateRangeResponse, error)
 	CreateStream(ctx context.Context, req *protocol.CreateStreamRequest, addr Address) (*protocol.CreateStreamResponse, error)
@@ -55,7 +56,10 @@ type SbpClient struct {
 }
 
 // NewClient creates a client
-func NewClient(cfg *config.SbpClient, lg *zap.Logger) *SbpClient {
+func NewClient(cfg *config.SbpClient, lg *zap.Logger) Client {
+	if cfg == nil {
+		cfg = &config.SbpClient{}
+	}
 	c := &SbpClient{
 		cfg: cfg,
 		lg:  lg,

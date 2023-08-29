@@ -47,7 +47,7 @@ func TestClientTimeout(t *testing.T) {
 	addr, shutdown := startServer(t, &timeoutHandler{UsedTime: used}, logger)
 	defer shutdown()
 
-	client := NewClient(&config.SbpClient{}, logger)
+	client := NewClient(nil, logger)
 	defer client.Shutdown(context.Background())
 
 	req := &timeoutRequest{RequestTimeout: timeout}
@@ -125,7 +125,7 @@ func TestSbpClient_SealRange(t *testing.T) {
 			addr, shutdown := startServer(t, tt.fields.handler, zap.NewNop())
 			defer shutdown()
 
-			client := NewClient(&config.SbpClient{}, zap.NewNop())
+			client := NewClient(nil, zap.NewNop())
 			defer client.Shutdown(context.Background())
 
 			resp, err := client.SealRange(context.Background(), tt.args.req, addr)
@@ -193,7 +193,7 @@ func TestSbpClient_CreateRange(t *testing.T) {
 			addr, shutdown := startServer(t, tt.fields.handler, zap.NewNop())
 			defer shutdown()
 
-			client := NewClient(&config.SbpClient{}, zap.NewNop())
+			client := NewClient(nil, zap.NewNop())
 			defer client.Shutdown(context.Background())
 
 			resp, err := client.CreateRange(context.Background(), tt.args.req, addr)
@@ -261,7 +261,7 @@ func TestSbpClient_CreateStream(t *testing.T) {
 			addr, shutdown := startServer(t, tt.fields.handler, zap.NewNop())
 			defer shutdown()
 
-			client := NewClient(&config.SbpClient{}, zap.NewNop())
+			client := NewClient(nil, zap.NewNop())
 			defer client.Shutdown(context.Background())
 
 			resp, err := client.CreateStream(context.Background(), tt.args.req, addr)
@@ -321,7 +321,7 @@ func TestSbpClient_ReportMetrics(t *testing.T) {
 			addr, shutdown := startServer(t, tt.fields.handler, zap.NewNop())
 			defer shutdown()
 
-			client := NewClient(&config.SbpClient{}, zap.NewNop())
+			client := NewClient(nil, zap.NewNop())
 			defer client.Shutdown(context.Background())
 
 			resp, err := client.ReportMetrics(context.Background(), tt.args.req, addr)
@@ -381,7 +381,7 @@ func TestSbpClient_CommitObject(t *testing.T) {
 			addr, shutdown := startServer(t, tt.fields.handler, zap.NewNop())
 			defer shutdown()
 
-			client := NewClient(&config.SbpClient{}, zap.NewNop())
+			client := NewClient(nil, zap.NewNop())
 			defer client.Shutdown(context.Background())
 
 			resp, err := client.CommitObject(context.Background(), tt.args.req, addr)

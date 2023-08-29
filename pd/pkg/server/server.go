@@ -122,10 +122,7 @@ func (s *Server) startEtcd(ctx context.Context) error {
 
 	// init etcd logger
 	etcdLogLevel, _ := zapcore.ParseLevel(s.cfg.Etcd.LogLevel)
-	etcdLogger := logger
-	if logger.Core().Enabled(etcdLogLevel) {
-		etcdLogger = logger.WithOptions(zap.IncreaseLevel(etcdLogLevel))
-	}
+	etcdLogger := logutil.IncreaseLevel(logger, etcdLogLevel)
 
 	// start etcd server
 	s.cfg.Etcd.ZapLoggerBuilder = embed.NewZapLoggerBuilder(etcdLogger.With(zap.Namespace("etcd-server")))

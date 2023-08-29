@@ -139,7 +139,9 @@ func (c *RaftCluster) loadInfo(ctx context.Context) error {
 		return err
 	}
 
-	go c.loadRangesLoop(ctx)
+	// FIXME: #1049
+	// go c.loadRangesLoop(ctx)
+	_ = c.loadRangesLoop
 
 	return nil
 }

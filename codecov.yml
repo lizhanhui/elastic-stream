@@ -3,6 +3,7 @@ codecov:
 
 ignore:
   - "pd/pkg/util/test/"
+  - "pd/pkg/benchmark/"
   - "pd/api/"
   - "pd/third_party/"
   - "pd/**/*_mock.go"

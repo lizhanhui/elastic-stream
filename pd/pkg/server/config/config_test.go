@@ -127,6 +127,7 @@ var (
 			AdvertisePDAddr:             "test-advertise-pd-addr",
 			LeaderLease:                 123,
 			LeaderPriorityCheckInterval: time.Hour + time.Minute + time.Second,
+			EnablePProf:                 true,
 		}
 	}
 )

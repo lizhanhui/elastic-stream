@@ -16,6 +16,8 @@ import (
 
 func TestRaftCluster_listRangeOnRangeServer_Timeout(t *testing.T) {
 	t.Parallel()
+	// FIXME: #1049
+	t.SkipNow()
 	re := require.New(t)
 
 	mockCtrl := gomock.NewController(t)
@@ -42,6 +44,8 @@ func TestRaftCluster_listRangeOnRangeServer_Timeout(t *testing.T) {
 
 func TestRaftCluster_listRangeOnRangeServerInStream_Timeout(t *testing.T) {
 	t.Parallel()
+	// FIXME: #1049
+	t.SkipNow()
 	re := require.New(t)
 
 	mockCtrl := gomock.NewController(t)

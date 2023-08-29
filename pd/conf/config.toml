@@ -23,6 +23,8 @@ advertisePDAddr = "127.0.0.1:12378"
 leaderLease = 3
 # time interval for checking the leader's priority
 leaderPriorityCheckInterval = 60000000000 # 1 minute
+# enable pprof HTTP server, at {client-url}/pd/debug/pprof/
+enablePProf = false
 
 [etcd]
 # set different tokens to prevent communication between PD nodes in different clusters

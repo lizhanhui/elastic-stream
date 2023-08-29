@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	clientv3 "go.etcd.io/etcd/client/v3"
@@ -13,6 +14,7 @@ import (
 	"github.com/AutoMQ/pd/api/rpcfb/rpcfb"
 	sbpClient "github.com/AutoMQ/pd/pkg/sbp/client"
 	"github.com/AutoMQ/pd/pkg/sbp/protocol"
+	sbpServer "github.com/AutoMQ/pd/pkg/sbp/server"
 	"github.com/AutoMQ/pd/pkg/server/cluster"
 	"github.com/AutoMQ/pd/pkg/server/config"
 	"github.com/AutoMQ/pd/pkg/server/id"
@@ -79,7 +81,7 @@ func (m *mockServerNotLeader) IsLeader() bool {
 	return false
 }
 
-func startSbpHandler(tb testing.TB, sc sbpClient.Client, clusterCfg *config.Cluster, isLeader bool) (*Handler, func()) {
+func startSbpHandler(tb testing.TB, sc sbpClient.Client, clusterCfg *config.Cluster, isLeader bool) (sbpServer.Handler, func()) {
 	re := require.New(tb)
 
 	if sc == nil {
@@ -102,18 +104,21 @@ func startSbpHandler(tb testing.TB, sc sbpClient.Client, clusterCfg *config.Clus
 	err := c.Start(server)
 	re.NoError(err)
 
-	h := NewHandler(c, zap.NewNop())
+	h := timeoutHandler{
+		handler: NewHandler(c, zap.NewNop()),
+		timeout: time.Second,
+	}
 
 	return h, func() { _ = c.Stop(); closeFunc() }
 }
 
-func preHeartbeats(tb testing.TB, h *Handler, serverIDs ...int32) {
+func preHeartbeats(tb testing.TB, h sbpServer.Handler, serverIDs ...int32) {
 	for _, serverID := range serverIDs {
 		preHeartbeat(tb, h, serverID)
 	}
 }
 
-func preHeartbeat(tb testing.TB, h *Handler, serverID int32) {
+func preHeartbeat(tb testing.TB, h sbpServer.Handler, serverID int32) {
 	re := require.New(tb)
 
 	req := &protocol.HeartbeatRequest{HeartbeatRequestT: rpcfb.HeartbeatRequestT{
@@ -129,7 +134,7 @@ func preHeartbeat(tb testing.TB, h *Handler, serverID int32) {
 	re.Equal(rpcfb.ErrorCodeOK, resp.Status.Code, resp.Status.Message)
 }
 
-func preCreateStreams(tb testing.TB, h *Handler, replica int8, cnt int) (streamIDs []int64) {
+func preCreateStreams(tb testing.TB, h sbpServer.Handler, replica int8, cnt int) (streamIDs []int64) {
 	streamIDs = make([]int64, 0, cnt)
 	for i := 0; i < cnt; i++ {
 		stream := preCreateStream(tb, h, replica)
@@ -138,7 +143,7 @@ func preCreateStreams(tb testing.TB, h *Handler, replica int8, cnt int) (streamI
 	return
 }
 
-func preCreateStream(tb testing.TB, h *Handler, replica int8) *rpcfb.StreamT {
+func preCreateStream(tb testing.TB, h sbpServer.Handler, replica int8) *rpcfb.StreamT {
 	re := require.New(tb)
 
 	req := &protocol.CreateStreamRequest{CreateStreamRequestT: rpcfb.CreateStreamRequestT{
@@ -155,7 +160,7 @@ func preCreateStream(tb testing.TB, h *Handler, replica int8) *rpcfb.StreamT {
 	return resp.Stream
 }
 
-func preDeleteStream(tb testing.TB, h *Handler, streamID int64) {
+func preDeleteStream(tb testing.TB, h sbpServer.Handler, streamID int64) {
 	re := require.New(tb)
 
 	req := &protocol.DeleteStreamRequest{DeleteStreamRequestT: rpcfb.DeleteStreamRequestT{
@@ -176,7 +181,7 @@ type preObject struct {
 	dataLen     int32
 }
 
-func preNewObject(tb testing.TB, h *Handler, object preObject) {
+func preNewObject(tb testing.TB, h sbpServer.Handler, object preObject) {
 	re := require.New(tb)
 
 	req := &protocol.CommitObjectRequest{CommitObjectRequestT: rpcfb.CommitObjectRequestT{Object: &rpcfb.ObjT{
@@ -191,4 +196,105 @@ func preNewObject(tb testing.TB, h *Handler, object preObject) {
 
 	h.CommitObject(req, resp)
 	re.Equal(rpcfb.ErrorCodeOK, resp.Status.Code, resp.Status.Message)
+}
+
+func timeoutReq(req protocol.InRequest, timeout time.Duration) context.CancelFunc {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	req.SetContext(ctx)
+	return cancel
+}
+
+type timeoutHandler struct {
+	handler sbpServer.Handler
+	timeout time.Duration
+}
+
+func (th timeoutHandler) Heartbeat(req *protocol.HeartbeatRequest, resp *protocol.HeartbeatResponse) {
+	cancel := timeoutReq(req, th.timeout)
+	defer cancel()
+	th.handler.Heartbeat(req, resp)
+}
+
+func (th timeoutHandler) AllocateID(req *protocol.IDAllocationRequest, resp *protocol.IDAllocationResponse) {
+	cancel := timeoutReq(req, th.timeout)
+	defer cancel()
+	th.handler.AllocateID(req, resp)
+}
+
+func (th timeoutHandler) ListRange(req *protocol.ListRangeRequest, resp *protocol.ListRangeResponse) {
+	cancel := timeoutReq(req, th.timeout)
+	defer cancel()
+	th.handler.ListRange(req, resp)
+}
+
+func (th timeoutHandler) SealRange(req *protocol.SealRangeRequest, resp *protocol.SealRangeResponse) {
+	cancel := timeoutReq(req, th.timeout)
+	defer cancel()
+	th.handler.SealRange(req, resp)
+}
+
+func (th timeoutHandler) CreateRange(req *protocol.CreateRangeRequest, resp *protocol.CreateRangeResponse) {
+	cancel := timeoutReq(req, th.timeout)
+	defer cancel()
+	th.handler.CreateRange(req, resp)
+}
+
+func (th timeoutHandler) CreateStream(req *protocol.CreateStreamRequest, resp *protocol.CreateStreamResponse) {
+	cancel := timeoutReq(req, th.timeout)
+	defer cancel()
+	th.handler.CreateStream(req, resp)
+}
+
+func (th timeoutHandler) DeleteStream(req *protocol.DeleteStreamRequest, resp *protocol.DeleteStreamResponse) {
+	cancel := timeoutReq(req, th.timeout)
+	defer cancel()
+	th.handler.DeleteStream(req, resp)
+}
+
+func (th timeoutHandler) UpdateStream(req *protocol.UpdateStreamRequest, resp *protocol.UpdateStreamResponse) {
+	cancel := timeoutReq(req, th.timeout)
+	defer cancel()
+	th.handler.UpdateStream(req, resp)
+}
+
+func (th timeoutHandler) DescribeStream(req *protocol.DescribeStreamRequest, resp *protocol.DescribeStreamResponse) {
+	cancel := timeoutReq(req, th.timeout)
+	defer cancel()
+	th.handler.DescribeStream(req, resp)
+}
+
+func (th timeoutHandler) TrimStream(req *protocol.TrimStreamRequest, resp *protocol.TrimStreamResponse) {
+	cancel := timeoutReq(req, th.timeout)
+	defer cancel()
+	th.handler.TrimStream(req, resp)
+}
+
+func (th timeoutHandler) ReportMetrics(req *protocol.ReportMetricsRequest, resp *protocol.ReportMetricsResponse) {
+	cancel := timeoutReq(req, th.timeout)
+	defer cancel()
+	th.handler.ReportMetrics(req, resp)
+}
+
+func (th timeoutHandler) DescribePDCluster(req *protocol.DescribePDClusterRequest, resp *protocol.DescribePDClusterResponse) {
+	cancel := timeoutReq(req, th.timeout)
+	defer cancel()
+	th.handler.DescribePDCluster(req, resp)
+}
+
+func (th timeoutHandler) CommitObject(req *protocol.CommitObjectRequest, resp *protocol.CommitObjectResponse) {
+	cancel := timeoutReq(req, th.timeout)
+	defer cancel()
+	th.handler.CommitObject(req, resp)
+}
+
+func (th timeoutHandler) ListResource(req *protocol.ListResourceRequest, resp *protocol.ListResourceResponse) {
+	cancel := timeoutReq(req, th.timeout)
+	defer cancel()
+	th.handler.ListResource(req, resp)
+}
+
+func (th timeoutHandler) WatchResource(req *protocol.WatchResourceRequest, resp *protocol.WatchResourceResponse) {
+	cancel := timeoutReq(req, th.timeout)
+	defer cancel()
+	th.handler.WatchResource(req, resp)
 }

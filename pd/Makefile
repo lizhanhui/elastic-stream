@@ -314,7 +314,7 @@ $(foreach bin,$(BINS),$(eval $(strip                              \
 	distribution/$(bin)_$(DEB_VERSION)_$(ARCH).deb: BIN = $(bin)  \
 )))
 $(foreach bin,$(BINS),$(eval  \
-	distribution/$(bin)_$(DEB_VERSION)_$(ARCH).deb: bin/$(OS)_$(ARCH)/$(bin)$(BIN_EXTENSION) $(LICENSES) $(shell find ./distribution/template/$(bin) -type f)  \
+	distribution/$(bin)_$(DEB_VERSION)_$(ARCH).deb: bin/$(OS)_$(ARCH)/$(bin)$(BIN_EXTENSION) $(LICENSES) $(shell find ./distribution/template -type f)  \
 ))
 
 # This is the target definition for all container-dotfiles.

@@ -51,7 +51,7 @@ func (t *Txn) Commit() (*clientv3.TxnResponse, error) {
 	logger := t.lg
 	cost := time.Since(start)
 	if cost > DefaultSlowRequestTime {
-		logger.Warn("txn runs too slow", zap.Reflect("response", resp), zap.Duration("cost", cost), zap.Error(err))
+		logger.Warn("txn runs too slow", zap.Duration("cost", cost), zap.Error(err))
 	}
 	// TODO add prometheus counters here
 

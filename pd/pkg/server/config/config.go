@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -17,6 +18,7 @@ import (
 	"go.uber.org/zap"
 
 	netutil "github.com/AutoMQ/pd/pkg/util/net"
+	"github.com/AutoMQ/pd/third_party/forked/etcd/pkg/debugutil"
 )
 
 var (
@@ -26,6 +28,9 @@ var (
 
 const (
 	URLSeparator = "," // URLSeparator is the separator in fields such as PeerUrls, ClientUrls, etc.
+
+	_httpPrefix      = "/pd"
+	_httpPrefixPProf = _httpPrefix + "/debug/pprof"
 
 	_envPrefix = "PD"
 
@@ -41,6 +46,7 @@ const (
 	_defaultPDAddr                            = "0.0.0.0:12378"
 	_defaultLeaderLease                 int64 = 3
 	_defaultLeaderPriorityCheckInterval       = time.Minute
+	_defaultEnablePProf                       = false
 
 	_defaultLogLevel            = "INFO"
 	_defaultLogZapEncoding      = "json"
@@ -77,6 +83,8 @@ type Config struct {
 	LeaderLease int64
 
 	LeaderPriorityCheckInterval time.Duration
+
+	EnablePProf bool
 
 	Version bool
 	lg      *zap.Logger
@@ -177,11 +185,12 @@ func (c *Config) Adjust() error {
 }
 
 func (c *Config) adjustEtcd() error {
+	logger := c.lg
+
 	cfg := c.Etcd
 	cfg.Name = c.Name
 	cfg.Dir = c.DataDir
 	cfg.InitialCluster = c.InitialCluster
-	// cfg.EnablePprof = true
 
 	var err error
 	cfg.ListenPeerUrls, err = parseUrls(c.PeerUrls)
@@ -199,6 +208,13 @@ func (c *Config) adjustEtcd() error {
 	cfg.AdvertiseClientUrls, err = parseUrls(c.AdvertiseClientUrls)
 	if err != nil {
 		return errors.WithMessage(err, "parse advertise client url")
+	}
+
+	if c.EnablePProf || c.Log.Level == "debug" {
+		logger.Info("pprof is enabled", zap.String("path", _httpPrefixPProf))
+		for p, h := range debugutil.PProfHandlers(_httpPrefixPProf) {
+			c.registerHandler(p, h)
+		}
 	}
 
 	return nil
@@ -289,6 +305,10 @@ func configure(v *viper.Viper, fs *pflag.FlagSet) {
 	_ = v.BindPFlag("pdAddr", fs.Lookup("pd-addr"))
 	_ = v.BindPFlag("advertisePDAddr", fs.Lookup("advertise-pd-addr"))
 
+	// other PD settings
+	fs.Bool("enable-pprof", _defaultEnablePProf, "enable pprof HTTP server, at {client-url}"+_httpPrefixPProf)
+	_ = v.BindPFlag("enablePProf", fs.Lookup("enable-pprof"))
+
 	// bind env not set before
 	_ = v.BindEnv("etcd.clusterState")
 
@@ -324,4 +344,15 @@ func defaultAdvertisePDAddr(pdAddr string) string {
 		return fmt.Sprintf("127.0.0.1:%s", port)
 	}
 	return fmt.Sprintf("%s:%s", ip, port)
+}
+
+func (c *Config) registerHandler(path string, handler http.Handler) {
+	logger := c.lg.With(zap.String("path", path))
+	if c.Etcd.UserHandlers == nil {
+		c.Etcd.UserHandlers = make(map[string]http.Handler)
+	}
+	if _, ok := c.Etcd.UserHandlers[path]; ok {
+		logger.Warn("path is registered, it will be overwritten")
+	}
+	c.Etcd.UserHandlers[path] = handler
 }
