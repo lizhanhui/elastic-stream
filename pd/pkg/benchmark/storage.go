@@ -36,7 +36,7 @@ var (
 	storageRangePerStream          int
 	storageObjectPerRange          int
 	storageObjectSparseIndexLength int
-	storageCleanup                 bool
+	storageSkipMaintain            bool
 
 	storageObjectSparseIndex []byte
 	storageStreamCounter     atomic.Int32
@@ -53,7 +53,7 @@ func init() {
 	storageCmd.Flags().IntVarP(&storageRangePerStream, "range-per-stream", "r", 10, "Total ranges per stream")
 	storageCmd.Flags().IntVarP(&storageObjectPerRange, "object-per-range", "o", 64, "Total objects per range")
 	storageCmd.Flags().IntVarP(&storageObjectSparseIndexLength, "object-index-length", "i", 64, "Sparse index length of each object")
-	storageCmd.Flags().BoolVarP(&storageCleanup, "cleanup", "C", false, "Cleanup all data after benchmark")
+	storageCmd.Flags().BoolVarP(&storageSkipMaintain, "skip-maintain", "M", false, "Skip compact and defragment etcd after benchmark")
 }
 
 func storageFunc(_ *cobra.Command, _ []string) error {
@@ -134,26 +134,26 @@ func benchStorage(ctx context.Context, clients []sbpClient.Client) error {
 	if err != nil {
 		return err
 	}
-	var infoAfterCleanup etcdInfo
-	if storageCleanup {
-		fmt.Println("Cleaning up...")
+	var infoAfterMaintain etcdInfo
+	if !storageSkipMaintain {
+		fmt.Println("Start to compact and defragment etcd...")
 		err = etcdReleaseSpace(ctx, etcdClient)
 		if err != nil {
 			return err
 		}
-		infoAfterCleanup, err = getEtcdInfo(ctx, etcdClient)
+		infoAfterMaintain, err = getEtcdInfo(ctx, etcdClient)
 		if err != nil {
 			return err
 		}
 	}
 	fmt.Println("Storage benchmark finished")
 	fmt.Println("Created streams:", storageStreamCounter.Load())
-	fmt.Println("Created ranges: ", storageRangeCounter.Load())
+	fmt.Println("Created ranges :", storageRangeCounter.Load())
 	fmt.Println("Created objects:", storageObjectCounter.Load())
-	fmt.Println("Before       :", infoBefore)
-	fmt.Println("After        :", infoAfter)
-	if storageCleanup {
-		fmt.Println("After cleanup:", infoAfterCleanup)
+	fmt.Println("Before         :", infoBefore)
+	fmt.Println("After          :", infoAfter)
+	if !storageSkipMaintain {
+		fmt.Println("After maintain :", infoAfterMaintain)
 	}
 
 	return err
