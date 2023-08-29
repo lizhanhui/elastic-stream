@@ -20,6 +20,7 @@ pub mod heartbeat;
 pub mod id_generator;
 pub mod invocation_context;
 pub(crate) mod lb_policy;
+mod naming;
 pub mod request;
 pub mod response;
 pub(crate) mod role;

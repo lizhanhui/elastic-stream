@@ -222,7 +222,7 @@ impl Client for DefaultClient {
                 if target.is_none() {
                     error!("Target is required while seal range against range servers");
                     return Err(EsError::new(
-                        ErrorCode::UNEXPECTED,
+                        ErrorCode::BAD_REQUEST,
                         "target is required when seal range against range servers",
                     ));
                 }
@@ -233,14 +233,14 @@ impl Client for DefaultClient {
                         "SealRange.range.end MUST be present while seal against placement driver"
                     );
                     return Err(EsError::new(
-                        ErrorCode::UNEXPECTED,
+                        ErrorCode::BAD_REQUEST,
                         "end_offset is required when seal range against range servers",
                     ));
                 }
             }
             _ => {
-                error!("Seal request kind must specify");
-                return Err(EsError::new(ErrorCode::UNEXPECTED, "seal kind is empty"));
+                error!("Seal request kind is required");
+                return Err(EsError::new(ErrorCode::BAD_REQUEST, "seal kind is missing"));
             }
         }
 
