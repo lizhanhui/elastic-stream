@@ -313,7 +313,7 @@ impl Store for ElasticStore {
     async fn fetch(&self, options: ReadOptions) -> Result<FetchResult, FetchError> {
         let now = std::time::Instant::now();
         let (index_tx, index_rx) = oneshot::channel();
-        self.shared.indexer.scan_record_handles(
+        self.shared.indexer.scan_records(
             options.stream_id,
             options.range,
             options.offset,
@@ -328,14 +328,16 @@ impl Store for ElasticStore {
             Err(e) => Err(e),
         }?;
 
-        if let Some(handles) = scan_res {
-            let mut io_receiver = Vec::with_capacity(handles.len());
-            for handle in handles {
+        if let Some(records) = scan_res {
+            let mut io_receiver = Vec::with_capacity(records.len());
+            for record in records {
                 let (sender, receiver) = oneshot::channel();
                 let io_task = ReadTask {
-                    stream_id: options.stream_id,
-                    wal_offset: handle.wal_offset,
-                    len: handle.len,
+                    stream_id: record.index.stream_id,
+                    range: record.index.range,
+                    offset: record.index.offset,
+                    wal_offset: record.handle.wal_offset,
+                    len: record.handle.len,
                     observer: sender,
                 };
 
@@ -352,6 +354,10 @@ impl Store for ElasticStore {
 
             // Join all IO tasks.
             let io_result = join_all(io_receiver).await;
+
+            let mut start_offset = u64::MAX;
+            let mut end_offset = u64::MIN;
+            let mut total_len = 0;
 
             let flattened_result: Vec<_> = io_result
                 .into_iter()
@@ -397,6 +403,10 @@ impl Store for ElasticStore {
                             );
                             return Err(FetchError::DataCorrupted);
                         }
+
+                        start_offset = std::cmp::min(start_offset, res.offset);
+                        end_offset = std::cmp::max(end_offset, res.offset);
+                        total_len += res.total_len();
                         Ok(res)
                     }
                     Ok(Err(e)) => Err(e),
@@ -421,10 +431,14 @@ impl Store for ElasticStore {
 
             return Ok(FetchResult {
                 stream_id: options.stream_id,
-                offset: options.offset,
+                range: options.range,
+                start_offset,
+                end_offset,
+                total_len,
                 results: final_result,
             });
         }
+        // TODO: record failed reason
         record_fetch_operation(now.elapsed().as_micros() as u64, 0, false);
         Err(FetchError::NoRecord)
     }
@@ -512,7 +526,7 @@ impl Store for ElasticStore {
         self.shared
             .indexer
             .retrieve_max_key(stream_id, range)
-            .map(|buf| buf.map(|entry| entry.end_offset()))
+            .map(|buf| buf.map(|record| record.end_offset()))
     }
 
     fn id(&self) -> i32 {
@@ -684,9 +698,13 @@ mod tests {
                         res_payload.extend_from_slice(&copy_single_fetch_result(r));
                     });
 
+                    assert_eq!(res.stream_id, 1);
+                    assert_eq!(res.range, 0);
+                    assert_eq!(res.start_offset, res.end_offset);
+                    assert_eq!(res.total_len, res_payload.len());
                     assert_eq!(
                         Bytes::copy_from_slice(&res_payload[..]),
-                        Bytes::from(format!("{}-{}", "hello, world", res.offset))
+                        Bytes::from(format!("{}-{}", "hello, world", res.start_offset))
                     );
                 });
             }
@@ -708,14 +726,23 @@ mod tests {
                     join_all(fetch_futures).await;
                 assert_eq!(1, fetch_results.len());
                 let fetch_result = fetch_results[0].as_ref().unwrap();
+
+                assert_eq!(fetch_result.stream_id, 1);
+                assert_eq!(fetch_result.range, 0);
+                assert_eq!(fetch_result.start_offset, 0);
+                assert_eq!(fetch_result.end_offset, 1023);
+
+                let mut total_len = 0;
                 fetch_result.results.iter().enumerate().for_each(|(i, r)| {
                     let mut res_payload = BytesMut::new();
                     res_payload.extend_from_slice(&copy_single_fetch_result(r));
+                    total_len += res_payload.len();
                     assert_eq!(
                         Bytes::copy_from_slice(&res_payload[..]),
                         Bytes::from(format!("{}-{}", "hello, world", i))
                     );
                 });
+                assert_eq!(fetch_result.total_len, total_len);
             }
 
             drop(store);

@@ -25,7 +25,7 @@ use tokio::sync::oneshot;
 
 use crate::error::{AppendError, FetchError, StoreError};
 use crate::index::driver::IndexDriver;
-use crate::index::record_handle::{HandleExt, RecordHandle};
+use crate::index::record::{HandleExt, Record, RecordHandle, RecordIndex};
 use crate::index::Indexer;
 use crate::io::buf::{AlignedBufReader, AlignedBufWriter};
 use crate::io::context::Context;
@@ -167,7 +167,7 @@ impl IO {
     pub(crate) fn new(
         config: &Arc<config::Configuration>,
         indexer: Arc<IndexDriver>,
-        sq_rx: crossbeam::channel::Receiver<IoTask>,
+        sq_rx: Receiver<IoTask>,
     ) -> Result<Self, StoreError> {
         let control_ring = io_uring::IoUring::builder().dontfork().build(32).map_err(|e| {
             error!("Failed to build I/O Uring instance for write-ahead-log segment file management: {:?}", e);
@@ -1209,13 +1209,18 @@ impl IO {
     }
 
     fn build_read_index(&mut self, wal_offset: u64, written_len: u32, task: &WriteTask) {
-        let handle = RecordHandle {
-            wal_offset,
-            len: written_len,
-            ext: HandleExt::BatchSize(task.len),
-        };
-        self.indexer
-            .index(task.stream_id, task.range, task.offset, handle);
+        self.indexer.index(Record {
+            index: RecordIndex {
+                stream_id: task.stream_id,
+                range: task.range,
+                offset: task.offset,
+            },
+            handle: RecordHandle {
+                wal_offset,
+                len: written_len,
+                ext: HandleExt::BatchSize(task.len),
+            },
+        });
     }
 
     fn complete_read_tasks(&mut self, affected_segments: HashSet<u64>) {
@@ -1302,13 +1307,17 @@ impl IO {
 
         let fetch_result = SingleFetchResult {
             stream_id: read_task.stream_id,
+            range: read_task.range,
+            offset: read_task.offset,
             wal_offset: read_task.wal_offset as i64,
             payload: slice_v,
         };
 
         trace!(
-            "Completes read task for stream {} at WAL offset {}, return {} bytes",
+            "Completes read task for stream {} range {} at offset {} and WAL offset {}, return {} bytes",
             fetch_result.stream_id,
+            fetch_result.range,
+            fetch_result.offset,
             fetch_result.wal_offset,
             read_task.len,
         );
@@ -2018,7 +2027,7 @@ mod tests {
     }
 
     fn send_and_receive_with_records(
-        sender: crossbeam::channel::Sender<IoTask>,
+        sender: Sender<IoTask>,
         stream_id: u64,
         start_offset: u64,
         records: Vec<bytes::Bytes>,
@@ -2069,6 +2078,8 @@ mod tests {
                 res_map.insert(res.wal_offset, &records[idx]);
                 IoTask::Read(ReadTask {
                     stream_id: res.stream_id,
+                    range: res.range_index,
+                    offset: res.offset,
                     wal_offset: res.wal_offset,
                     len: (records[idx].len() + 8) as u32,
                     observer: tx,

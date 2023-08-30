@@ -2,6 +2,65 @@ use std::io::Cursor;
 
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 
+/// Index entry in RocksDB
+pub(crate) struct Record {
+    // Record index, the key of record in RocksDB
+    pub(crate) index: RecordIndex,
+
+    // Record details, used to locate the record in WAL
+    pub(crate) handle: RecordHandle,
+}
+
+impl Record {
+    /// End offset of nested entries in the pointed `Record`
+    pub(crate) fn end_offset(&self) -> u64 {
+        match self.handle.ext {
+            HandleExt::Hash(..) => self.index.offset + 1,
+            HandleExt::BatchSize(len) => self.index.offset + len as u64,
+        }
+    }
+}
+
+pub(crate) struct RecordIndex {
+    /// Stream ID of the record.
+    pub(crate) stream_id: u64,
+
+    /// Range index of the record.
+    pub(crate) range: u32,
+
+    /// Logic offset of the record.
+    pub(crate) offset: u64,
+}
+
+impl TryFrom<&[u8]> for RecordIndex {
+    type Error = String;
+
+    fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
+        if value.len() != 20 {
+            return Err(format!("Key of index entry should contain stream_id[8B], range[4B], offset[8B], but got {}B", value.len()));
+        }
+        let mut cursor = Cursor::new(value);
+        let stream_id = cursor.get_u64();
+        let range = cursor.get_u32();
+        let offset = cursor.get_u64();
+        Ok(Self {
+            stream_id,
+            range,
+            offset,
+        })
+    }
+}
+
+impl From<&RecordIndex> for Bytes {
+    fn from(index: &RecordIndex) -> Self {
+        let mut value_buf = BytesMut::with_capacity(20);
+        value_buf.put_u64(index.stream_id);
+        value_buf.put_u32(index.range);
+        value_buf.put_u64(index.offset);
+        value_buf.freeze()
+    }
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) struct RecordHandle {
     /// WAL offset
@@ -12,17 +71,6 @@ pub(crate) struct RecordHandle {
 
     /// Extended information of the record.
     pub(crate) ext: HandleExt,
-}
-
-impl RecordHandle {
-    #[allow(dead_code)]
-    pub(crate) fn new(wal_offset: u64, len: u32, ext: HandleExt) -> Self {
-        Self {
-            wal_offset,
-            len,
-            ext,
-        }
-    }
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -44,12 +92,13 @@ impl HandleExt {
     }
 }
 
-impl From<&[u8]> for RecordHandle {
-    fn from(value: &[u8]) -> Self {
-        debug_assert!(
-            value.len() >= 12,
-            "Value of index entry should at least contain offset[8B], length-type[4B]"
-        );
+impl TryFrom<&[u8]> for RecordHandle {
+    type Error = String;
+
+    fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
+        if value.len() < 12 {
+            return Err(format!("Value of index entry should at least contain offset[8B], length_type[4B], but got {}B", value.len()));
+        }
         let mut cursor = Cursor::new(value);
         let offset = cursor.get_u64();
         let length_type = cursor.get_u32();
@@ -74,11 +123,11 @@ impl From<&[u8]> for RecordHandle {
                 unreachable!("Unknown type");
             }
         };
-        Self {
+        Ok(Self {
             wal_offset: offset,
             len,
             ext,
-        }
+        })
     }
 }
 

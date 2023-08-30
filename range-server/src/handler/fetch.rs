@@ -240,7 +240,10 @@ mod tests {
         range_manager.expect_fetch().once().returning_st(|_opt| {
             let fetch_result = FetchResult {
                 stream_id: 0,
-                offset: 0,
+                range: 0,
+                start_offset: 0,
+                end_offset: 0,
+                total_len: 0,
                 results: vec![],
             };
             Ok(fetch_result)

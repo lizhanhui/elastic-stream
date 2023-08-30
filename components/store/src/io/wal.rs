@@ -10,12 +10,13 @@ use crate::{
     error::StoreError,
     index::{
         driver::IndexDriver,
-        record_handle::{HandleExt, RecordHandle},
+        record::{HandleExt, RecordHandle},
     },
     io::record::RecordType,
     io::segment::{LogSegment, Medium, SegmentDescriptor, Status},
 };
 
+use crate::index::record::{Record, RecordIndex};
 use io_uring::{opcode, squeue, types};
 use log::{debug, error, info, trace, warn};
 use model::payload::Payload;
@@ -241,6 +242,11 @@ impl Wal {
                     let stream_id = entry.stream_id;
                     let range = entry.index;
                     let offset = entry.offset.expect("base-offset should have been assigned");
+                    let index = RecordIndex {
+                        stream_id,
+                        range,
+                        offset,
+                    };
                     let handle = RecordHandle {
                         wal_offset: segment.wal_offset + file_pos - len as u64 - 8,
                         len: len as u32 + 8,
@@ -248,7 +254,7 @@ impl Wal {
                     };
                     trace!("Index RecordBatch[stream-id={}, range={}, base-offset={}, wal-offset={}, len={}]",
                            stream_id, range, offset, handle.wal_offset, handle.len);
-                    indexer.index(stream_id, range, offset, handle);
+                    indexer.index(Record { index, handle });
                 }
 
                 Ok((None, _)) => {

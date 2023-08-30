@@ -1,19 +1,24 @@
-use super::{indexer::DefaultIndexer, record_handle::RecordHandle, Indexer};
-use crate::{
-    error::StoreError,
-    index::LocalRangeManager,
-    watermark::{DefaultWatermarkManager, Watermark, WatermarkManager},
-};
-use config::Configuration;
-use crossbeam::channel::{self, Receiver, Select, Sender, TryRecvError};
-use log::{error, info, warn};
-use model::{range::RangeMetadata, resource::EventType};
 use std::{
     ops::Deref,
     sync::Arc,
     thread::{sleep, Builder, JoinHandle},
 };
+
+use crossbeam::channel::{self, Receiver, Select, Sender, TryRecvError};
+use log::{error, info, warn};
 use tokio::sync::{mpsc, oneshot};
+
+use config::Configuration;
+use model::{range::RangeMetadata, resource::EventType};
+
+use crate::index::record::Record;
+use crate::{
+    error::StoreError,
+    index::LocalRangeManager,
+    watermark::{DefaultWatermarkManager, Watermark, WatermarkManager},
+};
+
+use super::{indexer::DefaultIndexer, Indexer};
 
 pub(crate) struct IndexDriver {
     tx: Sender<IndexCommand>,
@@ -25,10 +30,7 @@ pub(crate) struct IndexDriver {
 
 pub(crate) enum IndexCommand {
     Index {
-        stream_id: u64,
-        range: u32,
-        offset: u64,
-        handle: RecordHandle,
+        record: Record,
     },
     /// Used to retrieve a batch of record handles from a given offset.
     ScanRecord {
@@ -37,7 +39,7 @@ pub(crate) enum IndexCommand {
         offset: u64,
         max_offset: u64,
         max_bytes: u32,
-        observer: oneshot::Sender<Result<Option<Vec<RecordHandle>>, StoreError>>,
+        observer: oneshot::Sender<Result<Option<Vec<Record>>, StoreError>>,
     },
 
     ListRange {
@@ -114,25 +116,20 @@ impl IndexDriver {
         })
     }
 
-    pub(crate) fn index(&self, stream_id: u64, range: u32, offset: u64, handle: RecordHandle) {
-        if let Err(_e) = self.tx.send(IndexCommand::Index {
-            stream_id,
-            range,
-            offset,
-            handle,
-        }) {
+    pub(crate) fn index(&self, record: Record) {
+        if let Err(_e) = self.tx.send(IndexCommand::Index { record }) {
             error!("Failed to send index entry to internal indexer");
         }
     }
 
-    pub(crate) fn scan_record_handles(
+    pub(crate) fn scan_records(
         &self,
         stream_id: u64,
         range: u32,
         offset: u64,
         max_offset: u64,
         max_bytes: u32,
-        observer: oneshot::Sender<Result<Option<Vec<RecordHandle>>, StoreError>>,
+        observer: oneshot::Sender<Result<Option<Vec<Record>>, StoreError>>,
     ) {
         if let Err(_e) = self.tx.send(IndexCommand::ScanRecord {
             stream_id,
@@ -286,19 +283,17 @@ where
             if 0 == index {
                 match self.rx.try_recv() {
                     Ok(command) => match command {
-                        IndexCommand::Index {
-                            stream_id,
-                            range,
-                            offset,
-                            handle,
-                        } => {
-                            while let Err(e) = self.indexer.index(stream_id, range, offset, &handle)
-                            {
-                                error!("Failed to index: stream_id={}, offset={}, record_handle={:?}, cause: {}",
-                                stream_id, offset, handle, e);
+                        IndexCommand::Index { record } => {
+                            while let Err(e) = self.indexer.index(&record) {
+                                error!("Failed to index: stream_id={}, range={}, offset={}, record_handle={:?}, cause: {}",
+                                record.index.stream_id, record.index.range, record.index.offset, record.handle, e);
                                 sleep(std::time::Duration::from_millis(100));
                             }
-                            self.watermark_manager.on_index(stream_id, range, offset);
+                            self.watermark_manager.on_index(
+                                record.index.stream_id,
+                                record.index.range,
+                                record.index.offset,
+                            );
                         }
 
                         IndexCommand::ScanRecord {
@@ -311,7 +306,7 @@ where
                         } => {
                             let res = self
                                 .indexer
-                                .scan_record_handles_left_shift(
+                                .scan_record_left_shift(
                                     stream_id, range, offset, max_offset, max_bytes,
                                 )
                                 .map(|indexes_opt| {
@@ -431,10 +426,11 @@ where
 
 #[cfg(test)]
 mod tests {
+    use std::{error::Error, sync::Arc};
+
     use config::Configuration;
 
     use crate::{index::Indexer, watermark::Watermark};
-    use std::{error::Error, sync::Arc};
 
     struct TestWatermark {}
 

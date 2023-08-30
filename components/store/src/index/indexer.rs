@@ -9,18 +9,20 @@ use std::{
 };
 
 use bytes::{Buf, BufMut, Bytes, BytesMut};
-use config::Configuration;
 use log::{error, info, trace, warn};
-use model::range::RangeMetadata;
 use rocksdb::{
     BlockBasedOptions, ColumnFamilyDescriptor, DBCompressionType, FlushOptions, IteratorMode,
     Options, ReadOptions, WriteOptions, DB,
 };
 use tokio::sync::mpsc;
 
+use config::Configuration;
+use model::range::RangeMetadata;
+
+use crate::index::record::{Record, RecordIndex};
 use crate::{error::StoreError, watermark::Watermark};
 
-use super::{entry::IndexEntry, record_handle::RecordHandle, Indexer};
+use super::{record::RecordHandle, Indexer};
 
 const INDEX_COLUMN_FAMILY: &str = "index";
 const METADATA_COLUMN_FAMILY: &str = "metadata";
@@ -164,13 +166,13 @@ impl DefaultIndexer {
     }
 
     #[cfg(test)]
-    pub(crate) fn scan_record_handles(
+    pub(crate) fn scan_records(
         &self,
         stream_id: u64,
         range: u32,
         offset: u64,
         max_bytes: u32,
-    ) -> Result<Option<Vec<RecordHandle>>, StoreError> {
+    ) -> Result<Option<Vec<Record>>, StoreError> {
         let mut read_opts = ReadOptions::default();
         let lower = self.build_index_key(stream_id, range, offset);
         read_opts.set_iterate_lower_bound(&lower[..]);
@@ -180,14 +182,14 @@ impl DefaultIndexer {
         upper.put_u32(range + 1);
         read_opts.set_iterate_upper_bound(upper.freeze());
 
-        self.scan_record_handles_from(read_opts, max_bytes)
+        self.scan_records_from(read_opts, max_bytes)
     }
 
-    fn scan_record_handles_from(
+    fn scan_records_from(
         &self,
         read_opts: ReadOptions,
         max_bytes: u32,
-    ) -> Result<Option<Vec<RecordHandle>>, StoreError> {
+    ) -> Result<Option<Vec<Record>>, StoreError> {
         let mut bytes_c = 0_u32;
         match self.db.cf_handle(INDEX_COLUMN_FAMILY) {
             Some(cf) => {
@@ -195,19 +197,28 @@ impl DefaultIndexer {
                     .db
                     .iterator_cf_opt(cf, read_opts, IteratorMode::Start)
                     .flatten()
-                    .filter(|(_k, v)| {
-                        if v.len() < 8 + 4 {
-                            warn!("Got an invalid index entry: len(value) = {}", v.len());
-                        }
-                        v.len() > 8 /* WAL offset */ + 4 /* length-type */
-                    })
-                    .map_while(|(_k, v)| {
+                    .map_while(|(k, v)| {
                         if bytes_c >= max_bytes {
                             return None;
                         }
-                        let handle = Into::<RecordHandle>::into(&*v);
+
+                        let index = match RecordIndex::try_from(&*k) {
+                            Ok(index) => index,
+                            Err(error) => {
+                                warn!("Deserialize index key failed: {}", error);
+                                return None;
+                            }
+                        };
+
+                        let handle = match RecordHandle::try_from(&*v) {
+                            Ok(handle) => handle,
+                            Err(error) => {
+                                warn!("Deserialize index value failed: {}", error);
+                                return None;
+                            }
+                        };
                         bytes_c += handle.len;
-                        Some(handle)
+                        Some(Record { index, handle })
                     })
                     .collect();
 
@@ -241,15 +252,15 @@ impl DefaultIndexer {
         stream_id: u64,
         range: u32,
         offset: u64,
-    ) -> Result<Option<IndexEntry>, StoreError> {
+    ) -> Result<Option<Record>, StoreError> {
         let max_key = self.retrieve_max_key(stream_id, range)?;
-        if let Some(entry) = max_key {
-            if offset > entry.offset {
+        if let Some(record) = max_key {
+            if offset > record.index.offset {
                 return Ok(None);
             }
 
-            if offset == entry.offset {
-                return Ok(Some(entry));
+            if offset == record.index.offset {
+                return Ok(Some(record));
             }
         } else {
             return Ok(None);
@@ -275,7 +286,28 @@ impl DefaultIndexer {
                 lower_entry
                     .transpose()
                     .map_err(|e| StoreError::RocksDB(e.into_string()))
-                    .map(|opt| opt.map(|(k, v)| IndexEntry::new(&k, &v)))
+                    .map(|opt| {
+                        if let Some((k, v)) = opt {
+                            let index = match RecordIndex::try_from(&*k) {
+                                Ok(index) => index,
+                                Err(error) => {
+                                    warn!("Deserialize index key failed: {}", error);
+                                    return None;
+                                }
+                            };
+
+                            let handle = match RecordHandle::try_from(&*v) {
+                                Ok(handle) => handle,
+                                Err(error) => {
+                                    warn!("Deserialize index value failed: {}", error);
+                                    return None;
+                                }
+                            };
+                            Some(Record { index, handle })
+                        } else {
+                            None
+                        }
+                    })
             }
             None => Err(StoreError::RocksDB(format!(
                 "No column family: `{}`",
@@ -285,11 +317,11 @@ impl DefaultIndexer {
     }
 
     fn build_index_key(&self, stream_id: u64, range: u32, offset: u64) -> Bytes {
-        let mut index_key = BytesMut::with_capacity(8 + 4 + 8);
-        index_key.put_u64(stream_id);
-        index_key.put_u32(range);
-        index_key.put_u64(offset);
-        index_key.freeze()
+        Bytes::from(&RecordIndex {
+            stream_id,
+            range,
+            offset,
+        })
     }
 }
 
@@ -302,30 +334,20 @@ impl Indexer for DefaultIndexer {
     /// * `offset` Logical offset within the stream, similar to row-id within a database table.
     /// * `handle` - Pointer to record-batch in WAL.
     ///
-    fn index(
-        &self,
-        stream_id: u64,
-        range: u32,
-        offset: u64,
-        handle: &RecordHandle,
-    ) -> Result<(), StoreError> {
+    fn index(&self, record: &Record) -> Result<(), StoreError> {
         match self.db.cf_handle(INDEX_COLUMN_FAMILY) {
             Some(cf) => {
-                let mut key_buf = BytesMut::with_capacity(20);
-                key_buf.put_u64(stream_id);
-                key_buf.put_u32(range);
-                key_buf.put_u64(offset);
-
-                let value_buf = Into::<Bytes>::into(handle);
+                let key_buf = Into::<Bytes>::into(&record.index);
+                let value_buf = Into::<Bytes>::into(&record.handle);
 
                 self.db
                     .put_cf_opt(cf, &key_buf[..], &value_buf[..], &self.write_opts)
                     .map_err(|e| StoreError::RocksDB(e.into_string()))?;
-                self.advance_wal_checkpoint(handle.wal_offset)?;
+                self.advance_wal_checkpoint(record.handle.wal_offset)?;
                 let prev = self.count.fetch_add(1, Ordering::Relaxed);
                 if prev + 1 >= self.flush_threshold {
                     self.flush(false)?;
-                    info!("Advanced WAL checkpoint to {}", handle.wal_offset);
+                    info!("Advanced WAL checkpoint to {}", record.handle.wal_offset);
                     self.count.store(0, Ordering::Relaxed);
                 }
                 Ok(())
@@ -364,9 +386,9 @@ impl Indexer for DefaultIndexer {
         let mut read_opts = ReadOptions::default();
         read_opts.set_iterate_lower_bound(&lower[..]);
         read_opts.set_iterate_upper_bound(upper.freeze());
-        if let Ok(Some(vec)) = self.scan_record_handles_from(read_opts, 1) {
-            if let Some(handle) = vec.first() {
-                return Some(handle.wal_offset);
+        if let Ok(Some(vec)) = self.scan_records_from(read_opts, 1) {
+            if let Some(record) = vec.first() {
+                return Some(record.handle.wal_offset);
             }
         }
         None
@@ -375,17 +397,17 @@ impl Indexer for DefaultIndexer {
     /// The specific offset is not guaranteed to exist,
     /// because it may have been compacted or point to a intermediate position of a record batch.
     /// So the `scan_record_handles_left_shift` will left-shift the offset as a lower bound to scan the records
-    fn scan_record_handles_left_shift(
+    fn scan_record_left_shift(
         &self,
         stream_id: u64,
         range: u32,
         offset: u64,
         max_offset: u64,
         max_bytes: u32,
-    ) -> Result<Option<Vec<RecordHandle>>, StoreError> {
-        let left_key_entry = self.retrieve_left_key(stream_id, range, offset)?;
-        let left_key = left_key_entry
-            .map(|entry| entry.key())
+    ) -> Result<Option<Vec<Record>>, StoreError> {
+        let left_key_record = self.retrieve_left_key(stream_id, range, offset)?;
+        let left_key = left_key_record
+            .map(|entry| Bytes::from(&entry.index))
             .unwrap_or(self.build_index_key(stream_id, range, offset));
         let mut read_opts = ReadOptions::default();
         read_opts.set_iterate_lower_bound(&left_key[..]);
@@ -394,7 +416,7 @@ impl Indexer for DefaultIndexer {
         let upper_key = self.build_index_key(stream_id, range, max_offset);
         read_opts.set_iterate_upper_bound(&upper_key[..]);
 
-        self.scan_record_handles_from(read_opts, max_bytes)
+        self.scan_records_from(read_opts, max_bytes)
     }
 
     /// Returns WAL checkpoint offset.
@@ -475,11 +497,7 @@ impl Indexer for DefaultIndexer {
         }
     }
 
-    fn retrieve_max_key(
-        &self,
-        stream_id: u64,
-        range: u32,
-    ) -> Result<Option<IndexEntry>, StoreError> {
+    fn retrieve_max_key(&self, stream_id: u64, range: u32) -> Result<Option<Record>, StoreError> {
         match self.db.cf_handle(INDEX_COLUMN_FAMILY) {
             Some(cf) => {
                 let mut read_opts = ReadOptions::default();
@@ -497,7 +515,28 @@ impl Indexer for DefaultIndexer {
                 iter.next()
                     .transpose()
                     .map_err(|e| StoreError::RocksDB(e.into_string()))
-                    .map(|opt| opt.map(|(k, v)| IndexEntry::new(&k, &v)))
+                    .map(|opt| {
+                        if let Some((k, v)) = opt {
+                            let index = match RecordIndex::try_from(&*k) {
+                                Ok(index) => index,
+                                Err(error) => {
+                                    warn!("Deserialize index key failed: {}", error);
+                                    return None;
+                                }
+                            };
+
+                            let handle = match RecordHandle::try_from(&*v) {
+                                Ok(handle) => handle,
+                                Err(error) => {
+                                    warn!("Deserialize index value failed: {}", error);
+                                    return None;
+                                }
+                            };
+                            Some(Record { index, handle })
+                        } else {
+                            None
+                        }
+                    })
             }
             None => Err(StoreError::RocksDB(format!(
                 "No column family: `{}`",
@@ -518,7 +557,7 @@ impl super::LocalRangeManager for DefaultIndexer {
             read_opts.set_iterate_lower_bound(&prefix[..]);
             read_opts.set_prefix_same_as_start(true);
             self.db
-                .iterator_cf_opt(cf, read_opts, rocksdb::IteratorMode::Start)
+                .iterator_cf_opt(cf, read_opts, IteratorMode::Start)
                 .flatten()
                 .map_while(|(k, v)| {
                     if !k.starts_with(&prefix[..]) {
@@ -570,7 +609,7 @@ impl super::LocalRangeManager for DefaultIndexer {
             read_opts.set_iterate_lower_bound(&prefix[..]);
             read_opts.set_prefix_same_as_start(true);
             self.db
-                .iterator_cf_opt(cf, read_opts, rocksdb::IteratorMode::Start)
+                .iterator_cf_opt(cf, read_opts, IteratorMode::Start)
                 .flatten()
                 .map_while(|(k, v)| {
                     if !k.starts_with(&prefix[..]) {
@@ -673,9 +712,10 @@ mod tests {
         },
     };
 
+    use crate::index::record::{Record, RecordIndex};
     use crate::{
         index::{
-            record_handle::{HandleExt, RecordHandle},
+            record::{HandleExt, RecordHandle},
             Indexer,
         },
         watermark::Watermark,
@@ -738,19 +778,40 @@ mod tests {
         let stream_id = 1;
         let range = 0;
 
-        let ptr = RecordHandle {
-            wal_offset: 1024,
-            len: 128,
-            ext: HandleExt::Hash(10),
-        };
-        indexer.index(stream_id, range, start_offset, &ptr)?;
-        indexer.index(stream_id, range, start_offset + 1, &ptr)?;
+        indexer.index(&Record {
+            index: RecordIndex {
+                stream_id,
+                range,
+                offset: start_offset,
+            },
+            handle: RecordHandle {
+                wal_offset: 1024,
+                len: 128,
+                ext: HandleExt::Hash(10),
+            },
+        })?;
+        indexer.index(&Record {
+            index: RecordIndex {
+                stream_id,
+                range,
+                offset: start_offset + 1,
+            },
+            handle: RecordHandle {
+                wal_offset: 1024,
+                len: 128,
+                ext: HandleExt::Hash(10),
+            },
+        })?;
 
         // Case one: have a max key
         let max_key = indexer.retrieve_max_key(stream_id, range).unwrap().unwrap();
         assert_eq!(
             (stream_id, range, start_offset + 1),
-            (max_key.stream_id, max_key.range, max_key.offset)
+            (
+                max_key.index.stream_id,
+                max_key.index.range,
+                max_key.index.offset
+            )
         );
 
         //Case two: no max key
@@ -768,14 +829,42 @@ mod tests {
         let stream_id = 1;
         let range = 0;
 
-        let ptr = RecordHandle {
-            wal_offset: 1024,
-            len: 128,
-            ext: HandleExt::Hash(10),
-        };
-        indexer.index(stream_id, range, left_offset, &ptr)?;
-        indexer.index(stream_id, range, left_offset + 2, &ptr)?;
-        indexer.index(stream_id, range, left_offset + 4, &ptr)?;
+        indexer.index(&Record {
+            index: RecordIndex {
+                stream_id,
+                range,
+                offset: left_offset,
+            },
+            handle: RecordHandle {
+                wal_offset: 1024,
+                len: 128,
+                ext: HandleExt::Hash(10),
+            },
+        })?;
+        indexer.index(&Record {
+            index: RecordIndex {
+                stream_id,
+                range,
+                offset: left_offset + 2,
+            },
+            handle: RecordHandle {
+                wal_offset: 1024,
+                len: 128,
+                ext: HandleExt::Hash(10),
+            },
+        })?;
+        indexer.index(&Record {
+            index: RecordIndex {
+                stream_id,
+                range,
+                offset: left_offset + 4,
+            },
+            handle: RecordHandle {
+                wal_offset: 1024,
+                len: 128,
+                ext: HandleExt::Hash(10),
+            },
+        })?;
 
         let left_key = indexer
             .retrieve_left_key(stream_id, range, left_offset + 1)
@@ -783,7 +872,11 @@ mod tests {
             .unwrap();
         assert_eq!(
             (stream_id, range, left_offset),
-            (left_key.stream_id, left_key.range, left_key.offset)
+            (
+                left_key.index.stream_id,
+                left_key.index.range,
+                left_key.index.offset
+            )
         );
 
         // Case two: the specific key is equal to the left key
@@ -793,14 +886,18 @@ mod tests {
             .unwrap();
         assert_eq!(
             (stream_id, range, left_offset + 2),
-            (left_key.stream_id, left_key.range, left_key.offset)
+            (
+                left_key.index.stream_id,
+                left_key.index.range,
+                left_key.index.offset
+            )
         );
 
         // Case three: no left key
         let left_key = indexer
             .retrieve_left_key(stream_id, range, left_offset - 1)
             .unwrap();
-        assert_eq!(None, left_key);
+        assert!(left_key.is_none());
 
         // Case four: the smallest key
         let left_key = indexer
@@ -809,7 +906,11 @@ mod tests {
             .unwrap();
         assert_eq!(
             (stream_id, range, left_offset),
-            (left_key.stream_id, left_key.range, left_key.offset)
+            (
+                left_key.index.stream_id,
+                left_key.index.range,
+                left_key.index.offset
+            )
         );
 
         // Case five: the biggest key
@@ -820,7 +921,11 @@ mod tests {
 
         assert_eq!(
             (stream_id, range, left_offset + 4),
-            (left_key.stream_id, left_key.range, left_key.offset)
+            (
+                left_key.index.stream_id,
+                left_key.index.range,
+                left_key.index.offset
+            )
         );
 
         // Case six: the biggest key + 1
@@ -828,7 +933,7 @@ mod tests {
         let left_key = indexer
             .retrieve_left_key(stream_id, range, left_offset + 5)
             .unwrap();
-        assert_eq!(None, left_key);
+        assert!(left_key.is_none());
 
         Ok(())
     }
@@ -836,16 +941,23 @@ mod tests {
     #[test]
     fn test_index_scan_from_left_key() -> Result<(), Box<dyn Error>> {
         let indexer = new_indexer()?;
+        let stream_id = 0;
         let range = 0;
         const CNT: u64 = 1024;
         (1..CNT)
             .flat_map(|n| {
-                let ptr = RecordHandle {
-                    wal_offset: n * 128,
-                    len: 128,
-                    ext: HandleExt::Hash(10),
-                };
-                indexer.index(0, range, n * 10, &ptr)
+                indexer.index(&Record {
+                    index: RecordIndex {
+                        stream_id,
+                        range,
+                        offset: n * 10,
+                    },
+                    handle: RecordHandle {
+                        wal_offset: n * 128,
+                        len: 128,
+                        ext: HandleExt::Hash(10),
+                    },
+                })
             })
             .count();
 
@@ -853,55 +965,70 @@ mod tests {
         // While the logical offset is 10, 20, 30, ..., which means each record batch contains 10 records.
 
         // Case one: scan from a exist key
-        let indexes = indexer.scan_record_handles_left_shift(0, range, 10, 100, 128 * 2)?;
+        let indexes = indexer.scan_record_left_shift(stream_id, range, 10, 100, 128 * 2)?;
         assert!(indexes.is_some());
         let indexes = indexes.unwrap();
         assert_eq!(2, indexes.len());
 
-        indexes.into_iter().enumerate().for_each(|(i, handle)| {
-            assert_eq!(((i + 1) * 128) as u64, handle.wal_offset);
-            assert_eq!(128, handle.len);
-            assert_eq!(HandleExt::Hash(10), handle.ext);
+        indexes.into_iter().enumerate().for_each(|(i, record)| {
+            assert_eq!(stream_id, record.index.stream_id);
+            assert_eq!(range, record.index.range);
+            assert_eq!(((i + 1) * 10) as u64, record.index.offset);
+
+            assert_eq!(((i + 1) * 128) as u64, record.handle.wal_offset);
+            assert_eq!(128, record.handle.len);
+            assert_eq!(HandleExt::Hash(10), record.handle.ext);
         });
 
         // Case two: scan from a left key
-        let indexes = indexer.scan_record_handles_left_shift(0, range, 12, 100, 128 * 2)?;
+        let indexes = indexer.scan_record_left_shift(0, range, 12, 100, 128 * 2)?;
         assert!(indexes.is_some());
         let handles = indexes.unwrap();
         assert_eq!(2, handles.len());
 
-        handles.into_iter().enumerate().for_each(|(i, handle)| {
-            assert_eq!(((i + 1) * 128) as u64, handle.wal_offset);
-            assert_eq!(128, handle.len);
-            assert_eq!(HandleExt::Hash(10), handle.ext);
+        handles.into_iter().enumerate().for_each(|(i, record)| {
+            assert_eq!(stream_id, record.index.stream_id);
+            assert_eq!(range, record.index.range);
+            assert_eq!(((i + 1) * 10) as u64, record.index.offset);
+
+            assert_eq!(((i + 1) * 128) as u64, record.handle.wal_offset);
+            assert_eq!(128, record.handle.len);
+            assert_eq!(HandleExt::Hash(10), record.handle.ext);
         });
 
         // Case three: scan from a key smaller than the smallest key
-        let indexes = indexer.scan_record_handles_left_shift(0, range, 1, 100, 128 * 2)?;
+        let indexes = indexer.scan_record_left_shift(0, range, 1, 100, 128 * 2)?;
         assert!(indexes.is_some());
         let indexes = indexes.unwrap();
         assert_eq!(2, indexes.len());
 
-        indexes.into_iter().enumerate().for_each(|(i, handle)| {
-            assert_eq!(((i + 1) * 128) as u64, handle.wal_offset);
-            assert_eq!(128, handle.len);
-            assert_eq!(HandleExt::Hash(10), handle.ext);
+        indexes.into_iter().enumerate().for_each(|(i, record)| {
+            assert_eq!(stream_id, record.index.stream_id);
+            assert_eq!(range, record.index.range);
+            assert_eq!(((i + 1) * 10) as u64, record.index.offset);
+
+            assert_eq!(((i + 1) * 128) as u64, record.handle.wal_offset);
+            assert_eq!(128, record.handle.len);
+            assert_eq!(HandleExt::Hash(10), record.handle.ext);
         });
 
         // Case four: scan from a key bigger than the biggest key
 
-        let indexes = indexer.scan_record_handles_left_shift(0, range, CNT * 11, 100, 128 * 2)?;
+        let indexes = indexer.scan_record_left_shift(0, range, CNT * 11, 100, 128 * 2)?;
         assert!(indexes.is_none());
 
         // Case five: scan with a max offset
-        let indexes = indexer.scan_record_handles_left_shift(0, range, 10, 40, 128 * 10)?;
+        let indexes = indexer.scan_record_left_shift(0, range, 10, 40, 128 * 10)?;
         // Three records are scanned
         assert!(indexes.is_some());
         let indexes = indexes.unwrap();
         assert_eq!(3, indexes.len());
-        assert_eq!(indexes[0].wal_offset, 128);
-        assert_eq!(indexes[1].wal_offset, 256);
-        assert_eq!(indexes[2].wal_offset, 384);
+        assert_eq!(indexes[0].index.offset, 10);
+        assert_eq!(indexes[0].handle.wal_offset, 128);
+        assert_eq!(indexes[1].index.offset, 20);
+        assert_eq!(indexes[1].handle.wal_offset, 256);
+        assert_eq!(indexes[2].index.offset, 30);
+        assert_eq!(indexes[2].handle.wal_offset, 384);
 
         Ok(())
     }
@@ -909,36 +1036,47 @@ mod tests {
     #[test]
     fn test_index_scan() -> Result<(), Box<dyn Error>> {
         let indexer = new_indexer()?;
+        let stream_id = 0;
         let range = 0;
         const CNT: u64 = 1024;
         (0..CNT)
             .flat_map(|n| {
-                let ptr = RecordHandle {
-                    wal_offset: n,
-                    len: 128,
-                    ext: HandleExt::Hash(10),
-                };
-                indexer.index(0, range, n, &ptr)
+                indexer.index(&Record {
+                    index: RecordIndex {
+                        stream_id,
+                        range,
+                        offset: n,
+                    },
+                    handle: RecordHandle {
+                        wal_offset: n,
+                        len: 128,
+                        ext: HandleExt::Hash(10),
+                    },
+                })
             })
             .count();
 
         // Case one: scan ten records from the indexer
-        let indexes = indexer.scan_record_handles(0, range, 0, 10 * 128)?;
+        let indexes = indexer.scan_records(0, range, 0, 10 * 128)?;
         assert!(indexes.is_some());
         let indexes = indexes.unwrap();
         assert_eq!(10, indexes.len());
-        indexes.into_iter().enumerate().for_each(|(i, handle)| {
-            assert_eq!(i as u64, handle.wal_offset);
-            assert_eq!(128, handle.len);
-            assert_eq!(HandleExt::Hash(10), handle.ext);
+        indexes.into_iter().enumerate().for_each(|(i, record)| {
+            assert_eq!(stream_id, record.index.stream_id);
+            assert_eq!(range, record.index.range);
+            assert_eq!(i as u64, record.index.offset);
+
+            assert_eq!(i as u64, record.handle.wal_offset);
+            assert_eq!(128, record.handle.len);
+            assert_eq!(HandleExt::Hash(10), record.handle.ext);
         });
 
         // Case two: scan 0 bytes from the indexer
-        let indexes = indexer.scan_record_handles(0, range, 0, 0)?;
+        let indexes = indexer.scan_records(0, range, 0, 0)?;
         assert!(indexes.is_none());
 
         // Case three: return at least one record even if the bytes is not enough
-        let indexes = indexer.scan_record_handles(0, range, 0, 5)?;
+        let indexes = indexer.scan_records(0, range, 0, 5)?;
         assert!(indexes.is_some());
         let indexes = indexes.unwrap();
         assert_eq!(1, indexes.len());
@@ -961,28 +1099,36 @@ mod tests {
         });
         let indexer =
             super::DefaultIndexer::new(&config, Arc::clone(&watermark) as Arc<dyn Watermark>, 128)?;
+        let stream_id = 0;
         let range = 0;
         const CNT: u64 = 1024;
         (0..CNT)
             .flat_map(|n| {
-                let ptr = RecordHandle {
-                    wal_offset: n,
-                    len: 128,
-                    ext: HandleExt::Hash(10),
-                };
-                indexer.index(0, range, n, &ptr)
+                indexer.index(&Record {
+                    index: RecordIndex {
+                        stream_id,
+                        range,
+                        offset: n,
+                    },
+                    handle: RecordHandle {
+                        wal_offset: n,
+                        len: 128,
+                        ext: HandleExt::Hash(10),
+                    },
+                })
             })
             .count();
 
         indexer.flush(true)?;
         indexer.compact();
 
-        let indexes = indexer.scan_record_handles(0, range, 0, 10)?.unwrap();
-        assert_eq!(0, indexes[0].wal_offset);
+        let indexes = indexer.scan_records(0, range, 0, 10)?.unwrap();
+        assert_eq!(0, indexes[0].index.offset);
+        assert_eq!(0, indexes[0].handle.wal_offset);
         watermark.set_min(10);
 
         indexer.compact();
-        let _indexes = indexer.scan_record_handles(0, range, 0, 10)?.unwrap();
+        let _indexes = indexer.scan_records(0, range, 0, 10)?.unwrap();
         Ok(())
     }
 }
