@@ -193,7 +193,7 @@ func (c *Cache) addRangeToServer(rID model.RangeID, sID int32) {
 			valueInMap.Add(rID)
 			return valueInMap
 		}
-		return mapset.NewThreadUnsafeSet(rID)
+		return mapset.NewSet(rID)
 	})
 }
 
@@ -203,7 +203,7 @@ func (c *Cache) removeRangeFromServer(rID model.RangeID, sID int32) {
 			valueInMap.Remove(rID)
 			return valueInMap
 		}
-		return mapset.NewThreadUnsafeSet[model.RangeID]()
+		return mapset.NewSet[model.RangeID]()
 	})
 }
 
@@ -211,7 +211,7 @@ func (c *Cache) removeRangeFromServer(rID model.RangeID, sID int32) {
 func (c *Cache) RangesOnServer(sID int32) (rangeIDs mapset.Set[model.RangeID]) {
 	rangeIDs, _ = c.rangeIndex.Get(serverID(sID))
 	if rangeIDs == nil {
-		rangeIDs = mapset.NewThreadUnsafeSet[model.RangeID]()
+		rangeIDs = mapset.NewSet[model.RangeID]()
 	}
 	return
 }
