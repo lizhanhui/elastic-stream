@@ -35,34 +35,31 @@ func TestHandler_ListRange(t *testing.T) {
 			args: args{StreamID: 10, RangeServerID: -1},
 			want: []*rpcfb.RangeT{},
 		},
-		// FIXME: #1049
-		/*
-			{
-				name: "list range by range server id",
-				args: args{StreamID: -1, RangeServerID: 1},
-				want: []*rpcfb.RangeT{
-					{StreamId: 0, Epoch: 1, Index: 0, Start: 0, End: 42},
-					{StreamId: 0, Epoch: 2, Index: 1, Start: 42, End: -1},
-					{StreamId: 1, Epoch: 1, Index: 0, Start: 0, End: 42},
-					{StreamId: 1, Epoch: 2, Index: 1, Start: 42, End: -1},
-					{StreamId: 2, Epoch: 1, Index: 0, Start: 0, End: 42},
-					{StreamId: 2, Epoch: 2, Index: 1, Start: 42, End: -1},
-				},
+		{
+			name: "list range by range server id",
+			args: args{StreamID: -1, RangeServerID: 1},
+			want: []*rpcfb.RangeT{
+				{StreamId: 0, Epoch: 1, Index: 0, Start: 0, End: 42},
+				{StreamId: 0, Epoch: 2, Index: 1, Start: 42, End: -1},
+				{StreamId: 1, Epoch: 1, Index: 0, Start: 0, End: 42},
+				{StreamId: 1, Epoch: 2, Index: 1, Start: 42, End: -1},
+				{StreamId: 2, Epoch: 1, Index: 0, Start: 0, End: 42},
+				{StreamId: 2, Epoch: 2, Index: 1, Start: 42, End: -1},
 			},
-			{
-				name: "list range by non-exist range server id",
-				args: args{StreamID: -1, RangeServerID: 10},
-				want: []*rpcfb.RangeT{},
+		},
+		{
+			name: "list range by non-exist range server id",
+			args: args{StreamID: -1, RangeServerID: 10},
+			want: []*rpcfb.RangeT{},
+		},
+		{
+			name: "list range by stream id and range server id",
+			args: args{StreamID: 2, RangeServerID: 2},
+			want: []*rpcfb.RangeT{
+				{StreamId: 2, Epoch: 1, Index: 0, Start: 0, End: 42},
+				{StreamId: 2, Epoch: 2, Index: 1, Start: 42, End: -1},
 			},
-			{
-				name: "list range by stream id and range server id",
-				args: args{StreamID: 2, RangeServerID: 2},
-				want: []*rpcfb.RangeT{
-					{StreamId: 2, Epoch: 1, Index: 0, Start: 0, End: 42},
-					{StreamId: 2, Epoch: 2, Index: 1, Start: 42, End: -1},
-				},
-			},
-		*/
+		},
 	}
 	for _, tt := range tests {
 		tt := tt
