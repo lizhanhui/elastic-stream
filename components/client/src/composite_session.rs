@@ -490,10 +490,9 @@ impl CompositeSession {
             .collect::<Vec<_>>();
 
         let (mut tx, rx) = oneshot::channel();
-        let range_server = self.config.server.range_server();
         let request = request::Request {
             timeout: self.config.client_io_timeout(),
-            headers: request::Headers::DescribePlacementDriver { range_server },
+            headers: request::Headers::DescribePlacementDriver {},
             body: None,
         };
 

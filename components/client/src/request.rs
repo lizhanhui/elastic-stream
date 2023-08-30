@@ -52,9 +52,7 @@ pub enum Headers {
         host: String,
     },
 
-    DescribePlacementDriver {
-        range_server: RangeServer,
-    },
+    DescribePlacementDriver {},
 
     CreateRange {
         range: RangeMetadata,
@@ -191,9 +189,8 @@ impl From<&Request> for Bytes {
                 builder.finish(request, None);
             }
 
-            Headers::DescribePlacementDriver { range_server } => {
-                let mut request = DescribePlacementDriverClusterRequestT::default();
-                request.range_server = Box::new(range_server.into());
+            Headers::DescribePlacementDriver {} => {
+                let request = DescribePlacementDriverClusterRequestT::default();
                 let request = request.pack(&mut builder);
                 builder.finish(request, None);
             }

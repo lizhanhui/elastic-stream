@@ -718,11 +718,8 @@ table ReportMetricsResponse {
 }
 
 table DescribePlacementDriverClusterRequest {
-    // Range server that needs to know PD membership
-    range_server: RangeServer (id: 0, required);
-
     // The timeout in milliseconds to wait for the response.
-    timeout_ms: int32 (id: 1);
+    timeout_ms: int32 (id: 0);
 }
 
 table DescribePlacementDriverClusterResponse {

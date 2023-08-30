@@ -36,12 +36,7 @@ func TestHandler_DescribePDCluster(t *testing.T) {
 	h, closeFunc := startSbpHandler(t, nil, nil, true)
 	defer closeFunc()
 
-	req := &protocol.DescribePDClusterRequest{DescribePlacementDriverClusterRequestT: rpcfb.DescribePlacementDriverClusterRequestT{
-		RangeServer: &rpcfb.RangeServerT{
-			ServerId:      42,
-			AdvertiseAddr: fmt.Sprintf("addr-%d", 42),
-		},
-	}}
+	req := &protocol.DescribePDClusterRequest{DescribePlacementDriverClusterRequestT: rpcfb.DescribePlacementDriverClusterRequestT{}}
 	resp := &protocol.DescribePDClusterResponse{}
 	h.DescribePDCluster(req, resp)
 
