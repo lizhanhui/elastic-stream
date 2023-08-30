@@ -81,9 +81,7 @@ func (e *Endpoint) WatchResource(ctx context.Context, rv int64, types []rpcfb.Re
 		return false
 	}
 
-	wctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-	watcher := e.KV.Watch(wctx, nil, rv, filter)
+	watcher := e.KV.Watch(ctx, nil, rv, filter)
 	defer watcher.Close()
 
 	ch := watcher.EventChan()

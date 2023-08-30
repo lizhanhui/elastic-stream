@@ -229,16 +229,17 @@ func (e *Etcd) GetByRange(ctx context.Context, r Range, rev int64, limit int64, 
 }
 
 func (e *Etcd) Watch(ctx context.Context, prefix []byte, rev int64, filter Filter) Watcher {
-	ctx = clientv3.WithRequireLeader(ctx)
+	wctx, cancel := context.WithCancel(ctx)
+	wctx = clientv3.WithRequireLeader(wctx)
 	key := e.addPrefix(prefix)
 	opts := []clientv3.OpOption{clientv3.WithPrevKV(), clientv3.WithPrefix()}
 	if rev > 0 {
 		opts = append(opts, clientv3.WithRev(rev))
 	}
 
-	wch := e.watcher.Watch(ctx, string(key), opts...)
+	wch := e.watcher.Watch(wctx, string(key), opts...)
 	logger := e.lg.With(zap.ByteString("prefix", prefix), zap.Int64("revision", rev), traceutil.TraceLogField(ctx))
-	watcher := e.newWatchChan(ctx, wch, filter, logger)
+	watcher := e.newWatchChan(wctx, cancel, wch, filter, logger)
 	go watcher.run()
 
 	return watcher
@@ -530,8 +531,7 @@ type watchChan struct {
 	lg *zap.Logger
 }
 
-func (e *Etcd) newWatchChan(ctx context.Context, ch clientv3.WatchChan, filter Filter, logger *zap.Logger) *watchChan {
-	ctx, cancel := context.WithCancel(ctx)
+func (e *Etcd) newWatchChan(ctx context.Context, cancel context.CancelFunc, ch clientv3.WatchChan, filter Filter, logger *zap.Logger) *watchChan {
 	return &watchChan{
 		prefixHandler: e,
 		ctx:           ctx,
