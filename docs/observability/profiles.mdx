@@ -1,0 +1,93 @@
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+# Profiles
+
+Profiling is an effective way of understanding which parts of Elastic Stream are consuming the most resources.
+
+Elastic Stream supports these profiling backends:
+
+<Tabs>
+  <TabItem value="pyroscope" label="Grafana Pyroscope" default>
+
+## Grafana Pyroscope
+
+To enable the Grafana Pyroscope profiling exporter:
+
+```yaml
+observation:
+  profiles:
+    enable: true
+    server-endpoint: "http://localhost:4040"
+```
+
+### Configuration
+
+#### enable
+
+Required, Default="false"
+
+Enable profiling exporter.
+
+```yaml
+observation:
+  profiles:
+    enable: true
+```
+
+#### server-endpoint
+
+Optional, Default="", Format="`http://<host>:<port>`"
+
+Address of the Grafana Pyroscope to send profiling to.
+
+```yaml
+observation:
+  profiles:
+    server-endpoint: ""
+```
+
+  </TabItem>
+  <TabItem value="local" label="Local FrameGraph">
+
+## Local FrameGraph
+
+To generate the FrameGraph locally, simply do not specify the `server-endpoint`:
+
+```yaml
+observation:
+  profiles:
+    enable: true
+    report-path: "/tmp"
+```
+
+### Configuration
+
+#### enable
+
+Required, Default="false"
+
+Enable profiling exporter.
+
+```yaml
+observation:
+  profiles:
+    enable: true
+```
+
+#### report-path
+
+Optional, Default="/tmp"
+
+Path to save flamegraph files.
+
+If a relative path is configured, it will be relative to current working directory; If an absolute path is configured, the absolute path is used.
+
+```yaml
+observation:
+  profiles:
+    report-path: "/tmp"
+```
+
+  </TabItem>
+</Tabs>
