@@ -3,6 +3,8 @@ use std::{cell::RefCell, net::SocketAddr, rc::Rc, sync::Arc};
 use config::Configuration;
 use local_sync::mpsc;
 use log::{info, trace, warn};
+use model::error::EsError;
+use protocol::rpc::header::ErrorCode;
 use tokio_uring::net::TcpStream;
 use transport::connection::Connection;
 
@@ -28,14 +30,20 @@ where
         addr: SocketAddr,
         range_manager: Rc<M>,
         connection_tracker: Rc<RefCell<ConnectionTracker>>,
-    ) -> Self {
-        let connection = Rc::new(Connection::new(stream, addr));
-        Self {
+    ) -> Result<Self, EsError> {
+        let stream = Connection::with_stream(stream, addr).map_err(|e| {
+            EsError::new(
+                ErrorCode::CONNECTION_BROKEN,
+                &format!("TcpStream is broken: {}", e),
+            )
+        })?;
+        let connection = Rc::new(stream);
+        Ok(Self {
             config,
             connection,
             range_manager,
             connection_tracker,
-        }
+        })
     }
 
     pub(crate) fn process(self) {

@@ -218,13 +218,20 @@ where
                         }
                     };
 
-                    let session = super::session::Session::new(
+                    let res = super::session::Session::new(
                         Arc::clone(&self.config.server_config),
                         stream, remote_addr,
                         Rc::clone(&self.range_manager),
                         Rc::clone(&self.connection_tracker)
-                       );
-                    session.process();
+                    );
+                    match res {
+                        Ok(session) => {
+                            session.process();
+                        }
+                        Err(_e) => {
+                            info!("Failed to process accepted connection from {}", remote_addr);
+                        }
+                    }
                 }
             }
         }

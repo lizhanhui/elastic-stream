@@ -142,9 +142,9 @@ pub async fn run_listener() -> u16 {
             info!("TestServer accepted a connection from {:?}", remote_addr);
             tokio_uring::spawn(async move {
                 let addr = remote_addr.to_string();
-                let channel = Connection::new(conn, remote_addr);
+                let connection = Connection::with_stream(conn, remote_addr).unwrap();
                 loop {
-                    if let Ok(frame) = channel.read_frame().await {
+                    if let Ok(frame) = connection.read_frame().await {
                         if let Some(frame) = frame {
                             info!(
                                 "TestServer is processing a `{}` request",
@@ -380,7 +380,7 @@ pub async fn run_listener() -> u16 {
                             }
 
                             let opcode = response_frame.operation_code;
-                            match channel.write_frame(response_frame).await {
+                            match connection.write_frame(response_frame).await {
                                 Ok(_) => {
                                     trace!(
                                         "TestServer writes the `{}` response back directly",

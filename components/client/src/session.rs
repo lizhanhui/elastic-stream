@@ -3,17 +3,13 @@ use crate::{
     heartbeat::HeartbeatData,
     request::{self, Request},
     response::{self, Response},
-    session_state::SessionState,
     NodeRole,
 };
 use codec::{error::FrameError, frame::Frame};
 use futures::Future;
-use protocol::rpc::header::{ClientRole, GoAwayFlags, OperationCode, RangeServerState};
-use tower::Service;
-use transport::{connection::Connection, connection_state::ConnectionState};
-
 use local_sync::oneshot;
 use log::{error, info, trace, warn};
+use protocol::rpc::header::{ClientRole, GoAwayFlags, OperationCode, RangeServerState};
 use std::{
     cell::{RefCell, UnsafeCell},
     collections::HashMap,
@@ -25,16 +21,17 @@ use std::{
     time::Instant,
 };
 use tokio::sync::broadcast::{self, error::RecvError};
-use tokio_uring::net::TcpStream;
+use tower::Service;
+use transport::{connection::Connection, connection_state::ConnectionState, ConnectionError};
 
 use crate::invocation_context::InvocationContext;
 
 pub(crate) struct Session {
     config: Arc<config::Configuration>,
 
-    // Unlike {tokio, monoio}::TcpStream where we need to split underlying TcpStream into two owned mutable,
+    // Unlike {tokio, monoio}::TcpStream where we need to split underlying TcpStream into two owned halves,
     // tokio_uring::TcpStream requires immutable references only to perform read/write.
-    pub(crate) connection: Rc<Connection>,
+    pub(crate) connection: Rc<UnsafeCell<Connection>>,
 
     /// In-flight requests.
     inflight_requests: Rc<UnsafeCell<HashMap<u32, InvocationContext>>>,
@@ -44,24 +41,18 @@ pub(crate) struct Session {
     /// Role of the peer node in its cluster.
     role: Rc<RefCell<NodeRole>>,
 
-    /// State of the current session.
-    ///
-    /// By default, it is `Active`. Once it received `GoAway` frame from peer server, will mark itself as
-    /// `GoAway`.
-    ///
-    /// Session at `GoAway` state should close itself as soon as possible.
-    state: Rc<RefCell<SessionState>>,
+    shutdown: broadcast::Sender<()>,
 }
 
 impl Session {
     /// Spawn a loop to continuously read responses and server-side requests.
     fn spawn_read_loop(
-        connection: Rc<Connection>,
+        connection: Rc<UnsafeCell<Connection>>,
         inflight_requests: Rc<UnsafeCell<HashMap<u32, InvocationContext>>>,
-        state: Rc<RefCell<SessionState>>,
         mut shutdown: broadcast::Receiver<()>,
     ) {
         tokio_uring::spawn(async move {
+            let connection = unsafe { &mut *connection.get() };
             trace!("Start read loop for session[{}]", connection);
             loop {
                 tokio::select! {
@@ -116,7 +107,7 @@ impl Session {
                                 if frame.is_response() {
                                     Session::handle_response(inflight, frame, connection.remote_addr());
                                 } else if frame.operation_code == OperationCode::GOAWAY {
-                                    *state.borrow_mut() = SessionState::GoAway;
+                                    connection.set_state(ConnectionState::GoingAway);
                                     let reason = if frame.has_go_away_flag(GoAwayFlags::SERVER_MAINTENANCE) {
                                         "server maintenance"
                                     } else {"connection being idle"};
@@ -154,21 +145,11 @@ impl Session {
 
     pub(crate) fn new(
         remote_addr: SocketAddr,
-        stream: TcpStream,
         config: &Arc<config::Configuration>,
         shutdown: broadcast::Sender<()>,
     ) -> Self {
-        let connection = Rc::new(Connection::new(stream, remote_addr));
+        let connection = Rc::new(UnsafeCell::new(Connection::new(remote_addr)));
         let inflight = Rc::new(UnsafeCell::new(HashMap::new()));
-
-        let state = Rc::new(RefCell::new(SessionState::Active));
-
-        Self::spawn_read_loop(
-            Rc::clone(&connection),
-            Rc::clone(&inflight),
-            Rc::clone(&state),
-            shutdown.subscribe(),
-        );
 
         Self {
             config: Arc::clone(config),
@@ -176,8 +157,63 @@ impl Session {
             inflight_requests: inflight,
             idle_since: Rc::new(RefCell::new(Instant::now())),
             role: Rc::new(RefCell::new(NodeRole::Unknown)),
-            state,
+            shutdown,
         }
+    }
+
+    fn connection(&self) -> &Connection {
+        unsafe { &*self.connection.get() }
+    }
+
+    #[allow(clippy::mut_from_ref)]
+    fn connection_mut(&self) -> &mut Connection {
+        unsafe { &mut *self.connection.get() }
+    }
+
+    /// Establish TCP connection with configured timeout
+    pub(crate) async fn connect(&self) -> Result<(), ClientError> {
+        match self.connection().state() {
+            ConnectionState::Active | ConnectionState::Connecting | ConnectionState::GoingAway => {
+                return Ok(());
+            }
+            ConnectionState::Unspecified => {
+                trace!(
+                    "Establish TCP connection to {}",
+                    self.connection().remote_addr()
+                );
+            }
+
+            ConnectionState::Closed => {
+                info!(
+                    "Re-connect TCP connection to {} as it has been closed",
+                    self.connection().remote_addr()
+                );
+            }
+        }
+
+        self.connection_mut()
+            .connect(self.config.client_connect_timeout())
+            .await
+            .map_err(|e| match e {
+                // I/O error
+                ConnectionError::Network(e) => ClientError::ConnectFailure(e.to_string()),
+                // Timeout error
+                ConnectionError::Timeout { target, elapsed } => ClientError::ConnectTimeout(
+                    format!("Connecting {} timed out, elapsing {}", target, elapsed),
+                ),
+                // Not reachable!
+                ConnectionError::NotConnected | ConnectionError::EncodeFrame(_) => {
+                    ClientError::ClientInternal
+                }
+            })?;
+
+        Self::spawn_read_loop(
+            Rc::clone(&self.connection),
+            Rc::clone(&self.inflight_requests),
+            self.shutdown.subscribe(),
+        );
+
+        Ok(())
     }
 
     pub(crate) async fn write(
@@ -185,7 +221,7 @@ impl Session {
         request: request::Request,
         response_observer: oneshot::Sender<response::Response>,
     ) -> Result<(), InvocationContext> {
-        trace!("Sending {} to {}", request, self.connection);
+        trace!("Sending {} to {}", request, self.connection());
 
         // Update last read/write instant.
         *self.idle_since.borrow_mut() = Instant::now();
@@ -270,7 +306,7 @@ impl Session {
 
         let inflight_requests = unsafe { &mut *self.inflight_requests.get() };
         let context = InvocationContext::new(
-            self.connection.remote_addr(),
+            self.connection().remote_addr(),
             request.clone(),
             response_observer,
         );
@@ -279,19 +315,19 @@ impl Session {
         // Write frame to network
         let stream_id = frame.stream_id;
         let opcode = frame.operation_code;
-        match self.connection.write_frame(frame).await {
+        match self.connection().write_frame(frame).await {
             Ok(_) => {
                 trace!(
                     "Write request[opcode={}] bounded for {} using stream-id={} to socket buffer",
                     opcode.variant_name().unwrap_or("INVALID_OPCODE"),
-                    self.connection.remote_addr(),
+                    self.connection().remote_addr(),
                     stream_id,
                 );
             }
             Err(e) => {
                 error!(
                     "Failed to write request[opcode={}] bounded for {} to socket buffer. Cause: {:?}",
-                    opcode.variant_name().unwrap_or("INVALID_OPCODE"), self.connection.remote_addr(), e
+                    opcode.variant_name().unwrap_or("INVALID_OPCODE"), self.connection().remote_addr(), e
                 );
                 if let Some(ctx) = inflight_requests.remove(&stream_id) {
                     return Err(ctx);
@@ -330,12 +366,12 @@ impl Session {
         frame.header = Some((&request).into());
         let stream_id = frame.stream_id;
         let opcode = frame.operation_code;
-        match self.connection.write_frame(frame).await {
+        match self.connection().write_frame(frame).await {
             Ok(_) => {
                 trace!(
                     "Write request[opcode={}] bounded for {} using stream-id={} to socket buffer",
                     opcode.variant_name().unwrap_or("INVALID_OPCODE"),
-                    self.connection.remote_addr(),
+                    self.connection().remote_addr(),
                     stream_id,
                 );
                 *self.idle_since.borrow_mut() = Instant::now();
@@ -343,7 +379,7 @@ impl Session {
             Err(e) => {
                 error!(
                     "Failed to write request[opcode={}] bounded for {} to socket buffer. Cause: {:?}",
-                    opcode.variant_name().unwrap_or("INVALID_OPCODE"), self.connection.remote_addr(), e
+                    opcode.variant_name().unwrap_or("INVALID_OPCODE"), self.connection().remote_addr(), e
                 );
             }
         }
@@ -358,7 +394,7 @@ impl Session {
         if current != state {
             info!(
                 "Node-state of {} is changed: {:?} --> {:?}",
-                self.connection.remote_addr(),
+                self.connection().remote_addr(),
                 current,
                 state
             );
@@ -366,17 +402,21 @@ impl Session {
         }
     }
 
+    /// Flag whether the underlying TCP connection is going to shutdown in the near future.
     pub fn going_away(&self) -> bool {
-        *self.state.borrow() == SessionState::GoAway
+        self.connection().state() == ConnectionState::GoingAway
     }
 
+    /// Return true if there is an active TCP connection or is currently connecting.
+    ///
+    /// In either case, client may go ahead and write requests.
     pub fn active(&self) -> bool {
-        match self.connection.state() {
-            ConnectionState::Active => {}
-            ConnectionState::Closed => return false,
+        match self.connection().state() {
+            ConnectionState::Active | ConnectionState::Connecting | ConnectionState::GoingAway => {
+                true
+            }
+            ConnectionState::Closed | ConnectionState::Unspecified => false,
         }
-
-        return *self.state.borrow() == SessionState::Active;
     }
 
     fn handle_response(
@@ -517,14 +557,14 @@ impl Clone for Session {
             inflight_requests: Rc::clone(&self.inflight_requests),
             idle_since: Rc::clone(&self.idle_since),
             role: Rc::clone(&self.role),
-            state: Rc::clone(&self.state),
+            shutdown: self.shutdown.clone(),
         }
     }
 }
 
 impl Display for Session {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.connection.fmt(f)
+        self.connection().fmt(f)
     }
 }
 
@@ -572,11 +612,10 @@ mod tests {
         tokio_uring::start(async {
             let port = run_listener().await;
             let target = format!("127.0.0.1:{}", port);
-            let stream = TcpStream::connect(target.parse()?).await?;
             let config = Arc::new(config::Configuration::default());
             let (tx, _rx) = broadcast::channel(1);
-            let _session = Session::new(target.parse()?, stream, &config, tx);
-
+            let session = Session::new(target.parse()?, &config, tx);
+            session.connect().await?;
             Ok(())
         })
     }
@@ -588,10 +627,10 @@ mod tests {
         tokio_uring::start(async {
             let port = run_listener().await;
             let target = format!("127.0.0.1:{}", port);
-            let stream = TcpStream::connect(target.parse()?).await?;
             let config = Arc::new(config::Configuration::default());
             let (tx, _rx) = broadcast::channel(1);
-            let session = Session::new(target.parse()?, stream, &config, tx.clone());
+            let session = Session::new(target.parse()?, &config, tx.clone());
+            session.connect().await?;
             let mut timeout_session = Timeout::new(session, Duration::from_secs(1));
             let req = crate::request::Request {
                 timeout: Duration::from_secs(1),
@@ -649,10 +688,10 @@ mod tests {
         tokio_uring::start(async {
             let port = run_listener().await;
             let target = format!("127.0.0.1:{}", port);
-            let stream = TcpStream::connect(target.parse()?).await?;
             let config = Arc::new(config::Configuration::default());
             let (tx, _rx) = broadcast::channel(1);
-            let session = Session::new(target.parse()?, stream, &config, tx.clone());
+            let session = Session::new(target.parse()?, &config, tx.clone());
+            session.connect().await?;
             let timeout_session = Timeout::new(session, Duration::from_secs(1));
             let req = crate::request::Request {
                 timeout: Duration::from_secs(1),

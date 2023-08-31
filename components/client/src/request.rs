@@ -52,11 +52,11 @@ pub enum Headers {
         host: String,
     },
 
-    DescribePlacementDriver {},
-
     CreateRange {
         range: RangeMetadata,
     },
+
+    DescribePlacementDriver,
 
     SealRange {
         kind: SealKind,
@@ -185,12 +185,6 @@ impl From<&Request> for Bytes {
             Headers::AllocateId { host } => {
                 let mut request = IdAllocationRequestT::default();
                 request.host = host.clone();
-                let request = request.pack(&mut builder);
-                builder.finish(request, None);
-            }
-
-            Headers::DescribePlacementDriver {} => {
-                let request = DescribePlacementDriverClusterRequestT::default();
                 let request = request.pack(&mut builder);
                 builder.finish(request, None);
             }
@@ -359,6 +353,13 @@ impl From<&Request> for Bytes {
                 request.timeout_ms = req.timeout.as_millis() as i32;
                 request.stream_id = stream_id.to_owned() as i64;
                 request.epoch = epoch.to_owned() as i64;
+                let request = request.pack(&mut builder);
+                builder.finish(request, None);
+            }
+
+            Headers::DescribePlacementDriver => {
+                let mut request = DescribePlacementDriverClusterRequestT::default();
+                request.timeout_ms = req.timeout.as_millis() as i32;
                 let request = request.pack(&mut builder);
                 builder.finish(request, None);
             }

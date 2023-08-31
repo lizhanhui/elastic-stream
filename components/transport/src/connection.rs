@@ -4,10 +4,15 @@ use crate::WriteTask;
 use bytes::{Buf, BytesMut};
 use codec::error::FrameError;
 use codec::frame::Frame;
-use local_sync::{mpsc, oneshot};
+use local_sync::{
+    mpsc::unbounded::{self, Rx, Tx},
+    oneshot,
+};
+use log::debug;
 use log::{error, info, trace, warn};
 use std::cell::RefCell;
 use std::cell::UnsafeCell;
+use std::collections::VecDeque;
 use std::fmt::Display;
 use std::fmt::Formatter;
 use std::io::Cursor;
@@ -17,18 +22,14 @@ use std::os::fd::AsRawFd;
 use std::os::fd::FromRawFd;
 use std::os::fd::IntoRawFd;
 use std::rc::Rc;
+use std::time::Duration;
 use tokio_uring::net::TcpStream;
 
 const BUFFER_SIZE: usize = 4 * 1024;
 
 pub struct Connection {
     /// Underlying TCP stream.
-    stream: Rc<TcpStream>,
-
-    state: Rc<RefCell<ConnectionState>>,
-
-    /// Read buffer for this connection.
-    buffer: UnsafeCell<BytesMut>,
+    stream: Option<Rc<TcpStream>>,
 
     /// Local socket address
     local_addr: Option<SocketAddr>,
@@ -36,21 +37,29 @@ pub struct Connection {
     /// Peer socket address
     remote_addr: SocketAddr,
 
+    /// Connection state
+    state: Rc<RefCell<ConnectionState>>,
+
+    /// Read buffer for this connection.
+    buffer: UnsafeCell<BytesMut>,
+
     /// Write buffer for this connection.
     ///
-    /// Writes from concurrent coroutines are serialized by this MPSC channel.
-    tx: mpsc::unbounded::Tx<WriteTask>,
+    /// Writes from concurrent coroutines are linearized by this MPSC channel.
+    tx: RefCell<Option<Tx<WriteTask>>>,
+
+    /// Pending writes that arrives during establishing of a TCP connection.
+    tasks: UnsafeCell<VecDeque<WriteTask>>,
 }
 
 impl Connection {
-    pub fn new(stream: TcpStream, remote_addr: SocketAddr) -> Self {
-        let local_addr = Self::local_addr_of(&stream);
-        let stream = Rc::new(stream);
-        let (tx, mut rx) = mpsc::unbounded::channel::<WriteTask>();
-        let write_stream = Rc::clone(&stream);
-        let state = Rc::new(RefCell::new(ConnectionState::Active));
-
-        let connection_state = Rc::clone(&state);
+    fn spawn_write_loop(
+        stream: Rc<TcpStream>,
+        mut rx: Rx<WriteTask>,
+        connection_state: Rc<RefCell<ConnectionState>>,
+        local_addr: SocketAddr,
+        remote_addr: SocketAddr,
+    ) {
         tokio_uring::spawn(async move {
             trace!("Start write coroutine loop for {remote_addr}");
             loop {
@@ -62,19 +71,23 @@ impl Connection {
 
                         );
 
-                        if let Err(e) = Self::write(&write_stream, &task.frame, remote_addr).await {
+                        if let Err(e) = Self::write(&stream, &task.frame, remote_addr).await {
                             match e {
                                 ConnectionError::EncodeFrame(e) => {
-                                    error!("Failed to encode frame: {}", e.to_string());
+                                    error!("Failed to encode frame: {}", e);
                                     let _ =
                                         task.observer.send(Err(ConnectionError::EncodeFrame(e)));
                                 }
 
                                 ConnectionError::Network(e) => {
-                                    error!("Failed to write frame to network due to {}, closing underlying TcpStream", e.to_string());
+                                    error!("Failed to write frame to network due to {}, closing underlying TcpStream", e);
                                     *connection_state.borrow_mut() = ConnectionState::Closed;
-                                    let _ = write_stream.shutdown(Shutdown::Both);
+                                    let _ = stream.shutdown(Shutdown::Both);
                                     break;
+                                }
+
+                                ConnectionError::NotConnected | ConnectionError::Timeout { .. } => {
+                                    unreachable!("Should not reach here");
                                 }
                             }
                         } else {
@@ -82,27 +95,138 @@ impl Connection {
                         }
                     }
                     None => {
-                        log::info!(
-                            "Connection {} --> {remote_addr} should be closed, stop write coroutine loop",
-                            match local_addr {
-                                Some(addr) => addr.to_string(),
-                                None => "127.0.0.1:0".to_owned()
-                            }
+                        info!(
+                            "Connection {local_addr} --> {remote_addr} should be closed, stop write coroutine loop"
                         );
                         break;
                     }
                 }
             }
         });
+    }
 
+    pub fn new(remote_addr: SocketAddr) -> Self {
         Self {
-            stream,
-            state,
+            remote_addr,
+            stream: None,
+            local_addr: None,
+            state: Rc::new(RefCell::new(ConnectionState::Unspecified)),
             buffer: UnsafeCell::new(BytesMut::with_capacity(BUFFER_SIZE)),
+            tx: RefCell::new(None),
+            tasks: UnsafeCell::new(VecDeque::new()),
+        }
+    }
+
+    /// Create connection with an established `TcpStream`.
+    pub fn with_stream(
+        stream: TcpStream,
+        remote_addr: SocketAddr,
+    ) -> Result<Self, ConnectionError> {
+        let local_addr = Self::local_addr_of(&stream).map_err(|e| {
+            error!(
+                "Failed to acquire local address from the given TcpStream: {:?}",
+                e
+            );
+            ConnectionError::Network(e)
+        })?;
+
+        let (tx, rx) = unbounded::channel();
+        let stream = Rc::new(stream);
+        let state = Rc::new(RefCell::new(ConnectionState::Active));
+        Self::spawn_write_loop(
+            Rc::clone(&stream),
+            rx,
+            Rc::clone(&state),
             local_addr,
             remote_addr,
-            tx,
+        );
+
+        Ok(Self {
+            remote_addr,
+            stream: Some(stream),
+            local_addr: Some(local_addr),
+            state,
+            buffer: UnsafeCell::new(BytesMut::with_capacity(BUFFER_SIZE)),
+            tx: RefCell::new(Some(tx)),
+            tasks: UnsafeCell::new(VecDeque::new()),
+        })
+    }
+
+    pub async fn connect(&mut self, timeout: Duration) -> Result<(), ConnectionError> {
+        *self.state.borrow_mut() = ConnectionState::Connecting;
+
+        // Clean all buffered `WriteTask`s after completion of establishing connection
+        let _drain = BufferedTaskDrain {
+            tasks: unsafe { &mut *self.tasks.get() },
+        };
+        let connect = TcpStream::connect(self.remote_addr);
+        let connect = tokio::time::timeout(timeout, connect);
+        let stream = match connect.await {
+            Ok(res) => match res {
+                Ok(stream) => {
+                    debug!("Connection to {} established", self.remote_addr);
+                    stream
+                }
+                Err(e) => {
+                    *self.state.borrow_mut() = ConnectionState::Closed;
+                    error!("Failed to connect to {}: {:?}", self.remote_addr, e);
+                    return Err(ConnectionError::Network(e));
+                }
+            },
+            Err(elapsed) => {
+                *self.state.borrow_mut() = ConnectionState::Closed;
+                error!(
+                    "Failed to connect to {} due to timeout, elapsed {elapsed}",
+                    self.remote_addr
+                );
+                return Err(ConnectionError::Timeout {
+                    target: self.remote_addr,
+                    elapsed,
+                });
+            }
+        };
+
+        let local_addr = Self::local_addr_of(&stream).map_err(|e| {
+            error!(
+                "Failed to acquire local address of an established connection: {:?}",
+                e
+            );
+            let _ = stream.shutdown(Shutdown::Both);
+            *self.state.borrow_mut() = ConnectionState::Closed;
+            ConnectionError::Network(e)
+        })?;
+
+        stream.set_nodelay(true).map_err(|e| {
+            error!("Failed to disable TCP Nagle's algorithm");
+            ConnectionError::Network(e)
+        })?;
+
+        let stream = Rc::new(stream);
+
+        let (tx, rx) = unbounded::channel();
+
+        *self.state.borrow_mut() = ConnectionState::Active;
+        self.local_addr = Some(local_addr);
+
+        // While this coroutine is establishing TCP connection, other coroutine tasks
+        // may have queued up some pending requests.
+        // Now that we got a connection, it's time to write and flush them to network.
+        let tasks = unsafe { &mut *self.tasks.get() };
+        while let Some(task) = tasks.pop_front() {
+            let _ = tx.send(task);
         }
+        self.tx = RefCell::new(Some(tx));
+
+        Self::spawn_write_loop(
+            Rc::clone(&stream),
+            rx,
+            Rc::clone(&self.state),
+            local_addr,
+            self.remote_addr,
+        );
+        self.stream = Some(stream);
+
+        Ok(())
     }
 
     async fn write(
@@ -217,7 +341,12 @@ impl Connection {
             // of stream".
             let len = buffer.len();
             let buf = buffer.split_off(len);
-            let (res, buf) = self.stream.read(buf).await;
+            let (res, buf) = match &self.stream {
+                Some(stream) => stream.read(buf).await,
+                None => {
+                    return Err(FrameError::ConnectionReset);
+                }
+            };
             buffer.unsplit(buf);
 
             let read = match res {
@@ -321,12 +450,27 @@ impl Connection {
             observer: tx,
         };
 
-        self.tx.send(task).map_err(|_e| {
-            warn!(
-                "Failed to send frame to connection's internal MPSC channel. TcpStream has been closed",
-            );
-            ConnectionError::Network(std::io::Error::new(std::io::ErrorKind::BrokenPipe, "Connection MPSC channel closed"))
-        })?;
+        match *self.tx.borrow() {
+            Some(ref sq) => {
+                sq.send(task).map_err(|_e| {
+                    warn!(
+                        "Failed to send frame to connection's internal MPSC channel. TcpStream has been closed",
+                    );
+                    ConnectionError::Network(std::io::Error::new(std::io::ErrorKind::BrokenPipe, "Connection MPSC channel closed"))
+                })?;
+            }
+
+            None => {
+                if self.state() == ConnectionState::Connecting {
+                    // Another coroutine task is establishing a connection, put current write request into
+                    // write buffer.
+                    let tasks = unsafe { &mut *self.tasks.get() };
+                    tasks.push_back(task);
+                } else {
+                    return Err(ConnectionError::NotConnected);
+                }
+            }
+        }
 
         rx.await.map_err(|_e| {
             ConnectionError::Network(std::io::Error::new(
@@ -339,30 +483,40 @@ impl Connection {
     pub fn close(&self) -> std::io::Result<()> {
         if ConnectionState::Active == *self.state.borrow() {
             *self.state.borrow_mut() = ConnectionState::Closed;
-            self.stream.shutdown(Shutdown::Both)
-        } else {
-            Ok(())
+
+            // Drop tx, therefore, close the write coroutine loop task.
+            self.tx.borrow_mut().take();
+
+            if let Some(ref stream) = self.stream {
+                return stream.shutdown(Shutdown::Both);
+            }
         }
+        Ok(())
     }
 
     pub fn state(&self) -> ConnectionState {
         *self.state.borrow()
     }
 
-    pub fn local_addr_of(stream: &TcpStream) -> Option<SocketAddr> {
+    /// Expose this method, allowing upper layer to flag this connection as going away.
+    pub fn set_state(&self, state: ConnectionState) {
+        *self.state.borrow_mut() = state;
+    }
+
+    pub fn local_addr_of(stream: &TcpStream) -> std::io::Result<SocketAddr> {
         let fd = stream.as_raw_fd();
         let std_tcp_stream = unsafe { std::net::TcpStream::from_raw_fd(fd) };
         let local_addr = std_tcp_stream.local_addr();
         let _ = std_tcp_stream.into_raw_fd();
-        local_addr.ok()
+        local_addr
     }
 
-    pub fn peer_addr_of(stream: &TcpStream) -> Option<SocketAddr> {
+    pub fn peer_addr_of(stream: &TcpStream) -> std::io::Result<SocketAddr> {
         let fd = stream.as_raw_fd();
         let std_tcp_stream = unsafe { std::net::TcpStream::from_raw_fd(fd) };
         let peer_addr = std_tcp_stream.peer_addr();
         let _ = std_tcp_stream.into_raw_fd();
-        peer_addr.ok()
+        peer_addr
     }
 }
 
@@ -386,9 +540,20 @@ impl Drop for Connection {
     }
 }
 
+/// `RAII` for buffered write tasks during connection in progress
+struct BufferedTaskDrain<'a> {
+    tasks: &'a mut VecDeque<WriteTask>,
+}
+
+impl<'a> Drop for BufferedTaskDrain<'a> {
+    fn drop(&mut self) {
+        self.tasks.clear();
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use std::{error::Error, thread::JoinHandle};
+    use std::{error::Error, thread::JoinHandle, time::Duration};
 
     use bytes::{Buf, BufMut, BytesMut};
     use protocol::rpc::header::OperationCode;
@@ -474,11 +639,10 @@ mod tests {
             let address = format!("127.0.0.1:{}", port);
             {
                 let remote_addr = address.parse().unwrap();
-                let tcp_stream = tokio_uring::net::TcpStream::connect(remote_addr)
-                    .await
-                    .unwrap();
-                tcp_stream.set_nodelay(true).unwrap();
-                let connection = super::Connection::new(tcp_stream, remote_addr);
+
+                let mut connection = super::Connection::new(remote_addr);
+                connection.connect(Duration::from_secs(3)).await.unwrap();
+
                 let mut frame = codec::frame::Frame::new(OperationCode::ALLOCATE_ID);
                 let mut payload = vec![];
                 (0..8).for_each(|_| {

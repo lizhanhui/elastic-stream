@@ -1,13 +1,14 @@
 use super::{lb_policy::LbPolicy, session::Session};
+use crate::naming::Naming;
 use crate::{
     heartbeat::HeartbeatData, invocation_context::InvocationContext, request::Request,
     response::Response,
 };
+use crate::{request, response, NodeRole};
 use bytes::Bytes;
 use config::Configuration;
-use itertools::Itertools;
 use local_sync::oneshot;
-use log::{debug, error, info, trace, warn};
+use log::{debug, error, trace, warn};
 use model::{
     error::EsError,
     object::ObjectMetadata,
@@ -30,30 +31,23 @@ use protocol::rpc::header::{
     ErrorCode, PlacementDriverCluster, RangeServerState, ResourceType, StreamT,
 };
 use protocol::rpc::header::{OperationCode, SealKind};
-use rustc_hash::FxHashSet;
+use rustc_hash::FxHashMap;
+use std::fmt::Display;
 use std::{
     cell::RefCell,
-    collections::HashMap,
-    io::ErrorKind,
     net::{SocketAddr, ToSocketAddrs},
     rc::Rc,
     sync::Arc,
     time::{Duration, Instant},
 };
-use tokio::{
-    sync::broadcast,
-    time::{self, timeout},
-};
-use tokio_uring::net::TcpStream;
-
-use crate::{request, response, NodeRole};
+use tokio::sync::broadcast;
+use tokio::time;
 
 pub(crate) struct CompositeSession {
     target: String,
     config: Arc<Configuration>,
     lb_policy: LbPolicy,
-    endpoints: RefCell<FxHashSet<SocketAddr>>,
-    sessions: Rc<RefCell<HashMap<SocketAddr, Session>>>,
+    sessions: Rc<RefCell<FxHashMap<SocketAddr, Session>>>,
     shutdown: broadcast::Sender<()>,
     refresh_cluster_instant: RefCell<Instant>,
 }
@@ -66,32 +60,41 @@ impl CompositeSession {
         shutdown: broadcast::Sender<()>,
     ) -> Result<Self, EsError>
     where
-        T: ToSocketAddrs + ToString,
+        T: ToSocketAddrs + Display,
     {
-        let endpoints = RefCell::new(FxHashSet::default());
-        let sessions = Rc::new(RefCell::new(HashMap::new()));
-        // For now, we just resolve one session out of the target.
-        // In the future, we would support multiple internal connection and load balancing among them.
-        for socket_addr in target
-            .to_socket_addrs()
-            .map_err(|e| EsError::new(ErrorCode::BAD_ADDRESS, &format!("bad address, {}", e)))?
-        {
-            let res = Self::connect(
-                socket_addr,
-                config.client_connect_timeout(),
-                Arc::clone(&config),
-                shutdown.clone(),
+        let sessions = Rc::new(RefCell::new(FxHashMap::default()));
+
+        let addrs = target.to_socket_addrs().map_err(|e| {
+            EsError::new(
+                ErrorCode::BAD_ADDRESS,
+                &format!("Failed to resolve {}: {:?}", target, e),
             )
-            .await;
-            match res {
-                Ok(session) => {
-                    endpoints.borrow_mut().insert(socket_addr);
-                    sessions.borrow_mut().insert(socket_addr, session);
-                    info!("Connection to {} established", target.to_string());
-                    break;
+        })?;
+
+        match lb_policy {
+            LbPolicy::LeaderOnly => {
+                for addr in addrs {
+                    let session = Session::new(addr, &config, shutdown.clone());
+                    if let Err(e) = session.connect().await {
+                        warn!("Failed to connect to {}: {}", addr, e);
+                        continue;
+                    }
+
+                    if Self::refresh_pd_cluster(&session, &config, &sessions, shutdown.clone())
+                        .await
+                    {
+                        break;
+                    }
                 }
-                Err(_e) => {
-                    info!("Failed to connect to {}", socket_addr);
+
+                if sessions.borrow().is_empty() {
+                    error!("Failed to describe placement driver cluster. No session is created");
+                }
+            }
+            LbPolicy::PickFirst => {
+                for addr in addrs {
+                    let session = Session::new(addr, &config, shutdown.clone());
+                    sessions.borrow_mut().insert(addr, session);
                 }
             }
         }
@@ -100,11 +103,79 @@ impl CompositeSession {
             target: target.to_string(),
             config,
             lb_policy,
-            endpoints,
             sessions,
             shutdown,
             refresh_cluster_instant: RefCell::new(Instant::now()),
         })
+    }
+
+    async fn refresh_pd_cluster(
+        session: &Session,
+        config: &Arc<Configuration>,
+        sessions: &Rc<RefCell<FxHashMap<SocketAddr, Session>>>,
+        shutdown: broadcast::Sender<()>,
+    ) -> bool {
+        match Self::describe_pd_cluster0(session, config).await {
+            Ok(res) => match res {
+                Some(nodes) => {
+                    debug_assert!(!nodes.is_empty());
+                    let mut found = FxHashMap::default();
+                    for node in nodes {
+                        trace!("Resolve socket address for placement driver node advertise address: {}", node.advertise_addr);
+                        let resolved = node.advertise_addr.to_socket_addrs();
+                        match resolved {
+                            Ok(socket_addrs) => {
+                                for addr in socket_addrs {
+                                    found.insert(addr, node.leader);
+                                }
+                            }
+                            Err(e) => {
+                                error!(
+                                    "Failed to resolve PD advertise address {}: {:?}",
+                                    node.advertise_addr, e
+                                );
+                            }
+                        }
+                    }
+
+                    // Remove sessions that are not member of placement member cluster any more.
+                    sessions.borrow_mut().retain(|k, _v| found.contains_key(k));
+
+                    // Update PD node role
+                    for (addr, session) in sessions.borrow_mut().iter_mut() {
+                        if let Some(leader) = found.get(addr) {
+                            let role = if *leader {
+                                NodeRole::Leader
+                            } else {
+                                NodeRole::Follower
+                            };
+                            session.set_role(role);
+                        }
+                    }
+
+                    // Add new PD nodes
+                    found.retain(|k, _v| !sessions.borrow().contains_key(k));
+                    for (addr, leader) in found {
+                        let session = Session::new(addr, config, shutdown.clone());
+                        let role = if leader {
+                            NodeRole::Leader
+                        } else {
+                            NodeRole::Follower
+                        };
+                        session.set_role(role);
+                        sessions.borrow_mut().insert(addr, session);
+                    }
+                    return true;
+                }
+                None => {
+                    error!("Invalid describe cluster response from {session}");
+                }
+            },
+            Err(_e) => {
+                error!("Failed to describe placement driver cluster from {session}")
+            }
+        }
+        false
     }
 
     /// Check if we need to refresh placement driver cluster topology and leadership.
@@ -135,7 +206,7 @@ impl CompositeSession {
     ///
     /// # Parameter
     /// `nodes` - Placement driver nodes description from `DescribePlacementDriverClusterResponse`.
-    fn refresh_leadership(&self, nodes: &[PlacementDriverNode]) {
+    fn update_leadership(&self, nodes: &[PlacementDriverNode]) {
         debug!("Refresh placement driver cluster leadership");
         // Sync leader/follower state
         for node in nodes.iter() {
@@ -150,117 +221,147 @@ impl CompositeSession {
                         .iter()
                         .find(|&entry| *entry.0 == addr)
                     {
-                        session.set_role(if node.leader {
+                        let role = if node.leader {
                             NodeRole::Leader
                         } else {
                             NodeRole::Follower
-                        })
+                        };
+                        session.set_role(role);
                     }
                 });
         }
     }
 
-    async fn refresh_sessions(&self, nodes: &Vec<PlacementDriverNode>) {
-        if nodes.is_empty() {
-            trace!("Placement Driver Cluster is empty, no need to refresh sessions");
-            return;
-        }
-
-        // Update last-refresh-cluster-instant.
-        *self.refresh_cluster_instant.borrow_mut() = Instant::now();
-
-        let mut addrs = nodes
+    /// Describe current placement driver cluster membership.
+    ///
+    /// There are multiple rationales for this RPC.
+    /// 1. Placement driver is built on top of RAFT consensus algorithm and election happens in case of leader outage.
+    ///    Some RPCs should be steered to the leader node and need to refresh the leadership on failure;
+    /// 2. Heartbeat, metrics-reporting requests should be broadcasted to all placement driver nodes, so that when
+    ///    leader changes, range-server liveness and load evaluation are not impacted.
+    ///
+    /// # Implementation walkthrough
+    /// Step 1: If placement driver access URL uses domain name, resolve it;
+    ///  1.1 If the result `SocketAddress` has an existing `Session`, re-use it and go to step 2;
+    ///  1.2 If the result `SocketAddress` is completely new, connect and build a new `Session`
+    /// Step 2: Send DescribePlacementDriverRequest to the `Session` discovered in step 1;
+    /// Step 3: Once response is received from placement driver server, update the aggregated `Session` table,
+    ///         including leadership.
+    pub(crate) async fn refresh_placement_driver_cluster(&self) -> Result<(), EsError> {
+        let sessions = self
+            .sessions
+            .borrow()
             .iter()
-            .flat_map(|node| node.advertise_addr.to_socket_addrs().into_iter())
-            .flatten()
-            .filter(|socket_addr| socket_addr.is_ipv4())
-            .dedup()
+            .map(|(_addr, session)| session.clone())
             .collect::<Vec<_>>();
-
-        // Remove sessions that are no longer valid
-        self.sessions
-        .borrow_mut()
-        .extract_if(|k, _v| !addrs.contains(k))
-        .for_each(|(k, session)| {
-            let _ = session.connection.close();
-            self.endpoints.borrow_mut().retain(|e| {
-                e != &k
-            });
-            info!("Session to {} will be disconnected because latest Placement Driver Cluster does not contain it any more", k);
-        });
-
-        addrs.retain(|addr| !self.sessions.borrow().contains_key(addr));
-
-        addrs.iter().for_each(|addr| {
-            trace!(
-                "Create a new session for new Placement Driver Cluster member: {}",
-                addr
-            );
-        });
-
-        let futures = addrs.into_iter().map(|addr| {
-            Self::connect(
-                addr,
-                self.config.client_connect_timeout(),
-                Arc::clone(&self.config),
+        let mut successful = false;
+        for session in sessions {
+            if Self::refresh_pd_cluster(
+                &session,
+                &self.config,
+                &self.sessions,
                 self.shutdown.clone(),
             )
-        });
+            .await
+            {
+                successful = true;
+                break;
+            }
+        }
 
-        let res: Vec<Result<Session, EsError>> = futures::future::join_all(futures).await;
-        for item in res {
-            match item {
-                Ok(session) => {
-                    info!("Add a session to composite-session {}", session);
-                    self.endpoints
-                        .borrow_mut()
-                        .insert(session.connection.remote_addr());
-                    self.sessions
-                        .borrow_mut()
-                        .insert(session.connection.remote_addr(), session);
+        // All connections to known PD nodes become unusable, try to resolve from configured PD advertise address.
+        if !successful {
+            let iter = Naming::new(&self.target).to_socket_addrs().map_err(|e| {
+                error!("Failed to resolve PD cluster advertise addresses: {}", e);
+                EsError::new(ErrorCode::BAD_ADDRESS, "Invalid PD advertise address")
+            })?;
+            for addr in iter {
+                let session = Session::new(addr, &self.config, self.shutdown.clone());
+                if let Err(e) = session.connect().await {
+                    error!("Failed to connect {}: {}", addr, e);
+                    continue;
                 }
-                Err(e) => {
-                    error!("Failed to connect. {:?}", e);
+                if Self::refresh_pd_cluster(
+                    &session,
+                    &self.config,
+                    &self.sessions,
+                    self.shutdown.clone(),
+                )
+                .await
+                {
+                    break;
                 }
             }
         }
-        self.refresh_leadership(nodes);
-    }
-
-    pub(crate) async fn refresh_placement_driver_cluster(&self) -> Result<(), EsError> {
-        match self.describe_placement_driver_cluster().await? {
-            Some(nodes) => {
-                self.refresh_sessions(&nodes).await;
-                Ok(())
-            }
-            None => {
-                warn!("Placement driver returns an unexpected empty cluster. Skip refreshing sessions");
-                Err(EsError::new(ErrorCode::UNEXPECTED, "Empty cluster"))
-            }
-        }
+        Ok(())
     }
 
     async fn pick_session(&self, lb_policy: LbPolicy) -> Option<Session> {
         match lb_policy {
             LbPolicy::LeaderOnly => {
                 match self.pick_leader_session() {
-                    Some(session) => Some(session),
+                    Some(session) => {
+                        if session.connect().await.is_err() {
+                            if self.refresh_placement_driver_cluster().await.is_ok() {
+                                return self.pick_leader_session();
+                            }
+                            return None;
+                        }
+                        Some(session)
+                    }
                     None => {
                         trace!("No leader session found, try to describe placement driver cluster again");
                         if self.refresh_placement_driver_cluster().await.is_ok() {
-                            return self.pick_leader_session();
+                            match self.pick_leader_session() {
+                                Some(session) => {
+                                    if session.connect().await.is_err() {
+                                        return None;
+                                    } else {
+                                        return Some(session);
+                                    }
+                                }
+                                None => {
+                                    return None;
+                                }
+                            }
                         }
                         None
                     }
                 }
             }
-            LbPolicy::PickFirst => self
-                .sessions
-                .borrow()
-                .iter()
-                .map(|(_, session)| session.clone())
-                .next(),
+            LbPolicy::PickFirst => {
+                // Pick the first session that is active
+                let session = self.pick_active_session();
+                if session.is_none() {
+                    let sessions = self
+                        .sessions
+                        .borrow()
+                        .iter()
+                        .map(|(addr, session)| (*addr, session.clone()))
+                        .collect::<FxHashMap<_, _>>();
+                    for (addr, session) in sessions.into_iter() {
+                        match session.connect().await {
+                            Ok(()) => {
+                                return Some(session);
+                            }
+                            Err(e) => {
+                                warn!("Failed to connect to {addr}: {e}");
+                            }
+                        }
+                    }
+                }
+                session
+            }
         }
+    }
+
+    fn pick_active_session(&self) -> Option<Session> {
+        self.sessions
+            .borrow()
+            .iter()
+            .filter(|(_, session)| session.active())
+            .map(|(_, session)| session.clone())
+            .next()
     }
 
     fn pick_leader_session(&self) -> Option<Session> {
@@ -268,11 +369,7 @@ impl CompositeSession {
             .borrow()
             .iter()
             .filter(|&(_, session)| {
-                trace!(
-                    "State of session to {} is {:?}",
-                    session.connection.remote_addr(),
-                    session.role()
-                );
+                trace!("State of session to {} is {:?}", session, session.role());
                 session.role() == NodeRole::Leader
             })
             .map(|(_, session)| session.clone())
@@ -281,8 +378,6 @@ impl CompositeSession {
 
     /// Broadcast heartbeat requests to all nested sessions.
     pub(crate) async fn heartbeat(&self, data: &HeartbeatData) {
-        self.try_reconnect().await;
-
         if self.need_refresh_placement_driver_cluster()
             && self.refresh_placement_driver_cluster().await.is_err()
         {
@@ -340,7 +435,7 @@ impl CompositeSession {
                             .map(Into::<PlacementDriverNode>::into)
                             .collect::<Vec<_>>();
                         if !nodes.is_empty() {
-                            self.refresh_leadership(&nodes);
+                            self.update_leadership(&nodes);
                             return true;
                         }
                     }
@@ -456,95 +551,32 @@ impl CompositeSession {
         }
     }
 
-    /// Describe current placement driver cluster membership.
-    ///
-    /// There are multiple rationales for this RPC.
-    /// 1. Placement driver is built on top of RAFT consensus algorithm and election happens in case of leader outage.
-    ///    Some RPCs should steer to the leader node and need to refresh the leadership on failure;
-    /// 2. Heartbeat, metrics-reporting RPC requests should broadcast to all placement driver nodes, so that when
-    ///    leader changes, range-server liveness and load evaluation are not impacted.
-    ///
-    /// # Implementation walkthrough
-    /// Step 1: If placement driver access URL uses domain name, resolve it;
-    ///  1.1 If the result `SocketAddress` has an existing `Session`, re-use it and go to step 2;
-    ///  1.2 If the result `SocketAddress` is completely new, connect and build a new `Session`
-    /// Step 2: Send DescribePlacementDriverRequest to the `Session` discovered in step 1;
-    /// Step 3: Once response is received from placement driver server, update the aggregated `Session` table,
-    ///         including leadership.
-    async fn describe_placement_driver_cluster(
-        &self,
+    async fn describe_pd_cluster0(
+        session: &Session,
+        config: &Arc<Configuration>,
     ) -> Result<Option<Vec<PlacementDriverNode>>, EsError> {
-        self.try_reconnect().await;
+        session.connect().await.map_err(|e| {
+            EsError::new(
+                ErrorCode::CONNECT_TIMEOUT,
+                &format!("Session fails to connect: {}", e),
+            )
+        })?;
 
-        // Get latest `A` records for access point domain name
-        let addrs = self
-            .target
-            .to_socket_addrs()
-            .map_err(|e| {
-                error!("Failed to parse {} into SocketAddr: {:?}", self.target, e);
-                EsError::new(
-                    ErrorCode::BAD_ADDRESS,
-                    &format!("describe pd cluster fail, bad address, {}", e),
-                )
-            })?
-            .collect::<Vec<_>>();
-
-        let (mut tx, rx) = oneshot::channel();
         let request = request::Request {
-            timeout: self.config.client_io_timeout(),
-            headers: request::Headers::DescribePlacementDriver {},
+            timeout: config.client_io_timeout(),
+            headers: request::Headers::DescribePlacementDriver,
             body: None,
         };
 
-        // TODO: we shall broadcast describe cluster request to all known nodes.
-        let mut request_sent = false;
-        'outer: loop {
-            for addr in &addrs {
-                let session = match self.sessions.borrow().get(addr) {
-                    Some(session) => session.clone(),
-                    None => continue,
-                };
-
-                if let Err(mut ctx) = session.write(request.clone(), tx).await {
-                    tx = ctx
-                        .response_observer()
-                        .expect("Response observer should NOT be consumed");
-                    error!("Failed to send request to {}", addr);
-                    continue;
-                }
-                trace!("Describe placement driver cluster via {}", addr);
-                request_sent = true;
-                break 'outer;
-            }
-
-            if !request_sent {
-                info!(
-                    "Failed to describe placement driver cluster via {} existing sessions. Try to re-connect",
-                    self.sessions.borrow().len()
-                );
-                if let Some(addr) = addrs.first() {
-                    let session = Self::connect(
-                        *addr,
-                        self.config.client_connect_timeout(),
-                        Arc::clone(&self.config),
-                        self.shutdown.clone(),
-                    )
-                    .await?;
-                    self.sessions.borrow_mut().insert(*addr, session);
-                } else {
-                    break;
-                }
-            }
+        let (tx, rx) = oneshot::channel();
+        if let Err(mut ctx) = session.write(request.clone(), tx).await {
+            ctx.response_observer()
+                .expect("Response observer should NOT be consumed");
+            error!("Failed to send request to {}", session);
         }
+        trace!("Describe placement driver cluster via {}", session);
 
-        if !request_sent {
-            return Err(EsError::new(
-                ErrorCode::UNEXPECTED,
-                "describe pd cluster fail, request not send",
-            ));
-        }
-
-        match time::timeout(self.config.client_io_timeout(), rx).await {
+        match time::timeout(config.client_io_timeout(), rx).await {
             Ok(response) => match response {
                 Ok(response) => {
                     debug_assert_eq!(
@@ -642,116 +674,6 @@ impl CompositeSession {
         }
     }
 
-    /// Try to reconnect to the endpoints that is absent from sessions.
-    ///
-    ///
-    /// # Implementation walkthrough
-    /// 1. filter endpoints that is not found in sessions
-    /// 2. connect to the target and then create a session
-    /// 3. if there is no existing sessions, await till connect attempts completed or failed.
-    async fn try_reconnect(&self) {
-        if self.endpoints.borrow().is_empty() {
-            return;
-        }
-
-        // Remove session that is not active any more.
-        self.sessions
-            .borrow_mut()
-            .retain(|_, session| session.active());
-
-        if self.endpoints.borrow().len() > self.sessions.borrow().len() {
-            let futures = self
-                .endpoints
-                .borrow()
-                .iter()
-                .filter(|target| !self.sessions.borrow().contains_key(target))
-                .map(|target| {
-                    Self::connect(
-                        *target,
-                        self.config.client_connect_timeout(),
-                        Arc::clone(&self.config),
-                        self.shutdown.clone(),
-                    )
-                })
-                .collect::<Vec<_>>();
-
-            if futures.is_empty() {
-                return;
-            }
-            trace!("Reconnecting {} sessions", futures.len());
-            let need_await = self.sessions.borrow().is_empty();
-            let sessions = Rc::clone(&self.sessions);
-            let handle = tokio_uring::spawn(async move {
-                futures::future::join_all(futures)
-                    .await
-                    .into_iter()
-                    .for_each(|res| match res {
-                        Ok(session) => {
-                            let target = session.connection.remote_addr();
-                            sessions.borrow_mut().insert(target, session);
-                        }
-                        Err(e) => {
-                            error!("Failed to connect. Cause: {:?}", e);
-                        }
-                    });
-            });
-
-            if need_await {
-                let _ = handle.await;
-            }
-        }
-    }
-
-    async fn connect(
-        remote_addr: SocketAddr,
-        duration: Duration,
-        config: Arc<Configuration>,
-        shutdown: broadcast::Sender<()>,
-    ) -> Result<Session, EsError> {
-        info!("Establishing connection to {:?}", remote_addr);
-        let endpoint = remote_addr.to_string();
-        let connect = TcpStream::connect(remote_addr);
-        let stream = match timeout(duration, connect).await {
-            Ok(res) => match res {
-                Ok(tcp_stream) => {
-                    info!("Connection to {:?} established", remote_addr);
-                    tcp_stream.set_nodelay(true).map_err(|e| {
-                        error!("Failed to disable Nagle's algorithm. Cause: {:?}", e);
-                        EsError::new(
-                            ErrorCode::CONNECT_DISABLE_NAGLE_FAIL,
-                            "Failed to disable Nagle's algorithm",
-                        )
-                    })?;
-                    tcp_stream
-                }
-                Err(e) => match e.kind() {
-                    ErrorKind::ConnectionRefused => {
-                        error!("Connection to {} is refused", endpoint);
-                        return Err(EsError::new(
-                            ErrorCode::CONNECT_REFUSED,
-                            &format!("{:?}", endpoint),
-                        ));
-                    }
-                    _ => {
-                        return Err(EsError::new(
-                            ErrorCode::CONNECT_FAIL,
-                            &format!("{:?}", endpoint),
-                        ));
-                    }
-                },
-            },
-            Err(e) => {
-                let description = format!("Timeout when connecting {}, elapsed: {}", endpoint, e);
-                error!("{}", description);
-                return Err(EsError::new(
-                    ErrorCode::RPC_TIMEOUT,
-                    &format!("{:?}", endpoint),
-                ));
-            }
-        };
-        Ok(Session::new(remote_addr, stream, &config, shutdown.clone()))
-    }
-
     pub(crate) async fn append(&self, buf: Vec<Bytes>) -> Result<Vec<AppendResultEntry>, EsError> {
         let start_timestamp = Instant::now();
         let request = request::Request {
@@ -818,8 +740,6 @@ impl CompositeSession {
         disk_statistics: &DiskStatistics,
         memory_statistics: &MemoryStatistics,
     ) -> Result<(), EsError> {
-        self.try_reconnect().await;
-
         if self.need_refresh_placement_driver_cluster()
             && self.refresh_placement_driver_cluster().await.is_err()
         {
@@ -877,8 +797,6 @@ impl CompositeSession {
         &self,
         range_progress: Vec<RangeProgress>,
     ) -> Result<(), EsError> {
-        self.try_reconnect().await;
-
         if self.need_refresh_placement_driver_cluster()
             && self.refresh_placement_driver_cluster().await.is_err()
         {
@@ -1097,7 +1015,6 @@ impl CompositeSession {
 
     async fn request(&self, request: Request) -> Result<Response, EsError> {
         loop {
-            self.try_reconnect().await;
             let session = self.pick_session(self.lb_policy).await.ok_or(EsError::new(
                 ErrorCode::CONNECT_FAIL,
                 &format!("{:?}", self.target),
@@ -1158,28 +1075,6 @@ mod tests {
             let _session =
                 CompositeSession::new(&target, config, LbPolicy::PickFirst, shutdown_tx).await?;
 
-            Ok(())
-        })
-    }
-
-    #[test]
-    fn test_describe_placement_driver_cluster() -> Result<(), Box<dyn Error>> {
-        ulog::try_init_log();
-        let mut config = config::Configuration::default();
-        config.server.server_id = 1;
-        let config = Arc::new(config);
-        tokio_uring::start(async {
-            let port = run_listener().await;
-            let target = format!("{}:{}", "localhost", port);
-            let (shutdown_tx, _shutdown_rx) = broadcast::channel(1);
-            let composite_session =
-                CompositeSession::new(&target, config, LbPolicy::PickFirst, shutdown_tx).await?;
-            let nodes = composite_session
-                .describe_placement_driver_cluster()
-                .await
-                .unwrap()
-                .unwrap();
-            assert_eq!(1, nodes.len());
             Ok(())
         })
     }

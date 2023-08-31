@@ -1,4 +1,5 @@
 use std::{
+    fmt::Display,
     io::Result,
     net::{SocketAddr, ToSocketAddrs},
 };
@@ -7,13 +8,12 @@ const DNS_PREFIX: &str = "dns:";
 const IPV4_PREFIX: &str = "ipv4:";
 const IPV6_PREFIX: &str = "ipv6:";
 
-pub(crate) struct Naming {
-    name: String,
+pub(crate) struct Naming<'a> {
+    name: &'a str,
 }
 
-impl Naming {
-    #[allow(dead_code)]
-    pub(crate) fn new(name: String) -> Self {
+impl<'a> Naming<'a> {
+    pub(crate) fn new(name: &'a str) -> Self {
         Self { name }
     }
 
@@ -63,27 +63,33 @@ impl Iterator for NamingIter {
     }
 }
 
-impl ToSocketAddrs for Naming {
+impl<'a> ToSocketAddrs for Naming<'a> {
     type Iter = NamingIter;
 
     fn to_socket_addrs(&self) -> Result<Self::Iter> {
         let endpoints = vec![];
         let mut iter = NamingIter::new(endpoints);
         if self.name.starts_with(DNS_PREFIX) {
-            let (_prefix, host_port) = self.name.as_str().split_at(DNS_PREFIX.len());
+            let (_prefix, host_port) = self.name.split_at(DNS_PREFIX.len());
             for socket_addr in host_port.to_socket_addrs()? {
                 iter.endpoints.push(socket_addr);
             }
         } else if self.name.starts_with(IPV4_PREFIX) {
-            let (_prefix, csv) = self.name.as_str().split_at(IPV4_PREFIX.len());
+            let (_prefix, csv) = self.name.split_at(IPV4_PREFIX.len());
             Self::parse_csv(csv, &mut iter.endpoints)?;
         } else if self.name.starts_with(IPV6_PREFIX) {
-            let (_prefix, csv) = self.name.as_str().split_at(IPV6_PREFIX.len());
+            let (_prefix, csv) = self.name.split_at(IPV6_PREFIX.len());
             Self::parse_csv(csv, &mut iter.endpoints)?;
         } else {
-            Self::parse_csv(&self.name, &mut iter.endpoints)?;
+            Self::parse_csv(self.name, &mut iter.endpoints)?;
         }
         Ok(iter)
+    }
+}
+
+impl<'a> Display for Naming<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.name)
     }
 }
 
@@ -96,7 +102,7 @@ mod tests {
 
     #[test]
     fn test_dns_scheme() -> Result<(), Box<dyn Error>> {
-        let naming = super::Naming::new("dns:www.baidu.com:80".to_owned());
+        let naming = super::Naming::new("dns:www.baidu.com:80");
         let addrs = naming.to_socket_addrs()?.collect::<Vec<_>>();
         assert!(!addrs.is_empty());
         Ok(())
@@ -104,14 +110,14 @@ mod tests {
 
     #[test]
     fn test_ipv4_scheme() -> Result<(), Box<dyn Error>> {
-        let naming = super::Naming::new("ipv4:10.0.0.1:80".to_owned());
+        let naming = super::Naming::new("ipv4:10.0.0.1:80");
         let addrs = naming.to_socket_addrs()?.collect::<Vec<_>>();
         assert_eq!(
             addrs,
             vec![SocketAddr::new(IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1)), 80)]
         );
 
-        let naming = super::Naming::new("ipv4:10.0.0.1:80,10.0.0.2:80,10.0.0.3:80".to_owned());
+        let naming = super::Naming::new("ipv4:10.0.0.1:80,10.0.0.2:80,10.0.0.3:80");
         let mut addrs = naming.to_socket_addrs()?.collect::<Vec<_>>();
         addrs.sort();
         assert_eq!(
@@ -127,7 +133,7 @@ mod tests {
 
     #[test]
     fn test_default_scheme() -> Result<(), Box<dyn Error>> {
-        let naming = super::Naming::new("www.baidu.com:80".to_owned());
+        let naming = super::Naming::new("www.baidu.com:80");
         let mut addrs = naming.to_socket_addrs()?.collect::<Vec<_>>();
         addrs.sort();
 
@@ -135,14 +141,14 @@ mod tests {
         expected.sort();
         assert_eq!(addrs, expected);
 
-        let naming = super::Naming::new("10.0.0.1:80".to_owned());
+        let naming = super::Naming::new("10.0.0.1:80");
         let addrs = naming.to_socket_addrs()?.collect::<Vec<_>>();
         assert_eq!(
             addrs,
             vec![SocketAddr::new(IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1)), 80)]
         );
 
-        let naming = super::Naming::new("10.0.0.1:80,10.0.0.2:80,10.0.0.3:80".to_owned());
+        let naming = super::Naming::new("10.0.0.1:80,10.0.0.2:80,10.0.0.3:80");
         let mut addrs = naming.to_socket_addrs()?.collect::<Vec<_>>();
         addrs.sort();
         assert_eq!(

@@ -109,7 +109,7 @@ mod tests {
             let target = format!("127.0.0.1:{}", port);
             let addr = target.parse::<SocketAddr>().unwrap();
             let stream = TcpStream::connect(addr).await.unwrap();
-            let connection = Rc::new(Connection::new(stream, addr));
+            let connection = Rc::new(Connection::with_stream(stream, addr).unwrap());
             let conn_tracker = Rc::new(RefCell::new(ConnectionTracker::new()));
             let handler = super::IdleHandler::new(
                 Rc::downgrade(&connection),

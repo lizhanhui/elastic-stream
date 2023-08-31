@@ -1,5 +1,5 @@
 use super::{composite_session::CompositeSession, lb_policy::LbPolicy};
-use crate::heartbeat::HeartbeatData;
+use crate::{heartbeat::HeartbeatData, naming::Naming};
 use log::error;
 use model::error::EsError;
 use std::{cell::UnsafeCell, collections::HashMap, rc::Rc, sync::Arc};
@@ -49,30 +49,34 @@ impl SessionManager {
         match composite_sessions.get(target) {
             Some(composite_session) => Ok(Rc::clone(composite_session)),
             None => {
-                let lb_policy = if target == self.config.placement_driver {
-                    LbPolicy::LeaderOnly
-                } else {
-                    LbPolicy::PickFirst
-                };
-
-                let composite_session = Rc::new(
-                    CompositeSession::new(
-                        target,
+                let composite_session = if target == self.config.placement_driver {
+                    let naming = Naming::new(target);
+                    let composite_session = CompositeSession::new(
+                        naming,
                         Arc::clone(&self.config),
-                        lb_policy,
+                        LbPolicy::LeaderOnly,
                         self.shutdown.clone(),
                     )
-                    .await?,
-                );
+                    .await?;
 
-                if lb_policy == LbPolicy::LeaderOnly
-                    && composite_session
+                    if composite_session
                         .refresh_placement_driver_cluster()
                         .await
                         .is_err()
-                {
-                    error!("Failed to refresh placement driver cluster for {target}");
-                }
+                    {
+                        error!("Failed to refresh placement driver cluster for {target}");
+                    }
+                    composite_session
+                } else {
+                    CompositeSession::new(
+                        target,
+                        Arc::clone(&self.config),
+                        LbPolicy::PickFirst,
+                        self.shutdown.clone(),
+                    )
+                    .await?
+                };
+                let composite_session = Rc::new(composite_session);
                 composite_sessions.insert(target.to_owned(), Rc::clone(&composite_session));
                 Ok(composite_session)
             }

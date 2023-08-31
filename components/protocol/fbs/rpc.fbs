@@ -76,6 +76,9 @@ enum ErrorCode : int16 {
     // Try to seal or create a range with an epoch which not equals to the stream's epoch.
     EXPIRED_STREAM_EPOCH = 1489,
 
+    // TCP connection is broken
+    CONNECTION_BROKEN = 1490,
+
     // Server understands the intended operation but it does not support that.
     UNSUPPORTED_OPERATION = 1498,
 
