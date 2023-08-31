@@ -79,7 +79,7 @@ pub enum StoreError {
     AcquireLock,
 }
 
-#[derive(Debug, Error, Clone)]
+#[derive(Debug, Error, Clone, PartialEq)]
 pub enum FetchError {
     #[error("Failed to submit AppendRecordRequest")]
     SubmissionQueue,

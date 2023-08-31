@@ -8,8 +8,9 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+bytes = { workspace = true }
 lru = { workspace = true }
-percentage = { version = "0.1.0" }
+percentage = { workspace = true }
 
 [dev-dependencies]
 criterion = { workspace = true }

@@ -10,6 +10,7 @@ edition = "2021"
 [dependencies]
 byteorder = { workspace = true }
 bytes = { workspace = true }
+cache = { path = "../cache" }
 client = { path = "../client" }
 config = { path = "../config" }
 core_affinity = { workspace = true }
@@ -31,7 +32,7 @@ model = { path = "../model" }
 nix = { workspace = true }
 num_enum = { workspace = true }
 observation = { path = "../observation" }
-percentage = { version = "0.1.0" }
+percentage = { workspace = true }
 prometheus = { workspace = true }
 protocol = { path = "../protocol" }
 rand = { workspace = true }

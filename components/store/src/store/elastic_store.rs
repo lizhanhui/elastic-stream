@@ -587,7 +587,7 @@ unsafe impl Send for ElasticStore {}
 
 /// Some tests for ElasticStore.
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use std::error::Error;
 
     use bytes::{Bytes, BytesMut};
@@ -605,7 +605,7 @@ mod tests {
         AppendRecordRequest, ElasticStore, Store,
     };
 
-    fn build_store(pd_address: &str, store_path: &str) -> ElasticStore {
+    pub(crate) fn build_store(pd_address: &str, store_path: &str) -> ElasticStore {
         let mut config = config::Configuration {
             placement_driver: pd_address.to_owned(),
             ..Default::default()

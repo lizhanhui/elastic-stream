@@ -511,6 +511,7 @@ dependencies = [
 name = "cache"
 version = "0.2.9"
 dependencies = [
+ "bytes",
  "criterion 0.5.1",
  "lru",
  "percentage",
@@ -4208,6 +4209,7 @@ version = "0.2.9"
 dependencies = [
  "byteorder",
  "bytes",
+ "cache",
  "cargo-llvm-cov",
  "chrono",
  "client",
