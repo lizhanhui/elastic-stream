@@ -38,20 +38,20 @@ public class TailReadConsumer implements Runnable {
             }
             try {
                 long endOffset = this.endOffset.get();
-                log.info("StreamID: " + stream.streamId() + ", tail read, nextSeq: " + this.nextSeq
+                log.info("Stream[" + stream.streamId() + "] tail read, nextSeq: " + this.nextSeq
                         + ", nextOffset: " + nextOffset + ", endOffset: "
                         + endOffset);
                 FetchResult fetchResult = this.stream.fetch(this.nextOffset, endOffset,
                         Integer.MAX_VALUE).get();
                 List<RecordBatchWithContext> recordBatch = fetchResult.recordBatchList();
-                log.info("StreamID: " + stream.streamId() + ", tail read, fetch a recordBatch, size: "
+                log.info("Stream[" + stream.streamId() + "] tail read, fetch a recordBatch, size: "
                         + recordBatch.size());
                 for (int i = 0; i < recordBatch.size(); i++) {
                     RecordBatchWithContext record = recordBatch.get(i);
                     byte[] rawPayload = new byte[record.rawPayload().remaining()];
                     record.rawPayload().get(rawPayload);
                     if (Utils.checkRecord(this.nextSeq, ByteBuffer.wrap(rawPayload)) == false) {
-                        log.error("StreamID: " + stream.streamId() + ", tail read, something wrong with record[" + i
+                        log.error("Stream[" + stream.streamId() + "] tail read, something wrong with record[" + i
                                 + "]");
                         this.producer.terminate();
                     } else {

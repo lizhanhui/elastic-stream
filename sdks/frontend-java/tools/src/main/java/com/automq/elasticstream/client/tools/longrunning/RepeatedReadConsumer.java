@@ -37,12 +37,12 @@ public class RepeatedReadConsumer implements Runnable {
                 if (endOffset - startOffset >= 1024 * 1024) {
                     startOffset = endOffset - 1024 * 1024;
                 }
-                log.info("StreamID: " + stream.streamId() + ", repeated read, startOffset: " + startOffset
+                log.info("Stream[" + stream.streamId() + "] repeated read, startOffset: " + startOffset
                         + ", endOffset: "
                         + endOffset);
                 FetchResult fetchResult = this.stream.fetch(startOffset, endOffset, Integer.MAX_VALUE).get();
                 List<RecordBatchWithContext> recordBatch = fetchResult.recordBatchList();
-                log.info("StreamID: " + stream.streamId() + ", repeated read, fetch a recordBatch, size: "
+                log.info("Stream[" + stream.streamId() + "] repeated read, fetch a recordBatch, size: "
                         + recordBatch.size());
                 long nextSeq = this.startSeq + startOffset;
                 for (int i = 0; i < recordBatch.size(); i++) {
@@ -50,7 +50,7 @@ public class RepeatedReadConsumer implements Runnable {
                     byte[] rawPayload = new byte[record.rawPayload().remaining()];
                     record.rawPayload().get(rawPayload);
                     if (Utils.checkRecord(nextSeq, ByteBuffer.wrap(rawPayload)) == false) {
-                        log.error("StreamID: " + stream.streamId() + ", repeated read, something wrong with record[" + i
+                        log.error("Stream[" + stream.streamId() + "] repeated read, something wrong with record[" + i
                                 + "]");
                         this.producer.terminate();
                     } else {

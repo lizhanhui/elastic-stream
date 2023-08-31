@@ -56,7 +56,7 @@ public class Producer implements Runnable {
                     .append(new DefaultRecordBatch(1, 0, Collections.emptyMap(),
                             buffer));
             futureSet.add(cf);
-            log.info("StreamID: " + stream.streamId() + "(" + this.replica + "), send a append request, seq: "
+            log.info("Stream[" + stream.streamId() + ":" + this.replica + "] send a append request, seq: "
                     + this.nextSeq);
             cf.whenComplete((result, e) -> {
                 if (isTerminated()) {
@@ -66,7 +66,7 @@ public class Producer implements Runnable {
                     futureSet.remove(cf);
                     long baseOffset = result.baseOffset();
                     confirmOffset.add(baseOffset + 1);
-                    log.info("StreamID: " + stream.streamId() + "(" + this.replica + "), append a record batch, seq: " +
+                    log.info("Stream[" + stream.streamId() + ":" + this.replica + "] append a record batch, seq: " +
                             this.nextSeq
                             + ", offset:["
                             + baseOffset + ", " + (baseOffset + 1) + ")");
@@ -80,7 +80,7 @@ public class Producer implements Runnable {
             long currentTimestamp = System.currentTimeMillis();
             long elapsedTime = currentTimestamp - previousTimestamp;
             if (elapsedTime > TIME_OUT) {
-                log.error("StreamID: " + stream.streamId() + "(" + this.replica + ")Append timeout");
+                log.error("Append timeout, replica count: " + this.replica);
                 terminate();
             }
             try {
