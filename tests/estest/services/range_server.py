@@ -19,11 +19,12 @@ class RangeServer(Service):
         self.start_node(node)
 
     def start_node(self, node):
-        idx = self.idx(node)
-        node.account.ssh("mkdir -p %s" % RangeServer.ROOT)
-        cmd = self.start_cmd(node)
-        node.account.ssh(cmd)
-        wait_until(lambda: self.listening(node), timeout_sec=30, err_msg="RangeServer node failed to start")
+        self.start_and_wait(node)
+        # idx = self.idx(node)
+        # node.account.ssh("mkdir -p %s" % RangeServer.ROOT)
+        # cmd = self.start_cmd(node)
+        # node.account.ssh(cmd)
+        # wait_until(lambda: self.listening(node), timeout_sec=30, err_msg="RangeServer node failed to start")
 
     def listening(self, node):
         try:
@@ -47,7 +48,8 @@ class RangeServer(Service):
 
     def pids(self, node):
         try:
-            cmd = "ps -a | grep range-server | awk '{print $1}'"
+            # cmd = "ps -a | grep range-server | awk '{print $1}'"
+            cmd = "pgrep range-server"
             pid_arr = [pid for pid in node.account.ssh_capture(cmd, allow_fail=True, callback=int)]
             return pid_arr
         except (RemoteCommandError, ValueError) as e:
@@ -76,5 +78,23 @@ class RangeServer(Service):
 
 
     def clean_node(self, node):
-        self.stop_node(node)
-        node.account.ssh("sudo rm -rf -- %s" % RangeServer.ROOT, allow_fail=False)
+        # self.stop_node(node)
+        self.kill_node(node)
+        node.account.ssh("sudo rm -rf -- %s" % RangeServer.ROOT, allow_fail=True)
+
+    def clean(self):
+        for node in self.nodes:
+            self.clean_node(node)
+
+    def start_and_return_immediately(self, node):
+        idx = self.idx(node)
+        self.logger.info("Starting Append node %d on %s", idx, node.account.hostname)
+        node.account.ssh("mkdir -p %s" % self.ROOT)
+        cmd = self.start_cmd(node)
+        node.account.ssh(cmd, allow_fail=True)
+
+
+    def start_and_wait(self, node):
+        with node.account.monitor_log(self.ROOT + "/logs/range-server.log") as monitor:
+            self.start_and_return_immediately(node)
+            monitor.wait_until("Leader", timeout_sec=30, err_msg="RangeServer start timeout")

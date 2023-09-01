@@ -12,6 +12,7 @@ class PD(Service):
     def restart_cluster(self):
         for node in self.nodes:
             self.restart_node(node)
+        wait_until(lambda: self.ready(), timeout_sec=30, err_msg="PD node failed to restart")
 
     def restart_node(self, node):
         """Restart the given node."""
@@ -25,7 +26,12 @@ class PD(Service):
         cmd = self.start_cmd(node)
         node.account.ssh(cmd)
         self.hostname = node.account.hostname
-        wait_until(lambda: self.listening(node), timeout_sec=30, err_msg="PD node failed to start")
+
+    def ready(self):
+        for node0 in self.nodes:
+            if self.listening(node0) == False:
+                return False
+        return True
 
     def listening(self, node):
         try:
@@ -45,13 +51,21 @@ class PD(Service):
         cmd += "export PD_ADVERTISEPEERURLS=http://" + node.account.hostname + ":12380;"
         cmd += "export PD_ADVERTISECLIENTURLS=http://" + node.account.hostname + ":12379;"
         cmd += "export PD_ADVERTISEPDADDR=" + node.account.hostname + ":12378;"
+        init_cmd = ""
+        for node0 in self.nodes:
+            init_cmd += "pd-" +  node0.account.hostname + "=http://" + node0.account.hostname + ":12380,"
+        init_cmd = init_cmd[:-1]
+        init_cmd = "export PD_INITIALCLUSTER=\"" + init_cmd + "\";"
+        cmd += init_cmd
+        cmd += "export PD_ETCD_INITIALCLUSTERTOKEN=pd-cluster;"
         cmd += "pd &>> pd.log &"
         return cmd
 
 
     def pids(self, node):
         try:
-            cmd = "ps -a | grep pd | awk '{print $1}'"
+            # cmd = "ps -ax | grep pd | awk '{print $1}'"
+            cmd = "pgrep pd"
             pid_arr = [pid for pid in node.account.ssh_capture(cmd, allow_fail=True, callback=int)]
             return pid_arr
         except (RemoteCommandError, ValueError) as e:
@@ -70,17 +84,26 @@ class PD(Service):
         idx = self.idx(node)
         self.logger.info("Stopping %s node %d on %s" % (type(self).__name__, idx, node.account.hostname))
         self.signal_node(node)
-        wait_until(lambda: not self.alive(node), timeout_sec=5, err_msg="Timed out waiting for PD to stop.")
+        wait_until(lambda: not self.alive(node), timeout_sec=30, err_msg="Timed out waiting for PD to stop.")
 
     def signal_node(self, node, sig=signal.SIGTERM):
         pids = self.pids(node)
         for pid in pids:
+            # print("Kill pid: ", pid)
             node.account.signal(pid, sig)
 
+    def clean(self):
+        for node in self.nodes:
+            self.clean_node(node)
 
     def clean_node(self, node):
-        self.stop_node(node)
-        node.account.ssh("sudo rm -rf -- %s" % PD.ROOT, allow_fail=False)
+        # self.stop_node(node)
+        self.kill_node(node)
+        node.account.ssh("sudo rm -rf -- %s" % PD.ROOT, allow_fail=True)
 
     def get_hostname(self):
         return self.hostname
+
+    def start(self):
+        Service.start(self)
+        wait_until(lambda: self.ready(), timeout_sec=30, err_msg="PD node failed to start")

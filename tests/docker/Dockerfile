@@ -23,10 +23,10 @@ ENV DEBIAN_FRONTEND noninteractive
 ARG ducker_creator=default
 LABEL ducker.creator=$ducker_creator
 
-# RUN sed -i "s/archive.ubuntu./mirrors.aliyun./g" /etc/apt/sources.list
-# RUN sed -i "s/deb.debian.org/mirrors.aliyun.com/g" /etc/apt/sources.list
-# RUN sed -i "s/security.debian.org/mirrors.aliyun.com\/debian-security/g" /etc/apt/sources.list
-# RUN sed -i "s/httpredir.debian.org/mirrors.aliyun.com\/debian-security/g" /etc/apt/sources.list
+RUN sed -i "s/archive.ubuntu./mirrors.aliyun./g" /etc/apt/sources.list
+RUN sed -i "s/deb.debian.org/mirrors.aliyun.com/g" /etc/apt/sources.list
+RUN sed -i "s/security.debian.org/mirrors.aliyun.com\/debian-security/g" /etc/apt/sources.list
+RUN sed -i "s/httpredir.debian.org/mirrors.aliyun.com\/debian-security/g" /etc/apt/sources.list
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
@@ -49,8 +49,8 @@ ENV PATH $PATH:$JDK_HOME/bin
 # we have to install git since it is included in openjdk:8 but not openjdk:11
 RUN apt update && apt install -y sudo git netcat iptables rsync unzip wget curl jq coreutils openssh-server net-tools vim python3-pip python3-dev libffi-dev libssl-dev cmake pkg-config libfuse-dev iperf traceroute iproute2 iputils-ping && apt-get -y clean
 RUN python3 -m pip install -U pip==21.1.1;
-# RUN pip config set global.index-url http://mirrors.aliyun.com/pypi/simple
-# RUN pip config set install.trusted-host mirrors.aliyun.com
+RUN pip config set global.index-url http://mirrors.aliyun.com/pypi/simple
+RUN pip config set install.trusted-host mirrors.aliyun.com
 RUN pip3 install --upgrade cffi virtualenv pyasn1 boto3 pycrypto pywinrm ipaddress enum34 debugpy && pip3 install --upgrade "ducktape>0.8"
 
 # Set up ssh
@@ -65,9 +65,9 @@ RUN echo 'PermitUserEnvironment yes' >> /etc/ssh/sshd_config
 RUN apt-get update
 RUN apt-get install -y wget telnet
 
-RUN wget -P /opt "https://github.com/AutoMQ/elastic-stream/releases/download/v0.2.8/pd_0.2.8_amd64.deb"
-RUN wget -P /opt "https://github.com/AutoMQ/elastic-stream/releases/download/v0.2.8/range-server_0.2.8_amd64.deb"
-
+RUN wget -P /opt "https://github.com/AutoMQ/elastic-stream/releases/download/v0.2.10/pd_0.2.10_amd64.deb"
+RUN wget -P /opt "https://github.com/AutoMQ/elastic-stream/releases/download/v0.2.10/range-server_0.2.10_amd64.deb"
+ADD tools-1.1.0-SNAPSHOT-jar-with-dependencies.jar /opt
 RUN dpkg --recursive --install /opt
 
 
