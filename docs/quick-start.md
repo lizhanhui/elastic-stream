@@ -1,14 +1,6 @@
----
-sidebar_position: 1
----
 
-import Tabs from '@theme/Tabs';
-import TabItem from '@theme/TabItem';
 
 # Quick Start
-
-<Tabs>
-  <TabItem value="docker" label="Docker" default>
 
 ## A Simple Use Case Using Docker
 
@@ -33,8 +25,6 @@ cargo run --example main
 # Run Java example
 java -jar sdks/frontend-java/examples/target/examples-1.0-SNAPSHOT-jar-with-dependencies.jar
 ```
-  </TabItem>
-  <TabItem value="package" label="Pre-built package">
 
 ## Install from pre-built package
 
@@ -74,8 +64,6 @@ cargo run --example main
 # Run Java example
 java -jar sdks/frontend-java/examples/target/examples-1.0-SNAPSHOT-jar-with-dependencies.jar
 ```
-  </TabItem>
-  <TabItem value="source" label="Build from source">
 
 ## Build from source
 
@@ -122,5 +110,3 @@ sudo apt-get update
 sudo apt-get install -y openjdk-17-jdk maven
 ./sdks/build.sh
 ```
-  </TabItem>
-</Tabs>
