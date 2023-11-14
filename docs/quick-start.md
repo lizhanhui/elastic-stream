@@ -9,14 +9,14 @@ Run Elastic Stream using docker compose.
 ### Launch Server
 
 ```shell
-wget https://raw.githubusercontent.com/AutoMQ/elastic-stream/develop/dist/docker-compose/docker-compose.yaml
+wget https://raw.githubusercontent.com/lizhanhui/elastic-stream/develop/dist/docker-compose/docker-compose.yaml
 docker-compose up -d elastic-stream
 ```
 
 ### Launch Example workload
 
 ```shell
-git clone https://github.com/AutoMQ/elastic-stream.git
+git clone https://github.com/lizhanhui/elastic-stream.git
 cd elastic-stream
 
 # Run Rust example
@@ -30,7 +30,7 @@ java -jar sdks/frontend-java/examples/target/examples-1.0-SNAPSHOT-jar-with-depe
 
 ### Download assets
 
-Download deb file from [latest release](https://github.com/AutoMQ/elastic-stream/releases/latest).
+Download deb file from [latest release](https://github.com/lizhanhui/elastic-stream/releases/latest).
 
 ```shell
 # Please change the file name to match your OS architecture.
@@ -55,7 +55,7 @@ range-server start --config etc/range-server.yaml --log etc/range-server-log.yam
 ### Launch Example workload
 
 ```shell
-git clone https://github.com/AutoMQ/elastic-stream.git
+git clone https://github.com/lizhanhui/elastic-stream.git
 cd elastic-stream
 
 # Run Rust example
@@ -72,7 +72,7 @@ If there is no pre-built package for your OS or you just want to try, follow the
 ### Install dependencies
 
 ```shell
-git clone https://github.com/AutoMQ/elastic-stream.git
+git clone https://github.com/lizhanhui/elastic-stream.git
 cd elastic-stream
 sudo ./scripts/install_deps.sh
 ```
