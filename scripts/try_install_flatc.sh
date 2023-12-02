@@ -6,10 +6,11 @@ if [ ! -f /usr/local/bin/flatc ]; then
     arch=$(uname -m)
     if [ "$arch" == "aarch64" ]; then
         echo "Host arch is aarch64"
-        wget -O flatc.zip https://github.com/AutoMQ/flatbuffers/releases/download/v23.3.3/Linux.flatc.binary.g++-10-aarch64.zip
+        echo "aarch64 flatc binary is not available"
+        exit 1
     elif [ "$arch" == "x86_64" ]; then
         echo "Host arch is amd64"
-        wget -O flatc.zip https://github.com/AutoMQ/flatbuffers/releases/download/v23.3.3/Linux.flatc.binary.g++-10.zip
+        wget -O flatc.zip https://github.com/google/flatbuffers/releases/download/v23.5.26/Linux.flatc.binary.g++-10.zip
     else
         echo "Unsupported arch"
         exit 1

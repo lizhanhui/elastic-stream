@@ -509,8 +509,8 @@ mock: bin/tool/mockgen
 	    echo "flatc not found"; \
 	    exit 1; \
 	fi
-	if [ "$$($(FLATC) --version | cut -d' ' -f3)" != "23.3.3" ]; then \
-	    echo "flatc version must be 23.3.3"; \
+	if [ "$$($(FLATC) --version | cut -d' ' -f3)" != "23.5.26" ]; then \
+	    echo "flatc version must be 23.5.26"; \
 	    exit 1; \
 	fi
 	rm -rf $$(pwd)/api/rpcfb/rpcfb && $(FLATC) \
