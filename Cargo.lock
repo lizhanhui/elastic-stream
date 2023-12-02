@@ -519,6 +519,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "cache-padded"
+version = "1.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "981520c98f422fcc584dc1a95c334e6953900b9106bc47a9839b81790009eb21"
+
+[[package]]
 name = "camino"
 version = "1.1.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1044,14 +1050,14 @@ dependencies = [
 [[package]]
 name = "crossbeam"
 version = "0.8.2"
-source = "git+https://github.com/AutoMQ/crossbeam.git?branch=try_recv_no_block#5a856843d959ba4c40a7a13e3e338f406f82d409"
+source = "git+https://github.com/ElasticStream/crossbeam.git?branch=try_recv_no_block#723cd1e12ae8984e4453aac452441fe583d4b525"
 dependencies = [
  "cfg-if",
- "crossbeam-channel 0.5.8 (git+https://github.com/AutoMQ/crossbeam.git?branch=try_recv_no_block)",
- "crossbeam-deque 0.8.3 (git+https://github.com/AutoMQ/crossbeam.git?branch=try_recv_no_block)",
- "crossbeam-epoch 0.9.15 (git+https://github.com/AutoMQ/crossbeam.git?branch=try_recv_no_block)",
+ "crossbeam-channel 0.5.8 (git+https://github.com/ElasticStream/crossbeam.git?branch=try_recv_no_block)",
+ "crossbeam-deque 0.8.3 (git+https://github.com/ElasticStream/crossbeam.git?branch=try_recv_no_block)",
+ "crossbeam-epoch 0.9.15 (git+https://github.com/ElasticStream/crossbeam.git?branch=try_recv_no_block)",
  "crossbeam-queue",
- "crossbeam-utils 0.8.16 (git+https://github.com/AutoMQ/crossbeam.git?branch=try_recv_no_block)",
+ "crossbeam-utils 0.8.16 (git+https://github.com/ElasticStream/crossbeam.git?branch=try_recv_no_block)",
 ]
 
 [[package]]
@@ -1067,10 +1073,10 @@ dependencies = [
 [[package]]
 name = "crossbeam-channel"
 version = "0.5.8"
-source = "git+https://github.com/AutoMQ/crossbeam.git?branch=try_recv_no_block#5a856843d959ba4c40a7a13e3e338f406f82d409"
+source = "git+https://github.com/ElasticStream/crossbeam.git?branch=try_recv_no_block#723cd1e12ae8984e4453aac452441fe583d4b525"
 dependencies = [
  "cfg-if",
- "crossbeam-utils 0.8.16 (git+https://github.com/AutoMQ/crossbeam.git?branch=try_recv_no_block)",
+ "crossbeam-utils 0.8.16 (git+https://github.com/ElasticStream/crossbeam.git?branch=try_recv_no_block)",
 ]
 
 [[package]]
@@ -1087,11 +1093,11 @@ dependencies = [
 [[package]]
 name = "crossbeam-deque"
 version = "0.8.3"
-source = "git+https://github.com/AutoMQ/crossbeam.git?branch=try_recv_no_block#5a856843d959ba4c40a7a13e3e338f406f82d409"
+source = "git+https://github.com/ElasticStream/crossbeam.git?branch=try_recv_no_block#723cd1e12ae8984e4453aac452441fe583d4b525"
 dependencies = [
  "cfg-if",
- "crossbeam-epoch 0.9.15 (git+https://github.com/AutoMQ/crossbeam.git?branch=try_recv_no_block)",
- "crossbeam-utils 0.8.16 (git+https://github.com/AutoMQ/crossbeam.git?branch=try_recv_no_block)",
+ "crossbeam-epoch 0.9.15 (git+https://github.com/ElasticStream/crossbeam.git?branch=try_recv_no_block)",
+ "crossbeam-utils 0.8.16 (git+https://github.com/ElasticStream/crossbeam.git?branch=try_recv_no_block)",
 ]
 
 [[package]]
@@ -1110,11 +1116,11 @@ dependencies = [
 [[package]]
 name = "crossbeam-epoch"
 version = "0.9.15"
-source = "git+https://github.com/AutoMQ/crossbeam.git?branch=try_recv_no_block#5a856843d959ba4c40a7a13e3e338f406f82d409"
+source = "git+https://github.com/ElasticStream/crossbeam.git?branch=try_recv_no_block#723cd1e12ae8984e4453aac452441fe583d4b525"
 dependencies = [
  "autocfg",
  "cfg-if",
- "crossbeam-utils 0.8.16 (git+https://github.com/AutoMQ/crossbeam.git?branch=try_recv_no_block)",
+ "crossbeam-utils 0.8.16 (git+https://github.com/ElasticStream/crossbeam.git?branch=try_recv_no_block)",
  "memoffset 0.9.0",
  "scopeguard",
 ]
@@ -1122,10 +1128,10 @@ dependencies = [
 [[package]]
 name = "crossbeam-queue"
 version = "0.3.8"
-source = "git+https://github.com/AutoMQ/crossbeam.git?branch=try_recv_no_block#5a856843d959ba4c40a7a13e3e338f406f82d409"
+source = "git+https://github.com/ElasticStream/crossbeam.git?branch=try_recv_no_block#723cd1e12ae8984e4453aac452441fe583d4b525"
 dependencies = [
  "cfg-if",
- "crossbeam-utils 0.8.16 (git+https://github.com/AutoMQ/crossbeam.git?branch=try_recv_no_block)",
+ "crossbeam-utils 0.8.16 (git+https://github.com/ElasticStream/crossbeam.git?branch=try_recv_no_block)",
 ]
 
 [[package]]
@@ -1140,7 +1146,7 @@ dependencies = [
 [[package]]
 name = "crossbeam-utils"
 version = "0.8.16"
-source = "git+https://github.com/AutoMQ/crossbeam.git?branch=try_recv_no_block#5a856843d959ba4c40a7a13e3e338f406f82d409"
+source = "git+https://github.com/ElasticStream/crossbeam.git?branch=try_recv_no_block#723cd1e12ae8984e4453aac452441fe583d4b525"
 dependencies = [
  "cfg-if",
 ]
@@ -1189,12 +1195,6 @@ checksum = "bef552e6f588e446098f6ba40d89ac146c8c7b64aade83c051ee00bb5d2bc18d"
 dependencies = [
  "uuid",
 ]
-
-[[package]]
-name = "defer"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "647605a6345d5e89c3950a36a638c56478af9b414c55c6f2477c73b115f9acde"
 
 [[package]]
 name = "der"
@@ -2368,17 +2368,17 @@ dependencies = [
 
 [[package]]
 name = "minitrace"
-version = "0.5.0"
-source = "git+https://github.com/AutoMQ/minitrace-rust.git#a36724698f359b6ed4d8322feb1bfcddb74face1"
+version = "0.6.2"
+source = "git+https://github.com/ElasticStream/minitrace-rust.git#e62aca40ae0fca5b624c0360e2b8c9fe2e7d03ac"
 dependencies = [
- "defer",
  "futures",
- "minitrace-macro 0.5.0",
+ "minitrace-macro 0.6.2",
  "minstant",
  "once_cell",
  "parking_lot",
  "pin-project",
  "rand",
+ "rtrb",
 ]
 
 [[package]]
@@ -2406,8 +2406,8 @@ dependencies = [
 
 [[package]]
 name = "minitrace-macro"
-version = "0.5.0"
-source = "git+https://github.com/AutoMQ/minitrace-rust.git#a36724698f359b6ed4d8322feb1bfcddb74face1"
+version = "0.6.2"
+source = "git+https://github.com/ElasticStream/minitrace-rust.git#e62aca40ae0fca5b624c0360e2b8c9fe2e7d03ac"
 dependencies = [
  "proc-macro-error",
  "proc-macro2",
@@ -2755,7 +2755,7 @@ dependencies = [
  "hyper",
  "lazy_static",
  "log",
- "minitrace 0.5.0",
+ "minitrace 0.6.2",
  "minstant",
  "once_cell",
  "opentelemetry",
@@ -3759,6 +3759,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "rtrb"
+version = "0.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "99e704dd104faf2326a320140f70f0b736d607c1caa1b1748a6c568a79819109"
+dependencies = [
+ "cache-padded",
+]
+
+[[package]]
 name = "rust-ini"
 version = "0.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4229,7 +4238,7 @@ dependencies = [
  "libc",
  "local-sync",
  "log",
- "minitrace 0.5.0",
+ "minitrace 0.6.2",
  "minstant",
  "mock-server",
  "mockall",
